@@ -141,7 +141,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
             // Detect client-side frameworks (Blazor WASM, React, etc.) for reachable targets.
             // Only do this for real production/dev URLs, not test fixtures (*.test, *.local, localhost).
-            // Skip for responses that already have clear auth/API indicators.
+            // Public authentication config and framework evidence are independent.
             var isTestHostname = uri.Host.EndsWith(".test", StringComparison.OrdinalIgnoreCase) ||
                                  uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
                                  uri.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ||
@@ -149,11 +149,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
 
             if (!isTestHostname &&
                 preflightResult.Reachability == TargetReachability.Reachable &&
-                !result.AuthenticationRequired &&
-                result.DetectedAuthenticationType == FrontendAuthenticationType.None &&
-                string.IsNullOrWhiteSpace(result.DetectedTenantId))
+                !result.AuthenticationRequired)
             {
-                await DetectClientFrameworkAsync(preflightResult.FinalUrl, result, cancellationToken);
+                await DetectClientFrameworkAsync(normalizedUrl, result, cancellationToken);
             }
 
             // Discover endpoints and integrations (REST, GraphQL, Swagger, Health)
@@ -218,7 +216,8 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                     targetUri.AbsoluteUri, targetUri.Host, initialValidation.BlockReason);
                 result.Success = false;
                 result.BlockReason = initialValidation.BlockReason;
-                result.Reachability = TargetReachability.UntrustedRedirect;
+                // No request or redirect has occurred: the initial target is unreachable.
+                result.Reachability = TargetReachability.Unreachable;
                 return result;
             }
 
@@ -529,22 +528,27 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
 
             // Perform a GET request to retrieve response body for framework detection
+            if (!_validator.ValidateTarget(finalUrl, "Public").IsValid ||
+                !(await ValidateHostAddressesAsync(new Uri(finalUrl).Host, "Public", linkedCts.Token)).IsValid)
+                return;
             using var request = new HttpRequestMessage(HttpMethod.Get, finalUrl);
             request.Headers.Add("User-Agent", "BirkNext/1.0");
 
-            var response = await _httpClient.SendAsync(
-                request, HttpCompletionOption.ResponseContentRead, linkedCts.Token);
+            using var response = await _httpClient.SendAsync(
+                request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
 
             if (response.IsSuccessStatusCode)
             {
                 var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
-                var content = await response.Content.ReadAsStringAsync(linkedCts.Token);
+                var content = await ReadBoundedContentAsync(response.Content, 32768, linkedCts.Token, allowPrefix: true);
 
                 // Framework detection is safe: bounded inspection with positive signals
                 var detectedFramework = _frameworkDetector.DetectFramework(content, contentType);
                 if (detectedFramework.HasValue)
                 {
                     result.DetectedClientFramework = detectedFramework.Value;
+                    result.FrameworkEvidence = ClientFrameworkDetector.FindEvidence(content, contentType);
+                    result.FrameworkConfidence = DetectionConfidence.High;
                 }
             }
         }
@@ -650,6 +654,12 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             Success = false,
             Message = message,
             ErrorCode = errorCode,
+            Reachability = errorCode switch
+            {
+                "NETWORK_ERROR" or "TARGET_BLOCKED" => TargetReachability.Unreachable,
+                "TIMEOUT" => TargetReachability.Timeout,
+                _ => TargetReachability.Unknown
+            },
             Confidence = DetectionConfidence.Low,
             State = TargetDetectionState.Failed,
             IsActivationReady = false
@@ -997,6 +1007,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json - EventHub section",
                     Value = $"Namespace: {eventHubConfig.Value.Namespace}, Name: {eventHubConfig.Value.Name}",
                     Confidence = DetectionConfidence.High,
@@ -1022,6 +1033,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json - ServiceBus section",
                     Value = $"Namespace: {serviceBusConfig.Value.Namespace}, Name: {serviceBusConfig.Value.Name}",
                     Confidence = DetectionConfidence.High,
@@ -1046,6 +1058,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json - Kafka section",
                     Value = $"Brokers: {kafkaBrokers}",
                     Confidence = DetectionConfidence.High,
@@ -1078,6 +1091,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json - RabbitMQ section",
                     Value = $"Hostname: {rabbitMqConfig.Value.Hostname}, Port: {rabbitMqConfig.Value.Port}",
                     Confidence = DetectionConfidence.High,
@@ -1133,6 +1147,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json",
                     Value = "ApiBaseUrl or RestBaseUrl",
                     Confidence = DetectionConfidence.VeryHigh,
@@ -1148,6 +1163,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json",
                     Value = "GraphQL config",
                     Confidence = DetectionConfidence.VeryHigh,
@@ -1163,6 +1179,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json",
                     Value = "Swagger config",
                     Confidence = DetectionConfidence.VeryHigh,
@@ -1178,6 +1195,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 result.DiscoveryEvidence.Add(new DiscoveryEvidence
                 {
                     Type = DiscoveryEvidence.EvidenceType.StructuredConfig,
+                    Status = EndpointEvidenceStatus.Observed,
                     LocationCategory = "/appsettings.json",
                     Value = "Health endpoint",
                     Confidence = DetectionConfidence.VeryHigh,
@@ -1195,141 +1213,166 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         }
     }
 
-    private async Task ProbeRestEndpointsAsync(
-        Uri applicationUri,
-        TargetEnvironmentDetectionResponse result,
-        CancellationToken cancellationToken)
+    private async Task ProbeRestEndpointsAsync(Uri applicationUri, TargetEnvironmentDetectionResponse result, CancellationToken cancellationToken)
     {
-        var candidates = _endpointHelper.GetRestEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
-
-        foreach (var candidate in candidates.Take(3))
-        {
-            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
-                continue;
-
-            if (await ProbeEndpointAsync(candidate, "REST", cancellationToken))
-            {
-                result.DetectedRestBaseUrl = candidate;
-                result.RestConfidence = DetectionConfidence.High;
-                result.DiscoveryEvidence.Add(new DiscoveryEvidence
-                {
-                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
-                    LocationCategory = candidate,
-                    Value = "Endpoint responds to probe",
-                    Confidence = DetectionConfidence.High,
-                    TargetField = "RestBaseUrl"
-                });
-                return;
-            }
-        }
+        var evidence = await DiscoverConventionalEndpointAsync(
+            _endpointHelper.GetRestEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority)).Take(3),
+            "REST", "RestBaseUrl", cancellationToken);
+        if (evidence is null) return;
+        result.DetectedRestBaseUrl = evidence.LocationCategory;
+        result.RestConfidence = evidence.Confidence;
+        result.DiscoveryEvidence.Add(evidence);
     }
 
-    private async Task ProbeGraphQlEndpointsAsync(
-        Uri applicationUri,
-        TargetEnvironmentDetectionResponse result,
-        CancellationToken cancellationToken)
+    private async Task ProbeGraphQlEndpointsAsync(Uri applicationUri, TargetEnvironmentDetectionResponse result, CancellationToken cancellationToken)
     {
-        var candidates = _endpointHelper.GetGraphQlEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
-
-        foreach (var candidate in candidates.Take(3))
-        {
-            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
-                continue;
-
-            if (await ProbeEndpointAsync(candidate, "GraphQL", cancellationToken))
-            {
-                result.DetectedGraphQlEndpoint = candidate;
-                result.GraphQlConfidence = DetectionConfidence.High;
-                result.DiscoveryEvidence.Add(new DiscoveryEvidence
-                {
-                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
-                    LocationCategory = candidate,
-                    Value = "GraphQL endpoint responds",
-                    Confidence = DetectionConfidence.High,
-                    TargetField = "GraphQlEndpoint"
-                });
-                return;
-            }
-        }
+        var evidence = await DiscoverConventionalEndpointAsync(
+            _endpointHelper.GetGraphQlEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority)).Take(3),
+            "GraphQL", "GraphQlEndpoint", cancellationToken);
+        if (evidence is null) return;
+        result.DetectedGraphQlEndpoint = evidence.LocationCategory;
+        result.GraphQlConfidence = evidence.Confidence;
+        result.DiscoveryEvidence.Add(evidence);
     }
 
-    private async Task ProbeSwaggerEndpointsAsync(
-        Uri applicationUri,
-        TargetEnvironmentDetectionResponse result,
-        CancellationToken cancellationToken)
+    private async Task ProbeSwaggerEndpointsAsync(Uri applicationUri, TargetEnvironmentDetectionResponse result, CancellationToken cancellationToken)
     {
-        var candidates = _endpointHelper.GetSwaggerEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
-
-        foreach (var candidate in candidates.Take(3))
-        {
-            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
-                continue;
-
-            if (await ProbeEndpointAsync(candidate, "Swagger", cancellationToken))
-            {
-                result.DetectedSwaggerUrl = candidate;
-                result.SwaggerConfidence = DetectionConfidence.High;
-                result.DiscoveryEvidence.Add(new DiscoveryEvidence
-                {
-                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
-                    LocationCategory = candidate,
-                    Value = "Swagger endpoint exists",
-                    Confidence = DetectionConfidence.High,
-                    TargetField = "SwaggerUrl"
-                });
-                return;
-            }
-        }
+        var evidence = await DiscoverConventionalEndpointAsync(
+            _endpointHelper.GetSwaggerEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority)).Take(3),
+            "Swagger", "SwaggerUrl", cancellationToken);
+        if (evidence is null) return;
+        result.DetectedSwaggerUrl = evidence.LocationCategory;
+        result.SwaggerConfidence = evidence.Confidence;
+        result.DiscoveryEvidence.Add(evidence);
     }
 
-    private async Task ProbeHealthEndpointsAsync(
-        Uri applicationUri,
-        TargetEnvironmentDetectionResponse result,
-        CancellationToken cancellationToken)
+    private async Task ProbeHealthEndpointsAsync(Uri applicationUri, TargetEnvironmentDetectionResponse result, CancellationToken cancellationToken)
     {
-        var candidates = _endpointHelper.GetHealthEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority));
-
-        foreach (var candidate in candidates.Take(5))
-        {
-            if (!_endpointHelper.IsSafeProbeCandidate(candidate))
-                continue;
-
-            if (await ProbeEndpointAsync(candidate, "Health", cancellationToken))
-            {
-                result.DetectedHealthEndpoint = candidate;
-                result.HealthConfidence = DetectionConfidence.High;
-                result.DiscoveryEvidence.Add(new DiscoveryEvidence
-                {
-                    Type = DiscoveryEvidence.EvidenceType.SafeProbe,
-                    LocationCategory = candidate,
-                    Value = "Health endpoint responds",
-                    Confidence = DetectionConfidence.High,
-                    TargetField = "HealthEndpoint"
-                });
-                return;
-            }
-        }
+        var evidence = await DiscoverConventionalEndpointAsync(
+            _endpointHelper.GetHealthEndpointCandidates(applicationUri.GetLeftPart(UriPartial.Authority)).Take(5),
+            "Health", "HealthEndpoint", cancellationToken);
+        if (evidence is null) return;
+        result.DetectedHealthEndpoint = evidence.LocationCategory;
+        result.HealthConfidence = evidence.Confidence;
+        result.DiscoveryEvidence.Add(evidence);
     }
 
-    private async Task<bool> ProbeEndpointAsync(string url, string endpointType, CancellationToken cancellationToken)
+    private async Task<DiscoveryEvidence?> DiscoverConventionalEndpointAsync(
+        IEnumerable<string> candidates, string endpointType, string targetField, CancellationToken cancellationToken)
     {
+        DiscoveryEvidence? firstCandidate = null;
+        foreach (var candidate in candidates)
+        {
+            if (!_endpointHelper.IsSafeProbeCandidate(candidate)) continue;
+            var evidence = await ProbeEndpointAsync(candidate, endpointType, cancellationToken);
+            evidence.TargetField = targetField;
+            firstCandidate ??= evidence;
+            if (evidence.Status == EndpointEvidenceStatus.Confirmed) return evidence;
+        }
+        return firstCandidate;
+    }
+
+    private async Task<DiscoveryEvidence> ProbeEndpointAsync(string url, string endpointType, CancellationToken cancellationToken)
+    {
+        var evidence = new DiscoveryEvidence
+        {
+            Type = DiscoveryEvidence.EvidenceType.ConventionalCandidate,
+            LocationCategory = url,
+            Value = "Conventional path; service not confirmed",
+            Confidence = DetectionConfidence.Low
+        };
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(ProbeTimeoutSeconds));
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, cts.Token);
-
+            if (!_validator.ValidateTarget(url, "Public").IsValid ||
+                !(await ValidateHostAddressesAsync(new Uri(url).Host, "Public", linkedCts.Token)).IsValid)
+            {
+                evidence.ProbeStatus = EndpointProbeStatus.Blocked;
+                return evidence;
+            }
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Add("User-Agent", "BirkNext/1.0");
-
-            var response = await _httpClient.SendAsync(
-                request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
-
-            return response.IsSuccessStatusCode;
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+            evidence.HttpStatus = (int)response.StatusCode;
+            evidence.ContentType = response.Content.Headers.ContentType?.MediaType;
+            evidence.ProbeStatus = EndpointProbeStatus.ResponseReceived;
+            // Probes do not follow redirects. Existing redirect policy remains fail-closed.
+            if ((int)response.StatusCode is >= 300 and < 400)
+            {
+                evidence.ProbeStatus = EndpointProbeStatus.Blocked;
+                return evidence;
+            }
+            if (!response.IsSuccessStatusCode) return evidence;
+            var body = await ReadBoundedContentAsync(response.Content, MaxContentSizeBytes, linkedCts.Token);
+            if (body is null)
+            {
+                evidence.ProbeStatus = EndpointProbeStatus.SizeLimitExceeded;
+                return evidence;
+            }
+            if (HasEndpointResponseEvidence(body, evidence.ContentType, endpointType))
+            {
+                evidence.Type = DiscoveryEvidence.EvidenceType.SafeProbe;
+                evidence.Status = EndpointEvidenceStatus.Confirmed;
+                evidence.Confidence = DetectionConfidence.High;
+                evidence.Value = endpointType + " response evidence";
+                if (endpointType == "Swagger") evidence.OpenApiKind = OpenApiResourceKind.OpenApiDocument;
+            }
+            else if (endpointType == "Swagger" && evidence.ContentType?.Contains("text/html", StringComparison.OrdinalIgnoreCase) == true &&
+                     body.Contains("SwaggerUIBundle", StringComparison.Ordinal) && body.Contains("url:", StringComparison.Ordinal))
+            {
+                evidence.Status = EndpointEvidenceStatus.Observed;
+                evidence.Confidence = DetectionConfidence.Medium;
+                evidence.Type = DiscoveryEvidence.EvidenceType.HtmlReference;
+                evidence.OpenApiKind = OpenApiResourceKind.SwaggerUi;
+                evidence.Value = "Swagger UI reference; OpenAPI document not confirmed";
+            }
+            else evidence.Value = "Conventional path; response does not confirm endpoint type";
         }
-        catch
+        catch (OperationCanceledException) { evidence.ProbeStatus = EndpointProbeStatus.Timeout; }
+        catch (Exception) { evidence.ProbeStatus = EndpointProbeStatus.Failed; }
+        return evidence;
+    }
+
+    private static bool HasEndpointResponseEvidence(string body, string? contentType, string endpointType)
+    {
+        if (endpointType == "Health" && contentType?.Contains("text/plain", StringComparison.OrdinalIgnoreCase) == true)
+            return new[] { "Healthy", "Unhealthy", "Degraded" }.Contains(body.Trim(), StringComparer.OrdinalIgnoreCase);
+        if (contentType?.Contains("json", StringComparison.OrdinalIgnoreCase) != true) return false;
+        try
         {
-            return false;
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (endpointType == "REST") return root.ValueKind is JsonValueKind.Object or JsonValueKind.Array;
+            if (root.ValueKind != JsonValueKind.Object) return false;
+            return endpointType switch
+            {
+                "GraphQL" => root.TryGetProperty("data", out _) ||
+                    (root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array &&
+                     errors.EnumerateArray().Any(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("message", out _))),
+                "Swagger" => (root.TryGetProperty("openapi", out var version) || root.TryGetProperty("swagger", out version)) &&
+                    version.ValueKind == JsonValueKind.String && root.TryGetProperty("paths", out _) && root.TryGetProperty("info", out _),
+                "Health" => root.TryGetProperty("status", out var status) && status.ValueKind == JsonValueKind.String &&
+                    new[] { "Healthy", "Unhealthy", "Degraded" }.Contains(status.GetString(), StringComparer.OrdinalIgnoreCase),
+                _ => false
+            };
         }
+        catch (JsonException) { return false; }
+    }
+
+    private static async Task<string?> ReadBoundedContentAsync(HttpContent content, int limit, CancellationToken token, bool allowPrefix = false)
+    {
+        if (!allowPrefix && content.Headers.ContentLength > limit) return null;
+        using var stream = await content.ReadAsStreamAsync(token);
+        var bytes = new byte[limit + (allowPrefix ? 0 : 1)];
+        var count = 0;
+        while (count < bytes.Length)
+        {
+            var read = await stream.ReadAsync(bytes.AsMemory(count), token);
+            if (read == 0) break;
+            count += read;
+        }
+        return count > limit ? null : Encoding.UTF8.GetString(bytes, 0, count);
     }
 
     private string ComputeUrlFingerprint(string url)

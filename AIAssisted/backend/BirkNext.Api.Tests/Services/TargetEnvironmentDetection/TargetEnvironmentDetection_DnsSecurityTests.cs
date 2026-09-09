@@ -203,10 +203,31 @@ public sealed class TargetEnvironmentDetection_DnsSecurityTests
         var handler = new RecordingHttpHandler();
         var service = CreateService(resolver, handler);
 
-        var result = await service.DetectFromUrlAsync("https://unconfigured.example.test/");
+        var result = await service.DetectFromUrlAsync("https://example-qa.local");
 
         Assert.False(result.Success);
+        Assert.Equal(TargetReachability.Unreachable, result.Reachability);
+        Assert.Equal("Target validation failed: Hostname resolution failed or returned no addresses", result.Message);
+        Assert.Equal(TargetDetectionState.Failed, result.State);
         Assert.Equal(0, handler.RequestedUrls.Count);
+    }
+
+    [Fact]
+    public async Task PublicDns_ConnectionFails_ReturnsUnreachable()
+    {
+        var resolver = new FakeDnsResolver();
+        resolver.Add("public-app.example.test", "203.0.113.1");
+        var service = CreateService(resolver, new ConnectionFailureHandler());
+        var result = await service.DetectFromUrlAsync("https://public-app.example.test/");
+        Assert.False(result.Success);
+        Assert.Equal(TargetReachability.Unreachable, result.Reachability);
+        Assert.Equal("NETWORK_ERROR", result.ErrorCode);
+    }
+
+    private sealed class ConnectionFailureHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("Connection refused");
     }
 
     [Fact]
@@ -234,6 +255,7 @@ public sealed class TargetEnvironmentDetection_DnsSecurityTests
 
         var result = await service.DetectFromUrlAsync("https://public-app.example.test/");
 
+        Assert.Equal(TargetReachability.UntrustedRedirect, result.Reachability);
         Assert.Equal(1, handler.RequestedUrls.Count(url => url == "https://public-app.example.test/"));
         Assert.Equal(0, handler.RequestedUrls.Count(url => url == "https://private-redirect.example.test/"));
     }
@@ -361,5 +383,3 @@ internal sealed class RedirectHandler : HttpMessageHandler
             });
     }
 }
-
-

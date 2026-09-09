@@ -1,0 +1,31 @@
+@using BirkNext.Web.Models
+
+<div class="fa-endpoint-proposal" data-field="@Field" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;padding:0.75rem 0;border-bottom:1px solid var(--color-border)">
+    <div style="flex:1;min-width:12rem">
+        <strong>@Label</strong>
+        <div style="font-family:monospace;overflow-wrap:anywhere">@Value</div>
+        <div>@(Evidence?.Status ?? EndpointEvidenceStatus.Candidate) · @(Evidence?.Confidence ?? DetectionConfidence.Low)</div>
+        <div>Source: @(Evidence is null ? "Evidence unavailable" : $"{Evidence.Type} — {Evidence.LocationCategory}")</div>
+        @if (!string.IsNullOrWhiteSpace(Evidence?.Value)) { <div>@Evidence.Value</div> }
+        <div>Probe: @(Evidence?.ProbeStatus ?? EndpointProbeStatus.NotPerformed)@HttpDetails</div>
+        @if (Evidence?.OpenApiKind is OpenApiResourceKind.SwaggerUi or OpenApiResourceKind.OpenApiDocument)
+        {
+            <div>@(Evidence.OpenApiKind == OpenApiResourceKind.SwaggerUi ? "Swagger UI URL; not a confirmed contract document" : "OpenAPI document URL")</div>
+        }
+    </div>
+    @if (CanApply)
+    {
+        <button type="button" class="fa-apply-suggestion" @onclick="OnApply">@ApplyLabel</button>
+    }
+</div>
+
+@code {
+    [Parameter] public string Field { get; set; } = "";
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public string ApplyLabel { get; set; } = "";
+    [Parameter] public bool CanApply { get; set; }
+    [Parameter] public EventCallback OnApply { get; set; }
+    [Parameter] public DiscoveryEvidence? Evidence { get; set; }
+    private string HttpDetails => Evidence?.HttpStatus is int status ? $" · HTTP {status} · {Evidence.ContentType ?? "Content type unavailable"}" : "";
+}

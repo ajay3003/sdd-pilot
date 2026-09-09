@@ -75,6 +75,9 @@ public sealed class TargetEnvironmentDetectionResponse
     [JsonPropertyName("detectedClientFramework")]
     public ClientFrameworkType? DetectedClientFramework { get; set; }
 
+    public string? FrameworkEvidence { get; set; }
+    public DetectionConfidence FrameworkConfidence { get; set; } = DetectionConfidence.Low;
+
     [JsonPropertyName("state")]
     public TargetDetectionState State { get; set; } = TargetDetectionState.NotChecked;
 
@@ -259,7 +262,8 @@ public sealed class DiscoveryEvidence
         HtmlReference,      // From HTML (script tag, meta tag, config object)
         WasmAsset,          // From deployed WASM asset/bundle
         HintExtractor,      // From source project hints
-        SafeProbe           // From safe endpoint verification
+        SafeProbe,          // From safe endpoint verification
+        ConventionalCandidate
     }
 
     [JsonPropertyName("type")]
@@ -276,4 +280,17 @@ public sealed class DiscoveryEvidence
 
     [JsonPropertyName("targetField")]
     public string? TargetField { get; set; } // Which field this evidence supports (RestBaseUrl, GraphQlEndpoint, etc.)
+
+    public EndpointEvidenceStatus Status { get; set; } = EndpointEvidenceStatus.Candidate;
+    public EndpointProbeStatus ProbeStatus { get; set; } = EndpointProbeStatus.NotPerformed;
+    public int? HttpStatus { get; set; }
+    public string? ContentType { get; set; }
+    public OpenApiResourceKind OpenApiKind { get; set; } = OpenApiResourceKind.Unknown;
 }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EndpointEvidenceStatus { Candidate, Observed, Confirmed }
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EndpointProbeStatus { NotPerformed, ResponseReceived, Blocked, Timeout, Failed, SizeLimitExceeded }
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum OpenApiResourceKind { Unknown, SwaggerUi, OpenApiDocument }

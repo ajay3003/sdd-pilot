@@ -61,6 +61,15 @@ public sealed class ClientFrameworkDetector : IClientFrameworkDetector
         return null;
     }
 
+    public static string? FindEvidence(string? content, string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(content) || contentType?.Contains("text/html", StringComparison.OrdinalIgnoreCase) != true)
+            return null;
+        var prefix = content[..Math.Min(content.Length, MaxInspectionLength)];
+        var marker = BlazorMarkers.FirstOrDefault(m => prefix.Contains(m, StringComparison.OrdinalIgnoreCase));
+        return marker is null ? null : $"Public HTML reference: {marker}";
+    }
+
     /// <summary>
     /// Check if content has multiple positive Blazor WASM indicators.
     /// Requires at least one framework marker to avoid false positives.

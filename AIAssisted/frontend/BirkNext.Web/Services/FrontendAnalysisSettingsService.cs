@@ -351,7 +351,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         _settings.Profiles.FirstOrDefault(p => p.Id == profileId)
             ?? throw new InvalidOperationException($"Profile '{profileId}' not found.");
 
-    private static bool IsValidUrl(string url) =>
+    public static bool IsValidUrl(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) &&
         (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 

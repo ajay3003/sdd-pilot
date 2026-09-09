@@ -143,6 +143,10 @@ public sealed class TargetEnvironmentDetectionResult
     [JsonPropertyName("detectedClientFramework")]
     public ClientFrameworkType? DetectedClientFramework { get; set; }
 
+    public string? FrameworkEvidence { get; set; }
+    public DetectionConfidence FrameworkConfidence { get; set; } = DetectionConfidence.Low;
+    public List<DiscoveryEvidence> DiscoveryEvidence { get; set; } = [];
+
     [JsonPropertyName("state")]
     public DetectionState State { get; set; } = DetectionState.NotChecked;
 

@@ -185,6 +185,71 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         cut.FindAll(".fa-profile-chip").Should().Contain(b => b.TextContent.Contains("Production"));
     }
 
+    [Theory]
+    [InlineData(FrontendEnvironmentType.Development, "https://m2lbdev.bufetat.no/")]
+    [InlineData(FrontendEnvironmentType.Local, "")]
+    [InlineData(FrontendEnvironmentType.QA, "")]
+    public void AddEnvironment_StoresUrlAndSavesWithoutDetectionOrActivation(FrontendEnvironmentType type, string url)
+    {
+        var cut = Render<TargetSettingsComponent>();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
+        cut.Find(".fa-btn-create").Click();
+        var dialog = cut.Find("[role=dialog]");
+        dialog.TextContent.Should().Contain("Environment Name").And.Contain("Environment Type").And.Contain("Frontend Base URL");
+        cut.Find("#fa-create-type").GetAttribute("value").Should().Be("Local");
+        cut.Find("#fa-create-name").Change("M2LB DEV");
+        cut.Find("#fa-create-type").Change(type.ToString());
+        cut.Find("#fa-create-url").Input(url);
+        cut.FindAll("[role=dialog] button").Single(b => b.TextContent.Trim() == "Add Environment").Click();
+
+        cut.WaitForAssertion(() => cut.FindAll("[role=dialog]").Should().BeEmpty());
+        var profile = _settings.Settings.Profiles.Single(p => p.Name == "M2LB DEV");
+        profile.TargetUrl.Should().Be(string.IsNullOrEmpty(url) ? null : url);
+        profile.EnvironmentType.Should().Be(type);
+        _settings.Settings.ActiveProfileId.Should().Be("local");
+        _detection.VerifyNoOtherCalls();
+        JSInterop.Invocations["birkNextStorage.setItem"].Should().ContainSingle();
+        if (url.Length > 0)
+        {
+            cut.Find(".fa-summary-url").TextContent.Should().Be(url);
+            cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").HasAttribute("disabled").Should().BeFalse();
+            JSInterop.Invocations["birkNextStorage.setItem"].Single().Arguments[1]!.ToString().Should().Contain(url);
+        }
+    }
+
+    [Theory]
+    [InlineData("not a url")]
+    [InlineData("ftp://example.com")]
+    public void AddEnvironment_InvalidUrlBlocksCreationWithoutNetwork(string url)
+    {
+        var cut = Render<TargetSettingsComponent>();
+        var count = _settings.Settings.Profiles.Count;
+        cut.Find(".fa-btn-create").Click();
+        cut.Find("#fa-create-name").Change("Invalid URL");
+        cut.Find("#fa-create-url").Input(url);
+        cut.Find("[role=dialog] [role=alert]").TextContent.Should().Contain("not a valid absolute URL");
+        var add = cut.FindAll("[role=dialog] button").Single(b => b.TextContent.Trim() == "Add Environment");
+        add.HasAttribute("disabled").Should().BeTrue();
+        add.Click();
+        _settings.Settings.Profiles.Should().HaveCount(count);
+        _detection.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(TargetReachability.Unreachable, "Target validation failed: Hostname resolution failed or returned no addresses")]
+    [InlineData(TargetReachability.UntrustedRedirect, "Target validation failed: Redirect destination is blocked")]
+    public void FailedDetection_RendersTypedReachabilityAndSpecificReason(TargetReachability reachability, string reason)
+    {
+        _detection.Setup(x => x.DetectFromUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TargetEnvironmentDetectionResult { Success = false, State = DetectionState.Failed, Reachability = reachability, Message = reason });
+        var cut = Render<TargetSettingsComponent>();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Should().Contain("Detection failed"));
+        cut.Markup.Should().Contain(reason).And.Contain($">{reachability}</");
+        if (reachability == TargetReachability.Unreachable)
+            cut.Markup.Should().NotContain("UntrustedRedirect");
+    }
+
     private const string SettingsJson = """
     {
       "activeProfileId": "local",

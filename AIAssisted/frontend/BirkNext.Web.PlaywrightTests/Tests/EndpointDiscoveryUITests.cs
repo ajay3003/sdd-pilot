@@ -114,10 +114,18 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
 
             // Check if detected integrations section exists (may not be present if no integrations found)
             var integrationsSection = page.Locator("text=Discovered Integrations");
-            var isVisible = await integrationsSection.IsVisibleAsync().CatchAsync(_ => false);
+            bool isVisible = false;
+            try
+            {
+                isVisible = await integrationsSection.IsVisibleAsync();
+            }
+            catch
+            {
+                isVisible = false;
+            }
 
             // Whether visible or not, the test passes - we're checking the UI renders without error
-            isVisible.Should().BeLessOrEqual(true);
+            // The discovery section may or may not be present depending on what's detected
         }
         finally
         {
@@ -187,7 +195,15 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
 
             // Check for discovered integrations section
             var integrationsSection = page.Locator("text=Discovered Integrations");
-            var isVisible = await integrationsSection.IsVisibleAsync().CatchAsync(_ => false);
+            bool isVisible = false;
+            try
+            {
+                isVisible = await integrationsSection.IsVisibleAsync();
+            }
+            catch
+            {
+                isVisible = false;
+            }
 
             if (isVisible)
             {
@@ -241,7 +257,15 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
 
             // Look for stale warning
             var staleWarning = page.Locator("text=Discoveries are stale");
-            var isVisible = await staleWarning.IsVisibleAsync().CatchAsync(_ => false);
+            bool isVisible = false;
+            try
+            {
+                isVisible = await staleWarning.IsVisibleAsync();
+            }
+            catch
+            {
+                isVisible = false;
+            }
 
             // The stale warning should appear
             isVisible.Should().BeTrue("Stale warning should appear when URL changes");
@@ -288,7 +312,15 @@ public sealed class EndpointDiscoveryUITests : IAsyncLifetime
             await page.WaitForTimeoutAsync(1000);
 
             // Check if discovered section is now hidden
-            var visibleAfter = await discoveredSection.IsVisibleAsync().CatchAsync(_ => false);
+            bool visibleAfter = false;
+            try
+            {
+                visibleAfter = await discoveredSection.IsVisibleAsync();
+            }
+            catch
+            {
+                visibleAfter = false;
+            }
 
             // Section should be hidden or not visible
             visibleAfter.Should().BeFalse("Discovered endpoints should be hidden when stale");
