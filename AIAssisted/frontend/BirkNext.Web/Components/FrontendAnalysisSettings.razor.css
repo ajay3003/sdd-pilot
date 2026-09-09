@@ -502,6 +502,29 @@
 .fa-validation-error-inline { color: var(--clr-danger); font-weight: 500; }
 
 
+/* ── Unsaved draft notice (Authentication) ───────────────────────────────────── */
+
+.fa-unsaved-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.6rem 0.75rem;
+    color: var(--clr-warning);
+    background: var(--clr-warning-bg-light);
+    border: 1px solid var(--clr-warning-border);
+    border-left: 3px solid var(--clr-warning);
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    line-height: 1.45;
+}
+
+.fa-unsaved-icon  { flex: 0 0 auto; margin-top: 0.15rem; }
+.fa-unsaved-body  { display: flex; flex-direction: column; gap: 0.15rem; }
+.fa-unsaved-title { font-weight: 700; }
+.fa-unsaved-help  { color: var(--clr-text-muted); font-size: 0.8125rem; }
+
+
 /* ── Reset row ───────────────────────────────────────────────────────────────── */
 
 .fa-reset-row {

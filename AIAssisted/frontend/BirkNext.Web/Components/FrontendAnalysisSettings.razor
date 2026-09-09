@@ -250,6 +250,14 @@
                 {
                     <p><small>Last recorded verification: @evidence.Result ? @evidence.VerifiedAt ? @evidence.Origin</small></p>
                 }
+                @if (_detectionResult is not null && !ManualVerificationContextCurrent)
+                {
+                    <p class="fa-activation-reason fa-manual-context-changed" role="status">
+                        Authentication or environment settings changed since detection.
+                        @(IsDirty ? "Save changes, then run Detect settings again before recording manual verification." : "Run Detect settings again before recording manual verification.")
+                        Target discovery is unaffected.
+                    </p>
+                }
                 <p>If you changed environment settings, save them before recording verification. Activation requires current target detection and manual verification Passed.</p>
             </section>
         }
@@ -448,7 +456,7 @@
                                 {
                                     <div style="margin-top: 1rem; padding: 0.75rem; background: var(--color-warning-bg, rgba(255, 193, 7, 0.1)); border-left: 3px solid var(--color-warning); border-radius: 0.25rem; font-size: 0.875rem;">
                                         <div style="color: var(--color-warning); font-weight: 600; margin-bottom: 0.25rem;">⚠️ Discoveries are stale</div>
-                                        <div style="color: var(--color-text-muted); font-size: 0.8125rem;">The target URL changed since detection. Run Detect settings again to refresh discovered endpoints and integrations.</div>
+                                        <div style="color: var(--color-text-muted); font-size: 0.8125rem;">@DiscoveryStaleDetail</div>
                                     </div>
                                 }
 
@@ -676,14 +684,30 @@
                 {
                     var auth = _editProfile.Authentication;
                     <div class="fa-form-grid">
-                        <div class="form-field">
-                            <label class="fa-label" for="auth-verification-mode">Authentication verification</label>
-                            <select id="auth-verification-mode" class="form-control" @bind="_editProfile.Authentication.VerificationMode">
-                                <option value="Automated">Automated browser capability</option>
-                                <option value="ManualManagedEdge">Manual managed Microsoft Edge</option>
-                            </select>
-                            <label class="fa-label">Authentication Type <span class="fa-label-note">(Configured)</span></label>
-                            <select class="form-control" @bind="auth.AuthenticationType">
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label" style="font-weight:600">Verification method</label>
+                            <p style="font-size:0.9rem;margin-bottom:0.75rem">
+                                <strong>Manual verification — managed Microsoft Edge</strong><br />
+                                <small style="color:var(--color-text-muted)">Your organization requires manual sign-in using a managed Microsoft Edge work profile. BirkNext cannot automate authentication.</small>
+                            </p>
+                        </div>
+
+                        <div class="form-field fa-field-full" style="padding-top:1rem;border-top:1px solid var(--color-border)">
+                            <div class="fa-threshold-group-title" id="configured-authentication-heading">Configured Authentication</div>
+                            @if (HasUnsavedAuthenticationChanges)
+                            {
+                                <div class="fa-unsaved-notice" role="status" aria-labelledby="auth-unsaved-title" data-testid="auth-unsaved-changes">
+                                    <svg class="fa-unsaved-icon" width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false">
+                                        <path d="M8.982 1.566a1.13 1.13 0 0 0-1.964 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 5.995A.905.905 0 0 1 8 5zm.002 6a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+                                    </svg>
+                                    <div class="fa-unsaved-body">
+                                        <strong id="auth-unsaved-title" class="fa-unsaved-title">Unsaved changes</strong>
+                                        <div class="fa-unsaved-help">Authentication settings have been applied to the draft. Use Save changes to persist them.</div>
+                                    </div>
+                                </div>
+                            }
+                            <label class="fa-label" for="configured-authentication-type">Configured Authentication Type</label>
+                            <select id="configured-authentication-type" class="form-control" @bind="auth.AuthenticationType">
                                 @foreach (var t in Enum.GetValues<FrontendAuthenticationType>())
                                 {
                                     <option value="@t">@t</option>
@@ -695,30 +719,22 @@
                                 <input type="checkbox" @bind="auth.RequiresAuthentication" />
                                 <span>Requires Authentication</span>
                             </label>
-                            <label class="fa-check-row">
-                                <input type="checkbox" @bind="auth.UseExistingBrowserSession" />
-                                <span>Use Existing Browser Session</span>
-                            </label>
-                            <label class="fa-check-row">
-                                <input type="checkbox" @bind="auth.AutomaticallyOpenLoginPage" />
-                                <span>Automatically Open Login Page</span>
-                            </label>
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Expected Authority <span class="form-optional">(optional, configured)</span></label>
-                            <input type="url" class="form-control" placeholder="https://login.microsoftonline.com/…" @bind="auth.ExpectedAuthority" />
+                            <label class="fa-label" for="configured-authority">Expected Authority <span class="form-optional">(optional, configured)</span></label>
+                            <input id="configured-authority" type="url" class="form-control" placeholder="https://login.microsoftonline.com/…" @bind="auth.ExpectedAuthority" />
                         </div>
                         <div class="form-field">
-                            <label class="fa-label">Expected Tenant <span class="form-optional">(optional, configured)</span></label>
-                            <input type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedTenant" />
+                            <label class="fa-label" for="configured-tenant">Expected Tenant <span class="form-optional">(optional, configured)</span></label>
+                            <input id="configured-tenant" type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedTenant" />
                         </div>
                         <div class="form-field">
-                            <label class="fa-label">Expected Client ID <span class="form-optional">(optional, configured)</span></label>
-                            <input type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedClientId" />
+                            <label class="fa-label" for="configured-client-id">Expected Client ID <span class="form-optional">(optional, configured)</span></label>
+                            <input id="configured-client-id" type="text" class="form-control" placeholder="00000000-0000-0000-0000-000000000000" @bind="auth.ExpectedClientId" />
                         </div>
                         <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed Redirect URLs <span class="form-optional">(one per line, configured)</span></label>
-                            <textarea class="form-control" rows="3"
+                            <label class="fa-label" for="configured-redirect-urls">Allowed Redirect URLs <span class="form-optional">(one per line, configured)</span></label>
+                            <textarea id="configured-redirect-urls" class="form-control" rows="3"
                                       value="@ListToText(auth.AllowedRedirectUrls)"
                                       @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
                         </div>
@@ -775,8 +791,9 @@
                                     <div style="color: var(--color-text-muted); font-size: 0.875rem;">No authentication detected</div>
                                 }
 
-                                <button type="button" class="btn btn-secondary fa-btn-sm" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;">
-                                    Apply detected authentication settings
+                                <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;"
+                                        title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
+                                    Apply authentication
                                 </button>
                             </div>
                         }
@@ -786,10 +803,9 @@
                 {
                     var auth = profile.Authentication;
                     <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Verification method</dt><dd>Manual verification — managed Microsoft Edge</dd></div>
                         <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@auth.AuthenticationType</dd></div>
                         <div class="fa-dl-row"><dt>Requires Authentication</dt><dd>@BoolLabel(auth.RequiresAuthentication)</dd></div>
-                        <div class="fa-dl-row"><dt>Use Existing Browser Session</dt><dd>@BoolLabel(auth.UseExistingBrowserSession)</dd></div>
-                        <div class="fa-dl-row"><dt>Automatically Open Login Page</dt><dd>@BoolLabel(auth.AutomaticallyOpenLoginPage)</dd></div>
                         <div class="fa-dl-row"><dt>Expected Authority</dt><dd>@(auth.ExpectedAuthority ?? "—")</dd></div>
                         <div class="fa-dl-row"><dt>Expected Tenant</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedTenant) ? "—" : "Configured")</dd></div>
                         <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedClientId) ? "—" : "Configured")</dd></div>
@@ -1139,16 +1155,46 @@
             @if (_activeTab == "validation")
             {
                 var v = FaSettings.ValidateProfile(profile);
-                @if (v.IsValid && v.Warnings.Count == 0)
-                {
-                    <div class="fa-validation-ok">
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>
-                        Valid — no errors or warnings.
+                <dl class="fa-detail-list" style="margin-bottom:1.5rem">
+                    <div class="fa-dl-row">
+                        <dt>Configuration validation</dt>
+                        <dd>
+                            @if (v.IsValid && v.Warnings.Count == 0)
+                            {
+                                <span class="fa-validation-ok-inline">✓ Configuration valid — no configuration errors</span>
+                            }
+                            else if (v.Errors.Count == 0 && v.Warnings.Count > 0)
+                            {
+                                <span style="color:var(--color-warning)">⚠ Valid with @v.Warnings.Count warning(s)</span>
+                            }
+                            else
+                            {
+                                <span style="color:var(--color-error)">✕ @v.Errors.Count error(s)</span>
+                            }
+                        </dd>
                     </div>
-                }
+                    <div class="fa-dl-row">
+                        <dt>Activation readiness</dt>
+                        <dd>
+                            @if (!CanActivateSelected)
+                            {
+                                <span style="color:var(--color-text-muted)">Not ready — @ActivationBlockedReason</span>
+                            }
+                            else if (!_isEditMode || IsDirty == false)
+                            {
+                                <span class="fa-validation-ok-inline">✓ Ready for activation</span>
+                            }
+                            else if (_isEditMode && IsDirty)
+                            {
+                                <span style="color:var(--color-warning)">⚠ Unsaved changes — save changes before activation</span>
+                            }
+                        </dd>
+                    </div>
+                </dl>
                 @if (v.Errors.Count > 0 || v.Warnings.Count > 0)
                 {
                     <div class="fa-issue-cards">
+                        <div style="font-weight:600;margin-bottom:0.75rem;font-size:0.875rem">Configuration Issues</div>
                         @foreach (var err in v.Errors)
                         {
                             <div class="fa-issue-card fa-issue-card-error">
@@ -1165,54 +1211,6 @@
                         }
                     </div>
                 }
-            }
-
-            @* ── Diagnostics ── *@
-            @if (_activeTab == "diagnostics")
-            {
-                var diag = FaSettings.GetDiagnostics();
-                <section class="fa-diagnostics-context" aria-label="Diagnostics context">
-                    <h3>Diagnostics context</h3>
-                    @if (SelectedProfile?.Id == FaSettings.Settings.ActiveProfileId)
-                    {
-                        <p>Selected environment / active review environment: <strong>@SelectedProfile?.Name</strong><br />@SelectedProfile?.TargetUrl</p>
-                    }
-                    else
-                    {
-                        <p>Selected environment: <strong>@SelectedProfile?.Name</strong><br />@CurrentTargetUrl</p>
-                        <p>Active review environment: <strong>@diag.ActiveProfileName</strong><br />@diag.TargetUrl</p>
-                        <p role="note">You are inspecting @SelectedProfile?.Name. Reviews currently run against active environment @diag.ActiveProfileName.</p>
-                    }
-                    <p>Review diagnostics below use the active environment.</p>
-                </section>
-                <dl class="fa-detail-list">
-                    <div class="fa-dl-row"><dt>Active review environment</dt><dd>@diag.ActiveProfileName</dd></div>
-                    <div class="fa-dl-row"><dt>Environment</dt><dd>@diag.Environment</dd></div>
-                    <div class="fa-dl-row"><dt>Target URL</dt><dd>@(diag.TargetUrl ?? "—")</dd></div>
-                    <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@diag.AuthenticationType</dd></div>
-                    <div class="fa-dl-row"><dt>Threshold Mode</dt><dd>@diag.ThresholdMode</dd></div>
-                    <div class="fa-dl-row">
-                        <dt>Enabled Features</dt>
-                        <dd>
-                            @if (diag.EnabledFeatures.Count == 0) { <span>None</span> }
-                            else { <span>@string.Join(", ", diag.EnabledFeatures)</span> }
-                        </dd>
-                    </div>
-                    <div class="fa-dl-row">
-                        <dt>Disabled Features</dt>
-                        <dd>
-                            @if (diag.DisabledFeatures.Count == 0) { <span>None</span> }
-                            else { <span>@string.Join(", ", diag.DisabledFeatures)</span> }
-                        </dd>
-                    </div>
-                    <div class="fa-dl-row">
-                        <dt>Validation Status</dt>
-                        <dd>
-                            @if (diag.ValidationStatus.IsValid) { <span class="fa-validation-ok-inline">Valid</span> }
-                            else { <span class="fa-validation-error-inline">@diag.ValidationStatus.Errors.Count error(s)</span> }
-                        </dd>
-                    </div>
-                </dl>
             }
 
             @* ── Integrations ── *@
@@ -1576,7 +1574,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private TargetEnvironmentDetectionResult? _detectionResult;
     private bool? _browserRuntimeInspectionRequired;
     private string? _originalProfileJson;
+    private string? _originalAuthenticationJson;
     private string? _lastDetectionTargetUrl;
+    // Profile the current detection evidence belongs to (target discovery identity, not verification context)
+    private string? _detectionProfileId;
     private AuthenticationFailureReason? _authenticationFailureReason;
 
     // Browser detection state (Phase 2)
@@ -1594,7 +1595,6 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("security",    "Security Expectations"),
         ("features",    "Feature Toggles"),
         ("validation",    "Validation"),
-        ("diagnostics",   "Diagnostics"),
         ("integrations",  "Integrations"),
     ];
 
@@ -1630,6 +1630,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         // Reset current detection state when switching profiles (no cross-profile leakage)
         _detectionResult   = null;
         _lastDetectionTargetUrl = null;
+        _detectionProfileId = null;
+        _manualDetectionContext = null;
         _detectionError    = null;
         _authenticationFailureReason = null;
         _browserRuntimeInspectionRequired = null;
@@ -1643,6 +1645,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         var json     = System.Text.Json.JsonSerializer.Serialize(SelectedProfile);
         _editProfile = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(json);
         _originalProfileJson = json;
+        _originalAuthenticationJson = System.Text.Json.JsonSerializer.Serialize(SelectedProfile.Authentication);
         _isEditMode  = true;
         _saveError   = null;
     }
@@ -1651,6 +1654,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         _editProfile = null;
         _originalProfileJson = null;
+        _originalAuthenticationJson = null;
         _isEditMode  = false;
         _saveError   = null;
     }
@@ -1675,6 +1679,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _selectedProfileId = _editProfile.Id;
             _isEditMode        = false;
             _editProfile       = null;
+            _originalProfileJson = null;
+            _originalAuthenticationJson = null;
             RecomputeManualReadiness();
             _saveSuccess       = "Target environment saved.";
             StateHasChanged();
@@ -1833,6 +1839,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             {
                 // Update detection state based on backend result
                 _detectionResult = result.DetectionResponse;
+                _detectionProfileId = callingProfileId;
                 _authenticationFailureReason = result.AuthenticationFailureReason;
                 _browserRuntimeInspectionRequired = result.BrowserRuntimeInspectionRequired;
 
@@ -1951,7 +1958,14 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 ? await DetectionApi.DetectManualManagedEdgeAsync(detectionProfile.TargetUrl)
                 : await DetectionApi.DetectFromUrlAsync(detectionProfile.TargetUrl);
             if (CurrentProfile is null || ManualAuthenticationVerificationEvidence.Fingerprint(CurrentProfile) != detectionContext) return;
+            // Two independent contexts are recorded here:
+            //  - _manualDetectionContext: full verification context (URL + authentication + security settings).
+            //    Governs whether manual authentication verification may be recorded / remains valid.
+            //  - _detectionProfileId + detected URL: target discovery identity (see TargetDiscoveryFingerprint).
+            //    Governs whether endpoint/framework/environment discovery is stale. Authentication draft
+            //    changes must not affect it.
             _manualDetectionContext = detectionContext;
+            _detectionProfileId = detectionProfile.Id;
             _manualInstructionsOpen = false;
             _manualResultRecordedThisSession = false;
 
@@ -2024,16 +2038,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
         if (_detectionResult is not null)
         {
-            // If current detection result exists, use its state with staleness check
-            var resultUrl = string.IsNullOrWhiteSpace(_detectionResult.OriginalUrl)
-                ? _lastDetectionTargetUrl
-                : _detectionResult.OriginalUrl;
-
-            if (!UrlsMatch(resultUrl, profile.TargetUrl))
+            // Target discovery staleness is decided ONLY by target identity (profile + Frontend URL).
+            // Authentication draft changes are tracked separately via the manual verification context.
+            if (CurrentDiscoveryStaleReason != TargetDiscoveryStaleReason.None)
                 return DetectionState.Stale;
 
-            if (ManualVerificationRequired && _manualDetectionContext != ManualAuthenticationVerificationEvidence.Fingerprint(profile))
-                return DetectionState.Stale;
             // Return state from current result
             if (_detectionResult.State != DetectionState.NotChecked)
                 return _detectionResult.State;
@@ -2054,7 +2063,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         }
 
         // PART 2: No active current detection result. Check URL staleness against persisted state.
-        if (profile.LastDetectedUrl is not null && !UrlsMatch(profile.LastDetectedUrl, profile.TargetUrl))
+        if (CurrentDiscoveryStaleReason == TargetDiscoveryStaleReason.TargetUrlChanged)
             return DetectionState.Stale;
 
         // PART 3: Current lifecycle is neutral (not in an active attempt).
@@ -2062,6 +2071,63 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         // This is the key fix: Don't surface historical failure as active current failure.
         return DetectionState.NotChecked;
     }
+
+    /// <summary>
+    /// Fingerprint of the target the current detection evidence was gathered for.
+    /// Null when no detection result is held in this session.
+    /// </summary>
+    private TargetDiscoveryFingerprint? DetectedDiscoveryFingerprint
+    {
+        get
+        {
+            if (_detectionResult is null) return null;
+            var detectedUrl = string.IsNullOrWhiteSpace(_detectionResult.OriginalUrl)
+                ? _lastDetectionTargetUrl
+                : _detectionResult.OriginalUrl;
+            return TargetDiscoveryFingerprint.For(_detectionProfileId ?? CurrentProfile?.Id ?? "", detectedUrl);
+        }
+    }
+
+    /// <summary>
+    /// Typed reason why target discovery (reachability, framework, environment, endpoint and
+    /// integration proposals) is stale for the current profile. Never reacts to authentication,
+    /// threshold, feature toggle or other non-identity changes.
+    /// </summary>
+    private TargetDiscoveryStaleReason CurrentDiscoveryStaleReason
+    {
+        get
+        {
+            var profile = CurrentProfile;
+            if (profile is null) return TargetDiscoveryStaleReason.None;
+
+            if (DetectedDiscoveryFingerprint is { } detected)
+                return detected.StaleReasonFor(profile);
+
+            // No detection result in this session: compare against the persisted last-detected URL.
+            if (profile.LastDetectedUrl is not null && !UrlsMatch(profile.LastDetectedUrl, profile.TargetUrl))
+                return TargetDiscoveryStaleReason.TargetUrlChanged;
+
+            return TargetDiscoveryStaleReason.None;
+        }
+    }
+
+    private string DiscoveryStaleMessage => CurrentDiscoveryStaleReason switch
+    {
+        TargetDiscoveryStaleReason.ProfileChanged => "The selected environment changed since the last detection. Run detection again to refresh.",
+        _ => "The target URL changed since the last detection. Run detection again to refresh."
+    };
+
+    private string DiscoveryStaleActivationReason => CurrentDiscoveryStaleReason switch
+    {
+        TargetDiscoveryStaleReason.ProfileChanged => "Selected environment changed. Run Detect settings again before activating.",
+        _ => "Frontend URL changed. Run Detect settings again before activating."
+    };
+
+    private string DiscoveryStaleDetail => CurrentDiscoveryStaleReason switch
+    {
+        TargetDiscoveryStaleReason.ProfileChanged => "The selected environment changed since detection. Run Detect settings again to refresh discovered endpoints and integrations.",
+        _ => "The target URL changed since detection. Run Detect settings again to refresh discovered endpoints and integrations."
+    };
 
     private DetectionState CurrentDetectionState => ComputeDetectionState();
 
@@ -2127,6 +2193,14 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             ManualAuthenticationVerificationStatus.Pending => "Manual authentication verification pending",
             _ => "Manual authentication verification required"
         };
+    /// <summary>
+    /// True when the current profile still matches the verification context captured at detection
+    /// (URL, authentication and security settings). Authentication changes flip this to false and
+    /// require detection to be repeated before manual verification can be recorded. This is
+    /// independent of target discovery staleness.
+    /// </summary>
+    private bool ManualVerificationContextCurrent => _manualDetectionContext is null || CurrentProfile is not { } p ||
+        _manualDetectionContext == ManualAuthenticationVerificationEvidence.Fingerprint(p);
     private bool CanRecordManualVerification => CurrentProfile is { } p && !IsDirty &&
         FaSettings.ValidateProfile(p).IsValid && _detectionResult?.Success == true &&
         CurrentDetectionState == DetectionState.ManualAuthenticationVerificationRequired &&
@@ -2160,6 +2234,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool IsDirty => _editProfile is not null && _originalProfileJson is not null &&
         System.Text.Json.JsonSerializer.Serialize(_editProfile) != _originalProfileJson;
 
+    /// <summary>True when the authentication draft differs from the persisted authentication settings.</summary>
+    private bool HasUnsavedAuthenticationChanges => _editProfile is not null && _originalAuthenticationJson is not null &&
+        System.Text.Json.JsonSerializer.Serialize(_editProfile.Authentication) != _originalAuthenticationJson;
+
     private string DetectedAuthenticationLabel => _detectionResult is null ||
         (!_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None)
             ? "Not determined"
@@ -2175,7 +2253,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         DetectionState.Complete => "Review the detected/proposed settings below.",
         DetectionState.ManualAuthenticationVerificationRequired => "Target preflight complete. Managed Microsoft Edge work profile required for manual authentication verification.",
         DetectionState.Failed => _detectionResult?.Message ?? "Detection could not be completed safely.",
-        DetectionState.Stale => "The target URL changed since the last detection. Run detection again to refresh.",
+        DetectionState.Stale => DiscoveryStaleMessage,
         // NotChecked: show historical message if available
         DetectionState.NotChecked when SelectedProfile?.LastDetectionSucceeded == true => "Previously detected. Run detection again to refresh.",
         DetectionState.NotChecked when SelectedProfile?.LastDetectionFailure is not null =>
@@ -2185,7 +2263,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     };
 
     /// <summary>
-    /// Indicates if the detection result is stale (URL changed since detection).
+    /// Indicates if target discovery is stale (target identity changed since detection).
     /// </summary>
     private bool IsDetectionStale => CurrentDetectionState == DetectionState.Stale;
 
@@ -2193,35 +2271,20 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         CurrentDetectionState switch
         {
             DetectionState.NotChecked => "Run Detect settings before activating this environment.",
-            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification must pass and environment changes must be saved before activation.",
+            DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Unsaved changes. Save changes and pass manual authentication verification before activation.",
+            DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Settings changed since detection. Run Detect settings again and pass manual authentication verification before activation.",
+            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification must pass before activation.",
             DetectionState.AuthenticationRequired => "Interactive browser detection is required to complete authentication. Click 'Continue detection in browser' above.",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Complete the authentication confirmation in the browser and try again.",
             DetectionState.Partial => "Partial detection. Run interactive browser detection again to complete authentication.",
-            DetectionState.Stale => "Frontend URL changed. Run Detect settings again before activating.",
+            DetectionState.Stale => DiscoveryStaleActivationReason,
             DetectionState.Failed => "Detection failed. Run Detect settings successfully before activating.",
             _ => "Unable to activate. Run Detect settings first."
         };
 
-    private static bool UrlsMatch(string? left, string? right) =>
-        string.Equals(NormalizeUrl(left), NormalizeUrl(right), StringComparison.OrdinalIgnoreCase);
+    private static bool UrlsMatch(string? left, string? right) => TargetUrlNormalizer.Match(left, right);
 
-    private static string? NormalizeUrl(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || !Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri))
-            return value?.Trim();
-
-        var builder = new UriBuilder(uri)
-        {
-            Scheme = uri.Scheme.ToLowerInvariant(),
-            Host = uri.Host.ToLowerInvariant(),
-            Fragment = ""
-        };
-        if ((builder.Scheme == Uri.UriSchemeHttps && builder.Port == 443) ||
-            (builder.Scheme == Uri.UriSchemeHttp && builder.Port == 80))
-            builder.Port = -1;
-
-        return builder.Uri.AbsoluteUri.TrimEnd('/');
-    }
+    private static string? NormalizeUrl(string? value) => TargetUrlNormalizer.Normalize(value);
 
     // ── Reset / restore ──────────────────────────────────────────────────────
 
@@ -2396,6 +2459,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                detection.DetectedRedirectUrls.Count > 0;
     }
 
+    /// <summary>
+    /// Apply authentication: copies the detected authentication proposal (type, authority, tenant,
+    /// client ID, redirect URLs) into the DRAFT only. Follows the same Detected → Apply → draft →
+    /// Save changes model as the endpoint proposals. Never persists, never activates, never opens a
+    /// browser and never records manual verification. Idempotent: applying values that already match
+    /// the draft leaves the draft (and dirty state) unchanged.
+    /// </summary>
     private void ApplyDetectedAuthenticationSettings()
     {
         if (_detectionResult is null || _editProfile is null)

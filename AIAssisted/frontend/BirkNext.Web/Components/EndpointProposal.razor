@@ -1,21 +1,32 @@
 @using BirkNext.Web.Models
 
-<div class="fa-endpoint-proposal" data-field="@Field" style="display:flex;flex-wrap:wrap;align-items:center;gap:0.75rem;padding:0.75rem 0;border-bottom:1px solid var(--color-border)">
-    <div style="flex:1;min-width:12rem">
-        <strong>@Label</strong>
-        <div style="font-family:monospace;overflow-wrap:anywhere">@Value</div>
-        <div>@(Evidence?.Status ?? EndpointEvidenceStatus.Candidate) · @(Evidence?.Confidence ?? DetectionConfidence.Low)</div>
-        <div>Source: @SourceLabel@(Evidence is null ? "" : $" — {Evidence.LocationCategory}")</div>
-        @if (!string.IsNullOrWhiteSpace(Evidence?.Value)) { <div>@Evidence.Value</div> }
-        <div>Probe: @ProbeLabel@HttpDetails</div>
+<div class="fa-endpoint-proposal" data-field="@Field" style="display:grid;grid-template-columns:1fr auto;gap:1rem;align-items:start;padding:1rem;background:var(--color-surface-subtle);border:1px solid var(--color-border);border-radius:0.5rem;margin-bottom:0.75rem">
+    <div style="display:flex;flex-direction:column;gap:0.5rem">
+        <div style="display:flex;align-items:baseline;gap:0.75rem">
+            <strong style="font-size:0.95rem">@Label</strong>
+            <span style="font-size:0.8rem;color:var(--color-text-subtle)">
+                @(Evidence?.Status ?? EndpointEvidenceStatus.Candidate) ·
+                <span style="@(Evidence?.Confidence == DetectionConfidence.Low ? "color:var(--color-warning)" : "color:var(--color-success)")">
+                    @(Evidence?.Confidence ?? DetectionConfidence.Low)
+                </span>
+            </span>
+        </div>
+        <div style="font-family:monospace;font-size:0.9rem;overflow-wrap:break-word;word-break:break-all">@Value</div>
+        <div style="font-size:0.8rem;color:var(--color-text-subtle)">Source: @SourceLabel@(Evidence is null ? "" : $" ({Evidence.LocationCategory})")</div>
+        @if (!string.IsNullOrWhiteSpace(Evidence?.Value)) {
+            <div style="font-size:0.8rem;color:var(--color-text-subtle)">@Evidence.Value</div>
+        }
+        <div style="font-size:0.8rem;color:var(--color-text-subtle)">Probe: @ProbeLabel@HttpDetails</div>
         @if (Evidence?.OpenApiKind is OpenApiResourceKind.SwaggerUi or OpenApiResourceKind.OpenApiDocument)
         {
-            <div>@(Evidence.OpenApiKind == OpenApiResourceKind.SwaggerUi ? "Swagger UI URL; not a confirmed contract document" : "OpenAPI document URL")</div>
+            <div style="font-size:0.75rem;color:var(--color-text-muted)">@(Evidence.OpenApiKind == OpenApiResourceKind.SwaggerUi ? "Swagger UI URL; not a confirmed contract document" : "OpenAPI document URL")</div>
         }
     </div>
     @if (CanApply)
     {
-        <button type="button" class="fa-apply-suggestion" @onclick="OnApply">@ApplyLabel</button>
+        <button type="button" class="btn-secondary fa-btn-sm" @onclick="OnApply" style="white-space:nowrap;align-self:flex-start;margin-top:0.25rem" title="Apply this @(Label.ToLowerInvariant()) endpoint">
+            @ApplyLabel
+        </button>
     }
 </div>
 
