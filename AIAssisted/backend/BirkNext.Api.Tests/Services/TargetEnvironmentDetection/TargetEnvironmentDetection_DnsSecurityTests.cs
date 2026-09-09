@@ -41,7 +41,8 @@ public sealed class TargetEnvironmentDetection_DnsSecurityTests
         var result = await service.DetectFromUrlAsync("https://public.example.test/");
 
         Assert.True(result.Success);
-        Assert.Equal(1, handler.RequestedUrls.Count);
+        // Service makes 2 requests: HEAD for preflight, GET for appsettings.json
+        Assert.Equal(2, handler.RequestedUrls.Count);
         Assert.True(resolver.ResolvedHostnames.Contains("public.example.test"));
     }
 

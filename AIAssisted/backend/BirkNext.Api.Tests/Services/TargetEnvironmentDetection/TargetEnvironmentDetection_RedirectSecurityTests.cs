@@ -245,9 +245,9 @@ public sealed class TargetEnvironmentDetection_RedirectSecurityTests
 
         var result = await service.DetectFromUrlAsync("https://step1.example.test/");
 
-        // Should have made requests for step1, step2, step3, step4, step5
-        // (not step6, which would exceed limit)
-        Assert.True(requestedUrls.Count >= 1 && requestedUrls.Count <= 5);
+        // Service makes HEAD requests for each redirect plus GET for appsettings.json
+        // step1→step2→step3→step4→step5 = 5 HEAD requests + 1 appsettings.json = 6 requests max
+        Assert.True(requestedUrls.Count >= 1 && requestedUrls.Count <= 6);
         Assert.Equal(TargetReachability.Reachable, result.Reachability);
         Assert.True(result.RedirectCount <= 5);
     }

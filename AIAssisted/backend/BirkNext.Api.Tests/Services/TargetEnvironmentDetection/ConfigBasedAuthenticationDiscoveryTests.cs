@@ -30,7 +30,7 @@ public class ConfigBasedAuthenticationDiscoveryTests
 
         _mockResolver
             .Setup(r => r.ResolveHostAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new List<System.Net.IPAddress> { System.Net.IPAddress.Parse("127.0.0.1") });
+            .ReturnsAsync(new List<System.Net.IPAddress> { System.Net.IPAddress.Parse("203.0.113.10") });
     }
 
     private TargetEnvironmentDetectionService CreateService(HttpClient httpClient)
@@ -72,7 +72,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                         Content = new StringContent(appsettingsJson, System.Text.Encoding.UTF8, "application/json")
                     };
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
@@ -137,7 +138,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                         Content = new StringContent("invalid json {{{", System.Text.Encoding.UTF8, "application/json")
                     };
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
@@ -176,7 +178,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                         Content = new StringContent(appsettingsJson, System.Text.Encoding.UTF8, "application/json")
                     };
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
@@ -216,7 +219,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                         Content = new StringContent(appsettingsJson, System.Text.Encoding.UTF8, "application/json")
                     };
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
@@ -264,7 +268,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                         Content = new StringContent(appsettingsJson, System.Text.Encoding.UTF8, "application/json")
                     };
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
@@ -388,7 +393,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                 {
                     return new HttpResponseMessage(HttpStatusCode.InternalServerError);
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
@@ -453,7 +459,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                         Content = new StringContent(appsettingsJson, System.Text.Encoding.UTF8, "application/json")
                     };
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
@@ -496,7 +503,8 @@ public class ConfigBasedAuthenticationDiscoveryTests
                         Content = new StringContent(appsettingsJson, System.Text.Encoding.UTF8, "application/json")
                     };
                 }
-                return new HttpResponseMessage(HttpStatusCode.NotFound);
+                // Return 200 for preflight HEAD requests to root
+                return new HttpResponseMessage(HttpStatusCode.OK);
             });
 
         var httpClient = new HttpClient(mockHttpMessageHandler.Object)
