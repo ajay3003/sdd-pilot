@@ -1266,7 +1266,8 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
             if (!_endpointHelper.IsSafeProbeCandidate(candidate)) continue;
             var evidence = await ProbeEndpointAsync(candidate, endpointType, cancellationToken);
             evidence.TargetField = targetField;
-            firstCandidate ??= evidence;
+            if (firstCandidate is null || evidence.Status > firstCandidate.Status)
+                firstCandidate = evidence;
             if (evidence.Status == EndpointEvidenceStatus.Confirmed) return evidence;
         }
         return firstCandidate;

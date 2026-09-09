@@ -30,12 +30,9 @@ public sealed class ClientFrameworkDetector : IClientFrameworkDetector
     /// </summary>
     private static readonly string[] BlazorMarkers =
     [
-        "_framework/blazor.webassembly",
+        "_framework/blazor.webassembly.js",
         "blazor.webassembly.js",
-        "Microsoft.Authentication.WebAssembly.Msal",
-        "blazor-error-ui",
-        "./_framework/dotnet",
-        "dotnet.native.js"
+        "Microsoft.Authentication.WebAssembly.Msal"
     ];
 
     public ClientFrameworkType? DetectFramework(string? responseContent, string? contentType)
