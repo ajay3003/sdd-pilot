@@ -219,7 +219,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         cut.Markup.Should().Contain("Manual authentication verification required");
         _settings.Settings.ActiveProfileId.Should().Be("local");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("manual authentication verification");
+        cut.Find("#activation-gate-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass before activation.");
 
         AssertDiscoveryCurrent(cut, editing: false);
     }
@@ -303,30 +303,114 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         OpenTab(cut, "Authentication");
         Click(cut, "Apply authentication");
 
-        // Verification context changed → manual verification stale, activation blocked
-        cut.Markup.Should().Contain("Manual authentication verification stale");
+        // The recorded pass no longer matches the configured expectations → stale, activation blocked…
+        cut.Markup.Should().Contain("Manual authentication verification stale. Save changes, then repeat verification");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
         Persisted().ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed, "persisted evidence is untouched; staleness is computed");
 
-        // …but endpoint/framework/environment discovery is NOT stale
-        cut.Markup.Should().Contain("Manual authentication verification stale");
+        // …but applying the detector's own proposal neither invalidates the detection nor discovery
+        cut.Markup.Should().NotContain("Repeat detection");
+        cut.Markup.Should().NotContain("changed since detection");
         AssertDiscoveryCurrent(cut);
     }
 
+    // ── Defect 1: applying the detector's own proposal must not demand re-detection ──
+
+    /// <summary>Expected flow: Detect → Apply authentication → Save → manual verification → Passed. No second Detect.</summary>
     [Fact]
-    public void AfterSave_AuthChange_RequiresRepeatDetectionForManualVerification_WithAccurateReason()
+    public void AfterSave_AppliedProposal_ManualVerificationAvailableWithoutRedetect()
     {
         var cut = DetectAndApply(Open());
         Click(cut, "Save changes");
         cut.WaitForAssertion(() => Persisted().Authentication.AuthenticationType.Should().Be(FrontendAuthenticationType.MicrosoftEntraId));
 
-        // Verification context changed since detection → recording is gated with an accurate reason
+        cut.Markup.Should().NotContain("changed since detection");
+        cut.Markup.Should().NotContain("Run Detect settings again");
+        cut.Find("#activation-gate-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass before activation.");
+        AssertDiscoveryCurrent(cut, editing: false);
+
+        Click(cut, "Open verification instructions");
+        ButtonDisabled(cut, "Mark verification passed").Should().BeFalse("applied proposal is consistent with the detection evidence");
+        Click(cut, "Mark verification passed");
+        cut.WaitForAssertion(() => Persisted().ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed));
+        cut.Markup.Should().Contain("Manual authentication verification passed");
+        ButtonDisabled(cut, "Set as Active").Should().BeFalse("detection current + saved + manual verification passed");
+        _settings.Settings.ActiveProfileId.Should().Be("local", "activation is still an explicit action");
+        _api.Verify(x => x.DetectFromUrlAsync(Url, default), Times.Once, "no re-detect was required");
+        _api.VerifyNoOtherCalls();
+    }
+
+    /// <summary>An independent edit that diverges from the evidence still requires re-detection.</summary>
+    [Fact]
+    public void ManualEditDivergingFromEvidence_StillRequiresRedetect()
+    {
+        var cut = DetectAndApply(Open());
+        cut.Find("#configured-client-id").Change("99999999-9999-9999-9999-999999999999");
+        Click(cut, "Save changes");
+        cut.WaitForAssertion(() => Persisted().Authentication.ExpectedClientId.Should().Be("99999999-9999-9999-9999-999999999999"));
+
         cut.Markup.Should().Contain("Authentication or environment settings changed since detection.");
         cut.Markup.Should().Contain("Run Detect settings again before recording manual verification.");
-        cut.Markup.Should().NotContain("target URL changed");
+        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Run Detect settings again");
         Click(cut, "Open verification instructions");
         ButtonDisabled(cut, "Mark verification passed").Should().BeTrue();
+        // Discovery itself is still not stale: only the verification context diverged
+        cut.Markup.Should().NotContain("target URL changed");
         AssertDiscoveryCurrent(cut, editing: false);
+    }
+
+    /// <summary>"Apply detected type" is also the detector's own proposal and must not require re-detection.</summary>
+    [Fact]
+    public void ApplyDetectedType_DoesNotRequireRedetect()
+    {
+        _api.Setup(x => x.DetectFromUrlAsync(Url, default)).ReturnsAsync(() =>
+        {
+            var d = FullDetection();
+            d.SuggestedEnvironmentType = FrontendEnvironmentType.Production;
+            return d;
+        });
+        var cut = Open();
+        Click(cut, "Detect settings");
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
+        // "Apply detected type" is offered both in the detection result actions and inline in the Target tab
+        cut.FindAll("button").First(b => b.TextContent.Trim() == "Apply detected type").Click();
+        Click(cut, "Save changes");
+        cut.WaitForAssertion(() => Persisted().EnvironmentType.Should().Be(FrontendEnvironmentType.Production));
+
+        cut.Markup.Should().NotContain("changed since detection");
+        Click(cut, "Open verification instructions");
+        ButtonDisabled(cut, "Mark verification passed").Should().BeFalse();
+    }
+
+    // ── Defect 2: draft vs persisted authentication must be labelled, never contradictory ──
+
+    [Fact]
+    public void ManualPanelAndResultGrid_LabelDraftVersusSavedAuthentication()
+    {
+        var cut = Open();
+        Click(cut, "Detect settings");
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
+        var manualPanel = () => cut.Find("section[aria-label='Manual authentication verification']").TextContent;
+        var resultGrid = () => cut.Find(".fa-result-grid").TextContent;
+
+        // Before Apply: persisted None, honest explanation
+        manualPanel().Should().Contain("Configured authentication None means no authentication settings are preconfigured.");
+        resultGrid().Should().Contain("Configured authentication").And.NotContain("(draft)");
+
+        // After Apply, before Save: draft labelled as draft + unsaved, saved value named explicitly
+        OpenTab(cut, "Authentication");
+        Click(cut, "Apply authentication");
+        manualPanel().Should().Contain("Configured authentication (draft):").And.Contain("MicrosoftEntraId")
+            .And.Contain("Unsaved").And.Contain("Saved authentication: None")
+            .And.NotContain("Configured authentication None means");
+        resultGrid().Should().Contain("Configured authentication (draft)").And.Contain("Unsaved").And.Contain("saved: None");
+
+        // After Save: single persisted value, no draft wording
+        Click(cut, "Save changes");
+        cut.WaitForAssertion(() => Persisted().Authentication.AuthenticationType.Should().Be(FrontendAuthenticationType.MicrosoftEntraId));
+        manualPanel().Should().Contain("Configured authentication: MicrosoftEntraId.").And.NotContain("(draft)").And.NotContain("None means");
+        resultGrid().Should().NotContain("(draft)");
+        cut.Find(".fa-result-grid").TextContent.Should().Contain("MicrosoftEntraId");
     }
 
     // ── 27. Target URL change test ─────────────────────────────────────────────
@@ -462,5 +546,106 @@ public sealed class TargetDiscoveryFingerprintTests
         var fingerprint = TargetDiscoveryFingerprint.For(profile);
         profile.TargetUrl = equivalent;
         fingerprint.StaleReasonFor(profile).Should().Be(TargetDiscoveryStaleReason.None);
+    }
+}
+
+/// <summary>Applying the detector's own proposal ≠ detection-invalidating configuration change.</summary>
+public sealed class DetectionProposalConsistencyTests
+{
+    private static FrontendAnalysisProfile Snapshot() => new()
+    {
+        Id = "dev", TargetUrl = "https://m2lbdev.example.com/", EnvironmentType = FrontendEnvironmentType.Development,
+        Authentication = new() { AuthenticationType = FrontendAuthenticationType.None, AllowedRedirectUrls = ["https://existing.example.com/cb"] }
+    };
+
+    private static TargetEnvironmentDetectionResult Detection() => new()
+    {
+        DetectedAuthenticationType = FrontendAuthenticationType.MicrosoftEntraId,
+        DetectedAuthority = "https://login.microsoftonline.com/t/v2.0", DetectedTenantId = "t", DetectedClientId = "c",
+        DetectedRedirectUrls = ["https://m2lbdev.example.com/cb"], SuggestedEnvironmentType = FrontendEnvironmentType.Production
+    };
+
+    private static FrontendAnalysisProfile Clone(FrontendAnalysisProfile p) =>
+        System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(System.Text.Json.JsonSerializer.Serialize(p))!;
+
+    private static void ApplyProposal(FrontendAnalysisProfile p, TargetEnvironmentDetectionResult d)
+    {
+        p.Authentication.AuthenticationType = d.DetectedAuthenticationType;
+        p.Authentication.ExpectedAuthority = d.DetectedAuthority;
+        p.Authentication.ExpectedTenant = d.DetectedTenantId;
+        p.Authentication.ExpectedClientId = d.DetectedClientId;
+        var merged = new HashSet<string>(p.Authentication.AllowedRedirectUrls, StringComparer.OrdinalIgnoreCase);
+        foreach (var u in d.DetectedRedirectUrls) merged.Add(u);
+        p.Authentication.AllowedRedirectUrls = merged.ToList();
+    }
+
+    [Fact]
+    public void AppliedProposal_YieldsDetectionTimeFingerprint()
+    {
+        var snapshot = Snapshot(); var detection = Detection();
+        var current = Clone(snapshot);
+        ApplyProposal(current, detection);
+        current.EnvironmentType = FrontendEnvironmentType.Production;
+        ManualAuthenticationVerificationEvidence.Fingerprint(current).Should().NotBe(ManualAuthenticationVerificationEvidence.Fingerprint(snapshot), "raw fingerprint does change");
+        DetectionProposalConsistency.ConsistentFingerprint(current, snapshot, detection)
+            .Should().Be(ManualAuthenticationVerificationEvidence.Fingerprint(snapshot), "the applied proposal is evidence-consistent");
+    }
+
+    [Fact]
+    public void PartialProposal_OnlyAppliedFields_IsConsistent()
+    {
+        var snapshot = Snapshot(); var detection = Detection();
+        detection.DetectedTenantId = null; detection.DetectedClientId = null; detection.DetectedRedirectUrls = [];
+        var current = Clone(snapshot);
+        current.Authentication.AuthenticationType = detection.DetectedAuthenticationType;
+        current.Authentication.ExpectedAuthority = detection.DetectedAuthority;
+        DetectionProposalConsistency.ConsistentFingerprint(current, snapshot, detection)
+            .Should().Be(ManualAuthenticationVerificationEvidence.Fingerprint(snapshot));
+    }
+
+    [Theory]
+    [InlineData("authority")]
+    [InlineData("tenant")]
+    [InlineData("clientId")]
+    [InlineData("redirects")]
+    [InlineData("url")]
+    [InlineData("environment")]
+    [InlineData("timeout")]
+    public void DivergingEdit_ChangesFingerprint(string edit)
+    {
+        var snapshot = Snapshot(); var detection = Detection();
+        var current = Clone(snapshot);
+        ApplyProposal(current, detection);
+        switch (edit)
+        {
+            case "authority": current.Authentication.ExpectedAuthority = "https://login.microsoftonline.com/other/v2.0"; break;
+            case "tenant": current.Authentication.ExpectedTenant = "other"; break;
+            case "clientId": current.Authentication.ExpectedClientId = "other"; break;
+            case "redirects": current.Authentication.AllowedRedirectUrls.Add("https://evil.example.com/cb"); break;
+            case "url": current.TargetUrl = "https://other.example.com/"; break;
+            case "environment": current.EnvironmentType = FrontendEnvironmentType.QA; break; // neither snapshot nor proposal
+            case "timeout": current.RequestTimeoutSeconds++; break;
+        }
+        DetectionProposalConsistency.ConsistentFingerprint(current, snapshot, detection)
+            .Should().NotBe(ManualAuthenticationVerificationEvidence.Fingerprint(snapshot));
+    }
+
+    [Fact]
+    public void UnchangedProfile_IsConsistent()
+    {
+        var snapshot = Snapshot();
+        DetectionProposalConsistency.ConsistentFingerprint(Clone(snapshot), snapshot, Detection())
+            .Should().Be(ManualAuthenticationVerificationEvidence.Fingerprint(snapshot));
+    }
+
+    [Fact]
+    public void Neutralize_DoesNotMutateInput()
+    {
+        var snapshot = Snapshot(); var detection = Detection();
+        var current = Clone(snapshot);
+        ApplyProposal(current, detection);
+        var before = System.Text.Json.JsonSerializer.Serialize(current);
+        DetectionProposalConsistency.NeutralizeAppliedProposals(current, snapshot, detection);
+        System.Text.Json.JsonSerializer.Serialize(current).Should().Be(before);
     }
 }

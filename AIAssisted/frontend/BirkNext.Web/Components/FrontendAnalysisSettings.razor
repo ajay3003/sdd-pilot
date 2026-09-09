@@ -193,7 +193,14 @@
                         <div><dt>Manual authentication verification</dt><dd>@ManualVerificationLabel</dd></div>
                     }
                     <div><dt>Profile name</dt><dd>@(_detectionResult.SuggestedProfileName ?? "Not proposed") <small>Proposed</small></dd></div>
-                    <div><dt>Configured authentication</dt><dd>@profile.Authentication.AuthenticationType <small>Configured</small></dd></div>
+                    @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
+                    {
+                        <div class="fa-configured-auth-draft"><dt>Configured authentication (draft)</dt><dd>@_editProfile.Authentication.AuthenticationType <small>⚠ Unsaved · saved: @profile.Authentication.AuthenticationType</small></dd></div>
+                    }
+                    else
+                    {
+                        <div><dt>Configured authentication</dt><dd>@profile.Authentication.AuthenticationType <small>Configured</small></dd></div>
+                    }
                 </dl>
                 @if (!string.IsNullOrWhiteSpace(_detectionResult.FrameworkEvidence))
                 {
@@ -222,7 +229,18 @@
                 <div role="status">
                     <strong>@ManualVerificationLabel</strong>
                     <p>Your organization requires sign-in using a managed Microsoft Edge work profile. BirkNext cannot verify this sign-in automatically.</p>
-                    <p>Configured authentication None means no authentication settings are preconfigured.</p>
+                    @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
+                    {
+                        <p class="fa-configured-auth-draft">Configured authentication (draft): <strong>@_editProfile.Authentication.AuthenticationType</strong> — ⚠ Unsaved. Saved authentication: @profile.Authentication.AuthenticationType.</p>
+                    }
+                    else if (profile.Authentication.AuthenticationType == FrontendAuthenticationType.None)
+                    {
+                        <p>Configured authentication None means no authentication settings are preconfigured.</p>
+                    }
+                    else
+                    {
+                        <p>Configured authentication: @profile.Authentication.AuthenticationType.</p>
+                    }
                 </div>
                 @if (!_manualInstructionsOpen)
                 {
@@ -1578,6 +1596,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string? _lastDetectionTargetUrl;
     // Profile the current detection evidence belongs to (target discovery identity, not verification context)
     private string? _detectionProfileId;
+    // Deep copy of the profile as it was when detection ran; lets applied detector proposals be
+    // recognised as evidence-consistent rather than as detection-invalidating edits.
+    private FrontendAnalysisProfile? _detectionProfileSnapshot;
     private AuthenticationFailureReason? _authenticationFailureReason;
 
     // Browser detection state (Phase 2)
@@ -1631,6 +1652,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _detectionResult   = null;
         _lastDetectionTargetUrl = null;
         _detectionProfileId = null;
+        _detectionProfileSnapshot = null;
         _manualDetectionContext = null;
         _detectionError    = null;
         _authenticationFailureReason = null;
@@ -1954,6 +1976,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _lastDetectionTargetUrl = NormalizeUrl(_editProfile.TargetUrl);
             var detectionProfile = _editProfile;
             var detectionContext = ManualAuthenticationVerificationEvidence.Fingerprint(detectionProfile);
+            var detectionSnapshot = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(
+                System.Text.Json.JsonSerializer.Serialize(detectionProfile));
             var result = detectionProfile.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge
                 ? await DetectionApi.DetectManualManagedEdgeAsync(detectionProfile.TargetUrl)
                 : await DetectionApi.DetectFromUrlAsync(detectionProfile.TargetUrl);
@@ -1965,6 +1989,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             //    Governs whether endpoint/framework/environment discovery is stale. Authentication draft
             //    changes must not affect it.
             _manualDetectionContext = detectionContext;
+            _detectionProfileSnapshot = detectionSnapshot;
             _detectionProfileId = detectionProfile.Id;
             _manualInstructionsOpen = false;
             _manualResultRecordedThisSession = false;
@@ -2189,22 +2214,38 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         {
             ManualAuthenticationVerificationStatus.Passed => "Manual authentication verification passed",
             ManualAuthenticationVerificationStatus.Failed => "Manual authentication verification failed",
-            ManualAuthenticationVerificationStatus.Stale => "Manual authentication verification stale. Repeat detection and verification",
+            // The recorded result no longer matches the configured expectations. Detection only needs
+            // repeating when the profile has diverged from the detection evidence.
+            ManualAuthenticationVerificationStatus.Stale when !ManualVerificationContextCurrent => "Manual authentication verification stale. Repeat detection and verification",
+            ManualAuthenticationVerificationStatus.Stale when IsDirty => "Manual authentication verification stale. Save changes, then repeat verification",
+            ManualAuthenticationVerificationStatus.Stale => "Manual authentication verification stale. Repeat verification",
             ManualAuthenticationVerificationStatus.Pending => "Manual authentication verification pending",
             _ => "Manual authentication verification required"
         };
     /// <summary>
-    /// True when the current profile still matches the verification context captured at detection
-    /// (URL, authentication and security settings). Authentication changes flip this to false and
-    /// require detection to be repeated before manual verification can be recorded. This is
+    /// Fingerprint of the current profile for comparison with the detection-time verification context.
+    /// Fields that equal the detector's own proposal are treated as unchanged (see
+    /// <see cref="DetectionProposalConsistency"/>): applying "Apply authentication" or "Apply detected
+    /// type" never invalidates the detection that produced those values. Independent edits that diverge
+    /// from the evidence (URL, authority, tenant, client ID, security settings, …) still do.
+    /// </summary>
+    private string ManualVerificationContextFingerprint(FrontendAnalysisProfile profile) =>
+        _detectionProfileSnapshot is { } snapshot && _detectionResult is { } detection
+            ? DetectionProposalConsistency.ConsistentFingerprint(profile, snapshot, detection)
+            : ManualAuthenticationVerificationEvidence.Fingerprint(profile);
+
+    /// <summary>
+    /// True when the current profile is still consistent with the verification context captured at
+    /// detection. False only after an edit that diverges from the detection evidence; such an edit
+    /// requires detection to be repeated before manual verification can be recorded. This is
     /// independent of target discovery staleness.
     /// </summary>
     private bool ManualVerificationContextCurrent => _manualDetectionContext is null || CurrentProfile is not { } p ||
-        _manualDetectionContext == ManualAuthenticationVerificationEvidence.Fingerprint(p);
+        _manualDetectionContext == ManualVerificationContextFingerprint(p);
     private bool CanRecordManualVerification => CurrentProfile is { } p && !IsDirty &&
         FaSettings.ValidateProfile(p).IsValid && _detectionResult?.Success == true &&
         CurrentDetectionState == DetectionState.ManualAuthenticationVerificationRequired &&
-        _manualDetectionContext == ManualAuthenticationVerificationEvidence.Fingerprint(p);
+        _manualDetectionContext is not null && ManualVerificationContextCurrent;
     private void OpenManualVerification()
     {
         _manualInstructionsOpen = true;
