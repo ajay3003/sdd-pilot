@@ -174,9 +174,11 @@ public class MessagingContractAnalysisTests
         // Assert
         Assert.False(result.Compatible);
         Assert.Equal(ContractCompatibilityStatus.Breaking, result.Status);
-        var amountDiff = result.Differences.FirstOrDefault(d => d.Property == "amount");
+        var amountDiff = result.Differences.FirstOrDefault(d => d.Type == ContractDifferenceType.TypeMismatch);
         Assert.NotNull(amountDiff);
-        Assert.Equal(ContractDifferenceType.TypeMismatch, amountDiff.Type);
+        Assert.Contains("amount", amountDiff.Path);
+        Assert.Equal("integer", amountDiff.ProducerValue);
+        Assert.Equal("string", amountDiff.ConsumerValue);
     }
 
     [Fact]

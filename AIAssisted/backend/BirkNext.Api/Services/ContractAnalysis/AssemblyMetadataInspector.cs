@@ -43,6 +43,15 @@ public sealed class AssemblyMetadataInspector : IAssemblyMetadataInspector
             if (fileInfo.Length > 100 * 1024 * 1024) // 100MB limit
                 return Failure("SourceTooLarge", $"Assembly exceeds 100MB limit: {fileInfo.Length} bytes");
 
+            // Validate PE format (basic check: PE header must start with "MZ")
+            var buffer = new byte[2];
+            using (var fs = System.IO.File.OpenRead(assemblyPath))
+            {
+                int bytesRead = await fs.ReadAsync(buffer, 0, 2, ct);
+                if (bytesRead < 2 || buffer[0] != 0x4D || buffer[1] != 0x5A) // "MZ" signature
+                    return Failure("AssemblyInvalid", "File is not a valid .NET assembly (missing PE header)");
+            }
+
             // In Phase 5, assembly inspection is metadata-only.
             // Real implementation would use System.Reflection.Metadata.PEReader for zero-execution inspection.
             // For this version, we construct a basic result to demonstrate the contract.
