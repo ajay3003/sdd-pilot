@@ -119,6 +119,41 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
     // ── 20. Apply test ──────────────────────────────────────────────────────────
 
     [Fact]
+    public void DetectOnly_RemainsCleanAndReadOnlyAcrossEveryTab()
+    {
+        var cut = Open("""{ "authenticationType": "MicrosoftEntraId" }""");
+        var original = System.Text.Json.JsonSerializer.Serialize(Persisted());
+        Click(cut, "Detect settings");
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
+        foreach (var tab in new[] { "Target Application", "Authentication", "Feature Toggles", "Core Web Vitals", "Performance Thresholds", "Security Expectations", "Integrations" })
+        {
+            OpenTab(cut, tab);
+            cut.FindAll("input, select, textarea").Should().BeEmpty(tab);
+            cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel" || b.TextContent.Contains("Add Integration"));
+        }
+        cut.Markup.Should().Contain("Switch to Edit mode to add integrations");
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        ((bool)typeof(Component).GetField("_isEditMode", flags)!.GetValue(cut.Instance)!).Should().BeFalse();
+        ((bool)typeof(Component).GetProperty("IsDirty", flags)!.GetValue(cut.Instance)!).Should().BeFalse();
+        System.Text.Json.JsonSerializer.Serialize(Persisted()).Should().Be(original);
+        SaveCalls().Should().Be(0);
+        AssertDiscoveryCurrent(cut);
+    }
+
+    [Fact]
+    public void ExplicitEditAndCancel_ReturnToReadOnlyWithoutDetection()
+    {
+        var cut = Open();
+        Click(cut, "Edit Environment");
+        cut.Find("textarea.form-control").Change("Explicit edit");
+        ButtonDisabled(cut, "Save changes").Should().BeFalse();
+        Click(cut, "Cancel");
+        cut.FindAll("textarea").Should().BeEmpty();
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Cancel");
+        SaveCalls().Should().Be(0);
+    }
+
+    [Fact]
     public void ApplyAuthentication_PopulatesDraft_MarksDirty_WithoutSavingActivatingOrStalingDiscovery()
     {
         var cut = Open();
@@ -128,9 +163,9 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
 
         OpenTab(cut, "Authentication");
         cut.Markup.Should().NotContain("Apply detected authentication settings");
-        cut.Find("#configured-authentication-type").GetAttribute("value").Should().Be("None");
+        cut.FindAll("#configured-authentication-type").Should().BeEmpty();
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty("nothing has been applied yet");
-        ButtonDisabled(cut, "Save changes").Should().BeTrue();
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
         cut.Markup.Should().Contain("Detected Authentication");
 
         Click(cut, "Apply authentication");
@@ -255,8 +290,8 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         """));
 
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty();
-        ButtonDisabled(cut, "Save changes").Should().BeTrue();
-        cut.Find("#configured-authentication-type").GetAttribute("value").Should().Be("MicrosoftEntraId");
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
+        cut.FindAll("#configured-authentication-type").Should().BeEmpty();
         Persisted().Authentication.AllowedRedirectUrls.Should().Equal(Redirect);
         AssertDiscoveryCurrent(cut);
     }
@@ -422,6 +457,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
+        Click(cut, "Edit Environment");
         cut.Find("input[type=url]").Change("https://other.example.com/");
 
         DetectionLabel(cut).Should().Be("Needs re-check");
@@ -441,6 +477,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
+        Click(cut, "Edit Environment");
         OpenTab(cut, "General");
         cut.Find("textarea.form-control").Change("Some notes about this environment");
 

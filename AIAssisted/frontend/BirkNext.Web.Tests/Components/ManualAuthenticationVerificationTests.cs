@@ -129,6 +129,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Click(cut, "Detect settings");
         Click(cut, "Open verification instructions");
         Click(cut, "Mark verification passed");
+        Click(cut, "Edit Environment");
         var input = cut.FindAll("input").Single(x => x.GetAttribute("value") == Url);
         input.Change("https://other.example.com/");
         Assert.Contains("verification stale", cut.Markup);

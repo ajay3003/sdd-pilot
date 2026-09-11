@@ -197,7 +197,8 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
             .ToList();
         continueButtonBefore.Should().HaveCount(1);
 
-        // Now change the URL (we're already in edit mode after Detect settings click)
+        // Explicitly enter edit mode before changing the URL.
+        if (cut.FindAll("button").Any(b => b.TextContent.Trim() == "Edit Environment")) cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         var urlInput = cut.Find("input[type='url']");
         urlInput.Change("https://different-url.example.test");
 
@@ -564,6 +565,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
         persisted.Description = "Original";
 
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "General").Click();
+        if (cut.FindAll("button").Any(b => b.TextContent.Trim() == "Edit Environment")) cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.FindAll("input[type=text]")[1].Change("Unsaved change");
         cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
 
@@ -600,6 +602,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
             .Returns(pending.Task);
         var cut = RenderAuthRequiredQa();
         cut.FindAll("button").Single(b => b.TextContent.Contains("Continue detection in browser")).Click();
+        if (cut.FindAll("button").Any(b => b.TextContent.Trim() == "Edit Environment")) cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.Find("input[type=url]").Change("https://application-qa-b.example.test");
 
         pending.SetResult(CompleteOutcome("https://application-qa.example.test"));

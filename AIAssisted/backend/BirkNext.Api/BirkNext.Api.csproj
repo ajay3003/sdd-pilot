@@ -38,4 +38,7 @@
     <Content Update="Tools\LighthouseRunner\run-lighthouse.mjs" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="../../shared/ManagedEdgeCdpContracts.cs" Link="Models/ManagedEdgeCdpContracts.cs" />
+  </ItemGroup>
 </Project>

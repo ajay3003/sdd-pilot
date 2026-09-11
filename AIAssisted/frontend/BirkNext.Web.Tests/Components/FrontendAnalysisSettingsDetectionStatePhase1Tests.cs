@@ -154,6 +154,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
         // Change URL
+        if (cut.FindAll("button").Any(b => b.TextContent.Trim() == "Edit Environment")) cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.Find("input[type=url]").Change("https://application-qa-changed.example.test");
 
         // Detection state should be "Stale"
@@ -219,10 +220,12 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         });
 
         // Add default HTTPS port - should NOT be stale (normalized)
+        if (cut.FindAll("button").Any(b => b.TextContent.Trim() == "Edit Environment")) cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.Find("input[type=url]").Change("https://application-qa.example.test:443");
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
 
         // Change to different host - should be stale
+        if (cut.FindAll("button").Any(b => b.TextContent.Trim() == "Edit Environment")) cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.Find("input[type=url]").Change("https://application-qa-v2.example.test");
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs re-check");
     }
@@ -331,7 +334,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete"));
 
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save changes").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel");
 
         // Select different profile and back
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("Production")).Click();

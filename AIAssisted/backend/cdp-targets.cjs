@@ -1,0 +1,2 @@
+const {chromium}=require('C:/Users/ajaan/AppData/Roaming/npm/node_modules/playwright');
+(async()=>{const b=await chromium.connectOverCDP('http://127.0.0.1:9222');try{const s=await b.newBrowserCDPSession();const x=await s.send('Target.getTargets');console.log(x.targetInfos.map(t=>({type:t.type,subtype:t.subtype,attached:t.attached,origin:(()=>{try{return new URL(t.url).origin}catch{return ''}})()})));}finally{await b.close()}})().catch(()=>console.log('CDP diagnostic failed'));

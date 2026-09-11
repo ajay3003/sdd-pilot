@@ -1,3 +1,5 @@
+using BirkNext.Api.Services.ManagedEdge;
+using BirkNext.Api.Controllers;
 using BirkNext.Api.Data;
 using BirkNext.Api.Data.Migrations;
 using BirkNext.Api.Configuration;
@@ -207,6 +209,16 @@ builder.Services.AddScoped<IFrontendBrowserRuntimeReviewService, FrontendBrowser
 // Interactive authenticated review is local-workstation-only and disabled by default.
 builder.Services.Configure<AuthenticatedReviewOptions>(
     builder.Configuration.GetSection(AuthenticatedReviewOptions.SectionName));
+builder.Services.Configure<ManagedEdgeOptions>(builder.Configuration.GetSection("ManagedEdge"));
+builder.Services.AddSingleton<IManagedEdgeConnector, ManagedEdgeConnector>();
+builder.Services.AddSingleton<ManagedEdgeCdpService>();
+builder.Services.AddSingleton<IManagedEdgeCdpService>(sp => sp.GetRequiredService<ManagedEdgeCdpService>());
+builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<ManagedEdgeCdpService>());
+builder.Services.AddScoped<ManagedEdgeLocalCallerFilter>();
+builder.Services.AddSingleton<IEdgeInstallationLocator, WindowsEdgeInstallationLocator>();
+builder.Services.AddSingleton<IEdgePolicyReader, WindowsEdgePolicyReader>();
+builder.Services.AddSingleton<IManagedEdgeLauncher, ProcessManagedEdgeLauncher>();
+builder.Services.AddSingleton<IManagedEdgePreflightService, ManagedEdgePreflightService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
 builder.Services.AddSingleton<AuthenticationOriginPolicy>();

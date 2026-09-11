@@ -85,7 +85,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         _settings.ActiveProfile!.EnvironmentType.Should().Be(FrontendEnvironmentType.Local);
         _settings.ActiveProfile.Name.Should().Be("Local");
 
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Cancel").Click();
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Cancel");
         _settings.ActiveProfile.EnvironmentType.Should().Be(FrontendEnvironmentType.Local);
         _settings.ActiveProfile.Name.Should().Be("Local");
     }
@@ -107,6 +107,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
 
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.Find("input[type=url]").Change("https://application-qa-b.example.test");
 
         cut.Markup.Should().Contain("Detection result");
@@ -168,7 +169,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection failed"));
         cut.Markup.Should().Contain("Target could not be reached safely.");
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save changes").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeTrue();
         _settings.Settings.Profiles.Single(p => p.Id == "qa").TargetUrl.Should().Be("https://application-qa.example.test");
         _settings.Settings.ActiveProfileId.Should().Be("local");

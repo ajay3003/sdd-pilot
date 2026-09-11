@@ -22,4 +22,7 @@
     <Error Text="Stale scoped CSS bundle found at wwwroot/BirkNext.Web.styles.css. Remove this file. Blazor generates BirkNext.Web.styles.css during the scoped CSS build process, and a physical wwwroot copy causes a Static Web Assets duplicate collision (InvalidOperationException: Sequence contains more than one element)." />
   </Target>
 
+  <ItemGroup>
+    <Compile Include="../../shared/ManagedEdgeCdpContracts.cs" Link="Models/ManagedEdgeCdpContracts.cs" />
+  </ItemGroup>
 </Project>

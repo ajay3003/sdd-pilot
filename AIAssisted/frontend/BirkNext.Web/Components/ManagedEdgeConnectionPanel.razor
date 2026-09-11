@@ -1,0 +1,107 @@
+@using BirkNext.ManagedEdge
+@using BirkNext.Web.Services
+@using BirkNext.Web.Models
+
+<section class="fa-detection-summary" data-testid="managed-edge-panel" aria-label="Managed Edge authentication">
+    <h3>Authenticated testing with managed Microsoft Edge</h3>
+    <p>BirkNext attaches to a separate Edge instance that you sign into yourself. It never enters credentials, automates MFA, PIN, passkeys or Conditional Access, and never reads cookies, tokens or browser storage.</p>
+    <ol>
+        <li><strong>Check Edge compatibility.</strong> Confirms the Edge installation, the remote debugging policy and the local CDP endpoint.</li>
+        <li><strong>Start Edge for authenticated testing</strong>, or connect to a compatible Edge that is already running. BirkNext uses a dedicated profile and never touches your normal Edge windows or profile.</li>
+        <li><strong>Sign in manually.</strong> Use your corporate account and complete MFA, PIN, passkey and Conditional Access yourself.</li>
+        <li><strong>Open the selected target application.</strong> @SafeOrigin</li>
+        <li><strong>Connect or re-check.</strong> Keep exactly one tab for the target origin open.</li>
+        <li><strong>Verify authenticated access.</strong> BirkNext checks only approved positive evidence inside the existing browser context.</li>
+    </ol>
+
+    <h3>Authentication discovery</h3>
+    <dl class="fa-detail-list" data-testid="edge-auth-discovery">
+        <div class="fa-dl-row"><dt>Provider</dt><dd>@(Detection?.Success == true ? Detection.DetectedAuthenticationType.ToString() : "—")</dd></div>
+        <div class="fa-dl-row"><dt>Authority</dt><dd>@(Detection?.DetectedAuthority ?? "—")</dd></div>
+        <div class="fa-dl-row"><dt>Tenant</dt><dd>@(Detection?.DetectedTenantId ?? Detection?.TenantMode ?? "—")</dd></div>
+        <div class="fa-dl-row"><dt>Client ID</dt><dd>@(Detection?.DetectedClientId ?? "—")</dd></div>
+        <div class="fa-dl-row"><dt>Source</dt><dd>@(Detection?.Success == true ? "Public discovery of the target (Detect settings)" : "Not detected yet — run Detect settings")</dd></div>
+    </dl>
+
+    <h3>Edge compatibility</h3>
+    <dl class="fa-detail-list" data-testid="edge-compatibility">
+        <div class="fa-dl-row"><dt>Local browser integration</dt><dd>@(Preflight is null ? "Not checked" : Preflight.LocalBrowserIntegrationAvailable ? "Available" : "Unavailable in this deployment mode")</dd></div>
+        <div class="fa-dl-row"><dt>Edge installed</dt><dd>@(Preflight is null ? "Not checked" : Preflight.EdgeInstalled ? "Yes" : "No")</dd></div>
+        <div class="fa-dl-row"><dt>Version</dt><dd>@(Preflight?.EdgeVersion ?? "—")</dd></div>
+        <div class="fa-dl-row"><dt>Remote debugging policy</dt><dd>@(Preflight is null ? "Not checked" : PolicyLabel(Preflight.RemoteDebuggingPolicyStatus))</dd></div>
+        <div class="fa-dl-row"><dt>Remote debugging runtime</dt><dd>@(Preflight is null ? "Not checked" : Preflight.RemoteDebuggingRuntimeActive ? "Active" : "Not active")</dd></div>
+        <div class="fa-dl-row"><dt>CDP endpoint</dt><dd>@(Preflight?.CdpEndpoint ?? Status.Endpoint) — @EndpointLabel</dd></div>
+        <div class="fa-dl-row"><dt>Browser</dt><dd>@(Preflight?.BrowserProduct is { } product ? $"{product} {Preflight.BrowserVersion}" : "—")</dd></div>
+        <div class="fa-dl-row"><dt>Target application</dt><dd>@(Preflight is null ? "Not checked" : Preflight.TargetTabFound ? $"Found ({Preflight.TargetTabCount} tab{(Preflight.TargetTabCount == 1 ? "" : "s")})" : "Not opened yet")</dd></div>
+        <div class="fa-dl-row"><dt>Edge started by BirkNext</dt><dd>@(Preflight is null ? "—" : Preflight.EdgeStarted ? "Yes" : "No")</dd></div>
+    </dl>
+    @if (Preflight?.FailureReason is { } reason)
+    {
+        <p role="status" data-testid="edge-preflight-reason">@reason</p>
+    }
+    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.PreflightBusy || Profile is null)" @onclick="Check">Check Edge compatibility</button>
+    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.PreflightBusy || Runtime.Busy || Profile is null || Preflight?.CanLaunchTestEdge != true)" @onclick="Launch">Start Edge for authenticated testing</button>
+
+    <h3>Manual sign-in</h3>
+    <p role="status" data-testid="edge-manual-signin">@ManualSignInLabel</p>
+
+    <h3>Browser connection</h3>
+    <dl class="fa-detail-list">
+        <div class="fa-dl-row"><dt>Connection</dt><dd>@(Status.SessionId is null ? "Not connected" : "Connected") (@Status.State)</dd></div>
+        <div class="fa-dl-row"><dt>Target tab</dt><dd>@TargetTabLabel</dd></div>
+        <div class="fa-dl-row"><dt>Contexts / pages</dt><dd>@Status.ContextCount / @Status.PageCount</dd></div>
+    </dl>
+    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || Profile is null || Preflight?.LocalBrowserIntegrationAvailable == false)" @onclick="Connect">Connect to managed Edge</button>
+    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || Status.State is not (ManagedEdgeState.ConnectedUnproven or ManagedEdgeState.ConnectedAuthenticated))" @onclick="Verify">Verify authenticated access</button>
+    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Status.SessionId is null)" @onclick="Disconnect">Disconnect BirkNext from Edge</button>
+
+    <h3>Authenticated access</h3>
+    <p role="status"><strong>@(Status.AuthenticatedBrowserAvailable ? "Verified" : "Not verified")</strong> — @Status.Evidence</p>
+    @if (Status.Probe is { } probe)
+    {
+        <p>Safe request: HTTP @probe.StatusCode · @probe.ContentType · @probe.ElapsedMs ms. Response bodies are not captured.</p>
+    }
+
+    <h3>Authenticated automation</h3>
+    <dl class="fa-detail-list">
+        <div class="fa-dl-row"><dt>Public surface coverage</dt><dd>Available through existing reviews</dd></div>
+        <div class="fa-dl-row"><dt>Security</dt><dd>Public surface available · Authenticated browser surface @Available(Status.SecurityBrowserAvailable).ToLowerInvariant() — approved browser-context checks only; no full authenticated scan claimed</dd></div>
+        <div class="fa-dl-row"><dt>REST</dt><dd>Public discovery available · Authenticated runtime @Available(Status.RestAvailable).ToLowerInvariant() — approved same-origin GET checks only</dd></div>
+        <div class="fa-dl-row"><dt>GraphQL</dt><dd>Schema discovery available · Authenticated query execution @Available(Status.GraphQlAvailable).ToLowerInvariant() — semantic authenticated response not proven; mutations and subscriptions blocked</dd></div>
+    </dl>
+    <p>Manual attestation alone does not enable authenticated automation. API calls requiring application-managed token acquisition remain unavailable; BirkNext does not extract tokens to reproduce them.</p>
+</section>
+
+@code {
+    [Parameter] public ManagedEdgeRuntime? Runtime { get; set; }
+    [Parameter] public FrontendAnalysisProfile? Profile { get; set; }
+    [Parameter] public TargetEnvironmentDetectionResult? Detection { get; set; }
+    private ManagedEdgeStatus Status => Runtime?.For(Profile) ?? new() { State = ManagedEdgeState.NotConfigured };
+    private ManagedEdgePreflightResult? Preflight => Runtime?.PreflightFor(Profile);
+    private string SafeOrigin => Uri.TryCreate(Profile?.TargetUrl, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority) : "Configure a Frontend URL";
+    private static string Available(bool value) => value ? "Available" : "Unavailable";
+    private static string PolicyLabel(EdgeRemoteDebuggingPolicyStatus status) => status switch
+    {
+        EdgeRemoteDebuggingPolicyStatus.Allowed => "Allowed",
+        EdgeRemoteDebuggingPolicyStatus.Blocked => "Blocked",
+        EdgeRemoteDebuggingPolicyStatus.NotConfigured => "Not configured",
+        _ => "Unknown"
+    };
+    private string EndpointLabel => Preflight is null ? "Not checked"
+        : Preflight.RemoteDebuggingRuntimeActive ? "Ready"
+        : Preflight.PortInUseByOtherService ? "Occupied by a non-CDP service"
+        : "Unreachable";
+    private string TargetTabLabel => Status.OriginMatched ? Status.TargetOrigin ?? "Matched"
+        : Status.State == ManagedEdgeState.TargetTabNotInspectable ? "Found, but Edge refuses debugger attachment (protected session)"
+        : Status.State == ManagedEdgeState.AmbiguousTargetTabs ? "Multiple tabs found — keep exactly one"
+        : "Not found";
+    private string ManualSignInLabel => Status.AuthenticatedBrowserAvailable ? "User completed — browser access verified"
+        : Status.State is ManagedEdgeState.ConnectedUnproven ? "Waiting — sign in manually in the connected Edge tab, then verify"
+        : Status.State == ManagedEdgeState.TargetTabNotInspectable ? "Required — cannot be verified through CDP for this protected tab"
+        : "Required — complete sign-in manually in the test Edge instance";
+    private Task Check() => Runtime is not null && Profile is not null ? Runtime.CheckCompatibilityAsync(Profile) : Task.CompletedTask;
+    private Task Launch() => Runtime is not null && Profile is not null ? Runtime.LaunchEdgeAsync(Profile) : Task.CompletedTask;
+    private Task Connect() => Runtime is not null && Profile is not null ? Runtime.ConnectAsync(Profile) : Task.CompletedTask;
+    private Task Verify() => Runtime?.VerifyAsync() ?? Task.CompletedTask;
+    private Task Disconnect() => Runtime?.DisconnectAsync() ?? Task.CompletedTask;
+}

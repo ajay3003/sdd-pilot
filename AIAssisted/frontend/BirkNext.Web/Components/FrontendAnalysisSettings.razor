@@ -1,3 +1,6 @@
+@using BirkNext.ManagedEdge
+@implements IAsyncDisposable
+@inject IServiceProvider ServiceProvider
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject IFrontendAnalysisSettingsService FaSettings
@@ -356,6 +359,190 @@
             @* ── Target Application ── *@
             @if (_activeTab == "target")
             {
+                @* Detection results summary with provenance *@
+                @if (_detectionResult?.Success == true)
+                {
+                    <div class="fa-detection-summary fa-field-full" style="margin-top: 1.5rem; padding: 1rem; background: var(--color-surface-subtle); border-radius: 0.5rem; border-left: 3px solid var(--color-primary);">
+                        <div style="font-weight: 600; margin-bottom: 0.75rem;">Detected from target</div>
+
+                        @* Detection result rows with provenance *@
+                        <div style="display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 1rem; font-size: 0.875rem; row-gap: 0.75rem;">
+                            @* Reachability *@
+                            <div style="color: var(--color-text-subtle);">Reachability</div>
+                            <div style="font-weight: 500;">@_detectionResult.Reachability</div>
+                            <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+
+                            @* Client Framework *@
+                            @if (_detectionResult.DetectedClientFramework.HasValue)
+                            {
+                                <div style="color: var(--color-text-subtle);">Framework</div>
+                                <div style="font-weight: 500;">@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                            }
+
+                            @* Authentication Required *@
+                            @if (_detectionResult.AuthenticationRequired)
+                            {
+                                <div style="color: var(--color-text-subtle);">Authentication required</div>
+                                <div style="font-weight: 500;">Yes</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                            }
+
+                            @* Identity Provider *@
+                            @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None && !string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
+                            {
+                                <div style="color: var(--color-text-subtle);">Identity provider</div>
+                                <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                            }
+
+                            @* Authority *@
+                            @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
+                            {
+                                <div style="color: var(--color-text-subtle);">Authority</div>
+                                <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                            }
+
+                            @* Tenant / Tenant Mode *@
+                            @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
+                            {
+                                <div style="color: var(--color-text-subtle);">Tenant</div>
+                                <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedTenantId</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                            }
+                            else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
+                            {
+                                <div style="color: var(--color-text-subtle);">Tenant mode</div>
+                                <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                            }
+
+                            @* Client ID *@
+                            @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
+                            {
+                                <div style="color: var(--color-text-subtle);">Client/Application ID</div>
+                                <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedClientId</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                            }
+
+                            @* Environment Type (Suggested) *@
+                            @if (_detectionResult.SuggestedEnvironmentType.HasValue)
+                            {
+                                <div style="color: var(--color-text-subtle);">Environment type</div>
+                                <div style="font-weight: 500;">
+                                    @_detectionResult.SuggestedEnvironmentType
+                                    @if (CurrentProfile is not null && CurrentProfile.EnvironmentType != _detectionResult.SuggestedEnvironmentType.Value)
+                                    {
+                                        <button type="button" class="fa-apply-suggestion" @onclick="ApplyDetectedEnvironmentType">Apply detected type</button>
+                                    }
+                                </div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
+                            }
+
+                            @* Profile Name (Suggested) *@
+                            @if (!string.IsNullOrWhiteSpace(_detectionResult.SuggestedProfileName))
+                            {
+                                <div style="color: var(--color-text-subtle);">Profile name</div>
+                                <div style="font-weight: 500;">@_detectionResult.SuggestedProfileName</div>
+                                <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
+                            }
+                        </div>
+
+                        @* Authentication Support Status *@
+                        @if (_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
+                        {
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.5rem;">Authentication Support</div>
+                                <div style="color: var(--color-warning); font-size: 0.8125rem;">
+                                    <strong>Note:</strong> Authenticated review is <strong>not currently supported</strong> in Frontend Quality Review.
+                                    Detection only identifies the authentication configuration of your target.
+                                </div>
+                            </div>
+                        }
+
+                        @* Stale Detection Warning *@
+                        @if (IsDetectionStale)
+                        {
+                            <div style="margin-top: 1rem; padding: 0.75rem; background: var(--color-warning-bg, rgba(255, 193, 7, 0.1)); border-left: 3px solid var(--color-warning); border-radius: 0.25rem; font-size: 0.875rem;">
+                                <div style="color: var(--color-warning); font-weight: 600; margin-bottom: 0.25rem;">⚠️ Discoveries are stale</div>
+                                <div style="color: var(--color-text-muted); font-size: 0.8125rem;">@DiscoveryStaleDetail</div>
+                            </div>
+                        }
+
+                @* Detected API Endpoints *@
+                        @if (!IsDetectionStale && (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl) ||
+                             !string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint) ||
+                             !string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl) ||
+                             !string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint)))
+                        {
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.75rem;">Discovered API Endpoints</div>
+                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl))
+                                {
+                                    <EndpointProposal Field="RestBaseUrl" Label="REST Base URL" Value="@_detectionResult.DetectedRestBaseUrl"
+                                        ApplyLabel="Apply REST" Evidence="@GetEndpointEvidence("RestBaseUrl")"
+                                        CanApply="@((CurrentProfile?.RestBaseUrl ?? "") != _detectionResult.DetectedRestBaseUrl)"
+                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.RestBaseUrl), _detectionResult.DetectedRestBaseUrl))" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint))
+                                {
+                                    <EndpointProposal Field="GraphQlEndpoint" Label="GraphQL Endpoint" Value="@_detectionResult.DetectedGraphQlEndpoint"
+                                        ApplyLabel="Apply GraphQL" Evidence="@GetEndpointEvidence("GraphQlEndpoint")"
+                                        CanApply="@((CurrentProfile?.GraphQlEndpoint ?? "") != _detectionResult.DetectedGraphQlEndpoint)"
+                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.GraphQlEndpoint), _detectionResult.DetectedGraphQlEndpoint))" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl))
+                                {
+                                    <EndpointProposal Field="SwaggerUrl" Label="Swagger / OpenAPI" Value="@_detectionResult.DetectedSwaggerUrl"
+                                        ApplyLabel="Apply Swagger" Evidence="@GetEndpointEvidence("SwaggerUrl")"
+                                        CanApply="@((CurrentProfile?.SwaggerUrl ?? "") != _detectionResult.DetectedSwaggerUrl)"
+                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.SwaggerUrl), _detectionResult.DetectedSwaggerUrl))" />
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint))
+                                {
+                                    <EndpointProposal Field="HealthEndpoint" Label="Health Endpoint" Value="@_detectionResult.DetectedHealthEndpoint"
+                                        ApplyLabel="Apply Health" Evidence="@GetEndpointEvidence("HealthEndpoint")"
+                                        CanApply="@((CurrentProfile?.HealthEndpoint ?? "") != _detectionResult.DetectedHealthEndpoint)"
+                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.HealthEndpoint), _detectionResult.DetectedHealthEndpoint))" />
+                                }
+                            </div>
+                        }
+
+                        @* Detected Integrations *@
+                        @if (!IsDetectionStale && _detectionResult.DetectedIntegrations?.Count > 0)
+                        {
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
+                                <div style="font-weight: 600; margin-bottom: 0.75rem;">Discovered Integrations</div>
+                                <div style="display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 1rem; row-gap: 0.75rem;">
+                                    @foreach (var integration in _detectionResult.DetectedIntegrations)
+                                    {
+                                        <div style="color: var(--color-text-subtle);">@(integration.DisplayName ?? integration.Type)</div>
+                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">
+                                            @if (!string.IsNullOrWhiteSpace(integration.Endpoint))
+                                            {
+                                                @integration.Endpoint
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(integration.ResourceName))
+                                            {
+                                                <div style="font-size: 0.875em; color: var(--color-text-muted);">@integration.ResourceName</div>
+                                            }
+                                        </div>
+                                        @if (_isEditMode)
+                                        {
+                                            <button type="button" class="fa-apply-suggestion" @onclick="() => ApplyDetectedIntegration(integration)">Add</button>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div style="font-size: 0.75rem; color: var(--color-text-subtle); margin-top: 0.75rem;">
+                            Target detection confidence: @_detectionResult.Confidence. Reachability, authentication and environment; endpoint confidence is shown per proposal.
+                        </div>
+                    </div>
+                }
+
                 @if (_isEditMode && _editProfile is not null)
                 {
                     <div class="fa-form-grid">
@@ -366,190 +553,6 @@
                                    @bind="_editProfile.TargetUrl"
                                    @bind:after="() => ClearDetectionState()" />
                         </div>
-
-                        @* Detection results summary with provenance *@
-                        @if (_detectionResult?.Success == true)
-                        {
-                            <div class="fa-detection-summary fa-field-full" style="margin-top: 1.5rem; padding: 1rem; background: var(--color-surface-subtle); border-radius: 0.5rem; border-left: 3px solid var(--color-primary);">
-                                <div style="font-weight: 600; margin-bottom: 0.75rem;">Detected from target</div>
-
-                                @* Detection result rows with provenance *@
-                                <div style="display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 1rem; font-size: 0.875rem; row-gap: 0.75rem;">
-                                    @* Reachability *@
-                                    <div style="color: var(--color-text-subtle);">Reachability</div>
-                                    <div style="font-weight: 500;">@_detectionResult.Reachability</div>
-                                    <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-
-                                    @* Client Framework *@
-                                    @if (_detectionResult.DetectedClientFramework.HasValue)
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Framework</div>
-                                        <div style="font-weight: 500;">@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-                                    }
-
-                                    @* Authentication Required *@
-                                    @if (_detectionResult.AuthenticationRequired)
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Authentication required</div>
-                                        <div style="font-weight: 500;">Yes</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-                                    }
-
-                                    @* Identity Provider *@
-                                    @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None && !string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Identity provider</div>
-                                        <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-                                    }
-
-                                    @* Authority *@
-                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Authority</div>
-                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-                                    }
-
-                                    @* Tenant / Tenant Mode *@
-                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Tenant</div>
-                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedTenantId</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-                                    }
-                                    else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Tenant mode</div>
-                                        <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-                                    }
-
-                                    @* Client ID *@
-                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Client/Application ID</div>
-                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedClientId</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
-                                    }
-
-                                    @* Environment Type (Suggested) *@
-                                    @if (_detectionResult.SuggestedEnvironmentType.HasValue)
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Environment type</div>
-                                        <div style="font-weight: 500;">
-                                            @_detectionResult.SuggestedEnvironmentType
-                                            @if (_editProfile is not null && _editProfile.EnvironmentType != _detectionResult.SuggestedEnvironmentType.Value)
-                                            {
-                                                <button type="button" class="fa-apply-suggestion" @onclick="ApplyDetectedEnvironmentType">Apply detected type</button>
-                                            }
-                                        </div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
-                                    }
-
-                                    @* Profile Name (Suggested) *@
-                                    @if (!string.IsNullOrWhiteSpace(_detectionResult.SuggestedProfileName))
-                                    {
-                                        <div style="color: var(--color-text-subtle);">Profile name</div>
-                                        <div style="font-weight: 500;">@_detectionResult.SuggestedProfileName</div>
-                                        <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
-                                    }
-                                </div>
-
-                                @* Authentication Support Status *@
-                                @if (_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
-                                {
-                                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
-                                        <div style="font-weight: 600; margin-bottom: 0.5rem;">Authentication Support</div>
-                                        <div style="color: var(--color-warning); font-size: 0.8125rem;">
-                                            <strong>Note:</strong> Authenticated review is <strong>not currently supported</strong> in Frontend Quality Review.
-                                            Detection only identifies the authentication configuration of your target.
-                                        </div>
-                                    </div>
-                                }
-
-                                @* Stale Detection Warning *@
-                                @if (IsDetectionStale)
-                                {
-                                    <div style="margin-top: 1rem; padding: 0.75rem; background: var(--color-warning-bg, rgba(255, 193, 7, 0.1)); border-left: 3px solid var(--color-warning); border-radius: 0.25rem; font-size: 0.875rem;">
-                                        <div style="color: var(--color-warning); font-weight: 600; margin-bottom: 0.25rem;">⚠️ Discoveries are stale</div>
-                                        <div style="color: var(--color-text-muted); font-size: 0.8125rem;">@DiscoveryStaleDetail</div>
-                                    </div>
-                                }
-
-                        @* Detected API Endpoints *@
-                                @if (!IsDetectionStale && (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl) ||
-                                     !string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint) ||
-                                     !string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl) ||
-                                     !string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint)))
-                                {
-                                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
-                                        <div style="font-weight: 600; margin-bottom: 0.75rem;">Discovered API Endpoints</div>
-                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl))
-                                        {
-                                            <EndpointProposal Field="RestBaseUrl" Label="REST Base URL" Value="@_detectionResult.DetectedRestBaseUrl"
-                                                ApplyLabel="Apply REST" Evidence="@GetEndpointEvidence("RestBaseUrl")"
-                                                CanApply="@(_isEditMode && (_editProfile?.RestBaseUrl ?? "") != _detectionResult.DetectedRestBaseUrl)"
-                                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.RestBaseUrl), _detectionResult.DetectedRestBaseUrl))" />
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint))
-                                        {
-                                            <EndpointProposal Field="GraphQlEndpoint" Label="GraphQL Endpoint" Value="@_detectionResult.DetectedGraphQlEndpoint"
-                                                ApplyLabel="Apply GraphQL" Evidence="@GetEndpointEvidence("GraphQlEndpoint")"
-                                                CanApply="@(_isEditMode && (_editProfile?.GraphQlEndpoint ?? "") != _detectionResult.DetectedGraphQlEndpoint)"
-                                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.GraphQlEndpoint), _detectionResult.DetectedGraphQlEndpoint))" />
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl))
-                                        {
-                                            <EndpointProposal Field="SwaggerUrl" Label="Swagger / OpenAPI" Value="@_detectionResult.DetectedSwaggerUrl"
-                                                ApplyLabel="Apply Swagger" Evidence="@GetEndpointEvidence("SwaggerUrl")"
-                                                CanApply="@(_isEditMode && (_editProfile?.SwaggerUrl ?? "") != _detectionResult.DetectedSwaggerUrl)"
-                                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.SwaggerUrl), _detectionResult.DetectedSwaggerUrl))" />
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint))
-                                        {
-                                            <EndpointProposal Field="HealthEndpoint" Label="Health Endpoint" Value="@_detectionResult.DetectedHealthEndpoint"
-                                                ApplyLabel="Apply Health" Evidence="@GetEndpointEvidence("HealthEndpoint")"
-                                                CanApply="@(_isEditMode && (_editProfile?.HealthEndpoint ?? "") != _detectionResult.DetectedHealthEndpoint)"
-                                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.HealthEndpoint), _detectionResult.DetectedHealthEndpoint))" />
-                                        }
-                                    </div>
-                                }
-
-                                @* Detected Integrations *@
-                                @if (!IsDetectionStale && _detectionResult.DetectedIntegrations?.Count > 0)
-                                {
-                                    <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
-                                        <div style="font-weight: 600; margin-bottom: 0.75rem;">Discovered Integrations</div>
-                                        <div style="display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 1rem; row-gap: 0.75rem;">
-                                            @foreach (var integration in _detectionResult.DetectedIntegrations)
-                                            {
-                                                <div style="color: var(--color-text-subtle);">@(integration.DisplayName ?? integration.Type)</div>
-                                                <div style="font-family: monospace; font-weight: 500; word-break: break-all;">
-                                                    @if (!string.IsNullOrWhiteSpace(integration.Endpoint))
-                                                    {
-                                                        @integration.Endpoint
-                                                    }
-                                                    @if (!string.IsNullOrWhiteSpace(integration.ResourceName))
-                                                    {
-                                                        <div style="font-size: 0.875em; color: var(--color-text-muted);">@integration.ResourceName</div>
-                                                    }
-                                                </div>
-                                                @if (_isEditMode)
-                                                {
-                                                    <button type="button" class="fa-apply-suggestion" @onclick="() => ApplyDetectedIntegration(integration)">Add</button>
-                                                }
-                                            }
-                                        </div>
-                                    </div>
-                                }
-
-                                <div style="font-size: 0.75rem; color: var(--color-text-subtle); margin-top: 0.75rem;">
-                                    Target detection confidence: @_detectionResult.Confidence. Reachability, authentication and environment; endpoint confidence is shown per proposal.
-                                </div>
-                            </div>
-                        }
 
                         <div class="fa-threshold-group-title fa-field-full">API Endpoints</div>
                         <div class="form-field fa-field-full">
@@ -694,6 +697,8 @@
             @* ── Authentication ── *@
             @if (_activeTab == "auth")
             {
+                <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" Detection="_detectionResult" />
+                <h3>Authentication discovery and configuration</h3>
                 <p class="fa-section-note">
                     These settings describe expected authentication behaviour only. No credentials are stored or used here.
                     Secrets, passwords, tokens, and client secrets must never be entered.
@@ -757,64 +762,6 @@
                                       @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
                         </div>
 
-                        @* Show detected values if detection has been run *@
-                        @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
-                        {
-                            <div class="fa-field-full" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
-                                <div style="font-weight: 600; margin-bottom: 1rem; font-size: 0.9rem; text-transform: uppercase; color: var(--color-text-subtle);">Detected Authentication</div>
-
-                                @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
-                                {
-                                    <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; font-size: 0.875rem; margin-bottom: 1rem;">
-                                        <div style="color: var(--color-text-subtle);">Type</div>
-                                        <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType <span style="color: var(--color-text-muted); font-size: 0.8rem;">(from target)</span></div>
-
-                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
-                                        {
-                                            <div style="color: var(--color-text-subtle);">Authority</div>
-                                            <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
-                                        }
-
-                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
-                                        {
-                                            <div style="color: var(--color-text-subtle);">Tenant</div>
-                                            <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedTenantId</div>
-                                        }
-                                        else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
-                                        {
-                                            <div style="color: var(--color-text-subtle);">Tenant Mode</div>
-                                            <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
-                                        }
-
-                                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
-                                        {
-                                            <div style="color: var(--color-text-subtle);">Client ID</div>
-                                            <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedClientId</div>
-                                        }
-
-                                        @if (_detectionResult.DetectedRedirectUrls.Count > 0)
-                                        {
-                                            <div style="color: var(--color-text-subtle);">Redirect URLs</div>
-                                            <div>
-                                                @foreach (var url in _detectionResult.DetectedRedirectUrls)
-                                                {
-                                                    <div style="font-family: monospace; font-size: 0.8rem; word-break: break-all; margin-bottom: 0.25rem;">@url</div>
-                                                }
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div style="color: var(--color-text-muted); font-size: 0.875rem;">No authentication detected</div>
-                                }
-
-                                <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;"
-                                        title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
-                                    Apply authentication
-                                </button>
-                            </div>
-                        }
                     </div>
                 }
                 else
@@ -829,6 +776,64 @@
                         <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedClientId) ? "—" : "Configured")</dd></div>
                         <div class="fa-dl-row"><dt>Allowed Redirect URLs</dt><dd>@HostList(auth.AllowedRedirectUrls)</dd></div>
                     </dl>
+                }
+                @* Show detected values if detection has been run *@
+                @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
+                {
+                    <div class="fa-field-full" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
+                        <div style="font-weight: 600; margin-bottom: 1rem; font-size: 0.9rem; text-transform: uppercase; color: var(--color-text-subtle);">Detected Authentication</div>
+
+                        @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
+                        {
+                            <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; font-size: 0.875rem; margin-bottom: 1rem;">
+                                <div style="color: var(--color-text-subtle);">Type</div>
+                                <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType <span style="color: var(--color-text-muted); font-size: 0.8rem;">(from target)</span></div>
+
+                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
+                                {
+                                    <div style="color: var(--color-text-subtle);">Authority</div>
+                                    <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
+                                {
+                                    <div style="color: var(--color-text-subtle);">Tenant</div>
+                                    <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedTenantId</div>
+                                }
+                                else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
+                                {
+                                    <div style="color: var(--color-text-subtle);">Tenant Mode</div>
+                                    <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
+                                }
+
+                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
+                                {
+                                    <div style="color: var(--color-text-subtle);">Client ID</div>
+                                    <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedClientId</div>
+                                }
+
+                                @if (_detectionResult.DetectedRedirectUrls.Count > 0)
+                                {
+                                    <div style="color: var(--color-text-subtle);">Redirect URLs</div>
+                                    <div>
+                                        @foreach (var url in _detectionResult.DetectedRedirectUrls)
+                                        {
+                                            <div style="font-family: monospace; font-size: 0.8rem; word-break: break-all; margin-bottom: 0.25rem;">@url</div>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div style="color: var(--color-text-muted); font-size: 0.875rem;">No authentication detected</div>
+                        }
+
+                        <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;"
+                                title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
+                            Apply authentication
+                        </button>
+                    </div>
                 }
             }
 
@@ -1174,6 +1179,10 @@
             {
                 var v = FaSettings.ValidateProfile(profile);
                 <dl class="fa-detail-list" style="margin-bottom:1.5rem">
+                    <div class="fa-dl-row"><dt>Detection freshness</dt><dd>@(IsDetectionStale ? "Stale" : _detectionResult is null ? "Not checked" : "Current")</dd></div>
+                    <div class="fa-dl-row"><dt>Manual sign-in</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Completed - browser access verified" : "Required for authenticated browser access")</dd></div>
+                    <div class="fa-dl-row"><dt>Managed Edge connection</dt><dd>@EdgeStatus.State</dd></div>
+                    <div class="fa-dl-row"><dt>Authenticated access</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Verified" : "Not verified")</dd></div>
                     <div class="fa-dl-row">
                         <dt>Configuration validation</dt>
                         <dd>
@@ -1621,6 +1630,24 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     // ── Computed ─────────────────────────────────────────────────────────────
 
+    private ManagedEdgeRuntime? _edgeRuntime;
+    private bool _disposed;
+    private ManagedEdgeStatus EdgeStatus => _edgeRuntime?.For(CurrentProfile) ?? new();
+    private void EdgeRuntimeChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_edgeRuntime is not null) await _edgeRuntime.SynchronizeAsync(CurrentProfile);
+    }
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_edgeRuntime is not null)
+        {
+            _edgeRuntime.Changed -= EdgeRuntimeChanged;
+            await _edgeRuntime.DisconnectAsync();
+        }
+    }
+
     private FrontendAnalysisProfile? SelectedProfile =>
         string.IsNullOrEmpty(_selectedProfileId)
             ? null
@@ -1633,6 +1660,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     protected override async Task OnInitializedAsync()
     {
+        _edgeRuntime = ServiceProvider.GetService<ManagedEdgeRuntime>();
+        if (_edgeRuntime is not null) _edgeRuntime.Changed += EdgeRuntimeChanged;
         await FaSettings.LoadAsync(JS);
 
         _selectedProfileId = FaSettings.Settings.ActiveProfileId
@@ -1785,9 +1814,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private async Task DetectSelectedTargetAsync()
     {
-        if (!_isEditMode)
-            EnterEditMode();
-        if (_editProfile is null) return;
+        if (CurrentProfile is null) return;
 
         _activeTab = "target";
         await DetectConfigurationAsync();
@@ -1795,6 +1822,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private void ApplyDetectedEnvironmentType()
     {
+        if (_detectionResult?.SuggestedEnvironmentType is null) return;
+        if (!_isEditMode) EnterEditMode();
         if (_editProfile is not null && _detectionResult?.SuggestedEnvironmentType is { } suggested)
             _editProfile.EnvironmentType = suggested;
     }
@@ -1963,7 +1992,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private async Task DetectConfigurationAsync()
     {
-        if (_editProfile is null || string.IsNullOrWhiteSpace(_editProfile.TargetUrl))
+        if (CurrentProfile is null || string.IsNullOrWhiteSpace(CurrentProfile.TargetUrl))
             return;
 
         _isDetecting = true;
@@ -1973,8 +2002,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
         try
         {
-            _lastDetectionTargetUrl = NormalizeUrl(_editProfile.TargetUrl);
-            var detectionProfile = _editProfile;
+            _lastDetectionTargetUrl = NormalizeUrl(CurrentProfile.TargetUrl);
+            var detectionProfile = CurrentProfile;
             var detectionContext = ManualAuthenticationVerificationEvidence.Fingerprint(detectionProfile);
             var detectionSnapshot = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(
                 System.Text.Json.JsonSerializer.Serialize(detectionProfile));
@@ -1999,19 +2028,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
                 _detectionResult = result;
                 _browserRuntimeInspectionRequired = result.BrowserRuntimeInspectionRequired;
 
-                // IMPORTANT: Detection updates draft only, does NOT save
-                // User must explicitly click Save Environment
-
-                // PART 12: Conflict handling rules:
-                // empty + detected → populate
-                // existing == detected → unchanged
-                // existing != detected → preserve existing and show conflict
-
-                // Keep environment type as an explicit proposal. The user must
-                // apply it to the draft and then save it separately.
-
-                // Always record the URL that was detected (even if detection failed)
-                // This allows us to distinguish between "never run" and "run but failed"
+                // Detection updates transient evidence only; Apply owns draft mutations.
                 if (!result.Success)
                 {
                     _detectionError = result.Message;
@@ -2197,7 +2214,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private bool CanActivateSelected => ManualVerificationRequired
         ? CanRecordManualVerification && _detectionResult?.DetectedClientFramework.HasValue == true &&
-          _detectionResult.Warnings.Count == 0 && ManualStatus == ManualAuthenticationVerificationStatus.Passed
+          _detectionResult.Warnings.Count == 0 && (ManualStatus == ManualAuthenticationVerificationStatus.Passed || EdgeStatus.AuthenticatedBrowserAvailable)
         : _detectionResult?.IsActivationReady == true && CurrentDetectionState == DetectionState.Complete;
 
     private string? _manualDetectionContext;
@@ -2509,8 +2526,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     private void ApplyDetectedAuthenticationSettings()
     {
-        if (_detectionResult is null || _editProfile is null)
-            return;
+        if (_detectionResult is null) return;
+        var wasEditing = _isEditMode;
+        if (!_isEditMode) EnterEditMode();
+        if (_editProfile is null) return;
 
         var auth = _editProfile.Authentication;
 
@@ -2541,6 +2560,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             auth.AllowedRedirectUrls = merged.ToList();
         }
 
+        if (!wasEditing && !IsDirty) CancelEdit();
         StateHasChanged();
     }
 
@@ -2549,8 +2569,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private void ApplyDetectedEndpoint(string fieldName, string value)
     {
-        if (_editProfile is null || string.IsNullOrWhiteSpace(value))
-            return;
+        if (string.IsNullOrWhiteSpace(value)) return;
+        if (!_isEditMode) EnterEditMode();
+        if (_editProfile is null) return;
 
         if (fieldName == nameof(_editProfile.RestBaseUrl))
             _editProfile.RestBaseUrl = value;

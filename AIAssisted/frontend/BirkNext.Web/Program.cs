@@ -127,6 +127,12 @@ builder.Services.AddHttpClient<ITargetPreflightService, TargetPreflightService>(
 var backendUrl = builder.Configuration["BackendUrl"] ?? "https://localhost:5000";
 BackendUrlValidator.Validate(backendUrl, builder.HostEnvironment.Environment);
 
+builder.Services.AddHttpClient<IManagedEdgeCdpApiService, ManagedEdgeCdpApiService>(client =>
+{
+    client.BaseAddress = new Uri(backendUrl);
+    client.Timeout = TimeSpan.FromSeconds(20);
+});
+builder.Services.AddScoped<ManagedEdgeRuntime>();
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
 {
     client.BaseAddress = new Uri(backendUrl);
