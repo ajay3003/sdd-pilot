@@ -180,8 +180,8 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
             Click(cut, action);
             cut.WaitForAssertion(() => Assert.False(cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check Edge compatibility").HasAttribute("disabled")));
             Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel");
-            // Settings form stays read-only; the managed Edge runtime panel may carry its own controls (e.g. the proxy-trust opt-in).
-            Assert.Empty(cut.FindAll("input, select, textarea").Where(e => e.Closest("[data-testid=managed-edge-panel]") is null));
+            // Settings form stays read-only, and the managed Edge runtime panel carries no editable control at all (no runtime trust opt-in).
+            Assert.Empty(cut.FindAll("input, select, textarea"));
             Assert.Equal(persisted, JsonSerializer.Serialize(settings.Settings));
             Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "birkNextStorage.setItem");
             Assert.DoesNotContain("Needs re-check", cut.Markup);
@@ -197,79 +197,134 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
     private static void Click(IRenderedComponent<Settings> cut, string label) => cut.FindAll("button").Single(b => b.TextContent.Trim() == label).Click();
 
     [Fact]
-    public void ProxyTrustIsOptInAndDefaultsToExactOrigin()
+    public void RuntimePanelHasNoTrustOptInAndShowsSavedPolicyReadOnly()
     {
-        var runtime = new ManagedEdgeRuntime(_api.Object);
-        Assert.Equal(ManagedEdgeTrustModel.ExactOrigin, runtime.TrustModel);
-        var cut = Panel(runtime);
-        Assert.Contains("Exact origin required", cut.Markup);
-        var checkbox = cut.Find("[data-testid='edge-trust-model'] input[type=checkbox]");
-        Assert.False(checkbox.HasAttribute("checked"));
-        checkbox.Change(true);
-        Assert.Equal(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, runtime.TrustModel);
-        cut.WaitForAssertion(() => Assert.Contains("Approved MCAS proxied delivery", cut.Markup));
-        checkbox.Change(false);
-        Assert.Equal(ManagedEdgeTrustModel.ExactOrigin, runtime.TrustModel);
+        // ExactOrigin is the saved default for a profile without the field.
+        Assert.Equal(ManagedEdgeTrustModel.ExactOrigin, _profile.Authentication.BrowserDeliveryTrust);
+        var cut = Panel(new ManagedEdgeRuntime(_api.Object));
+        Assert.Empty(cut.FindAll("input, select, textarea"));
+        Assert.DoesNotContain("Accept an approved Microsoft Defender for Cloud Apps proxied delivery", cut.Markup);
+        Assert.Empty(cut.FindAll("[data-testid='edge-trust-model']"));
+        Assert.Contains("Exact origin only", cut.Find("[data-testid='edge-configured-trust']").TextContent);
+        Assert.Equal("Not observed", cut.Find("[data-testid='edge-observed-origin']").TextContent);
+        Assert.Equal("Not observed", cut.Find("[data-testid='edge-delivery']").TextContent);
+        Assert.Equal("Not evaluated", cut.Find("[data-testid='edge-trust-decision']").TextContent);
+        // The panel only reflects the saved policy; it does not own it.
+        _profile.Authentication.BrowserDeliveryTrust = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
+        cut.Render();
+        Assert.Contains("Approved MCAS proxy permitted", cut.Find("[data-testid='edge-configured-trust']").TextContent);
+        Assert.Contains("exact origin still preferred", cut.Find("[data-testid='edge-configured-trust']").TextContent);
+        Assert.Empty(cut.FindAll("input, select, textarea"));
     }
 
-    [Fact]
-    public void ProxyTrustSelectionFlowsToConnectRequest()
+    [Theory]
+    [InlineData(ManagedEdgeTrustModel.ExactOrigin)]
+    [InlineData(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin)]
+    public void SavedTrustPolicyFlowsToConnectRequest(ManagedEdgeTrustModel saved)
     {
         ManagedEdgeConnectRequest? captured = null;
         _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>()))
             .Callback<ManagedEdgeConnectRequest>(r => captured = r)
             .ReturnsAsync(new ManagedEdgeStatus { SessionId = "s", State = ManagedEdgeState.ConnectedUnproven, OriginMatched = true });
-        var runtime = new ManagedEdgeRuntime(_api.Object);
-        var cut = Panel(runtime);
-        cut.Find("[data-testid='edge-trust-model'] input[type=checkbox]").Change(true);
+        _profile.Authentication.BrowserDeliveryTrust = saved;
+        var json = JsonSerializer.Serialize(_profile);
+        var cut = Panel(new ManagedEdgeRuntime(_api.Object));
         Button(cut, "Connect to managed Edge").Click();
         cut.WaitForAssertion(() => Assert.NotNull(captured));
-        Assert.Equal(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, captured!.TrustModel);
+        Assert.Equal(saved, captured!.TrustModel);
+        Assert.Equal(json, JsonSerializer.Serialize(_profile));   // connecting never writes back to the profile
+    }
+
+    [Fact]
+    public void DirectDeliveryUnderProxyPermittedPolicyIsShownAsExactOriginTrusted()
+    {
+        // The "MCAS removed later" case: saved policy still permits the proxy, but the browser delivers the exact origin directly.
+        _profile.Authentication.BrowserDeliveryTrust = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
+        var direct = new ManagedEdgeStatus
+        {
+            SessionId = "s", State = ManagedEdgeState.ConnectedAuthenticated, OriginMatched = true,
+            TargetOrigin = "https://m2lbdev.bufetat.no", DeliveryOrigin = "https://m2lbdev.bufetat.no",
+            TrustModel = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, TrustDecision = ManagedEdgeTrustDecision.ExactOriginTrusted, RestAvailable = true,
+            Evidence = "Expected origin matched; administrator-approved protected GET returned the expected status and content type."
+        };
+        _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(direct);
+        _api.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(direct);
+        var cut = Panel(new ManagedEdgeRuntime(_api.Object));
+        Button(cut, "Connect to managed Edge").Click();
+        cut.WaitForAssertion(() => Assert.Equal("Exact origin — trusted", cut.Find("[data-testid='edge-trust-decision']").TextContent));
+        Assert.Contains("Approved MCAS proxy permitted", cut.Find("[data-testid='edge-configured-trust']").TextContent);
+        Assert.Equal("Direct", cut.Find("[data-testid='edge-delivery']").TextContent);
+        Assert.Equal("https://m2lbdev.bufetat.no", cut.Find("[data-testid='edge-observed-origin']").TextContent);
+        Assert.Equal("—", cut.Find("[data-testid='edge-correlation']").TextContent);
+        Assert.Contains("Verified", cut.Markup);
+        Assert.DoesNotContain("access.mcas.ms", cut.Markup);
     }
 
     [Fact]
     public void ApprovedProxiedDeliveryShowsSeparateTargetAndBrowserOriginAndVerifiedAccess()
     {
-        _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(new ManagedEdgeStatus
+        _profile.Authentication.BrowserDeliveryTrust = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
+        var proxied = new ManagedEdgeStatus
         {
             SessionId = "s", State = ManagedEdgeState.ConnectedAuthenticated, OriginMatched = true,
             TargetOrigin = "https://m2lbdev.bufetat.no", DeliveryOrigin = "https://m2lbdev-bufetat-no.access.mcas.ms",
-            TrustModel = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, RestAvailable = true,
-            CorrelationEvidence = "User opted in; HTTPS access.mcas.ms delivery; live document origin matches; navigation history includes configured target, Entra authority.",
+            TrustModel = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, TrustDecision = ManagedEdgeTrustDecision.ApprovedProxyTrusted, RestAvailable = true,
+            CorrelationEvidence = "Saved policy permits approved MCAS proxy; HTTPS access.mcas.ms delivery; live document origin matches; navigation history includes configured target, Entra authority.",
             Evidence = "Approved proxied delivery matched; administrator-approved protected GET returned the expected status and content type."
-        });
-        _api.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(new ManagedEdgeStatus
-        {
-            SessionId = "s", State = ManagedEdgeState.ConnectedAuthenticated, OriginMatched = true,
-            TargetOrigin = "https://m2lbdev.bufetat.no", DeliveryOrigin = "https://m2lbdev-bufetat-no.access.mcas.ms",
-            TrustModel = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, RestAvailable = true
-        });
-        var runtime = new ManagedEdgeRuntime(_api.Object) { TrustModel = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin };
-        var cut = Panel(runtime);
+        };
+        _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(proxied);
+        _api.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(proxied);
+        var cut = Panel(new ManagedEdgeRuntime(_api.Object));
         Button(cut, "Connect to managed Edge").Click();
-        cut.WaitForAssertion(() => Assert.Contains("Approved MCAS proxied delivery", cut.Find("[data-testid='edge-correlation']").TextContent));
-        var connection = cut.Markup;
-        Assert.Contains("m2lbdev.bufetat.no", connection);
-        Assert.Contains("m2lbdev-bufetat-no.access.mcas.ms", connection);
-        Assert.Contains("Microsoft Defender for Cloud Apps proxy", connection);
-        Assert.Contains("Verified", connection);
+        cut.WaitForAssertion(() => Assert.Equal("Approved correlated MCAS proxy — trusted", cut.Find("[data-testid='edge-trust-decision']").TextContent));
+        var delivery = cut.Find("[data-testid='edge-browser-delivery']").TextContent;
+        Assert.Contains("https://m2lbdev.bufetat.no", delivery);                       // configured target unchanged
+        Assert.Contains("https://m2lbdev-bufetat-no.access.mcas.ms", delivery);        // observed browser origin
+        Assert.Equal("Microsoft Defender for Cloud Apps proxy", cut.Find("[data-testid='edge-delivery']").TextContent);
+        Assert.Contains("navigation history includes", cut.Find("[data-testid='edge-correlation']").TextContent);
+        Assert.Contains("Verified", cut.Markup);
     }
 
     [Fact]
     public void UncorrelatedProxiedTabIsExplainedAndNotVerified()
     {
+        _profile.Authentication.BrowserDeliveryTrust = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
         _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(new ManagedEdgeStatus
         {
             State = ManagedEdgeState.ProxiedDeliveryUncorrelated, TargetOrigin = "https://m2lbdev.bufetat.no",
             DeliveryOrigin = "https://m2lbdev-bufetat-no.access.mcas.ms", TrustModel = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin,
+            TrustDecision = ManagedEdgeTrustDecision.ProxyCorrelationFailed,
             Evidence = "A proxied tab for this application is open, but BirkNext could not correlate it to the configured target through the browser session."
         });
-        var runtime = new ManagedEdgeRuntime(_api.Object) { TrustModel = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin };
-        var cut = Panel(runtime);
+        var cut = Panel(new ManagedEdgeRuntime(_api.Object));
         Button(cut, "Connect to managed Edge").Click();
         cut.WaitForAssertion(() => Assert.Contains("could not correlate", cut.Markup));
+        Assert.Equal("Proxy correlation failed", cut.Find("[data-testid='edge-trust-decision']").TextContent);
         Assert.Contains("not correlated to the target", cut.Markup);
         Assert.Contains("Not verified", cut.Markup);
         Assert.True(Button(cut, "Verify authenticated access").HasAttribute("disabled"));
+    }
+
+    [Fact]
+    public void ExactOriginEnvironmentExplainsProxiedDeliveryAndStaysUnverified()
+    {
+        // Saved ExactOrigin (default) while the tenant now proxies the application through Defender for Cloud Apps.
+        _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(new ManagedEdgeStatus
+        {
+            State = ManagedEdgeState.ProxiedDeliveryNotPermitted, TargetOrigin = "https://m2lbdev.bufetat.no",
+            DeliveryOrigin = "https://m2lbdev-bufetat-no.access.mcas.ms", TrustModel = ManagedEdgeTrustModel.ExactOrigin,
+            TrustDecision = ManagedEdgeTrustDecision.ProxyNotPermitted,
+            Evidence = "Browser delivery is proxied by Microsoft Defender for Cloud Apps, but this environment permits exact-origin delivery only."
+        });
+        var cut = Panel(new ManagedEdgeRuntime(_api.Object));
+        Button(cut, "Connect to managed Edge").Click();
+        cut.WaitForAssertion(() => Assert.Contains("permits exact-origin delivery only", cut.Markup));
+        Assert.Contains("Exact origin only", cut.Find("[data-testid='edge-configured-trust']").TextContent);
+        Assert.Equal("Microsoft Defender for Cloud Apps proxy", cut.Find("[data-testid='edge-delivery']").TextContent);
+        Assert.Contains("not permitted by this environment", cut.Find("[data-testid='edge-trust-decision']").TextContent);
+        Assert.Contains("Blocked", cut.Find("[data-testid='edge-manual-signin']").TextContent);
+        Assert.Contains("Not verified", cut.Markup);
+        Assert.True(Button(cut, "Verify authenticated access").HasAttribute("disabled"));
+        Assert.Empty(cut.FindAll("input, select, textarea"));   // no way to opt in from the runtime panel
     }
 }

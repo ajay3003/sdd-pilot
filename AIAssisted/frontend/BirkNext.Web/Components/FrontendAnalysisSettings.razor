@@ -762,6 +762,23 @@
                                       @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
                         </div>
 
+                        @* Browser delivery trust: saved policy for managed-Edge authenticated testing. Exact origin is always preferred;
+                           ApprovedMcasProxyOrigin only ADDS an approved, correlated Defender for Cloud Apps fallback. Changing it follows the normal
+                           draft -> Save changes / Cancel flow and never marks public target detection stale. *@
+                        <div class="form-field fa-field-full" style="padding-top:1rem;border-top:1px solid var(--color-border)" data-testid="browser-delivery-trust">
+                            <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
+                            <p class="fa-section-note">Saved with this environment. Decides which manually signed-in Edge tab BirkNext may bind to. Direct delivery at the configured target origin is always preferred and always accepted.</p>
+                            <dl class="fa-detail-list">
+                                <div class="fa-dl-row"><dt>Configured target</dt><dd data-testid="browser-delivery-trust-target">@(BrowserDeliveryTrustLabels.ConfiguredTarget(_editProfile) ?? "Configure a Frontend URL")</dd></div>
+                            </dl>
+                            <label class="fa-label" for="browser-delivery-trust-model">Trust model</label>
+                            <select id="browser-delivery-trust-model" class="form-control" @bind="auth.BrowserDeliveryTrust">
+                                <option value="@ManagedEdgeTrustModel.ExactOrigin">@BrowserDeliveryTrustLabels.ExactOriginOption</option>
+                                <option value="@ManagedEdgeTrustModel.ApprovedMcasProxyOrigin">@BrowserDeliveryTrustLabels.ApprovedProxyOption</option>
+                            </select>
+                            <p class="fa-section-note" data-testid="browser-delivery-trust-help">@BrowserDeliveryTrustLabels.Help(auth.BrowserDeliveryTrust)</p>
+                        </div>
+
                     </div>
                 }
                 else
@@ -776,6 +793,14 @@
                         <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedClientId) ? "—" : "Configured")</dd></div>
                         <div class="fa-dl-row"><dt>Allowed Redirect URLs</dt><dd>@HostList(auth.AllowedRedirectUrls)</dd></div>
                     </dl>
+                    <div class="fa-field-full" style="margin-top:1.5rem" data-testid="browser-delivery-trust">
+                        <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
+                        <dl class="fa-detail-list">
+                            <div class="fa-dl-row"><dt>Configured target</dt><dd data-testid="browser-delivery-trust-target">@(BrowserDeliveryTrustLabels.ConfiguredTarget(profile) ?? "Configure a Frontend URL")</dd></div>
+                            <div class="fa-dl-row"><dt>Trust model</dt><dd data-testid="browser-delivery-trust-model">@BrowserDeliveryTrustLabels.Policy(auth.BrowserDeliveryTrust)</dd></div>
+                        </dl>
+                        <p class="fa-section-note" data-testid="browser-delivery-trust-help">@BrowserDeliveryTrustLabels.Help(auth.BrowserDeliveryTrust) Use Edit Environment to change the trust model; the change is saved only with Save changes.</p>
+                    </div>
                 }
                 @* Show detected values if detection has been run *@
                 @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
@@ -1182,6 +1207,11 @@
                     <div class="fa-dl-row"><dt>Detection freshness</dt><dd>@(IsDetectionStale ? "Stale" : _detectionResult is null ? "Not checked" : "Current")</dd></div>
                     <div class="fa-dl-row"><dt>Manual sign-in</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Completed - browser access verified" : "Required for authenticated browser access")</dd></div>
                     <div class="fa-dl-row"><dt>Managed Edge connection</dt><dd>@EdgeStatus.State</dd></div>
+                    <div class="fa-dl-row"><dt>Browser trust configuration</dt><dd data-testid="validation-trust-configuration">@BrowserDeliveryTrustLabels.Configuration(profile)</dd></div>
+                    <div class="fa-dl-row"><dt>Configured trust</dt><dd data-testid="validation-configured-trust">@BrowserDeliveryTrustLabels.Policy(profile.Authentication.BrowserDeliveryTrust)</dd></div>
+                    <div class="fa-dl-row"><dt>Observed delivery</dt><dd data-testid="validation-observed-delivery">@BrowserDeliveryTrustLabels.Delivery(EdgeStatus)</dd></div>
+                    <div class="fa-dl-row"><dt>Correlation</dt><dd data-testid="validation-correlation">@BrowserDeliveryTrustLabels.Correlation(EdgeStatus)</dd></div>
+                    <div class="fa-dl-row"><dt>Trust decision</dt><dd data-testid="validation-trust-decision">@BrowserDeliveryTrustLabels.ValidationDecision(EdgeStatus)</dd></div>
                     <div class="fa-dl-row"><dt>Authenticated access</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Verified" : "Not verified")</dd></div>
                     <div class="fa-dl-row">
                         <dt>Configuration validation</dt>

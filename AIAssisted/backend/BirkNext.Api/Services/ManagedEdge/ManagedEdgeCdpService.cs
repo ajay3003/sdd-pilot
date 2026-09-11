@@ -34,53 +34,67 @@ public sealed class ManagedEdgeCdpService(IManagedEdgeConnector connector, IOpti
             browser = await connector.ConnectAsync(endpoint, cancellationToken);
             var matches = browser.Pages.Where(p => !p.IsClosed && ManagedEdgePolicy.MatchesOrigin(p.Url, origin)).ToArray();
             var discovered = (browser.DiscoveredPageUrls ?? []).Count(u => ManagedEdgePolicy.MatchesOrigin(u, origin));
-            // Candidate Defender for Cloud Apps reverse-proxy deliveries of THIS application (host identity), regardless of trust model.
+            // Candidate Defender for Cloud Apps reverse-proxy deliveries of THIS application (host identity), observed regardless of trust model.
             var proxied = browser.Pages.Where(p => !p.IsClosed && ManagedEdgePolicy.IsCorrelatedMcasProxyOrigin(p.Url, origin)).ToArray();
+            var proxyPermitted = request.TrustModel == ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
+            // TrustModel echoes the SAVED policy; TrustDecision records what that policy decided for the tabs actually present.
             var status = new ManagedEdgeStatus { Endpoint = endpoint, TargetOrigin = origin, TrustModel = request.TrustModel, ContextCount = browser.ContextCount, PageCount = browser.Pages.Count, DiscoveredTargetTabs = discovered };
 
-            // Exact origin always wins, whatever trust model was requested.
+            // Selection order (see README "Trust models"):
+            //   1. exact configured target origin, when the browser exposes it - ALWAYS preferred, under either trust model;
+            //   2. an approved, target-correlated Defender for Cloud Apps delivery - only when the saved policy permits it;
+            //   3. otherwise fail closed with a precise reason.
+            // ApprovedMcasProxyOrigin therefore never REQUIRES a proxy: if MCAS is removed and delivery returns to the exact origin,
+            // step 1 selects it with no configuration change. An exact tab that is advertised but not inspectable must not block step 2.
             if (matches.Length == 1)
-                return Register(request, browser, matches[0], origin, status with { DeliveryOrigin = origin, TrustModel = ManagedEdgeTrustModel.ExactOrigin,
+                return Register(request, browser, matches[0], origin, status with { DeliveryOrigin = origin, TrustDecision = ManagedEdgeTrustDecision.ExactOriginTrusted,
                     Evidence = "Expected origin matched. Authenticated access is not yet proven." });
             if (matches.Length > 1)
             {
                 browser.Dispose();
-                return status with { State = ManagedEdgeState.AmbiguousTargetTabs, Evidence = "Keep exactly one tab for this target origin open, then reconnect." };
+                return status with { State = ManagedEdgeState.AmbiguousTargetTabs, TrustDecision = ManagedEdgeTrustDecision.NotTrusted, Evidence = "Keep exactly one tab for this target origin open, then reconnect." };
             }
 
-            if (request.TrustModel == ManagedEdgeTrustModel.ApprovedMcasProxyOrigin && proxied.Length > 0)
+            if (proxyPermitted && proxied.Length > 0)
             {
                 if (proxied.Length > 1)
                 {
                     browser.Dispose();
-                    return status with { State = ManagedEdgeState.AmbiguousTargetTabs, Evidence = "Keep exactly one Defender for Cloud Apps proxied tab for this application open, then reconnect." };
+                    return status with { State = ManagedEdgeState.AmbiguousTargetTabs, TrustDecision = ManagedEdgeTrustDecision.NotTrusted, Evidence = "Keep exactly one Defender for Cloud Apps proxied tab for this application open, then reconnect." };
                 }
                 var page = proxied[0];
                 var delivery = ManagedEdgePolicy.Origin(page.Url);
                 var correlation = await CorrelateProxiedDeliveryAsync(page, origin, delivery);
                 if (correlation is not null)
-                    return Register(request, browser, page, delivery, status with { DeliveryOrigin = delivery, CorrelationEvidence = correlation,
+                    return Register(request, browser, page, delivery, status with { DeliveryOrigin = delivery, CorrelationEvidence = correlation, TrustDecision = ManagedEdgeTrustDecision.ApprovedProxyTrusted,
                         Evidence = "Approved Defender for Cloud Apps proxied delivery is correlated to the configured target. Authenticated access is not yet proven." });
                 browser.Dispose();
-                return status with { State = ManagedEdgeState.ProxiedDeliveryUncorrelated, DeliveryOrigin = delivery,
+                return status with { State = ManagedEdgeState.ProxiedDeliveryUncorrelated, DeliveryOrigin = delivery, TrustDecision = ManagedEdgeTrustDecision.ProxyCorrelationFailed,
                     Evidence = "A proxied tab for this application is open, but BirkNext could not correlate it to the configured target through the browser session (live document origin and navigation from the target, Entra or the Defender sign-in intermediary). Open the configured target URL in that tab, sign in, then reconnect. Arbitrary access.mcas.ms origins are never trusted." };
             }
 
             browser.Dispose();
+            if (!proxyPermitted && proxied.Length > 0)
+            {
+                // Saved policy is exact-origin only: report the proxied delivery precisely, never trust it silently. The user may edit the
+                // environment's Browser delivery trust if the proxied delivery is approved for this target.
+                var delivery = proxied.Length == 1 ? ManagedEdgePolicy.Origin(proxied[0].Url) : null;
+                return status with { State = ManagedEdgeState.ProxiedDeliveryNotPermitted, DeliveryOrigin = delivery, TrustDecision = ManagedEdgeTrustDecision.ProxyNotPermitted,
+                    Evidence = "Browser delivery is proxied by Microsoft Defender for Cloud Apps, but this environment permits exact-origin delivery only. " +
+                        (discovered > 0 ? "The exact-origin tab is open but Edge refuses debugger attachment to it. " : "") +
+                        "If the proxied delivery is approved for this target, change the environment's Browser delivery trust to 'Exact origin + approved MCAS proxy' and save; otherwise open the target directly." };
+            }
             // The browser advertises the tab but refused to expose it to the debugger: report that precisely instead of "not found".
             if (discovered > 0)
-                return status with { State = ManagedEdgeState.TargetTabNotInspectable,
+                return status with { State = ManagedEdgeState.TargetTabNotInspectable, TrustDecision = ManagedEdgeTrustDecision.TargetNotInspectable,
                     Evidence = "The target tab is open, but Edge refused debugger attachment to it. This is expected for a Microsoft Defender for Cloud Apps protected session in a signed-in Edge work profile, where developer tools are turned off. BirkNext does not bypass browser protection, so authenticated access cannot be verified through CDP for this tab." };
-            return status with { State = ManagedEdgeState.TargetTabNotFound,
-                Evidence = proxied.Length > 0
-                    ? "No exact-origin tab is open. A Defender for Cloud Apps proxied tab for this application exists, but exact origin trust is active; enable approved MCAS proxy trust to evaluate it."
-                    : "Open the target application in Edge, then reconnect." };
+            return status with { State = ManagedEdgeState.TargetTabNotFound, TrustDecision = ManagedEdgeTrustDecision.NotTrusted, Evidence = "Open the target application in Edge, then reconnect." };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             browser?.Dispose();
             // Never return/log transport exceptions: they may contain URLs or protocol data.
-            return new() { Endpoint = endpoint, TargetOrigin = origin, State = ManagedEdgeState.Failed, Evidence = "Local CDP connection failed. Check Edge and port 9222, then retry." };
+            return new() { Endpoint = endpoint, TargetOrigin = origin, TrustModel = request.TrustModel, State = ManagedEdgeState.Failed, TrustDecision = ManagedEdgeTrustDecision.NotTrusted, Evidence = "Local CDP connection failed. Check Edge and port 9222, then retry." };
         }
         catch (OperationCanceledException) { browser?.Dispose(); throw; }
         finally { _connectGate.Release(); }
@@ -97,10 +111,11 @@ public sealed class ManagedEdgeCdpService(IManagedEdgeConnector connector, IOpti
     }
 
     /// <summary>
-    /// Approved MCAS proxied delivery requires every signal: user opt-in (trust model), HTTPS access.mcas.ms host with the target's
-    /// application identity (already checked by the caller), the live document origin equal to the delivery origin, and navigation history
-    /// that ties the tab to the same sign-in flow (configured target, Entra authority, or the Defender sign-in intermediary).
-    /// Returns a non-sensitive evidence summary, or null when correlation fails.
+    /// Approved MCAS proxied delivery requires every signal: the SAVED environment policy permits it (ApprovedMcasProxyOrigin), HTTPS
+    /// access.mcas.ms host with the target's application identity (already checked by the caller via
+    /// <see cref="ManagedEdgePolicy.IsCorrelatedMcasProxyOrigin"/>), the live document origin equal to the delivery origin, and navigation
+    /// history that ties the tab to the same sign-in flow (configured target, Entra authority, or the Defender sign-in intermediary).
+    /// Only origins (scheme/host/port) are read; nothing is navigated. Returns a non-sensitive evidence summary, or null when correlation fails.
     /// </summary>
     private static async Task<string?> CorrelateProxiedDeliveryAsync(IManagedEdgePage page, string targetOrigin, string deliveryOrigin)
     {
@@ -118,7 +133,7 @@ public sealed class ManagedEdgeCdpService(IManagedEdgeConnector connector, IOpti
         var sawIntermediary = history.Any(h => ManagedEdgePolicy.IsMcasIntermediaryOrigin(h, deliveryOrigin));
         if (!sawTarget && !sawEntra && !sawIntermediary) return null;
         var flow = string.Join(", ", new[] { sawTarget ? "configured target" : null, sawEntra ? "Entra authority" : null, sawIntermediary ? "Defender sign-in intermediary" : null }.Where(s => s is not null));
-        return $"User opted in; HTTPS access.mcas.ms delivery; application identity {new Uri(targetOrigin).IdnHost.Replace('.', '-')}; live document origin matches; navigation history includes {flow}.";
+        return $"Saved policy permits approved MCAS proxy; HTTPS access.mcas.ms delivery; application identity {new Uri(targetOrigin).IdnHost.Replace('.', '-')}; live document origin matches; navigation history includes {flow}.";
     }
 
     private Session Get(ManagedEdgeSessionRequest request)
@@ -206,7 +221,7 @@ public sealed class ManagedEdgeCdpService(IManagedEdgeConnector connector, IOpti
     private static ManagedEdgeStatus Stale(Session session)
     {
         session.Status = session.Status with { State = ManagedEdgeState.Stale, OriginMatched = false, RestAvailable = false, GraphQlAvailable = false, Probe = null,
-            Evidence = "Browser connection, page or verification changed. Reconnect and verify again." };
+            TrustDecision = ManagedEdgeTrustDecision.NotTrusted, Evidence = "Browser connection, page or verification changed. Reconnect and verify again." };
         if (!session.Disposed) { session.Disposed = true; session.Browser.Dispose(); }
         return session.Status;
     }

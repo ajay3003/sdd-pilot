@@ -60,9 +60,12 @@ public sealed class ManagedEdgeMcasProxyTrustTests
         _browser.SetupGet(b => b.Pages).Returns(new[] { _proxy.Object });
         using var service = Service();
         var status = await service.ConnectAsync(Request(ManagedEdgeTrustModel.ExactOrigin));
-        Assert.Equal(ManagedEdgeState.TargetTabNotFound, status.State);
+        Assert.Equal(ManagedEdgeState.ProxiedDeliveryNotPermitted, status.State);
+        Assert.Equal(ManagedEdgeTrustDecision.ProxyNotPermitted, status.TrustDecision);
+        Assert.Equal(ManagedEdgeTrustModel.ExactOrigin, status.TrustModel);
         Assert.Null(status.SessionId);
-        Assert.Contains("enable approved MCAS proxy trust", status.Evidence);
+        Assert.False(status.OriginMatched);
+        Assert.Contains("permits exact-origin delivery only", status.Evidence);
         _browser.Verify(b => b.Dispose(), Times.Once);
     }
 
@@ -78,6 +81,7 @@ public sealed class ManagedEdgeMcasProxyTrustTests
         Assert.Equal(ProxyOrigin, status.DeliveryOrigin);   // proxy is only the delivery origin
         Assert.True(status.ProxiedDelivery);
         Assert.Equal(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, status.TrustModel);
+        Assert.Equal(ManagedEdgeTrustDecision.ApprovedProxyTrusted, status.TrustDecision);
         Assert.Equal("Microsoft Defender for Cloud Apps proxy", status.BrowserDelivery);
         Assert.NotNull(status.CorrelationEvidence);
         Assert.Contains("navigation history includes", status.CorrelationEvidence);
@@ -92,7 +96,12 @@ public sealed class ManagedEdgeMcasProxyTrustTests
         Assert.Equal(ManagedEdgeState.ConnectedUnproven, status.State);
         Assert.Equal(Origin, status.DeliveryOrigin);
         Assert.False(status.ProxiedDelivery);
-        Assert.Equal(ManagedEdgeTrustModel.ExactOrigin, status.TrustModel);
+        // The saved policy is echoed unchanged; the DECISION says the exact origin won.
+        Assert.Equal(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin, status.TrustModel);
+        Assert.Equal(ManagedEdgeTrustDecision.ExactOriginTrusted, status.TrustDecision);
+        Assert.Null(status.CorrelationEvidence);
+        _proxy.Verify(p => p.GetLocationOriginAsync(), Times.Never);
+        _proxy.Verify(p => p.GetNavigationOriginsAsync(), Times.Never);
     }
 
     [Theory]
@@ -108,6 +117,7 @@ public sealed class ManagedEdgeMcasProxyTrustTests
         using var service = Service();
         var status = await service.ConnectAsync(Request(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin));
         Assert.Equal(ManagedEdgeState.ProxiedDeliveryUncorrelated, status.State);
+        Assert.Equal(ManagedEdgeTrustDecision.ProxyCorrelationFailed, status.TrustDecision);
         Assert.Null(status.SessionId);
         Assert.False(status.AuthenticatedBrowserAvailable);
         Assert.Contains("could not correlate", status.Evidence);

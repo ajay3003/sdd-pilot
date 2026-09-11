@@ -46,35 +46,29 @@
     <p role="status" data-testid="edge-manual-signin">@ManualSignInLabel</p>
 
     <h3>Browser connection</h3>
-    <div class="form-field" data-testid="edge-trust-model">
-        <label class="fa-check-row">
-            <input type="checkbox" disabled="@(Runtime is null || Runtime.Busy)" checked="@ProxyTrustEnabled" @onchange="OnProxyTrustChanged" />
-            <span>Accept an approved Microsoft Defender for Cloud Apps proxied delivery for this target</span>
-        </label>
-        <p class="fa-section-note">
-            When on, BirkNext may connect to a Defender for Cloud Apps reverse-proxy tab (a correlated <code>*.access.mcas.ms</code> origin) instead of the exact origin,
-            but only when the browser session ties it back to @SafeOrigin. The Frontend URL is never changed to the proxy address; the proxy is only the runtime delivery origin.
-        </p>
-    </div>
-    <dl class="fa-detail-list">
-        <div class="fa-dl-row"><dt>Trust model</dt><dd>@TrustModelLabel</dd></div>
+    <dl class="fa-detail-list" data-testid="edge-connection">
         <div class="fa-dl-row"><dt>Connection</dt><dd>@(Status.SessionId is null ? "Not connected" : "Connected") (@Status.State)</dd></div>
-        <div class="fa-dl-row"><dt>Configured target</dt><dd>@(Status.TargetOrigin ?? SafeOrigin)</dd></div>
-        <div class="fa-dl-row"><dt>Browser delivery</dt><dd>@Status.BrowserDelivery</dd></div>
-        @if (Status.ProxiedDelivery)
-        {
-            <div class="fa-dl-row"><dt>Observed browser origin</dt><dd>@Status.DeliveryOrigin</dd></div>
-        }
         <div class="fa-dl-row"><dt>Target tab</dt><dd>@TargetTabLabel</dd></div>
         <div class="fa-dl-row"><dt>Contexts / pages</dt><dd>@Status.ContextCount / @Status.PageCount</dd></div>
     </dl>
-    @if (Status.CorrelationEvidence is { } correlation)
-    {
-        <p role="status" data-testid="edge-correlation"><strong>Approved MCAS proxied delivery</strong> — @correlation</p>
-    }
     <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || Profile is null || Preflight?.LocalBrowserIntegrationAvailable == false)" @onclick="Connect">Connect to managed Edge</button>
     <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || Status.State is not (ManagedEdgeState.ConnectedUnproven or ManagedEdgeState.ConnectedAuthenticated))" @onclick="Verify">Verify authenticated access</button>
     <button type="button" class="btn-secondary" disabled="@(Runtime is null || Status.SessionId is null)" @onclick="Disconnect">Disconnect BirkNext from Edge</button>
+
+    <h3>Browser delivery</h3>
+    <p class="fa-section-note">
+        Runtime observation only, never saved. The trust policy itself is part of this environment's saved configuration
+        (Authentication → Browser delivery trust); connecting, verifying or disconnecting never changes it. Direct delivery at the configured
+        target origin is always preferred; an approved Microsoft Defender for Cloud Apps proxied delivery is only a permitted fallback.
+    </p>
+    <dl class="fa-detail-list" data-testid="edge-browser-delivery">
+        <div class="fa-dl-row"><dt>Configured target</dt><dd>@(Status.TargetOrigin ?? SafeOrigin)</dd></div>
+        <div class="fa-dl-row"><dt>Configured trust</dt><dd data-testid="edge-configured-trust">@ConfiguredTrustLabel</dd></div>
+        <div class="fa-dl-row"><dt>Observed browser origin</dt><dd data-testid="edge-observed-origin">@(Status.DeliveryOrigin ?? "Not observed")</dd></div>
+        <div class="fa-dl-row"><dt>Delivery</dt><dd data-testid="edge-delivery">@BrowserDeliveryTrustLabels.Delivery(Status)</dd></div>
+        <div class="fa-dl-row"><dt>Trust decision</dt><dd data-testid="edge-trust-decision">@BrowserDeliveryTrustLabels.Decision(Status)</dd></div>
+        <div class="fa-dl-row"><dt>Correlation evidence</dt><dd data-testid="edge-correlation">@(Status.CorrelationEvidence ?? "—")</dd></div>
+    </dl>
 
     <h3>Authenticated access</h3>
     <p role="status"><strong>@(Status.AuthenticatedBrowserAvailable ? "Verified" : "Not verified")</strong> — @Status.Evidence</p>
@@ -115,19 +109,15 @@
     private string TargetTabLabel => Status.OriginMatched ? (Status.ProxiedDelivery ? Status.DeliveryOrigin : Status.TargetOrigin) ?? "Matched"
         : Status.State == ManagedEdgeState.TargetTabNotInspectable ? "Found, but Edge refuses debugger attachment (protected session)"
         : Status.State == ManagedEdgeState.ProxiedDeliveryUncorrelated ? "Proxied tab found, but not correlated to the target"
+        : Status.State == ManagedEdgeState.ProxiedDeliveryNotPermitted ? "Proxied delivery found, but this environment permits exact-origin delivery only"
         : Status.State == ManagedEdgeState.AmbiguousTargetTabs ? "Multiple tabs found — keep exactly one"
         : "Not found";
-    private bool ProxyTrustEnabled => Runtime?.TrustModel == ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
-    private string TrustModelLabel => Status.TrustModel == ManagedEdgeTrustModel.ApprovedMcasProxyOrigin || ProxyTrustEnabled
-        ? (Status.ProxiedDelivery ? "Approved MCAS proxied delivery" : "Approved MCAS proxied delivery (opt-in); exact origin still preferred")
-        : "Exact origin required";
-    private void OnProxyTrustChanged(ChangeEventArgs e)
-    {
-        if (Runtime is not null) Runtime.TrustModel = e.Value is true ? ManagedEdgeTrustModel.ApprovedMcasProxyOrigin : ManagedEdgeTrustModel.ExactOrigin;
-    }
+    /// <summary>The SAVED policy (draft while editing). Read-only here: the control lives in the Authentication configuration.</summary>
+    private string ConfiguredTrustLabel => Profile is null ? "—" : BrowserDeliveryTrustLabels.PolicyShort(Profile.Authentication.BrowserDeliveryTrust);
     private string ManualSignInLabel => Status.AuthenticatedBrowserAvailable ? "User completed — browser access verified"
         : Status.State is ManagedEdgeState.ConnectedUnproven ? "Waiting — sign in manually in the connected Edge tab, then verify"
         : Status.State == ManagedEdgeState.TargetTabNotInspectable ? "Required — cannot be verified through CDP for this protected tab"
+        : Status.State == ManagedEdgeState.ProxiedDeliveryNotPermitted ? "Blocked — browser delivery is proxied by Microsoft Defender for Cloud Apps, but this environment permits exact-origin delivery only"
         : "Required — complete sign-in manually in the test Edge instance";
     private Task Check() => Runtime is not null && Profile is not null ? Runtime.CheckCompatibilityAsync(Profile) : Task.CompletedTask;
     private Task Launch() => Runtime is not null && Profile is not null ? Runtime.LaunchEdgeAsync(Profile) : Task.CompletedTask;

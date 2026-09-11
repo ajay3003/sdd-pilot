@@ -50,8 +50,6 @@ public sealed class ManagedEdgeRuntime(IManagedEdgeCdpApiService api) : IAsyncDi
 {
     private ManagedEdgeSessionRequest? _owner;
     private string? _identity;
-    /// <summary>User-selected trust model for the next connect. Approved MCAS proxy trust is opt-in and never the default.</summary>
-    public ManagedEdgeTrustModel TrustModel { get; set; } = ManagedEdgeTrustModel.ExactOrigin;
     private long _generation;
     private long _operation;
     private CancellationTokenSource? _poll;
@@ -103,7 +101,9 @@ public sealed class ManagedEdgeRuntime(IManagedEdgeCdpApiService api) : IAsyncDi
         await DisconnectAsync();
         var generation = ++_generation;
         _identity = ManualAuthenticationVerificationEvidence.Fingerprint(profile);
-        var request = new ManagedEdgeConnectRequest(profile.Id, profile.TargetUrl ?? "", _identity, TrustModel);
+        // The trust policy is the environment's SAVED Browser delivery trust (Authentication configuration). There is no runtime opt-in:
+        // exact origin is always preferred, and approved MCAS proxy fallback applies only when the saved policy permits it.
+        var request = new ManagedEdgeConnectRequest(profile.Id, profile.TargetUrl ?? "", _identity, profile.Authentication.BrowserDeliveryTrust);
         Busy = true;
         Status = new() { State = ManagedEdgeState.Connecting, Evidence = "Connecting to the local Edge instance…" };
         Changed?.Invoke();

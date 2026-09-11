@@ -56,26 +56,41 @@ Connect compares two views: the page targets advertised by `/json/list` and the 
 
 ## Trust models: exact origin and approved MCAS proxied delivery
 
-`ManagedEdgeTrustModel` binds the browser tab to the configured Target Environment:
+`ManagedEdgeTrustModel` is the environment's saved **Browser delivery trust** policy. It is persisted with the Target Environment's authentication configuration (`authentication.browserDeliveryTrust`), defaults to `ExactOrigin`, and a legacy profile without the field deserializes to `ExactOrigin`. It is the single policy source of truth: there is no per-connection opt-in, and connecting, verifying or disconnecting never changes it.
 
-- **`ExactOrigin`** (default): the connected tab's origin must equal the configured target origin. This is the only trust model unless the user opts in per connection.
-- **`ApprovedMcasProxyOrigin`** (opt-in): when Defender for Cloud Apps serves the application through its reverse proxy rather than in-browser protection, the authenticated session is delivered from a `*.access.mcas.ms` origin. BirkNext may connect to that tab, but never because the host merely ends in `access.mcas.ms`. Every signal must hold at once:
-  1. the user explicitly enabled approved MCAS proxy trust for this connection;
+- **`ExactOrigin`** (default): the connected tab's origin must equal the configured target origin. A proxied delivery is reported as `ProxiedDeliveryNotPermitted` and never trusted; the user may edit and save the policy if the proxied delivery is approved for that target.
+- **`ApprovedMcasProxyOrigin`** means *"exact origin OR approved correlated MCAS proxy"*, never *"require MCAS"*. The exact target origin is always accepted and preferred. In addition, when Defender for Cloud Apps serves the application through its reverse proxy, the authenticated session delivered from a `*.access.mcas.ms` origin may be connected — but never because the host merely ends in `access.mcas.ms`. Every signal must hold at once:
+  1. the saved environment policy is `ApprovedMcasProxyOrigin`;
   2. the configured Target Environment is known (rules stay keyed to the target, never the proxy);
   3. the proxy origin is HTTPS on the default port with no user-info;
-  4. the proxy host encodes the target application identity (target host with dots replaced by hyphens, optionally `-suffix`), the same correlation the Playwright A2 path uses (`AuthenticationOriginPolicy.IsTargetCorrelatedMcas`);
+  4. the proxy host encodes the target application identity: `<target host with dots replaced by hyphens>` optionally followed by `-<suffix>`, then `.access.mcas.ms` (`ManagedEdgePolicy.IsCorrelatedMcasProxyOrigin`, mirroring `AuthenticationOriginPolicy.IsTargetCorrelatedMcas`). `evil.access.mcas.ms` or another tenant's application never matches;
   5. the tab's live `location.origin` equals that delivery origin;
-  6. the tab's navigation history ties it to the same sign-in flow — the configured target, the Entra authority (`login.microsoftonline.com`), or a Defender sign-in intermediary origin.
+  6. the tab's navigation history (reduced to scheme/host/port inside the browser) ties it to the same sign-in flow — the configured target, the Entra authority (`login.microsoftonline.com`), or a Defender sign-in intermediary origin.
 
-If a correlated proxy tab is present but any correlation signal is missing, the state is `ProxiedDeliveryUncorrelated` and the session is never registered. An exact-origin tab always wins over a proxy tab, whatever the requested trust model.
+### Selection algorithm
 
-`ManagedEdgeStatus` keeps the two origins separate: `TargetOrigin` is always the configured environment (never replaced by the proxy), `DeliveryOrigin` is where the authenticated session is actually served, and `ProxiedDelivery`/`BrowserDelivery` describe the relationship. Selector and same-origin fetch checks run against the delivery origin (`Session.ProbeOrigin`), so REST/GraphQL base URLs are still built from the target environment, never from `access.mcas.ms`. Navigation origins are read via `Page.getNavigationHistory` and reduced to scheme/host/port before leaving the browser; no path, query, cookie, token or storage is inspected. `CorrelationEvidence` is a non-sensitive summary of which signals matched.
+Connect evaluates the observed tabs in this fixed order, whatever the saved policy:
 
-Only navigation origins and the live document origin are read for correlation — this is the same "observe navigation, never drive it" rule as the rest of the bridge. The connection is an explicit, per-session approved relationship, not an `allow any *.access.mcas.ms` rule.
+1. Exactly one inspectable tab at the exact configured target origin → select it (`TrustDecision = ExactOriginTrusted`).
+2. More than one exact-origin tab → `AmbiguousTargetTabs`.
+3. Saved policy permits the proxy and a target-correlated proxy candidate exists → correlate it; success → `ApprovedProxyTrusted`, failure → `ProxiedDeliveryUncorrelated` / `ProxyCorrelationFailed`. An exact-origin tab that is advertised but not inspectable (Defender in-browser protection) does **not** block this step.
+4. Saved policy is `ExactOrigin` and a proxied delivery is observed → `ProxiedDeliveryNotPermitted` / `ProxyNotPermitted`.
+5. Exact tab advertised but not attachable → `TargetTabNotInspectable`.
+6. Otherwise → `TargetTabNotFound`.
+
+Consequences that are covered by `ManagedEdgeTrustLifecycleTests`:
+
+- **MCAS removed later**: an environment saved as `ApprovedMcasProxyOrigin` whose delivery returns to the exact origin connects through step 1 with no profile edit, no Save and no trust-model change. Runtime status then shows configured trust *Approved MCAS proxy permitted*, observed delivery *Direct*, trust decision *Exact origin — trusted*.
+- **MCAS introduced later**: the same environment falls back to step 3 automatically when the exact page becomes uninspectable and a correlated proxy delivery appears.
+- **`ExactOrigin` stays strict**: introducing MCAS for an `ExactOrigin` environment yields `ProxiedDeliveryNotPermitted`; nothing is trusted until the user explicitly edits and saves the policy.
+
+`ManagedEdgeStatus` keeps configuration and observation separate: `TrustModel` echoes the saved policy, `TrustDecision` is the runtime decision, `TargetOrigin` is always the configured environment (never replaced by the proxy), `DeliveryOrigin` is where the authenticated session is actually served, and `ProxiedDelivery`/`BrowserDelivery` describe the relationship. Selector and same-origin fetch checks run against the delivery origin (`Session.ProbeOrigin`); REST/GraphQL base URLs are still built from the target environment, never from `access.mcas.ms`. Navigation origins are read via `Page.getNavigationHistory` and reduced to scheme/host/port before leaving the browser; no path, query, cookie, token or storage is inspected. `CorrelationEvidence` is a non-sensitive summary of which signals matched. None of the runtime values (delivery origin, decision, evidence, session, proof) is ever persisted.
+
+Only navigation origins and the live document origin are read for correlation — this is the same "observe navigation, never drive it" rule as the rest of the bridge; BirkNext never navigates a tab to manufacture correlation evidence.
 
 ## State and lifecycle
 
-Session handles, proof, counts, capabilities and compatibility results are transient. No field is added to saved environment profiles. A profile/context digest binds requests to the selected configuration; a compatibility result is shown only for the target origin it was checked for. URL/auth/security changes and environment selection immediately revoke frontend availability and disconnect the old session. Backend status revokes proof for closed tabs, navigation, disconnected browsers, and expiry. Verification expires after two minutes and sessions after thirty minutes. UI polls every three seconds; the backend also cleans up expired connections. No cookie, token, storage, response body, or transport exception is logged or returned.
+Session handles, proof, counts, capabilities, trust decisions, delivery origins and compatibility results are transient. The only persisted managed-Edge value is the Browser delivery trust policy, which lives in the environment's saved authentication configuration and follows the normal Edit / Save / Cancel flow; changing it invalidates the current runtime session (the verification context fingerprint includes authentication configuration) but never invalidates public target detection. A profile/context digest binds requests to the selected configuration; a compatibility result is shown only for the target origin it was checked for. URL/auth/security changes and environment selection immediately revoke frontend availability and disconnect the old session. Backend status revokes proof for closed tabs, navigation, disconnected browsers, and expiry. Verification expires after two minutes and sessions after thirty minutes. UI polls every three seconds; the backend also cleans up expired connections. No cookie, token, storage, response body, or transport exception is logged or returned.
 
 Machine-proven browser access can satisfy the authentication activation gate when configuration, detection freshness, framework, warning and unsaved-change gates also pass. Historical manual attestation retains its separate semantics and never grants authenticated automation coverage. Neither path activates automatically. Disconnecting CDP does not invalidate public detection. Compatibility check, launch, connect, verify and disconnect never enter edit mode or mark the environment dirty.
 

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BirkNext.ManagedEdge;
 
 namespace BirkNext.Web.Models;
 
@@ -244,6 +245,14 @@ public sealed class FrontendAuthenticationSettings
     [JsonPropertyName("expectedTenant")]             public string?                   ExpectedTenant             { get; set; }
     [JsonPropertyName("expectedClientId")]           public string?                   ExpectedClientId           { get; set; }
     [JsonPropertyName("allowedRedirectUrls")]        public List<string>              AllowedRedirectUrls        { get; set; } = [];
+
+    /// <summary>
+    /// Saved Browser delivery trust policy for managed-Edge authenticated testing. This is the single policy source of truth:
+    /// ExactOrigin (default) accepts only a tab at the configured target origin; ApprovedMcasProxyOrigin ALSO accepts a strongly
+    /// correlated Microsoft Defender for Cloud Apps proxied delivery while still preferring the exact origin. Legacy profiles without
+    /// the field deserialize to ExactOrigin. Observed delivery, trust decisions and sessions are runtime-only and never persisted.
+    /// </summary>
+    [JsonPropertyName("browserDeliveryTrust")]       public ManagedEdgeTrustModel     BrowserDeliveryTrust       { get; set; } = ManagedEdgeTrustModel.ExactOrigin;
 }
 
 public sealed class FrontendPerformanceThresholds

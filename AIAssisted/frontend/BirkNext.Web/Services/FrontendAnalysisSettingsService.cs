@@ -260,6 +260,12 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
                 errors.Add($"Redirect URL \"{url}\" is not a valid absolute URL.");
         }
 
+        // Approved MCAS proxy trust correlates an HTTPS *.access.mcas.ms delivery to the target host; a non-HTTPS target is a configuration smell, not an error.
+        if (profile.Authentication.BrowserDeliveryTrust == BirkNext.ManagedEdge.ManagedEdgeTrustModel.ApprovedMcasProxyOrigin &&
+            !string.IsNullOrWhiteSpace(profile.TargetUrl) &&
+            profile.TargetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+            warnings.Add("Browser delivery trust permits an approved Microsoft Defender for Cloud Apps proxy, but the Frontend URL is not HTTPS. Exact-origin delivery is still preferred.");
+
         var perf = profile.Performance;
         if (perf.MaxAverageApiLatencyMs          <= 0) errors.Add("Maximum Average API Latency must be a positive value.");
         if (perf.MaxSingleRequestLatencyMs       <= 0) errors.Add("Maximum Single Request Latency must be a positive value.");

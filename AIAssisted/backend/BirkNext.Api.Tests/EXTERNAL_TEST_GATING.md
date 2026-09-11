@@ -109,6 +109,24 @@ Expected result:
 - Tests execute with real browser automation
 - Duration: ~10-20 seconds
 
+### Run Live M2LB Dev Tests
+
+`RealM2LBDetectionTests` run the real detection service (real DNS and HTTP) against https://m2lbdev.bufetat.no/. They depend on network access and target availability, so they are **not** part of the deterministic suite. They are not hidden behind a permanent `[Fact(Skip)]` either: `[LiveM2LBFact]` (`TestInfrastructure/LiveM2LBTestGate.cs`) reports each test as *skipped with an explicit reason* when the opt-in variable is absent, and executes it when the variable is set.
+
+```bash
+set RUN_LIVE_M2LB_TESTS=true
+dotnet test BirkNext.Api.Tests -c Release --filter "Category=LiveM2LB"
+```
+
+or `AIAssisted/scripts/run-live-m2lb-tests.ps1` (sets the variable for that run only).
+
+Expected result:
+- 5 live detection tests execute (reachability, profile suggestion, authentication detection, SSRF/DNS, configuration detection)
+- Only unauthenticated public discovery GETs are sent (the same requests as "Detect settings"); no credentials, MFA, browser, CDP or MCAS interaction
+- Duration: a few seconds per test, network dependent
+
+Without the variable the deterministic run reports exactly these 5 tests as skipped. Deterministic equivalents (fake HTTP/DNS) live in the always-on `TargetEnvironmentDetection` unit tests.
+
 ## Implementation Details
 
 ### ExternalFrontendQualityTestGate
@@ -129,6 +147,7 @@ if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
 |----------|---------|---------|
 | `RUN_EXTERNAL_FRONTEND_QUALITY_TESTS` | Enable all external tool tests | unset (disabled) |
 | `RUN_LOCAL_AUTHENTICATED_BROWSER_TESTS` | Enable headed browser tests | unset (disabled) |
+| `RUN_LIVE_M2LB_TESTS` | Enable live M2LB Dev network tests (`Category=LiveM2LB`) | unset (reported as skipped) |
 
 ### Test Categories
 
@@ -142,6 +161,7 @@ if (!ExternalFrontendQualityTestGate.IsLocalHeadedEnabled) return;
 | `AuthenticatedReviewPhaseA3RealAcceptance` | 8 | Playwright + local HTTP | `IsLocalHeadedEnabled` |
 | `LocalHeadedPlaywright` | 1 | Visible Playwright browser | `IsLocalHeadedEnabled` |
 | `ExternalEngineHardening` | 6 | None (mocked) | None - always runs |
+| `LiveM2LB` | 5 | Network access to M2LB Dev | `[LiveM2LBFact]` (skipped with reason unless `RUN_LIVE_M2LB_TESTS=true`) |
 
 ### Guard Pattern
 

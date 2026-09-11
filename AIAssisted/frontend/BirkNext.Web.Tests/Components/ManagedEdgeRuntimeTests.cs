@@ -41,6 +41,7 @@ public sealed class ManagedEdgeRuntimeTests : BunitContext
     [InlineData("profile")]
     [InlineData("url")]
     [InlineData("auth")]
+    [InlineData("trust")]
     public async Task IdentityChangeImmediatelyStalesAndDisconnects(string change)
     {
         await using var runtime = new ManagedEdgeRuntime(_api.Object);
@@ -49,6 +50,8 @@ public sealed class ManagedEdgeRuntimeTests : BunitContext
         if (change == "profile") _profile.Id = "qa";
         if (change == "url") _profile.TargetUrl = "https://other.test";
         if (change == "auth") _profile.Authentication.ExpectedTenant = "changed";
+        // Changing the saved Browser delivery trust invalidates the runtime session (a proxied session must not survive a switch to exact-only).
+        if (change == "trust") _profile.Authentication.BrowserDeliveryTrust = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
         Assert.Equal(ManagedEdgeState.Stale, runtime.For(_profile).State);
         Assert.False(runtime.For(_profile).AuthenticatedBrowserAvailable);
         await runtime.SynchronizeAsync(_profile);
@@ -111,8 +114,8 @@ public sealed class ManagedEdgeRuntimeTests : BunitContext
         {
             Click(cut, action);
             cut.WaitForAssertion(() => Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel"));
-            // Settings form stays read-only; the managed Edge runtime panel may carry its own controls (e.g. the proxy-trust opt-in).
-            Assert.Empty(cut.FindAll("input, select, textarea").Where(e => e.Closest("[data-testid=managed-edge-panel]") is null));
+            // Settings form stays read-only and the managed Edge runtime panel has no editable control (no runtime trust opt-in).
+            Assert.Empty(cut.FindAll("input, select, textarea"));
             Assert.Equal(persisted, JsonSerializer.Serialize(settings.Settings));
             Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "birkNextStorage.setItem");
             Assert.DoesNotContain("Needs re-check", cut.Markup);

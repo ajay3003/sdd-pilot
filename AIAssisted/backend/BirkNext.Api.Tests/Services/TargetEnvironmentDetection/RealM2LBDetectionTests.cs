@@ -1,6 +1,7 @@
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.FrontendBrowserRuntime;
 using BirkNext.Api.Services.TargetEnvironmentDetection;
+using BirkNext.Api.Tests.TestInfrastructure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -8,10 +9,18 @@ using Xunit;
 namespace BirkNext.Api.Tests.Services.TargetEnvironmentDetection;
 
 /// <summary>
-/// Phase 3: Real M2LB Environment Detection Tests
-/// Tests the TargetEnvironmentDetectionService against actual M2LB dev environment
-/// Verifies: DNS resolution, SSRF validation, hostname detection, authentication detection
+/// Live M2LB environment detection tests. They run the real <see cref="TargetEnvironmentDetectionService"/> (real DNS,
+/// real HTTP) against the M2LB Dev target and therefore depend on network access and target availability.
+///
+/// Category <c>LiveM2LB</c>; gated by <see cref="LiveM2LBTestGate"/> (RUN_LIVE_M2LB_TESTS=true). Without the opt-in every
+/// test is reported as skipped with an explicit reason; it is never a silent pass and never part of deterministic CI.
+/// The equivalent deterministic behaviour (SSRF validation, hostname classification, authentication detection,
+/// configuration detection) is covered by the always-on TargetEnvironmentDetection unit tests with fake HTTP/DNS.
+///
+/// Only unauthenticated public discovery GETs are performed - the same requests as the "Detect settings" feature.
+/// No credentials, MFA, browser, CDP or MCAS interaction is involved.
 /// </summary>
+[Trait("Category", LiveM2LBTestGate.Category)]
 public sealed class RealM2LBDetectionTests
 {
     private readonly BrowserTargetValidator _validator = new();
@@ -24,7 +33,7 @@ public sealed class RealM2LBDetectionTests
         _resolverLogger = new NullLogger<DnsTargetHostResolver>();
     }
 
-    [Fact(Skip = "Real M2LB integration test - only run against live environment")]
+    [LiveM2LBFact]
     public async Task RealM2LBDev_Reachable_DetectionSucceeds()
     {
         // Arrange
@@ -48,7 +57,7 @@ public sealed class RealM2LBDetectionTests
         Assert.Equal("https://m2lbdev.bufetat.no/", result.OriginalUrl);
     }
 
-    [Fact(Skip = "Real M2LB integration test - only run against live environment")]
+    [LiveM2LBFact]
     public async Task RealM2LBDev_M2LBProfileDetected()
     {
         // Arrange
@@ -69,7 +78,7 @@ public sealed class RealM2LBDetectionTests
         Assert.Contains("M2LB", result.SuggestedProfileName, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact(Skip = "Real M2LB integration test - only run against live environment")]
+    [LiveM2LBFact]
     public async Task RealM2LBDev_AuthenticationDetection()
     {
         // Arrange
@@ -92,7 +101,7 @@ public sealed class RealM2LBDetectionTests
         }
     }
 
-    [Fact(Skip = "Real M2LB integration test - only run against live environment")]
+    [LiveM2LBFact]
     public async Task RealM2LBDev_NoSSRFErrors()
     {
         // Arrange
@@ -112,7 +121,7 @@ public sealed class RealM2LBDetectionTests
         Assert.NotEqual(TargetReachability.DnsError, result.Reachability);
     }
 
-    [Fact(Skip = "Real M2LB integration test - only run against live environment")]
+    [LiveM2LBFact]
     public async Task RealM2LBDev_ConfigurationDetection()
     {
         // Arrange
