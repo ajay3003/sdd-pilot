@@ -53,8 +53,11 @@ public sealed class RealM2LBDetectionTests
         Assert.True(result.Reachability == TargetReachability.Reachable || result.Reachability == TargetReachability.AuthenticationRequired,
             $"Expected Reachable or AuthenticationRequired, got {result.Reachability}");
 
-        // Verify hostname is recognized
-        Assert.Equal("https://m2lbdev.bufetat.no/", result.OriginalUrl);
+        // Verify the target identity is recognized. OriginalUrl is the sanitized application target (scheme://host[/path], no query,
+        // fragment or trailing slash for the root path) - see TargetEnvironmentDetectionService.GetNormalizedApplicationTarget.
+        Assert.Equal("https://m2lbdev.bufetat.no", new Uri(result.OriginalUrl!, UriKind.Absolute).GetLeftPart(UriPartial.Authority));
+        Assert.DoesNotContain("?", result.OriginalUrl);
+        Assert.DoesNotContain("#", result.OriginalUrl);
     }
 
     [LiveM2LBFact]
