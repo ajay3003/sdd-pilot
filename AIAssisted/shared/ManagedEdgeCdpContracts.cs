@@ -8,15 +8,26 @@ public enum ManagedEdgeState
     NotConfigured, NotConnected, Connecting, Connected, TargetTabNotFound,
     AmbiguousTargetTabs, ConnectedUnproven, ConnectedAuthenticated, Failed, Stale,
     /// <summary>The target tab is open, but the browser refused debugger attachment to it (for example a Defender for Cloud Apps protected session).</summary>
-    TargetTabNotInspectable
+    TargetTabNotInspectable,
+    /// <summary>A target-correlated MCAS proxy tab exists, but the required correlation signals for approved proxied delivery were not all present.</summary>
+    ProxiedDeliveryUncorrelated
 }
 
 /// <summary>Edge RemoteDebuggingAllowed policy. NotConfigured is not Blocked.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum EdgeRemoteDebuggingPolicyStatus { Unknown, NotConfigured, Allowed, Blocked }
 
+/// <summary>
+/// How the browser tab is bound to the configured Target Environment.
+/// ExactOrigin: the tab origin must equal the configured target origin.
+/// ApprovedMcasProxyOrigin: the tab may be a Microsoft Defender for Cloud Apps reverse-proxy delivery of the same application,
+/// accepted only when the user opted in and every correlation signal ties it to the configured target. Never "any *.access.mcas.ms".
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ManagedEdgeTrustModel { ExactOrigin, ApprovedMcasProxyOrigin }
+
 // Runtime evidence only. Never add these objects to persisted environment profiles.
-public sealed record ManagedEdgeConnectRequest(string ProfileId, string TargetUrl, string ContextFingerprint);
+public sealed record ManagedEdgeConnectRequest(string ProfileId, string TargetUrl, string ContextFingerprint, ManagedEdgeTrustModel TrustModel = ManagedEdgeTrustModel.ExactOrigin);
 public sealed record ManagedEdgeSessionRequest(string SessionId, string ProfileId, string ContextFingerprint);
 public sealed record ManagedEdgeFetchRequest(string SessionId, string ProfileId, string ContextFingerprint, string Path, string? GraphQlQuery = null);
 public sealed record ManagedEdgeProbeResult(int StatusCode, string ContentType, double ElapsedMs);
@@ -28,7 +39,15 @@ public sealed record ManagedEdgeStatus
     public string? SessionId { get; init; }
     public ManagedEdgeState State { get; init; } = ManagedEdgeState.NotConnected;
     public string Endpoint { get; init; } = "http://127.0.0.1:9222";
+    /// <summary>Configured Target Environment origin. Never replaced by a proxy origin.</summary>
     public string? TargetOrigin { get; init; }
+    /// <summary>Origin the authenticated browser session is actually delivered from. Equals TargetOrigin for direct delivery.</summary>
+    public string? DeliveryOrigin { get; init; }
+    public ManagedEdgeTrustModel TrustModel { get; init; } = ManagedEdgeTrustModel.ExactOrigin;
+    /// <summary>Non-sensitive summary of the correlation signals that bound a proxied delivery to the target.</summary>
+    public string? CorrelationEvidence { get; init; }
+    public bool ProxiedDelivery => DeliveryOrigin is not null && TargetOrigin is not null && !string.Equals(DeliveryOrigin, TargetOrigin, StringComparison.OrdinalIgnoreCase);
+    public string BrowserDelivery => ProxiedDelivery ? "Microsoft Defender for Cloud Apps proxy" : "Direct";
     public int ContextCount { get; init; }
     public int PageCount { get; init; }
     /// <summary>Target-origin page targets advertised by the browser, whether or not they are inspectable.</summary>

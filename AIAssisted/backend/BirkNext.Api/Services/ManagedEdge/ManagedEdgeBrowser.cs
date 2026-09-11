@@ -22,6 +22,10 @@ public interface IManagedEdgePage
     bool NavigationChanged { get; }
     Task<bool> HasAuthenticatedElementAsync(string origin, string selector);
     Task<ManagedEdgeProbeResult> FetchAsync(string origin, string path, string? query);
+    /// <summary>Live document origin of the page (location.origin), used to bind a proxied delivery to the page context.</summary>
+    Task<string?> GetLocationOriginAsync();
+    /// <summary>Origins (scheme://host[:port] only) of the tab's navigation history. Paths, queries and fragments are discarded before leaving the browser.</summary>
+    Task<IReadOnlyList<string>> GetNavigationOriginsAsync();
 }
 
 public interface IManagedEdgeConnector
@@ -108,7 +112,42 @@ public sealed class ManagedEdgeConnector : IManagedEdgeConnector
             }
             """, new { origin, selector });
 
-        public Task<ManagedEdgeProbeResult> FetchAsync(string origin, string path, string? query) => _page.EvaluateAsync<ManagedEdgeProbeResult>(
+        public async Task<string?> GetLocationOriginAsync()
+        {
+            var value = await _page.EvaluateAsync<string>("() => location.origin");
+            return string.IsNullOrWhiteSpace(value) || value == "null" ? null : value;
+        }
+
+        // Page.getNavigationHistory returns full URLs; only their origins are kept. Nothing else from the CDP session is read.
+        public async Task<IReadOnlyList<string>> GetNavigationOriginsAsync()
+        {
+            var session = await _page.Context.NewCDPSessionAsync(_page);
+            try
+            {
+                var history = await session.SendAsync("Page.getNavigationHistory");
+                if (history is not { } element || !element.TryGetProperty("entries", out var entries) || entries.ValueKind != JsonValueKind.Array) return [];
+                return entries.EnumerateArray()
+                    .Select(e => e.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String ? url.GetString() : null)
+                    .Select(u => Uri.TryCreate(u, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" ? uri.GetLeftPart(UriPartial.Authority).ToLowerInvariant() : null)
+                    .Where(o => o is not null).Select(o => o!).ToArray();
+            }
+            finally { await session.DetachAsync(); }
+        }
+
+        // Playwright .NET cannot materialize a positional record from a JS object; read a JsonElement and map the three allowed fields only.
+        public async Task<ManagedEdgeProbeResult> FetchAsync(string origin, string path, string? query)
+        {
+            var raw = await _page.EvaluateAsync<JsonElement>(FetchScript, new { origin, path, query });
+            if (raw.ValueKind != JsonValueKind.Object ||
+                !raw.TryGetProperty("StatusCode", out var status) || !status.TryGetInt32(out var statusCode) ||
+                !raw.TryGetProperty("ContentType", out var contentType) || contentType.ValueKind != JsonValueKind.String ||
+                !raw.TryGetProperty("ElapsedMs", out var elapsed) || !elapsed.TryGetDouble(out var elapsedMs))
+                throw new InvalidOperationException("Probe result has an unexpected shape.");
+            var mime = contentType.GetString()!;
+            return new ManagedEdgeProbeResult(statusCode, mime.Length <= 64 ? mime : "other", elapsedMs);
+        }
+
+        private const string FetchScript =
             """
             async ({origin, path, query}) => {
                 if (location.origin !== origin) throw new Error('Origin changed');
@@ -126,6 +165,6 @@ public sealed class ManagedEdgeConnector : IManagedEdgeConnector
                 if (response.body) await response.body.cancel();
                 return {StatusCode: response.status, ContentType: safeMime, ElapsedMs: Math.round(performance.now()-start)};
             }
-            """, new { origin, path, query });
+            """;
     }
 }

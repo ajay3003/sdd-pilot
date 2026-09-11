@@ -1,3 +1,5 @@
+using System.Linq;
+using AngleSharp.Dom;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using Bunit;
@@ -128,7 +130,8 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         foreach (var tab in new[] { "Target Application", "Authentication", "Feature Toggles", "Core Web Vitals", "Performance Thresholds", "Security Expectations", "Integrations" })
         {
             OpenTab(cut, tab);
-            cut.FindAll("input, select, textarea").Should().BeEmpty(tab);
+            // Settings form stays read-only; the managed Edge runtime panel carries its own controls (e.g. the proxy-trust opt-in).
+            cut.FindAll("input, select, textarea").Where(e => e.Closest("[data-testid=managed-edge-panel]") is null).Should().BeEmpty(tab);
             cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel" || b.TextContent.Contains("Add Integration"));
         }
         cut.Markup.Should().Contain("Switch to Edit mode to add integrations");

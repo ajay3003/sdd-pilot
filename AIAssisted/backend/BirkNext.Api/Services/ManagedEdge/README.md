@@ -52,7 +52,26 @@ The first probe executes `fetch` in the existing page context. It sets no authen
 
 ## Tabs the browser refuses to expose
 
-Connect compares two views: the page targets advertised by `/json/list` and the pages Playwright could attach to. When the target origin is advertised but no page is attachable, the state is `TargetTabNotInspectable`, not `TargetTabNotFound`. This is the observed behaviour for M2LB Dev in a signed-in Edge for Business work profile: Microsoft Defender for Cloud Apps in-browser protection keeps the real origin in the address bar and turns developer tools off, and the browser answers `Target.attachToTarget` with `Not allowed` for that tab only (fresh tabs, including the `*.access.mcas.ms` sign-in interstitial, remain attachable). BirkNext reports this precisely and does not bypass browser protection; authenticated access cannot be proven through CDP for such a tab. Reference: https://learn.microsoft.com/en-us/defender-cloud-apps/in-browser-protection
+Connect compares two views: the page targets advertised by `/json/list` and the pages Playwright could attach to. When the target origin is advertised but no page is attachable, the state is `TargetTabNotInspectable`, not `TargetTabNotFound`. This is the observed behaviour for M2LB Dev in a signed-in Edge for Business work profile with in-browser protection: Microsoft Defender for Cloud Apps keeps the real origin in the address bar and turns developer tools off, and the browser answers `Target.attachToTarget` with `Not allowed` for that tab only (fresh tabs, including the `*.access.mcas.ms` sign-in interstitial, remain attachable). BirkNext reports this precisely and does not bypass browser protection; authenticated access cannot be proven through CDP for such a tab. Reference: https://learn.microsoft.com/en-us/defender-cloud-apps/in-browser-protection
+
+## Trust models: exact origin and approved MCAS proxied delivery
+
+`ManagedEdgeTrustModel` binds the browser tab to the configured Target Environment:
+
+- **`ExactOrigin`** (default): the connected tab's origin must equal the configured target origin. This is the only trust model unless the user opts in per connection.
+- **`ApprovedMcasProxyOrigin`** (opt-in): when Defender for Cloud Apps serves the application through its reverse proxy rather than in-browser protection, the authenticated session is delivered from a `*.access.mcas.ms` origin. BirkNext may connect to that tab, but never because the host merely ends in `access.mcas.ms`. Every signal must hold at once:
+  1. the user explicitly enabled approved MCAS proxy trust for this connection;
+  2. the configured Target Environment is known (rules stay keyed to the target, never the proxy);
+  3. the proxy origin is HTTPS on the default port with no user-info;
+  4. the proxy host encodes the target application identity (target host with dots replaced by hyphens, optionally `-suffix`), the same correlation the Playwright A2 path uses (`AuthenticationOriginPolicy.IsTargetCorrelatedMcas`);
+  5. the tab's live `location.origin` equals that delivery origin;
+  6. the tab's navigation history ties it to the same sign-in flow — the configured target, the Entra authority (`login.microsoftonline.com`), or a Defender sign-in intermediary origin.
+
+If a correlated proxy tab is present but any correlation signal is missing, the state is `ProxiedDeliveryUncorrelated` and the session is never registered. An exact-origin tab always wins over a proxy tab, whatever the requested trust model.
+
+`ManagedEdgeStatus` keeps the two origins separate: `TargetOrigin` is always the configured environment (never replaced by the proxy), `DeliveryOrigin` is where the authenticated session is actually served, and `ProxiedDelivery`/`BrowserDelivery` describe the relationship. Selector and same-origin fetch checks run against the delivery origin (`Session.ProbeOrigin`), so REST/GraphQL base URLs are still built from the target environment, never from `access.mcas.ms`. Navigation origins are read via `Page.getNavigationHistory` and reduced to scheme/host/port before leaving the browser; no path, query, cookie, token or storage is inspected. `CorrelationEvidence` is a non-sensitive summary of which signals matched.
+
+Only navigation origins and the live document origin are read for correlation — this is the same "observe navigation, never drive it" rule as the rest of the bridge. The connection is an explicit, per-session approved relationship, not an `allow any *.access.mcas.ms` rule.
 
 ## State and lifecycle
 

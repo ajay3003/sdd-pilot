@@ -56,6 +56,7 @@ public sealed class ManagedEdgePreflightTests
                     var stream = peer.GetStream();
                     var buffer = new byte[8192];
                     var read = await stream.ReadAsync(buffer);
+                    if (read == 0) return; // bare TCP reachability probe, not an HTTP request
                     var request = Encoding.ASCII.GetString(buffer, 0, read);
                     Interlocked.Increment(ref Requests);
                     var response = request.StartsWith("GET /json/list") ? Json(ListJson) : VersionResponse;

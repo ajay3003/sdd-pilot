@@ -51,6 +51,36 @@ public static class ManagedEdgePolicy
         catch (ArgumentException) { return false; }
     }
 
+    private const string McasSuffix = ".access.mcas.ms";
+
+    /// <summary>
+    /// Application-identity correlation for Defender for Cloud Apps reverse-proxy delivery: HTTPS, host under access.mcas.ms,
+    /// and the host prefix is the configured target host with dots replaced by hyphens (optionally followed by "-suffix").
+    /// Mirrors <see cref="AuthenticatedReview.AuthenticationOriginPolicy.IsTargetCorrelatedMcas"/>. An arbitrary *.access.mcas.ms host never matches.
+    /// </summary>
+    public static bool IsCorrelatedMcasProxyOrigin(string candidateUrl, string targetOrigin)
+    {
+        if (!Uri.TryCreate(candidateUrl, UriKind.Absolute, out var candidate) || !Uri.TryCreate(targetOrigin, UriKind.Absolute, out var target)) return false;
+        if (candidate.Scheme != Uri.UriSchemeHttps || candidate.UserInfo.Length != 0 || !candidate.IsDefaultPort) return false;
+        if (!candidate.IdnHost.EndsWith(McasSuffix, StringComparison.OrdinalIgnoreCase)) return false;
+        var prefix = candidate.IdnHost[..^McasSuffix.Length].TrimEnd('.');
+        var encodedTarget = target.IdnHost.Replace('.', '-');
+        if (prefix.Length == 0 || encodedTarget.Length == 0 || encodedTarget == candidate.IdnHost) return false;
+        return prefix.Equals(encodedTarget, StringComparison.OrdinalIgnoreCase) ||
+               prefix.StartsWith(encodedTarget + "-", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Any HTTPS access.mcas.ms origin (for example the tenant "aad_login" intermediary) that is not the delivery origin itself.</summary>
+    public static bool IsMcasIntermediaryOrigin(string url, string deliveryOrigin)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return false;
+        return uri.IdnHost.EndsWith(McasSuffix, StringComparison.OrdinalIgnoreCase) && !MatchesOrigin(url, deliveryOrigin);
+    }
+
+    public static bool IsEntraAuthorityOrigin(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps &&
+        string.Equals(uri.IdnHost, "login.microsoftonline.com", StringComparison.OrdinalIgnoreCase);
+
     public static Uri SafePath(string origin, string path)
     {
         if (string.IsNullOrWhiteSpace(path) || !path.StartsWith('/') || path.StartsWith("//") ||

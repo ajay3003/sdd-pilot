@@ -20,8 +20,10 @@ public sealed class ManagedEdgeCdpTests
         _page.SetupGet(p => p.Url).Returns(Origin + "/home");
         _page.SetupGet(p => p.IsClosed).Returns(false);
         _page.SetupGet(p => p.NavigationChanged).Returns(false);
-        _page.Setup(p => p.HasAuthenticatedElementAsync(Origin, "#signed-in-only")).ReturnsAsync(false);
-        _page.Setup(p => p.FetchAsync(Origin, "/api/me", null)).ReturnsAsync(new ManagedEdgeProbeResult(401, "application/json", 3));
+        _page.Setup(p => p.HasAuthenticatedElementAsync(It.IsAny<string>(), "#signed-in-only")).ReturnsAsync(false);
+        _page.Setup(p => p.FetchAsync(It.IsAny<string>(), "/api/me", null)).ReturnsAsync(new ManagedEdgeProbeResult(401, "application/json", 3));
+        _page.Setup(p => p.GetLocationOriginAsync()).ReturnsAsync(() => ManagedEdgePolicy.Origin(_page.Object.Url));
+        _page.Setup(p => p.GetNavigationOriginsAsync()).ReturnsAsync(new[] { Origin, "https://login.microsoftonline.com" });
         _browser.SetupGet(b => b.IsConnected).Returns(true);
         _browser.SetupGet(b => b.ContextCount).Returns(1);
         _browser.SetupGet(b => b.Pages).Returns(new[] { _page.Object });

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AngleSharp.Dom;
 using BirkNext.ManagedEdge;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
@@ -110,7 +111,8 @@ public sealed class ManagedEdgeRuntimeTests : BunitContext
         {
             Click(cut, action);
             cut.WaitForAssertion(() => Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel"));
-            Assert.Empty(cut.FindAll("input, select, textarea"));
+            // Settings form stays read-only; the managed Edge runtime panel may carry its own controls (e.g. the proxy-trust opt-in).
+            Assert.Empty(cut.FindAll("input, select, textarea").Where(e => e.Closest("[data-testid=managed-edge-panel]") is null));
             Assert.Equal(persisted, JsonSerializer.Serialize(settings.Settings));
             Assert.DoesNotContain(JSInterop.Invocations, i => i.Identifier == "birkNextStorage.setItem");
             Assert.DoesNotContain("Needs re-check", cut.Markup);
