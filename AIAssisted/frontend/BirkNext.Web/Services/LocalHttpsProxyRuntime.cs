@@ -12,7 +12,6 @@ public interface ILocalHttpsProxyApiService
     Task<LocalHttpsProxyStatus> StopAsync(LocalHttpsProxySessionRequest request);
     Task<ProxyCertificateStatus> InstallCertificateAsync();
     Task<ProxyCertificateStatus> RemoveCertificateAsync();
-    Task<LocalHttpsProxyStatus> LaunchEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request);
     Task<AuthenticatedApiExecutionResult> ExecuteRestAsync(AuthenticatedRestRequest request);
     Task<AuthenticatedApiExecutionResult> ExecuteGraphQlAsync(AuthenticatedGraphQlRequest request);
 }
@@ -32,7 +31,6 @@ public sealed class LocalHttpsProxyApiService(HttpClient http) : ILocalHttpsProx
     public Task<LocalHttpsProxyStatus> StopAsync(LocalHttpsProxySessionRequest request) => PostAsync<LocalHttpsProxyStatus>("api/local-https-proxy/stop", request);
     public Task<ProxyCertificateStatus> InstallCertificateAsync() => PostAsync<ProxyCertificateStatus>("api/local-https-proxy/certificate/install", new LocalHttpsProxyCertificateRequest(true));
     public Task<ProxyCertificateStatus> RemoveCertificateAsync() => PostAsync<ProxyCertificateStatus>("api/local-https-proxy/certificate/remove", new LocalHttpsProxyCertificateRequest(true));
-    public Task<LocalHttpsProxyStatus> LaunchEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request) => PostAsync<LocalHttpsProxyStatus>("api/local-https-proxy/launch-edge", request);
     public Task<AuthenticatedApiExecutionResult> ExecuteRestAsync(AuthenticatedRestRequest request) => PostAsync<AuthenticatedApiExecutionResult>("api/local-https-proxy/execute/rest", request);
     public Task<AuthenticatedApiExecutionResult> ExecuteGraphQlAsync(AuthenticatedGraphQlRequest request) => PostAsync<AuthenticatedApiExecutionResult>("api/local-https-proxy/execute/graphql", request);
 }
@@ -169,17 +167,6 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         Changed?.Invoke();
         try { var certificate = await action(); if (generation == _generation) Status = Status with { Certificate = certificate }; }
         catch { if (generation == _generation) Status = Status with { FailureReason = "The certificate action did not complete. Trust state is unchanged." }; }
-        finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
-    }
-
-    public async Task LaunchEdgeAsync()
-    {
-        if (_owner is not { } owner || Busy) return;
-        var generation = _generation;
-        Busy = true;
-        Changed?.Invoke();
-        try { var result = await api.LaunchEdgeAsync(new(owner.SessionId, owner.ProfileId, owner.ContextFingerprint)); if (generation == _generation) Status = result; }
-        catch { if (generation == _generation) Status = Status with { FailureReason = "Starting Edge with the proxy did not complete. Configure the proxy manually in Windows proxy settings instead." }; }
         finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
     }
 

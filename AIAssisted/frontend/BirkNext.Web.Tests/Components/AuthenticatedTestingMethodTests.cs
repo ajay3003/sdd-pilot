@@ -520,4 +520,51 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal("Waiting for authenticated traffic", Row(cut, "proxy-credential"));
         cut.WaitForAssertion(() => _proxyApi.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.AtLeastOnce));
     }
+
+    // ── proxy Step 3 — Browser uses normal managed Edge only (no integrated launch) ──
+
+    [Fact]
+    public void ProxyBrowserStepUsesNormalManagedEdgeAndHasNoIntegratedLaunch()
+    {
+        var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
+        OpenTab(cut, "Authentication");
+        Assert.True(Has(cut, "local-https-proxy-panel"));
+        Assert.True(Has(cut, "proxy-browser-step"));
+        // No integrated/separate browser launch in proxy mode.
+        Assert.False(HasButton(cut, "Start Edge with proxy"));
+        Assert.DoesNotContain("--proxy-server", cut.Markup);
+        Assert.DoesNotContain("--remote-debugging", cut.Markup);
+        // Normal managed Edge / manual instructions.
+        Assert.Equal("Manual", Row(cut, "proxy-browser-auth"));
+        Assert.Contains("normal managed Microsoft Edge", cut.Markup);
+        Assert.True(Has(cut, "proxy-setup-instructions"));
+        Assert.Contains("does not change your default Windows or Edge proxy settings", Row(cut, "proxy-browser-note"));
+        Assert.Contains("127.0.0.1", Row(cut, "proxy-browser-endpoint"));
+        // Before the proxy is started the browser step is not actionable.
+        Assert.Contains("Complete Steps 1", Row(cut, "proxy-browser-prerequisite"));
+    }
+
+    [Fact]
+    public async Task ProxyBrowserStepBecomesReadyOnceProxyListeningAndCertificateTrusted()
+    {
+        var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
+        // Ready mock is Listening with a Trusted certificate → no prerequisite blocker and a concrete endpoint.
+        Assert.False(Has(cut, "proxy-browser-prerequisite"));
+        Assert.Equal("127.0.0.1:8888", Row(cut, "proxy-browser-endpoint"));
+    }
+
+    [Fact]
+    public void CdpBrowserLaunchRemainsAvailableForCdpMethod()
+    {
+        var cut = Open(); // legacy JSON (no field) => ManagedEdgeCdp
+        OpenTab(cut, "Authentication");
+        Assert.True(Has(cut, "managed-edge-panel"));
+        Assert.False(Has(cut, "local-https-proxy-panel"));
+        // CDP keeps its own managed-Edge launch action.
+        Assert.Contains("Start Edge for authenticated testing", cut.Markup);
+        Assert.True(HasButton(cut, "Check Edge compatibility"));
+    }
 }

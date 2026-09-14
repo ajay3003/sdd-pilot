@@ -161,7 +161,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         OpenTab(cut, "Authentication");
         Assert.Equal("ExactOrigin", TrustSelect(cut).GetAttribute("value"));
         Assert.True(ButtonDisabled(cut, "Save changes"));
-        Assert.True(ButtonDisabled(cut, "Cancel"));
+        Assert.False(ButtonDisabled(cut, "Cancel"));
 
         TrustSelect(cut).Change("ApprovedMcasProxyOrigin");
 

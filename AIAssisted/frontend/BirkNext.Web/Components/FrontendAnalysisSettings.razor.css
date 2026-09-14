@@ -349,6 +349,7 @@
     font-size: .8125rem;
     font-weight: 600;
 }
+.fa-auth-layout ::deep .fa-state-neutral > .fa-card-heading .fa-card-status { color: var(--clr-text-muted); }
 .fa-page-unsaved { color: var(--clr-warning); font-weight: 600; font-size: .875rem; }
 .fa-auth-layout ::deep [data-testid="browser-delivery-trust"],
 .fa-auth-layout ::deep .fa-auth-step[class*="fa-state-"] { padding: .75rem; }
