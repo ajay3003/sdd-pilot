@@ -104,8 +104,8 @@ public static class AuthenticatedTestingMethodLabels
                 var api = proxy.AuthenticatedCredentialAvailable ? "Available via Local HTTPS Proxy" : "Unavailable - no authenticated API context yet (start the proxy and sign in)";
                 var dom = "Unavailable - the Local HTTPS proxy does not enable browser DOM inspection";
                 return new(ProxyOption, publicSurface, api, dom,
-                    proxy.RestAvailable ? "Authenticated GET/HEAD/OPTIONS available" : "Authenticated REST unavailable",
-                    proxy.GraphQlQueryAvailable ? "Authenticated query available (mutations blocked)" : "Authenticated GraphQL query unavailable");
+                    proxy.AuthenticatedRestObserved ? "Authenticated REST endpoint verified from traffic" : "Authenticated REST endpoint not observed yet",
+                    proxy.AuthenticatedGraphQlQueryObserved ? "Authenticated GraphQL query endpoint verified from traffic" : "Authenticated GraphQL query endpoint not observed yet");
             }
             case AuthenticatedTestingMethod.ManualOnly:
                 return new(ManualOption, publicSurface, "Unavailable - manual verification only", "Unavailable - manual verification only", "Authenticated REST unavailable", "Authenticated GraphQL unavailable");

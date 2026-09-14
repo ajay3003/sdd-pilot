@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Channels;
+using BirkNext.LocalHttpsProxy;
 
 namespace BirkNext.Api.Services.LocalHttpsProxy;
 
@@ -55,7 +56,11 @@ public sealed class DirectUpstreamConnector(string? upstreamProxy = null) : IUps
     }
 }
 
-/// <summary>One intercepted request/response pair on an approved host. The bearer reference is cleared right after the observer ran.</summary>
+/// <summary>
+/// One intercepted request/response pair on an approved host. The bearer reference is cleared right after the observer ran. The path
+/// and content types are safe endpoint-discovery metadata; the GraphQL operation is parsed transiently from a bounded body prefix and
+/// only its kind/name are kept here (never the body text).
+/// </summary>
 internal sealed class ProxyExchange
 {
     public required string Host { get; init; }
@@ -63,6 +68,11 @@ internal sealed class ProxyExchange
     public required string Method { get; init; }
     public int StatusCode { get; init; }
     public string? BearerToken { get; set; }
+    public string? Path { get; init; }
+    public string? RequestContentType { get; init; }
+    public string? ResponseContentType { get; init; }
+    public GraphQlOperationType GraphQlOperationType { get; init; }
+    public string? GraphQlOperationName { get; init; }
     public override string ToString() => $"{Method} {Host}:{Port} -> HTTP {StatusCode}";
 }
 
@@ -299,13 +309,20 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             await RelayAsync(sslClient, sslUpstream, host, port, ct);
     }
 
-    private sealed class PendingRequest(string method, string? bearer, bool upgrade)
+    private sealed class PendingRequest(string method, string? path, string? requestContentType, string? bearer, GraphQlOperationType graphQlOperation, string? graphQlOperationName, bool upgrade)
     {
         public string Method { get; } = method;
+        public string? Path { get; } = path;
+        public string? RequestContentType { get; } = requestContentType;
         public string? Bearer { get; set; } = bearer;
+        public GraphQlOperationType GraphQlOperation { get; } = graphQlOperation;
+        public string? GraphQlOperationName { get; } = graphQlOperationName;
         public bool IsUpgrade { get; } = upgrade;
         public TaskCompletionSource<bool> UpgradeDecision { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
+
+    /// <summary>Upper bound on the request body bytes transiently captured for GraphQL classification. GraphQL operations are small; larger bodies are relayed without capture.</summary>
+    private const long MaxCapturedBodyBytes = 32 * 1024;
 
     private async Task RelayAsync(SslStream client, SslStream server, string host, int port, CancellationToken ct)
     {
@@ -321,10 +338,23 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                 var raw = await clientReader.ReadHeadAsync(65536, cts.Token);
                 if (raw is null) break;
                 if (!HttpHead.TryParse(raw, out var request) || !request.IsRequest) break;
-                var record = new PendingRequest(request.Method, ExtractBearer(request), request.IsUpgrade);
-                await pending.Writer.WriteAsync(record, cts.Token);
+                var requestContentType = request.Header("Content-Type");
                 await server.WriteAsync(raw, cts.Token);
-                await clientReader.CopyBodyAsync(server, BodyFraming.ForRequest(request), cts.Token);
+                // The request body is relayed verbatim. Only a bounded JSON POST body is transiently captured, purely to classify a
+                // GraphQL operation (query vs mutation vs subscription); its bytes are never stored, logged or returned.
+                var framing = BodyFraming.ForRequest(request);
+                var graphQlOperation = GraphQlOperationType.None;
+                string? graphQlOperationName = null;
+                if (framing.Kind == BodyKind.ContentLength && framing.Length <= MaxCapturedBodyBytes
+                    && ObservedTrafficClassifier.IsGraphQlBodyCandidate(request.Method, requestContentType))
+                {
+                    var body = await clientReader.CopyExactCapturingAsync(server, framing.Length, cts.Token);
+                    try { (graphQlOperation, graphQlOperationName) = GraphQlBodyInspector.Classify(Encoding.UTF8.GetString(body)); }
+                    finally { Array.Clear(body); }
+                }
+                else await clientReader.CopyBodyAsync(server, framing, cts.Token);
+                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.IsUpgrade);
+                await pending.Writer.WriteAsync(record, cts.Token);
                 await server.FlushAsync(cts.Token);
                 if (record.IsUpgrade)
                 {
@@ -363,10 +393,11 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                 }
                 if (!await pending.WaitToReadAsync(ct) || !pending.TryRead(out current)) break;
                 await client.WriteAsync(raw, ct);
+                var responseContentType = response.Header("Content-Type");
                 if (response.StatusCode == 101)
                 {
                     current.UpgradeDecision.TrySetResult(true);
-                    Report(current, host, port, 101);
+                    Report(current, host, port, 101, responseContentType);
                     await serverReader.CopyToEndAsync(client, ct);
                     break;
                 }
@@ -374,7 +405,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                 var framing = BodyFraming.ForResponse(response, current.Method);
                 await serverReader.CopyBodyAsync(client, framing, ct);
                 await client.FlushAsync(ct);
-                Report(current, host, port, response.StatusCode);
+                Report(current, host, port, response.StatusCode, responseContentType);
                 current = null;
                 if (response.ConnectionClose || framing.Kind == BodyKind.UntilClose) break;
             }
@@ -387,9 +418,14 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
         }
     }
 
-    private void Report(PendingRequest request, string host, int port, int statusCode)
+    private void Report(PendingRequest request, string host, int port, int statusCode, string? responseContentType)
     {
-        var exchange = new ProxyExchange { Host = host, Port = port, Method = request.Method, StatusCode = statusCode, BearerToken = request.Bearer };
+        var exchange = new ProxyExchange
+        {
+            Host = host, Port = port, Method = request.Method, StatusCode = statusCode, BearerToken = request.Bearer,
+            Path = request.Path, RequestContentType = request.RequestContentType, ResponseContentType = responseContentType,
+            GraphQlOperationType = request.GraphQlOperation, GraphQlOperationName = request.GraphQlOperationName
+        };
         request.Bearer = null;
         try { observer.OnExchange(exchange); }
         catch (Exception ex) { logger?.LogWarning("Proxy traffic observer failed with {ExceptionType}.", ex.GetType().Name); }

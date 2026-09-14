@@ -111,6 +111,52 @@ public sealed record ProxyCertificateStatus
     public string Guidance { get; init; } = "";
 }
 
+/// <summary>Which API surface an observed authenticated request belongs to.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ObservedEndpointType { Rest, GraphQl }
+
+/// <summary>
+/// How strongly the observed traffic proves an authenticated API endpoint. <see cref="Verified"/> requires an authenticated request
+/// with an API-compatible (non-HTML, non-static) response; <see cref="Candidate"/> has some but not all signals; <see cref="Rejected"/>
+/// is an SPA document, static asset or otherwise not an API. Never inferred from mere credential presence.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ObservedEndpointConfidence { Rejected, Candidate, Verified }
+
+/// <summary>GraphQL operation kind derived transiently from an observed request body. <see cref="None"/> means "not a GraphQL request".</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GraphQlOperationType { None, Query, Mutation, Subscription }
+
+/// <summary>
+/// Safe, non-secret evidence of one authenticated API endpoint that BirkNext actually observed in intercepted browser traffic on an
+/// approved host. Traffic-driven, so discovery never assumes <c>/health</c> or <c>/graphql</c>. Deliberately carries no credential:
+/// no bearer token, Authorization value, cookie, request body or response body is ever represented here. Runtime-only, never persisted.
+/// </summary>
+public sealed record ObservedAuthenticatedEndpoint
+{
+    public ObservedEndpointType EndpointType { get; init; }
+    /// <summary>Scheme + host [+ non-default port], e.g. <c>https://api-dev.example.no</c>. Always HTTPS (only TLS-terminated approved hosts are observed).</summary>
+    public string Origin { get; init; } = "";
+    /// <summary>Request path only, without query string (a query string can carry secrets and is never captured).</summary>
+    public string Path { get; init; } = "";
+    public string Method { get; init; } = "";
+    public int ResponseStatus { get; init; }
+    public string? RequestContentType { get; init; }
+    public string? ResponseContentType { get; init; }
+    /// <summary>An <c>Authorization: Bearer</c> was present on the request. The token value itself is never captured.</summary>
+    public bool BearerObserved { get; init; }
+    public ObservedEndpointConfidence Confidence { get; init; }
+    /// <summary>For GraphQL only, the operation kind parsed transiently from the request body; <see cref="GraphQlOperationType.None"/> for REST.</summary>
+    public GraphQlOperationType OperationType { get; init; }
+    /// <summary>For GraphQL only, the operation name if the body named one; null for anonymous operations and for REST.</summary>
+    public string? OperationName { get; init; }
+    /// <summary>How many times an identical endpoint (origin+path+method+type) was observed; repeated requests are collapsed, not flooded.</summary>
+    public int Count { get; init; } = 1;
+    public DateTimeOffset LastObservedAt { get; init; }
+    /// <summary>User-facing endpoint URL (origin + path), never a credential.</summary>
+    public string Display => $"{Origin}{Path}";
+}
+
 /// <summary>Runtime evidence only. Never contains a credential; never persisted with environment profiles.</summary>
 public sealed record LocalHttpsProxyStatus
 {
@@ -142,10 +188,29 @@ public sealed record LocalHttpsProxyStatus
     /// <summary>"JWT" or "Opaque"; no claim values.</summary>
     public string? CredentialFormat { get; init; }
 
+    /// <summary>A credential is available, so an approved read-only REST check <em>can be executed</em>. This is execution capability, not proof that a REST endpoint was observed.</summary>
     public bool RestAvailable => AuthenticatedCredentialAvailable;
+    /// <summary>A credential is available, so an approved GraphQL query check <em>can be executed</em>. Not proof that a GraphQL endpoint was observed.</summary>
     public bool GraphQlQueryAvailable => AuthenticatedCredentialAvailable;
     /// <summary>The proxy never enables browser DOM inspection.</summary>
     public bool BrowserDomAvailable => false;
+
+    /// <summary>
+    /// Authenticated API endpoints discovered from observed traffic on approved hosts, most-trustworthy and most-recent first.
+    /// Runtime-only, no credential. Empty until real authenticated traffic is seen; discovery never assumes <c>/health</c> or <c>/graphql</c>.
+    /// </summary>
+    public IReadOnlyList<ObservedAuthenticatedEndpoint> ObservedEndpoints { get; init; } = [];
+
+    /// <summary>The best verified authenticated REST endpoint observed in traffic, or null when none was observed. Never the SPA HTML document.</summary>
+    public ObservedAuthenticatedEndpoint? VerifiedRestEndpoint =>
+        ObservedEndpoints.Where(e => e is { EndpointType: ObservedEndpointType.Rest, Confidence: ObservedEndpointConfidence.Verified }).MaxBy(e => (e.Count, e.LastObservedAt));
+    /// <summary>The best verified authenticated GraphQL <em>query</em> endpoint observed in traffic, or null. A mutation/subscription endpoint never counts as a verified query.</summary>
+    public ObservedAuthenticatedEndpoint? VerifiedGraphQlQueryEndpoint =>
+        ObservedEndpoints.Where(e => e is { EndpointType: ObservedEndpointType.GraphQl, Confidence: ObservedEndpointConfidence.Verified, OperationType: GraphQlOperationType.Query }).MaxBy(e => (e.Count, e.LastObservedAt));
+    /// <summary>An authenticated REST endpoint was actually observed and verified from traffic (independent of credential availability).</summary>
+    public bool AuthenticatedRestObserved => VerifiedRestEndpoint is not null;
+    /// <summary>An authenticated GraphQL query endpoint was actually observed and verified from traffic.</summary>
+    public bool AuthenticatedGraphQlQueryObserved => VerifiedGraphQlQueryEndpoint is not null;
 
     public string Evidence { get; init; } = "Start the local HTTPS proxy, then sign in manually in Microsoft Edge.";
     public string? FailureReason { get; init; }

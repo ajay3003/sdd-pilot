@@ -151,6 +151,29 @@ internal sealed class BufferedNetworkReader(Stream stream, int bufferSize = 1638
         }
     }
 
+    /// <summary>
+    /// Copies exactly <paramref name="count"/> body bytes to <paramref name="destination"/> verbatim (no modification of the relayed
+    /// stream) while returning a copy of those bytes for transient in-memory inspection. Callers must bound <paramref name="count"/>;
+    /// it is used only for small JSON POST bodies (GraphQL classification) and the returned buffer is never stored or logged.
+    /// </summary>
+    public async Task<byte[]> CopyExactCapturingAsync(Stream destination, long count, CancellationToken ct)
+    {
+        var captured = new byte[count];
+        var offset = 0;
+        while (count > 0)
+        {
+            if (!HasBuffered && !await FillAsync(ct)) throw new IOException("Connection closed inside an HTTP message body.");
+            var take = (int)Math.Min(count, _end - _start);
+            var slice = new ReadOnlyMemory<byte>(_buffer, _start, take);
+            await destination.WriteAsync(slice, ct);
+            slice.Span.CopyTo(captured.AsSpan(offset));
+            offset += take;
+            _start += take;
+            count -= take;
+        }
+        return captured;
+    }
+
     /// <summary>Copies a chunked body verbatim (chunk sizes, extensions and trailers included).</summary>
     public async Task CopyChunkedAsync(Stream destination, CancellationToken ct)
     {

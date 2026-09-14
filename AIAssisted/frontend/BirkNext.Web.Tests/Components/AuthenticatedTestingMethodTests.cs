@@ -36,7 +36,13 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     {
         State = LocalHttpsProxyState.Ready, InterceptedRequests = 3, AuthenticatedRequestsObserved = 1, AuthenticatedCredentialAvailable = true,
         CredentialObservedHost = "m2lbdev.bufetat.no", CredentialObservedAt = DateTimeOffset.UtcNow, CredentialExpiresAt = DateTimeOffset.UtcNow.AddMinutes(25), CredentialFormat = "JWT",
-        Evidence = "Authenticated API context available (memory only)."
+        Evidence = "Authenticated API context available (memory only).",
+        // Authenticated API endpoints discovered from observed traffic (never assumed /health or /graphql). No credential.
+        ObservedEndpoints =
+        [
+            new() { EndpointType = ObservedEndpointType.Rest, Origin = Origin, Path = "/api/children", Method = "GET", ResponseStatus = 200, ResponseContentType = "application/json", BearerObserved = true, Confidence = ObservedEndpointConfidence.Verified, Count = 3, LastObservedAt = DateTimeOffset.UtcNow },
+            new() { EndpointType = ObservedEndpointType.GraphQl, Origin = Origin, Path = "/internal/gql", Method = "POST", ResponseStatus = 200, RequestContentType = "application/json", ResponseContentType = "application/json", BearerObserved = true, Confidence = ObservedEndpointConfidence.Verified, OperationType = GraphQlOperationType.Query, OperationName = "Me", Count = 1, LastObservedAt = DateTimeOffset.UtcNow }
+        ]
     };
 
     public AuthenticatedTestingMethodTests()
@@ -400,19 +406,28 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var cut = Open(authenticationJson: """{"authenticatedTestingMethod":"LocalHttpsProxy"}""");
         OpenTab(cut, "Authentication");
         await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
-        cut.WaitForAssertion(() => Assert.Equal("Available", Row(cut, "capability-rest")));
+        cut.WaitForAssertion(() => Assert.Equal("Verified", Row(cut, "capability-rest")));
         Click(cut, "Edit Environment");
         SelectMethod(cut, AuthenticatedTestingMethod.ManualOnly);
-        foreach (var capability in new[] { "api", "dom", "rest", "graphql" })
-            Assert.Equal("Unavailable", Row(cut, $"capability-{capability}"));
-        Assert.False(Has(cut, "proxy-credential"));
+        // Switching away stops the proxy asynchronously; once it settles every authenticated capability is cleared — nothing reads "Available"
+        // or "Verified" (the cleared wording is "Unavailable" on the manual grid or "Not observed" on the just-cleared proxy grid; both mean not authenticated).
         cut.WaitForAssertion(() => _proxyApi.Verify(x => x.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.AtLeastOnce));
+        cut.WaitForState(() => Has(cut, "manual-only-panel"));
+        Assert.False(Has(cut, "proxy-credential"));
+        AssertNoAuthenticatedCapabilityClaimed(cut);
         SelectMethod(cut, AuthenticatedTestingMethod.ManagedEdgeCdp);
-        Assert.Equal("Unavailable", Row(cut, "capability-rest"));
+        cut.WaitForState(() => Has(cut, "managed-edge-panel"));
+        AssertNoAuthenticatedCapabilityClaimed(cut);
         Click(cut, "Cancel");
         Assert.Equal(AuthenticatedTestingMethod.LocalHttpsProxy, Persisted().Authentication.AuthenticatedTestingMethod);
-        Assert.Equal("Unavailable", Row(cut, "capability-rest"));
         Assert.Equal(0, SaveCalls());
+    }
+
+    // No authenticated surface is claimed: every capability row reads a cleared value, never "Available" or "Verified".
+    private static void AssertNoAuthenticatedCapabilityClaimed(IRenderedComponent<Component> cut)
+    {
+        foreach (var capability in new[] { "api", "dom", "rest", "graphql" })
+            Assert.Contains(Row(cut, $"capability-{capability}"), new[] { "Unavailable", "Not observed" });
     }
 
     [Theory]
@@ -474,10 +489,14 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal("Detected", Row(cut, "proxy-authenticated-traffic"));
         Assert.Equal("Available - memory only", Row(cut, "proxy-credential"));
         Assert.True(Has(cut, "proxy-credential-expiry"));
-        Assert.Contains("Available", Row(cut, "capability-rest"));
-        Assert.Contains("Available", Row(cut, "capability-graphql"));
-        Assert.Contains("Unavailable", Row(cut, "capability-dom"));
-        Assert.Contains("Available", Row(cut, "capability-api"));
+        // REST/GraphQL are verified from observed traffic, not from the credential; the auth context is separately "Available".
+        Assert.Equal("Verified", Row(cut, "capability-rest"));
+        Assert.Equal("Verified", Row(cut, "capability-graphql"));
+        Assert.Equal("Unavailable", Row(cut, "capability-dom"));
+        Assert.Equal("Available", Row(cut, "capability-api"));
+        Assert.Contains("Verified", Row(cut, "discovered-rest"));
+        Assert.Contains("/api/children", Row(cut, "discovered-rest"));
+        Assert.Contains("/internal/gql", Row(cut, "discovered-graphql"));
 
         // Runtime evidence is transient: no edit mode, no Save changes, no storage write, persisted profile unchanged.
         Assert.True(HasButton(cut, "Edit Environment"));
@@ -566,5 +585,109 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         // CDP keeps its own managed-Edge launch action.
         Assert.Contains("Start Edge for authenticated testing", cut.Markup);
         Assert.True(HasButton(cut, "Check Edge compatibility"));
+    }
+
+    // ── proxy session lifetime follows the runtime/environment, not the Authentication component ──
+
+    [Fact]
+    public async Task NavigatingAwayFromAuthenticationDoesNotStopTheProxy()
+    {
+        var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
+        Assert.True(_proxyRuntime.SessionActive);
+
+        // Navigating to another page unmounts/disposes this component. It must NOT stop the proxy or wipe the context.
+        await cut.InvokeAsync(() => cut.Instance.DisposeAsync());
+
+        _proxyApi.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
+        Assert.True(_proxyRuntime.SessionActive);
+        Assert.True(_proxyRuntime.Status.AuthenticatedCredentialAvailable);
+    }
+
+    [Fact]
+    public async Task NavigatingAwayFromAuthenticationDoesNotDisconnectCdp()
+    {
+        var connected = new ManagedEdgeStatus { SessionId = "edge-session", State = ManagedEdgeState.ConnectedUnproven, OriginMatched = true, TargetOrigin = Origin };
+        _edgeApi.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(connected);
+        _edgeApi.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(connected);
+        var cut = Open();
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Connect to existing Edge"));
+        cut.WaitForAssertion(() => Assert.NotNull(_edgeRuntime.Status.SessionId));
+        // Navigating away must not disconnect the CDP session either (same runtime-scoped lifetime model).
+        await cut.InvokeAsync(() => cut.Instance.DisposeAsync());
+        _edgeApi.Verify(a => a.DisconnectAsync(It.IsAny<ManagedEdgeSessionRequest>()), Times.Never);
+        Assert.NotNull(_edgeRuntime.Status.SessionId);
+    }
+
+    // ── Step 4 — authenticated API discovery from observed traffic (sections 12-14, 18-19, 25) ──
+
+    [Fact]
+    public async Task ProxyPanelDiscoversRealEndpointsFromObservedTrafficNotAssumedPaths()
+    {
+        var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
+
+        // Discovered from traffic: the real observed paths, never the assumed /health or /graphql.
+        Assert.Contains("Verified", Row(cut, "discovered-rest"));
+        Assert.Contains("/api/children", Row(cut, "discovered-rest"));
+        Assert.Contains("/internal/gql", Row(cut, "discovered-graphql"));
+        Assert.Contains("Query", Row(cut, "discovered-graphql"));
+        Assert.Contains("Observed authenticated endpoints (2)", Row(cut, "observed-endpoints"));
+        Assert.Contains("/api/children", Row(cut, "observed-endpoints"));
+
+        // Capability separation: auth context available, REST and GraphQL verified from traffic.
+        Assert.Equal("Available", Row(cut, "capability-api"));
+        Assert.Equal("Verified", Row(cut, "capability-rest"));
+        Assert.Equal("Verified", Row(cut, "capability-graphql"));
+        Assert.Equal("Unavailable", Row(cut, "capability-dom"));
+
+        // The REST replay targets the discovered read-only endpoint, not the configured /health.
+        Assert.Contains("/api/children", Row(cut, "proxy-checks"));
+        Assert.DoesNotContain("/health", Row(cut, "proxy-checks"));
+        // No credential is ever shown.
+        foreach (var forbidden in new[] { "eyJ", FakeToken, "Bearer ", "Cookie" })
+            Assert.DoesNotContain(forbidden, cut.Markup);
+        Assert.Equal(0, SaveCalls());
+    }
+
+    [Fact]
+    public async Task AuthContextAvailableWithoutObservedTrafficReportsNotVerified()
+    {
+        // A credential is available but no REST/GraphQL endpoint has been observed yet: context available, neither surface verified.
+        var contextOnly = Ready with { ObservedEndpoints = [], AuthenticatedRequestsObserved = 1 };
+        _proxyApi.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(contextOnly);
+        _proxyApi.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(contextOnly);
+        var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
+
+        Assert.Equal("Available", Row(cut, "capability-api"));
+        Assert.Equal("Not observed", Row(cut, "capability-rest"));
+        Assert.Equal("Not observed", Row(cut, "capability-graphql"));
+        Assert.Contains("Not observed yet", Row(cut, "discovered-rest"));
+        Assert.Contains("Not observed yet", Row(cut, "discovered-graphql"));
+        Assert.Contains("use the application normally", Row(cut, "discovery-guidance"));
+        Assert.Contains("No authenticated API endpoints observed yet", Row(cut, "observed-endpoints"));
+    }
+
+    [Fact]
+    public async Task NavigatingAwayDoesNotClearObservedApiEndpoints()
+    {
+        var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        cut.WaitForAssertion(() => Assert.True(_proxyRuntime.Status.AuthenticatedRestObserved));
+
+        // Endpoint discovery lives in the app-scoped runtime, not the component: navigation must not clear it.
+        await cut.InvokeAsync(() => cut.Instance.DisposeAsync());
+        _proxyApi.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
+        Assert.True(_proxyRuntime.Status.AuthenticatedRestObserved);
+        Assert.NotEmpty(_proxyRuntime.Status.ObservedEndpoints);
     }
 }

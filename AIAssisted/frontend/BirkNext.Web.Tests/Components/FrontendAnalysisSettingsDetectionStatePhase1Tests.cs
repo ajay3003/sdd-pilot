@@ -336,11 +336,14 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
 
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel");
 
-        // Select different profile and back
+        // Select different profile and back. Detection is now persisted as a safe snapshot, so switching back restores it as a current
+        // "previously detected" result (revalidated against the unchanged QA target) rather than reverting to "Not checked". It still must
+        // not enable Save/Cancel or persist any draft configuration.
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("Production")).Click();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
 
-        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Not checked");
+        cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection complete");
+        cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel");
     }
 
     [Fact]

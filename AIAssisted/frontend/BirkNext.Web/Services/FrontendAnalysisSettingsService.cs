@@ -13,6 +13,13 @@ public interface IFrontendAnalysisSettingsService
     Task LoadAsync(IJSRuntime js);
     Task SaveAsync(IJSRuntime js);
 
+    // Detection snapshots: safe public discovery evidence, persisted separately from Target Environment configuration (a distinct
+    // storage key/interop) so that running Detect never modifies or "saves" the saved profile. No credential is ever stored.
+    Task LoadDetectionSnapshotsAsync(IJSRuntime js);
+    DetectionSnapshot? GetDetectionSnapshot(string profileId);
+    Task SaveDetectionSnapshotAsync(IJSRuntime js, string profileId, DetectionSnapshot snapshot);
+    Task RemoveDetectionSnapshotAsync(IJSRuntime js, string profileId);
+
     FrontendAnalysisProfile CreateProfile(string name, FrontendEnvironmentType environmentType);
     void                    DeleteProfile(string profileId);
     FrontendAnalysisProfile DuplicateProfile(string profileId);
@@ -87,6 +94,44 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         {
             var json = JsonSerializer.Serialize(_settings, JsonOptions);
             await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, json);
+        }
+        catch { }
+    }
+
+    // ── Detection snapshots (separate evidence store, never part of the saved profile) ──────────
+
+    private Dictionary<string, DetectionSnapshot> _detectionSnapshots = new(StringComparer.Ordinal);
+
+    public async Task LoadDetectionSnapshotsAsync(IJSRuntime js)
+    {
+        try
+        {
+            var json = await js.InvokeAsync<string?>("birkNextStorage.getSnapshots");
+            if (!string.IsNullOrWhiteSpace(json))
+                _detectionSnapshots = JsonSerializer.Deserialize<Dictionary<string, DetectionSnapshot>>(json, JsonOptions) ?? new(StringComparer.Ordinal);
+        }
+        catch { /* absent, unreadable, or an interop the host has not provided: no restored snapshots. */ }
+    }
+
+    public DetectionSnapshot? GetDetectionSnapshot(string profileId) => _detectionSnapshots.GetValueOrDefault(profileId);
+
+    public async Task SaveDetectionSnapshotAsync(IJSRuntime js, string profileId, DetectionSnapshot snapshot)
+    {
+        _detectionSnapshots[profileId] = snapshot;
+        await PersistSnapshotsAsync(js);
+    }
+
+    public async Task RemoveDetectionSnapshotAsync(IJSRuntime js, string profileId)
+    {
+        if (_detectionSnapshots.Remove(profileId))
+            await PersistSnapshotsAsync(js);
+    }
+
+    private async Task PersistSnapshotsAsync(IJSRuntime js)
+    {
+        try
+        {
+            await js.InvokeVoidAsync("birkNextStorage.setSnapshots", JsonSerializer.Serialize(_detectionSnapshots, JsonOptions));
         }
         catch { }
     }

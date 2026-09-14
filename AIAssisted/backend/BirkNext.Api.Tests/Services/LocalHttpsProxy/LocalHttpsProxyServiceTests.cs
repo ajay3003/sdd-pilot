@@ -274,6 +274,78 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         Assert.Equal(LocalHttpsProxyState.WaitingForAuthenticatedTraffic, status.State);
     }
 
+    // ── authenticated endpoint discovery from observed traffic ────────────────
+
+    [Fact]
+    public async Task AuthenticatedJsonGetIsDiscoveredAsAVerifiedRestEndpointFromTheRealPath()
+    {
+        var port = await StartAsync(Scope());
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost, $"GET /api/v2/children?page=1 HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {Jwt(_now.AddHours(1))}\r\n\r\n");
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.AuthenticatedRestObserved);
+        var status = await _service.StatusAsync(Session());
+        var rest = status.VerifiedRestEndpoint!;
+        Assert.Equal(ObservedEndpointType.Rest, rest.EndpointType);
+        Assert.Equal($"https://{ApiHost}/api/v2/children", rest.Display);   // real path, query stripped; never assumed /health
+        Assert.Equal("GET", rest.Method);
+        Assert.False(status.AuthenticatedGraphQlQueryObserved);
+        // No credential value in the observed endpoints projection ("BearerObserved" is a safe boolean flag, not a token).
+        var json = JsonSerializer.Serialize(status.ObservedEndpoints);
+        Assert.DoesNotContain("eyJ", json);
+        Assert.DoesNotContain("Bearer ", json);
+    }
+
+    [Fact]
+    public async Task GraphQlQueryPostIsDiscoveredFromTheBodyAndRelayedVerbatim()
+    {
+        var port = await StartAsync(Scope());
+        var gqlBody = "{\"query\":\"query Me { me { id } }\",\"operationName\":\"Me\"}";
+        var request = $"POST /internal/gql HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {Jwt(_now.AddHours(1))}\r\nContent-Type: application/json\r\nContent-Length: {gqlBody.Length}\r\n\r\n{gqlBody}";
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost, request);
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.AuthenticatedGraphQlQueryObserved);
+        var status = await _service.StatusAsync(Session());
+        var gql = status.VerifiedGraphQlQueryEndpoint!;
+        Assert.Equal(ObservedEndpointType.GraphQl, gql.EndpointType);
+        Assert.Equal(GraphQlOperationType.Query, gql.OperationType);
+        Assert.Equal("Me", gql.OperationName);
+        Assert.Equal($"https://{ApiHost}/internal/gql", gql.Display);   // learned path, not assumed /graphql
+        // The request body was relayed to the origin byte-for-byte (capture never alters the stream).
+        Assert.Contains(gqlBody, _upstream.RequestBodies);
+    }
+
+    [Fact]
+    public async Task GraphQlMutationIsRecordedButNeverVerifiesTheQueryCapability()
+    {
+        var port = await StartAsync(Scope());
+        var body = "{\"query\":\"mutation Add { add(name:\\\"x\\\"){ id } }\"}";
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost, $"POST /internal/gql HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {Jwt(_now.AddHours(1))}\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\n\r\n{body}");
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.ObservedEndpoints.Any(e => e.EndpointType == ObservedEndpointType.GraphQl));
+        var status = await _service.StatusAsync(Session());
+        Assert.Contains(status.ObservedEndpoints, e => e.EndpointType == ObservedEndpointType.GraphQl && e.OperationType == GraphQlOperationType.Mutation);
+        Assert.False(status.AuthenticatedGraphQlQueryObserved);
+    }
+
+    [Fact]
+    public async Task AuthenticatedHtmlDocumentIsNotDiscoveredAsAVerifiedRestEndpoint()
+    {
+        _upstream.NextContentType = "text/html; charset=utf-8";
+        var port = await StartAsync(Scope());
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost, $"GET /app/shell HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {Jwt(_now.AddHours(1))}\r\n\r\n");
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.ObservedEndpoints.Count > 0);
+        var status = await _service.StatusAsync(Session());
+        Assert.False(status.AuthenticatedRestObserved);   // the SPA document is never a REST proof
+        Assert.Contains(status.ObservedEndpoints, e => e.Path == "/app/shell" && e.Confidence == ObservedEndpointConfidence.Rejected);
+    }
+
+    [Fact]
+    public async Task StoppingClearsDiscoveredEndpoints()
+    {
+        var port = await StartAsync(Scope());
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost, $"GET /api/children HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {Jwt(_now.AddHours(1))}\r\n\r\n");
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.AuthenticatedRestObserved);
+        var stopped = await _service.StopAsync(Session());
+        Assert.Empty(stopped.ObservedEndpoints);
+    }
+
     // ── wipe rules ───────────────────────────────────────────────────────────
 
     private async Task<int> StartWithCredentialAsync(LocalHttpsProxyScopeRequest? scope = null)
@@ -418,11 +490,14 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         private readonly X509Certificate2 _certificate = SelfSigned(ApiHost);
         private readonly List<string?> _authorization = [];
         private readonly List<byte[]> _plainPayloads = [];
+        private readonly List<string> _requestBodies = [];
         public int TlsPort => ((IPEndPoint)_tls.LocalEndpoint).Port;
         public int PlainPort => ((IPEndPoint)_plain.LocalEndpoint).Port;
         public volatile int NextStatus = 200;
+        public volatile string NextContentType = "application/json";
         public IReadOnlyList<string?> AuthorizationHeaders { get { lock (_authorization) return _authorization.ToList(); } }
         public IReadOnlyList<byte[]> PlainPayloads { get { lock (_plainPayloads) return _plainPayloads.ToList(); } }
+        public IReadOnlyList<string> RequestBodies { get { lock (_requestBodies) return _requestBodies.ToList(); } }
 
         public static Task<FakeUpstream> StartAsync()
         {
@@ -451,11 +526,14 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
                             using var reader = new BufferedNetworkReader(ssl);
                             while (await reader.ReadHeadAsync(65536, _cts.Token) is { } raw && HttpHead.TryParse(raw, out var request))
                             {
-                                await reader.CopyBodyAsync(Stream.Null, BodyFraming.ForRequest(request), _cts.Token);
+                                using var bodyStream = new MemoryStream();
+                                await reader.CopyBodyAsync(bodyStream, BodyFraming.ForRequest(request), _cts.Token);
                                 lock (_authorization) _authorization.Add(request.Header("Authorization"));
+                                lock (_requestBodies) _requestBodies.Add(Encoding.UTF8.GetString(bodyStream.ToArray()));
                                 var status = NextStatus;
+                                var contentType = NextContentType;
                                 var body = "{\"ok\":true}";
-                                await ssl.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {(status == 200 ? "OK" : "Denied")}\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), _cts.Token);
+                                await ssl.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {(status == 200 ? "OK" : "Denied")}\r\nContent-Type: {contentType}\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n{body}"), _cts.Token);
                                 await ssl.FlushAsync(_cts.Token);
                                 break;
                             }

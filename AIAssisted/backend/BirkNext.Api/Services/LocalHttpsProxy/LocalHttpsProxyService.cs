@@ -311,7 +311,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         {
             SessionId = session.Id, State = state, Port = session.Port, CanStart = false,
             InterceptedRequests = session.Intercepted, PassThroughConnections = session.PassThrough, TlsHandshakeFailures = session.TlsFailures,
-            AuthenticatedRequestsObserved = session.BearerObserved, LastInterceptedHost = session.LastHost,
+            AuthenticatedRequestsObserved = session.BearerObserved, LastInterceptedHost = session.LastHost, ObservedEndpoints = session.ObservedEndpoints,
             AuthenticatedCredentialAvailable = available, CredentialExpired = expired,
             CredentialObservedHost = descriptor?.ObservedHost, CredentialObservedAt = descriptor?.ObservedAt, CredentialExpiresAt = descriptor?.ExpiresAt, CredentialFormat = descriptor?.Format,
             Evidence = evidence, FailureReason = state == LocalHttpsProxyState.Failed ? "Proxy listener faulted." : status.FailureReason
@@ -365,6 +365,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         private volatile string? _lastHost;
         private volatile string? _lastRejection;
         private long _credentialExpiresAtTicks;
+        private readonly ObservedEndpointRegistry _endpoints = new();
 
         public string Id { get; } = Guid.NewGuid().ToString("N");
         public LocalHttpsProxyScopeRequest Scope { get; } = scope;
@@ -379,6 +380,8 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         public int BearerObserved => _bearerObserved;
         public string? LastHost => _lastHost;
         public string? LastRejection => _lastRejection;
+        /// <summary>Authenticated API endpoints discovered from this session's observed traffic. Runtime-only, no credential.</summary>
+        public IReadOnlyList<ObservedAuthenticatedEndpoint> ObservedEndpoints => _endpoints.Snapshot();
         public DateTimeOffset? CredentialExpiresAt { get { var ticks = Interlocked.Read(ref _credentialExpiresAtTicks); return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero); } }
 
         public void Attach(LocalHttpsProxyServer server, int port) { Server = server; Port = port; }
@@ -394,6 +397,9 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             if (exchange.BearerToken is not { } token) return;
             Interlocked.Increment(ref _bearerObserved);
             if (Stopped) return;
+            // Authenticated endpoint discovery is independent of credential promotion: a request that is rejected for promotion (wrong
+            // status, tenant, expiry) is still real observed evidence of an authenticated endpoint. Only approved host:port are recorded.
+            RecordObservedEndpoint(exchange);
             if (!Hosts.Contains(exchange.Host, exchange.Port)) { _lastRejection = "the credential was observed on a host outside the approved allowlist"; return; }
             if (exchange.StatusCode is < 200 or >= 300) { _lastRejection = $"the last authenticated request returned HTTP {exchange.StatusCode}"; return; }
             var metadata = BearerTokenInspector.Inspect(token);
@@ -408,6 +414,26 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             _lastRejection = null;
             logger?.LogInformation("Authenticated API context established for environment {ProfileId} from approved host {Host} ({Format}); expires {ExpiresAt:u}. The credential is held in memory only.",
                 Scope.ProfileId, exchange.Host, metadata.Format, expiresAt);
+        }
+
+        /// <summary>Classifies an observed authenticated request into a safe endpoint record. No token, header value or body is retained.</summary>
+        private void RecordObservedEndpoint(ProxyExchange exchange)
+        {
+            if (!Hosts.Contains(exchange.Host, exchange.Port)) return;
+            var endpoint = ObservedTrafficClassifier.Classify(new ObservedRequestMetadata
+            {
+                Host = exchange.Host,
+                Port = exchange.Port,
+                Method = exchange.Method,
+                Target = exchange.Path ?? "/",
+                RequestContentType = exchange.RequestContentType,
+                ResponseStatus = exchange.StatusCode,
+                ResponseContentType = exchange.ResponseContentType,
+                BearerObserved = true,
+                GraphQlOperationType = exchange.GraphQlOperationType,
+                GraphQlOperationName = exchange.GraphQlOperationName
+            }, clock());
+            if (endpoint is not null) _endpoints.Record(endpoint);
         }
     }
 }

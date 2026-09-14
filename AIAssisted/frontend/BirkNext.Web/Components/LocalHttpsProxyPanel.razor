@@ -99,21 +99,42 @@
 
     </div>
     <div class="fa-auth-step">
-    <h4>Step 4 — Authenticated API context</h4>
+    <h4>Step 4 — Authenticated API discovery</h4>
     <dl class="fa-detail-list">
-        <div class="fa-dl-row"><dt>Authenticated API traffic</dt><dd data-testid="proxy-authenticated-traffic">@AuthenticatedTestingMethodLabels.AuthenticatedTraffic(Status)</dd></div>
-        <div class="fa-dl-row"><dt>Status</dt><dd data-testid="proxy-credential">@(Status.AuthenticatedCredentialAvailable || Status.CredentialExpired ? AuthenticatedTestingMethodLabels.Credential(Status) : "Waiting for authenticated traffic")</dd></div>
+        <div class="fa-dl-row"><dt>Authenticated context</dt><dd data-testid="proxy-credential">@(Status.AuthenticatedCredentialAvailable || Status.CredentialExpired ? AuthenticatedTestingMethodLabels.Credential(Status) : "Waiting for authenticated traffic")</dd></div>
+        <div class="fa-dl-row"><dt>Authenticated traffic</dt><dd data-testid="proxy-authenticated-traffic">@AuthenticatedTestingMethodLabels.AuthenticatedTraffic(Status)</dd></div>
         @if (Status.CredentialExpiresAt is { } expires)
         {
             <div class="fa-dl-row"><dt>Authenticated API session expires</dt><dd data-testid="proxy-credential-expiry">@expires.ToLocalTime().ToString("HH:mm:ss")</dd></div>
         }
+        <div class="fa-dl-row"><dt>Discovered REST</dt><dd data-testid="discovered-rest">@DiscoveredRestLabel</dd></div>
+        <div class="fa-dl-row"><dt>Discovered GraphQL</dt><dd data-testid="discovered-graphql">@DiscoveredGraphQlLabel</dd></div>
     </dl>
+    <p class="fa-section-note" data-testid="discovery-guidance">Endpoints are learned from the authenticated traffic BirkNext actually observed — never assumed. @(Status.ObservedEndpoints.Count == 0 ? "Sign in and use the application normally (open a screen that loads data) to generate authenticated API traffic." : "")</p>
+    <details data-testid="observed-endpoints"><summary>Observed authenticated endpoints (@Status.ObservedEndpoints.Count)</summary>
+    @if (Status.ObservedEndpoints.Count == 0)
+    {
+        <p class="fa-section-note">No authenticated API endpoints observed yet. Use the application normally to generate API traffic.</p>
+    }
+    else
+    {
+        <dl class="fa-detail-list">
+            @foreach (var endpoint in Status.ObservedEndpoints)
+            {
+                <div class="fa-dl-row">
+                    <dt>@endpoint.EndpointType · @ConfidenceLabel(endpoint)</dt>
+                    <dd>@endpoint.Method @endpoint.Display → HTTP @endpoint.ResponseStatus@(endpoint.EndpointType == ObservedEndpointType.GraphQl ? $" ({endpoint.OperationType}{(endpoint.OperationName is { Length: > 0 } n ? $" {n}" : "")})" : "")@(endpoint.Count > 1 ? $" ×{endpoint.Count}" : "")</dd>
+                </div>
+            }
+        </dl>
+    }
+    </details>
     <details><summary>Authenticated API checks</summary>
-    <p class="fa-section-note">Read-only checks only: REST GET on the configured health endpoint or REST base URL, and a single GraphQL query. Mutations, subscriptions and unsafe HTTP methods are rejected. Response bodies are not captured.</p>
+    <p class="fa-section-note">Read-only checks only: a REST GET/HEAD/OPTIONS on a discovered (or configured) endpoint, and a single GraphQL query. Mutations, subscriptions and unsafe HTTP methods are rejected. Response bodies are not captured.</p>
     <dl class="fa-detail-list" data-testid="proxy-checks">
-        <div class="fa-dl-row"><dt>REST check target</dt><dd>@(RestUrl ?? "Configure an HTTPS health endpoint or REST base URL")</dd></div>
+        <div class="fa-dl-row"><dt>REST check target</dt><dd>@(RestReplayUrl ?? "No discovered or configured HTTPS REST endpoint")</dd></div>
         <div class="fa-dl-row"><dt>REST result</dt><dd data-testid="proxy-rest-result">@(Runtime?.LastRestResult?.Outcome ?? "Not run")</dd></div>
-        <div class="fa-dl-row"><dt>GraphQL check target</dt><dd>@(GraphQlUrl ?? "Configure an HTTPS GraphQL endpoint")</dd></div>
+        <div class="fa-dl-row"><dt>GraphQL check target</dt><dd>@(GraphQlReplayUrl ?? "No discovered or configured HTTPS GraphQL endpoint")</dd></div>
         <div class="fa-dl-row"><dt>GraphQL result</dt><dd data-testid="proxy-graphql-result">@(Runtime?.LastGraphQlResult?.Outcome ?? "Not run")</dd></div>
     </dl>
     @if (Runtime?.LastExecutionError is { } error)
@@ -121,14 +142,14 @@
         <p role="alert" data-testid="proxy-check-error">@error</p>
     }
     <div class="fa-field-full" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0">
-        <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Status.RestAvailable || RestUrl is null)" @onclick="RunRest">Run authenticated REST GET</button>
-        <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Status.GraphQlQueryAvailable || GraphQlUrl is null)" @onclick="RunGraphQl">Run authenticated GraphQL query</button>
+        <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Status.RestAvailable || RestReplayUrl is null)" @onclick="RunRest">Run authenticated REST GET</button>
+        <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Status.GraphQlQueryAvailable || GraphQlReplayUrl is null)" @onclick="RunGraphQl">Run authenticated GraphQL query</button>
     </div>
 
     </details>
     </div>
     </div>
-    <AuthenticatedCapabilities Rest="Status.RestAvailable" GraphQl="Status.GraphQlQueryAvailable" />
+    <AuthenticatedCapabilities Api="Status.AuthenticatedCredentialAvailable" Rest="Status.AuthenticatedRestObserved" GraphQl="Status.AuthenticatedGraphQlQueryObserved" TrafficVerified="true" />
 
 </section>
 
@@ -157,6 +178,22 @@
     private string? RestUrl => Profile is null ? null : LocalHttpsProxyScope.RestCheckUrl(Profile);
     private string? GraphQlUrl => Profile is null ? null : LocalHttpsProxyScope.GraphQlCheckUrl(Profile);
 
+    // Discovery: verified endpoints learned from observed authenticated traffic (never assumed /health or /graphql).
+    private ObservedAuthenticatedEndpoint? DiscoveredRest => Status.VerifiedRestEndpoint;
+    private ObservedAuthenticatedEndpoint? DiscoveredGraphQl => Status.VerifiedGraphQlQueryEndpoint;
+    private string DiscoveredRestLabel => DiscoveredRest is { } e ? $"Verified — {e.Method} {e.Display} (HTTP {e.ResponseStatus})" : "Not observed yet";
+    private string DiscoveredGraphQlLabel => DiscoveredGraphQl is { } e ? $"Verified — {e.Method} {e.Display} ({e.OperationType})" : "Not observed yet";
+    private static string ConfidenceLabel(ObservedAuthenticatedEndpoint endpoint) => endpoint.Confidence switch
+    {
+        ObservedEndpointConfidence.Verified => "Verified from traffic",
+        ObservedEndpointConfidence.Candidate => "Candidate",
+        _ => "Rejected (not an API)"
+    };
+
+    // Safe replay prefers a discovered read-only endpoint; falls back to the configured endpoint. The backend re-enforces HTTPS + approved-host + safe-method.
+    private string? RestReplayUrl => DiscoveredRest is { Method: "GET" or "HEAD" or "OPTIONS" } e ? e.Display : RestUrl;
+    private string? GraphQlReplayUrl => DiscoveredGraphQl?.Display ?? GraphQlUrl;
+
     // Primary Step-1 status line in plain words. Stopped/Stale are transient session states (their integration/port flags are not a fresh
     // compatibility signal), so they use the base wording; environment/deployment/port blockers only override an actively evaluated state.
     private string ProxyStatusLabel =>
@@ -179,6 +216,6 @@
     private Task Stop() => Runtime?.StopAsync() ?? Task.CompletedTask;
     private async Task InstallCertificate() { _confirmInstall = false; if (Runtime is not null) await Runtime.InstallCertificateAsync(); }
     private async Task RemoveCertificate() { _confirmRemove = false; if (Runtime is not null) await Runtime.RemoveCertificateAsync(); }
-    private Task RunRest() => Runtime is not null && RestUrl is { } url ? Runtime.ExecuteRestCheckAsync(url) : Task.CompletedTask;
-    private Task RunGraphQl() => Runtime is not null && GraphQlUrl is { } url ? Runtime.ExecuteGraphQlCheckAsync(url, LocalHttpsProxyScope.GraphQlCheckQuery) : Task.CompletedTask;
+    private Task RunRest() => Runtime is not null && RestReplayUrl is { } url ? Runtime.ExecuteRestCheckAsync(url) : Task.CompletedTask;
+    private Task RunGraphQl() => Runtime is not null && GraphQlReplayUrl is { } url ? Runtime.ExecuteGraphQlCheckAsync(url, LocalHttpsProxyScope.GraphQlCheckQuery) : Task.CompletedTask;
 }

@@ -187,7 +187,13 @@
         {
             <section class="fa-result fa-result-@DetectionStateCss" aria-labelledby="detection-result-heading" aria-live="polite">
                 <div class="fa-result-heading">
-                    <div><span class="fa-result-kicker">Detection result</span><h3 id="detection-result-heading">@DetectionStateLabel</h3></div>
+                    <div>
+                        <span class="fa-result-kicker">Detection result</span><h3 id="detection-result-heading">@DetectionStateLabel</h3>
+                        @if (_detectionRestored)
+                        {
+                            <span class="fa-card-status" role="status" data-testid="detection-restored">@RestoredDetectionLabel</span>
+                        }
+                    </div>
                     <span class="fa-result-confidence">Target detection confidence: @_detectionResult.Confidence</span>
                 </div>
                 <p class="fa-result-message">@DetectionStateMessage</p>
@@ -771,7 +777,7 @@
                             <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
                         }
                         <p>Manual verification confirms user access only. It does not enable authenticated REST, GraphQL or browser automation.</p>
-                        <AuthenticatedCapabilities />
+                        <AuthenticatedCapabilities Api="false" Dom="false" Rest="false" GraphQl="false" TrafficVerified="false" />
                     </section>
                 }
                 <section class="fa-auth-configuration fa-state-@(HasUnsavedAuthenticationChanges ? "draft" : "saved")" data-testid="authentication-configuration">
@@ -1679,6 +1685,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string? _originalProfileJson;
     private string? _originalAuthenticationJson;
     private string? _lastDetectionTargetUrl;
+    // True when _detectionResult was rehydrated from a persisted DetectionSnapshot (a previous application session), not detected now.
+    private bool _detectionRestored;
+    // Optional freshness limit: a restored detection older than this revalidates as Stale (re-detect required). Live in-session detection is never aged out.
+    private static readonly TimeSpan DetectionFreshness = TimeSpan.FromDays(14);
     // Profile the current detection evidence belongs to (target discovery identity, not verification context)
     private string? _detectionProfileId;
     // Deep copy of the profile as it was when detection ran; lets applied detector proposals be
@@ -1723,19 +1733,17 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (_edgeRuntime is not null) await _edgeRuntime.SynchronizeAsync(CurrentProfile);
         if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
     }
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _disposed = true;
-        if (_edgeRuntime is not null)
-        {
-            _edgeRuntime.Changed -= EdgeRuntimeChanged;
-            await _edgeRuntime.DisconnectAsync();
-        }
-        if (_proxyRuntime is not null)
-        {
-            _proxyRuntime.Changed -= EdgeRuntimeChanged;
-            await _proxyRuntime.StopAsync();
-        }
+        // The managed-Edge and Local HTTPS proxy runtimes are app-scoped: their session lifetime follows the backend/runtime session and
+        // the selected Target Environment, NOT this component. Navigating to another BirkNext page unmounts this component but must not stop
+        // the proxy or disconnect CDP — the authenticated session keeps listening so it can back API testing across the application. Only
+        // unsubscribe from change notifications here. Real invalidation still happens on an explicit Stop proxy / Disconnect click, on a
+        // selected-environment or target-configuration change (SynchronizeAsync), or on credential expiry.
+        if (_edgeRuntime is not null) _edgeRuntime.Changed -= EdgeRuntimeChanged;
+        if (_proxyRuntime is not null) _proxyRuntime.Changed -= EdgeRuntimeChanged;
+        return ValueTask.CompletedTask;
     }
 
     private FrontendAnalysisProfile? SelectedProfile =>
@@ -1755,9 +1763,14 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _proxyRuntime = ServiceProvider.GetService<LocalHttpsProxyRuntime>();
         if (_proxyRuntime is not null) _proxyRuntime.Changed += EdgeRuntimeChanged;
         await FaSettings.LoadAsync(JS);
+        // Detection snapshots live in a separate evidence store (never in the saved profile), so load them before restoring.
+        await FaSettings.LoadDetectionSnapshotsAsync(JS);
 
         _selectedProfileId = FaSettings.Settings.ActiveProfileId
             ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+        // Restore the persisted public detection snapshot so a restart shows "Previously detected" (revalidated to Current/Stale)
+        // instead of forcing a fresh Detect. No credential is restored — only safe discovery evidence.
+        RestoreDetectionSnapshot();
     }
 
     // ── Profile selection ────────────────────────────────────────────────────
@@ -1769,15 +1782,37 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (_isEditMode) CancelEdit();
         _selectedProfileId = profileId;
         _activeTab         = "general";
-        // Reset current detection state when switching profiles (no cross-profile leakage)
-        _detectionResult   = null;
+        // Reset current detection state when switching profiles (no cross-profile leakage), then restore the newly selected
+        // profile's persisted detection snapshot (if any) so it shows "Previously detected" revalidated to Current/Stale.
+        _detectionError    = null;
+        _authenticationFailureReason = null;
+        _browserRuntimeInspectionRequired = null;
+        RestoreDetectionSnapshot();
+    }
+
+    /// <summary>
+    /// Clears in-session detection evidence and rehydrates it from the selected profile's persisted <see cref="DetectionSnapshot"/>.
+    /// Only the safe public detection result is restored; the fresh-session manual verification context (<c>_manualDetectionContext</c>)
+    /// is deliberately NOT restored, so recording manual verification and activating a manual-verification environment still require a
+    /// fresh Detect. A deep copy avoids aliasing the persisted snapshot object.
+    /// </summary>
+    private void RestoreDetectionSnapshot()
+    {
+        _detectionResult = null;
         _lastDetectionTargetUrl = null;
         _detectionProfileId = null;
         _detectionProfileSnapshot = null;
         _manualDetectionContext = null;
-        _detectionError    = null;
-        _authenticationFailureReason = null;
-        _browserRuntimeInspectionRequired = null;
+        _detectionRestored = false;
+
+        if (SelectedProfile is { } profile && FaSettings.GetDetectionSnapshot(profile.Id) is { Result: not null } snapshot)
+        {
+            _detectionResult = System.Text.Json.JsonSerializer.Deserialize<TargetEnvironmentDetectionResult>(
+                System.Text.Json.JsonSerializer.Serialize(snapshot.Result));
+            _detectionProfileId = snapshot.DetectedProfileId ?? profile.Id;
+            _lastDetectionTargetUrl = snapshot.DetectedUrl;
+            _detectionRestored = _detectionResult is not null;
+        }
     }
 
     // ── Edit mode ────────────────────────────────────────────────────────────
@@ -1854,6 +1889,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         copy.LastDetectionSucceeded = false;
         copy.LastDetectionFailure = null;
         await FaSettings.SaveAsync(JS);
+        // The duplicate is a new environment identity; it inherits no detection snapshot (the source's is keyed to the source id).
+        await FaSettings.RemoveDetectionSnapshotAsync(JS, copy.Id);
         _selectedProfileId = copy.Id;
         _activeTab         = "general";
     }
@@ -1982,15 +2019,19 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             {
                 // Update detection state based on backend result
                 _detectionResult = result.DetectionResponse;
+                _detectionRestored = false;
                 _detectionProfileId = callingProfileId;
                 _authenticationFailureReason = result.AuthenticationFailureReason;
                 _browserRuntimeInspectionRequired = result.BrowserRuntimeInspectionRequired;
 
-                // Store detection state in profile
+                // Store detection provenance in the profile (existing behaviour for the interactive/browser continuation path).
                 callingProfile.LastDetectedUrl = callingUrl;
                 callingProfile.LastDetectionSucceeded = result.State == DetectionState.Complete;
                 callingProfile.LastDetectionFailure = result.State == DetectionState.Complete ? null : result.State.ToString();
                 await FaSettings.SaveAsync(JS);
+
+                // Also persist the safe public detection snapshot (separate evidence store, no credential) so a restart restores it.
+                await PersistDetectionSnapshotAsync(callingProfile, result.DetectionResponse, callingUrl);
 
                 _browserDetectionInProgress = false;
                 StateHasChanged();
@@ -2118,7 +2159,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             if (result is not null)
             {
                 _detectionResult = result;
+                _detectionRestored = false;
                 _browserRuntimeInspectionRequired = result.BrowserRuntimeInspectionRequired;
+
+                // Persist the safe public detection snapshot (no credential) so a restart restores it as "Previously detected".
+                await PersistDetectionSnapshotAsync(detectionProfile, result, detectionProfile.TargetUrl);
 
                 // Detection updates transient evidence only; Apply owns draft mutations.
                 if (!result.Success)
@@ -2140,6 +2185,27 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _isDetecting = false;
             RecomputeManualReadiness();
         }
+    }
+
+    /// <summary>
+    /// Persists a safe public detection snapshot on the saved profile so it survives a restart. Stores only discovery evidence and its
+    /// target-identity fingerprint/timestamp/source — never a token, cookie, bearer, proxy or CDP session. Writes to the persisted
+    /// profile (by id) and saves immediately, matching how detection evidence is stored outside the Save-changes flow.
+    /// </summary>
+    private async Task PersistDetectionSnapshotAsync(FrontendAnalysisProfile detectionProfile, TargetEnvironmentDetectionResult result, string? detectedUrl)
+    {
+        // Only a successful/meaningful detection is remembered; a hard failure must not masquerade as "previously detected".
+        // Writes ONLY the separate evidence store — the saved profile is never modified by detection.
+        if (!result.Success || result.State == DetectionState.Failed) return;
+        var snapshot = new DetectionSnapshot
+        {
+            Result = System.Text.Json.JsonSerializer.Deserialize<TargetEnvironmentDetectionResult>(System.Text.Json.JsonSerializer.Serialize(result)) ?? result,
+            DetectedProfileId = detectionProfile.Id,
+            DetectedUrl = NormalizeUrl(detectedUrl ?? result.OriginalUrl),
+            DetectedAt = DateTimeOffset.UtcNow,
+            Source = "Detect Settings"
+        };
+        await FaSettings.SaveDetectionSnapshotAsync(JS, detectionProfile.Id, snapshot);
     }
 
     private FrontendAnalysisProfile? CurrentProfile => _isEditMode ? _editProfile : SelectedProfile;
@@ -2175,6 +2241,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             // Target discovery staleness is decided ONLY by target identity (profile + Frontend URL).
             // Authentication draft changes are tracked separately via the manual verification context.
             if (CurrentDiscoveryStaleReason != TargetDiscoveryStaleReason.None)
+                return DetectionState.Stale;
+
+            // A restored snapshot older than the freshness limit revalidates as Stale even when the target identity is unchanged.
+            if (RestoredDetectionExpired)
                 return DetectionState.Stale;
 
             // Return state from current result
@@ -2245,11 +2315,32 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         }
     }
 
-    private string DiscoveryStaleMessage => CurrentDiscoveryStaleReason switch
+    private DetectionSnapshot? RestoredSnapshot => SelectedProfile is { } p ? FaSettings.GetDetectionSnapshot(p.Id) : null;
+
+    /// <summary>A restored (previous-session) detection whose snapshot is older than the freshness limit; re-detect is required.</summary>
+    private bool RestoredDetectionExpired => _detectionRestored && RestoredSnapshot is { } snapshot &&
+        DateTimeOffset.UtcNow - snapshot.DetectedAt > DetectionFreshness;
+
+    /// <summary>Header badge for a restored detection: whether it is still current or needs re-detecting.</summary>
+    private string RestoredDetectionLabel
     {
-        TargetDiscoveryStaleReason.ProfileChanged => "The selected environment changed since the last detection. Run detection again to refresh.",
-        _ => "The target URL changed since the last detection. Run detection again to refresh."
-    };
+        get
+        {
+            var when = RestoredSnapshot?.DetectedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            var suffix = when is null ? "" : $" ({when})";
+            return CurrentDetectionState == DetectionState.Stale
+                ? $"Previously detected — stale, re-detect required{suffix}"
+                : $"Previously detected — current{suffix}";
+        }
+    }
+
+    private string DiscoveryStaleMessage => RestoredDetectionExpired && CurrentDiscoveryStaleReason == TargetDiscoveryStaleReason.None
+        ? "The saved detection is older than the freshness limit. Run detection again to refresh."
+        : CurrentDiscoveryStaleReason switch
+        {
+            TargetDiscoveryStaleReason.ProfileChanged => "The selected environment changed since the last detection. Run detection again to refresh.",
+            _ => "The target URL changed since the last detection. Run detection again to refresh."
+        };
 
     private string DiscoveryStaleActivationReason => CurrentDiscoveryStaleReason switch
     {

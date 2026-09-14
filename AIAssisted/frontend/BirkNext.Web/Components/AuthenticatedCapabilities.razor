@@ -2,18 +2,23 @@
     <h3>Authenticated capabilities</h3>
     <dl class="fa-detail-list">
         <div class="fa-dl-row"><dt>Security · Public</dt><dd>Available</dd></div>
-        <div class="fa-dl-row"><dt>Security · Authenticated API</dt><dd data-testid="capability-api">@Available(Rest || GraphQl)</dd></div>
+        <div class="fa-dl-row"><dt>Security · Authenticated API context</dt><dd data-testid="capability-api">@Available(Api)</dd></div>
         <div class="fa-dl-row"><dt>Security · Authenticated DOM</dt><dd data-testid="capability-dom">@Available(Dom)</dd></div>
         <div class="fa-dl-row"><dt>REST · Public discovery</dt><dd>Available</dd></div>
-        <div class="fa-dl-row"><dt>REST · Authenticated</dt><dd data-testid="capability-rest" title="Approved read-only requests only">@Available(Rest)</dd></div>
+        <div class="fa-dl-row"><dt>REST · Authenticated endpoint</dt><dd data-testid="capability-rest" title="Verified only from observed authenticated traffic; approved read-only requests only">@Verb(Rest)</dd></div>
         <div class="fa-dl-row"><dt>GraphQL · Schema discovery</dt><dd>Available</dd></div>
-        <div class="fa-dl-row"><dt>GraphQL · Authenticated query</dt><dd data-testid="capability-graphql" title="Queries only; mutations and subscriptions remain blocked">@Available(GraphQl)</dd></div>
+        <div class="fa-dl-row"><dt>GraphQL · Authenticated query endpoint</dt><dd data-testid="capability-graphql" title="Verified only from an observed authenticated query; mutations and subscriptions remain blocked">@Verb(GraphQl)</dd></div>
     </dl>
 </section>
 
 @code {
+    /// <summary>An authenticated API context (credential) is available. Separate from whether a REST or GraphQL endpoint was actually observed.</summary>
+    [Parameter] public bool Api { get; set; }
     [Parameter] public bool Dom { get; set; }
     [Parameter] public bool Rest { get; set; }
     [Parameter] public bool GraphQl { get; set; }
+    /// <summary>When true (Local HTTPS proxy), the REST/GraphQL rows report traffic verification ("Verified" / "Not observed") rather than execution availability.</summary>
+    [Parameter] public bool TrafficVerified { get; set; }
     private static string Available(bool value) => value ? "Available" : "Unavailable";
+    private string Verb(bool value) => TrafficVerified ? (value ? "Verified" : "Not observed") : Available(value);
 }
