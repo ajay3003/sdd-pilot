@@ -165,6 +165,70 @@ public sealed class AuthenticatedApiExecutionServiceTests
         Assert.Contains("Access denied", result.Outcome);
     }
 
+    // ── profile-keyed execution for reviews (no runtime session id; scope resolved from the store) ──
+
+    [Fact]
+    public async Task ProfileKeyedRestResolvesScopeFromStoreAndAppliesCredentialInternally()
+    {
+        _handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}", Encoding.UTF8, "application/json") };
+        using var service = Service();
+        var result = await service.ExecuteRestForProfileAsync("dev", Fp, "GET", "https://api.example.test/health");
+        Assert.Equal(200, result.StatusCode);
+        Assert.Equal("Bearer", _handler.LastRequest!.Headers.Authorization!.Scheme);
+        Assert.Equal(Token, _handler.LastRequest.Headers.Authorization.Parameter);
+        Assert.DoesNotContain(Token, JsonSerializer.Serialize(result));
+    }
+
+    [Fact]
+    public async Task ProfileKeyedRestWithoutContextThrowsNoContext()
+    {
+        _store.Invalidate("dev");
+        using var service = Service();
+        var ex = await Assert.ThrowsAsync<AuthenticatedContextUnavailableException>(() => service.ExecuteRestForProfileAsync("dev", Fp, "GET", "https://api.example.test/health"));
+        Assert.Equal(AuthenticatedExecutionStatus.NoContext, ex.Status);
+        Assert.Null(_handler.LastRequest);
+    }
+
+    [Fact]
+    public async Task ProfileKeyedRestOutOfScopeHostThrowsOutOfScope()
+    {
+        using var service = Service();
+        var ex = await Assert.ThrowsAsync<AuthenticatedContextUnavailableException>(() => service.ExecuteRestForProfileAsync("dev", Fp, "GET", "https://evil.example.test/x"));
+        Assert.Equal(AuthenticatedExecutionStatus.OutOfScope, ex.Status);
+        Assert.Null(_handler.LastRequest);
+    }
+
+    [Theory]
+    [InlineData("POST")]
+    [InlineData("DELETE")]
+    public async Task ProfileKeyedRestUnsafeMethodRejected(string method)
+    {
+        using var service = Service();
+        await Assert.ThrowsAsync<ArgumentException>(() => service.ExecuteRestForProfileAsync("dev", Fp, method, "https://api.example.test/x"));
+        Assert.Null(_handler.LastRequest);
+    }
+
+    [Fact]
+    public async Task ProfileKeyedGraphQlQueryAcceptedButMutationRejected()
+    {
+        _handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"data\":{}}", Encoding.UTF8, "application/json") };
+        using var service = Service();
+        var ok = await service.ExecuteGraphQlQueryForProfileAsync("dev", Fp, "https://graphql.example.test/graphql", "query { __typename }");
+        Assert.Equal(200, ok.StatusCode);
+        await Assert.ThrowsAsync<ArgumentException>(() => service.ExecuteGraphQlQueryForProfileAsync("dev", Fp, "https://graphql.example.test/graphql", "mutation { deleteUser(id: 1) }"));
+    }
+
+    [Fact]
+    public async Task ProfileKeyedExpiredContextThrowsExpiredAndNeverSends()
+    {
+        var clockStore = new TransientAuthenticatedApiContextStore(() => DateTimeOffset.UtcNow);
+        ((ITransientCredentialSink)clockStore).Store("dev", Fp, "api.example.test", _scope, Token, DateTimeOffset.UtcNow.AddMilliseconds(-1), "JWT");
+        using var service = new AuthenticatedApiExecutionService(_sessions.Object, clockStore, Options.Create(new LocalHttpsProxyOptions()), _handler);
+        var ex = await Assert.ThrowsAsync<AuthenticatedContextUnavailableException>(() => service.ExecuteRestForProfileAsync("dev", Fp, "GET", "https://api.example.test/health"));
+        Assert.Contains(ex.Status, new[] { AuthenticatedExecutionStatus.NoContext, AuthenticatedExecutionStatus.Expired });
+        Assert.Null(_handler.LastRequest);
+    }
+
     private sealed class RecordingHandler : HttpMessageHandler
     {
         public Func<HttpRequestMessage, HttpResponseMessage> Respond { get; set; } = _ => new HttpResponseMessage(HttpStatusCode.OK);

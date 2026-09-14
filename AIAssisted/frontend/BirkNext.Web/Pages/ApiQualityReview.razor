@@ -77,6 +77,20 @@
             </div>
         </div>
 
+        @if (_report?.Authentication is { } auth)
+        {
+            <AuthenticatedReviewStatus Capabilities="auth.Capabilities" />
+            @if (auth.Checks.Count > 0)
+            {
+                <dl class="fa-detail-list" data-testid="aqr-authenticated-checks">
+                    @foreach (var check in auth.Checks)
+                    {
+                        <div class="fa-dl-row"><dt>@check.Label (authenticated)</dt><dd>@check.Outcome</dd></div>
+                    }
+                </dl>
+            }
+        }
+
         @* ── Endpoint status chips ──────────────────────────────────────── *@
         @if (_context is not null)
         {
@@ -529,16 +543,23 @@
             []);
     }
 
-    private static ApiQualityReviewRequest BuildRequest(FrontendAnalysisContext ctx) => new()
+    private static ApiQualityReviewRequest BuildRequest(FrontendAnalysisContext ctx)
     {
-        RestBaseUrl       = ctx.RestBaseUrl,
-        HealthEndpoint    = ctx.HealthEndpoint,
-        SwaggerUrl        = ctx.SwaggerUrl,
-        GraphQlEndpoint   = ctx.GraphQlEndpoint,
-        TimeoutSeconds    = ctx.RequestTimeoutSeconds,
-        RetryCount        = ctx.RetryCount,
-        EnvironmentName   = ctx.ActiveProfile.Name,
-    };
+        var identity = ReviewAuthenticationIdentity.For(ctx.ActiveProfile);
+        return new()
+        {
+            RestBaseUrl       = ctx.RestBaseUrl,
+            HealthEndpoint    = ctx.HealthEndpoint,
+            SwaggerUrl        = ctx.SwaggerUrl,
+            GraphQlEndpoint   = ctx.GraphQlEndpoint,
+            TimeoutSeconds    = ctx.RequestTimeoutSeconds,
+            RetryCount        = ctx.RetryCount,
+            EnvironmentName   = ctx.ActiveProfile.Name,
+            AuthenticatedTestingMethod = identity.Method,
+            ProfileId         = identity.ProfileId,
+            ContextFingerprint = identity.ContextFingerprint,
+        };
+    }
 
     // ── Filters ───────────────────────────────────────────────────────────────
 

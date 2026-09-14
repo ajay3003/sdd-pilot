@@ -1,0 +1,48 @@
+@using BirkNext.LocalHttpsProxy
+@using BirkNext.Web.Models
+
+@* Consistent authenticated-testing status for API, Integration and Front-end Quality Reviews. Renders capability flags and provenance
+   only — never a token. When ShowBrowserSurfaces is set it also shows the DOM/browser-runtime split (used by Front-end Quality Review). *@
+<div class="ars" data-testid="authenticated-review-status">
+    <dl class="ars-list">
+        <div class="ars-row"><dt>Authentication</dt><dd data-testid="ars-method">@AuthenticatedTestingMethodLabels.Option(Capabilities.Method)</dd></div>
+        <div class="ars-row"><dt>Authenticated API session</dt><dd data-testid="ars-context-status">@StatusLabel</dd></div>
+        @if (Capabilities.ObservedHost is { Length: > 0 } host)
+        {
+            <div class="ars-row"><dt>Observed host</dt><dd data-testid="ars-host">@host</dd></div>
+        }
+        @if (Capabilities.ExpiresAt is { } expires && Capabilities.ContextStatus == AuthenticatedApiContextStatus.Available)
+        {
+            <div class="ars-row"><dt>Expires</dt><dd data-testid="ars-expires">@expires.ToLocalTime().ToString("HH:mm:ss")</dd></div>
+        }
+        <div class="ars-row"><dt>Session</dt><dd data-testid="ars-session">@(Capabilities.AuthenticatedApi ? "Available — memory only" : "Not available")</dd></div>
+        <div class="ars-row"><dt>REST</dt><dd data-testid="ars-rest">@Availability(Capabilities.AuthenticatedRest)</dd></div>
+        <div class="ars-row"><dt>GraphQL query</dt><dd data-testid="ars-graphql">@Availability(Capabilities.AuthenticatedGraphQlQuery)</dd></div>
+        @if (ShowBrowserSurfaces)
+        {
+            <div class="ars-row"><dt>Authenticated DOM</dt><dd data-testid="ars-dom">@Availability(Capabilities.AuthenticatedBrowserDom)</dd></div>
+            <div class="ars-row"><dt>Browser runtime</dt><dd data-testid="ars-runtime">@Availability(Capabilities.AuthenticatedBrowserRuntime)</dd></div>
+        }
+    </dl>
+    @if (Capabilities.Reason is { Length: > 0 } reason)
+    {
+        <p class="ars-reason" role="status" data-testid="ars-reason">@reason</p>
+    }
+    <a class="ars-manage" href="/admin/system-settings?section=target-environments" data-testid="ars-manage">Manage authentication</a>
+</div>
+
+@code {
+    [Parameter] public AuthenticatedReviewCapabilities Capabilities { get; set; } = new();
+    [Parameter] public bool ShowBrowserSurfaces { get; set; }
+
+    private static string Availability(bool value) => value ? "Available" : "Unavailable";
+
+    private string StatusLabel => Capabilities.ContextStatus switch
+    {
+        AuthenticatedApiContextStatus.Available => "Available — memory only",
+        AuthenticatedApiContextStatus.Expired => "Expired",
+        AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic => "Waiting for authenticated traffic",
+        AuthenticatedApiContextStatus.Stale => "Stale — environment changed",
+        _ => "Not applicable"
+    };
+}

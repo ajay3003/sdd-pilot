@@ -86,11 +86,60 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
 
     // ── model / persistence (section 35) ─────────────────────────────────────
 
+    [Theory]
+    [InlineData(FrontendEnvironmentType.Development, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.QA, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.Test, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.RC, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.Production, AuthenticatedTestingMethod.ManagedEdgeCdp)]
+    [InlineData(FrontendEnvironmentType.Local, AuthenticatedTestingMethod.ManagedEdgeCdp)]
+    [InlineData(FrontendEnvironmentType.Custom, AuthenticatedTestingMethod.ManagedEdgeCdp)]
+    public void NewProfileDefaultsByEnvironmentType(FrontendEnvironmentType type, AuthenticatedTestingMethod expected) =>
+        Assert.Equal(expected, new FrontendAnalysisSettingsService().CreateProfile("New", type).Authentication.AuthenticatedTestingMethod);
+
     [Fact]
-    public void NewProfileDefaultsToManagedEdgeCdp()
+    public void PersistedModelDefaultStaysManagedEdgeCdpForLegacyDeserialization()
     {
-        Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, new FrontendAnalysisSettingsService().CreateProfile("New", FrontendEnvironmentType.Development).Authentication.AuthenticatedTestingMethod);
+        // The default applied at creation is environment-specific, but the persisted-model default must stay ManagedEdgeCdp so legacy JSON
+        // without the field keeps deserializing to ManagedEdgeCdp (see LegacyProfileWithoutTheFieldDeserializesToManagedEdgeCdp).
         Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, new FrontendAuthenticationSettings().AuthenticatedTestingMethod);
+        Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, new FrontendAnalysisProfile().Authentication.AuthenticatedTestingMethod);
+    }
+
+    [Theory]
+    [InlineData(AuthenticatedTestingMethod.ManagedEdgeCdp)]
+    [InlineData(AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(AuthenticatedTestingMethod.ManualOnly)]
+    public void ExplicitlyChosenMethodPersistsThroughSaveAndReload(AuthenticatedTestingMethod method)
+    {
+        var settings = new FrontendAnalysisSettingsService();
+        var profile = settings.CreateProfile("Env", FrontendEnvironmentType.Development);
+        profile.Authentication.AuthenticatedTestingMethod = method;
+        settings.UpdateProfile(profile);
+        var reloaded = JsonSerializer.Deserialize<FrontendAnalysisProfile>(JsonSerializer.Serialize(settings.Settings.Profiles.Single(p => p.Id == profile.Id)))!;
+        Assert.Equal(method, reloaded.Authentication.AuthenticatedTestingMethod);
+    }
+
+    [Theory]
+    [InlineData(FrontendEnvironmentType.Development, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.QA, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.Test, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.RC, AuthenticatedTestingMethod.LocalHttpsProxy)]
+    [InlineData(FrontendEnvironmentType.Production, AuthenticatedTestingMethod.ManagedEdgeCdp)]
+    [InlineData(FrontendEnvironmentType.Local, AuthenticatedTestingMethod.ManagedEdgeCdp)]
+    public void ResetRestoresEnvironmentTypeDefaultMethodAndKeepsIdentity(FrontendEnvironmentType type, AuthenticatedTestingMethod expected)
+    {
+        var settings = new FrontendAnalysisSettingsService();
+        var profile = settings.CreateProfile("Env", type);
+        profile.TargetUrl = "https://target.example.test/";
+        // Move off the default, then reset.
+        profile.Authentication.AuthenticatedTestingMethod = expected == AuthenticatedTestingMethod.LocalHttpsProxy ? AuthenticatedTestingMethod.ManualOnly : AuthenticatedTestingMethod.LocalHttpsProxy;
+        settings.ResetProfile(profile.Id);
+        var reset = settings.Settings.Profiles.Single(p => p.Id == profile.Id);
+        Assert.Equal(expected, reset.Authentication.AuthenticatedTestingMethod);
+        Assert.Equal("Env", reset.Name);
+        Assert.Equal(type, reset.EnvironmentType);
+        Assert.Equal("https://target.example.test/", reset.TargetUrl);
     }
 
     [Fact]
@@ -126,7 +175,13 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         source.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.LocalHttpsProxy;
         var copy = settings.DuplicateProfile(source.Id);
         Assert.Equal(AuthenticatedTestingMethod.LocalHttpsProxy, copy.Authentication.AuthenticatedTestingMethod);
-        Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, settings.CreateProfile("Other", FrontendEnvironmentType.Test).Authentication.AuthenticatedTestingMethod);
+        // Duplicate preserves the SOURCE's method, even when it differs from the new-profile default for that environment type.
+        var cdpSource = settings.CreateProfile("Cdp", FrontendEnvironmentType.Development);
+        cdpSource.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.ManagedEdgeCdp;
+        Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, settings.DuplicateProfile(cdpSource.Id).Authentication.AuthenticatedTestingMethod);
+        var manualSource = settings.CreateProfile("Manual", FrontendEnvironmentType.QA);
+        manualSource.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.ManualOnly;
+        Assert.Equal(AuthenticatedTestingMethod.ManualOnly, settings.DuplicateProfile(manualSource.Id).Authentication.AuthenticatedTestingMethod);
     }
 
     [Theory]
@@ -253,6 +308,38 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Contains("manual verification only", Row(cut, "validation-coverage-api"));
     }
 
+    [Fact]
+    public void ReadOnlyShowsSelectedMethodAndNamesOfTheOtherMethods()
+    {
+        var cut = Open(); // dev profile from legacy JSON (no field) => ManagedEdgeCdp
+        OpenTab(cut, "Authentication");
+        Assert.Empty(cut.FindAll("#authenticated-testing-method-select"));
+        Assert.Equal(AuthenticatedTestingMethodLabels.CdpOption, Row(cut, "authenticated-testing-method-value"));
+        var others = Row(cut, "authenticated-testing-method-others");
+        Assert.Contains(AuthenticatedTestingMethodLabels.ProxyOption, others);
+        Assert.Contains(AuthenticatedTestingMethodLabels.ManualOption, others);
+        Assert.DoesNotContain(AuthenticatedTestingMethodLabels.CdpOption, others);
+        // Read-only must not render any runtime panel for an unselected method.
+        Assert.True(Has(cut, "managed-edge-panel"));
+        Assert.False(Has(cut, "local-https-proxy-panel"));
+        Assert.False(Has(cut, "manual-only-panel"));
+    }
+
+    [Fact]
+    public void EditModeExposesAllThreeChoicesWithProxyRecommended()
+    {
+        var cut = Open();
+        OpenTab(cut, "Authentication");
+        Click(cut, "Edit Environment");
+        var options = cut.Find("#authenticated-testing-method-select").QuerySelectorAll("option");
+        Assert.Equal(3, options.Length);
+        var texts = options.Select(o => o.TextContent.Trim()).ToArray();
+        Assert.Contains(texts, t => t.Contains(AuthenticatedTestingMethodLabels.ProxyOption) && t.Contains("recommended"));
+        Assert.Contains(AuthenticatedTestingMethodLabels.CdpOption, texts);
+        Assert.Contains(AuthenticatedTestingMethodLabels.ManualOption, texts);
+        Assert.Equal(0, SaveCalls());
+    }
+
     // ── CDP blocked: no silent switch (section 26) ───────────────────────────
 
     [Fact]
@@ -354,6 +441,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.False(Has(cut, "cdp-blocked-proxy-hint"));
         await cut.InvokeAsync(() => Click(cut, "Connect to existing Edge"));
         cut.WaitForAssertion(() => Assert.True(Has(cut, "cdp-blocked-proxy-hint")));
+        Assert.Contains("fa-state-blocked", cut.Find("[data-testid='managed-edge-panel']").ClassList);
         Assert.Equal(AuthenticatedTestingMethodLabels.CdpBlockedProxyHint, Row(cut, "cdp-blocked-proxy-hint"));
         Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, Persisted().Authentication.AuthenticatedTestingMethod);
         Assert.True(Has(cut, "managed-edge-panel"));
@@ -373,11 +461,14 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.True(Has(cut, "local-https-proxy-panel"));
         Assert.Equal(AuthenticatedTestingMethodLabels.ProxySecurityWarning, Row(cut, "proxy-security-warning"));
         Assert.Equal("Not started", Row(cut, "proxy-state"));
+        Assert.Contains("fa-state-neutral", cut.Find("[data-testid='local-https-proxy-panel']").ClassList);
 
         await cut.InvokeAsync(() => Click(cut, "Check proxy compatibility"));
         cut.WaitForAssertion(() => Assert.Contains("m2lbdev.bufetat.no:443", Row(cut, "proxy-approved-hosts")));
         await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
+        Assert.Contains("fa-state-ready", cut.Find("[data-testid='local-https-proxy-panel']").ClassList);
+        Assert.Contains("Runtime: Authenticated API context available", Row(cut, "local-https-proxy-panel"));
         Assert.Equal("127.0.0.1:8888", Row(cut, "proxy-endpoint"));
         Assert.Equal("Trusted", Row(cut, "proxy-certificate"));
         Assert.Equal("Detected", Row(cut, "proxy-authenticated-traffic"));

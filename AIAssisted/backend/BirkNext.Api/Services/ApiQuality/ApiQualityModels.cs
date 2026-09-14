@@ -25,6 +25,32 @@ public sealed class ApiQualityReviewRequest
     [JsonPropertyName("timeoutSeconds")]   public int     TimeoutSeconds   { get; set; } = 30;
     [JsonPropertyName("retryCount")]       public int     RetryCount       { get; set; } = 3;
     [JsonPropertyName("environmentName")]  public string  EnvironmentName  { get; set; } = "";
+
+    // Active Target Environment authenticated-testing identity. Lets the backend route API-backed checks through the memory-only
+    // authenticated context when the environment uses the Local HTTPS proxy. Never carries a token.
+    [JsonPropertyName("authenticatedTestingMethod")] public BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod AuthenticatedTestingMethod { get; set; } = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
+    [JsonPropertyName("profileId")]          public string? ProfileId          { get; set; }
+    [JsonPropertyName("contextFingerprint")] public string? ContextFingerprint { get; set; }
+}
+
+/// <summary>One authenticated API-backed check performed for the review through the Local HTTPS proxy context. No credential, headers or body.</summary>
+public sealed class ApiQualityAuthenticatedCheck
+{
+    [JsonPropertyName("label")]         public string                       Label         { get; init; } = "";
+    [JsonPropertyName("url")]           public string                       Url           { get; init; } = "";
+    [JsonPropertyName("executionMode")] public BirkNext.LocalHttpsProxy.ReviewExecutionMode ExecutionMode { get; init; }
+    [JsonPropertyName("status")]        public BirkNext.LocalHttpsProxy.AuthenticatedExecutionStatus Status { get; init; }
+    [JsonPropertyName("statusCode")]    public int                          StatusCode    { get; init; }
+    [JsonPropertyName("contentType")]   public string?                      ContentType   { get; init; }
+    [JsonPropertyName("elapsedMs")]     public double                       ElapsedMs     { get; init; }
+    [JsonPropertyName("outcome")]       public string                       Outcome       { get; init; } = "";
+}
+
+/// <summary>Authenticated API availability + provenance surfaced in the API Quality report. Capability flags come from the shared review model; no token.</summary>
+public sealed class ApiQualityAuthenticationSummary
+{
+    [JsonPropertyName("capabilities")] public BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities Capabilities { get; init; } = new();
+    [JsonPropertyName("checks")]       public List<ApiQualityAuthenticatedCheck> Checks { get; init; } = [];
 }
 
 public sealed class ApiQualityFinding
@@ -76,6 +102,9 @@ public sealed class ApiQualityReviewReport
     [JsonPropertyName("recommendations")]    public List<string>                  Recommendations { get; init; } = [];
     [JsonPropertyName("limitations")]        public List<string>                  Limitations     { get; init; } = [];
     [JsonPropertyName("errorMessage")]       public string? ErrorMessage { get; init; }
+
+    /// <summary>Authenticated API availability and provenance for this review. Null when the environment has no authenticated-testing identity.</summary>
+    [JsonPropertyName("authentication")]     public ApiQualityAuthenticationSummary? Authentication { get; init; }
 
     // Endpoint probe results for Connectivity tab
     [JsonPropertyName("frontendResult")]  public ApiQualityEndpointResult? FrontendResult  { get; init; }

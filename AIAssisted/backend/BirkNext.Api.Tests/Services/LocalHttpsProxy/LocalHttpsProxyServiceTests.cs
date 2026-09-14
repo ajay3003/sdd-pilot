@@ -286,6 +286,26 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task StatusForProfileReflectsCredentialAndIsScopedToTheProfileForReviews()
+    {
+        await StartWithCredentialAsync();
+        var query = (ILocalHttpsProxyStatusQuery)_service;
+        var status = query.StatusForProfile("dev", Fp);
+        Assert.NotNull(status);
+        Assert.True(status!.AuthenticatedCredentialAvailable);
+        Assert.Equal(ApiHost, status.CredentialObservedHost);
+        // A different profile or fingerprint sees no context (Dev credential never leaks to QA).
+        Assert.Null(query.StatusForProfile("qa", Fp));
+        Assert.Null(query.StatusForProfile("dev", new string('B', 64)));
+        // After expiry the profile view reports the credential expired, not available.
+        _now = _now.AddMinutes(31);
+        var expired = query.StatusForProfile("dev", Fp);
+        Assert.NotNull(expired);
+        Assert.False(expired!.AuthenticatedCredentialAvailable);
+        Assert.True(expired.CredentialExpired);
+    }
+
+    [Fact]
     public async Task StopWipesTheCredentialImmediatelyAndInvalidatesTheSession()
     {
         var port = await StartWithCredentialAsync();

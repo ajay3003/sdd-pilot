@@ -140,6 +140,31 @@ public sealed class IntegrationQualityRequest
     [JsonPropertyName("environmentName")] public string                    EnvironmentName { get; set; } = "";
     [JsonPropertyName("integrations")]    public List<IntegrationConfigDto> Integrations   { get; set; } = [];
     [JsonPropertyName("timeoutSeconds")]  public int                       TimeoutSeconds  { get; set; } = 30;
+
+    // Active Target Environment authenticated-testing identity (never a token). Enables authenticated runtime checks via the Local HTTPS proxy.
+    [JsonPropertyName("authenticatedTestingMethod")] public BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod AuthenticatedTestingMethod { get; set; } = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
+    [JsonPropertyName("profileId")]          public string? ProfileId          { get; set; }
+    [JsonPropertyName("contextFingerprint")] public string? ContextFingerprint { get; set; }
+}
+
+/// <summary>One authenticated runtime check performed for an integration through the Local HTTPS proxy context. No credential, headers or body.</summary>
+public sealed class IntegrationAuthenticatedCheck
+{
+    [JsonPropertyName("integrationId")] public string                       IntegrationId { get; init; } = "";
+    [JsonPropertyName("label")]         public string                       Label         { get; init; } = "";
+    [JsonPropertyName("url")]           public string                       Url           { get; init; } = "";
+    [JsonPropertyName("executionMode")] public BirkNext.LocalHttpsProxy.ReviewExecutionMode ExecutionMode { get; init; }
+    [JsonPropertyName("status")]        public BirkNext.LocalHttpsProxy.AuthenticatedExecutionStatus Status { get; init; }
+    [JsonPropertyName("statusCode")]    public int                          StatusCode    { get; init; }
+    [JsonPropertyName("elapsedMs")]     public double                       ElapsedMs     { get; init; }
+    [JsonPropertyName("outcome")]       public string                       Outcome       { get; init; } = "";
+}
+
+/// <summary>Authenticated availability + provenance surfaced in the Integration Quality report. Capability flags come from the shared review model; no token.</summary>
+public sealed class IntegrationAuthenticationSummary
+{
+    [JsonPropertyName("capabilities")] public BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities Capabilities { get; init; } = new();
+    [JsonPropertyName("checks")]       public List<IntegrationAuthenticatedCheck> Checks { get; init; } = [];
 }
 
 public sealed class IntegrationFinding
@@ -181,4 +206,6 @@ public sealed class IntegrationQualityReport
     [JsonPropertyName("statuses")]           public List<IntegrationStatus>  Statuses          { get; init; } = [];
     [JsonPropertyName("recommendations")]    public List<string>             Recommendations   { get; init; } = [];
     [JsonPropertyName("limitations")]        public List<string>             Limitations       { get; init; } = [];
+    /// <summary>Authenticated availability and provenance for this review. Null when the environment has no authenticated-testing identity.</summary>
+    [JsonPropertyName("authentication")]     public IntegrationAuthenticationSummary? Authentication { get; init; }
 }

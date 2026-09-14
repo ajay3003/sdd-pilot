@@ -26,6 +26,15 @@ public interface ILocalHttpsProxySessionAccess
 }
 
 /// <summary>
+/// Read-only, profile-keyed view of the current proxy/credential status for reviews that do not hold a runtime session id. Returns the
+/// live <see cref="LocalHttpsProxyStatus"/> only when the current session matches the profile+fingerprint; otherwise null. No credential.
+/// </summary>
+public interface ILocalHttpsProxyStatusQuery
+{
+    LocalHttpsProxyStatus? StatusForProfile(string profileId, string contextFingerprint);
+}
+
+/// <summary>
 /// Owns the single loopback proxy session. Enforces the DEV/non-production gate, the LocalWorkstation deployment gate, loopback-only
 /// binding and the approved-host allowlist; promotes an observed Bearer credential to the memory-only authenticated API context only
 /// when it was sent over HTTPS to an approved host on a successful request, is not expired and matches the expected tenant (when
@@ -33,7 +42,7 @@ public interface ILocalHttpsProxySessionAccess
 /// </summary>
 public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> options, IOptions<AuthenticatedReviewOptions> runtime, IProxyCertificateAuthority authority,
     TransientAuthenticatedApiContextStore store, IUpstreamConnector upstream, IEdgeInstallationLocator edgeLocator, IManagedEdgeLauncher edgeLauncher,
-    ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess
+    ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
 {
     public const string PortsOccupiedReason = "The configured loopback proxy ports are all occupied. BirkNext never stops the occupying process; free a port or configure LocalHttpsProxy:Port.";
     public const string EdgeMissingReason = "Microsoft Edge was not found in the standard installation locations. Configure the proxy manually in Windows proxy settings instead.";
@@ -185,6 +194,21 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
     }
 
     ApprovedHostSet ILocalHttpsProxySessionAccess.GetScope(LocalHttpsProxySessionRequest session) => Get(session).Hosts;
+
+    LocalHttpsProxyStatus? ILocalHttpsProxyStatusQuery.StatusForProfile(string profileId, string contextFingerprint)
+    {
+        _gate.Wait();
+        try
+        {
+            var session = _session;
+            if (session is null ||
+                !string.Equals(session.Scope.ProfileId, profileId, StringComparison.Ordinal) ||
+                !string.Equals(session.Scope.ContextFingerprint, contextFingerprint, StringComparison.Ordinal))
+                return null;
+            return Describe(session.Scope, session);
+        }
+        finally { _gate.Release(); }
+    }
 
     // ── internals ────────────────────────────────────────────────────────────
 

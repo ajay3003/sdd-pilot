@@ -45,6 +45,14 @@ public static class AuthenticatedTestingMethodLabels
         _ => CdpOption
     };
 
+    /// <summary>Names of the methods other than the selected one, for the read-only "Other available methods" line.</summary>
+    public static string OtherMethods(AuthenticatedTestingMethod selected) =>
+        string.Join(", ", Enum.GetValues<AuthenticatedTestingMethod>().Where(m => m != selected).Select(Option));
+
+    /// <summary>The edit-mode option label, appending a recommendation hint on the Local HTTPS proxy choice for its default environments.</summary>
+    public static string EditOption(AuthenticatedTestingMethod method) =>
+        method == AuthenticatedTestingMethod.LocalHttpsProxy ? $"{ProxyOption} (recommended for DEV/QA/Test/RC)" : Option(method);
+
     public static string Help(AuthenticatedTestingMethod method) => method switch
     {
         AuthenticatedTestingMethod.LocalHttpsProxy => ProxySecurityWarning,

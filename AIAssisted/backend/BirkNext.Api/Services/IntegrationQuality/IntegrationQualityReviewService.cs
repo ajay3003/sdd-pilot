@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using BirkNext.Api.Services.LocalHttpsProxy;
+using BirkNext.LocalHttpsProxy;
 
 namespace BirkNext.Api.Services.IntegrationQuality;
 
@@ -6,6 +8,7 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
 {
     private readonly HttpClient _client;
     private readonly ILogger<IntegrationQualityReviewService> _logger;
+    private readonly IAuthenticatedReviewGateway _authenticatedReview;
 
     private static readonly HashSet<IntegrationType> AsyncTypes =
     [
@@ -13,10 +16,40 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         IntegrationType.Kafka, IntegrationType.RabbitMQ
     ];
 
-    public IntegrationQualityReviewService(HttpClient client, ILogger<IntegrationQualityReviewService> logger)
+    public IntegrationQualityReviewService(HttpClient client, ILogger<IntegrationQualityReviewService> logger, IAuthenticatedReviewGateway authenticatedReview)
     {
         _client = client;
         _logger = logger;
+        _authenticatedReview = authenticatedReview;
+    }
+
+    /// <summary>
+    /// Authenticated runtime layer shared with the other reviews: resolves capabilities for the active environment and, when an
+    /// authenticated context is available, runs approved authenticated GET checks against each enabled integration's health/worker URL
+    /// with recorded provenance. Public probes are unaffected; an unavailable/expired context is reported, never silently downgraded.
+    /// </summary>
+    private async Task<IntegrationAuthenticationSummary> BuildAuthenticationSummaryAsync(IntegrationQualityRequest request, CancellationToken ct)
+    {
+        var identity = new AuthenticatedReviewIdentity(request.AuthenticatedTestingMethod, request.ProfileId, request.ContextFingerprint);
+        var capabilities = _authenticatedReview.Resolve(identity);
+        var checks = new List<IntegrationAuthenticatedCheck>();
+        if (capabilities.AuthenticatedRest)
+        {
+            foreach (var intg in request.Integrations.Where(i => i.Enabled))
+            {
+                foreach (var (label, url) in new[] { ("Health", intg.HealthUrl), ("Worker", intg.WorkerUrl) })
+                {
+                    if (string.IsNullOrWhiteSpace(url)) continue;
+                    var outcome = await _authenticatedReview.ExecuteRestAsync(identity, "GET", url!, ct);
+                    checks.Add(new IntegrationAuthenticatedCheck
+                    {
+                        IntegrationId = intg.Id, Label = label, Url = url!, ExecutionMode = outcome.Mode, Status = outcome.Status,
+                        StatusCode = outcome.Result?.StatusCode ?? 0, ElapsedMs = outcome.Result?.ElapsedMs ?? 0, Outcome = outcome.Message
+                    });
+                }
+            }
+        }
+        return new IntegrationAuthenticationSummary { Capabilities = capabilities, Checks = checks };
     }
 
     public async Task<IntegrationQualityReport> AnalyzeAsync(
@@ -187,6 +220,8 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         if (request.Integrations.Any(i => !i.Enabled))
             limitations.Add("Disabled integrations are excluded from the readiness score and findings.");
 
+        var authentication = await BuildAuthenticationSummaryAsync(request, ct);
+
         return new IntegrationQualityReport
         {
             EnvironmentName    = request.EnvironmentName,
@@ -199,7 +234,8 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
             Findings           = findings,
             Statuses           = statuses,
             Recommendations    = recommendations,
-            Limitations        = limitations
+            Limitations        = limitations,
+            Authentication     = authentication
         };
     }
 

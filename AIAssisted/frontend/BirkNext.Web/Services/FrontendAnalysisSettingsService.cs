@@ -105,6 +105,10 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             Security        = GetDefaultSecuritySettings(),
             Features        = GetDefaultFeatureToggles()
         };
+        // A brand-new environment starts on the environment-type default method (Local HTTPS proxy for DEV/QA/Test/RC, CDP otherwise).
+        // This is an explicit choice on a new profile, not a migration: the persisted-model default stays ManagedEdgeCdp so legacy JSON
+        // without the field still deserializes to ManagedEdgeCdp.
+        profile.Authentication.AuthenticatedTestingMethod = BirkNext.LocalHttpsProxy.LocalHttpsProxyEnvironmentPolicy.DefaultMethodFor(environmentType.ToString());
         _settings.Profiles.Add(profile);
         return profile;
     }
@@ -211,6 +215,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         p.CoreWebVitals = GetDefaultCoreWebVitals();
         p.Security      = GetDefaultSecuritySettings();
         p.Features      = GetDefaultFeatureToggles();
+        // Restore the environment-type default authenticated testing method. Name, environment type and target URL are left untouched.
+        p.Authentication.AuthenticatedTestingMethod = BirkNext.LocalHttpsProxy.LocalHttpsProxyEnvironmentPolicy.DefaultMethodFor(p.EnvironmentType.ToString());
     }
 
     // ── Validation ────────────────────────────────────────────────────────────
@@ -402,6 +408,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             Performance     = new FrontendPerformanceThresholds(),
             CoreWebVitals   = new CoreWebVitalsThresholds(),
             Security        = new FrontendSecuritySettings(),
-            Features        = new FrontendAnalysisFeatureToggles()
+            Features        = new FrontendAnalysisFeatureToggles(),
+            Authentication  = new FrontendAuthenticationSettings { AuthenticatedTestingMethod = BirkNext.LocalHttpsProxy.LocalHttpsProxyEnvironmentPolicy.DefaultMethodFor(env.ToString()) }
         };
 }

@@ -108,7 +108,11 @@
             <div class="fa-detail-header-actions">
                 @if (_isEditMode)
                 {
-                    <SecondaryButton OnClick="CancelEdit" Disabled="@(_isSaving || !IsDirty)">Cancel</SecondaryButton>
+                    @if (IsDirty)
+                    {
+                        <span class="fa-page-unsaved" role="status">Unsaved changes</span>
+                    }
+                    <SecondaryButton OnClick="CancelEdit" Disabled="@_isSaving">Cancel</SecondaryButton>
                     <PrimaryButton OnClick="SaveProfileAsync" Disabled="@(_isSaving || !IsDirty)">
                         @(_isSaving ? "Saving…" : "Save changes")
                     </PrimaryButton>
@@ -701,8 +705,8 @@
             @if (_activeTab == "auth")
             {
                 <div class="fa-auth-layout">
-                <section class="fa-detection-summary" data-testid="authentication-discovery">
-                    <h3>Authentication discovery</h3>
+                <section class="fa-detection-summary fa-state-@AuthenticationDiscoveryState" data-testid="authentication-discovery">
+                    <div class="fa-card-heading"><h3>Authentication discovery</h3><span class="fa-card-status" role="status">@AuthenticationDiscoveryLabel</span></div>
                     <dl class="fa-detail-list" data-testid="edge-auth-discovery">
                         <div class="fa-dl-row"><dt>Provider</dt><dd>@DetectedAuthenticationLabel</dd></div>
                         <div class="fa-dl-row"><dt>Authority</dt><dd>@(_detectionResult?.DetectedAuthority ?? "—")</dd></div>
@@ -713,25 +717,30 @@
                     @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
                     {
                         <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;"
+                                disabled="@(AuthenticationProposalStale || AuthenticationProposalMatches(CurrentProfile))"
                                 title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
                             Apply authentication
                         </button>
+                        <p>@(AuthenticationDiscoveryState == "draft" ? "Save changes to persist this configuration." : "Detected values are not saved automatically.")</p>
                     }
                 </section>
-                <section class="fa-detection-summary" data-testid="authenticated-testing-method">
-                    <h3>Authenticated testing method</h3>
+                <section class="fa-detection-summary fa-state-@(TestingMethodChanged ? "draft" : "saved")" data-testid="authenticated-testing-method">
+                    <div class="fa-card-heading"><h3>Authenticated testing method</h3><span class="fa-card-status" role="status">@(TestingMethodChanged ? "Unsaved change" : _isEditMode ? "Editing draft" : "Saved configuration")</span></div>
                     @if (_isEditMode && _editProfile is not null)
                     {
                         <label class="fa-label" for="authenticated-testing-method-select">Method</label>
                         <select id="authenticated-testing-method-select" class="form-control" @bind="_editProfile.Authentication.AuthenticatedTestingMethod">
+                            <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.EditOption(AuthenticatedTestingMethod.LocalHttpsProxy)</option>
                             <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
-                            <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.ProxyOption</option>
                             <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
                         </select>
                     }
                     else
                     {
-                        <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)</dd></div></dl>
+                        <dl class="fa-detail-list">
+                            <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)</dd></div>
+                            <div class="fa-dl-row"><dt>Other available methods</dt><dd data-testid="authenticated-testing-method-others">@AuthenticatedTestingMethodLabels.OtherMethods(SelectedTestingMethod)</dd></div>
+                        </dl>
                     }
                     <p class="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? "fa-section-note" : "fa-auth-help")" data-testid="authenticated-testing-method-help"><span data-testid="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? "proxy-security-warning" : null)">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span></p>
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile))
@@ -751,7 +760,7 @@
                 }
                 else
                 {
-                    <section class="fa-detection-summary" data-testid="manual-only-panel" aria-label="Manual verification only">
+                    <section class="fa-detection-summary fa-state-@(ManualStatus == ManualAuthenticationVerificationStatus.Passed ? "ready" : ManualStatus == ManualAuthenticationVerificationStatus.Failed ? "blocked" : "needs-action")" data-testid="manual-only-panel" aria-label="Manual verification only">
                         <h3>Manual verification</h3>
                         <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Status</dt><dd>@ManualStatus</dd></div></dl>
                         <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
@@ -765,8 +774,8 @@
                         <AuthenticatedCapabilities />
                     </section>
                 }
-                <section class="fa-auth-configuration" data-testid="authentication-configuration">
-                <h3>Authentication configuration</h3>
+                <section class="fa-auth-configuration fa-state-@(HasUnsavedAuthenticationChanges ? "draft" : "saved")" data-testid="authentication-configuration">
+                <div class="fa-card-heading"><h3>Authentication configuration</h3><span class="fa-card-status" role="status">@(HasUnsavedAuthenticationChanges ? "Unsaved changes" : _isEditMode ? "Editing draft" : "Saved configuration")</span></div>
                 @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
                 {
                     <p role="status">@ManualVerificationLabel <button type="button" class="btn-secondary fa-btn-sm" @onclick='() => _activeTab = "target"'>Review manual verification</button></p>
@@ -793,7 +802,7 @@
                                     </svg>
                                     <div class="fa-unsaved-body">
                                         <strong id="auth-unsaved-title" class="fa-unsaved-title">Unsaved changes</strong>
-                                        <div class="fa-unsaved-help">Authentication settings have been applied to the draft. Use Save changes to persist them.</div>
+                                        <div class="fa-unsaved-help">Authentication settings differ from saved configuration. Use Save changes to persist them.</div>
                                     </div>
                                 </div>
                             }
@@ -835,7 +844,8 @@
                            draft -> Save changes / Cancel flow and never marks public target detection stale. *@
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                     {
-                        <div class="form-field fa-field-full" style="padding-top:1rem;border-top:1px solid var(--color-border)" data-testid="browser-delivery-trust">
+                        <div class="form-field fa-field-full fa-state-@(BrowserTrustChanged ? "draft" : "saved")" style="padding-top:1rem;border-top:1px solid var(--color-border)" data-testid="browser-delivery-trust">
+                            <span class="fa-card-status" role="status">@(BrowserTrustChanged ? "Unsaved change" : "Editing draft")</span>
                             <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
                             <p>Exact origin is always preferred.</p>
                             <dl class="fa-detail-list">
@@ -870,7 +880,8 @@
                     </details>
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                     {
-                    <div class="fa-field-full" style="margin-top:1.5rem" data-testid="browser-delivery-trust">
+                    <div class="fa-field-full fa-state-saved" style="margin-top:1.5rem" data-testid="browser-delivery-trust">
+                        <span class="fa-card-status">Saved configuration</span>
                         <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
                         <dl class="fa-detail-list">
                             <div class="fa-dl-row"><dt>Configured target</dt><dd data-testid="browser-delivery-trust-target">@(BrowserDeliveryTrustLabels.ConfiguredTarget(profile) ?? "Configure a Frontend URL")</dd></div>
@@ -2377,6 +2388,44 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool HasUnsavedAuthenticationChanges => _editProfile is not null && _originalAuthenticationJson is not null &&
         System.Text.Json.JsonSerializer.Serialize(_editProfile.Authentication) != _originalAuthenticationJson;
 
+    private bool TestingMethodChanged => _editProfile is not null &&
+        _editProfile.Authentication.AuthenticatedTestingMethod != SelectedProfile?.Authentication.AuthenticatedTestingMethod;
+
+    private bool BrowserTrustChanged => _editProfile is not null &&
+        _editProfile.Authentication.BrowserDeliveryTrust != SelectedProfile?.Authentication.BrowserDeliveryTrust;
+
+    // Preserve both existing fingerprint contracts: target identity and proposal-consistent
+    // authentication/security context. Applying the detector's own values remains current.
+    private bool AuthenticationProposalStale => IsDetectionStale ||
+        (_manualDetectionContext is not null && CurrentProfile is { } current &&
+         ManualVerificationContextFingerprint(current) != _manualDetectionContext);
+
+    private bool AuthenticationProposalMatches(FrontendAnalysisProfile? profile)
+    {
+        if (profile is null || _detectionResult is not { Success: true } d || !HasDetectedAuthSettings(d)) return false;
+        var a = profile.Authentication;
+        var tenant = !string.IsNullOrWhiteSpace(d.DetectedTenantId) ? d.DetectedTenantId : d.TenantMode;
+        return (d.DetectedAuthenticationType == FrontendAuthenticationType.None || a.AuthenticationType == d.DetectedAuthenticationType) &&
+            (string.IsNullOrWhiteSpace(d.DetectedAuthority) || a.ExpectedAuthority == d.DetectedAuthority) &&
+            (string.IsNullOrWhiteSpace(tenant) || a.ExpectedTenant == tenant) &&
+            (string.IsNullOrWhiteSpace(d.DetectedClientId) || a.ExpectedClientId == d.DetectedClientId) &&
+            d.DetectedRedirectUrls.All(url => a.AllowedRedirectUrls.Contains(url, StringComparer.OrdinalIgnoreCase));
+    }
+
+    private string AuthenticationDiscoveryState => AuthenticationProposalStale ? "needs-action" :
+        _detectionResult?.Success != true || !HasDetectedAuthSettings(_detectionResult) ? "neutral" :
+        AuthenticationProposalMatches(CurrentProfile) ?
+            AuthenticationProposalMatches(SelectedProfile) ? "saved" : "draft" : "detected";
+
+    private string AuthenticationDiscoveryLabel => AuthenticationDiscoveryState switch
+    {
+        "needs-action" => "Detection stale — run Detect settings again",
+        "saved" => "Matches saved configuration",
+        "draft" => "Applied to draft — Save changes to persist",
+        "detected" => "Detected — proposal available",
+        _ => "Not detected"
+    };
+
     private string DetectedAuthenticationLabel => _detectionResult is null ||
         (!_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None)
             ? "Not determined"
@@ -2607,7 +2656,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     private void ApplyDetectedAuthenticationSettings()
     {
-        if (_detectionResult is null) return;
+        if (_detectionResult?.Success != true || AuthenticationProposalStale || AuthenticationProposalMatches(CurrentProfile)) return;
         var wasEditing = _isEditMode;
         if (!_isEditMode) EnterEditMode();
         if (_editProfile is null) return;
@@ -2650,7 +2699,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private void ApplyDetectedEndpoint(string fieldName, string value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return;
+        if (string.IsNullOrWhiteSpace(value) || IsDetectionStale) return;
+        var wasEditing = _isEditMode;
         if (!_isEditMode) EnterEditMode();
         if (_editProfile is null) return;
 
@@ -2663,6 +2713,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         else if (fieldName == nameof(_editProfile.HealthEndpoint))
             _editProfile.HealthEndpoint = value;
 
+        if (!wasEditing && !IsDirty) CancelEdit();
         StateHasChanged();
     }
 

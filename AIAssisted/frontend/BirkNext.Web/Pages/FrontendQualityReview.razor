@@ -9,6 +9,7 @@
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
 @inject IFrontendQualityEngineStatusApiService EngineStatusService
+@inject IServiceProvider ServiceProvider
 @inject IJSRuntime JS
 
 <PageTitle>Frontend Quality Review</PageTitle>
@@ -41,6 +42,15 @@
                        NotAssessedItems="FrontendNotAssessedItems"
                        Metadata="BuildFrontendMetadata()"
                        EstimatedDuration="Review duration depends on target size and enabled checks." />
+
+        @if (_caps is { } caps)
+        {
+            <section class="fqr-auth-capabilities" aria-label="Authenticated review capabilities" data-testid="fqr-authenticated-capabilities">
+                <h2>Authenticated coverage</h2>
+                <p class="fa-section-note">API-backed checks can use the Local HTTPS proxy authenticated context; authenticated DOM and browser-runtime checks require a CDP browser context.</p>
+                <AuthenticatedReviewStatus Capabilities="caps" ShowBrowserSurfaces="true" />
+            </section>
+        }
 
         @if (_context?.RequiresAuthentication == true)
         {
@@ -567,6 +577,7 @@
     ];
 
     private FrontendAnalysisContext? _context;
+    private BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities? _caps;
     private AuthenticatedBrowserSession? _authSession;
     private bool _authPolling;
 
@@ -591,7 +602,15 @@
         _context = await ContextFactory.GetActiveContextAsync();
         _report  = RuntimeReviews.QualityReview.Report;
 
+        await ResolveAuthenticatedCapabilities();
         await FetchEngineStatus();
+    }
+
+    private async Task ResolveAuthenticatedCapabilities()
+    {
+        // Optional so page-render tests that do not register it still work; when present it drives the authenticated coverage panel.
+        if (ServiceProvider.GetService(typeof(IAuthenticatedReviewCapabilitiesService)) is IAuthenticatedReviewCapabilitiesService service)
+            _caps = await service.ResolveAsync(ReviewAuthenticationIdentity.For(_context?.ActiveProfile));
     }
 
     private async Task FetchEngineStatus()
@@ -761,6 +780,7 @@
     private async Task RefreshContext()
     {
         _context = await ContextFactory.GetActiveContextAsync();
+        await ResolveAuthenticatedCapabilities();
     }
 
     private IReadOnlyList<ReviewLanding.TargetField> BuildFrontendTargetFields()

@@ -231,8 +231,10 @@ builder.Services.AddSingleton<IUpstreamConnector>(sp => new DirectUpstreamConnec
 builder.Services.AddSingleton<LocalHttpsProxyService>();
 builder.Services.AddSingleton<ILocalHttpsProxyService>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<ILocalHttpsProxySessionAccess>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
+builder.Services.AddSingleton<ILocalHttpsProxyStatusQuery>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<IAuthenticatedApiExecutionService, AuthenticatedApiExecutionService>();
+builder.Services.AddSingleton<IAuthenticatedReviewGateway, AuthenticatedReviewGateway>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
 builder.Services.AddSingleton<AuthenticationOriginPolicy>();
@@ -308,6 +310,13 @@ builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService
 {
     client.Timeout = TimeSpan.FromSeconds(60);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiQualityScanner/1.0");
+});
+
+// Integration Quality Review
+builder.Services.AddHttpClient<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualityReviewService, BirkNext.Api.Services.IntegrationQuality.IntegrationQualityReviewService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-IntegrationQualityScanner/1.0");
 });
 
 // Contract Analysis (Phase 3-4)

@@ -2,8 +2,8 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Models
 
-<section class="fa-detection-summary" data-testid="managed-edge-panel" aria-label="Managed Edge authentication">
-    <h3>Managed Edge / CDP</h3>
+<section class="fa-detection-summary fa-state-@RuntimeState" data-testid="managed-edge-panel" aria-label="Managed Edge authentication">
+    <div class="fa-card-heading"><h3>Managed Edge / CDP</h3><span class="fa-card-status" role="status">Runtime: @RuntimeLabel</span></div>
     <details><summary>Sign-in instructions</summary>
         <p>Start a separate Edge instance, open @SafeOrigin and sign in manually. Complete MFA, PIN, passkeys and Conditional Access yourself, then re-check the target application. BirkNext never reads cookies, tokens or browser storage.</p>
     </details>
@@ -89,6 +89,18 @@
     [Parameter] public TargetEnvironmentDetectionResult? Detection { get; set; }
     private ManagedEdgeStatus Status => Runtime?.For(Profile) ?? new() { State = ManagedEdgeState.NotConfigured };
     private ManagedEdgePreflightResult? Preflight => Runtime?.PreflightFor(Profile);
+    private string RuntimeState => Status.State switch
+    {
+        ManagedEdgeState.TargetTabNotInspectable or ManagedEdgeState.ProxiedDeliveryUncorrelated or
+        ManagedEdgeState.ProxiedDeliveryNotPermitted or ManagedEdgeState.Failed => "blocked",
+        ManagedEdgeState.ConnectedAuthenticated => "ready",
+        ManagedEdgeState.TargetTabNotFound or ManagedEdgeState.AmbiguousTargetTabs or ManagedEdgeState.Stale => "needs-action",
+        ManagedEdgeState.Connected or ManagedEdgeState.ConnectedUnproven or ManagedEdgeState.Connecting => "detected",
+        _ => Preflight is null ? "neutral" : Preflight.CanConnect || Preflight.CanLaunchTestEdge ? "ready" : "blocked"
+    };
+    private string RuntimeLabel => Status.State is ManagedEdgeState.NotConfigured or ManagedEdgeState.NotConnected
+        ? Preflight is null ? "Not checked" : RuntimeState == "ready" ? "Ready" : "Blocked / unavailable"
+        : AuthenticatedTestingMethodLabels.Connection(Status.State);
     private string SafeOrigin => Uri.TryCreate(Profile?.TargetUrl, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority) : "Configure a Frontend URL";
     private static string PolicyLabel(EdgeRemoteDebuggingPolicyStatus status) => status switch
     {

@@ -18,6 +18,22 @@ public interface IAuthenticatedApiExecutionService
 {
     Task<AuthenticatedApiExecutionResult> ExecuteRestAsync(AuthenticatedRestRequest request, CancellationToken cancellationToken = default);
     Task<AuthenticatedApiExecutionResult> ExecuteGraphQlQueryAsync(AuthenticatedGraphQlRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Profile-keyed authenticated REST execution for reviews: resolves the approved host scope from the memory-only context store
+    /// (no runtime session id needed), re-validates the context at execution time, applies the credential internally and returns a
+    /// sanitized result. Throws <see cref="AuthenticatedContextUnavailableException"/> when there is no usable context or the host is out of scope.
+    /// </summary>
+    Task<AuthenticatedApiExecutionResult> ExecuteRestForProfileAsync(string profileId, string contextFingerprint, string method, string url, CancellationToken cancellationToken = default);
+
+    /// <summary>Profile-keyed authenticated GraphQL QUERY execution for reviews. Same contract as <see cref="ExecuteRestForProfileAsync"/>; mutations/subscriptions/variables rejected.</summary>
+    Task<AuthenticatedApiExecutionResult> ExecuteGraphQlQueryForProfileAsync(string profileId, string contextFingerprint, string endpointUrl, string query, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Thrown when a profile-keyed authenticated execution cannot run because the memory-only context is missing/expired or the target host is out of scope. Carries no credential.</summary>
+public sealed class AuthenticatedContextUnavailableException(AuthenticatedExecutionStatus status, string message) : Exception(message)
+{
+    public AuthenticatedExecutionStatus Status { get; } = status;
 }
 
 public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutionService, IDisposable
@@ -76,6 +92,57 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/graphql-response+json"));
         Apply(session, message);
         return await SendAsync(message, graphQl: true, cancellationToken);
+    }
+
+    public async Task<AuthenticatedApiExecutionResult> ExecuteRestForProfileAsync(string profileId, string contextFingerprint, string method, string url, CancellationToken cancellationToken = default)
+    {
+        var scope = ScopeForProfile(profileId, contextFingerprint);
+        if (string.IsNullOrWhiteSpace(method) || !SafeMethods.Contains(method.Trim()))
+            throw new ArgumentException("Only GET, HEAD and OPTIONS are allowed for authenticated REST checks in this phase; no request may mutate DEV data.");
+        var uri = ApprovedUriForProfile(scope, url);
+        using var message = new HttpRequestMessage(new HttpMethod(method.Trim().ToUpperInvariant()), uri);
+        message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        ApplyForProfile(profileId, contextFingerprint, message);
+        return await SendAsync(message, graphQl: false, cancellationToken);
+    }
+
+    public async Task<AuthenticatedApiExecutionResult> ExecuteGraphQlQueryForProfileAsync(string profileId, string contextFingerprint, string endpointUrl, string query, CancellationToken cancellationToken = default)
+    {
+        var scope = ScopeForProfile(profileId, contextFingerprint);
+        ManagedEdgePolicy.QueryOnly(query);
+        var uri = ApprovedUriForProfile(scope, endpointUrl);
+        using var message = new HttpRequestMessage(HttpMethod.Post, uri)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new { query }), Encoding.UTF8, "application/json")
+        };
+        message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/graphql-response+json"));
+        ApplyForProfile(profileId, contextFingerprint, message);
+        return await SendAsync(message, graphQl: true, cancellationToken);
+    }
+
+    private ApprovedHostSet ScopeForProfile(string profileId, string contextFingerprint) =>
+        ((ITransientCredentialSink)_store).ScopeOf(profileId, contextFingerprint)
+        ?? throw new AuthenticatedContextUnavailableException(AuthenticatedExecutionStatus.NoContext,
+            "Authenticated API context unavailable. Perform an authenticated action in the browser through the proxy first.");
+
+    private static Uri ApprovedUriForProfile(ApprovedHostSet scope, string? url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps || uri.UserInfo.Length != 0)
+            throw new ArgumentException("Only HTTPS URLs are allowed for authenticated checks.");
+        if (!scope.ContainsUri(uri))
+            throw new AuthenticatedContextUnavailableException(AuthenticatedExecutionStatus.OutOfScope, "The requested host is not approved for the selected Target Environment.");
+        return uri;
+    }
+
+    private void ApplyForProfile(string profileId, string contextFingerprint, HttpRequestMessage message)
+    {
+        // Re-validate at execution time: the context may have expired or been invalidated since the review was planned.
+        if (!_store.IsAuthenticatedApiContextAvailable(profileId, contextFingerprint))
+            throw new AuthenticatedContextUnavailableException(AuthenticatedExecutionStatus.Expired,
+                "Authenticated API session expired or was invalidated. Continue using the target application in the proxy-configured browser to refresh the session.");
+        if (!((ITransientCredentialSink)_store).TryApply(profileId, contextFingerprint, message))
+            throw new AuthenticatedContextUnavailableException(AuthenticatedExecutionStatus.OutOfScope, "The authenticated API context does not cover this request.");
     }
 
     private static Uri ApprovedUri(ApprovedHostSet scope, string? url)

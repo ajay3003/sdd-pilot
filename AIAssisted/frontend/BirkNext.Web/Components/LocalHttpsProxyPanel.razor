@@ -3,8 +3,8 @@
 @using BirkNext.Web.Services
 @using BirkNext.Web.Models
 
-<section class="fa-detection-summary" data-testid="local-https-proxy-panel" aria-label="Local HTTPS proxy authenticated testing">
-    <h3>Local HTTPS proxy</h3>
+<section class="fa-detection-summary fa-state-@RuntimeState" data-testid="local-https-proxy-panel" aria-label="Local HTTPS proxy authenticated testing">
+    <div class="fa-card-heading"><h3>Local HTTPS proxy</h3><span class="fa-card-status" role="status">Runtime: @RuntimeLabel</span></div>
     <div class="fa-auth-steps">
     <div class="fa-auth-step">
     <h4>Step 1 — Proxy</h4>
@@ -38,7 +38,7 @@
     </div>
 
     </div>
-    <div class="fa-auth-step">
+    <div class="fa-auth-step fa-state-@(Status.Certificate.State == ProxyCertificateTrustState.Trusted ? "ready" : Checked ? "needs-action" : "neutral")">
     <h4>Step 2 — Certificate</h4>
     <p data-testid="proxy-certificate">@AuthenticatedTestingMethodLabels.Certificate(Status.Certificate.State)</p>
     <details><summary>Certificate details</summary>
@@ -133,6 +133,15 @@
     private bool Checked => Status.State != LocalHttpsProxyState.NotStarted || Status.ApprovedHosts.Count > 0 || Status.FailureReason is not null;
     private bool Active => Status.SessionId is not null && Status.State is not (LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Stale or LocalHttpsProxyState.Failed);
     private bool EnvironmentAllowed => LocalHttpsProxyScope.EnvironmentAllowed(Profile);
+    private string RuntimeState => !EnvironmentAllowed || Status.State == LocalHttpsProxyState.Failed ? "blocked" :
+        Status.CredentialExpired ? "needs-action" : Status.AuthenticatedCredentialAvailable ? "ready" : Status.State switch
+        {
+            LocalHttpsProxyState.WaitingForCertificateTrust or LocalHttpsProxyState.WaitingForAuthenticatedTraffic or LocalHttpsProxyState.Stale => "needs-action",
+            LocalHttpsProxyState.Listening or LocalHttpsProxyState.Starting or LocalHttpsProxyState.AuthenticatedTrafficDetected or LocalHttpsProxyState.Ready => "detected",
+            _ => "neutral"
+        };
+    private string RuntimeLabel => RuntimeState == "blocked" ? "Blocked" : Status.CredentialExpired ? "Expired" :
+        Status.AuthenticatedCredentialAvailable ? "Authenticated API context available" : AuthenticatedTestingMethodLabels.ProxyState(Status.State);
     private string EnvironmentLabel => Profile is null ? "—" : EnvironmentAllowed ? $"{Profile.EnvironmentType} - allowed" : $"{Profile.EnvironmentType} - Local HTTPS proxy unavailable (non-production environments only)";
     private string? RestUrl => Profile is null ? null : LocalHttpsProxyScope.RestCheckUrl(Profile);
     private string? GraphQlUrl => Profile is null ? null : LocalHttpsProxyScope.GraphQlCheckUrl(Profile);

@@ -324,6 +324,35 @@
     font-size: 1rem;
 }
 
+.fa-auth-layout ::deep .fa-card-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .4rem 1rem;
+    margin-bottom: .75rem;
+}
+.fa-auth-layout ::deep .fa-card-heading h3 { margin: 0; }
+.fa-auth-layout ::deep [class*="fa-state-"] {
+    border-left: 3px solid var(--fa-state-color, var(--clr-border-subtle));
+    background: var(--fa-state-bg, var(--clr-surface));
+}
+.fa-auth-layout ::deep .fa-state-neutral { --fa-state-color: var(--clr-border-subtle); --fa-state-bg: var(--clr-surface); }
+.fa-auth-layout ::deep .fa-state-detected,
+.fa-auth-layout ::deep .fa-state-ready { --fa-state-color: var(--clr-info); --fa-state-bg: var(--clr-info-bg-light); }
+.fa-auth-layout ::deep .fa-state-draft,
+.fa-auth-layout ::deep .fa-state-needs-action { --fa-state-color: var(--clr-warning); --fa-state-bg: var(--clr-warning-bg-light); }
+.fa-auth-layout ::deep .fa-state-saved { --fa-state-color: var(--clr-success); --fa-state-bg: var(--clr-success-bg-light); }
+.fa-auth-layout ::deep .fa-state-blocked { --fa-state-color: var(--clr-danger); --fa-state-bg: var(--clr-danger-bg); }
+.fa-auth-layout ::deep .fa-card-status {
+    color: var(--fa-state-color, var(--clr-text-muted));
+    font-size: .8125rem;
+    font-weight: 600;
+}
+.fa-page-unsaved { color: var(--clr-warning); font-weight: 600; font-size: .875rem; }
+.fa-auth-layout ::deep [data-testid="browser-delivery-trust"],
+.fa-auth-layout ::deep .fa-auth-step[class*="fa-state-"] { padding: .75rem; }
+
 .fa-auth-layout ::deep h4 {
     margin: 1rem 0 .4rem;
     font-size: .9rem;

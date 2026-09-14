@@ -40,8 +40,26 @@ public static class LocalHttpsProxyEnvironmentPolicy
 {
     public static readonly IReadOnlyList<string> AllowedEnvironmentTypes = ["Local", "Development", "QA", "Test", "RC"];
 
+    /// <summary>
+    /// Environment types for which a NEWLY created (or reset) profile defaults to <see cref="AuthenticatedTestingMethod.LocalHttpsProxy"/>.
+    /// A deliberate subset of <see cref="AllowedEnvironmentTypes"/>: Local is proxy-eligible but not defaulted (local targets are usually
+    /// plain-HTTP loopback the proxy cannot intercept), so it keeps the CDP default. This governs only the initial choice for new profiles;
+    /// it never migrates existing profiles and never changes the persisted-model default used when deserializing legacy JSON.
+    /// </summary>
+    public static readonly IReadOnlyList<string> ProxyDefaultEnvironmentTypes = ["Development", "QA", "Test", "RC"];
+
     public static bool IsAllowed(string? environmentType) =>
         environmentType is not null && AllowedEnvironmentTypes.Contains(environmentType.Trim(), StringComparer.Ordinal);
+
+    /// <summary>
+    /// The authenticated testing method a NEW or reset profile of this environment type should start with: Local HTTPS proxy for
+    /// non-production DEV/QA/Test/RC environments, and the production-safe <see cref="AuthenticatedTestingMethod.ManagedEdgeCdp"/> default
+    /// for every other type (Local, Production, Custom). Never returns a proxy default for an environment where the proxy is disallowed.
+    /// </summary>
+    public static AuthenticatedTestingMethod DefaultMethodFor(string? environmentType) =>
+        environmentType is not null && ProxyDefaultEnvironmentTypes.Contains(environmentType.Trim(), StringComparer.Ordinal)
+            ? AuthenticatedTestingMethod.LocalHttpsProxy
+            : AuthenticatedTestingMethod.ManagedEdgeCdp;
 
     public const string EnvironmentBlockedReason =
         "Local HTTPS proxy is available only for Local, Development, QA, Test and RC environments. Production (and Custom) environments are never intercepted.";
@@ -132,4 +150,86 @@ public sealed record LocalHttpsProxyStatus
     public string Evidence { get; init; } = "Start the local HTTPS proxy, then sign in manually in Microsoft Edge.";
     public string? FailureReason { get; init; }
     public DateTimeOffset CheckedAt { get; init; } = DateTimeOffset.UtcNow;
+}
+
+// ── Authenticated review consumption ──────────────────────────────────────────
+// Types shared between the backend authenticated-review gateway and the frontend review pages so the two agree on how an
+// authenticated API context is consumed by API / Integration / Front-end Quality Reviews. None of these ever carries a credential.
+
+/// <summary>
+/// Status of the transient authenticated API context for a review, separate from the proxy listener state (<see cref="LocalHttpsProxyState"/>).
+/// The proxy can be Listening while the context is Expired or WaitingForAuthenticatedTraffic. No credential value is ever represented here.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AuthenticatedApiContextStatus
+{
+    /// <summary>No authenticated automation configured for the environment (ManualOnly), or the method is not proxy-based.</summary>
+    NotApplicable,
+    /// <summary>Proxy method selected but no context has been captured yet.</summary>
+    WaitingForAuthenticatedTraffic,
+    /// <summary>A valid, non-expired in-memory context exists and reviews may execute authenticated API checks.</summary>
+    Available,
+    /// <summary>A context existed but its credential expired; it has been wiped. The proxy may still be listening for a fresh one.</summary>
+    Expired,
+    /// <summary>The environment/target configuration changed so any prior context no longer applies.</summary>
+    Stale
+}
+
+/// <summary>How a single review check was executed. Recorded as safe provenance so reports distinguish public from authenticated results.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ReviewExecutionMode
+{
+    Public,
+    AuthenticatedViaManagedEdgeCdp,
+    AuthenticatedViaLocalHttpsProxy,
+    /// <summary>An authenticated check that could not run because no authenticated context was available (never silently downgraded to public).</summary>
+    AuthenticatedUnavailable,
+    /// <summary>No authenticated automation (ManualOnly).</summary>
+    ManualNotExecuted
+}
+
+/// <summary>
+/// Capability matrix a review resolves for the active Target Environment. Each surface is decided independently (never inferred from
+/// another). Carries only non-secret status, the observed approved host and expiry; never a token.
+/// </summary>
+public sealed record AuthenticatedReviewCapabilities
+{
+    public AuthenticatedTestingMethod Method { get; init; } = AuthenticatedTestingMethod.ManagedEdgeCdp;
+    public AuthenticatedApiContextStatus ContextStatus { get; init; } = AuthenticatedApiContextStatus.NotApplicable;
+    public bool PublicApi { get; init; } = true;
+    public bool AuthenticatedApi { get; init; }
+    public bool AuthenticatedRest { get; init; }
+    public bool AuthenticatedGraphQlQuery { get; init; }
+    public bool AuthenticatedBrowserDom { get; init; }
+    public bool AuthenticatedBrowserRuntime { get; init; }
+    public string? ObservedHost { get; init; }
+    public DateTimeOffset? ExpiresAt { get; init; }
+    /// <summary>Non-secret, user-facing explanation of the current authenticated availability (e.g. why DOM checks are unavailable).</summary>
+    public string Reason { get; init; } = "";
+}
+
+/// <summary>Identity a review passes so the backend can resolve the active environment's authenticated context. Never carries a token.</summary>
+public sealed record AuthenticatedReviewIdentity(AuthenticatedTestingMethod Method, string? ProfileId, string? ContextFingerprint);
+
+/// <summary>Typed outcome of an authenticated API execution requested by a review. Distinguishes real HTTP results from auth-unavailable states so a review never silently downgrades.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum AuthenticatedExecutionStatus
+{
+    Executed,
+    NoContext,
+    Expired,
+    Invalidated,
+    OutOfScope,
+    MethodNotProxy,
+    Rejected
+}
+
+/// <summary>Result of a review-issued authenticated request: either an executed <see cref="AuthenticatedApiExecutionResult"/> or a typed reason it did not run. No credential, no headers, no body.</summary>
+public sealed record AuthenticatedReviewExecutionOutcome
+{
+    public AuthenticatedExecutionStatus Status { get; init; }
+    public ReviewExecutionMode Mode { get; init; } = ReviewExecutionMode.AuthenticatedUnavailable;
+    public AuthenticatedApiExecutionResult? Result { get; init; }
+    public string Message { get; init; } = "";
+    public bool Executed => Status == AuthenticatedExecutionStatus.Executed && Result is not null;
 }

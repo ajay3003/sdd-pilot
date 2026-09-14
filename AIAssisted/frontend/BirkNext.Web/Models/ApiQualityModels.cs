@@ -25,6 +25,29 @@ public sealed class ApiQualityReviewRequest
     [JsonPropertyName("timeoutSeconds")]   public int     TimeoutSeconds   { get; set; } = 30;
     [JsonPropertyName("retryCount")]       public int     RetryCount       { get; set; } = 3;
     [JsonPropertyName("environmentName")]  public string  EnvironmentName  { get; set; } = "";
+
+    // Active Target Environment authenticated-testing identity (never a token). Lets the backend route API-backed checks through the proxy context.
+    [JsonPropertyName("authenticatedTestingMethod")] public BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod AuthenticatedTestingMethod { get; set; } = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
+    [JsonPropertyName("profileId")]          public string? ProfileId          { get; set; }
+    [JsonPropertyName("contextFingerprint")] public string? ContextFingerprint { get; set; }
+}
+
+public sealed class ApiQualityAuthenticatedCheck
+{
+    [JsonPropertyName("label")]         public string                       Label         { get; init; } = "";
+    [JsonPropertyName("url")]           public string                       Url           { get; init; } = "";
+    [JsonPropertyName("executionMode")] public BirkNext.LocalHttpsProxy.ReviewExecutionMode ExecutionMode { get; init; }
+    [JsonPropertyName("status")]        public BirkNext.LocalHttpsProxy.AuthenticatedExecutionStatus Status { get; init; }
+    [JsonPropertyName("statusCode")]    public int                          StatusCode    { get; init; }
+    [JsonPropertyName("contentType")]   public string?                      ContentType   { get; init; }
+    [JsonPropertyName("elapsedMs")]     public double                       ElapsedMs     { get; init; }
+    [JsonPropertyName("outcome")]       public string                       Outcome       { get; init; } = "";
+}
+
+public sealed class ApiQualityAuthenticationSummary
+{
+    [JsonPropertyName("capabilities")] public BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities Capabilities { get; init; } = new();
+    [JsonPropertyName("checks")]       public List<ApiQualityAuthenticatedCheck> Checks { get; init; } = [];
 }
 
 public sealed class ApiQualityFinding
@@ -76,6 +99,8 @@ public sealed class ApiQualityReviewReport
     [JsonPropertyName("recommendations")]    public List<string>                  Recommendations { get; init; } = [];
     [JsonPropertyName("limitations")]        public List<string>                  Limitations     { get; init; } = [];
     [JsonPropertyName("errorMessage")]       public string? ErrorMessage { get; init; }
+
+    [JsonPropertyName("authentication")]     public ApiQualityAuthenticationSummary? Authentication { get; init; }
 
     [JsonPropertyName("frontendResult")]  public ApiQualityEndpointResult? FrontendResult  { get; init; }
     [JsonPropertyName("restResult")]      public ApiQualityEndpointResult? RestResult      { get; init; }

@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using BirkNext.Api.Services.LocalHttpsProxy;
+using BirkNext.LocalHttpsProxy;
 
 namespace BirkNext.Api.Services.ApiQuality;
 
@@ -10,15 +12,56 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
 {
     private readonly HttpClient _client;
     private readonly ILogger<ApiQualityReviewService> _logger;
+    private readonly IAuthenticatedReviewGateway _authenticatedReview;
 
     // Introspection query — minimal schema probe
     private const string IntrospectionQuery = """{"query":"{ __schema { queryType { name } mutationType { name } subscriptionType { name } } }"}""";
+    // Single named query without variables for authenticated GraphQL availability (schema query type name); satisfies QUERY-only policy.
+    private const string AuthenticatedGraphQlProbe = "query { __typename }";
 
-    public ApiQualityReviewService(HttpClient client, ILogger<ApiQualityReviewService> logger)
+    public ApiQualityReviewService(HttpClient client, ILogger<ApiQualityReviewService> logger, IAuthenticatedReviewGateway authenticatedReview)
     {
         _client = client;
         _logger = logger;
+        _authenticatedReview = authenticatedReview;
     }
+
+    private static AuthenticatedReviewIdentity Identity(ApiQualityReviewRequest request) =>
+        new(request.AuthenticatedTestingMethod, request.ProfileId, request.ContextFingerprint);
+
+    /// <summary>
+    /// Authenticated API-backed layer: resolves capabilities from the active environment and, when an authenticated context is available,
+    /// runs approved authenticated GET checks and one GraphQL query with recorded provenance. Public probes are unaffected; an unavailable
+    /// or expired context is reported as such and never silently downgraded to a public request labelled authenticated.
+    /// </summary>
+    private async Task<ApiQualityAuthenticationSummary?> BuildAuthenticationSummaryAsync(ApiQualityReviewRequest request, CancellationToken ct)
+    {
+        var identity = Identity(request);
+        var capabilities = _authenticatedReview.Resolve(identity);
+        var checks = new List<ApiQualityAuthenticatedCheck>();
+        if (capabilities.AuthenticatedRest)
+        {
+            foreach (var (label, url) in new[] { ("REST API", request.RestBaseUrl), ("Health", request.HealthEndpoint) })
+            {
+                if (string.IsNullOrWhiteSpace(url)) continue;
+                var outcome = await _authenticatedReview.ExecuteRestAsync(identity, "GET", url!, ct);
+                checks.Add(ToCheck(label, url!, outcome));
+            }
+        }
+        if (capabilities.AuthenticatedGraphQlQuery && !string.IsNullOrWhiteSpace(request.GraphQlEndpoint))
+        {
+            var outcome = await _authenticatedReview.ExecuteGraphQlQueryAsync(identity, request.GraphQlEndpoint!, AuthenticatedGraphQlProbe, ct);
+            checks.Add(ToCheck("GraphQL", request.GraphQlEndpoint!, outcome));
+        }
+        return new ApiQualityAuthenticationSummary { Capabilities = capabilities, Checks = checks };
+    }
+
+    private static ApiQualityAuthenticatedCheck ToCheck(string label, string url, AuthenticatedReviewExecutionOutcome outcome) => new()
+    {
+        Label = label, Url = url, ExecutionMode = outcome.Mode, Status = outcome.Status,
+        StatusCode = outcome.Result?.StatusCode ?? 0, ContentType = outcome.Result?.ContentType,
+        ElapsedMs = outcome.Result?.ElapsedMs ?? 0, Outcome = outcome.Message
+    };
 
     public async Task<ApiQualityReviewReport> AnalyzeAsync(ApiQualityReviewRequest request, CancellationToken ct = default)
     {
@@ -119,9 +162,13 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
 
         recommendations.AddRange(BuildRecommendations(findings));
 
+        // ── Authenticated API-backed layer (Local HTTPS proxy) ──────────────────────
+        var authentication = await BuildAuthenticationSummaryAsync(request, ct);
+
         return new ApiQualityReviewReport
         {
             EnvironmentName   = request.EnvironmentName,
+            Authentication    = authentication,
             GeneratedAt       = DateTime.UtcNow,
             OverallScore      = overallScore,
             ConnectivityScore = Score(categoryScores, ApiQualityCategory.Connectivity),

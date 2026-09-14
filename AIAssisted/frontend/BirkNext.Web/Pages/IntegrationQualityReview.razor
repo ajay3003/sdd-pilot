@@ -49,6 +49,19 @@
                 </button>
             </div>
         </div>
+        @if (_report.Authentication is { } auth)
+        {
+            <AuthenticatedReviewStatus Capabilities="auth.Capabilities" />
+            @if (auth.Checks.Count > 0)
+            {
+                <dl class="fa-detail-list" data-testid="iqr-authenticated-checks">
+                    @foreach (var check in auth.Checks)
+                    {
+                        <div class="fa-dl-row"><dt>@check.Label (authenticated)</dt><dd>@check.Outcome</dd></div>
+                    }
+                </dl>
+            }
+        }
     }
 
     @if (_running)
@@ -342,12 +355,19 @@
         await JS.InvokeVoidAsync("downloadHtmlFile", $"integration-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
-    private static IntegrationQualityRequest BuildRequest(FrontendAnalysisContext context) => new()
+    private static IntegrationQualityRequest BuildRequest(FrontendAnalysisContext context)
     {
-        EnvironmentName = context.ActiveProfile.Name,
-        TimeoutSeconds = context.RequestTimeoutSeconds,
-        Integrations = context.Integrations.Select(CloneIntegration).ToList()
-    };
+        var identity = ReviewAuthenticationIdentity.For(context.ActiveProfile);
+        return new()
+        {
+            EnvironmentName = context.ActiveProfile.Name,
+            TimeoutSeconds = context.RequestTimeoutSeconds,
+            Integrations = context.Integrations.Select(CloneIntegration).ToList(),
+            AuthenticatedTestingMethod = identity.Method,
+            ProfileId = identity.ProfileId,
+            ContextFingerprint = identity.ContextFingerprint,
+        };
+    }
 
     private static IntegrationConfig CloneIntegration(IntegrationConfig source) => new()
     {

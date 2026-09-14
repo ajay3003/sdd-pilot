@@ -27,6 +27,8 @@ internal interface ITransientCredentialSink
     void Store(string profileId, string contextFingerprint, string observedHost, ApprovedHostSet scope, string bearerToken, DateTimeOffset expiresAt, string format);
     /// <summary>Applies the credential to an HTTPS request for an approved authority of the same environment. False when unavailable or out of scope.</summary>
     bool TryApply(string profileId, string contextFingerprint, HttpRequestMessage request);
+    /// <summary>Approved host set of the current (non-expired) context for the profile, so a review can pre-validate a target host without holding a runtime session. Null when no valid context exists.</summary>
+    ApprovedHostSet? ScopeOf(string profileId, string contextFingerprint);
 }
 
 /// <summary>
@@ -72,6 +74,8 @@ public sealed class TransientAuthenticatedApiContextStore(Func<DateTimeOffset>? 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", entry.Reveal());
         return true;
     }
+
+    ApprovedHostSet? ITransientCredentialSink.ScopeOf(string profileId, string contextFingerprint) => Current(profileId, contextFingerprint)?.Scope;
 
     private Entry? Current(string profileId, string contextFingerprint)
     {

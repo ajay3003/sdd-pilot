@@ -15,7 +15,7 @@ namespace BirkNext.Web.Tests.Components;
 /// proposals. Applying detected authentication mutates the draft only, surfaces a bold icon-led
 /// "Unsaved changes" indicator, and must never invalidate target discovery or claim the URL changed.
 /// </summary>
-public sealed class AuthenticationApplyDraftTests : BunitContext
+public sealed partial class AuthenticationApplyDraftTests : BunitContext
 {
     private readonly FrontendAnalysisSettingsService _settings = new();
     private readonly Mock<ITargetEnvironmentDetectionApiService> _api = new(MockBehavior.Strict);
@@ -58,7 +58,10 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         DetectedTenantId = Tenant,
         DetectedClientId = ClientId,
         DetectedRedirectUrls = [Redirect],
-        DetectedRestBaseUrl = Rest
+        DetectedRestBaseUrl = Rest,
+        DetectedGraphQlEndpoint = Url + "graphql",
+        DetectedHealthEndpoint = Url + "health",
+        DetectedSwaggerUrl = Url + "swagger.json"
     };
 
     private IRenderedComponent<Component> Open(string persistedAuthenticationJson = PersistedAuthNone)
@@ -220,7 +223,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         notice.QuerySelector("strong")!.TextContent.Trim().Should().Be("Unsaved changes");
         notice.QuerySelector("svg").Should().NotBeNull("the indicator is icon-led");
         notice.QuerySelector("svg")!.GetAttribute("aria-hidden").Should().Be("true", "icon must not be the only carrier of meaning");
-        notice.TextContent.Should().Contain("Authentication settings have been applied to the draft. Use Save changes to persist them.");
+        notice.TextContent.Should().Contain("Authentication settings differ from saved configuration. Use Save changes to persist them.");
 
         // Placed next to Configured Authentication, not at the top of the page
         var configured = cut.Find("#configured-authentication-heading");

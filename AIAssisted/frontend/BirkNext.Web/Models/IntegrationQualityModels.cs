@@ -9,6 +9,28 @@ public sealed class IntegrationQualityRequest
     [JsonPropertyName("environmentName")] public string                  EnvironmentName { get; set; } = "";
     [JsonPropertyName("integrations")]    public List<IntegrationConfig> Integrations    { get; set; } = [];
     [JsonPropertyName("timeoutSeconds")]  public int                     TimeoutSeconds  { get; set; } = 30;
+
+    [JsonPropertyName("authenticatedTestingMethod")] public BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod AuthenticatedTestingMethod { get; set; } = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
+    [JsonPropertyName("profileId")]          public string? ProfileId          { get; set; }
+    [JsonPropertyName("contextFingerprint")] public string? ContextFingerprint { get; set; }
+}
+
+public sealed class IntegrationAuthenticatedCheck
+{
+    [JsonPropertyName("integrationId")] public string                       IntegrationId { get; init; } = "";
+    [JsonPropertyName("label")]         public string                       Label         { get; init; } = "";
+    [JsonPropertyName("url")]           public string                       Url           { get; init; } = "";
+    [JsonPropertyName("executionMode")] public BirkNext.LocalHttpsProxy.ReviewExecutionMode ExecutionMode { get; init; }
+    [JsonPropertyName("status")]        public BirkNext.LocalHttpsProxy.AuthenticatedExecutionStatus Status { get; init; }
+    [JsonPropertyName("statusCode")]    public int                          StatusCode    { get; init; }
+    [JsonPropertyName("elapsedMs")]     public double                       ElapsedMs     { get; init; }
+    [JsonPropertyName("outcome")]       public string                       Outcome       { get; init; } = "";
+}
+
+public sealed class IntegrationAuthenticationSummary
+{
+    [JsonPropertyName("capabilities")] public BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities Capabilities { get; init; } = new();
+    [JsonPropertyName("checks")]       public List<IntegrationAuthenticatedCheck> Checks { get; init; } = [];
 }
 
 public sealed class IntegrationFinding
@@ -49,4 +71,5 @@ public sealed class IntegrationQualityReport
     [JsonPropertyName("statuses")]              public List<IntegrationStatus>  Statuses             { get; init; } = [];
     [JsonPropertyName("recommendations")]       public List<string>             Recommendations      { get; init; } = [];
     [JsonPropertyName("limitations")]           public List<string>             Limitations          { get; init; } = [];
+    [JsonPropertyName("authentication")]        public IntegrationAuthenticationSummary? Authentication { get; init; }
 }

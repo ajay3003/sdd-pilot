@@ -124,6 +124,8 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         var settings = new FrontendAnalysisSettingsService();
         var profile = settings.CreateProfile("Dev", FrontendEnvironmentType.Development);
         profile.TargetUrl = "http://m2lbdev.bufetat.no/";
+        // This test covers Browser delivery trust only; keep the CDP testing method so the separate proxy+HTTP validation error does not apply.
+        profile.Authentication.AuthenticatedTestingMethod = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
         profile.Authentication.BrowserDeliveryTrust = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
         var result = settings.ValidateProfile(profile);
         Assert.True(result.IsValid);
