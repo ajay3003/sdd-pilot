@@ -133,6 +133,12 @@ builder.Services.AddHttpClient<IManagedEdgeCdpApiService, ManagedEdgeCdpApiServi
     client.Timeout = TimeSpan.FromSeconds(20);
 });
 builder.Services.AddScoped<ManagedEdgeRuntime>();
+builder.Services.AddHttpClient<ILocalHttpsProxyApiService, LocalHttpsProxyApiService>(client =>
+{
+    client.BaseAddress = new Uri(backendUrl);
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+builder.Services.AddScoped<LocalHttpsProxyRuntime>();
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
 {
     client.BaseAddress = new Uri(backendUrl);

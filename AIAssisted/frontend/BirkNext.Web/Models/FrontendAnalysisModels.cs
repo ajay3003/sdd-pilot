@@ -253,6 +253,14 @@ public sealed class FrontendAuthenticationSettings
     /// the field deserialize to ExactOrigin. Observed delivery, trust decisions and sessions are runtime-only and never persisted.
     /// </summary>
     [JsonPropertyName("browserDeliveryTrust")]       public ManagedEdgeTrustModel     BrowserDeliveryTrust       { get; set; } = ManagedEdgeTrustModel.ExactOrigin;
+
+    /// <summary>
+    /// Saved choice of HOW authenticated testing is performed for this environment: the managed Edge browser context (CDP, default and
+    /// legacy behaviour), the BirkNext-managed loopback HTTPS proxy (DEV/non-production only, credentials memory-only) or manual verification
+    /// only. Legacy profiles without the field deserialize to ManagedEdgeCdp. BirkNext never switches this automatically. Proxy runtime state
+    /// (session, port, certificate trust, observed traffic, credential availability) is transient and never persisted.
+    /// </summary>
+    [JsonPropertyName("authenticatedTestingMethod")] public BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod AuthenticatedTestingMethod { get; set; } = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
 }
 
 public sealed class FrontendPerformanceThresholds

@@ -24,5 +24,6 @@
 
   <ItemGroup>
     <Compile Include="../../shared/ManagedEdgeCdpContracts.cs" Link="Models/ManagedEdgeCdpContracts.cs" />
+    <Compile Include="../../shared/LocalHttpsProxyContracts.cs" Link="Models/LocalHttpsProxyContracts.cs" />
   </ItemGroup>
 </Project>

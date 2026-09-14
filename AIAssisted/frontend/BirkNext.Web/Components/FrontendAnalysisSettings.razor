@@ -1,4 +1,5 @@
 @using BirkNext.ManagedEdge
+@using BirkNext.LocalHttpsProxy
 @implements IAsyncDisposable
 @inject IServiceProvider ServiceProvider
 @using BirkNext.Web.Models
@@ -697,7 +698,27 @@
             @* ── Authentication ── *@
             @if (_activeTab == "auth")
             {
-                <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" Detection="_detectionResult" />
+                @* The SAVED Authenticated testing method decides which runtime panel is shown. Runtime operations in either panel are
+                   transient: they never enter edit mode, never show Save changes and never persist evidence. *@
+                @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                {
+                    <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" Detection="_detectionResult" />
+                    @if (EdgeStatus.State == ManagedEdgeState.TargetTabNotInspectable)
+                    {
+                        <p class="fa-section-note" role="status" data-testid="cdp-blocked-proxy-hint">@AuthenticatedTestingMethodLabels.CdpBlockedProxyHint</p>
+                    }
+                }
+                else if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                {
+                    <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" EdgeStatus="EdgeStatus" />
+                }
+                else
+                {
+                    <section class="fa-detection-summary" data-testid="manual-only-panel" aria-label="Manual verification only">
+                        <h3>Authenticated testing: manual verification only</h3>
+                        <p>No authenticated automation is configured for this environment. Public reviews remain available; authenticated REST, GraphQL and browser DOM checks are unavailable. Record manual authentication verification on the Target Application tab.</p>
+                    </section>
+                }
                 <h3>Authentication discovery and configuration</h3>
                 <p class="fa-section-note">
                     These settings describe expected authentication behaviour only. No credentials are stored or used here.
@@ -762,6 +783,27 @@
                                       @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
                         </div>
 
+                        @* Authenticated testing method: saved configuration (draft -> Save changes / Cancel). Never switched automatically. *@
+                        <div class="form-field fa-field-full" style="padding-top:1rem;border-top:1px solid var(--color-border)" data-testid="authenticated-testing-method">
+                            <div class="fa-threshold-group-title" id="authenticated-testing-method-heading">Authenticated testing method</div>
+                            <p class="fa-section-note">Saved with this environment. Decides how BirkNext performs authenticated testing; runtime sessions are never saved.</p>
+                            <label class="fa-label" for="authenticated-testing-method-select">Method</label>
+                            <select id="authenticated-testing-method-select" class="form-control" @bind="auth.AuthenticatedTestingMethod">
+                                <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
+                                <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.ProxyOption</option>
+                                <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
+                            </select>
+                            <p class="fa-section-note" data-testid="authenticated-testing-method-help">@AuthenticatedTestingMethodLabels.Help(auth.AuthenticatedTestingMethod)</p>
+                            @if (auth.AuthenticatedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                            {
+                                <p class="fa-section-note" role="note" data-testid="authenticated-testing-method-warning">@AuthenticatedTestingMethodLabels.ProxySecurityWarning</p>
+                                @if (!LocalHttpsProxyScope.EnvironmentAllowed(_editProfile))
+                                {
+                                    <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
+                                }
+                            }
+                        </div>
+
                         @* Browser delivery trust: saved policy for managed-Edge authenticated testing. Exact origin is always preferred;
                            ApprovedMcasProxyOrigin only ADDS an approved, correlated Defender for Cloud Apps fallback. Changing it follows the normal
                            draft -> Save changes / Cancel flow and never marks public target detection stale. *@
@@ -786,6 +828,7 @@
                     var auth = profile.Authentication;
                     <dl class="fa-detail-list">
                         <div class="fa-dl-row"><dt>Verification method</dt><dd>Manual verification — managed Microsoft Edge</dd></div>
+                        <div class="fa-dl-row"><dt>Authenticated testing method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(auth.AuthenticatedTestingMethod)</dd></div>
                         <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@auth.AuthenticationType</dd></div>
                         <div class="fa-dl-row"><dt>Requires Authentication</dt><dd>@BoolLabel(auth.RequiresAuthentication)</dd></div>
                         <div class="fa-dl-row"><dt>Expected Authority</dt><dd>@(auth.ExpectedAuthority ?? "—")</dd></div>
@@ -1207,6 +1250,12 @@
                     <div class="fa-dl-row"><dt>Detection freshness</dt><dd>@(IsDetectionStale ? "Stale" : _detectionResult is null ? "Not checked" : "Current")</dd></div>
                     <div class="fa-dl-row"><dt>Manual sign-in</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Completed - browser access verified" : "Required for authenticated browser access")</dd></div>
                     <div class="fa-dl-row"><dt>Managed Edge connection</dt><dd>@EdgeStatus.State</dd></div>
+                    <div class="fa-dl-row"><dt>Authenticated testing method</dt><dd data-testid="validation-testing-method">@AuthenticatedTestingMethodLabels.Option(profile.Authentication.AuthenticatedTestingMethod)</dd></div>
+                    <div class="fa-dl-row"><dt>Local HTTPS proxy</dt><dd data-testid="validation-proxy-state">@(profile.Authentication.AuthenticatedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? $"{AuthenticatedTestingMethodLabels.ProxyState(ProxyStatus.State)} · {ProxyStatus.Endpoint}" : "Not selected")</dd></div>
+                    <div class="fa-dl-row"><dt>Authenticated API context</dt><dd data-testid="validation-proxy-credential">@(profile.Authentication.AuthenticatedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? AuthenticatedTestingMethodLabels.Credential(ProxyStatus) : "—")</dd></div>
+                    <div class="fa-dl-row"><dt>Public surface</dt><dd data-testid="validation-coverage-public">@Coverage.PublicSurface</dd></div>
+                    <div class="fa-dl-row"><dt>Authenticated API surface</dt><dd data-testid="validation-coverage-api">@Coverage.AuthenticatedApiSurface</dd></div>
+                    <div class="fa-dl-row"><dt>Authenticated browser DOM surface</dt><dd data-testid="validation-coverage-dom">@Coverage.AuthenticatedBrowserDomSurface</dd></div>
                     <div class="fa-dl-row"><dt>Browser trust configuration</dt><dd data-testid="validation-trust-configuration">@BrowserDeliveryTrustLabels.Configuration(profile)</dd></div>
                     <div class="fa-dl-row"><dt>Configured trust</dt><dd data-testid="validation-configured-trust">@BrowserDeliveryTrustLabels.Policy(profile.Authentication.BrowserDeliveryTrust)</dd></div>
                     <div class="fa-dl-row"><dt>Observed delivery</dt><dd data-testid="validation-observed-delivery">@BrowserDeliveryTrustLabels.Delivery(EdgeStatus)</dd></div>
@@ -1661,12 +1710,20 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     // ── Computed ─────────────────────────────────────────────────────────────
 
     private ManagedEdgeRuntime? _edgeRuntime;
+    private LocalHttpsProxyRuntime? _proxyRuntime;
     private bool _disposed;
     private ManagedEdgeStatus EdgeStatus => _edgeRuntime?.For(CurrentProfile) ?? new();
+    /// <summary>Transient Local HTTPS proxy status for the current configuration. Never persisted; never contains a credential.</summary>
+    private LocalHttpsProxyStatus ProxyStatus => _proxyRuntime?.For(CurrentProfile) ?? new();
+    private AuthenticatedTestingMethod SelectedTestingMethod => CurrentProfile?.Authentication.AuthenticatedTestingMethod ?? AuthenticatedTestingMethod.ManagedEdgeCdp;
+    private AuthenticatedCapabilitySummary Coverage => AuthenticatedTestingMethodLabels.Capabilities(SelectedTestingMethod, EdgeStatus, ProxyStatus);
+    /// <summary>Machine-proven authenticated API context through the saved Local HTTPS proxy method (API surface only, never DOM).</summary>
+    private bool ProxyApiContextAvailable => SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && ProxyStatus.AuthenticatedCredentialAvailable;
     private void EdgeRuntimeChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_edgeRuntime is not null) await _edgeRuntime.SynchronizeAsync(CurrentProfile);
+        if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
     }
     public async ValueTask DisposeAsync()
     {
@@ -1675,6 +1732,11 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         {
             _edgeRuntime.Changed -= EdgeRuntimeChanged;
             await _edgeRuntime.DisconnectAsync();
+        }
+        if (_proxyRuntime is not null)
+        {
+            _proxyRuntime.Changed -= EdgeRuntimeChanged;
+            await _proxyRuntime.StopAsync();
         }
     }
 
@@ -1692,6 +1754,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         _edgeRuntime = ServiceProvider.GetService<ManagedEdgeRuntime>();
         if (_edgeRuntime is not null) _edgeRuntime.Changed += EdgeRuntimeChanged;
+        _proxyRuntime = ServiceProvider.GetService<LocalHttpsProxyRuntime>();
+        if (_proxyRuntime is not null) _proxyRuntime.Changed += EdgeRuntimeChanged;
         await FaSettings.LoadAsync(JS);
 
         _selectedProfileId = FaSettings.Settings.ActiveProfileId
@@ -2244,7 +2308,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private bool CanActivateSelected => ManualVerificationRequired
         ? CanRecordManualVerification && _detectionResult?.DetectedClientFramework.HasValue == true &&
-          _detectionResult.Warnings.Count == 0 && (ManualStatus == ManualAuthenticationVerificationStatus.Passed || EdgeStatus.AuthenticatedBrowserAvailable)
+          _detectionResult.Warnings.Count == 0 && (ManualStatus == ManualAuthenticationVerificationStatus.Passed || EdgeStatus.AuthenticatedBrowserAvailable || ProxyApiContextAvailable)
         : _detectionResult?.IsActivationReady == true && CurrentDetectionState == DetectionState.Complete;
 
     private string? _manualDetectionContext;

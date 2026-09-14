@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.ManagedEdge;
+using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.Api.Controllers;
 using BirkNext.Api.Data;
 using BirkNext.Api.Data.Migrations;
@@ -219,6 +220,19 @@ builder.Services.AddSingleton<IEdgeInstallationLocator, WindowsEdgeInstallationL
 builder.Services.AddSingleton<IEdgePolicyReader, WindowsEdgePolicyReader>();
 builder.Services.AddSingleton<IManagedEdgeLauncher, ProcessManagedEdgeLauncher>();
 builder.Services.AddSingleton<IManagedEdgePreflightService, ManagedEdgePreflightService>();
+
+// DEV-only loopback HTTPS inspection proxy: explicit opt-in per Target Environment, LocalWorkstation runtime only, credential memory-only.
+builder.Services.Configure<LocalHttpsProxyOptions>(builder.Configuration.GetSection(LocalHttpsProxyOptions.SectionName));
+builder.Services.AddSingleton<IProxyCertificateStore>(_ => OperatingSystem.IsWindows() ? new WindowsUserCertificateStore() : new EphemeralCertificateStore { TrustManagementSupported = false });
+builder.Services.AddSingleton<IProxyCertificateAuthority, ProxyCertificateAuthority>();
+builder.Services.AddSingleton<TransientAuthenticatedApiContextStore>();
+builder.Services.AddSingleton<ITransientAuthenticatedApiContextStore>(sp => sp.GetRequiredService<TransientAuthenticatedApiContextStore>());
+builder.Services.AddSingleton<IUpstreamConnector>(sp => new DirectUpstreamConnector(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalHttpsProxyOptions>>().Value.UpstreamProxy));
+builder.Services.AddSingleton<LocalHttpsProxyService>();
+builder.Services.AddSingleton<ILocalHttpsProxyService>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
+builder.Services.AddSingleton<ILocalHttpsProxySessionAccess>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
+builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
+builder.Services.AddSingleton<IAuthenticatedApiExecutionService, AuthenticatedApiExecutionService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
 builder.Services.AddSingleton<AuthenticationOriginPolicy>();

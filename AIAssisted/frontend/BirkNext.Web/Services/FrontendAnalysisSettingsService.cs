@@ -266,6 +266,15 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             profile.TargetUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
             warnings.Add("Browser delivery trust permits an approved Microsoft Defender for Cloud Apps proxy, but the Frontend URL is not HTTPS. Exact-origin delivery is still preferred.");
 
+        // The Local HTTPS proxy intercepts authenticated traffic and is a DEV/non-production testing method only. Production (and Custom) fail closed.
+        if (profile.Authentication.AuthenticatedTestingMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy)
+        {
+            if (!BirkNext.LocalHttpsProxy.LocalHttpsProxyEnvironmentPolicy.IsAllowed(profile.EnvironmentType.ToString()))
+                errors.Add("Local HTTPS proxy is available only for Local, Development, QA, Test and RC environments. Choose another authenticated testing method for this environment type.");
+            if (!string.IsNullOrWhiteSpace(profile.TargetUrl) && !profile.TargetUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                errors.Add("Local HTTPS proxy requires an HTTPS Frontend URL.");
+        }
+
         var perf = profile.Performance;
         if (perf.MaxAverageApiLatencyMs          <= 0) errors.Add("Maximum Average API Latency must be a positive value.");
         if (perf.MaxSingleRequestLatencyMs       <= 0) errors.Add("Maximum Single Request Latency must be a positive value.");
