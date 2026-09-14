@@ -114,6 +114,7 @@ builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
+builder.Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
 builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentService>();
 builder.Services.AddSingleton<ITargetEnvironmentHintExtractor, TargetEnvironmentHintExtractor>();
 builder.Services.AddSingleton<IIntegrationTargetRegistryService, IntegrationTargetRegistryService>();

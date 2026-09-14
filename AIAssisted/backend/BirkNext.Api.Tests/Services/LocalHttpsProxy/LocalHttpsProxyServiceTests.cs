@@ -337,6 +337,34 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ObservedTrafficIsCorrelatedToItsPageByRefererEndToEnd()
+    {
+        var port = await StartAsync(Scope());
+        // An XHR carrying a Referer of the page that made it is correlated to that page.
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost,
+            $"GET /api/children HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {Jwt(_now.AddHours(1))}\r\nReferer: https://{ApiHost}/barn/123\r\n\r\n");
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.ObservedNetworkEndpoints.Any(e => e.Category == ObservedTrafficCategory.Rest));
+        var status = await _service.StatusAsync(Session());
+        var rest = status.ObservedNetworkEndpoints.Single(e => e.Category == ObservedTrafficCategory.Rest && e.Path == "/api/children");
+        Assert.Equal($"https://{ApiHost}", rest.PageOrigin);
+        Assert.Equal("/barn/123", rest.PagePath);
+        // No credential value in the network projection ("AuthObserved" is a safe boolean).
+        var json = JsonSerializer.Serialize(status.ObservedNetworkEndpoints);
+        Assert.DoesNotContain("eyJ", json);
+        Assert.DoesNotContain("Bearer ", json);
+    }
+
+    [Fact]
+    public async Task RequestWithoutARefererIsRecordedButNotCorrelatedToAPage()
+    {
+        var port = await StartAsync(Scope());
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost, $"GET /api/config HTTP/1.1\r\nHost: {ApiHost}\r\n\r\n");
+        await WaitForAsync(() => _service.StatusAsync(Session()).Result.ObservedNetworkEndpoints.Count > 0);
+        var status = await _service.StatusAsync(Session());
+        Assert.Contains(status.ObservedNetworkEndpoints, e => e.Path == "/api/config" && e.PageOrigin is null && e.PagePath is null);
+    }
+
+    [Fact]
     public async Task StoppingClearsDiscoveredEndpoints()
     {
         var port = await StartAsync(Scope());
@@ -344,6 +372,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         await WaitForAsync(() => _service.StatusAsync(Session()).Result.AuthenticatedRestObserved);
         var stopped = await _service.StopAsync(Session());
         Assert.Empty(stopped.ObservedEndpoints);
+        Assert.Empty(stopped.ObservedNetworkEndpoints);
     }
 
     // ── wipe rules ───────────────────────────────────────────────────────────

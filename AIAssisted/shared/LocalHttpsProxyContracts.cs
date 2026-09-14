@@ -157,6 +157,50 @@ public sealed record ObservedAuthenticatedEndpoint
     public string Display => $"{Origin}{Path}";
 }
 
+/// <summary>
+/// Conservative classification of one piece of browser-observed traffic. Not every request is forced into REST or GraphQL: static
+/// assets, telemetry, WebSockets, authentication hops and other HTTP are kept distinct so the page tables stay honest.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ObservedTrafficCategory { Rest, GraphQl, WebSocket, Authentication, StaticAsset, Telemetry, OtherHttp, Unknown }
+
+/// <summary>How an endpoint became known. Drives the user-facing "Source" label; never implies a source that could not actually see the traffic.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EndpointDiscoverySource { PublicConfiguration, AuthenticatedProxyTraffic, ConfigurationDiscovery, ManualConfiguration, Unknown }
+
+/// <summary>
+/// One browser-observed network endpoint with the safe page context it was correlated to (from the request Referer, never a query
+/// string). Carries no credential: no bearer token, Authorization value, cookie, request body or response body. Used for the
+/// page-oriented Endpoint Discovery view and its safe per-Target-Environment persistence.
+/// </summary>
+public sealed record ObservedNetworkEndpoint
+{
+    public ObservedTrafficCategory Category { get; init; }
+    /// <summary>"https" or "wss".</summary>
+    public string Scheme { get; init; } = "https";
+    public string Host { get; init; } = "";
+    public int Port { get; init; } = 443;
+    /// <summary>Request path only, query string and fragment stripped.</summary>
+    public string Path { get; init; } = "";
+    public string Method { get; init; } = "";
+    /// <summary>An <c>Authorization: Bearer</c> was present. The token value itself is never captured.</summary>
+    public bool AuthObserved { get; init; }
+    public int LastStatus { get; init; }
+    public EndpointDiscoverySource Source { get; init; } = EndpointDiscoverySource.AuthenticatedProxyTraffic;
+    public ObservedEndpointConfidence Confidence { get; init; } = ObservedEndpointConfidence.Candidate;
+    public int Count { get; init; } = 1;
+    public DateTimeOffset FirstObservedAt { get; init; }
+    public DateTimeOffset LastObservedAt { get; init; }
+    public GraphQlOperationType OperationType { get; init; }
+    public string? OperationName { get; init; }
+    /// <summary>Scheme+host[:port] of the page (document) that made this request, from the Referer. Null when it cannot be safely correlated.</summary>
+    public string? PageOrigin { get; init; }
+    /// <summary>Path of the correlating page (query stripped). Null when it cannot be safely correlated → Shared / background traffic.</summary>
+    public string? PagePath { get; init; }
+    public string Origin => Port is 443 or 80 ? $"{Scheme}://{Host}" : $"{Scheme}://{Host}:{Port}";
+    public string Display => $"{Origin}{Path}";
+}
+
 /// <summary>Runtime evidence only. Never contains a credential; never persisted with environment profiles.</summary>
 public sealed record LocalHttpsProxyStatus
 {
@@ -200,6 +244,12 @@ public sealed record LocalHttpsProxyStatus
     /// Runtime-only, no credential. Empty until real authenticated traffic is seen; discovery never assumes <c>/health</c> or <c>/graphql</c>.
     /// </summary>
     public IReadOnlyList<ObservedAuthenticatedEndpoint> ObservedEndpoints { get; init; } = [];
+
+    /// <summary>
+    /// All browser-observed network endpoints (REST, GraphQL, WebSocket, static, telemetry, auth, other), each with its safe page
+    /// correlation, for the page-oriented Endpoint Discovery view. Runtime-only, no credential; empty until traffic is observed.
+    /// </summary>
+    public IReadOnlyList<ObservedNetworkEndpoint> ObservedNetworkEndpoints { get; init; } = [];
 
     /// <summary>The best verified authenticated REST endpoint observed in traffic, or null when none was observed. Never the SPA HTML document.</summary>
     public ObservedAuthenticatedEndpoint? VerifiedRestEndpoint =>

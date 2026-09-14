@@ -762,7 +762,7 @@
                 }
                 else if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
                 {
-                    <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" />
+                    <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" OnViewDiscovery='() => _activeTab = "endpoint"' />
                 }
                 else
                 {
@@ -900,6 +900,17 @@
 
                 </section>
                 </div>
+            }
+
+            @* ── Endpoint Discovery ── *@
+            @if (_activeTab == "endpoint")
+            {
+                <p class="fa-section-note">
+                    Page-oriented discovery of what each application page actually communicates with. Learned from public detection, from
+                    authenticated traffic observed through the Local HTTPS proxy, and from configured backend integrations. Endpoint
+                    evidence is safe metadata only — never a credential, cookie or request body — and never auto-saved into configuration.
+                </p>
+                <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus" />
             }
 
             @* ── Performance Thresholds ── *@
@@ -1706,6 +1717,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("general",     "General"),
         ("target",      "Target Application"),
         ("auth",        "Authentication"),
+        ("endpoint",    "Endpoint Discovery"),
         ("performance", "Performance Thresholds"),
         ("cwv",         "Core Web Vitals"),
         ("security",    "Security Expectations"),
@@ -1718,6 +1730,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private ManagedEdgeRuntime? _edgeRuntime;
     private LocalHttpsProxyRuntime? _proxyRuntime;
+    private IEndpointDiscoveryService? _discovery;
     private bool _disposed;
     private ManagedEdgeStatus EdgeStatus => _edgeRuntime?.For(CurrentProfile) ?? new();
     /// <summary>Transient Local HTTPS proxy status for the current configuration. Never persisted; never contains a credential.</summary>
@@ -1727,7 +1740,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private AuthenticatedCapabilitySummary Coverage => AuthenticatedTestingMethodLabels.Capabilities(SelectedTestingMethod, EdgeStatus, ProxyStatus);
     /// <summary>Machine-proven authenticated API context through the saved Local HTTPS proxy method (API surface only, never DOM).</summary>
     private bool ProxyApiContextAvailable => SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && ProxyStatus.AuthenticatedCredentialAvailable;
-    private void EdgeRuntimeChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
+    private void EdgeRuntimeChanged() { if (!_disposed) _ = OnRuntimeChangedAsync(); }
+    // Fold live proxy-observed network endpoints into the persisted Endpoint Discovery history as traffic arrives, even while the user is
+    // on another tab, then re-render. Persistence carries only safe metadata (no credential); the runtime session itself is never persisted.
+    private async Task OnRuntimeChangedAsync()
+    {
+        if (_disposed) return;
+        if (_discovery is not null && _proxyRuntime is not null && CurrentProfile is { } profile && _proxyRuntime.For(profile).ObservedNetworkEndpoints is { Count: > 0 } endpoints)
+            await _discovery.MergeObservedAsync(JS, profile.Id, endpoints);
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (_edgeRuntime is not null) await _edgeRuntime.SynchronizeAsync(CurrentProfile);
@@ -1762,9 +1784,12 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (_edgeRuntime is not null) _edgeRuntime.Changed += EdgeRuntimeChanged;
         _proxyRuntime = ServiceProvider.GetService<LocalHttpsProxyRuntime>();
         if (_proxyRuntime is not null) _proxyRuntime.Changed += EdgeRuntimeChanged;
+        _discovery = ServiceProvider.GetService<IEndpointDiscoveryService>();
         await FaSettings.LoadAsync(JS);
         // Detection snapshots live in a separate evidence store (never in the saved profile), so load them before restoring.
         await FaSettings.LoadDetectionSnapshotsAsync(JS);
+        // Endpoint Discovery history is persisted separately per Target Environment; load it so a restart restores discovery (never a credential).
+        if (_discovery is not null) await _discovery.LoadAsync(JS);
 
         _selectedProfileId = FaSettings.Settings.ActiveProfileId
             ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;

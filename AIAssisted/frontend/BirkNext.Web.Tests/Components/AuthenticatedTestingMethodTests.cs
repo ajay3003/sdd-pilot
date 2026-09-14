@@ -53,7 +53,10 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Services.AddSingleton(_detector.Object);
         Services.AddSingleton(_edgeRuntime);
         Services.AddSingleton(_proxyRuntime);
+        Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         JSInterop.SetupVoid("birkNextStorage.setItem", _ => true).SetVoidResult();
+        JSInterop.SetupVoid("birkNextStorage.setDiscovery", _ => true).SetVoidResult();
+        JSInterop.Setup<string?>("birkNextStorage.getDiscovery").SetResult(null);
         _detector.Setup(a => a.DetectFromUrlAsync(It.IsAny<string>(), default)).ReturnsAsync(new TargetEnvironmentDetectionResult
         {
             Success = true, OriginalUrl = Url, Reachability = TargetReachability.Reachable,
@@ -490,13 +493,13 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal("Available - memory only", Row(cut, "proxy-credential"));
         Assert.True(Has(cut, "proxy-credential-expiry"));
         // REST/GraphQL are verified from observed traffic, not from the credential; the auth context is separately "Available".
+        // (The detailed per-page endpoint tables live in the Endpoint Discovery tab, not here.)
         Assert.Equal("Verified", Row(cut, "capability-rest"));
         Assert.Equal("Verified", Row(cut, "capability-graphql"));
         Assert.Equal("Unavailable", Row(cut, "capability-dom"));
         Assert.Equal("Available", Row(cut, "capability-api"));
-        Assert.Contains("Verified", Row(cut, "discovered-rest"));
-        Assert.Contains("/api/children", Row(cut, "discovered-rest"));
-        Assert.Contains("/internal/gql", Row(cut, "discovered-graphql"));
+        Assert.False(Has(cut, "discovered-rest"));
+        Assert.False(Has(cut, "proxy-checks"));
 
         // Runtime evidence is transient: no edit mode, no Save changes, no storage write, persisted profile unchanged.
         Assert.True(HasButton(cut, "Edit Environment"));
@@ -622,44 +625,34 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.NotNull(_edgeRuntime.Status.SessionId);
     }
 
-    // ── Step 4 — authenticated API discovery from observed traffic (sections 12-14, 18-19, 25) ──
+    // ── Authentication keeps only the auth-context summary; detailed endpoint discovery moved to the Endpoint Discovery tab (sections 5, 56) ──
 
     [Fact]
-    public async Task ProxyPanelDiscoversRealEndpointsFromObservedTrafficNotAssumedPaths()
+    public async Task AuthenticationProxyPanelKeepsOnlyTheContextSummaryAndLinksToEndpointDiscovery()
     {
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
         await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
 
-        // Discovered from traffic: the real observed paths, never the assumed /health or /graphql.
-        Assert.Contains("Verified", Row(cut, "discovered-rest"));
-        Assert.Contains("/api/children", Row(cut, "discovered-rest"));
-        Assert.Contains("/internal/gql", Row(cut, "discovered-graphql"));
-        Assert.Contains("Query", Row(cut, "discovered-graphql"));
-        Assert.Contains("Observed authenticated endpoints (2)", Row(cut, "observed-endpoints"));
-        Assert.Contains("/api/children", Row(cut, "observed-endpoints"));
-
-        // Capability separation: auth context available, REST and GraphQL verified from traffic.
+        // The compact context/capability summary stays; the detailed endpoint tables and replay checks are gone from Authentication.
+        Assert.Equal("Available - memory only", Row(cut, "proxy-credential"));
         Assert.Equal("Available", Row(cut, "capability-api"));
-        Assert.Equal("Verified", Row(cut, "capability-rest"));
-        Assert.Equal("Verified", Row(cut, "capability-graphql"));
-        Assert.Equal("Unavailable", Row(cut, "capability-dom"));
-
-        // The REST replay targets the discovered read-only endpoint, not the configured /health.
-        Assert.Contains("/api/children", Row(cut, "proxy-checks"));
-        Assert.DoesNotContain("/health", Row(cut, "proxy-checks"));
-        // No credential is ever shown.
-        foreach (var forbidden in new[] { "eyJ", FakeToken, "Bearer ", "Cookie" })
-            Assert.DoesNotContain(forbidden, cut.Markup);
-        Assert.Equal(0, SaveCalls());
+        Assert.False(Has(cut, "discovered-rest"));
+        Assert.False(Has(cut, "discovered-graphql"));
+        Assert.False(Has(cut, "observed-endpoints"));
+        Assert.False(Has(cut, "proxy-checks"));
+        Assert.False(HasButton(cut, "Run authenticated REST GET"));
+        // A link points to the new tab.
+        Assert.True(Has(cut, "proxy-discovery-link"));
+        Assert.True(HasButton(cut, "View Endpoint Discovery"));
     }
 
     [Fact]
-    public async Task AuthContextAvailableWithoutObservedTrafficReportsNotVerified()
+    public async Task AuthContextAvailableWithoutObservedTrafficReportsNotVerifiedCapability()
     {
         // A credential is available but no REST/GraphQL endpoint has been observed yet: context available, neither surface verified.
-        var contextOnly = Ready with { ObservedEndpoints = [], AuthenticatedRequestsObserved = 1 };
+        var contextOnly = Ready with { ObservedEndpoints = [], ObservedNetworkEndpoints = [], AuthenticatedRequestsObserved = 1 };
         _proxyApi.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(contextOnly);
         _proxyApi.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(contextOnly);
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
@@ -670,10 +663,6 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal("Available", Row(cut, "capability-api"));
         Assert.Equal("Not observed", Row(cut, "capability-rest"));
         Assert.Equal("Not observed", Row(cut, "capability-graphql"));
-        Assert.Contains("Not observed yet", Row(cut, "discovered-rest"));
-        Assert.Contains("Not observed yet", Row(cut, "discovered-graphql"));
-        Assert.Contains("use the application normally", Row(cut, "discovery-guidance"));
-        Assert.Contains("No authenticated API endpoints observed yet", Row(cut, "observed-endpoints"));
     }
 
     [Fact]

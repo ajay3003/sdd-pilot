@@ -73,6 +73,10 @@ internal sealed class ProxyExchange
     public string? ResponseContentType { get; init; }
     public GraphQlOperationType GraphQlOperationType { get; init; }
     public string? GraphQlOperationName { get; init; }
+    /// <summary>The request Referer, used only to correlate the request to a page. Never persisted or logged.</summary>
+    public string? Referer { get; init; }
+    /// <summary>True for a WebSocket upgrade (HTTP 101). No message bytes are ever inspected.</summary>
+    public bool IsWebSocket { get; init; }
     public override string ToString() => $"{Method} {Host}:{Port} -> HTTP {StatusCode}";
 }
 
@@ -309,7 +313,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             await RelayAsync(sslClient, sslUpstream, host, port, ct);
     }
 
-    private sealed class PendingRequest(string method, string? path, string? requestContentType, string? bearer, GraphQlOperationType graphQlOperation, string? graphQlOperationName, bool upgrade)
+    private sealed class PendingRequest(string method, string? path, string? requestContentType, string? bearer, GraphQlOperationType graphQlOperation, string? graphQlOperationName, string? referer, bool upgrade)
     {
         public string Method { get; } = method;
         public string? Path { get; } = path;
@@ -317,6 +321,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
         public string? Bearer { get; set; } = bearer;
         public GraphQlOperationType GraphQlOperation { get; } = graphQlOperation;
         public string? GraphQlOperationName { get; } = graphQlOperationName;
+        public string? Referer { get; } = referer;
         public bool IsUpgrade { get; } = upgrade;
         public TaskCompletionSource<bool> UpgradeDecision { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
@@ -353,7 +358,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                     finally { Array.Clear(body); }
                 }
                 else await clientReader.CopyBodyAsync(server, framing, cts.Token);
-                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.IsUpgrade);
+                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.Header("Referer"), request.IsUpgrade);
                 await pending.Writer.WriteAsync(record, cts.Token);
                 await server.FlushAsync(cts.Token);
                 if (record.IsUpgrade)
@@ -424,7 +429,8 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
         {
             Host = host, Port = port, Method = request.Method, StatusCode = statusCode, BearerToken = request.Bearer,
             Path = request.Path, RequestContentType = request.RequestContentType, ResponseContentType = responseContentType,
-            GraphQlOperationType = request.GraphQlOperation, GraphQlOperationName = request.GraphQlOperationName
+            GraphQlOperationType = request.GraphQlOperation, GraphQlOperationName = request.GraphQlOperationName,
+            Referer = request.Referer, IsWebSocket = statusCode == 101
         };
         request.Bearer = null;
         try { observer.OnExchange(exchange); }

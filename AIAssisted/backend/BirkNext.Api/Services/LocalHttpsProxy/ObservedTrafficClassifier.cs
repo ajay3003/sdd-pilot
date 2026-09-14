@@ -202,6 +202,198 @@ internal static class ObservedTrafficClassifier
     }
 }
 
+/// <summary>Non-secret metadata of one intercepted exchange for page-oriented network discovery, including the safe page-correlation Referer.</summary>
+internal sealed record NetworkRequestMetadata
+{
+    public required string Host { get; init; }
+    public required int Port { get; init; }
+    public required string Method { get; init; }
+    public required string Target { get; init; }
+    public string? RequestContentType { get; init; }
+    public int ResponseStatus { get; init; }
+    public string? ResponseContentType { get; init; }
+    public bool BearerObserved { get; init; }
+    public bool IsWebSocket { get; init; }
+    public GraphQlOperationType GraphQlOperationType { get; init; }
+    public string? GraphQlOperationName { get; init; }
+    /// <summary>The request Referer header, if any. Used only to derive the correlating page origin/path; the value is never persisted.</summary>
+    public string? Referer { get; init; }
+}
+
+/// <summary>
+/// Classifies one browser-observed exchange into an <see cref="ObservedNetworkEndpoint"/> for the page-oriented discovery view. Unlike
+/// the authenticated-only <see cref="ObservedTrafficClassifier"/>, this records every approved-host exchange (authenticated or not) and
+/// assigns a conservative category (REST, GraphQL, WebSocket, Authentication, Static, Telemetry, Other) plus a safe page correlation from
+/// the Referer. Never assumes <c>/graphql</c>; never classifies an SPA HTML document as REST. Carries no credential, body or query string.
+/// </summary>
+internal static class NetworkTrafficClassifier
+{
+    private static readonly string[] StaticExtensions =
+        [".js", ".mjs", ".css", ".map", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".avif",
+         ".woff", ".woff2", ".ttf", ".eot", ".otf", ".mp4", ".webm", ".wasm"];
+    private static readonly string[] TelemetryMarkers =
+        ["/telemetry", "/analytics", "insights", "/collect", "/beacon", "/rum", "/track", "/appcenter", "app_insights"];
+    private static readonly string[] AuthMarkers =
+        ["/oauth", "/oauth2", "/authorize", "/connect/token", "/signin", "/sign-in", "/login", "/.well-known/openid", "/adfs/", "/msal"];
+
+    public static ObservedNetworkEndpoint Classify(NetworkRequestMetadata metadata, DateTimeOffset observedAt)
+    {
+        var path = NormalizePath(metadata.Target);
+        var method = (metadata.Method ?? "").ToUpperInvariant();
+        var reqCt = Simplify(metadata.RequestContentType);
+        var respCt = Simplify(metadata.ResponseContentType);
+        var (category, confidence) = Categorize(metadata, path, method, reqCt, respCt);
+        var (pageOrigin, pagePath) = CorrelatePage(metadata, category, method, respCt);
+
+        return new ObservedNetworkEndpoint
+        {
+            Category = category,
+            Scheme = metadata.IsWebSocket ? "wss" : "https",
+            Host = metadata.Host,
+            Port = metadata.Port,
+            Path = path,
+            Method = metadata.IsWebSocket ? "WS" : method,
+            AuthObserved = metadata.BearerObserved,
+            LastStatus = metadata.ResponseStatus,
+            Source = EndpointDiscoverySource.AuthenticatedProxyTraffic,
+            Confidence = confidence,
+            Count = 1,
+            FirstObservedAt = observedAt,
+            LastObservedAt = observedAt,
+            OperationType = metadata.GraphQlOperationType,
+            OperationName = metadata.GraphQlOperationName,
+            PageOrigin = pageOrigin,
+            PagePath = pagePath
+        };
+    }
+
+    private static (ObservedTrafficCategory, ObservedEndpointConfidence) Categorize(NetworkRequestMetadata m, string path, string method, string? reqCt, string? respCt)
+    {
+        if (m.IsWebSocket) return (ObservedTrafficCategory.WebSocket, ObservedEndpointConfidence.Verified);
+        if (m.GraphQlOperationType != GraphQlOperationType.None)
+            return (ObservedTrafficCategory.GraphQl, IsHtml(respCt) ? ObservedEndpointConfidence.Candidate : ObservedEndpointConfidence.Verified);
+        if (IsStaticAsset(path) || IsStaticContentType(respCt)) return (ObservedTrafficCategory.StaticAsset, ObservedEndpointConfidence.Verified);
+        if (ContainsAny(path, TelemetryMarkers)) return (ObservedTrafficCategory.Telemetry, ObservedEndpointConfidence.Candidate);
+        if (ContainsAny(path, AuthMarkers)) return (ObservedTrafficCategory.Authentication, ObservedEndpointConfidence.Candidate);
+        if (IsHtml(respCt)) return (ObservedTrafficCategory.OtherHttp, ObservedEndpointConfidence.Candidate);   // SPA document, never REST
+        if (IsJson(respCt))
+            return (ObservedTrafficCategory.Rest, method is "GET" or "HEAD" or "OPTIONS" ? ObservedEndpointConfidence.Verified : ObservedEndpointConfidence.Candidate);
+        if (IsJson(reqCt) || IsApiLikePath(path)) return (ObservedTrafficCategory.Rest, ObservedEndpointConfidence.Candidate);
+        return (ObservedTrafficCategory.OtherHttp, ObservedEndpointConfidence.Candidate);
+    }
+
+    /// <summary>A GET returning an HTML document is itself a page; every other request is correlated to the page named by its Referer.</summary>
+    private static (string?, string?) CorrelatePage(NetworkRequestMetadata m, ObservedTrafficCategory category, string method, string? respCt)
+    {
+        if (category is ObservedTrafficCategory.OtherHttp && method == "GET" && IsHtml(respCt))
+        {
+            var origin = m.Port is 443 or 80 ? $"https://{m.Host}" : $"https://{m.Host}:{m.Port}";
+            return (origin, NormalizePath(m.Target));
+        }
+        if (Uri.TryCreate(m.Referer, UriKind.Absolute, out var referer) && referer.Scheme is "https" or "http")
+        {
+            var origin = referer.IsDefaultPort ? $"{referer.Scheme}://{referer.Host}" : $"{referer.Scheme}://{referer.Host}:{referer.Port}";
+            return (origin, NormalizePath(referer.AbsolutePath));
+        }
+        return (null, null);   // cannot correlate → Shared / background traffic
+    }
+
+    private static bool ContainsAny(string path, string[] markers)
+    {
+        var lower = path.ToLowerInvariant();
+        return markers.Any(lower.Contains);
+    }
+
+    private static bool IsApiLikePath(string path)
+    {
+        var lower = path.ToLowerInvariant();
+        return lower.Contains("/api/") || lower.StartsWith("/api/") || lower.Contains("/v1/") || lower.Contains("/v2/") || lower.Contains("/odata");
+    }
+
+    private static string NormalizePath(string target)
+    {
+        if (string.IsNullOrEmpty(target)) return "/";
+        var path = target;
+        var query = path.IndexOf('?');
+        if (query >= 0) path = path[..query];
+        var fragment = path.IndexOf('#');
+        if (fragment >= 0) path = path[..fragment];
+        if (path.Length == 0) return "/";
+        if (path.Length > 1) path = path.TrimEnd('/');
+        return path.Length == 0 ? "/" : path;
+    }
+
+    private static bool IsStaticAsset(string path)
+    {
+        var dot = path.LastIndexOf('.');
+        if (dot < 0) return false;
+        return StaticExtensions.Contains(path[dot..].ToLowerInvariant());
+    }
+
+    private static bool IsStaticContentType(string? ct) =>
+        ct is not null && (ct.StartsWith("image/") || ct.StartsWith("font/") || ct.StartsWith("text/css")
+            || ct is "application/javascript" or "text/javascript" or "application/wasm");
+
+    private static bool IsHtml(string? ct) => ct is "text/html" or "application/xhtml+xml";
+
+    private static bool IsJson(string? ct) => ct is not null &&
+        (ct is "application/json" or "text/json" or "application/graphql-response+json" || ct.EndsWith("+json", StringComparison.Ordinal));
+
+    private static string? Simplify(string? contentType)
+    {
+        if (string.IsNullOrWhiteSpace(contentType)) return null;
+        var value = contentType;
+        var semicolon = value.IndexOf(';');
+        if (semicolon >= 0) value = value[..semicolon];
+        return value.Trim().ToLowerInvariant();
+    }
+}
+
+/// <summary>
+/// Collapses observed network endpoints per page by (page, category, scheme, host, port, path, method), counting repeats. Bounded,
+/// thread-safe, memory-only. Holds no credential. Cleared with the session it belongs to.
+/// </summary>
+internal sealed class ObservedNetworkRegistry(int capacity = 400)
+{
+    private readonly object _lock = new();
+    private readonly Dictionary<string, ObservedNetworkEndpoint> _endpoints = new(StringComparer.Ordinal);
+
+    public void Record(ObservedNetworkEndpoint endpoint)
+    {
+        var key = $"{endpoint.PageOrigin}{endpoint.PagePath}|{endpoint.Category}|{endpoint.Scheme}|{endpoint.Host}|{endpoint.Port}|{endpoint.Path}|{endpoint.Method}";
+        lock (_lock)
+        {
+            if (_endpoints.TryGetValue(key, out var existing))
+            {
+                _endpoints[key] = existing with
+                {
+                    Count = existing.Count + 1,
+                    LastStatus = endpoint.LastStatus,
+                    LastObservedAt = endpoint.LastObservedAt,
+                    AuthObserved = existing.AuthObserved || endpoint.AuthObserved,
+                    Confidence = (ObservedEndpointConfidence)Math.Max((int)existing.Confidence, (int)endpoint.Confidence),
+                    OperationType = endpoint.OperationType != GraphQlOperationType.None ? endpoint.OperationType : existing.OperationType,
+                    OperationName = endpoint.OperationName ?? existing.OperationName
+                };
+                return;
+            }
+            if (_endpoints.Count >= capacity) return;
+            _endpoints[key] = endpoint;
+        }
+    }
+
+    public IReadOnlyList<ObservedNetworkEndpoint> Snapshot()
+    {
+        lock (_lock)
+            return _endpoints.Values
+                .OrderByDescending(e => e.LastObservedAt)
+                .ThenByDescending(e => e.Count)
+                .ToList();
+    }
+
+    public void Clear() { lock (_lock) _endpoints.Clear(); }
+}
+
 /// <summary>
 /// Collapses observed authenticated endpoints by (origin, path, method, type) so repeated identical requests are counted, not flooded.
 /// Bounded in size, thread-safe, memory-only. Holds no credential. Cleared with the session it belongs to.
