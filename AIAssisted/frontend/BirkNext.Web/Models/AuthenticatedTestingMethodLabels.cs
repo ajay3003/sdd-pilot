@@ -17,10 +17,26 @@ public static class AuthenticatedTestingMethodLabels
     public const string ManualOption = "Manual verification only";
 
     public const string ProxySecurityWarning =
-        "This DEV-only mode intercepts approved HTTPS traffic locally to enable authenticated API testing. Authentication credentials may pass through BirkNext memory but are never displayed, logged or saved.";
+        "DEV-only authenticated API testing. BirkNext temporarily processes approved bearer credentials in memory but never displays, logs or saves them.";
 
     public const string CdpBlockedProxyHint =
-        "CDP blocked by enterprise browser protection. Local HTTPS proxy is available as an alternative authenticated API testing method: edit this environment, choose Local HTTPS proxy under Authenticated testing method, and save. BirkNext never switches the method automatically.";
+        "Local HTTPS proxy is available as an alternative for authenticated API testing.";
+
+    public static string Connection(ManagedEdgeState state) => state switch
+    {
+        ManagedEdgeState.TargetTabNotInspectable => "Blocked by enterprise browser protection",
+        ManagedEdgeState.TargetTabNotFound => "Target application not found",
+        ManagedEdgeState.ConnectedUnproven => "Connected — authenticated access not yet verified",
+        ManagedEdgeState.ConnectedAuthenticated => "Authenticated access verified",
+        ManagedEdgeState.ProxiedDeliveryUncorrelated => "Proxy delivery detected but target correlation failed",
+        ManagedEdgeState.ProxiedDeliveryNotPermitted => "Proxy delivery detected but not allowed by this environment",
+        ManagedEdgeState.Connecting => "Connecting",
+        ManagedEdgeState.Connected => "Connected — authenticated access not yet verified",
+        ManagedEdgeState.Stale => "Stale — re-check target application",
+        ManagedEdgeState.Failed => "Connection failed",
+        ManagedEdgeState.AmbiguousTargetTabs => "Multiple target tabs — keep exactly one",
+        _ => "Not connected"
+    };
 
     public static string Option(AuthenticatedTestingMethod method) => method switch
     {
@@ -31,9 +47,9 @@ public static class AuthenticatedTestingMethodLabels
 
     public static string Help(AuthenticatedTestingMethod method) => method switch
     {
-        AuthenticatedTestingMethod.LocalHttpsProxy => "Captures approved DEV API traffic through a BirkNext-managed localhost HTTPS proxy. Authentication material is held only in memory and is never displayed or saved.",
-        AuthenticatedTestingMethod.ManualOnly => "No authenticated automation. Public reviews remain available; authenticated REST, GraphQL and browser checks are unavailable.",
-        _ => "Uses the authenticated browser context without reading authentication credentials. Preferred when enterprise browser policy allows debugger attachment."
+        AuthenticatedTestingMethod.LocalHttpsProxy => ProxySecurityWarning,
+        AuthenticatedTestingMethod.ManualOnly => "User verifies access manually. Authenticated automation is unavailable.",
+        _ => "Uses an authenticated Edge browser context without reading or storing tokens. Preferred when browser policy permits debugger attachment."
     };
 
     public static string ProxyState(LocalHttpsProxyState state) => state switch
@@ -78,9 +94,7 @@ public static class AuthenticatedTestingMethodLabels
             case AuthenticatedTestingMethod.LocalHttpsProxy:
             {
                 var api = proxy.AuthenticatedCredentialAvailable ? "Available via Local HTTPS Proxy" : "Unavailable - no authenticated API context yet (start the proxy and sign in)";
-                var dom = edge.State == ManagedEdgeState.TargetTabNotInspectable
-                    ? "Unavailable - CDP blocked by enterprise browser protection"
-                    : "Unavailable - the Local HTTPS proxy does not enable browser DOM inspection";
+                var dom = "Unavailable - the Local HTTPS proxy does not enable browser DOM inspection";
                 return new(ProxyOption, publicSurface, api, dom,
                     proxy.RestAvailable ? "Authenticated GET/HEAD/OPTIONS available" : "Authenticated REST unavailable",
                     proxy.GraphQlQueryAvailable ? "Authenticated query available (mutations blocked)" : "Authenticated GraphQL query unavailable");

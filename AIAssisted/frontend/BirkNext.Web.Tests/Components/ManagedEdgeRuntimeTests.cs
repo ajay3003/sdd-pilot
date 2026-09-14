@@ -110,7 +110,7 @@ public sealed class ManagedEdgeRuntimeTests : BunitContext
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         Click(cut, "Authentication");
         var persisted = JsonSerializer.Serialize(settings.Settings);
-        foreach (var action in new[] { "Connect to managed Edge", "Verify authenticated access", "Disconnect BirkNext from Edge" })
+        foreach (var action in new[] { "Connect to existing Edge", "Verify authenticated access", "Disconnect BirkNext from Edge" })
         {
             Click(cut, action);
             cut.WaitForAssertion(() => Assert.DoesNotContain(cut.FindAll("button"), b => b.TextContent.Trim() is "Save changes" or "Cancel"));

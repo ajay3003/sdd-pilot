@@ -195,10 +195,10 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var cut = Open();
         OpenTab(cut, "Authentication");
         Click(cut, "Edit Environment");
-        Assert.False(Has(cut, "authenticated-testing-method-warning"));
+        Assert.False(Has(cut, "proxy-security-warning"));
         SelectMethod(cut, AuthenticatedTestingMethod.LocalHttpsProxy);
-        Assert.Equal(AuthenticatedTestingMethodLabels.ProxySecurityWarning, Row(cut, "authenticated-testing-method-warning"));
-        Assert.Contains("held only in memory", Row(cut, "authenticated-testing-method-help"));
+        Assert.Equal(AuthenticatedTestingMethodLabels.ProxySecurityWarning, Row(cut, "proxy-security-warning"));
+        Assert.Contains("in memory", Row(cut, "authenticated-testing-method-help"));
         Assert.True(Has(cut, "local-https-proxy-panel"));
         Assert.False(Has(cut, "managed-edge-panel"));
         Assert.True(Has(cut, "auth-unsaved-changes"));
@@ -256,12 +256,103 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     // ── CDP blocked: no silent switch (section 26) ───────────────────────────
 
     [Fact]
+    public void DetectionHasOneCompactSummaryAndExplicitApply()
+    {
+        var cut = Open();
+        Click(cut, "Detect settings");
+        OpenTab(cut, "Authentication");
+        Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Authentication discovery"));
+        Assert.Empty(cut.FindAll(".fa-result-grid"));
+        Assert.DoesNotContain("Detected Authentication", cut.Markup);
+        Assert.True(HasButton(cut, "Apply authentication"));
+        Assert.Equal(0, SaveCalls());
+    }
+
+    [Theory]
+    [InlineData(AuthenticatedTestingMethod.ManagedEdgeCdp, "managed-edge-panel")]
+    [InlineData(AuthenticatedTestingMethod.LocalHttpsProxy, "local-https-proxy-panel")]
+    [InlineData(AuthenticatedTestingMethod.ManualOnly, "manual-only-panel")]
+    public void OnlySelectedWorkflowAndConfigurationAppearInPrimaryOrder(AuthenticatedTestingMethod method, string panel)
+    {
+        var cut = Open(authenticationJson: $$"""{"authenticatedTestingMethod":"{{method}}"}""");
+        OpenTab(cut, "Authentication");
+        Assert.Empty(cut.FindAll("#authenticated-testing-method-select"));
+        Assert.Single(cut.FindAll("[data-testid='authenticated-testing-method-value']"));
+        Assert.Single(cut.FindAll("[data-testid='authentication-discovery']"));
+        Assert.Single(cut.FindAll("[data-testid='authenticated-capabilities']"));
+        foreach (var candidate in new[] { "managed-edge-panel", "local-https-proxy-panel", "manual-only-panel" })
+            Assert.Equal(candidate == panel, Has(cut, candidate));
+        Assert.Equal(method == AuthenticatedTestingMethod.ManagedEdgeCdp, Has(cut, "browser-delivery-trust"));
+        Assert.Equal(method == AuthenticatedTestingMethod.LocalHttpsProxy, Has(cut, "proxy-security-warning"));
+        Assert.True(cut.Markup.IndexOf("data-testid=\"authentication-discovery\"") < cut.Markup.IndexOf("data-testid=\"authenticated-testing-method\""));
+        Assert.True(cut.Markup.IndexOf("data-testid=\"authenticated-testing-method\"") < cut.Markup.IndexOf($"data-testid=\"{panel}\""));
+        Assert.DoesNotContain("TargetTabNotInspectable", cut.Markup);
+        Click(cut, "Edit Environment");
+        Assert.Single(cut.FindAll("#authenticated-testing-method-select"));
+        Assert.Equal(method == AuthenticatedTestingMethod.ManagedEdgeCdp, Has(cut, "browser-delivery-trust"));
+    }
+
+    [Fact]
+    public async Task ProtectedTargetHasNoCapabilitiesOrInternalEnumAndNoProductionProxyHint()
+    {
+        var cut = Open(environmentType: "Production");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Connect to existing Edge"));
+        cut.WaitForAssertion(() => Assert.Contains("Enterprise browser protection prevents debugger attachment", cut.Markup));
+        Assert.DoesNotContain("TargetTabNotInspectable", cut.Markup);
+        Assert.False(Has(cut, "cdp-blocked-proxy-hint"));
+        foreach (var capability in new[] { "api", "dom", "rest", "graphql" })
+            Assert.Equal("Unavailable", Row(cut, $"capability-{capability}"));
+        OpenTab(cut, "Validation");
+        Assert.DoesNotContain("TargetTabNotInspectable", cut.Markup);
+    }
+
+    [Fact]
+    public async Task SwitchingFromReadyProxyClearsCapabilitiesAndCancelRestoresMethodWithoutCredentials()
+    {
+        var cut = Open(authenticationJson: """{"authenticatedTestingMethod":"LocalHttpsProxy"}""");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        cut.WaitForAssertion(() => Assert.Equal("Available", Row(cut, "capability-rest")));
+        Click(cut, "Edit Environment");
+        SelectMethod(cut, AuthenticatedTestingMethod.ManualOnly);
+        foreach (var capability in new[] { "api", "dom", "rest", "graphql" })
+            Assert.Equal("Unavailable", Row(cut, $"capability-{capability}"));
+        Assert.False(Has(cut, "proxy-credential"));
+        cut.WaitForAssertion(() => _proxyApi.Verify(x => x.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.AtLeastOnce));
+        SelectMethod(cut, AuthenticatedTestingMethod.ManagedEdgeCdp);
+        Assert.Equal("Unavailable", Row(cut, "capability-rest"));
+        Click(cut, "Cancel");
+        Assert.Equal(AuthenticatedTestingMethod.LocalHttpsProxy, Persisted().Authentication.AuthenticatedTestingMethod);
+        Assert.Equal("Unavailable", Row(cut, "capability-rest"));
+        Assert.Equal(0, SaveCalls());
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public async Task CdpCapabilitiesFollowIndividualRuntimeFlags(bool rest, bool graphQl)
+    {
+        _edgeApi.Setup(x => x.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(new ManagedEdgeStatus
+        {
+            State = ManagedEdgeState.ConnectedAuthenticated, RestAvailable = rest, GraphQlAvailable = graphQl
+        });
+        var cut = Open();
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Connect to existing Edge"));
+        cut.WaitForAssertion(() => Assert.Equal("Available", Row(cut, "capability-dom")));
+        Assert.Equal(rest ? "Available" : "Unavailable", Row(cut, "capability-rest"));
+        Assert.Equal(graphQl ? "Available" : "Unavailable", Row(cut, "capability-graphql"));
+        Assert.Equal(0, SaveCalls());
+    }
+
+    [Fact]
     public async Task CdpBlockedShowsProxyHintButNeverSwitchesTheSavedMethod()
     {
         var cut = Open();
         OpenTab(cut, "Authentication");
         Assert.False(Has(cut, "cdp-blocked-proxy-hint"));
-        await cut.InvokeAsync(() => Click(cut, "Connect to managed Edge"));
+        await cut.InvokeAsync(() => Click(cut, "Connect to existing Edge"));
         cut.WaitForAssertion(() => Assert.True(Has(cut, "cdp-blocked-proxy-hint")));
         Assert.Equal(AuthenticatedTestingMethodLabels.CdpBlockedProxyHint, Row(cut, "cdp-blocked-proxy-hint"));
         Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, Persisted().Authentication.AuthenticatedTestingMethod);
@@ -292,10 +383,10 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal("Detected", Row(cut, "proxy-authenticated-traffic"));
         Assert.Equal("Available - memory only", Row(cut, "proxy-credential"));
         Assert.True(Has(cut, "proxy-credential-expiry"));
-        Assert.Contains("Authenticated GET/HEAD/OPTIONS available", Row(cut, "proxy-rest"));
-        Assert.Contains("Authenticated query available", Row(cut, "proxy-graphql"));
-        Assert.Contains("Unavailable", Row(cut, "proxy-browser-dom"));
-        Assert.Contains("Available via Local HTTPS Proxy", Row(cut, "proxy-coverage-api"));
+        Assert.Contains("Available", Row(cut, "capability-rest"));
+        Assert.Contains("Available", Row(cut, "capability-graphql"));
+        Assert.Contains("Unavailable", Row(cut, "capability-dom"));
+        Assert.Contains("Available", Row(cut, "capability-api"));
 
         // Runtime evidence is transient: no edit mode, no Save changes, no storage write, persisted profile unchanged.
         Assert.True(HasButton(cut, "Edit Environment"));
@@ -317,7 +408,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         OpenTab(cut, "Authentication");
         await cut.InvokeAsync(() => Click(cut, "Stop proxy"));
         cut.WaitForAssertion(() => Assert.Equal("Stopped", Row(cut, "proxy-state")));
-        Assert.Equal("Not available", Row(cut, "proxy-credential"));
+        Assert.Equal("Waiting for authenticated traffic", Row(cut, "proxy-credential"));
         _proxyApi.Verify(a => a.StopAsync(It.Is<LocalHttpsProxySessionRequest>(r => r.SessionId == "proxy-session" && r.ProfileId == "dev")), Times.Once);
         Assert.Equal(0, SaveCalls());
         Assert.Equal(persistedBefore, JsonSerializer.Serialize(Persisted()));
@@ -335,7 +426,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         cut.Find("input[type=url][placeholder='https://myapp.example.com']").Change("https://other.bufetat.no/");
         OpenTab(cut, "Authentication");
         cut.WaitForAssertion(() => Assert.Contains("Stale", Row(cut, "proxy-state")));
-        Assert.Equal("Not available", Row(cut, "proxy-credential"));
+        Assert.Equal("Waiting for authenticated traffic", Row(cut, "proxy-credential"));
         cut.WaitForAssertion(() => _proxyApi.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.AtLeastOnce));
     }
 }

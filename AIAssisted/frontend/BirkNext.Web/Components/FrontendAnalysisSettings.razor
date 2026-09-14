@@ -179,7 +179,7 @@
             }
         </div>
 
-        @if (_detectionResult is not null)
+        @if (_detectionResult is not null && _activeTab != "auth")
         {
             <section class="fa-result fa-result-@DetectionStateCss" aria-labelledby="detection-result-heading" aria-live="polite">
                 <div class="fa-result-heading">
@@ -192,7 +192,7 @@
                     <div><dt>Framework</dt><dd>@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</dd></div>
                     <div><dt>Environment</dt><dd>@(_detectionResult.SuggestedEnvironmentType?.ToString() ?? "Not detected") <small>Proposed</small></dd></div>
                     <div><dt>Detected authentication</dt><dd>@DetectedAuthenticationLabel</dd></div>
-                    @if (ManualVerificationRequired)
+                    @if (ManualVerificationRequired && _activeTab != "auth")
                     {
                         <div><dt>Manual authentication verification</dt><dd>@ManualVerificationLabel</dd></div>
                     }
@@ -227,11 +227,12 @@
             </section>
         }
 
-        @if (ManualVerificationRequired)
+        @if (ManualVerificationRequired && _activeTab != "auth")
         {
             <section class="fa-result" aria-label="Manual authentication verification">
                 <div role="status">
                     <strong>@ManualVerificationLabel</strong>
+                    <details><summary>Verification details</summary>
                     <p>Your organization requires sign-in using a managed Microsoft Edge work profile. BirkNext cannot verify this sign-in automatically.</p>
                     @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
                     {
@@ -245,6 +246,7 @@
                     {
                         <p>Configured authentication: @profile.Authentication.AuthenticationType.</p>
                     }
+                    </details>
                 </div>
                 @if (!_manualInstructionsOpen)
                 {
@@ -698,32 +700,78 @@
             @* ── Authentication ── *@
             @if (_activeTab == "auth")
             {
+                <div class="fa-auth-layout">
+                <section class="fa-detection-summary" data-testid="authentication-discovery">
+                    <h3>Authentication discovery</h3>
+                    <dl class="fa-detail-list" data-testid="edge-auth-discovery">
+                        <div class="fa-dl-row"><dt>Provider</dt><dd>@DetectedAuthenticationLabel</dd></div>
+                        <div class="fa-dl-row"><dt>Authority</dt><dd>@(_detectionResult?.DetectedAuthority ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Tenant</dt><dd>@(_detectionResult?.DetectedTenantId ?? _detectionResult?.TenantMode ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Client ID</dt><dd>@(_detectionResult?.DetectedClientId ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Source</dt><dd>@(_detectionResult?.Success == true ? "Detect Settings" : "Not detected")</dd></div>
+                    </dl>
+                    @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
+                    {
+                        <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;"
+                                title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
+                            Apply authentication
+                        </button>
+                    }
+                </section>
+                <section class="fa-detection-summary" data-testid="authenticated-testing-method">
+                    <h3>Authenticated testing method</h3>
+                    @if (_isEditMode && _editProfile is not null)
+                    {
+                        <label class="fa-label" for="authenticated-testing-method-select">Method</label>
+                        <select id="authenticated-testing-method-select" class="form-control" @bind="_editProfile.Authentication.AuthenticatedTestingMethod">
+                            <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
+                            <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.ProxyOption</option>
+                            <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
+                        </select>
+                    }
+                    else
+                    {
+                        <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)</dd></div></dl>
+                    }
+                    <p class="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? "fa-section-note" : "fa-auth-help")" data-testid="authenticated-testing-method-help"><span data-testid="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? "proxy-security-warning" : null)">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span></p>
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile))
+                    {
+                        <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
+                    }
+                </section>
                 @* The SAVED Authenticated testing method decides which runtime panel is shown. Runtime operations in either panel are
                    transient: they never enter edit mode, never show Save changes and never persist evidence. *@
                 @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                 {
-                    <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" Detection="_detectionResult" />
-                    @if (EdgeStatus.State == ManagedEdgeState.TargetTabNotInspectable)
-                    {
-                        <p class="fa-section-note" role="status" data-testid="cdp-blocked-proxy-hint">@AuthenticatedTestingMethodLabels.CdpBlockedProxyHint</p>
-                    }
+                    <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" />
                 }
                 else if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
                 {
-                    <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" EdgeStatus="EdgeStatus" />
+                    <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" />
                 }
                 else
                 {
                     <section class="fa-detection-summary" data-testid="manual-only-panel" aria-label="Manual verification only">
-                        <h3>Authenticated testing: manual verification only</h3>
-                        <p>No authenticated automation is configured for this environment. Public reviews remain available; authenticated REST, GraphQL and browser DOM checks are unavailable. Record manual authentication verification on the Target Application tab.</p>
+                        <h3>Manual verification</h3>
+                        <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Status</dt><dd>@ManualStatus</dd></div></dl>
+                        <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
+                        @if (_manualInstructionsOpen)
+                        {
+                            <p>Open @CurrentTargetUrl in your managed Edge work profile, sign in manually, and confirm access to the target application.</p>
+                            <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
+                            <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
+                        }
+                        <p>Manual verification confirms user access only. It does not enable authenticated REST, GraphQL or browser automation.</p>
+                        <AuthenticatedCapabilities />
                     </section>
                 }
-                <h3>Authentication discovery and configuration</h3>
-                <p class="fa-section-note">
-                    These settings describe expected authentication behaviour only. No credentials are stored or used here.
-                    Secrets, passwords, tokens, and client secrets must never be entered.
-                </p>
+                <section class="fa-auth-configuration" data-testid="authentication-configuration">
+                <h3>Authentication configuration</h3>
+                @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
+                {
+                    <p role="status">@ManualVerificationLabel <button type="button" class="btn-secondary fa-btn-sm" @onclick='() => _activeTab = "target"'>Review manual verification</button></p>
+                }
+                <details><summary>Configuration help</summary><p>Expected authentication settings only. Never enter passwords, tokens or client secrets.</p></details>
                 @if (_isEditMode && _editProfile is not null)
                 {
                     var auth = _editProfile.Authentication;
@@ -731,8 +779,7 @@
                         <div class="form-field fa-field-full">
                             <label class="fa-label" style="font-weight:600">Verification method</label>
                             <p style="font-size:0.9rem;margin-bottom:0.75rem">
-                                <strong>Manual verification — managed Microsoft Edge</strong><br />
-                                <small style="color:var(--color-text-muted)">Your organization requires manual sign-in using a managed Microsoft Edge work profile. BirkNext cannot automate authentication.</small>
+                                <strong>@VerificationModeLabel</strong>
                             </p>
                         </div>
 
@@ -783,33 +830,14 @@
                                       @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
                         </div>
 
-                        @* Authenticated testing method: saved configuration (draft -> Save changes / Cancel). Never switched automatically. *@
-                        <div class="form-field fa-field-full" style="padding-top:1rem;border-top:1px solid var(--color-border)" data-testid="authenticated-testing-method">
-                            <div class="fa-threshold-group-title" id="authenticated-testing-method-heading">Authenticated testing method</div>
-                            <p class="fa-section-note">Saved with this environment. Decides how BirkNext performs authenticated testing; runtime sessions are never saved.</p>
-                            <label class="fa-label" for="authenticated-testing-method-select">Method</label>
-                            <select id="authenticated-testing-method-select" class="form-control" @bind="auth.AuthenticatedTestingMethod">
-                                <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
-                                <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.ProxyOption</option>
-                                <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
-                            </select>
-                            <p class="fa-section-note" data-testid="authenticated-testing-method-help">@AuthenticatedTestingMethodLabels.Help(auth.AuthenticatedTestingMethod)</p>
-                            @if (auth.AuthenticatedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
-                            {
-                                <p class="fa-section-note" role="note" data-testid="authenticated-testing-method-warning">@AuthenticatedTestingMethodLabels.ProxySecurityWarning</p>
-                                @if (!LocalHttpsProxyScope.EnvironmentAllowed(_editProfile))
-                                {
-                                    <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
-                                }
-                            }
-                        </div>
-
                         @* Browser delivery trust: saved policy for managed-Edge authenticated testing. Exact origin is always preferred;
                            ApprovedMcasProxyOrigin only ADDS an approved, correlated Defender for Cloud Apps fallback. Changing it follows the normal
                            draft -> Save changes / Cancel flow and never marks public target detection stale. *@
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                    {
                         <div class="form-field fa-field-full" style="padding-top:1rem;border-top:1px solid var(--color-border)" data-testid="browser-delivery-trust">
                             <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
-                            <p class="fa-section-note">Saved with this environment. Decides which manually signed-in Edge tab BirkNext may bind to. Direct delivery at the configured target origin is always preferred and always accepted.</p>
+                            <p>Exact origin is always preferred.</p>
                             <dl class="fa-detail-list">
                                 <div class="fa-dl-row"><dt>Configured target</dt><dd data-testid="browser-delivery-trust-target">@(BrowserDeliveryTrustLabels.ConfiguredTarget(_editProfile) ?? "Configure a Frontend URL")</dd></div>
                             </dl>
@@ -818,8 +846,9 @@
                                 <option value="@ManagedEdgeTrustModel.ExactOrigin">@BrowserDeliveryTrustLabels.ExactOriginOption</option>
                                 <option value="@ManagedEdgeTrustModel.ApprovedMcasProxyOrigin">@BrowserDeliveryTrustLabels.ApprovedProxyOption</option>
                             </select>
-                            <p class="fa-section-note" data-testid="browser-delivery-trust-help">@BrowserDeliveryTrustLabels.Help(auth.BrowserDeliveryTrust)</p>
+                            <details><summary>Trust policy details</summary><p data-testid="browser-delivery-trust-help">@BrowserDeliveryTrustLabels.Help(auth.BrowserDeliveryTrust)</p></details>
                         </div>
+                    }
 
                     </div>
                 }
@@ -827,82 +856,33 @@
                 {
                     var auth = profile.Authentication;
                     <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Verification method</dt><dd>Manual verification — managed Microsoft Edge</dd></div>
-                        <div class="fa-dl-row"><dt>Authenticated testing method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(auth.AuthenticatedTestingMethod)</dd></div>
-                        <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@auth.AuthenticationType</dd></div>
+                        <div class="fa-dl-row"><dt>Verification method</dt><dd>@VerificationModeLabel</dd></div>
+                        <div class="fa-dl-row"><dt>Configured authentication</dt><dd>@auth.AuthenticationType @if (_detectionResult?.Success == true && _detectionResult.DetectedAuthenticationType != auth.AuthenticationType) { <small class="fa-configured-auth-draft">Differs from detected provider</small> }</dd></div>
                         <div class="fa-dl-row"><dt>Requires Authentication</dt><dd>@BoolLabel(auth.RequiresAuthentication)</dd></div>
+                    </dl>
+                    <details><summary>Configured identifiers and redirect URLs</summary>
+                    <dl class="fa-detail-list">
                         <div class="fa-dl-row"><dt>Expected Authority</dt><dd>@(auth.ExpectedAuthority ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Expected Tenant</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedTenant) ? "—" : "Configured")</dd></div>
-                        <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(string.IsNullOrWhiteSpace(auth.ExpectedClientId) ? "—" : "Configured")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Tenant</dt><dd>@(auth.ExpectedTenant ?? "—")</dd></div>
+                        <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(auth.ExpectedClientId ?? "—")</dd></div>
                         <div class="fa-dl-row"><dt>Allowed Redirect URLs</dt><dd>@HostList(auth.AllowedRedirectUrls)</dd></div>
                     </dl>
+                    </details>
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                    {
                     <div class="fa-field-full" style="margin-top:1.5rem" data-testid="browser-delivery-trust">
                         <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
                         <dl class="fa-detail-list">
                             <div class="fa-dl-row"><dt>Configured target</dt><dd data-testid="browser-delivery-trust-target">@(BrowserDeliveryTrustLabels.ConfiguredTarget(profile) ?? "Configure a Frontend URL")</dd></div>
                             <div class="fa-dl-row"><dt>Trust model</dt><dd data-testid="browser-delivery-trust-model">@BrowserDeliveryTrustLabels.Policy(auth.BrowserDeliveryTrust)</dd></div>
                         </dl>
-                        <p class="fa-section-note" data-testid="browser-delivery-trust-help">@BrowserDeliveryTrustLabels.Help(auth.BrowserDeliveryTrust) Use Edit Environment to change the trust model; the change is saved only with Save changes.</p>
+                        <details><summary>Trust policy details</summary><p data-testid="browser-delivery-trust-help">@BrowserDeliveryTrustLabels.Help(auth.BrowserDeliveryTrust) Use Edit Environment to change the trust model; the change is saved only with Save changes.</p></details>
                     </div>
+                    }
                 }
-                @* Show detected values if detection has been run *@
-                @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
-                {
-                    <div class="fa-field-full" style="margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid var(--color-border);">
-                        <div style="font-weight: 600; margin-bottom: 1rem; font-size: 0.9rem; text-transform: uppercase; color: var(--color-text-subtle);">Detected Authentication</div>
 
-                        @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
-                        {
-                            <div style="display: grid; grid-template-columns: 1fr 1.5fr; gap: 1rem; font-size: 0.875rem; margin-bottom: 1rem;">
-                                <div style="color: var(--color-text-subtle);">Type</div>
-                                <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType <span style="color: var(--color-text-muted); font-size: 0.8rem;">(from target)</span></div>
-
-                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
-                                {
-                                    <div style="color: var(--color-text-subtle);">Authority</div>
-                                    <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
-                                }
-
-                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
-                                {
-                                    <div style="color: var(--color-text-subtle);">Tenant</div>
-                                    <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedTenantId</div>
-                                }
-                                else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
-                                {
-                                    <div style="color: var(--color-text-subtle);">Tenant Mode</div>
-                                    <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
-                                }
-
-                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
-                                {
-                                    <div style="color: var(--color-text-subtle);">Client ID</div>
-                                    <div style="font-family: monospace; font-weight: 500;">@_detectionResult.DetectedClientId</div>
-                                }
-
-                                @if (_detectionResult.DetectedRedirectUrls.Count > 0)
-                                {
-                                    <div style="color: var(--color-text-subtle);">Redirect URLs</div>
-                                    <div>
-                                        @foreach (var url in _detectionResult.DetectedRedirectUrls)
-                                        {
-                                            <div style="font-family: monospace; font-size: 0.8rem; word-break: break-all; margin-bottom: 0.25rem;">@url</div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-                        else
-                        {
-                            <div style="color: var(--color-text-muted); font-size: 0.875rem;">No authentication detected</div>
-                        }
-
-                        <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;"
-                                title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
-                            Apply authentication
-                        </button>
-                    </div>
-                }
+                </section>
+                </div>
             }
 
             @* ── Performance Thresholds ── *@
@@ -1248,20 +1228,26 @@
                 var v = FaSettings.ValidateProfile(profile);
                 <dl class="fa-detail-list" style="margin-bottom:1.5rem">
                     <div class="fa-dl-row"><dt>Detection freshness</dt><dd>@(IsDetectionStale ? "Stale" : _detectionResult is null ? "Not checked" : "Current")</dd></div>
-                    <div class="fa-dl-row"><dt>Manual sign-in</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Completed - browser access verified" : "Required for authenticated browser access")</dd></div>
-                    <div class="fa-dl-row"><dt>Managed Edge connection</dt><dd>@EdgeStatus.State</dd></div>
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                    {
+                        <div class="fa-dl-row"><dt>Manual sign-in</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Completed - browser access verified" : "Required for authenticated browser access")</dd></div>
+                        <div class="fa-dl-row"><dt>Managed Edge connection</dt><dd>@AuthenticatedTestingMethodLabels.Connection(EdgeStatus.State)</dd></div>
+                    }
                     <div class="fa-dl-row"><dt>Authenticated testing method</dt><dd data-testid="validation-testing-method">@AuthenticatedTestingMethodLabels.Option(profile.Authentication.AuthenticatedTestingMethod)</dd></div>
                     <div class="fa-dl-row"><dt>Local HTTPS proxy</dt><dd data-testid="validation-proxy-state">@(profile.Authentication.AuthenticatedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? $"{AuthenticatedTestingMethodLabels.ProxyState(ProxyStatus.State)} · {ProxyStatus.Endpoint}" : "Not selected")</dd></div>
                     <div class="fa-dl-row"><dt>Authenticated API context</dt><dd data-testid="validation-proxy-credential">@(profile.Authentication.AuthenticatedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? AuthenticatedTestingMethodLabels.Credential(ProxyStatus) : "—")</dd></div>
                     <div class="fa-dl-row"><dt>Public surface</dt><dd data-testid="validation-coverage-public">@Coverage.PublicSurface</dd></div>
                     <div class="fa-dl-row"><dt>Authenticated API surface</dt><dd data-testid="validation-coverage-api">@Coverage.AuthenticatedApiSurface</dd></div>
                     <div class="fa-dl-row"><dt>Authenticated browser DOM surface</dt><dd data-testid="validation-coverage-dom">@Coverage.AuthenticatedBrowserDomSurface</dd></div>
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                    {
                     <div class="fa-dl-row"><dt>Browser trust configuration</dt><dd data-testid="validation-trust-configuration">@BrowserDeliveryTrustLabels.Configuration(profile)</dd></div>
                     <div class="fa-dl-row"><dt>Configured trust</dt><dd data-testid="validation-configured-trust">@BrowserDeliveryTrustLabels.Policy(profile.Authentication.BrowserDeliveryTrust)</dd></div>
                     <div class="fa-dl-row"><dt>Observed delivery</dt><dd data-testid="validation-observed-delivery">@BrowserDeliveryTrustLabels.Delivery(EdgeStatus)</dd></div>
                     <div class="fa-dl-row"><dt>Correlation</dt><dd data-testid="validation-correlation">@BrowserDeliveryTrustLabels.Correlation(EdgeStatus)</dd></div>
                     <div class="fa-dl-row"><dt>Trust decision</dt><dd data-testid="validation-trust-decision">@BrowserDeliveryTrustLabels.ValidationDecision(EdgeStatus)</dd></div>
                     <div class="fa-dl-row"><dt>Authenticated access</dt><dd>@(EdgeStatus.AuthenticatedBrowserAvailable ? "Verified" : "Not verified")</dd></div>
+                    }
                     <div class="fa-dl-row">
                         <dt>Configuration validation</dt>
                         <dd>
@@ -1715,6 +1701,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private ManagedEdgeStatus EdgeStatus => _edgeRuntime?.For(CurrentProfile) ?? new();
     /// <summary>Transient Local HTTPS proxy status for the current configuration. Never persisted; never contains a credential.</summary>
     private LocalHttpsProxyStatus ProxyStatus => _proxyRuntime?.For(CurrentProfile) ?? new();
+    private string VerificationModeLabel => CurrentProfile?.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge ? "Manual verification" : "Automated detection";
     private AuthenticatedTestingMethod SelectedTestingMethod => CurrentProfile?.Authentication.AuthenticatedTestingMethod ?? AuthenticatedTestingMethod.ManagedEdgeCdp;
     private AuthenticatedCapabilitySummary Coverage => AuthenticatedTestingMethodLabels.Capabilities(SelectedTestingMethod, EdgeStatus, ProxyStatus);
     /// <summary>Machine-proven authenticated API context through the saved Local HTTPS proxy method (API surface only, never DOM).</summary>

@@ -99,7 +99,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         Button(cut, "Check Edge compatibility").Click();
         cut.WaitForAssertion(() => Assert.Contains("Unavailable in this deployment mode", cut.Markup));
         Assert.True(Button(cut, "Start Edge for authenticated testing").HasAttribute("disabled"));
-        Assert.True(Button(cut, "Connect to managed Edge").HasAttribute("disabled"));
+        Assert.True(Button(cut, "Connect to existing Edge").HasAttribute("disabled"));
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
             Evidence = "The target tab is open, but Edge refused debugger attachment to it."
         });
         var cut = Panel(new ManagedEdgeRuntime(_api.Object));
-        Button(cut, "Connect to managed Edge").Click();
+        Button(cut, "Connect to existing Edge").Click();
         cut.WaitForAssertion(() => Assert.Contains("refuses debugger attachment", cut.Markup));
         Assert.Contains("Not verified", cut.Markup);
         Assert.Contains("cannot be verified through CDP", cut.Find("[data-testid='edge-manual-signin']").TextContent);
@@ -173,7 +173,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         var discovery = cut.Find("[data-testid='edge-auth-discovery']").TextContent;
         Assert.Contains("https://login.microsoftonline.com/tenant-id", discovery);
         Assert.Contains("client-id", discovery);
-        Assert.Contains("Public discovery of the target", discovery);
+        Assert.Contains("Detect Settings", discovery);
         foreach (var action in new[] { "Check Edge compatibility", "Start Edge for authenticated testing", "Check Edge compatibility" })
         {
             cut.WaitForAssertion(() => Assert.False(cut.FindAll("button").Single(b => b.TextContent.Trim() == action).HasAttribute("disabled")));
@@ -229,7 +229,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         _profile.Authentication.BrowserDeliveryTrust = saved;
         var json = JsonSerializer.Serialize(_profile);
         var cut = Panel(new ManagedEdgeRuntime(_api.Object));
-        Button(cut, "Connect to managed Edge").Click();
+        Button(cut, "Connect to existing Edge").Click();
         cut.WaitForAssertion(() => Assert.NotNull(captured));
         Assert.Equal(saved, captured!.TrustModel);
         Assert.Equal(json, JsonSerializer.Serialize(_profile));   // connecting never writes back to the profile
@@ -250,7 +250,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(direct);
         _api.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(direct);
         var cut = Panel(new ManagedEdgeRuntime(_api.Object));
-        Button(cut, "Connect to managed Edge").Click();
+        Button(cut, "Connect to existing Edge").Click();
         cut.WaitForAssertion(() => Assert.Equal("Exact origin — trusted", cut.Find("[data-testid='edge-trust-decision']").TextContent));
         Assert.Contains("Approved MCAS proxy permitted", cut.Find("[data-testid='edge-configured-trust']").TextContent);
         Assert.Equal("Direct", cut.Find("[data-testid='edge-delivery']").TextContent);
@@ -275,7 +275,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
         _api.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(proxied);
         _api.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(proxied);
         var cut = Panel(new ManagedEdgeRuntime(_api.Object));
-        Button(cut, "Connect to managed Edge").Click();
+        Button(cut, "Connect to existing Edge").Click();
         cut.WaitForAssertion(() => Assert.Equal("Approved correlated MCAS proxy — trusted", cut.Find("[data-testid='edge-trust-decision']").TextContent));
         var delivery = cut.Find("[data-testid='edge-browser-delivery']").TextContent;
         Assert.Contains("https://m2lbdev.bufetat.no", delivery);                       // configured target unchanged
@@ -297,7 +297,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
             Evidence = "A proxied tab for this application is open, but BirkNext could not correlate it to the configured target through the browser session."
         });
         var cut = Panel(new ManagedEdgeRuntime(_api.Object));
-        Button(cut, "Connect to managed Edge").Click();
+        Button(cut, "Connect to existing Edge").Click();
         cut.WaitForAssertion(() => Assert.Contains("could not correlate", cut.Markup));
         Assert.Equal("Proxy correlation failed", cut.Find("[data-testid='edge-trust-decision']").TextContent);
         Assert.Contains("not correlated to the target", cut.Markup);
@@ -317,7 +317,7 @@ public sealed class ManagedEdgePreflightUiTests : BunitContext
             Evidence = "Browser delivery is proxied by Microsoft Defender for Cloud Apps, but this environment permits exact-origin delivery only."
         });
         var cut = Panel(new ManagedEdgeRuntime(_api.Object));
-        Button(cut, "Connect to managed Edge").Click();
+        Button(cut, "Connect to existing Edge").Click();
         cut.WaitForAssertion(() => Assert.Contains("permits exact-origin delivery only", cut.Markup));
         Assert.Contains("Exact origin only", cut.Find("[data-testid='edge-configured-trust']").TextContent);
         Assert.Equal("Microsoft Defender for Cloud Apps proxy", cut.Find("[data-testid='edge-delivery']").TextContent);

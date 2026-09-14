@@ -4,37 +4,24 @@
 @using BirkNext.Web.Models
 
 <section class="fa-detection-summary" data-testid="local-https-proxy-panel" aria-label="Local HTTPS proxy authenticated testing">
-    <h3>Authenticated testing</h3>
-    <p class="fa-section-note" role="note" data-testid="proxy-security-warning">@AuthenticatedTestingMethodLabels.ProxySecurityWarning</p>
-    <ol>
-        <li><strong>Check proxy compatibility.</strong> Confirms local integration, a free loopback port, certificate trust, the environment gate and the approved hosts.</li>
-        <li><strong>Start the authenticated proxy.</strong> BirkNext listens on 127.0.0.1 only.</li>
-        <li><strong>Configure Edge to use the proxy</strong> (start a separate Edge with the proxy, or set it manually), then <strong>sign in manually</strong>. MFA, PIN, passkeys and Conditional Access stay yours.</li>
-        <li><strong>Open the target application and perform a normal safe action.</strong> BirkNext detects authenticated API traffic on approved hosts only.</li>
-        <li><strong>Stop the proxy</strong> when done. The in-memory credential is wiped immediately.</li>
-    </ol>
-
+    <h3>Local HTTPS proxy</h3>
+    <div class="fa-auth-steps">
+    <div class="fa-auth-step">
+    <h4>Step 1 — Proxy</h4>
     <dl class="fa-detail-list" data-testid="proxy-status">
-        <div class="fa-dl-row"><dt>Method</dt><dd>@AuthenticatedTestingMethodLabels.ProxyOption</dd></div>
         <div class="fa-dl-row"><dt>Proxy status</dt><dd data-testid="proxy-state">@AuthenticatedTestingMethodLabels.ProxyState(Status.State)</dd></div>
         <div class="fa-dl-row"><dt>Endpoint</dt><dd data-testid="proxy-endpoint">@Status.Endpoint</dd></div>
+    </dl>
+    <details><summary>Proxy diagnostics</summary>
+    <dl class="fa-detail-list">
         <div class="fa-dl-row"><dt>Local integration</dt><dd>@(Checked ? (Status.LocalIntegrationAvailable ? "Available" : "Unavailable in this deployment mode") : "Not checked")</dd></div>
         <div class="fa-dl-row"><dt>Environment</dt><dd data-testid="proxy-environment">@EnvironmentLabel</dd></div>
         <div class="fa-dl-row"><dt>Port</dt><dd>@(Checked ? (Status.PortAvailable ? "Available" : "Occupied - BirkNext never frees a port") : "Not checked")</dd></div>
-        <div class="fa-dl-row"><dt>Certificate</dt><dd data-testid="proxy-certificate">@AuthenticatedTestingMethodLabels.Certificate(Status.Certificate.State)</dd></div>
         <div class="fa-dl-row"><dt>Target</dt><dd data-testid="proxy-target">@(Profile?.Name ?? "—") @(Status.TargetOrigin is { } origin ? $"({origin})" : "")</dd></div>
         <div class="fa-dl-row"><dt>Approved hosts</dt><dd data-testid="proxy-approved-hosts">@(Status.ApprovedHosts.Count == 0 ? (Checked ? "None" : "Not checked") : string.Join(", ", Status.ApprovedHosts))</dd></div>
-        <div class="fa-dl-row"><dt>Authenticated API traffic</dt><dd data-testid="proxy-authenticated-traffic">@AuthenticatedTestingMethodLabels.AuthenticatedTraffic(Status)</dd></div>
-        <div class="fa-dl-row"><dt>Credential</dt><dd data-testid="proxy-credential">@AuthenticatedTestingMethodLabels.Credential(Status)</dd></div>
-        @if (Status.CredentialExpiresAt is { } expires)
-        {
-            <div class="fa-dl-row"><dt>Authenticated API session expires</dt><dd data-testid="proxy-credential-expiry">@expires.ToLocalTime().ToString("HH:mm:ss")</dd></div>
-        }
-        <div class="fa-dl-row"><dt>REST</dt><dd data-testid="proxy-rest">@Capabilities.Rest</dd></div>
-        <div class="fa-dl-row"><dt>GraphQL query</dt><dd data-testid="proxy-graphql">@Capabilities.GraphQlQuery</dd></div>
-        <div class="fa-dl-row"><dt>Browser DOM</dt><dd data-testid="proxy-browser-dom">@Capabilities.AuthenticatedBrowserDomSurface</dd></div>
     </dl>
     <p role="status" data-testid="proxy-evidence">@Status.Evidence</p>
+    </details>
     @if (Status.FailureReason is { } failure)
     {
         <p role="alert" data-testid="proxy-failure">@failure</p>
@@ -50,20 +37,16 @@
         <button type="button" class="btn-secondary" disabled="@(Runtime is null || !Active)" @onclick="Stop">Stop proxy</button>
     </div>
 
-    <h3>Browser proxy configuration</h3>
-    <p class="fa-section-note">
-        BirkNext never changes the Windows or default Edge proxy settings. Either start a separate Edge instance below (dedicated BirkNext profile,
-        <code>--proxy-server=127.0.0.1:@(Status.Port > 0 ? Status.Port.ToString() : "<port>")</code>), or configure it manually:
-        Windows Settings → Network &amp; Internet → Proxy → Manual proxy setup → address <code>127.0.0.1</code>, port <code>@(Status.Port > 0 ? Status.Port.ToString() : "<port>")</code>; turn it off again after testing.
-        If organization policy forces proxy settings, only the manual route applies.
-    </p>
-    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Active)" @onclick="LaunchEdge">Start Edge with proxy</button>
-
-    <h3>Test certificate</h3>
+    </div>
+    <div class="fa-auth-step">
+    <h4>Step 2 — Certificate</h4>
+    <p data-testid="proxy-certificate">@AuthenticatedTestingMethodLabels.Certificate(Status.Certificate.State)</p>
+    <details><summary>Certificate details</summary>
     <p class="fa-section-note">
         Intercepting approved hosts requires trusting the dedicated <em>BirkNext DEV HTTPS Inspection CA</em> for the current Windows user. BirkNext never installs it silently:
         confirm here, then confirm the Windows prompt. Remove it when authenticated proxy testing is no longer needed.
     </p>
+    </details>
     @if (Status.Certificate.State == ProxyCertificateTrustState.Trusted)
     {
         @if (!_confirmRemove)
@@ -89,7 +72,32 @@
         }
     }
 
-    <h3>Authenticated API checks</h3>
+    </div>
+    <div class="fa-auth-step">
+    <h4>Step 3 — Browser</h4>
+    <p>Configure Edge to use the local proxy and sign in manually.</p>
+    <details><summary>Browser proxy instructions</summary>
+    <p class="fa-section-note">
+        BirkNext never changes the Windows or default Edge proxy settings. Either start a separate Edge instance below (dedicated BirkNext profile,
+        <code>--proxy-server=127.0.0.1:@(Status.Port > 0 ? Status.Port.ToString() : "<port>")</code>), or configure it manually:
+        Windows Settings → Network &amp; Internet → Proxy → Manual proxy setup → address <code>127.0.0.1</code>, port <code>@(Status.Port > 0 ? Status.Port.ToString() : "<port>")</code>; turn it off again after testing.
+        If organization policy forces proxy settings, only the manual route applies.
+    </p>
+    </details>
+    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Active)" @onclick="LaunchEdge">Start Edge with proxy</button>
+
+    </div>
+    <div class="fa-auth-step">
+    <h4>Step 4 — Authenticated API context</h4>
+    <dl class="fa-detail-list">
+        <div class="fa-dl-row"><dt>Authenticated API traffic</dt><dd data-testid="proxy-authenticated-traffic">@AuthenticatedTestingMethodLabels.AuthenticatedTraffic(Status)</dd></div>
+        <div class="fa-dl-row"><dt>Status</dt><dd data-testid="proxy-credential">@(Status.AuthenticatedCredentialAvailable || Status.CredentialExpired ? AuthenticatedTestingMethodLabels.Credential(Status) : "Waiting for authenticated traffic")</dd></div>
+        @if (Status.CredentialExpiresAt is { } expires)
+        {
+            <div class="fa-dl-row"><dt>Authenticated API session expires</dt><dd data-testid="proxy-credential-expiry">@expires.ToLocalTime().ToString("HH:mm:ss")</dd></div>
+        }
+    </dl>
+    <details><summary>Authenticated API checks</summary>
     <p class="fa-section-note">Read-only checks only: REST GET on the configured health endpoint or REST base URL, and a single GraphQL query. Mutations, subscriptions and unsafe HTTP methods are rejected. Response bodies are not captured.</p>
     <dl class="fa-detail-list" data-testid="proxy-checks">
         <div class="fa-dl-row"><dt>REST check target</dt><dd>@(RestUrl ?? "Configure an HTTPS health endpoint or REST base URL")</dd></div>
@@ -106,12 +114,11 @@
         <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Status.GraphQlQueryAvailable || GraphQlUrl is null)" @onclick="RunGraphQl">Run authenticated GraphQL query</button>
     </div>
 
-    <h3>Coverage</h3>
-    <dl class="fa-detail-list" data-testid="proxy-coverage">
-        <div class="fa-dl-row"><dt>Public surface</dt><dd>@Capabilities.PublicSurface</dd></div>
-        <div class="fa-dl-row"><dt>Authenticated API surface</dt><dd data-testid="proxy-coverage-api">@Capabilities.AuthenticatedApiSurface</dd></div>
-        <div class="fa-dl-row"><dt>Authenticated browser DOM surface</dt><dd data-testid="proxy-coverage-dom">@Capabilities.AuthenticatedBrowserDomSurface</dd></div>
-    </dl>
+    </details>
+    </div>
+    </div>
+    <AuthenticatedCapabilities Rest="Status.RestAvailable" GraphQl="Status.GraphQlQueryAvailable" />
+
 </section>
 
 @code {
@@ -127,7 +134,6 @@
     private bool Active => Status.SessionId is not null && Status.State is not (LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Stale or LocalHttpsProxyState.Failed);
     private bool EnvironmentAllowed => LocalHttpsProxyScope.EnvironmentAllowed(Profile);
     private string EnvironmentLabel => Profile is null ? "—" : EnvironmentAllowed ? $"{Profile.EnvironmentType} - allowed" : $"{Profile.EnvironmentType} - Local HTTPS proxy unavailable (non-production environments only)";
-    private AuthenticatedCapabilitySummary Capabilities => AuthenticatedTestingMethodLabels.Capabilities(AuthenticatedTestingMethod.LocalHttpsProxy, EdgeStatus, Status);
     private string? RestUrl => Profile is null ? null : LocalHttpsProxyScope.RestCheckUrl(Profile);
     private string? GraphQlUrl => Profile is null ? null : LocalHttpsProxyScope.GraphQlCheckUrl(Profile);
 

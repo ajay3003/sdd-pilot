@@ -221,7 +221,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         OpenTab(cut, "Authentication");
-        Click(cut, "Connect to managed Edge");
+        Click(cut, "Connect to existing Edge");
         cut.WaitForAssertion(() => Assert.Equal("Exact origin — trusted", Row(cut, "edge-trust-decision")));
         Click(cut, "Edit Environment");
         TrustSelect(cut).Change("ApprovedMcasProxyOrigin");
@@ -247,7 +247,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => Assert.Contains("Detected from target", cut.Markup));
         OpenTab(cut, "Authentication");
-        foreach (var action in new[] { "Connect to managed Edge", "Verify authenticated access", "Disconnect BirkNext from Edge" })
+        foreach (var action in new[] { "Connect to existing Edge", "Verify authenticated access", "Disconnect BirkNext from Edge" })
         {
             Click(cut, action);
             cut.WaitForAssertion(() => Assert.False(cut.FindAll("button").Single(b => b.TextContent.Trim() == "Check Edge compatibility").HasAttribute("disabled")));
@@ -277,7 +277,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         _api.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(direct);
         var cut = Open("""{ "authenticationType": "MicrosoftEntraId", "browserDeliveryTrust": "ApprovedMcasProxyOrigin" }""");
         OpenTab(cut, "Authentication");
-        Click(cut, "Connect to managed Edge");
+        Click(cut, "Connect to existing Edge");
         cut.WaitForAssertion(() => Assert.Equal("Exact origin — trusted", Row(cut, "edge-trust-decision")));
         Assert.Equal("Direct", Row(cut, "edge-delivery"));
         Assert.Contains("Approved MCAS proxy permitted", Row(cut, "edge-configured-trust"));
@@ -286,7 +286,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         Assert.Equal(BrowserDeliveryTrustLabels.ApprovedProxyOption, Row(cut, "validation-configured-trust"));
         Assert.Equal("Direct", Row(cut, "validation-observed-delivery"));
         Assert.Equal("Verified", Row(cut, "validation-trust-decision"));
-        Assert.Contains("Verified", cut.FindAll(".fa-dl-row").Single(r => r.TextContent.Contains("Authenticated access")).TextContent);
+        Assert.Contains("Verified", cut.FindAll(".fa-dl-row").Single(r => r.QuerySelector("dt")?.TextContent == "Authenticated access").TextContent);
         Assert.False(HasButton(cut, "Save changes"));
     }
 
@@ -303,7 +303,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         _api.Setup(a => a.StatusAsync(It.IsAny<ManagedEdgeSessionRequest>(), It.IsAny<bool>())).ReturnsAsync(proxied);
         var cut = Open("""{ "authenticationType": "MicrosoftEntraId", "browserDeliveryTrust": "ApprovedMcasProxyOrigin" }""");
         OpenTab(cut, "Authentication");
-        Click(cut, "Connect to managed Edge");
+        Click(cut, "Connect to existing Edge");
         cut.WaitForAssertion(() => Assert.Equal("Approved correlated MCAS proxy — trusted", Row(cut, "edge-trust-decision")));
         Assert.Equal("Microsoft Defender for Cloud Apps proxy", Row(cut, "edge-delivery"));
         Assert.Equal(ProxyOrigin, Row(cut, "edge-observed-origin"));
@@ -327,7 +327,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         });
         var cut = Open();
         OpenTab(cut, "Authentication");
-        Click(cut, "Connect to managed Edge");
+        Click(cut, "Connect to existing Edge");
         cut.WaitForAssertion(() => Assert.Contains("permits exact-origin delivery only", cut.Markup));
         Assert.Contains("not permitted by this environment", Row(cut, "edge-trust-decision"));
         Assert.Equal("Microsoft Defender for Cloud Apps proxy", Row(cut, "edge-delivery"));
@@ -352,7 +352,7 @@ public sealed class BrowserDeliveryTrustConfigurationTests : BunitContext
         });
         var cut = Open("""{ "authenticationType": "MicrosoftEntraId", "browserDeliveryTrust": "ApprovedMcasProxyOrigin" }""");
         OpenTab(cut, "Authentication");
-        Click(cut, "Connect to managed Edge");
+        Click(cut, "Connect to existing Edge");
         cut.WaitForAssertion(() => Assert.Equal("Proxy correlation failed", Row(cut, "edge-trust-decision")));
         OpenTab(cut, "Validation");
         Assert.Equal("Failed", Row(cut, "validation-correlation"));

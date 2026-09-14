@@ -91,6 +91,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
     /// </summary>
     private static void AssertDiscoveryCurrent(IRenderedComponent<Component> cut, bool editing = true)
     {
+        OpenTab(cut, "Target Application");
         DetectionLabel(cut).Should().Be("Manual authentication verification required");
         cut.Markup.Should().Contain("Detection result");
         cut.Find(".fa-result-message").TextContent.Should().NotContain("changed");
@@ -169,7 +170,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         cut.FindAll("#configured-authentication-type").Should().BeEmpty();
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty("nothing has been applied yet");
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
-        cut.Markup.Should().Contain("Detected Authentication");
+        cut.Markup.Should().Contain("Authentication discovery");
 
         Click(cut, "Apply authentication");
 
@@ -181,7 +182,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         cut.Find("#configured-redirect-urls").GetAttribute("value").Should().Contain(Redirect);
 
         // Detected evidence remains visible as provenance
-        cut.Markup.Should().Contain("Detected Authentication");
+        cut.Markup.Should().Contain("Authentication discovery");
         cut.Markup.Should().Contain("Apply authentication");
 
         // Dirty → top-level Save enabled, unsaved indicator visible, no second Save inside Authentication
@@ -276,8 +277,8 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         Persisted().Authentication.ExpectedAuthority.Should().BeNull();
         SaveCalls().Should().Be(savesBefore);
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty();
-        cut.FindAll(".fa-dl-row").Single(r => r.QuerySelector("dt")!.TextContent.Trim() == "Authentication Type")
-            .QuerySelector("dd")!.TextContent.Trim().Should().Be("None", "view mode shows persisted authentication");
+        cut.FindAll(".fa-dl-row").Single(r => r.QuerySelector("dt")!.TextContent.Trim() == "Configured authentication")
+            .QuerySelector("dd")!.TextContent.Trim().Should().StartWith("None", "view mode shows persisted authentication");
 
         AssertDiscoveryCurrent(cut, editing: false);
     }
@@ -387,6 +388,8 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Save changes");
         cut.WaitForAssertion(() => Persisted().Authentication.ExpectedClientId.Should().Be("99999999-9999-9999-9999-999999999999"));
 
+        Click(cut, "Review manual verification");
+
         cut.Markup.Should().Contain("Authentication or environment settings changed since detection.");
         cut.Markup.Should().Contain("Run Detect settings again before recording manual verification.");
         cut.Find("#activation-gate-reason").TextContent.Should().Contain("Run Detect settings again");
@@ -438,6 +441,7 @@ public sealed class AuthenticationApplyDraftTests : BunitContext
         // After Apply, before Save: draft labelled as draft + unsaved, saved value named explicitly
         OpenTab(cut, "Authentication");
         Click(cut, "Apply authentication");
+        OpenTab(cut, "Target Application");
         manualPanel().Should().Contain("Configured authentication (draft):").And.Contain("MicrosoftEntraId")
             .And.Contain("Unsaved").And.Contain("Saved authentication: None")
             .And.NotContain("Configured authentication None means");
