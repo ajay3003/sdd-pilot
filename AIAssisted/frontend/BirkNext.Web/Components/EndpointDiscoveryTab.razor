@@ -94,7 +94,7 @@
                     {
                         <button type="button" class="ed-pagelink @(SelectedPage?.Identity == pg.Identity ? "ed-pagelink-active" : "")" data-testid="discovery-page-link" @onclick="() => _selectedPage = pg.Identity">
                             <span class="ed-pagetitle">@pg.Title</span>
-                            <span class="ed-pagecount">@AppEndpointCount(pg) endpoints</span>
+                            <span class="ed-pagecount">@(pg.IsWaitingForFreshTraffic ? "Waiting for fresh traffic" : $"{AppEndpointCount(pg)} endpoints")</span>
                         </button>
                     }
                 }
@@ -108,8 +108,9 @@
                             <p class="ed-page-sub ed-mono">@sel.Identity · last @Time(sel.LastObservedAt)</p>
                         </div>
                         <div class="ed-page-actions">
-                            <button type="button" class="btn-secondary fa-btn-sm" data-testid="discovery-reanalyze" @onclick="() => ReanalyzePage(sel.Identity)">Re-analyze</button>
-                            <button type="button" class="btn-secondary fa-btn-sm" data-testid="discovery-clear" @onclick="() => ClearPage(sel.Identity)">Clear endpoints</button>
+                            <button type="button" class="btn-secondary fa-btn-sm" data-testid="discovery-refresh" disabled="@(_refreshing is not null)"
+                                    title="Clear this page's current observations and collect fresh endpoint traffic as you use the page again."
+                                    @onclick="() => RefreshPage(sel.Identity)">Refresh analysis</button>
                             @if (_confirmDeletePage == sel.Identity)
                             {
                                 <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-page-confirm" @onclick="() => DeletePage(sel.Identity)">Confirm delete</button>
@@ -124,6 +125,10 @@
                     @if (_confirmDeletePage == sel.Identity)
                     {
                         <p class="ed-warn" data-testid="discovery-delete-page-note">Delete analysis for "@sel.Title"? This removes discovered endpoint history for this page only. Target Environment configuration is not changed.</p>
+                    }
+                    @if (sel.IsWaitingForFreshTraffic)
+                    {
+                        <p class="ed-note" data-testid="discovery-page-state">Waiting for fresh traffic. Use this page in the target application to collect fresh endpoint traffic.</p>
                     }
                     @RenderEndpointTable(VisibleEndpoints(sel.Endpoints), "discovery-page-table", "No endpoints observed for this page yet.")
                 }
@@ -180,6 +185,7 @@
     private string _view = "overview";
     private string? _selectedPage;
     private string? _confirmDeletePage;
+    private string? _refreshing;
     private bool _confirmDeleteAll;
     private string _categoryFilter = "app";      // app = REST/GraphQL/WebSocket/Auth/Other; excludes static/telemetry
     private string _search = "";
@@ -326,8 +332,14 @@
 
     // ── management ───────────────────────────────────────────────────────────
 
-    private async Task ReanalyzePage(string identity) { if (Profile is not null) { await Discovery.ReanalyzePageAsync(JS, Profile.Id, identity); StateHasChanged(); } }
-    private async Task ClearPage(string identity) { if (Profile is not null) { await Discovery.ClearPageAsync(JS, Profile.Id, identity); StateHasChanged(); } }
+    // Refresh applies to exactly the one selected page; the guard serializes rapid double-clicks so they cannot race the fresh-traffic window.
+    private async Task RefreshPage(string identity)
+    {
+        if (Profile is null || _refreshing is not null) return;
+        _refreshing = identity;
+        try { await Discovery.RefreshPageAsync(JS, Profile.Id, identity); }
+        finally { _refreshing = null; StateHasChanged(); }
+    }
     private async Task DeletePage(string identity)
     {
         _confirmDeletePage = null;

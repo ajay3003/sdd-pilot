@@ -16,9 +16,12 @@ public interface IEndpointDiscoveryService
     /// <summary>Folds the current runtime's observed endpoints into the persisted per-page snapshot and persists. Returns true when anything changed.</summary>
     Task<bool> MergeObservedAsync(IJSRuntime js, string profileId, IReadOnlyList<ObservedNetworkEndpoint> observed);
     Task DeletePageAsync(IJSRuntime js, string profileId, string pageIdentity);
-    Task ClearPageAsync(IJSRuntime js, string profileId, string pageIdentity);
-    /// <summary>Re-analyze: keep the page identity but reset its observation window so fresh traffic repopulates it.</summary>
-    Task ReanalyzePageAsync(IJSRuntime js, string profileId, string pageIdentity);
+    /// <summary>
+    /// Refresh analysis for exactly one existing page: keep the page entry and identity, start a new analysis generation, reset its current
+    /// endpoint evidence, and mark it waiting for fresh traffic. Old observations do not reappear; only traffic observed after the refresh
+    /// boundary repopulates the page. Never touches other pages, shared traffic, the proxy, the authenticated context or configuration.
+    /// </summary>
+    Task RefreshPageAsync(IJSRuntime js, string profileId, string pageIdentity);
     /// <summary>Delete all browser-observed analyses (pages + shared). Configured backend integrations are computed from config and are never affected.</summary>
     Task DeleteAllAsync(IJSRuntime js, string profileId);
 }
@@ -67,15 +70,16 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     public Task DeletePageAsync(IJSRuntime js, string profileId, string pageIdentity) => MutateAsync(js, profileId, s =>
         s.Pages.RemoveAll(p => p.Identity == pageIdentity) > 0);
 
-    public Task ClearPageAsync(IJSRuntime js, string profileId, string pageIdentity) => MutateAsync(js, profileId, s =>
+    public Task RefreshPageAsync(IJSRuntime js, string profileId, string pageIdentity) => MutateAsync(js, profileId, s =>
     {
         var page = s.Pages.FirstOrDefault(p => p.Identity == pageIdentity);
-        if (page is null || page.Endpoints.Count == 0) return page is not null;
+        if (page is null) return false;   // the page entry is never deleted/recreated by a refresh
+        page.AnalysisGeneration++;
+        page.RefreshedAtUtc = DateTimeOffset.UtcNow;
         page.Endpoints.Clear();
+        page.LastObservedAt = default;    // no traffic observed yet in the new generation; never show the old "last observed" as current
         return true;
     });
-
-    public Task ReanalyzePageAsync(IJSRuntime js, string profileId, string pageIdentity) => ClearPageAsync(js, profileId, pageIdentity);
 
     public Task DeleteAllAsync(IJSRuntime js, string profileId) => MutateAsync(js, profileId, s =>
     {
@@ -158,8 +162,12 @@ public static class EndpointDiscoveryMerge
                 snapshot.Pages.Add(page);
                 changed = true;
             }
+            // Refresh boundary: a page whose analysis was refreshed only accepts traffic observed at or after the refresh, so old cumulative
+            // runtime observations (still held by the live proxy session) never repopulate a just-refreshed page.
+            if (page.RefreshedAtUtc is { } boundary && endpoint.LastObservedAt < boundary)
+                continue;
             changed |= Upsert(page.Endpoints, endpoint);
-            if (endpoint.FirstObservedAt < page.FirstObservedAt) page.FirstObservedAt = endpoint.FirstObservedAt;
+            if (page.FirstObservedAt == default || endpoint.FirstObservedAt < page.FirstObservedAt) page.FirstObservedAt = endpoint.FirstObservedAt;
             if (endpoint.LastObservedAt > page.LastObservedAt) page.LastObservedAt = endpoint.LastObservedAt;
         }
         if (changed) snapshot.UpdatedAt = now;

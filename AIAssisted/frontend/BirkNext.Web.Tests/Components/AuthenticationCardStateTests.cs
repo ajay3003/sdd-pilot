@@ -81,28 +81,20 @@ public sealed partial class AuthenticationApplyDraftTests
         cut.FindAll(".fa-page-unsaved").Should().BeEmpty();
     }
 
-    [Theory]
-    [InlineData("Apply REST", "RestBaseUrl")]
-    [InlineData("Apply GraphQL", "GraphQlEndpoint")]
-    [InlineData("Apply Health", "HealthEndpoint")]
-    [InlineData("Apply Swagger", "SwaggerUrl")]
-    public void EndpointApply_IsDraftOnlyAndCancelReverts(string label, string field)
+    [Fact]
+    public void DetectedEndpointProposals_AreNotShownOnAnyTab()
     {
+        // The "Discovered API Endpoints" proposal UI (Apply REST/GraphQL/Swagger/Health) was removed entirely; detection still
+        // records the endpoints in the result model, but they are no longer surfaced as apply-to-config proposals anywhere.
         var cut = Open();
-        var before = JsonSerializer.Serialize(Persisted());
         Click(cut, "Detect settings");
-        // Endpoint proposals now live on the Endpoint Discovery tab, the single authoritative location.
-        OpenTab(cut, "Endpoint Discovery");
-        Click(cut, label);
-        ButtonDisabled(cut, "Save changes").Should().BeFalse();
-        var draft = (FrontendAnalysisProfile)typeof(Component).GetField("_editProfile",
-            BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(cut.Instance)!;
-        typeof(FrontendAnalysisProfile).GetProperty(field)!.GetValue(draft).Should().NotBeNull();
-        SaveCalls().Should().Be(0);
-        JsonSerializer.Serialize(Persisted()).Should().Be(before);
-        Click(cut, "Cancel");
-        SaveCalls().Should().Be(0);
-        JsonSerializer.Serialize(Persisted()).Should().Be(before);
+        foreach (var tab in new[] { "Target Application", "Endpoint Discovery" })
+        {
+            OpenTab(cut, tab);
+            cut.Markup.Should().NotContain("Discovered API Endpoints");
+            foreach (var action in new[] { "Apply REST", "Apply GraphQL", "Apply Swagger", "Apply Health" })
+                cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == action);
+        }
     }
 
     [Fact]

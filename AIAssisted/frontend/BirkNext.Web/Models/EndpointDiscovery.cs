@@ -26,7 +26,18 @@ public sealed class PageAnalysis
     [JsonPropertyName("lastObservedAt")] public DateTimeOffset LastObservedAt { get; set; }
     [JsonPropertyName("endpoints")] public List<ObservedNetworkEndpoint> Endpoints { get; set; } = [];
 
+    /// <summary>
+    /// The current analysis generation. "Refresh analysis" increments it and stamps <see cref="RefreshedAtUtc"/>; only traffic observed at
+    /// or after that boundary counts toward the page, so old observations never reappear after a refresh.
+    /// </summary>
+    [JsonPropertyName("analysisGeneration")] public int AnalysisGeneration { get; set; } = 1;
+
+    /// <summary>UTC boundary of the current analysis generation, set by "Refresh analysis". Null means the page has never been refreshed (all observed traffic counts).</summary>
+    [JsonPropertyName("refreshedAtUtc")] public DateTimeOffset? RefreshedAtUtc { get; set; }
+
     /// <summary>Stable identity: scheme+host+normalized path, no query string or credentials.</summary>
     [JsonIgnore] public string Identity => $"{PageOrigin}{PagePath}";
     [JsonIgnore] public string Title => string.IsNullOrWhiteSpace(DisplayName) ? (PagePath.Length == 0 ? "/" : PagePath) : DisplayName!;
+    /// <summary>The page was refreshed and no traffic has been observed for the new generation yet.</summary>
+    [JsonIgnore] public bool IsWaitingForFreshTraffic => RefreshedAtUtc is not null && Endpoints.Count == 0;
 }

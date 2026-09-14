@@ -483,17 +483,7 @@
                             </div>
                         }
 
-                        @* Endpoint and integration discovery evidence (REST/GraphQL/Swagger/Health proposals, discovered integrations) lives on the
-                           Endpoint Discovery tab — the single authoritative location. Target Application shows only target identity and runtime
-                           characteristics. *@
-                        @if (!IsDetectionStale && HasDiscoveredEndpointsOrIntegrations)
-                        {
-                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;" data-testid="target-endpoint-discovery-moved">
-                                BirkNext discovered API endpoints and integrations for this target.
-                                <button type="button" class="fa-apply-suggestion" @onclick='() => _activeTab = "endpoint"'>Review in Endpoint Discovery</button>
-                            </div>
-                        }
-
+                        @* Target Application shows only target identity and runtime characteristics. Endpoint/integration discovery is not shown here. *@
                         <div style="font-size: 0.75rem; color: var(--color-text-subtle); margin-top: 0.75rem;">
                             Target detection confidence: @_detectionResult.Confidence. Reachability, authentication and environment.
                         </div>
@@ -511,65 +501,6 @@
                                    @bind:after="() => ClearDetectionState()" />
                         </div>
 
-                        <div class="fa-threshold-group-title fa-field-full">API Endpoints</div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">REST Base URL</label>
-                            <input type="url" class="form-control" placeholder="https://api.example.com" @bind="_editProfile.RestBaseUrl" />
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">GraphQL Endpoint</label>
-                            <input type="url" class="form-control" placeholder="https://api.example.com/graphql" @bind="_editProfile.GraphQlEndpoint" />
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Health Endpoint</label>
-                            <input type="url" class="form-control" placeholder="https://api.example.com/health" @bind="_editProfile.HealthEndpoint" />
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Swagger / OpenAPI URL</label>
-                            <input type="url" class="form-control" placeholder="https://api.example.com/swagger/v1/swagger.json" @bind="_editProfile.SwaggerUrl" />
-                        </div>
-
-                        <div class="fa-threshold-group-title fa-field-full">Configured authentication</div>
-                        <p class="fa-section-note fa-field-full" style="margin-top:0">Credentials used by review tools to call REST/GraphQL APIs. Stored in browser local storage only — never sent to the BirkNext backend.</p>
-                        <div class="form-field">
-                            <label class="fa-label">Configured authentication</label>
-                            <select class="form-control" @bind="_editProfile.ApiAuth.AuthType">
-                                @foreach (var t in Enum.GetValues<TargetApiAuthType>())
-                                {
-                                    <option value="@t">@t</option>
-                                }
-                            </select>
-                        </div>
-                        @if (_editProfile.ApiAuth.AuthType == TargetApiAuthType.BearerToken)
-                        {
-                            <div class="form-field fa-field-full">
-                                <label class="fa-label">Bearer Token</label>
-                                <input type="password" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.BearerToken" />
-                            </div>
-                        }
-                        @if (_editProfile.ApiAuth.AuthType == TargetApiAuthType.ApiKey)
-                        {
-                            <div class="form-field">
-                                <label class="fa-label">API Key</label>
-                                <input type="password" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.ApiKey" />
-                            </div>
-                            <div class="form-field">
-                                <label class="fa-label">Header Name</label>
-                                <input type="text" class="form-control" placeholder="X-Api-Key" @bind="_editProfile.ApiAuth.ApiKeyHeaderName" />
-                            </div>
-                        }
-                        @if (_editProfile.ApiAuth.AuthType == TargetApiAuthType.BasicAuth)
-                        {
-                            <div class="form-field">
-                                <label class="fa-label">Username</label>
-                                <input type="text" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.BasicUsername" />
-                            </div>
-                            <div class="form-field">
-                                <label class="fa-label">Password</label>
-                                <input type="password" class="form-control" autocomplete="off" @bind="_editProfile.ApiAuth.BasicPassword" />
-                            </div>
-                        }
-
                         <div class="fa-threshold-group-title fa-field-full">Request Settings</div>
                         <div class="fa-form-row-compact">
                             <div class="form-field">
@@ -584,32 +515,6 @@
                                 <input type="number" class="form-control fa-threshold-input" min="0" max="10" @bind="_editProfile.RetryCount" />
                             </div>
                         </div>
-
-                        <details class="fa-advanced fa-field-full">
-                        <summary>Advanced <span>Optional endpoint constraints</span></summary>
-                        <div class="fa-advanced-grid">
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Expected API Gateway</label>
-                            <input type="url" class="form-control" placeholder="https://apim.example.com" @bind="_editProfile.ExpectedApiGateway" />
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Expected CDN</label>
-                            <input type="url" class="form-control" placeholder="https://cdn.example.com" @bind="_editProfile.ExpectedCdn" />
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed REST Hosts <span style="font-size:0.75rem;color:var(--color-text-muted)">(one per line)</span></label>
-                            <textarea class="form-control" rows="3"
-                                      value="@ListToText(_editProfile.AllowedRestHosts)"
-                                      @onchange="e => _editProfile.AllowedRestHosts = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed GraphQL Endpoints <span style="font-size:0.75rem;color:var(--color-text-muted)">(one per line)</span></label>
-                            <textarea class="form-control" rows="3"
-                                      value="@ListToText(_editProfile.AllowedGraphQlEndpoints)"
-                                      @onchange="e => _editProfile.AllowedGraphQlEndpoints = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                        </div>
-                        </details>
                     </div>
                 }
                 else
@@ -617,36 +522,9 @@
                     <dl class="fa-detail-list">
                         <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Frontend</dt></div>
                         <div class="fa-dl-row"><dt>Frontend Base URL</dt><dd>@(profile.TargetUrl ?? "—")</dd></div>
-                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">REST API</dt></div>
-                        <div class="fa-dl-row"><dt>REST Base URL</dt><dd>@(profile.RestBaseUrl ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Health Endpoint</dt><dd>@(profile.HealthEndpoint ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Swagger / OpenAPI URL</dt><dd>@(profile.SwaggerUrl ?? "—")</dd></div>
-                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">GraphQL</dt></div>
-                        <div class="fa-dl-row"><dt>GraphQL Endpoint</dt><dd>@(profile.GraphQlEndpoint ?? "—")</dd></div>
-                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">API Authentication</dt></div>
-                        <div class="fa-dl-row"><dt>Authentication Type</dt><dd>@profile.ApiAuth.AuthType</dd></div>
-                        @if (profile.ApiAuth.AuthType == TargetApiAuthType.BearerToken)
-                        {
-                            <div class="fa-dl-row"><dt>Bearer Token</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.BearerToken) ? "—" : "Configured")</dd></div>
-                        }
-                        @if (profile.ApiAuth.AuthType == TargetApiAuthType.ApiKey)
-                        {
-                            <div class="fa-dl-row"><dt>API Key</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.ApiKey) ? "—" : "Configured")</dd></div>
-                            <div class="fa-dl-row"><dt>Header Name</dt><dd>@(profile.ApiAuth.ApiKeyHeaderName ?? "X-Api-Key")</dd></div>
-                        }
-                        @if (profile.ApiAuth.AuthType == TargetApiAuthType.BasicAuth)
-                        {
-                            <div class="fa-dl-row"><dt>Username</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.BasicUsername) ? "—" : "Configured")</dd></div>
-                            <div class="fa-dl-row"><dt>Password</dt><dd>@(string.IsNullOrWhiteSpace(profile.ApiAuth.BasicPassword) ? "—" : "Configured")</dd></div>
-                        }
                         <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Request Settings</dt></div>
                         <div class="fa-dl-row"><dt>Request Timeout</dt><dd>@profile.RequestTimeoutSeconds s</dd></div>
                         <div class="fa-dl-row"><dt>Retry Count</dt><dd>@profile.RetryCount</dd></div>
-                        <div class="fa-dl-row fa-dl-section"><dt colspan="2" class="fa-dl-section-title">Advanced</dt></div>
-                        <div class="fa-dl-row"><dt>Expected API Gateway</dt><dd>@(profile.ExpectedApiGateway ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Expected CDN</dt><dd>@(profile.ExpectedCdn ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed REST Hosts</dt><dd>@HostList(profile.AllowedRestHosts)</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed GraphQL Endpoints</dt><dd>@HostList(profile.AllowedGraphQlEndpoints)</dd></div>
                     </dl>
                 }
             }
@@ -854,67 +732,6 @@
                     authenticated traffic observed through the Local HTTPS proxy, and from configured backend integrations. Endpoint
                     evidence is safe metadata only — never a credential, cookie or request body — and never auto-saved into configuration.
                 </p>
-
-                @* Publicly detected endpoints/integrations (from Detect settings) — the single authoritative place to apply them to configuration. *@
-                @if (_detectionResult?.Success == true && !IsDetectionStale && HasDiscoveredEndpointsOrIntegrations)
-                {
-                    <div class="fa-detection-summary fa-field-full" style="padding:1rem;margin-bottom:1rem;" data-testid="discovery-proposals">
-                        <div style="font-weight:600;margin-bottom:0.75rem;">Discovered API Endpoints</div>
-                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl))
-                        {
-                            <EndpointProposal Field="RestBaseUrl" Label="REST Base URL" Value="@_detectionResult.DetectedRestBaseUrl"
-                                ApplyLabel="Apply REST" Evidence="@GetEndpointEvidence("RestBaseUrl")"
-                                CanApply="@((CurrentProfile?.RestBaseUrl ?? "") != _detectionResult.DetectedRestBaseUrl)"
-                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.RestBaseUrl), _detectionResult.DetectedRestBaseUrl))" />
-                        }
-                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint))
-                        {
-                            <EndpointProposal Field="GraphQlEndpoint" Label="GraphQL Endpoint" Value="@_detectionResult.DetectedGraphQlEndpoint"
-                                ApplyLabel="Apply GraphQL" Evidence="@GetEndpointEvidence("GraphQlEndpoint")"
-                                CanApply="@((CurrentProfile?.GraphQlEndpoint ?? "") != _detectionResult.DetectedGraphQlEndpoint)"
-                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.GraphQlEndpoint), _detectionResult.DetectedGraphQlEndpoint))" />
-                        }
-                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl))
-                        {
-                            <EndpointProposal Field="SwaggerUrl" Label="Swagger / OpenAPI" Value="@_detectionResult.DetectedSwaggerUrl"
-                                ApplyLabel="Apply Swagger" Evidence="@GetEndpointEvidence("SwaggerUrl")"
-                                CanApply="@((CurrentProfile?.SwaggerUrl ?? "") != _detectionResult.DetectedSwaggerUrl)"
-                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.SwaggerUrl), _detectionResult.DetectedSwaggerUrl))" />
-                        }
-                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint))
-                        {
-                            <EndpointProposal Field="HealthEndpoint" Label="Health Endpoint" Value="@_detectionResult.DetectedHealthEndpoint"
-                                ApplyLabel="Apply Health" Evidence="@GetEndpointEvidence("HealthEndpoint")"
-                                CanApply="@((CurrentProfile?.HealthEndpoint ?? "") != _detectionResult.DetectedHealthEndpoint)"
-                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.HealthEndpoint), _detectionResult.DetectedHealthEndpoint))" />
-                        }
-                        @if (_detectionResult.DetectedIntegrations?.Count > 0)
-                        {
-                            <div style="font-weight:600;margin:0.75rem 0;">Discovered Integrations</div>
-                            <div style="display:grid;grid-template-columns:1fr 1.5fr auto;gap:1rem;row-gap:0.75rem;">
-                                @foreach (var integration in _detectionResult.DetectedIntegrations)
-                                {
-                                    <div style="color:var(--color-text-subtle);">@(integration.DisplayName ?? integration.Type)</div>
-                                    <div style="font-family:monospace;font-weight:500;word-break:break-all;">
-                                        @if (!string.IsNullOrWhiteSpace(integration.Endpoint))
-                                        {
-                                            @integration.Endpoint
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(integration.ResourceName))
-                                        {
-                                            <div style="font-size:0.875em;color:var(--color-text-muted);">@integration.ResourceName</div>
-                                        }
-                                    </div>
-                                    @if (_isEditMode)
-                                    {
-                                        <button type="button" class="fa-apply-suggestion" @onclick="() => ApplyDetectedIntegration(integration)">Add</button>
-                                    }
-                                }
-                            </div>
-                        }
-                        <p class="fa-section-note" style="margin-top:0.75rem;margin-bottom:0;">Applying a proposal updates the draft configuration only; nothing is saved until you Save changes.</p>
-                    </div>
-                }
 
                 <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus" />
             }
@@ -2577,15 +2394,6 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     private bool IsDetectionStale => CurrentDetectionState == DetectionState.Stale;
 
-    /// <summary>True when the last successful detection produced any REST/GraphQL/Swagger/Health endpoint or integration proposal to apply (shown only on the Endpoint Discovery tab).</summary>
-    private bool HasDiscoveredEndpointsOrIntegrations =>
-        _detectionResult is not null &&
-        (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl)
-         || !string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint)
-         || !string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl)
-         || !string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint)
-         || _detectionResult.DetectedIntegrations?.Count > 0);
-
     private string ActivationBlockedReason =>
         CurrentDetectionState switch
         {
@@ -2825,54 +2633,4 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         StateHasChanged();
     }
 
-    private DiscoveryEvidence? GetEndpointEvidence(string fieldName) =>
-        _detectionResult?.DiscoveryEvidence.LastOrDefault(e => e.TargetField == fieldName);
-
-    private void ApplyDetectedEndpoint(string fieldName, string value)
-    {
-        if (string.IsNullOrWhiteSpace(value) || IsDetectionStale) return;
-        var wasEditing = _isEditMode;
-        if (!_isEditMode) EnterEditMode();
-        if (_editProfile is null) return;
-
-        if (fieldName == nameof(_editProfile.RestBaseUrl))
-            _editProfile.RestBaseUrl = value;
-        else if (fieldName == nameof(_editProfile.GraphQlEndpoint))
-            _editProfile.GraphQlEndpoint = value;
-        else if (fieldName == nameof(_editProfile.SwaggerUrl))
-            _editProfile.SwaggerUrl = value;
-        else if (fieldName == nameof(_editProfile.HealthEndpoint))
-            _editProfile.HealthEndpoint = value;
-
-        if (!wasEditing && !IsDirty) CancelEdit();
-        StateHasChanged();
-    }
-
-    private void ApplyDetectedIntegration(DiscoveredIntegration integration)
-    {
-        if (_editProfile is null || integration is null)
-            return;
-
-        var integrationType = Enum.TryParse<IntegrationType>(integration.Type, ignoreCase: true, out var parsed)
-            ? parsed
-            : IntegrationType.REST;
-
-        var newIntegration = new IntegrationConfig
-        {
-            Id = Guid.NewGuid().ToString("N"),
-            Type = integrationType,
-            Name = integration.DisplayName ?? integration.Type,
-            Endpoint = integration.Endpoint,
-            Resource = integration.ResourceName,
-            Enabled = true
-        };
-
-        if (_editProfile.Integrations == null)
-            _editProfile.Integrations = new List<IntegrationConfig>();
-
-        if (!_editProfile.Integrations.Any(i => i.Endpoint == newIntegration.Endpoint && i.Type == newIntegration.Type))
-            _editProfile.Integrations.Add(newIntegration);
-
-        StateHasChanged();
-    }
 }

@@ -16,6 +16,12 @@ namespace BirkNext.Web.Models;
 /// </summary>
 public sealed class DetectionSnapshot
 {
+    /// <summary>Current persisted schema version. Bump when the snapshot shape changes incompatibly; older/newer versions are dropped on load, never crash startup.</summary>
+    public const int CurrentVersion = 1;
+
+    /// <summary>Schema version of this persisted snapshot. A snapshot whose version is not <see cref="CurrentVersion"/> is treated as unsupported and ignored on load.</summary>
+    [JsonPropertyName("version")] public int Version { get; set; } = CurrentVersion;
+
     /// <summary>The full public detection result. No secret fields.</summary>
     [JsonPropertyName("result")] public TargetEnvironmentDetectionResult Result { get; set; } = new();
 

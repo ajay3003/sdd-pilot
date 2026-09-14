@@ -110,13 +110,13 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Markup.Should().NotContain("Discoveries are stale");
         if (editing)
         {
-            // Target Application keeps only the identity/runtime summary; the endpoint discovery proposals live on Endpoint Discovery.
+            // Target Application keeps only the identity/runtime summary. The endpoint discovery proposals were removed entirely (from every tab).
             cut.Markup.Should().Contain("Detected from target");
             cut.Markup.Should().NotContain("Discovered API Endpoints");
             cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Apply REST");
             OpenTab(cut, "Endpoint Discovery");
-            cut.Markup.Should().Contain("Discovered API Endpoints");
-            cut.Markup.Should().Contain("Apply REST");
+            cut.Markup.Should().NotContain("Discovered API Endpoints");
+            cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Apply REST");
             OpenTab(cut, "Target Application");
         }
     }

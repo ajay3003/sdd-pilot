@@ -14,7 +14,6 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
     private readonly FrontendAnalysisSettingsService _settings = new();
     private readonly Mock<ITargetEnvironmentDetectionApiService> _detection = new();
     private static readonly string[] Fields = ["RestBaseUrl", "GraphQlEndpoint", "SwaggerUrl", "HealthEndpoint"];
-    private static readonly string[] Labels = ["REST Base URL", "GraphQL Endpoint", "Swagger / OpenAPI URL", "Health Endpoint"];
     private static readonly string[] Actions = ["Apply REST", "Apply GraphQL", "Apply Swagger", "Apply Health"];
     private static readonly string[] Values = ["https://m2lbdev.bufetat.no/api/", "https://m2lbdev.bufetat.no/graphql", "https://m2lbdev.bufetat.no/swagger", "https://m2lbdev.bufetat.no/health"];
 
@@ -63,33 +62,26 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
         cut.FindAll(".fa-profile-chip").Single(c => c.TextContent.Contains("Dev")).Click();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        // Endpoint discovery proposals now live on the Endpoint Discovery tab, the single authoritative location.
-        OpenTab(cut, "Endpoint Discovery");
-        cut.WaitForAssertion(() => cut.FindAll(".fa-endpoint-proposal").Should().HaveCount(4));
         return cut;
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(1)]
-    [InlineData(2)]
-    [InlineData(3)]
-    public void ExplicitApply_ChangesOnlyItsFieldInDraft_NoSaveOrActivation(int index)
+    [Fact]
+    public void DetectedEndpointProposals_AreNotShownAsApplyToConfigUiOnAnyTab()
     {
+        // The "Discovered API Endpoints" apply-to-config proposal UI was removed entirely. Detection still records the endpoints in the
+        // result model (other engines still read RestBaseUrl/GraphQlEndpoint/etc.), but they are no longer surfaced as proposals.
         var cut = Detect();
-        foreach (var action in Actions) cut.FindAll("button").Should().Contain(b => b.TextContent.Trim() == action);
-        var row = cut.Find($".fa-endpoint-proposal[data-field='{Fields[index]}']");
-        row.QuerySelector("button")!.TextContent.Should().Be(Actions[index]);
-        row.QuerySelector("button")!.Click();
-        // Applying enters edit mode; the endpoint configuration inputs live on the Target Application tab.
-        OpenTab(cut, "Target Application");
-        for (var i = 0; i < Fields.Length; i++)
+        foreach (var tab in new[] { "Target Application", "Endpoint Discovery" })
         {
-            var input = cut.FindAll(".form-field").Single(f => f.QuerySelector("label")?.TextContent.Trim() == Labels[i]).QuerySelector("input")!;
-            (input.GetAttribute("value") ?? "").Should().Be(i == index ? Values[i] : "");
-            typeof(FrontendAnalysisProfile).GetProperty(Fields[i])!.GetValue(_settings.Settings.Profiles.Single(p => p.Id == "dev")).Should().BeNull();
+            OpenTab(cut, tab);
+            cut.FindAll(".fa-endpoint-proposal").Should().BeEmpty(tab);
+            cut.Markup.Should().NotContain("Discovered API Endpoints");
+            foreach (var action in Actions) cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == action, tab);
         }
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Save changes").HasAttribute("disabled").Should().BeFalse();
+        // The saved configuration model is untouched by removing the proposal UI.
+        var dev = _settings.Settings.Profiles.Single(p => p.Id == "dev");
+        foreach (var field in Fields)
+            typeof(FrontendAnalysisProfile).GetProperty(field)!.GetValue(dev).Should().BeNull();
         _settings.Settings.ActiveProfileId.Should().Be("qa");
         JSInterop.Invocations.Should().NotContain(i => i.Identifier == "birkNextStorage.setItem");
     }
@@ -134,16 +126,13 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
     }
 
     [Fact]
-    public void ProposalEvidence_IsPerField_AndFrameworkEvidenceIsVisible()
+    public void FrameworkEvidenceAndIdentitySummaryRemainOnTargetApplication()
     {
-        var cut = Detect();   // lands on Endpoint Discovery, where the proposals and their per-field evidence are shown
-        cut.Find("[data-field='RestBaseUrl']").TextContent.Should().Contain("Observed · VeryHigh").And.Contain("Structured config").And.Contain("Not performed");
-        foreach (var field in Fields.Skip(1))
-            cut.Find($"[data-field='{field}']").TextContent.Should().Contain("Candidate · Low").And.Contain("Conventional path").And.Contain("HTTP 200").And.Contain("text/html").And.NotContain("Confirmed");
-        // Framework evidence and the identity/runtime summary remain on the Target Application tab.
-        OpenTab(cut, "Target Application");
+        // Identity/runtime characteristics (framework evidence, the detected summary) stay on Target Application; the endpoint proposals do not.
+        var cut = Detect();
         cut.Find(".fa-framework-evidence").TextContent.Should().Contain("_framework/blazor.webassembly.js").And.Contain("High");
         cut.Markup.Should().Contain("Blazor WebAssembly");
+        cut.FindAll(".fa-endpoint-proposal").Should().BeEmpty();
     }
 
     [Fact]

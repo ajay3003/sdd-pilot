@@ -10,7 +10,7 @@ namespace BirkNext.Web.Tests.Components;
 /// <summary>
 /// The Endpoint Discovery tab is page-oriented: it creates a page per safely correlated application page, renders a stylish endpoint
 /// table per page, an application-wide overview, a Shared/background bucket and a Backend integrations table, and supports delete /
-/// clear / re-analyze / delete-all. It never shows a credential and never persists one.
+/// refresh-analysis / delete-all. Refresh applies to exactly one page. It never shows a credential and never persists one.
 /// </summary>
 public sealed class EndpointDiscoveryTabTests : BunitContext
 {
@@ -22,12 +22,12 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;   // getDiscovery/setDiscovery are best-effort and wrapped in try/catch
     }
 
-    private static ObservedNetworkEndpoint Ep(ObservedTrafficCategory cat, string path, string method = "GET", string? pagePath = "/barn/1", bool auth = true, GraphQlOperationType op = GraphQlOperationType.None, string? host = "api-dev.bufetat.no", string scheme = "https") =>
+    private static ObservedNetworkEndpoint Ep(ObservedTrafficCategory cat, string path, string method = "GET", string? pagePath = "/barn/1", bool auth = true, GraphQlOperationType op = GraphQlOperationType.None, string? host = "api-dev.bufetat.no", string scheme = "https", DateTimeOffset? at = null) =>
         new()
         {
             Category = cat, Scheme = scheme, Host = host!, Port = 443, Path = path, Method = method, AuthObserved = auth, LastStatus = 200,
             Source = EndpointDiscoverySource.AuthenticatedProxyTraffic, Confidence = ObservedEndpointConfidence.Verified, Count = 4,
-            FirstObservedAt = DateTimeOffset.UtcNow, LastObservedAt = DateTimeOffset.UtcNow, OperationType = op,
+            FirstObservedAt = at ?? DateTimeOffset.UtcNow, LastObservedAt = at ?? DateTimeOffset.UtcNow, OperationType = op,
             PageOrigin = pagePath is null ? null : Origin, PagePath = pagePath
         };
 
@@ -136,14 +136,51 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
     }
 
     [Fact]
-    public void ClearEndpointsKeepsThePageWithZeroEndpoints()
+    public void RefreshAnalysisKeepsThePageAndResetsItToWaitingForFreshTraffic()
     {
         var cut = Render(Dev(), Traffic(Ep(ObservedTrafficCategory.Rest, "/api/a", pagePath: "/a")));
         cut.Find("[data-testid='discovery-nav-pages']").Click();
         cut.Find("[data-testid='discovery-page-link']").Click();
-        cut.Find("[data-testid='discovery-clear']").Click();
-        Assert.Equal("1", Row(cut, "discovery-pages-count"));
-        Assert.Contains("0 endpoints", cut.Find("[data-testid='discovery-page-link']").TextContent);
+        // The only refresh action is "Refresh analysis"; there is no "Clear endpoints" or bulk re-analyze.
+        Assert.Empty(cut.FindAll("[data-testid='discovery-clear']"));
+        Assert.Equal("Refresh analysis", cut.Find("[data-testid='discovery-refresh']").TextContent.Trim());
+
+        cut.Find("[data-testid='discovery-refresh']").Click();
+        Assert.Equal("1", Row(cut, "discovery-pages-count"));   // page kept, not deleted
+        Assert.Contains("Waiting for fresh traffic", cut.Find("[data-testid='discovery-page-link']").TextContent);
+        Assert.Contains("Waiting for fresh traffic", Row(cut, "discovery-page-state"));
+    }
+
+    [Fact]
+    public void RefreshedPageDoesNotRepopulateFromTheStillLiveOldTraffic()
+    {
+        // The proxy session keeps re-reporting old observations on every re-render. A refreshed page must stay waiting, not repopulate.
+        var oldTraffic = Traffic(Ep(ObservedTrafficCategory.Rest, "/api/children", pagePath: "/children", at: DateTimeOffset.UtcNow.AddMinutes(-10)));
+        var cut = Render(Dev(), oldTraffic);
+        cut.Find("[data-testid='discovery-nav-pages']").Click();
+        cut.Find("[data-testid='discovery-page-link']").Click();
+        cut.Find("[data-testid='discovery-refresh']").Click();
+        Assert.Contains("Waiting for fresh traffic", Row(cut, "discovery-page-state"));
+
+        // A re-render re-runs the merge with the SAME old live traffic; the refreshed page must remain empty.
+        cut.Render(p => p.Add(x => x.Profile, Dev()).Add(x => x.ProxyStatus, oldTraffic));
+        cut.Find("[data-testid='discovery-nav-pages']").Click();
+        Assert.Contains("Waiting for fresh traffic", cut.Find("[data-testid='discovery-page-link']").TextContent);
+    }
+
+    [Fact]
+    public void RefreshedPageRepopulatesFromFreshCorrelatedTraffic()
+    {
+        var cut = Render(Dev(), Traffic(Ep(ObservedTrafficCategory.Rest, "/api/children", pagePath: "/children", at: DateTimeOffset.UtcNow.AddMinutes(-10))));
+        cut.Find("[data-testid='discovery-nav-pages']").Click();
+        cut.Find("[data-testid='discovery-page-link']").Click();
+        cut.Find("[data-testid='discovery-refresh']").Click();
+
+        // Fresh traffic for the same page arrives after the refresh boundary.
+        cut.Render(p => p.Add(x => x.Profile, Dev())
+            .Add(x => x.ProxyStatus, Traffic(Ep(ObservedTrafficCategory.Rest, "/api/children", pagePath: "/children", at: DateTimeOffset.UtcNow.AddMinutes(5)))));
+        cut.Find("[data-testid='discovery-nav-pages']").Click();
+        Assert.Contains("1 endpoints", cut.Find("[data-testid='discovery-page-link']").TextContent);
     }
 
     [Fact]

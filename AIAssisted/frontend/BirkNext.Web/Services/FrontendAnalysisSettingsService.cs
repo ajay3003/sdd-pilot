@@ -104,13 +104,37 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public async Task LoadDetectionSnapshotsAsync(IJSRuntime js)
     {
-        try
+        string? json;
+        try { json = await js.InvokeAsync<string?>("birkNextStorage.getSnapshots"); }
+        catch { return; /* interop unavailable or refused: no restored snapshots. */ }
+        _detectionSnapshots = ParseSnapshots(json);
+    }
+
+    /// <summary>
+    /// Parses the persisted snapshot store per entry so one malformed or schema-drifted snapshot (for example one written by an older
+    /// build) cannot throw and wipe restoration for every environment. Entries that do not deserialize, carry an unsupported schema
+    /// version, or lack a detection result are skipped; the rest are restored. Never throws.
+    /// </summary>
+    internal static Dictionary<string, DetectionSnapshot> ParseSnapshots(string? json)
+    {
+        var result = new Dictionary<string, DetectionSnapshot>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(json)) return result;
+        JsonDocument document;
+        try { document = JsonDocument.Parse(json); }
+        catch (JsonException) { return result; }
+        using (document)
         {
-            var json = await js.InvokeAsync<string?>("birkNextStorage.getSnapshots");
-            if (!string.IsNullOrWhiteSpace(json))
-                _detectionSnapshots = JsonSerializer.Deserialize<Dictionary<string, DetectionSnapshot>>(json, JsonOptions) ?? new(StringComparer.Ordinal);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return result;
+            foreach (var entry in document.RootElement.EnumerateObject())
+            {
+                DetectionSnapshot? snapshot;
+                try { snapshot = entry.Value.Deserialize<DetectionSnapshot>(JsonOptions); }
+                catch (JsonException) { continue; }   // skip a single unreadable entry, keep the rest
+                if (snapshot is { Version: DetectionSnapshot.CurrentVersion, Result: not null })
+                    result[entry.Name] = snapshot;
+            }
         }
-        catch { /* absent, unreadable, or an interop the host has not provided: no restored snapshots. */ }
+        return result;
     }
 
     public DetectionSnapshot? GetDetectionSnapshot(string profileId) => _detectionSnapshots.GetValueOrDefault(profileId);
