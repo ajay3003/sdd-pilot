@@ -308,8 +308,8 @@
     {
         get
         {
-            var byPage = Snapshot.Pages.SelectMany(p => p.Endpoints.Select(e => (Page: p.Identity, E: e)))
-                .Concat(Snapshot.Shared.Select(e => (Page: (string?)null, E: e)!));
+            var byPage = Snapshot.Pages.SelectMany(p => p.Endpoints.Select(e => (Page: (string?)p.Identity, E: e)))
+                .Concat(Snapshot.Shared.Select(e => (Page: (string?)null, E: e)));
             return byPage
                 .Where(x => x.E.Category is not (ObservedTrafficCategory.StaticAsset or ObservedTrafficCategory.Telemetry))
                 .GroupBy(x => (x.E.Host, x.E.Category))

@@ -91,6 +91,8 @@ public sealed partial class AuthenticationApplyDraftTests
         var cut = Open();
         var before = JsonSerializer.Serialize(Persisted());
         Click(cut, "Detect settings");
+        // Endpoint proposals now live on the Endpoint Discovery tab, the single authoritative location.
+        OpenTab(cut, "Endpoint Discovery");
         Click(cut, label);
         ButtonDisabled(cut, "Save changes").Should().BeFalse();
         var draft = (FrontendAnalysisProfile)typeof(Component).GetField("_editProfile",

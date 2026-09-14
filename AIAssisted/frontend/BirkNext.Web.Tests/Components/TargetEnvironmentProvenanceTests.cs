@@ -22,6 +22,9 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
     {
         Services.AddSingleton<IFrontendAnalysisSettingsService>(_settings);
         Services.AddSingleton(_detection.Object);
+        Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
+        JSInterop.SetupVoid("birkNextStorage.setDiscovery", _ => true).SetVoidResult();
+        JSInterop.Setup<string?>("birkNextStorage.getDiscovery").SetResult(null);
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult("""
         {"activeProfileId":"qa","profiles":[
           {"id":"qa","name":"QA","environmentType":"QA","targetUrl":"https://example-qa.local"},
@@ -51,11 +54,17 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
         }).ToList()
     };
 
+    private static void OpenTab(IRenderedComponent<TargetSettings> cut, string label) =>
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == label).Click();
+
     private IRenderedComponent<TargetSettings> Detect()
     {
         var cut = Render<TargetSettings>();
         cut.FindAll(".fa-profile-chip").Single(c => c.TextContent.Contains("Dev")).Click();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Detect settings").Click();
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
+        // Endpoint discovery proposals now live on the Endpoint Discovery tab, the single authoritative location.
+        OpenTab(cut, "Endpoint Discovery");
         cut.WaitForAssertion(() => cut.FindAll(".fa-endpoint-proposal").Should().HaveCount(4));
         return cut;
     }
@@ -72,6 +81,8 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
         var row = cut.Find($".fa-endpoint-proposal[data-field='{Fields[index]}']");
         row.QuerySelector("button")!.TextContent.Should().Be(Actions[index]);
         row.QuerySelector("button")!.Click();
+        // Applying enters edit mode; the endpoint configuration inputs live on the Target Application tab.
+        OpenTab(cut, "Target Application");
         for (var i = 0; i < Fields.Length; i++)
         {
             var input = cut.FindAll(".form-field").Single(f => f.QuerySelector("label")?.TextContent.Trim() == Labels[i]).QuerySelector("input")!;
@@ -125,12 +136,14 @@ public sealed class TargetEnvironmentProvenanceTests : BunitContext
     [Fact]
     public void ProposalEvidence_IsPerField_AndFrameworkEvidenceIsVisible()
     {
-        var cut = Detect();
+        var cut = Detect();   // lands on Endpoint Discovery, where the proposals and their per-field evidence are shown
         cut.Find("[data-field='RestBaseUrl']").TextContent.Should().Contain("Observed · VeryHigh").And.Contain("Structured config").And.Contain("Not performed");
         foreach (var field in Fields.Skip(1))
             cut.Find($"[data-field='{field}']").TextContent.Should().Contain("Candidate · Low").And.Contain("Conventional path").And.Contain("HTTP 200").And.Contain("text/html").And.NotContain("Confirmed");
+        // Framework evidence and the identity/runtime summary remain on the Target Application tab.
+        OpenTab(cut, "Target Application");
         cut.Find(".fa-framework-evidence").TextContent.Should().Contain("_framework/blazor.webassembly.js").And.Contain("High");
-        cut.Markup.Should().Contain("Blazor WebAssembly").And.Contain("endpoint confidence is shown per proposal");
+        cut.Markup.Should().Contain("Blazor WebAssembly");
     }
 
     [Fact]

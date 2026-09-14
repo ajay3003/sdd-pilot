@@ -483,75 +483,19 @@
                             </div>
                         }
 
-                @* Detected API Endpoints *@
-                        @if (!IsDetectionStale && (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl) ||
-                             !string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint) ||
-                             !string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl) ||
-                             !string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint)))
+                        @* Endpoint and integration discovery evidence (REST/GraphQL/Swagger/Health proposals, discovered integrations) lives on the
+                           Endpoint Discovery tab — the single authoritative location. Target Application shows only target identity and runtime
+                           characteristics. *@
+                        @if (!IsDetectionStale && HasDiscoveredEndpointsOrIntegrations)
                         {
-                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
-                                <div style="font-weight: 600; margin-bottom: 0.75rem;">Discovered API Endpoints</div>
-                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl))
-                                {
-                                    <EndpointProposal Field="RestBaseUrl" Label="REST Base URL" Value="@_detectionResult.DetectedRestBaseUrl"
-                                        ApplyLabel="Apply REST" Evidence="@GetEndpointEvidence("RestBaseUrl")"
-                                        CanApply="@((CurrentProfile?.RestBaseUrl ?? "") != _detectionResult.DetectedRestBaseUrl)"
-                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.RestBaseUrl), _detectionResult.DetectedRestBaseUrl))" />
-                                }
-                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint))
-                                {
-                                    <EndpointProposal Field="GraphQlEndpoint" Label="GraphQL Endpoint" Value="@_detectionResult.DetectedGraphQlEndpoint"
-                                        ApplyLabel="Apply GraphQL" Evidence="@GetEndpointEvidence("GraphQlEndpoint")"
-                                        CanApply="@((CurrentProfile?.GraphQlEndpoint ?? "") != _detectionResult.DetectedGraphQlEndpoint)"
-                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.GraphQlEndpoint), _detectionResult.DetectedGraphQlEndpoint))" />
-                                }
-                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl))
-                                {
-                                    <EndpointProposal Field="SwaggerUrl" Label="Swagger / OpenAPI" Value="@_detectionResult.DetectedSwaggerUrl"
-                                        ApplyLabel="Apply Swagger" Evidence="@GetEndpointEvidence("SwaggerUrl")"
-                                        CanApply="@((CurrentProfile?.SwaggerUrl ?? "") != _detectionResult.DetectedSwaggerUrl)"
-                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.SwaggerUrl), _detectionResult.DetectedSwaggerUrl))" />
-                                }
-                                @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint))
-                                {
-                                    <EndpointProposal Field="HealthEndpoint" Label="Health Endpoint" Value="@_detectionResult.DetectedHealthEndpoint"
-                                        ApplyLabel="Apply Health" Evidence="@GetEndpointEvidence("HealthEndpoint")"
-                                        CanApply="@((CurrentProfile?.HealthEndpoint ?? "") != _detectionResult.DetectedHealthEndpoint)"
-                                        OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.HealthEndpoint), _detectionResult.DetectedHealthEndpoint))" />
-                                }
-                            </div>
-                        }
-
-                        @* Detected Integrations *@
-                        @if (!IsDetectionStale && _detectionResult.DetectedIntegrations?.Count > 0)
-                        {
-                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
-                                <div style="font-weight: 600; margin-bottom: 0.75rem;">Discovered Integrations</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1.5fr auto; gap: 1rem; row-gap: 0.75rem;">
-                                    @foreach (var integration in _detectionResult.DetectedIntegrations)
-                                    {
-                                        <div style="color: var(--color-text-subtle);">@(integration.DisplayName ?? integration.Type)</div>
-                                        <div style="font-family: monospace; font-weight: 500; word-break: break-all;">
-                                            @if (!string.IsNullOrWhiteSpace(integration.Endpoint))
-                                            {
-                                                @integration.Endpoint
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(integration.ResourceName))
-                                            {
-                                                <div style="font-size: 0.875em; color: var(--color-text-muted);">@integration.ResourceName</div>
-                                            }
-                                        </div>
-                                        @if (_isEditMode)
-                                        {
-                                            <button type="button" class="fa-apply-suggestion" @onclick="() => ApplyDetectedIntegration(integration)">Add</button>
-                                        }
-                                    }
-                                </div>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;" data-testid="target-endpoint-discovery-moved">
+                                BirkNext discovered API endpoints and integrations for this target.
+                                <button type="button" class="fa-apply-suggestion" @onclick='() => _activeTab = "endpoint"'>Review in Endpoint Discovery</button>
                             </div>
                         }
 
                         <div style="font-size: 0.75rem; color: var(--color-text-subtle); margin-top: 0.75rem;">
-                            Target detection confidence: @_detectionResult.Confidence. Reachability, authentication and environment; endpoint confidence is shown per proposal.
+                            Target detection confidence: @_detectionResult.Confidence. Reachability, authentication and environment.
                         </div>
                     </div>
                 }
@@ -910,6 +854,68 @@
                     authenticated traffic observed through the Local HTTPS proxy, and from configured backend integrations. Endpoint
                     evidence is safe metadata only — never a credential, cookie or request body — and never auto-saved into configuration.
                 </p>
+
+                @* Publicly detected endpoints/integrations (from Detect settings) — the single authoritative place to apply them to configuration. *@
+                @if (_detectionResult?.Success == true && !IsDetectionStale && HasDiscoveredEndpointsOrIntegrations)
+                {
+                    <div class="fa-detection-summary fa-field-full" style="padding:1rem;margin-bottom:1rem;" data-testid="discovery-proposals">
+                        <div style="font-weight:600;margin-bottom:0.75rem;">Discovered API Endpoints</div>
+                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl))
+                        {
+                            <EndpointProposal Field="RestBaseUrl" Label="REST Base URL" Value="@_detectionResult.DetectedRestBaseUrl"
+                                ApplyLabel="Apply REST" Evidence="@GetEndpointEvidence("RestBaseUrl")"
+                                CanApply="@((CurrentProfile?.RestBaseUrl ?? "") != _detectionResult.DetectedRestBaseUrl)"
+                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.RestBaseUrl), _detectionResult.DetectedRestBaseUrl))" />
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint))
+                        {
+                            <EndpointProposal Field="GraphQlEndpoint" Label="GraphQL Endpoint" Value="@_detectionResult.DetectedGraphQlEndpoint"
+                                ApplyLabel="Apply GraphQL" Evidence="@GetEndpointEvidence("GraphQlEndpoint")"
+                                CanApply="@((CurrentProfile?.GraphQlEndpoint ?? "") != _detectionResult.DetectedGraphQlEndpoint)"
+                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.GraphQlEndpoint), _detectionResult.DetectedGraphQlEndpoint))" />
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl))
+                        {
+                            <EndpointProposal Field="SwaggerUrl" Label="Swagger / OpenAPI" Value="@_detectionResult.DetectedSwaggerUrl"
+                                ApplyLabel="Apply Swagger" Evidence="@GetEndpointEvidence("SwaggerUrl")"
+                                CanApply="@((CurrentProfile?.SwaggerUrl ?? "") != _detectionResult.DetectedSwaggerUrl)"
+                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.SwaggerUrl), _detectionResult.DetectedSwaggerUrl))" />
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint))
+                        {
+                            <EndpointProposal Field="HealthEndpoint" Label="Health Endpoint" Value="@_detectionResult.DetectedHealthEndpoint"
+                                ApplyLabel="Apply Health" Evidence="@GetEndpointEvidence("HealthEndpoint")"
+                                CanApply="@((CurrentProfile?.HealthEndpoint ?? "") != _detectionResult.DetectedHealthEndpoint)"
+                                OnApply="@(() => ApplyDetectedEndpoint(nameof(FrontendAnalysisProfile.HealthEndpoint), _detectionResult.DetectedHealthEndpoint))" />
+                        }
+                        @if (_detectionResult.DetectedIntegrations?.Count > 0)
+                        {
+                            <div style="font-weight:600;margin:0.75rem 0;">Discovered Integrations</div>
+                            <div style="display:grid;grid-template-columns:1fr 1.5fr auto;gap:1rem;row-gap:0.75rem;">
+                                @foreach (var integration in _detectionResult.DetectedIntegrations)
+                                {
+                                    <div style="color:var(--color-text-subtle);">@(integration.DisplayName ?? integration.Type)</div>
+                                    <div style="font-family:monospace;font-weight:500;word-break:break-all;">
+                                        @if (!string.IsNullOrWhiteSpace(integration.Endpoint))
+                                        {
+                                            @integration.Endpoint
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(integration.ResourceName))
+                                        {
+                                            <div style="font-size:0.875em;color:var(--color-text-muted);">@integration.ResourceName</div>
+                                        }
+                                    </div>
+                                    @if (_isEditMode)
+                                    {
+                                        <button type="button" class="fa-apply-suggestion" @onclick="() => ApplyDetectedIntegration(integration)">Add</button>
+                                    }
+                                }
+                            </div>
+                        }
+                        <p class="fa-section-note" style="margin-top:0.75rem;margin-bottom:0;">Applying a proposal updates the draft configuration only; nothing is saved until you Save changes.</p>
+                    </div>
+                }
+
                 <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus" />
             }
 
@@ -2570,6 +2576,15 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// Indicates if target discovery is stale (target identity changed since detection).
     /// </summary>
     private bool IsDetectionStale => CurrentDetectionState == DetectionState.Stale;
+
+    /// <summary>True when the last successful detection produced any REST/GraphQL/Swagger/Health endpoint or integration proposal to apply (shown only on the Endpoint Discovery tab).</summary>
+    private bool HasDiscoveredEndpointsOrIntegrations =>
+        _detectionResult is not null &&
+        (!string.IsNullOrWhiteSpace(_detectionResult.DetectedRestBaseUrl)
+         || !string.IsNullOrWhiteSpace(_detectionResult.DetectedGraphQlEndpoint)
+         || !string.IsNullOrWhiteSpace(_detectionResult.DetectedSwaggerUrl)
+         || !string.IsNullOrWhiteSpace(_detectionResult.DetectedHealthEndpoint)
+         || _detectionResult.DetectedIntegrations?.Count > 0);
 
     private string ActivationBlockedReason =>
         CurrentDetectionState switch

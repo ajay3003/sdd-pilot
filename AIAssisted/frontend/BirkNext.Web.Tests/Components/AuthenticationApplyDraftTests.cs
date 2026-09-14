@@ -30,7 +30,10 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     {
         Services.AddSingleton<IFrontendAnalysisSettingsService>(_settings);
         Services.AddSingleton(_api.Object);
+        Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         JSInterop.SetupVoid("birkNextStorage.setItem", _ => true).SetVoidResult();
+        JSInterop.SetupVoid("birkNextStorage.setDiscovery", _ => true).SetVoidResult();
+        JSInterop.Setup<string?>("birkNextStorage.getDiscovery").SetResult(null);
         _api.Setup(x => x.DetectFromUrlAsync(Url, default)).ReturnsAsync(() => FullDetection());
     }
 
@@ -107,9 +110,14 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Markup.Should().NotContain("Discoveries are stale");
         if (editing)
         {
+            // Target Application keeps only the identity/runtime summary; the endpoint discovery proposals live on Endpoint Discovery.
             cut.Markup.Should().Contain("Detected from target");
+            cut.Markup.Should().NotContain("Discovered API Endpoints");
+            cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Apply REST");
+            OpenTab(cut, "Endpoint Discovery");
             cut.Markup.Should().Contain("Discovered API Endpoints");
             cut.Markup.Should().Contain("Apply REST");
+            OpenTab(cut, "Target Application");
         }
     }
 

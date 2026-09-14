@@ -42,6 +42,10 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         [
             new() { EndpointType = ObservedEndpointType.Rest, Origin = Origin, Path = "/api/children", Method = "GET", ResponseStatus = 200, ResponseContentType = "application/json", BearerObserved = true, Confidence = ObservedEndpointConfidence.Verified, Count = 3, LastObservedAt = DateTimeOffset.UtcNow },
             new() { EndpointType = ObservedEndpointType.GraphQl, Origin = Origin, Path = "/internal/gql", Method = "POST", ResponseStatus = 200, RequestContentType = "application/json", ResponseContentType = "application/json", BearerObserved = true, Confidence = ObservedEndpointConfidence.Verified, OperationType = GraphQlOperationType.Query, OperationName = "Me", Count = 1, LastObservedAt = DateTimeOffset.UtcNow }
+        ],
+        ObservedNetworkEndpoints =
+        [
+            new() { Category = ObservedTrafficCategory.Rest, Scheme = "https", Host = "m2lbdev.bufetat.no", Port = 443, Path = "/api/children", Method = "GET", AuthObserved = true, LastStatus = 200, Confidence = ObservedEndpointConfidence.Verified, Count = 3, FirstObservedAt = DateTimeOffset.UtcNow, LastObservedAt = DateTimeOffset.UtcNow, PageOrigin = Origin, PagePath = "/barn/1" }
         ]
     };
 
@@ -678,5 +682,21 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         _proxyApi.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
         Assert.True(_proxyRuntime.Status.AuthenticatedRestObserved);
         Assert.NotEmpty(_proxyRuntime.Status.ObservedEndpoints);
+    }
+
+    [Fact]
+    public async Task NavigatingWithinBirkNextDoesNotClearEndpointDiscovery()
+    {
+        var discovery = Services.GetRequiredService<IEndpointDiscoveryService>();
+        var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
+        OpenTab(cut, "Authentication");
+        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        // Starting the proxy folds observed traffic into the persisted, app-scoped discovery store.
+        cut.WaitForAssertion(() => Assert.NotEmpty(discovery.GetSnapshot("dev").Pages));
+
+        // Navigating away (component dispose) must NOT clear the endpoint discovery held in the app-scoped store.
+        await cut.InvokeAsync(() => cut.Instance.DisposeAsync());
+        Assert.NotEmpty(discovery.GetSnapshot("dev").Pages);
+        Assert.Contains(discovery.GetSnapshot("dev").Pages, p => p.PagePath == "/barn/1");
     }
 }
