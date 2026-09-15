@@ -357,7 +357,7 @@
 
     private static IntegrationQualityRequest BuildRequest(FrontendAnalysisContext context)
     {
-        var identity = ReviewAuthenticationIdentity.For(context);
+        var identity = ReviewAuthenticationIdentity.ForContext(context);
         return new()
         {
             EnvironmentName = context.ActiveProfile.Name,

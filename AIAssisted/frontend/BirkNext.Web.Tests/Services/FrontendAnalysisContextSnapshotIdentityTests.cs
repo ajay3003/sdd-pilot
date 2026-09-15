@@ -53,7 +53,7 @@ public sealed class FrontendAnalysisContextSnapshotIdentityTests
         var profile = M2lbProfile();
         var context = await ContextFor(profile);
 
-        var identity = ReviewAuthenticationIdentity.For(context);
+        var identity = ReviewAuthenticationIdentity.ForContext(context);
         var expected = ReviewAuthenticationIdentity.For(profile);
 
         identity.Method.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy);
@@ -106,8 +106,8 @@ public sealed class FrontendAnalysisContextSnapshotIdentityTests
         profile.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.ManualOnly;
         var context = new FrontendAnalysisContext { ActiveProfile = profile };
 
-        ReviewAuthenticationIdentity.For(context).Should().Be(ReviewAuthenticationIdentity.For(profile));
-        ReviewAuthenticationIdentity.For((FrontendAnalysisContext?)null).Method.Should().Be(AuthenticatedTestingMethod.ManagedEdgeCdp);
+        ReviewAuthenticationIdentity.ForContext(context).Should().Be(ReviewAuthenticationIdentity.For(profile));
+        ReviewAuthenticationIdentity.ForContext(null).Method.Should().Be(AuthenticatedTestingMethod.ManagedEdgeCdp);
     }
 
     [Fact]

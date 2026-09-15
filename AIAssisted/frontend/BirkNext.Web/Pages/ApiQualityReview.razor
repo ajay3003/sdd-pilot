@@ -545,7 +545,7 @@
 
     private static ApiQualityReviewRequest BuildRequest(FrontendAnalysisContext ctx)
     {
-        var identity = ReviewAuthenticationIdentity.For(ctx);
+        var identity = ReviewAuthenticationIdentity.ForContext(ctx);
         return new()
         {
             RestBaseUrl       = ctx.RestBaseUrl,

@@ -24,7 +24,7 @@ public sealed class FrontendQualityTargetAccessResolver(
     {
         // Identity and fingerprints come from the saved profile (computed by the context factory), never re-derived from the
         // data-minimized profile copy: a mismatched fingerprint would hide an available proxy context and report "Stale".
-        var identity = ReviewAuthenticationIdentity.For(context);
+        var identity = ReviewAuthenticationIdentity.ForContext(context);
         var caps = context.RequiresAuthentication && identity.Method == AuthenticatedTestingMethod.LocalHttpsProxy
             ? await SafeResolveCapabilitiesAsync(identity, cancellationToken)
             : null;
@@ -70,7 +70,7 @@ public static class FrontendQualityTargetAccess
         LocalHttpsProxyState? proxyState)
     {
         var profile = context.ActiveProfile;
-        var method = ReviewAuthenticationIdentity.For(context).Method;
+        var method = ReviewAuthenticationIdentity.ForContext(context).Method;
         var apiStatus = capabilities?.ContextStatus ?? AuthenticatedApiContextStatus.NotApplicable;
         var apiAvailable = capabilities?.AuthenticatedApi == true;
         var enterpriseBlocked = managedEdgeState == ManagedEdgeState.TargetTabNotInspectable;

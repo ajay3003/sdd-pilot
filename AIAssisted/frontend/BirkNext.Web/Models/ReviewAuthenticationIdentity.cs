@@ -19,7 +19,7 @@ public static class ReviewAuthenticationIdentity
     /// <see cref="FrontendAnalysisContext.ActiveProfile"/> is a data-minimized copy whose fingerprint would not match the proxy
     /// session), otherwise derived from the context's profile copy.
     /// </summary>
-    public static AuthenticatedReviewIdentity For(FrontendAnalysisContext? context) =>
+    public static AuthenticatedReviewIdentity ForContext(FrontendAnalysisContext? context) =>
         context is null ? For((FrontendAnalysisProfile?)null)
         : context.ReviewIdentity is { ProfileId: { Length: > 0 } } identity ? identity
         : For(context.ActiveProfile);
