@@ -286,7 +286,7 @@ public sealed class FrontendQualityAccessOrchestrationTests
         var result = await fixture.Orchestrator.RunAsync(Target, fixture.Context, fixture.AuthenticatedSnapshot());
 
         fixture.Runtime.Calls.Should().Be(1);
-        fixture.Runtime.LastRequest!.Mode.Should().Be(BrowserRuntimeExecutionModeDto.AuthenticatedSessionPage);
+        fixture.Runtime.LastRequest!.ExecutionMode.Should().Be(BrowserRuntimeExecutionModeDto.AuthenticatedSessionPage);
         var runtime = Outcome(result, FrontendQualityEngineId.BrowserRuntime);
         runtime.ExecutionState.Should().Be(FrontendQualityEngineExecutionState.Assessed);
         runtime.AccessKind.Should().Be(FrontendQualityEngineAccessKind.AuthenticatedBrowserSession);

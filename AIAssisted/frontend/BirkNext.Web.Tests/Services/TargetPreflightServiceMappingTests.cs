@@ -16,7 +16,8 @@ public sealed class TargetPreflightServiceMappingTests
     private const string Target = "https://m2lbdev.example.test/";
 
     private static TargetReachabilityProbeDto Probe(TargetReachability reachability, int? status = null, string message = "", string? finalUrl = null, string? blockReason = null, int redirects = 0) =>
-        new() { TargetUrl = Target, Reachability = reachability, StatusCode = status, Message = message, FinalUrl = finalUrl ?? Target, BlockReason = blockReason, RedirectCount = redirects, ElapsedMs = 12.5 };
+        new() { TargetUrl = Target, Reachability = reachability, StatusCode = status, Message = message, FinalUrl = finalUrl ?? Target, BlockReason = blockReason, RedirectCount = redirects, ElapsedMs = 12.5,
+            AuthenticationRequired = reachability == TargetReachability.AuthenticationRequired };
 
     [Fact]
     public void Reachable200_IsReady()
