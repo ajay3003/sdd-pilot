@@ -68,6 +68,39 @@ public sealed class TargetEnvironmentDetectionController : ControllerBase
     }
 
     /// <summary>
+    /// Server-side reachability probe for review preflight. Runs on the backend network path (the same one the Static Security
+    /// and Passive Performance engines use) so browser CORS policy or in-browser protection cannot turn a reachable target into a
+    /// generic timeout. Returns the real HTTP status, sign-in redirect, network failure or timeout. No configuration discovery.
+    /// </summary>
+    [HttpPost("reachability")]
+    public async Task<IActionResult> ProbeReachability(
+        [FromBody] TargetReachabilityRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null || string.IsNullOrWhiteSpace(request.TargetUrl))
+        {
+            _logger.LogWarning("Reachability probe received with invalid target URL");
+            return BadRequest(new { message = "Target URL is required" });
+        }
+
+        try
+        {
+            var result = await _detectionService.ProbeReachabilityAsync(request.TargetUrl, cancellationToken);
+            Response.Headers.CacheControl = "no-store";
+            return Ok(result);
+        }
+        catch (OperationCanceledException)
+        {
+            return StatusCode(408, new { message = "Reachability probe timeout" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during reachability probe for {Url}", request.TargetUrl);
+            return StatusCode(500, new { message = "Reachability probe failed" });
+        }
+    }
+
+    /// <summary>
     /// Continues target detection using interactive browser authentication.
     /// Called after preflight has identified authentication requirement.
     /// Launches headed browser for user-driven authentication flow.

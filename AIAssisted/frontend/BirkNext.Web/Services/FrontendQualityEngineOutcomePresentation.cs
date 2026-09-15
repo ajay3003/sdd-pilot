@@ -33,6 +33,10 @@ public static class FrontendQualityEngineOutcomePresentation
         EngineMissing,        // EngineUnavailable - tool/runtime missing
         EngineFailed,         // EngineError - execution failure
         Cancelled,            // Cancelled - review cancelled
+        TargetUnreachable,    // TargetUnreachable - network-level failure, not a timeout
+        TargetHttpError,      // TargetHttpError - HTTP error status from the target
+        TimedOut,             // TimedOut - real timeout over the correct access path
+        EnterpriseBlocked,    // EnterpriseBrowserProtectionBlocked - CDP attach refused by browser protection
     }
 
     public static OutcomePresentation GetPresentation(FrontendQualityEngineOutcomeReason reason) =>
@@ -86,8 +90,83 @@ public static class FrontendQualityEngineOutcomePresentation
             FrontendQualityEngineOutcomeReason.Cancelled =>
                 new("Cancelled", "The review or engine execution was cancelled.", OutcomePresentationCategory.Cancelled, false),
 
+            FrontendQualityEngineOutcomeReason.TargetUnreachable =>
+                new("Target unreachable", "The target could not be reached over the network (not a timeout).", OutcomePresentationCategory.TargetUnreachable, false),
+
+            FrontendQualityEngineOutcomeReason.TargetHttpError =>
+                new("Target HTTP error", "The target answered with an HTTP error status; see the reason for the exact status.", OutcomePresentationCategory.TargetHttpError, false),
+
+            FrontendQualityEngineOutcomeReason.TimedOut =>
+                new("Timed out", "A request was issued over the correct access path and the target did not respond within the timeout period.", OutcomePresentationCategory.TimedOut, false),
+
+            FrontendQualityEngineOutcomeReason.AuthenticatedContextUnavailable =>
+                new("Authenticated context not available", "The selected authenticated testing method has no usable runtime context right now.", OutcomePresentationCategory.AuthRequired, false),
+
+            FrontendQualityEngineOutcomeReason.AuthenticatedContextExpired =>
+                new("Authenticated context expired", "The authenticated API context expired and was wiped.", OutcomePresentationCategory.AuthExpired, false),
+
+            FrontendQualityEngineOutcomeReason.EnterpriseBrowserProtectionBlocked =>
+                new("Blocked by enterprise browser protection", "The browser refuses debugger attachment to the target tab; BirkNext never bypasses browser protection.", OutcomePresentationCategory.EnterpriseBlocked, false),
+
+            FrontendQualityEngineOutcomeReason.BrowserDomUnavailableForMethod =>
+                new("Authenticated DOM unavailable for method", "The engine needs an authenticated browser DOM, which the selected authenticated testing method cannot provide.", OutcomePresentationCategory.AuthUnsupported, false),
+
+            FrontendQualityEngineOutcomeReason.ManualOnlyMethod =>
+                new("Manual verification only", "The environment's authentication method supports manual verification only; no automated authenticated access exists.", OutcomePresentationCategory.AuthUnsupported, false),
+
             _ => new("Unknown", "An unexpected outcome was encountered.", OutcomePresentationCategory.EngineFailed, false),
         };
+
+    /// <summary>
+    /// Explicit engine readiness/outcome state for the engine table: Completed (with or without findings), Blocked, Unsupported,
+    /// Failed, Timed out, Cancelled, Disabled or Not selected. "Not ready" is never used as a catch-all.
+    /// </summary>
+    public static string StateLabel(FrontendQualityEngineOutcome outcome) => outcome.ExecutionState switch
+    {
+        FrontendQualityEngineExecutionState.Assessed => outcome.FindingCount is > 0 ? "Completed — findings" : "Completed — no findings",
+        FrontendQualityEngineExecutionState.TimedOut => "Timed out",
+        FrontendQualityEngineExecutionState.EngineError => "Failed",
+        FrontendQualityEngineExecutionState.Cancelled => "Cancelled",
+        FrontendQualityEngineExecutionState.Disabled => "Disabled",
+        FrontendQualityEngineExecutionState.NotApplicable when outcome.OutcomeReason == FrontendQualityEngineOutcomeReason.NotSelected => "Not selected",
+        FrontendQualityEngineExecutionState.NotApplicable => "Unsupported",
+        _ when IsUnsupported(outcome.OutcomeReason) => "Unsupported",
+        _ when outcome.OutcomeReason == FrontendQualityEngineOutcomeReason.TimedOut => "Timed out",
+        _ when outcome.OutcomeReason == FrontendQualityEngineOutcomeReason.EngineError => "Failed",
+        _ => "Blocked",
+    };
+
+    /// <summary>CSS modifier for the state badge.</summary>
+    public static string StateClass(FrontendQualityEngineOutcome outcome) => StateLabel(outcome) switch
+    {
+        "Completed — findings" => "completed-findings",
+        "Completed — no findings" => "completed",
+        "Timed out" => "timedout",
+        "Failed" => "failed",
+        "Cancelled" => "cancelled",
+        "Disabled" or "Not selected" => "inactive",
+        "Unsupported" => "unsupported",
+        _ => "blocked",
+    };
+
+    /// <summary>"Assessed" only when the engine actually ran against the target and produced a result; everything else is "Not assessed".</summary>
+    public static string AssessmentLabel(FrontendQualityEngineOutcome outcome) =>
+        outcome.ExecutionState == FrontendQualityEngineExecutionState.Assessed ? "Assessed" : "Not assessed";
+
+    /// <summary>The engine cannot work with the selected access mode/method (as opposed to a prerequisite that is merely missing).</summary>
+    public static bool IsUnsupported(FrontendQualityEngineOutcomeReason reason) => reason is
+        FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported or
+        FrontendQualityEngineOutcomeReason.BrowserDomUnavailableForMethod or
+        FrontendQualityEngineOutcomeReason.ManualOnlyMethod;
+
+    public static string AccessKindLabel(FrontendQualityEngineAccessKind kind) => kind switch
+    {
+        FrontendQualityEngineAccessKind.PublicHttp => "Public HTTP",
+        FrontendQualityEngineAccessKind.AuthenticatedHttp => "Authenticated HTTP",
+        FrontendQualityEngineAccessKind.AuthenticatedBrowserSession => "Authenticated browser session",
+        FrontendQualityEngineAccessKind.BrowserRuntime => "Browser runtime",
+        _ => kind.ToString(),
+    };
 
     public static string GetLabel(FrontendQualityEngineOutcomeReason reason) =>
         GetPresentation(reason).Label;

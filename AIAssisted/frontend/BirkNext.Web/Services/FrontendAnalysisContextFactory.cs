@@ -123,15 +123,25 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             AllowedRestHosts = [.. profile.AllowedRestHosts],
             AllowedGraphQlEndpoints = [.. profile.AllowedGraphQlEndpoints],
             ExpectedCdn = profile.ExpectedCdn,
+            // The full non-secret authentication configuration must be preserved: the authenticated-review identity
+            // (ReviewAuthenticationIdentity / LocalHttpsProxyScope.Fingerprint) and the manual-verification fingerprint are
+            // derived from this snapshot and must match the saved profile, otherwise the backend cannot find the memory-only
+            // proxy context and the wrong testing method is reported. None of these fields is a credential.
             Authentication = new FrontendAuthenticationSettings
             {
+                VerificationMode = profile.Authentication.VerificationMode,
                 RequiresAuthentication = profile.Authentication.RequiresAuthentication,
                 AuthenticationType = profile.Authentication.AuthenticationType,
                 UseExistingBrowserSession = profile.Authentication.UseExistingBrowserSession,
                 AutomaticallyOpenLoginPage = profile.Authentication.AutomaticallyOpenLoginPage,
                 ExpectedAuthority = profile.Authentication.ExpectedAuthority,
-                AllowedRedirectUrls = [.. profile.Authentication.AllowedRedirectUrls]
+                ExpectedTenant = profile.Authentication.ExpectedTenant,
+                ExpectedClientId = profile.Authentication.ExpectedClientId,
+                AllowedRedirectUrls = [.. profile.Authentication.AllowedRedirectUrls],
+                BrowserDeliveryTrust = profile.Authentication.BrowserDeliveryTrust,
+                AuthenticatedTestingMethod = profile.Authentication.AuthenticatedTestingMethod,
             },
+            ManualVerification = profile.ManualVerification,
             Performance = profile.Performance,
             CoreWebVitals = profile.CoreWebVitals,
             Security = profile.Security,

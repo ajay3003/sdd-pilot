@@ -50,44 +50,132 @@ public static class FrontendQualityEngineOutcomeNormalizer
         string? reason)
     {
         var policy = context.EngineRequirements.ToPolicy();
-        var (state, outcomeReason) = status switch
-        {
-            PreflightStatus.AuthenticationRequired => (FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.AuthenticationRequired),
-            PreflightStatus.Unreachable or PreflightStatus.ScannerUnavailable => (FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.ReadinessUnavailable),
-            _ => (FrontendQualityEngineExecutionState.SafetyBlocked, FrontendQualityEngineOutcomeReason.TargetPolicyRejected),
-        };
+        var (state, outcomeReason) = PreflightOutcome(status);
         return Enum.GetValues<FrontendQualityEngineId>().Select(id => Base(
             id, DisplayName(id), Enabled(id, context.FeatureToggles), policy.GetRequirement(id),
             Enabled(id, context.FeatureToggles) ? state : FrontendQualityEngineExecutionState.Disabled,
             targetUrl, failure: reason, reason: outcomeReason)).ToList();
     }
 
+    /// <summary>
+    /// Maps a target preflight status to the engine state/reason pair. A real timeout is the only status that yields
+    /// <see cref="FrontendQualityEngineExecutionState.TimedOut"/>; network failures and HTTP errors are never reported as timeouts.
+    /// </summary>
+    public static (FrontendQualityEngineExecutionState State, FrontendQualityEngineOutcomeReason Reason) PreflightOutcome(PreflightStatus status) => status switch
+    {
+        PreflightStatus.AuthenticationRequired => (FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.AuthenticationRequired),
+        PreflightStatus.TimedOut => (FrontendQualityEngineExecutionState.TimedOut, FrontendQualityEngineOutcomeReason.TimedOut),
+        PreflightStatus.Unreachable => (FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.TargetUnreachable),
+        PreflightStatus.ScannerUnavailable => (FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.EngineUnavailable),
+        _ => (FrontendQualityEngineExecutionState.SafetyBlocked, FrontendQualityEngineOutcomeReason.TargetPolicyRejected),
+    };
+
     public static FrontendQualityEngineOutcome StaticSecurity(
         string targetUrl, bool enabled, FrontendQualityEngineRequirementPolicy policy,
         WasmSecurityReviewReport? report, string? error, bool cancelled = false)
     {
-        var state = BasicState(enabled, report is not null && string.IsNullOrWhiteSpace(report.ErrorMessage),
-            error ?? report?.ErrorMessage, adapterAvailable: true, cancelled);
+        var fetch = ClassifyStaticSecurityFetch(report);
+        var assessed = report is not null && string.IsNullOrWhiteSpace(report.ErrorMessage) && fetch is null;
+        var state = fetch?.State ?? BasicState(enabled, assessed, error ?? report?.ErrorMessage, adapterAvailable: true, cancelled);
+        var failure = fetch?.Failure ?? error ?? report?.ErrorMessage;
         return Base(FrontendQualityEngineId.StaticSecurity, "Static Security", enabled,
             policy.GetRequirement(FrontendQualityEngineId.StaticSecurity), state,
-            report?.TargetUrl ?? targetUrl, findings: report?.Findings.Count,
-            evidence: report?.Findings.Sum(f => f.Evidence.Count), failure: error ?? report?.ErrorMessage,
+            report?.TargetUrl ?? targetUrl, findings: assessed ? report!.Findings.Count : null,
+            evidence: assessed ? report!.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
             started: report?.ScannedAt == default ? null : report?.ScannedAt,
-            limitations: report?.Limitations, strength: FrontendQualityEvidenceStrength.StaticIndicator);
+            limitations: report?.Limitations, strength: FrontendQualityEvidenceStrength.StaticIndicator,
+            reason: fetch?.Reason ?? (assessed ? FrontendQualityEngineOutcomeReason.None : ReasonForState(state)));
     }
 
     public static FrontendQualityEngineOutcome PassivePerformance(
         string targetUrl, bool enabled, FrontendQualityEngineRequirementPolicy policy,
         WasmPerformanceReviewReport? report, string? error, bool cancelled = false)
     {
-        var state = BasicState(enabled, report is not null && string.IsNullOrWhiteSpace(report.ErrorMessage),
-            error ?? report?.ErrorMessage, adapterAvailable: true, cancelled);
+        var fetch = ClassifyPassivePerformanceFetch(report);
+        var assessed = report is not null && string.IsNullOrWhiteSpace(report.ErrorMessage) && fetch is null;
+        var state = fetch?.State ?? BasicState(enabled, assessed, error ?? report?.ErrorMessage, adapterAvailable: true, cancelled);
+        var failure = fetch?.Failure ?? error ?? report?.ErrorMessage;
         return Base(FrontendQualityEngineId.PassivePerformance, "Passive Performance", enabled,
             policy.GetRequirement(FrontendQualityEngineId.PassivePerformance), state,
-            report?.TargetUrl ?? targetUrl, findings: report?.Findings.Count,
-            evidence: report?.Findings.Sum(f => f.Evidence.Count), failure: error ?? report?.ErrorMessage,
+            report?.TargetUrl ?? targetUrl, findings: assessed ? report!.Findings.Count : null,
+            evidence: assessed ? report!.Findings.Sum(f => f.Evidence.Count) : null, failure: failure,
             started: report?.ReviewedAt == default ? null : report?.ReviewedAt,
-            limitations: report?.Limitations, strength: FrontendQualityEvidenceStrength.StaticIndicator);
+            limitations: report?.Limitations, strength: FrontendQualityEvidenceStrength.StaticIndicator,
+            reason: fetch?.Reason ?? (assessed ? FrontendQualityEngineOutcomeReason.None : ReasonForState(state)));
+    }
+
+    public sealed record TargetFetchClassification(FrontendQualityEngineExecutionState State, FrontendQualityEngineOutcomeReason Reason, string Failure);
+
+    /// <summary>
+    /// Static Security only assessed the target when the SPA document itself was fetched. A report whose HTML asset failed carries
+    /// zero findings because nothing was analysed, not because the target is clean, so it must not count as assessed.
+    /// </summary>
+    public static TargetFetchClassification? ClassifyStaticSecurityFetch(WasmSecurityReviewReport? report)
+    {
+        var index = report?.Assets.FirstOrDefault(a => string.Equals(a.AssetType, "HTML", StringComparison.OrdinalIgnoreCase));
+        if (index is null || index.Analyzed || string.Equals(index.Status, "200 OK", StringComparison.OrdinalIgnoreCase)) return null;
+        if (string.Equals(index.Status, "Timeout", StringComparison.OrdinalIgnoreCase)) return TimedOutFetch();
+        if (string.Equals(index.Status, "Error", StringComparison.OrdinalIgnoreCase)) return UnreachableFetch();
+        if (Enum.TryParse<System.Net.HttpStatusCode>(index.Status, ignoreCase: true, out var code)) return HttpFetch((int)code);
+        return UnreachableFetch();
+    }
+
+    /// <summary>Passive Performance only assessed the target when the index document was fetched successfully.</summary>
+    public static TargetFetchClassification? ClassifyPassivePerformanceFetch(WasmPerformanceReviewReport? report)
+    {
+        var index = report?.Assets.FirstOrDefault(a => a.Type == AssetType.Index);
+        if (index is null || index.StatusCode is >= 200 and < 300) return null;
+        if (index.StatusCode == 0)
+            return Contains(index.Error, "timed out") || Contains(index.Error, "timeout") ? TimedOutFetch() : UnreachableFetch();
+        return HttpFetch(index.StatusCode);
+    }
+
+    public static TargetFetchClassification HttpFetch(int statusCode) => statusCode is 401 or 403
+        ? new(FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.AuthenticationRequired,
+            $"Target returned HTTP {statusCode}. The frontend host requires authentication.")
+        : new(FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.TargetHttpError, $"Target returned HTTP {statusCode}.");
+
+    public static TargetFetchClassification TimedOutFetch() =>
+        new(FrontendQualityEngineExecutionState.TimedOut, FrontendQualityEngineOutcomeReason.TimedOut, "Target did not respond within timeout period.");
+
+    public static TargetFetchClassification UnreachableFetch() =>
+        new(FrontendQualityEngineExecutionState.Unavailable, FrontendQualityEngineOutcomeReason.TargetUnreachable, "Target unreachable: the connection could not be established.");
+
+    /// <summary>
+    /// Attaches the access path to every outcome and applies fail-fast access decisions: an engine whose access preflight was
+    /// Blocked/Unsupported never ran, so its state and reason come from the decision. Engines that are Disabled or Not selected keep
+    /// their own state (they were not going to run anyway); engines that produced a result keep it.
+    /// </summary>
+    public static List<FrontendQualityEngineOutcome> ApplyAccessDecisions(
+        List<FrontendQualityEngineOutcome> outcomes,
+        IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision>? decisions)
+    {
+        if (decisions is null) return outcomes;
+        for (var index = 0; index < outcomes.Count; index++)
+        {
+            var outcome = outcomes[index];
+            if (!decisions.TryGetValue(outcome.EngineId, out var decision)) continue;
+            outcome = outcome with { AccessKind = decision.AccessKind, AccessLabel = decision.AccessLabel };
+            var inactive = outcome.ExecutionState is FrontendQualityEngineExecutionState.Disabled ||
+                           outcome.OutcomeReason is FrontendQualityEngineOutcomeReason.NotSelected
+                               or FrontendQualityEngineOutcomeReason.BlockedByDeploymentPolicy
+                               or FrontendQualityEngineOutcomeReason.DisabledInSystemSettings;
+            if (!decision.IsReady && !inactive && outcome.ExecutionState != FrontendQualityEngineExecutionState.Assessed)
+            {
+                outcome = outcome with
+                {
+                    OutcomeReason = decision.OutcomeReason,
+                    ExecutionState = StateForReason(decision.OutcomeReason, outcome.ExecutionState),
+                    SanitizedFailureReason = SafeNullable(decision.Reason),
+                    ReadinessState = FrontendQualityEngineReadinessState.Unavailable,
+                    ReadinessReason = SafeNullable(decision.Reason),
+                    RequiredAction = decision.RequiredAction,
+                    ActionHref = decision.ActionHref,
+                };
+            }
+            outcomes[index] = outcome;
+        }
+        return outcomes;
     }
 
     public static FrontendQualityEngineOutcome BrowserRuntime(
@@ -413,6 +501,14 @@ public static class FrontendQualityEngineOutcomeNormalizer
             FrontendQualityEngineOutcomeReason.ReadinessUnavailable => FrontendQualityEngineExecutionState.Unavailable,
             FrontendQualityEngineOutcomeReason.BlockedByDeploymentPolicy or
             FrontendQualityEngineOutcomeReason.TargetPolicyRejected => FrontendQualityEngineExecutionState.SafetyBlocked,
+            FrontendQualityEngineOutcomeReason.TimedOut => FrontendQualityEngineExecutionState.TimedOut,
+            FrontendQualityEngineOutcomeReason.TargetUnreachable or
+            FrontendQualityEngineOutcomeReason.TargetHttpError or
+            FrontendQualityEngineOutcomeReason.AuthenticatedContextUnavailable or
+            FrontendQualityEngineOutcomeReason.AuthenticatedContextExpired or
+            FrontendQualityEngineOutcomeReason.EnterpriseBrowserProtectionBlocked => FrontendQualityEngineExecutionState.Unavailable,
+            FrontendQualityEngineOutcomeReason.BrowserDomUnavailableForMethod or
+            FrontendQualityEngineOutcomeReason.ManualOnlyMethod => FrontendQualityEngineExecutionState.NotApplicable,
             _ => FrontendQualityEngineExecutionState.SafetyBlocked,
         };
 

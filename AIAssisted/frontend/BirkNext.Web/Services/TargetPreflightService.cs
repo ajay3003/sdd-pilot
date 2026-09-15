@@ -1,3 +1,6 @@
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -16,10 +19,43 @@ public sealed class TargetPreflightResult
     public string? FinalUrl { get; init; }
     public int? ResponseStatusCode { get; init; }
     public bool IsLikelyLoginPage { get; init; }
+    /// <summary>Precise reachability classification from the server-side probe, when one was executed.</summary>
+    public TargetReachability? Reachability { get; init; }
+    /// <summary>Probe duration in milliseconds, when a probe was executed.</summary>
+    public double? ElapsedMs { get; init; }
 }
 
+/// <summary>Wire shape of the backend <c>api/frontend-target/reachability</c> response. Non-secret.</summary>
+public sealed class TargetReachabilityProbeDto
+{
+    [JsonPropertyName("targetUrl")] public string TargetUrl { get; set; } = "";
+    [JsonPropertyName("reachability")] public TargetReachability Reachability { get; set; } = TargetReachability.Unknown;
+    [JsonPropertyName("statusCode")] public int? StatusCode { get; set; }
+    [JsonPropertyName("finalUrl")] public string? FinalUrl { get; set; }
+    [JsonPropertyName("authenticationRequired")] public bool AuthenticationRequired { get; set; }
+    [JsonPropertyName("redirectCount")] public int RedirectCount { get; set; }
+    [JsonPropertyName("elapsedMs")] public double ElapsedMs { get; set; }
+    [JsonPropertyName("message")] public string Message { get; set; } = "";
+    [JsonPropertyName("blockReason")] public string? BlockReason { get; set; }
+}
+
+/// <summary>
+/// Target reachability preflight for the Frontend Quality Review. The probe is executed by the BirkNext backend
+/// (<c>api/frontend-target/reachability</c>) on the same network path the Static Security and Passive Performance engines use.
+/// It is deliberately NOT a browser-side fetch: a Blazor WebAssembly request to a cross-origin target is subject to CORS policy and
+/// in-browser protection, which turned reachable targets into "Network error" / generic timeout results.
+/// The timeout wording is used only when the backend probe actually timed out.
+/// </summary>
 public sealed class TargetPreflightService : ITargetPreflightService
 {
+    public const string TimeoutMessage = "Target did not respond within timeout period.";
+    public const string BackendUnavailableMessage = "Reachability check unavailable: the BirkNext backend could not be reached.";
+
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
+
     private readonly HttpClient _http;
 
     public TargetPreflightService(HttpClient http)
@@ -27,8 +63,8 @@ public sealed class TargetPreflightService : ITargetPreflightService
 
     public async Task<TargetPreflightResult> CheckTargetAsync(string targetUrl)
     {
-        // Validate URL syntax first
-        if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri))
+        // Validate URL syntax first (no network)
+        if (!Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) || (uri.Scheme != "https" && uri.Scheme != "http"))
         {
             return new TargetPreflightResult
             {
@@ -37,113 +73,69 @@ public sealed class TargetPreflightService : ITargetPreflightService
             };
         }
 
+        TargetReachabilityProbeDto? probe;
         try
         {
-            // Make a HEAD request first to avoid downloading full content
-            using var request = new HttpRequestMessage(HttpMethod.Head, uri);
-            request.Headers.Add("User-Agent", "BirkNext/1.0");
-
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-
-            var finalUrl = response.RequestMessage?.RequestUri?.AbsoluteUri;
-            var redirected = finalUrl != targetUrl;
-
-            // Check for redirect loops or auth redirects
-            if (redirected && IsLikelyAuthRedirect(finalUrl))
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            using var response = await _http.PostAsJsonAsync("api/frontend-target/reachability", new { targetUrl = uri.AbsoluteUri }, JsonOptions, cts.Token);
+            if (!response.IsSuccessStatusCode)
             {
                 return new TargetPreflightResult
                 {
-                    Status = PreflightStatus.AuthenticationRequired,
-                    Message = "Target appears to require authentication (redirect detected).",
-                    FinalUrl = finalUrl,
-                    RedirectOccurred = true,
-                    ResponseStatusCode = (int)response.StatusCode,
+                    Status = PreflightStatus.ScannerUnavailable,
+                    Message = $"Reachability check unavailable: the BirkNext backend returned HTTP {(int)response.StatusCode}.",
                 };
             }
-
-            // Check status code
-            if (!response.IsSuccessStatusCode)
-            {
-                if ((int)response.StatusCode >= 400 && (int)response.StatusCode < 500)
-                {
-                    return new TargetPreflightResult
-                    {
-                        Status = PreflightStatus.Unreachable,
-                        Message = $"Target returned HTTP {response.StatusCode}. Frontend may be inaccessible.",
-                        FinalUrl = finalUrl,
-                        RedirectOccurred = redirected,
-                        ResponseStatusCode = (int)response.StatusCode,
-                    };
-                }
-
-                if ((int)response.StatusCode >= 500)
-                {
-                    return new TargetPreflightResult
-                    {
-                        Status = PreflightStatus.ReadyWithWarnings,
-                        Message = $"Target returned HTTP {response.StatusCode}. Server error detected.",
-                        FinalUrl = finalUrl,
-                        RedirectOccurred = redirected,
-                        ResponseStatusCode = (int)response.StatusCode,
-                    };
-                }
-            }
-
-            // Check for Blazor WASM
-            var isBlazorWasm = response.Content.Headers.ContentType?.MediaType?.Contains("text/html") == true ||
-                              (response.Headers.TryGetValues("content-type", out var ct) &&
-                               ct.Any(c => c.Contains("text/html")));
-
-            return new TargetPreflightResult
-            {
-                Status = redirected && IsLikelyLoginPage(finalUrl)
-                    ? PreflightStatus.AuthenticationRequired
-                    : PreflightStatus.Ready,
-                Message = "Target is reachable and ready for analysis.",
-                FinalUrl = finalUrl,
-                RedirectOccurred = redirected,
-                ResponseStatusCode = (int)response.StatusCode,
-                IsBlazorWasm = isBlazorWasm,
-                IsLikelyLoginPage = redirected && IsLikelyLoginPage(finalUrl),
-            };
+            probe = await response.Content.ReadFromJsonAsync<TargetReachabilityProbeDto>(JsonOptions, cts.Token);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
-            return new TargetPreflightResult
-            {
-                Status = PreflightStatus.Unreachable,
-                Message = $"Network error: {ex.Message}",
-            };
+            return new TargetPreflightResult { Status = PreflightStatus.ScannerUnavailable, Message = BackendUnavailableMessage };
         }
-        catch (TaskCanceledException)
-        {
-            return new TargetPreflightResult
-            {
-                Status = PreflightStatus.Unreachable,
-                Message = "Target did not respond within timeout period.",
-            };
-        }
-        catch (Exception ex)
-        {
-            return new TargetPreflightResult
-            {
-                Status = PreflightStatus.ScannerUnavailable,
-                Message = $"Preflight check error: {ex.Message}",
-            };
-        }
+
+        if (probe is null)
+            return new TargetPreflightResult { Status = PreflightStatus.ScannerUnavailable, Message = BackendUnavailableMessage };
+
+        return Map(probe, uri.AbsoluteUri);
     }
 
-    private static bool IsLikelyAuthRedirect(string? finalUrl) =>
-        !string.IsNullOrWhiteSpace(finalUrl) && (
-            finalUrl.Contains("login", StringComparison.OrdinalIgnoreCase) ||
-            finalUrl.Contains("signin", StringComparison.OrdinalIgnoreCase) ||
-            finalUrl.Contains("authorize", StringComparison.OrdinalIgnoreCase) ||
-            finalUrl.Contains("oauth", StringComparison.OrdinalIgnoreCase) ||
-            finalUrl.Contains("auth", StringComparison.OrdinalIgnoreCase));
+    /// <summary>Deterministic mapping of the probe to the review preflight status. Pure; unit-tested.</summary>
+    public static TargetPreflightResult Map(TargetReachabilityProbeDto probe, string requestedUrl)
+    {
+        var redirected = probe.RedirectCount > 0 || (!string.IsNullOrWhiteSpace(probe.FinalUrl) &&
+            !string.Equals(probe.FinalUrl.TrimEnd('/'), requestedUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
+        var status = probe.Reachability switch
+        {
+            TargetReachability.Timeout => PreflightStatus.TimedOut,
+            TargetReachability.AuthenticationRequired => PreflightStatus.AuthenticationRequired,
+            TargetReachability.Reachable when probe.StatusCode is >= 500 => PreflightStatus.ReadyWithWarnings,
+            TargetReachability.Reachable => PreflightStatus.Ready,
+            TargetReachability.Unknown when probe.BlockReason == "INVALID_URL" => PreflightStatus.InvalidTarget,
+            TargetReachability.Unknown => PreflightStatus.ScannerUnavailable,
+            _ => PreflightStatus.Unreachable,
+        };
+        var message = status == PreflightStatus.TimedOut ? TimeoutMessage
+            : string.IsNullOrWhiteSpace(probe.Message) ? DefaultMessage(status, probe) : probe.Message;
+        return new TargetPreflightResult
+        {
+            Status = status,
+            Message = message,
+            FinalUrl = probe.FinalUrl,
+            RedirectOccurred = redirected,
+            ResponseStatusCode = probe.StatusCode,
+            IsLikelyLoginPage = probe.AuthenticationRequired && probe.StatusCode is not (401 or 403),
+            Reachability = probe.Reachability,
+            ElapsedMs = probe.ElapsedMs,
+        };
+    }
 
-    private static bool IsLikelyLoginPage(string? finalUrl) =>
-        !string.IsNullOrWhiteSpace(finalUrl) && (
-            finalUrl.Contains("login", StringComparison.OrdinalIgnoreCase) ||
-            finalUrl.Contains("signin", StringComparison.OrdinalIgnoreCase));
+    private static string DefaultMessage(PreflightStatus status, TargetReachabilityProbeDto probe) => status switch
+    {
+        PreflightStatus.Ready => "Target is reachable and ready for analysis.",
+        PreflightStatus.ReadyWithWarnings => $"Target returned HTTP {probe.StatusCode}. Server error detected.",
+        PreflightStatus.AuthenticationRequired => "The frontend host requires authentication.",
+        PreflightStatus.InvalidTarget => "Target URL is not a valid absolute URL.",
+        PreflightStatus.ScannerUnavailable => BackendUnavailableMessage,
+        _ => probe.StatusCode.HasValue ? $"Target returned HTTP {probe.StatusCode}." : "Target unreachable.",
+    };
 }

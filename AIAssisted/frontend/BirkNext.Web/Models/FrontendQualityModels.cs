@@ -39,6 +39,8 @@ public enum PreflightStatus
     Unreachable,
     InvalidTarget,
     ScannerUnavailable,
+    /// <summary>A probe was issued over the correct (backend) network path and the target did not answer within the timeout.</summary>
+    TimedOut,
 }
 
 public sealed class FrontendQualityFinding
@@ -111,6 +113,8 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("preflightStatus")]    public PreflightStatus?                 PreflightStatus    { get; init; }
     [JsonPropertyName("preflightMessage")]   public string?                          PreflightMessage   { get; init; }
     [JsonPropertyName("redirectOccurred")]   public bool                             RedirectOccurred   { get; init; }
+    /// <summary>Resolved Target Environment access (method, authenticated context, DOM availability) the review executed under. Non-secret.</summary>
+    [JsonPropertyName("targetAccess")]       public FrontendQualityTargetAccessContext? TargetAccess    { get; init; }
     [JsonPropertyName("assessedEngines")]    public List<string> AssessedEngines
     {
         get => EngineOutcomes.Count > 0 ? FrontendQualityEngineCompatibility.Assessed(EngineOutcomes) : _legacyAssessedEngines;

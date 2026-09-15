@@ -77,6 +77,7 @@ builder.Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotServic
 builder.Services.AddSingleton<IReportExportService, ReportExportService>();
 builder.Services.AddSingleton<IFrontendQualityReviewService, FrontendQualityReviewService>();
 builder.Services.AddScoped<ISecurityScanner, SecurityScannerAdapter>();
+builder.Services.AddScoped<IFrontendQualityTargetAccessResolver, FrontendQualityTargetAccessResolver>();
 builder.Services.AddScoped<IFrontendQualityReviewOrchestrator, FrontendQualityReviewOrchestrator>();
 builder.Services.AddHttpClient<IQualityReviewPageModelService, QualityReviewPageModelService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

@@ -19,6 +19,13 @@ public interface ITargetEnvironmentDetectionService
     Task<TargetEnvironmentDetectionResponse> DetectFromUrlAsync(string targetUrl, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Server-side reachability probe only (no configuration discovery): validated HEAD with manual redirect following on the
+    /// backend network path. Returns the real HTTP status, sign-in redirect, network failure or timeout so review engines can
+    /// preflight the target without depending on browser CORS policy.
+    /// </summary>
+    Task<TargetReachabilityProbeResult> ProbeReachabilityAsync(string targetUrl, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Continue detection using a specific authentication strategy (e.g., interactive browser).
     /// Should only be called after preflight detection has identified an authentication requirement.
     /// </summary>
@@ -191,6 +198,103 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         }
     }
 
+    public async Task<TargetReachabilityProbeResult> ProbeReachabilityAsync(string targetUrl, CancellationToken cancellationToken = default)
+    {
+        var probe = new TargetReachabilityProbeResult { TargetUrl = GetSanitizedUrlForResponse(targetUrl ?? "") };
+        if (string.IsNullOrWhiteSpace(targetUrl) || !Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+        {
+            probe.Reachability = TargetReachability.Unknown;
+            probe.Message = "Target URL is not a valid absolute http(s) URL.";
+            probe.BlockReason = "INVALID_URL";
+            return probe;
+        }
+
+        var validation = _validator.ValidateTarget(uri.AbsoluteUri, "Public");
+        if (!validation.IsValid)
+        {
+            probe.Reachability = TargetReachability.Unreachable;
+            probe.BlockReason = validation.BlockReason;
+            probe.Message = $"Target blocked by policy: {validation.BlockReason}";
+            return probe;
+        }
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var preflight = await CheckTargetWithRedirectAsync(uri, cancellationToken);
+            stopwatch.Stop();
+            probe.ElapsedMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1);
+            probe.Reachability = preflight.Reachability;
+            probe.StatusCode = preflight.StatusCode;
+            probe.FinalUrl = preflight.StatusCode.HasValue ? GetSanitizedUrlForResponse(preflight.FinalUrl) : null;
+            probe.AuthenticationRequired = preflight.AuthenticationRequired;
+            probe.RedirectCount = preflight.RedirectCount;
+            probe.BlockReason = preflight.Success ? null : preflight.BlockReason;
+            probe.Message = DescribeReachability(preflight);
+            return probe;
+        }
+        catch (HttpRequestException ex)
+        {
+            stopwatch.Stop();
+            probe.ElapsedMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1);
+            probe.Reachability = ClassifyNetworkFailure(ex);
+            probe.Message = probe.Reachability switch
+            {
+                TargetReachability.DnsError => "Target hostname could not be resolved.",
+                TargetReachability.TlsError => "TLS handshake with the target failed.",
+                _ => "Target unreachable: the connection could not be established.",
+            };
+            _logger.LogWarning("Reachability probe network failure for {Host}: {Reachability}", uri.Host, probe.Reachability);
+            return probe;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            stopwatch.Stop();
+            probe.ElapsedMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1);
+            probe.Reachability = TargetReachability.Timeout;
+            probe.Message = "Target did not respond within timeout period.";
+            return probe;
+        }
+    }
+
+    private static string DescribeReachability(PreflightCheckResult preflight)
+    {
+        if (!preflight.Success)
+            return $"Target blocked by policy: {preflight.BlockReason}";
+        var status = preflight.StatusCode;
+        return preflight.Reachability switch
+        {
+            TargetReachability.Timeout => "Target did not respond within timeout period.",
+            TargetReachability.AuthenticationRequired when status is 401 or 403 => $"Target returned HTTP {status}. The frontend host requires authentication.",
+            TargetReachability.AuthenticationRequired when preflight.LoginPageDetected => "Target redirected to a sign-in page. The frontend host requires authentication.",
+            TargetReachability.AuthenticationRequired => "The frontend host requires authentication.",
+            TargetReachability.Reachable when status is >= 500 => $"Target returned HTTP {status}. Server error detected.",
+            TargetReachability.Reachable when status.HasValue => $"Target is reachable (HTTP {status}).",
+            TargetReachability.Reachable => "Target is reachable.",
+            TargetReachability.Unreachable when status.HasValue => $"Target returned HTTP {status}.",
+            TargetReachability.Unreachable => "Target unreachable.",
+            TargetReachability.TooManyRedirects => "Target redirected too many times.",
+            TargetReachability.UntrustedRedirect => "Target redirected to a location that is not trusted for this probe.",
+            _ => "Target reachability could not be determined.",
+        };
+    }
+
+    private static TargetReachability ClassifyNetworkFailure(HttpRequestException ex)
+    {
+        for (Exception? inner = ex; inner is not null; inner = inner.InnerException)
+        {
+            if (inner is System.Security.Authentication.AuthenticationException)
+                return TargetReachability.TlsError;
+            if (inner is System.Net.Sockets.SocketException socket &&
+                socket.SocketErrorCode is System.Net.Sockets.SocketError.HostNotFound
+                    or System.Net.Sockets.SocketError.NoData
+                    or System.Net.Sockets.SocketError.TryAgain)
+                return TargetReachability.DnsError;
+        }
+        return TargetReachability.Unreachable;
+    }
+
     private async Task<PreflightCheckResult> CheckTargetWithRedirectAsync(
         Uri targetUri,
         CancellationToken cancellationToken)
@@ -234,6 +338,18 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                     request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
 
                 var statusCode = (int)response.StatusCode;
+
+                // Some hosts refuse HEAD (405/501) while serving GET normally. Retry once with GET, headers only, so a
+                // reachable target is never misreported as unreachable because of the probe method.
+                if (statusCode is 405 or 501)
+                {
+                    using var getRequest = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                    getRequest.Headers.Add("User-Agent", "BirkNext/1.0");
+                    response = await _httpClient.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
+                    statusCode = (int)response.StatusCode;
+                }
+
+                result.StatusCode = statusCode;
 
                 // Check for HTTP redirect (3xx status codes)
                 // AllowAutoRedirect is false, so we handle redirects manually here
@@ -326,6 +442,7 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
                 if (IsLikelyLoginPage(result.FinalUrl))
                 {
                     result.AuthenticationRequired = true;
+                    result.LoginPageDetected = true;
                     result.Reachability = TargetReachability.AuthenticationRequired;
                 }
 
@@ -1394,5 +1511,9 @@ public sealed class TargetEnvironmentDetectionService : ITargetEnvironmentDetect
         public int RedirectCount { get; set; }
         public bool Success { get; set; } = true;
         public string? BlockReason { get; set; }
+        /// <summary>Final HTTP status code, or null when no HTTP response was received (blocked, network failure, timeout).</summary>
+        public int? StatusCode { get; set; }
+        /// <summary>True when the final response came from a sign-in page URL rather than an HTTP 401/403.</summary>
+        public bool LoginPageDetected { get; set; }
     }
 }

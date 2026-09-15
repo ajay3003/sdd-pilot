@@ -48,6 +48,22 @@ public enum FrontendQualityEngineOutcomeReason
     EngineUnavailable,
     EngineError,
     Cancelled,
+    /// <summary>The target could not be reached over the network (DNS, TLS, connection failure or policy block). Not a timeout.</summary>
+    TargetUnreachable,
+    /// <summary>The target answered with an HTTP error status (e.g. 404, 500); the status is carried in the sanitized failure reason.</summary>
+    TargetHttpError,
+    /// <summary>A request was actually issued over the correct access path and no response arrived within the timeout.</summary>
+    TimedOut,
+    /// <summary>Authenticated testing method selected, but its runtime context (Local HTTPS proxy API context) is not available.</summary>
+    AuthenticatedContextUnavailable,
+    /// <summary>The authenticated API context existed but expired.</summary>
+    AuthenticatedContextExpired,
+    /// <summary>Managed Edge (CDP) attach to the target tab is refused by enterprise browser protection.</summary>
+    EnterpriseBrowserProtectionBlocked,
+    /// <summary>The engine needs an authenticated browser DOM, which the selected method (Local HTTPS proxy) can never provide.</summary>
+    BrowserDomUnavailableForMethod,
+    /// <summary>The environment's authentication method is manual verification only; no automated authenticated access exists.</summary>
+    ManualOnlyMethod,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -149,6 +165,14 @@ public sealed record FrontendQualityEngineOutcome
     [JsonPropertyName("limitations")] public List<string> Limitations { get; init; } = [];
     [JsonPropertyName("manualTestingObligations")] public List<string> ManualTestingObligations { get; init; } = [];
     [JsonPropertyName("evidence")] public List<FrontendQualityEvidenceDescriptor> Evidence { get; init; } = [];
+
+    /// <summary>Access path the engine used or would need (Public HTTP, Authenticated HTTP, Authenticated browser session, Browser runtime).</summary>
+    [JsonPropertyName("accessKind")] public FrontendQualityEngineAccessKind? AccessKind { get; init; }
+    /// <summary>User-facing access label including the method, e.g. "Public HTTP (frontend shell)".</summary>
+    [JsonPropertyName("accessLabel")] public string? AccessLabel { get; init; }
+    /// <summary>Contextual next step for a blocked/unsupported engine (never an automatic action).</summary>
+    [JsonPropertyName("requiredAction")] public string? RequiredAction { get; init; }
+    [JsonPropertyName("actionHref")] public string? ActionHref { get; init; }
 
     public static FrontendQualityEngineOutcome CreateWithSanitizedFailure(
         FrontendQualityEngineId engineId,
