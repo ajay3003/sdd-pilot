@@ -309,6 +309,64 @@
     padding: 0.85rem 1rem;
 }
 
+/* ── Target environment access + engine state badges (child components → ::deep) ── */
+::deep .fqr-target-access {
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid var(--clr-border);
+    background: var(--clr-surface);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    margin-top: 1rem;
+}
+
+::deep .fqr-target-access-ready { border-left-color: var(--clr-success, #2e7d32); }
+::deep .fqr-target-access-attention { border-left-color: var(--clr-warning, #b26a00); }
+::deep .fqr-target-access-blocked { border-left-color: var(--clr-danger, #c62828); }
+
+::deep .fqr-target-access h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+
+::deep .fqr-target-access-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+    gap: 0.25rem 1.25rem;
+    margin: 0;
+}
+
+::deep .fqr-target-access-list > div { display: grid; grid-template-columns: 11rem 1fr; gap: 0.5rem; font-size: 0.9rem; }
+::deep .fqr-target-access-list dt { color: var(--clr-text-subtle); }
+::deep .fqr-target-access-list dd { margin: 0; overflow-wrap: anywhere; }
+::deep .fqr-target-access-reason,
+::deep .fqr-target-access-note { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--clr-text-subtle); }
+::deep .fqr-target-access-actions { margin: 0.6rem 0 0; font-size: 0.9rem; }
+::deep .fqr-muted { color: var(--clr-text-subtle); }
+
+::deep .fqr-coverage-summary { margin: 0.5rem 0 0.75rem; font-size: 0.9rem; }
+::deep .fqr-coverage-summary ul { margin: 0.25rem 0 0 1.1rem; padding: 0; }
+
+::deep .fqr-state {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border: 1px solid var(--clr-border);
+    background: var(--clr-surface);
+    white-space: nowrap;
+}
+
+::deep .fqr-state-completed,
+::deep .fqr-state-completed-findings { border-color: var(--clr-success, #2e7d32); color: var(--clr-success, #2e7d32); }
+::deep .fqr-state-completed-findings { color: var(--clr-warning, #b26a00); border-color: var(--clr-warning, #b26a00); }
+::deep .fqr-state-blocked,
+::deep .fqr-state-failed,
+::deep .fqr-state-timedout { border-color: var(--clr-danger, #c62828); color: var(--clr-danger, #c62828); }
+::deep .fqr-state-unsupported { border-color: var(--clr-warning, #b26a00); color: var(--clr-warning, #b26a00); }
+::deep .fqr-state-inactive,
+::deep .fqr-state-cancelled { color: var(--clr-text-subtle); }
+
+::deep .fqr-outcome-reason { display: block; margin-top: 0.2rem; font-size: 0.78rem; color: var(--clr-text-subtle); }
+::deep .fqr-required-action { display: block; margin-top: 0.2rem; font-size: 0.85rem; }
+
 .fqr-technical-grid {
     border-top: 1px solid var(--clr-border);
     display: grid;

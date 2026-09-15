@@ -1,0 +1,65 @@
+@using BirkNext.LocalHttpsProxy
+@using BirkNext.ManagedEdge
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* Compact Target Environment access context for the Frontend Quality Review: which environment, how it authenticates, which
+   authenticated testing method is saved, whether an authenticated context / browser DOM is available right now, and — kept
+   deliberately separate — the manual verification status versus automated engine access. Non-secret values only. *@
+<section class="fqr-target-access fqr-target-access-@ModeClass" aria-label="Target environment access" data-testid="fqr-target-access">
+    <h2>Target environment access</h2>
+    <dl class="fqr-target-access-list">
+        <div><dt>Target</dt><dd data-testid="fqr-access-target">@Access.EnvironmentName <span class="fqr-muted">(@Access.EnvironmentType)</span></dd></div>
+        <div><dt>URL</dt><dd data-testid="fqr-access-url">@Access.TargetUrl</dd></div>
+        <div><dt>Authentication</dt><dd data-testid="fqr-access-auth">@(Access.RequiresAuthentication ? Access.AuthenticationType.ToString() : "Not required")</dd></div>
+        <div><dt>Testing method</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)</dd></div>
+        <div><dt>Access mode</dt><dd data-testid="fqr-access-mode">@FrontendQualityTargetAccess.ModeLabel(Access.Mode)</dd></div>
+        <div><dt>Authenticated context</dt><dd data-testid="fqr-access-context">@FrontendQualityTargetAccess.ApiContextLabel(Access)</dd></div>
+        <div><dt>Browser DOM</dt><dd data-testid="fqr-access-dom">@FrontendQualityTargetAccess.BrowserDomLabel(Access)</dd></div>
+        @if (Access.ManagedEdgeState is { } edge && Access.Method == AuthenticatedTestingMethod.ManagedEdgeCdp)
+        {
+            <div><dt>Managed Edge (CDP)</dt><dd data-testid="fqr-access-cdp">@AuthenticatedTestingMethodLabels.Connection(edge)</dd></div>
+        }
+        @if (Access.ProxyState is { } proxy && Access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
+        {
+            <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@AuthenticatedTestingMethodLabels.ProxyState(proxy)</dd></div>
+        }
+        <div><dt>Manual verification</dt><dd data-testid="fqr-access-manual">@FrontendQualityTargetAccess.ManualVerificationLabel(Access.ManualVerificationStatus)</dd></div>
+        <div><dt>Automated engine access</dt><dd data-testid="fqr-access-automated">@FrontendQualityTargetAccess.AutomatedAccessLabel(Access)</dd></div>
+    </dl>
+    @if (Access.RequiresAuthentication)
+    {
+        <p class="fqr-target-access-reason" role="status" data-testid="fqr-access-reason">@Access.Reason</p>
+        @if (Access.ManualVerificationStatus == ManualAuthenticationVerificationStatus.Passed && !Access.AuthenticatedBrowserDomAvailable && !Access.AuthenticatedApiAvailable)
+        {
+            <p class="fqr-target-access-note" data-testid="fqr-access-manual-note">Manual verification passed confirms user access only; it does not give automated engines access to the target.</p>
+        }
+    }
+    @if (ShowActions)
+    {
+        <p class="fqr-target-access-actions">
+            <a href="@FrontendQualityTargetAccess.TargetEnvironmentsHref" data-testid="fqr-action-target-environment">Open Target Environment</a>
+            @if (Access.RequiresAuthentication)
+            {
+                <span> · </span><a href="@FrontendQualityTargetAccess.TargetEnvironmentsHref" data-testid="fqr-action-authentication">Open Authentication</a>
+            }
+            @if (Access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
+            {
+                <span> · </span><a href="@FrontendQualityTargetAccess.TargetEnvironmentsHref" data-testid="fqr-action-endpoint-discovery">View Endpoint Discovery</a>
+            }
+        </p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityTargetAccessContext Access { get; set; } = new();
+    /// <summary>Show navigation actions (landing view). The report view shows the context only.</summary>
+    [Parameter] public bool ShowActions { get; set; } = true;
+
+    private string ModeClass => Access.Mode switch
+    {
+        FrontendQualityTargetAccessMode.PublicDirect or FrontendQualityTargetAccessMode.LocalHttpsProxy or FrontendQualityTargetAccessMode.ManagedEdgeCdp => "ready",
+        FrontendQualityTargetAccessMode.EnterpriseBlocked => "blocked",
+        _ => "attention",
+    };
+}

@@ -11,24 +11,50 @@
 
 <section class="fqr-section" aria-label="Automated coverage and engine outcomes">
     <SectionHeader Title="Automated coverage" />
-    <p><strong>@CoverageLabel</strong></p>
-    <p><strong>Required assessed:</strong> @RequiredAssessed / @RequiredTotal &nbsp; <strong>Optional assessed:</strong> @OptionalAssessed / @OptionalTotal</p>
+    <p><strong data-testid="fqr-coverage-label">@CoverageLabel</strong></p>
+    <p><strong>Required assessed:</strong> <span data-testid="fqr-required-assessed">@RequiredAssessed / @RequiredTotal</span> &nbsp; <strong>Optional assessed:</strong> @OptionalAssessed / @OptionalTotal</p>
+    @if (RequiredTotal > 0 && RequiredAssessed < RequiredTotal)
+    {
+        <div class="fqr-coverage-summary" data-testid="fqr-coverage-summary">
+            <p>@RequiredAssessed of @RequiredTotal required engines completed.</p>
+            <ul>
+                @foreach (var outcome in RequiredNotAssessed)
+                {
+                    <li data-engine-id="@outcome.EngineId"><strong>@outcome.DisplayName:</strong> @FrontendQualityEngineOutcomePresentation.StateLabel(outcome) — @(outcome.SanitizedFailureReason ?? FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason))</li>
+                }
+            </ul>
+        </div>
+    }
     <div class="fqr-table-wrap">
         <table class="fqr-findings-table fqr-engine-matrix">
-            <thead><tr><th>Engine</th><th>Policy</th><th>Enabled</th><th>Outcome</th><th>Evidence / findings</th><th>Duration</th><th>Tool / browser</th><th>Reason or manual obligation</th></tr></thead>
+            <thead><tr><th>Engine</th><th>Policy</th><th>Enabled</th><th>Assessment</th><th>Access</th><th>Outcome</th><th>Evidence / findings</th><th>Duration</th><th>Tool / browser</th><th>Reason / required action</th></tr></thead>
             <tbody>
                 @foreach (var outcome in Report.EngineOutcomes.OrderBy(item => item.EngineId))
                 {
-                    <tr data-engine-id="@outcome.EngineId">
+                    <tr data-engine-id="@outcome.EngineId" data-engine-state="@FrontendQualityEngineOutcomePresentation.StateClass(outcome)">
                         <td><strong>@outcome.DisplayName</strong></td>
                         <td>@outcome.Requirement</td>
                         <td>@(outcome.Enabled ? "Enabled" : "Disabled")</td>
-                        <td><span class="fqr-state fqr-reason-@(FrontendQualityEngineOutcomePresentation.GetCategory(outcome.OutcomeReason).ToString().ToLowerInvariant())">@FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason)</span></td>
+                        <td data-testid="fqr-assessment">@FrontendQualityEngineOutcomePresentation.AssessmentLabel(outcome)</td>
+                        <td data-testid="fqr-access">@(outcome.AccessLabel ?? (outcome.AccessKind.HasValue ? FrontendQualityEngineOutcomePresentation.AccessKindLabel(outcome.AccessKind.Value) : "—"))</td>
+                        <td>
+                            <span class="fqr-state fqr-state-@FrontendQualityEngineOutcomePresentation.StateClass(outcome)" data-testid="fqr-state">@FrontendQualityEngineOutcomePresentation.StateLabel(outcome)</span>
+                            @if (outcome.ExecutionState != FrontendQualityEngineExecutionState.Assessed && outcome.OutcomeReason != FrontendQualityEngineOutcomeReason.None)
+                            {
+                                <span class="fqr-outcome-reason fqr-reason-@(FrontendQualityEngineOutcomePresentation.GetCategory(outcome.OutcomeReason).ToString().ToLowerInvariant())" data-testid="fqr-outcome-reason">@FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason)</span>
+                            }
+                        </td>
                         <td>@(outcome.EvidenceCount?.ToString() ?? "—") / @(outcome.FindingCount?.ToString() ?? "—")</td>
                         <td>@(outcome.DurationMs.HasValue ? $"{outcome.DurationMs.Value} ms" : "—")</td>
                         <td>@ToolLabel(outcome)</td>
-                        <td>
+                        <td data-testid="fqr-reason">
                             @if (!string.IsNullOrWhiteSpace(outcome.SanitizedFailureReason)) { <span>@outcome.SanitizedFailureReason</span> }
+                            @if (!string.IsNullOrWhiteSpace(outcome.RequiredAction))
+                            {
+                                <span class="fqr-required-action">
+                                    @if (!string.IsNullOrWhiteSpace(outcome.ActionHref)) { <a href="@outcome.ActionHref">@outcome.RequiredAction</a> } else { <span>@outcome.RequiredAction</span> }
+                                </span>
+                            }
                             @if (outcome.ManualTestingObligations.Count > 0) { <span>@string.Join(" ", outcome.ManualTestingObligations)</span> }
                         </td>
                     </tr>
@@ -122,11 +148,16 @@
     [Parameter, EditorRequired] public FrontendQualityReviewReport Report { get; set; } = default!;
     private int RequiredTotal => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required);
     private int RequiredAssessed => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+    private IEnumerable<FrontendQualityEngineOutcome> RequiredNotAssessed => Report.EngineOutcomes
+        .Where(o => o.Requirement == FrontendQualityEngineRequirement.Required && o.ExecutionState != FrontendQualityEngineExecutionState.Assessed)
+        .OrderBy(o => o.EngineId);
     private int OptionalTotal => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Optional);
     private int OptionalAssessed => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Optional && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
     private int CriticalHighCount => Report.LogicalIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High);
     private string DispositionLabel => Report.ReleaseDisposition?.ToString() ?? "ReviewRequired";
     private string DispositionText => Report.ReleaseDisposition switch {
+        FrontendQualityReleaseDisposition.Blocked when RequiredTotal > 0 && RequiredAssessed < RequiredTotal =>
+            $"Required engine could not assess the target ({RequiredAssessed} of {RequiredTotal} required engines completed). See the engine table for the exact access blocker.",
         FrontendQualityReleaseDisposition.Blocked => "Automated review is blocked by one or more configured release-blocking conditions.",
         FrontendQualityReleaseDisposition.NoAutomatedBlockDetected => "No configured automated release block was detected.",
         _ => "Automated evidence requires review before a release decision can be made." };

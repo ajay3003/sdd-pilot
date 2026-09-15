@@ -53,15 +53,15 @@ public static class FrontendQualityDecisionSupportService
         IReadOnlyList<FrontendQualityManualReviewItem> manualItems,
         FrontendQualityReleasePolicySettings policy)
     {
-        if (coverage.RequiredCoverageState == FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment)
+        // A release decision needs every REQUIRED engine to have actually assessed the target. One required engine that
+        // could not run (blocked, unsupported, unreachable, timed out, failed) keeps the disposition Blocked; the engine table
+        // explains which engine and why. Partial required coverage is never downgraded to "review required".
+        if (coverage.RequiredCoverageState != FrontendQualityRequiredCoverageState.AllRequiredAssessed)
             return FrontendQualityReleaseDisposition.Blocked;
 
         var blockingIds = policy.BlockingLogicalIssueIds.ToHashSet(StringComparer.Ordinal);
         if (issues.Any(issue => blockingIds.Contains(issue.LogicalId)))
             return FrontendQualityReleaseDisposition.Blocked;
-
-        if (coverage.RequiredCoverageState == FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed)
-            return FrontendQualityReleaseDisposition.ReviewRequired;
 
         if (manualItems.Count > 0)
             return FrontendQualityReleaseDisposition.ReviewRequired;

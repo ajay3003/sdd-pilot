@@ -9,7 +9,7 @@ public sealed class FrontendQualityDecisionSupportTests
 {
     [Theory]
     [InlineData(FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment, FrontendQualityReleaseDisposition.Blocked)]
-    [InlineData(FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed, FrontendQualityReleaseDisposition.ReviewRequired)]
+    [InlineData(FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed, FrontendQualityReleaseDisposition.Blocked)]
     [InlineData(FrontendQualityRequiredCoverageState.AllRequiredAssessed, FrontendQualityReleaseDisposition.NoAutomatedBlockDetected)]
     public void CoverageStates_DriveExplicitBaselineDisposition(
         FrontendQualityRequiredCoverageState coverageState,
@@ -25,13 +25,16 @@ public sealed class FrontendQualityDecisionSupportTests
     [InlineData(FrontendQualityEngineExecutionState.Unavailable)]
     [InlineData(FrontendQualityEngineExecutionState.Cancelled)]
     [InlineData(FrontendQualityEngineExecutionState.Disabled)]
-    public void RequiredUnassessedEngine_RequiresReviewWhenOtherRequiredEvidenceExists(FrontendQualityEngineExecutionState state)
+    public void RequiredUnassessedEngine_KeepsReleaseBlockedEvenWhenOtherRequiredEvidenceExists(FrontendQualityEngineExecutionState state)
     {
+        // One required engine that did not assess the target (blocked, unsupported, timed out, failed, disabled) means the
+        // required assessment is incomplete: the release stays Blocked and the engine table explains why. It is never
+        // downgraded to "review required".
         var outcomes = AllAssessed();
         outcomes[0] = Outcome(FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineRequirement.Required, state, state != FrontendQualityEngineExecutionState.Disabled);
 
         Evaluate(FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed, outcomes, [], [], new())
-            .Should().Be(FrontendQualityReleaseDisposition.ReviewRequired);
+            .Should().Be(FrontendQualityReleaseDisposition.Blocked);
     }
 
     [Fact]

@@ -9,8 +9,11 @@ namespace BirkNext.Web.Tests.Services;
 public sealed class AuthenticatedReviewPhaseA5OrchestrationTests
 {
     [Fact]
-    public async Task MissingAuthoritativeSnapshot_IsRejectedBeforeAnyEngineInvocation()
+    public async Task MissingAuthoritativeSnapshot_BlocksAuthenticatedEnginesButNotPublicHttpEngines()
     {
+        // Without an authoritative (UI-captured, authenticated) snapshot the authenticated browser engines never run.
+        // The public-HTTP engines (Static Security, Passive Performance) do not depend on the authenticated session:
+        // they analyse the public frontend shell and are executed instead of being blocked wholesale.
         var fixture = new Fixture();
 
         var result = await fixture.Orchestrator.RunAsync(Fixture.Target, fixture.Context);
@@ -19,9 +22,15 @@ public sealed class AuthenticatedReviewPhaseA5OrchestrationTests
         fixture.Accessibility.Calls.Should().Be(0);
         fixture.Lighthouse.Calls.Should().Be(0);
         fixture.PassiveSecurity.Calls.Should().Be(0);
-        result.PreflightBlocked.Should().BeTrue();
-        result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == FrontendQualityEngineId.BrowserRuntime)
-            .OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.AuthenticationRequired);
+        result.PreflightBlocked.Should().BeFalse("public-HTTP engines still ran");
+        result.SecurityReport.Should().NotBeNull();
+        result.PerformanceReport.Should().NotBeNull();
+        var runtime = result.QualityReport!.EngineOutcomes.Single(x => x.EngineId == FrontendQualityEngineId.BrowserRuntime);
+        runtime.OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.AuthenticationRequired);
+        runtime.ExecutionState.Should().NotBe(FrontendQualityEngineExecutionState.Assessed);
+        runtime.SanitizedFailureReason.Should().Contain("authenticated engine snapshot");
+        result.QualityReport.EngineOutcomes.Single(x => x.EngineId == FrontendQualityEngineId.StaticSecurity)
+            .AccessKind.Should().Be(FrontendQualityEngineAccessKind.PublicHttp);
     }
 
     [Fact]

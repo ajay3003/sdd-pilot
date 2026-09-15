@@ -43,16 +43,21 @@
                        Metadata="BuildFrontendMetadata()"
                        EstimatedDuration="Review duration depends on target size and enabled checks." />
 
+        @if (_access is { } landingAccess)
+        {
+            <FrontendQualityTargetAccessPanel Access="landingAccess" ShowActions="true" />
+        }
+
         @if (_caps is { } caps)
         {
             <section class="fqr-auth-capabilities" aria-label="Authenticated review capabilities" data-testid="fqr-authenticated-capabilities">
                 <h2>Authenticated coverage</h2>
-                <p class="fa-section-note">API-backed checks can use the Local HTTPS proxy authenticated context; authenticated DOM and browser-runtime checks require a CDP browser context.</p>
+                <p class="fa-section-note">Static Security and Passive Performance fetch the public frontend shell over HTTP. Authenticated DOM and browser-runtime checks need the Managed Edge (CDP) browser context; the Local HTTPS proxy provides an authenticated API context only.</p>
                 <AuthenticatedReviewStatus Capabilities="caps" ShowBrowserSurfaces="true" />
             </section>
         }
 
-        @if (_context?.RequiresAuthentication == true)
+        @if (_context?.RequiresAuthentication == true && SelectedMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp)
         {
             <section class="fqr-auth-session" aria-live="polite" aria-label="Authenticated review sign-in">
                 <h2>Authentication required</h2>
@@ -65,9 +70,9 @@
                 {
                     <p><strong>Authenticated</strong> — Delivery context: @DeliveryContextText</p>
                     <ul class="fqr-auth-capabilities">
-                        <li>Browser Runtime: Available for authenticated review</li>
-                        <li>Accessibility: Not yet available for authenticated review</li>
-                        <li>Static Security, Passive Performance, Lighthouse, and Passive ZAP: Not supported for authenticated review</li>
+                        <li>Browser Runtime and Accessibility: run in the authenticated browser session</li>
+                        <li>Static Security and Passive Performance: run against the public frontend shell (Public HTTP)</li>
+                        <li>Lighthouse and Passive ZAP: no authenticated mode</li>
                     </ul>
                 }
                 else if (!_authPolling)
@@ -78,6 +83,22 @@
                 {
                     <button type="button" class="btn-secondary" @onclick="CancelAuthentication">Cancel authentication</button>
                 }
+            </section>
+        }
+        else if (_context?.RequiresAuthentication == true && SelectedMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy)
+        {
+            <section class="fqr-auth-session" aria-label="Authenticated access with Local HTTPS proxy" data-testid="fqr-proxy-method-note">
+                <h2>Authentication required — Local HTTPS proxy</h2>
+                <p>The authenticated context for this environment is established on the Target Environment page (start the proxy, sign in to the target in the proxy-configured browser). It provides authenticated API access only. Static Security and Passive Performance run against the public frontend shell; Browser Runtime and Accessibility cannot assess the signed-in application with this method.</p>
+                <a class="btn-secondary" href="@FrontendQualityTargetAccess.TargetEnvironmentsHref">Open Target Environment</a>
+            </section>
+        }
+        else if (_context?.RequiresAuthentication == true && SelectedMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManualOnly)
+        {
+            <section class="fqr-auth-session" aria-label="Manual verification only" data-testid="fqr-manual-only-note">
+                <h2>Authentication required — manual verification only</h2>
+                <p>This environment supports manual verification only. Automated engines that need authenticated access are unsupported here; Static Security and Passive Performance still run against the public frontend shell.</p>
+                <a class="btn-secondary" href="@FrontendQualityTargetAccess.TargetEnvironmentsHref">Open Authentication</a>
             </section>
         }
 
@@ -179,9 +200,21 @@
         {
             <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="status">
                 <span aria-hidden="true">🔐</span>
-                <strong>Authentication required</strong> — The configured target requires authentication, so the protected frontend could not be assessed.
+                <strong>Authentication required</strong> — @(report.PreflightMessage ?? "The configured target requires authentication, so the protected frontend could not be assessed.")
                 <a href="/admin/system-settings?section=target-environments" class="wsr-banner-action">Configure authentication</a>
             </div>
+        }
+        else if ((report.PreflightStatus is PreflightStatus.TimedOut or PreflightStatus.Unreachable or PreflightStatus.ScannerUnavailable) && !string.IsNullOrWhiteSpace(report.PreflightMessage))
+        {
+            <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="status" data-testid="fqr-preflight-banner">
+                <span aria-hidden="true">⚠</span>
+                <strong>@(report.PreflightStatus == PreflightStatus.TimedOut ? "Target timed out" : report.PreflightStatus == PreflightStatus.Unreachable ? "Target unreachable" : "Reachability check unavailable")</strong> — @report.PreflightMessage
+            </div>
+        }
+
+        @if (report.TargetAccess is { } reportAccess)
+        {
+            <FrontendQualityTargetAccessPanel Access="reportAccess" ShowActions="false" />
         }
 
         <FrontendQualityDecisionSupport Report="report" />
@@ -578,8 +611,12 @@
 
     private FrontendAnalysisContext? _context;
     private BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities? _caps;
+    private FrontendQualityTargetAccessContext? _access;
     private AuthenticatedBrowserSession? _authSession;
     private bool _authPolling;
+
+    private BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod SelectedMethod =>
+        _access?.Method ?? _context?.ActiveProfile.Authentication.AuthenticatedTestingMethod ?? BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
 
     private bool    _running;
     private string  _progressMessage = "";
@@ -611,6 +648,19 @@
         // Optional so page-render tests that do not register it still work; when present it drives the authenticated coverage panel.
         if (ServiceProvider.GetService(typeof(IAuthenticatedReviewCapabilitiesService)) is IAuthenticatedReviewCapabilitiesService service)
             _caps = await service.ResolveAsync(ReviewAuthenticationIdentity.For(_context?.ActiveProfile));
+        await ResolveTargetAccess();
+    }
+
+    /// <summary>Resolves the Target Environment access context shown on the landing view; the orchestrator resolves it again at run time.</summary>
+    private async Task ResolveTargetAccess()
+    {
+        if (_context is null || !_context.HasTargetUrl) { _access = null; return; }
+        if (ServiceProvider.GetService(typeof(IFrontendQualityTargetAccessResolver)) is IFrontendQualityTargetAccessResolver resolver)
+        {
+            try { _access = await resolver.ResolveAsync(_context); return; }
+            catch { }
+        }
+        _access = FrontendQualityTargetAccess.FromContext(_context);
     }
 
     private async Task FetchEngineStatus()
@@ -745,6 +795,7 @@
             SkippedEngines = qualityReport.SkippedEngines,
             PreflightStatus = qualityReport.PreflightStatus,
             PreflightMessage = qualityReport.PreflightMessage,
+            TargetAccess = qualityReport.TargetAccess,
             AccessibilityReport = qualityReport.AccessibilityReport,
             LighthouseReport = qualityReport.LighthouseReport,
             PassiveSecurityReport = qualityReport.PassiveSecurityReport,

@@ -122,12 +122,15 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         // precise reason instead of issuing a request and waiting for a timeout.
         var access = await ResolveAccessAsync(context, cancellationToken);
         var decisions = FrontendQualityTargetAccess.DecideAll(access);
+        // Authenticated DOM engines only run under an authoritative snapshot captured by the UI after sign-in; a defaulted
+        // snapshot never grants authenticated execution. Public-HTTP engines are unaffected by this rule.
+        var authoritativeSnapshot = snapshot is not null && snapshot.AuthMode == ReviewAuthenticationModeDto.Authenticated;
         snapshot ??= CaptureDefaultSnapshot(context);
 
         AuthenticatedBrowserExecutionReference? authenticatedReference = null;
         if (access.RequiresAuthentication && access.AuthenticatedBrowserDomAvailable)
         {
-            if (snapshot.AuthMode != ReviewAuthenticationModeDto.Authenticated)
+            if (!authoritativeSnapshot)
                 decisions = BlockAuthenticatedBrowserEngines(decisions, FrontendQualityEngineOutcomeReason.AuthenticationRequired,
                     "An authenticated engine snapshot is required. Refresh the review after signing in.");
             else

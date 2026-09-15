@@ -538,8 +538,12 @@ public sealed class ReportExportService : IReportExportService
     private static void AppendFrontendDecisionSupport(StringBuilder sb, FrontendQualityReviewReport report)
     {
         var disposition = report.ReleaseDisposition ?? FrontendQualityReleaseDisposition.ReviewRequired;
+        var requiredAll = report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required);
+        var requiredDone = report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
         var dispositionText = disposition switch
         {
+            FrontendQualityReleaseDisposition.Blocked when requiredAll > 0 && requiredDone < requiredAll =>
+                $"Required engine could not assess the target ({requiredDone} of {requiredAll} required engines completed). See the engine table for the exact access blocker.",
             FrontendQualityReleaseDisposition.Blocked => "Automated review is blocked by one or more configured release-blocking conditions.",
             FrontendQualityReleaseDisposition.NoAutomatedBlockDetected => "No configured automated release block was detected.",
             _ => "Automated evidence requires review before a release decision can be made.",
@@ -558,17 +562,44 @@ public sealed class ReportExportService : IReportExportService
         sb.Append($"<p><strong>{Esc(disposition.ToString())}</strong> — {Esc(dispositionText)}</p>\n");
         sb.Append($"<p><strong>Critical/high logical issues:</strong> {report.LogicalIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)} &nbsp; <strong>Logical issues:</strong> {report.LogicalIssues.Count} &nbsp; <strong>Source findings:</strong> {report.Findings.Count}</p>\n</section>\n");
 
+        if (report.TargetAccess is { } access)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Target environment access</h2>\n<dl>\n");
+            sb.Append($"<dt><strong>Target:</strong></dt><dd>{Esc(access.EnvironmentName)} ({Esc(access.EnvironmentType)})</dd>\n");
+            sb.Append($"<dt><strong>URL:</strong></dt><dd>{Esc(access.TargetUrl)}</dd>\n");
+            sb.Append($"<dt><strong>Authentication:</strong></dt><dd>{Esc(access.RequiresAuthentication ? access.AuthenticationType.ToString() : "Not required")}</dd>\n");
+            sb.Append($"<dt><strong>Testing method:</strong></dt><dd>{Esc(AuthenticatedTestingMethodLabels.Option(access.Method))}</dd>\n");
+            sb.Append($"<dt><strong>Access mode:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ModeLabel(access.Mode))}</dd>\n");
+            sb.Append($"<dt><strong>Authenticated context:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ApiContextLabel(access))}</dd>\n");
+            sb.Append($"<dt><strong>Browser DOM:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.BrowserDomLabel(access))}</dd>\n");
+            sb.Append($"<dt><strong>Manual verification:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ManualVerificationLabel(access.ManualVerificationStatus))}</dd>\n");
+            sb.Append($"<dt><strong>Automated engine access:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.AutomatedAccessLabel(access))}</dd>\n");
+            sb.Append("</dl>\n</section>\n");
+        }
+
+        var requiredAssessed = required.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
         sb.Append("<section class=\"block\">\n<h2>Automated coverage</h2>\n");
-        sb.Append($"<p><strong>{Esc(coverageText)}</strong></p><p><strong>Required assessed:</strong> {required.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)} / {required.Count} &nbsp; <strong>Optional assessed:</strong> {optional.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)} / {optional.Count}</p>\n");
+        sb.Append($"<p><strong>{Esc(coverageText)}</strong></p><p><strong>Required assessed:</strong> {requiredAssessed} / {required.Count} &nbsp; <strong>Optional assessed:</strong> {optional.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)} / {optional.Count}</p>\n");
+        if (required.Count > 0 && requiredAssessed < required.Count)
+        {
+            sb.Append($"<p>{requiredAssessed} of {required.Count} required engines completed.</p>\n<ul>\n");
+            foreach (var o in required.Where(o => o.ExecutionState != FrontendQualityEngineExecutionState.Assessed).OrderBy(o => o.EngineId))
+                sb.Append($"<li>{Esc(o.DisplayName)}: {Esc(FrontendQualityEngineOutcomePresentation.StateLabel(o))} — {Esc(SanitizePassive(o.SanitizedFailureReason ?? FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason)))}</li>\n");
+            sb.Append("</ul>\n");
+        }
         sb.Append(Table(
-            ["Engine", "Policy", "Enabled", "Outcome", "Evidence / findings", "Duration", "Tool / browser", "Reason / manual obligation"],
+            ["Engine", "Policy", "Enabled", "Assessment", "Access", "Outcome", "Evidence / findings", "Duration", "Tool / browser", "Reason / required action"],
             report.EngineOutcomes.OrderBy(o => o.EngineId).Select(o => new[]
             {
-                Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Enabled" : "Disabled", Esc(FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason)),
+                Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Enabled" : "Disabled",
+                Esc(FrontendQualityEngineOutcomePresentation.AssessmentLabel(o)),
+                Esc(o.AccessLabel ?? (o.AccessKind.HasValue ? FrontendQualityEngineOutcomePresentation.AccessKindLabel(o.AccessKind.Value) : "—")),
+                Esc($"{FrontendQualityEngineOutcomePresentation.StateLabel(o)} · {FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason)}"),
                 $"{o.EvidenceCount?.ToString() ?? "—"} / {o.FindingCount?.ToString() ?? "—"}",
                 o.DurationMs.HasValue ? $"{o.DurationMs.Value} ms" : "—",
                 Esc(string.Join(" · ", new[] { o.ToolName, o.ToolVersion, o.BrowserName, o.BrowserVersion }.Where(v => !string.IsNullOrWhiteSpace(v)))),
-                Esc(SanitizePassive(string.Join(" ", new[] { o.SanitizedFailureReason }.Concat(o.ManualTestingObligations).Where(v => !string.IsNullOrWhiteSpace(v)))))
+                Esc(SanitizePassive(string.Join(" ", new[] { o.SanitizedFailureReason, o.RequiredAction is { Length: > 0 } action ? $"Required action: {action}." : null }
+                    .Concat(o.ManualTestingObligations).Where(v => !string.IsNullOrWhiteSpace(v)))))
             })));
         sb.Append("</section>\n");
 
