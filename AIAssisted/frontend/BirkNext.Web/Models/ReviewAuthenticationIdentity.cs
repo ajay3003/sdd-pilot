@@ -13,4 +13,14 @@ public static class ReviewAuthenticationIdentity
         profile is null
             ? new AuthenticatedReviewIdentity(AuthenticatedTestingMethod.ManagedEdgeCdp, null, null)
             : new AuthenticatedReviewIdentity(profile.Authentication.AuthenticatedTestingMethod, profile.Id, LocalHttpsProxyScope.Fingerprint(profile));
+
+    /// <summary>
+    /// Identity for a review page: the factory-computed identity of the SAVED profile when present (the context's
+    /// <see cref="FrontendAnalysisContext.ActiveProfile"/> is a data-minimized copy whose fingerprint would not match the proxy
+    /// session), otherwise derived from the context's profile copy.
+    /// </summary>
+    public static AuthenticatedReviewIdentity For(FrontendAnalysisContext? context) =>
+        context is null ? For((FrontendAnalysisProfile?)null)
+        : context.ReviewIdentity is { ProfileId: { Length: > 0 } } identity ? identity
+        : For(context.ActiveProfile);
 }

@@ -9,9 +9,10 @@ using Moq;
 namespace BirkNext.Web.Tests.Services;
 
 /// <summary>
-/// The safe profile snapshot handed to review pages must preserve the full non-secret authentication configuration. The
-/// authenticated-review identity (method + proxy fingerprint) and the manual-verification fingerprint are derived from it, so a
-/// lossy copy made the backend look for a proxy context under the wrong fingerprint and reported the wrong testing method.
+/// Review pages need the authenticated-review identity (saved testing method + proxy context fingerprint) and the manual
+/// verification status of the SAVED profile. The context's profile copy is data-minimized (no tenant/client identifiers), so
+/// deriving these from the copy produced a different fingerprint and the wrong method: the backend could not find the memory-only
+/// proxy context and the Frontend Quality Review reported the CDP reason for a Local HTTPS proxy environment.
 /// </summary>
 public sealed class FrontendAnalysisContextSnapshotIdentityTests
 {
@@ -27,7 +28,7 @@ public sealed class FrontendAnalysisContextSnapshotIdentityTests
         profile.Authentication.AuthenticationType = FrontendAuthenticationType.MicrosoftEntraId;
         profile.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.LocalHttpsProxy;
         profile.Authentication.ExpectedTenant = "11111111-1111-1111-1111-111111111111";
-        profile.Authentication.ExpectedClientId = "FAKE-CLIENT-ID";
+        profile.Authentication.ExpectedClientId = "FAKE-CLIENT-ID-SENTINEL";
         profile.Authentication.ExpectedAuthority = "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111";
         profile.Authentication.VerificationMode = AuthenticationVerificationMode.ManualManagedEdge;
         profile.Authentication.BrowserDeliveryTrust = ManagedEdgeTrustModel.ApprovedMcasProxyOrigin;
@@ -47,45 +48,79 @@ public sealed class FrontendAnalysisContextSnapshotIdentityTests
     }
 
     [Fact]
-    public async Task Snapshot_PreservesAuthenticatedTestingMethodAndProxyFingerprint()
+    public async Task ReviewIdentity_MatchesSavedProfileMethodAndProxyFingerprint()
     {
         var profile = M2lbProfile();
         var context = await ContextFor(profile);
 
-        var fromSnapshot = ReviewAuthenticationIdentity.For(context.ActiveProfile);
-        var fromProfile = ReviewAuthenticationIdentity.For(profile);
+        var identity = ReviewAuthenticationIdentity.For(context);
+        var expected = ReviewAuthenticationIdentity.For(profile);
 
-        fromSnapshot.Method.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy);
-        fromSnapshot.ProfileId.Should().Be("dev");
-        fromSnapshot.ContextFingerprint.Should().Be(fromProfile.ContextFingerprint,
+        identity.Method.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy);
+        identity.ProfileId.Should().Be("dev");
+        identity.ContextFingerprint.Should().Be(expected.ContextFingerprint,
             "the backend resolves the memory-only proxy context by this fingerprint; a mismatch hides an available authenticated context");
-        LocalHttpsProxyScope.Fingerprint(context.ActiveProfile).Should().Be(LocalHttpsProxyScope.Fingerprint(profile));
+        identity.ContextFingerprint.Should().HaveLength(64, "a SHA-256 digest, never configuration values");
     }
 
     [Fact]
-    public async Task Snapshot_PreservesManualVerificationAndItsFingerprint()
+    public async Task ProfileCopy_IsDataMinimized_SoIdentityMustNotBeDerivedFromIt()
     {
         var profile = M2lbProfile();
         var context = await ContextFor(profile);
 
-        ManualAuthenticationVerificationEvidence.Fingerprint(context.ActiveProfile).Should().Be(ManualAuthenticationVerificationEvidence.Fingerprint(profile));
-        context.ActiveProfile.ManualVerification.Should().NotBeNull();
-        context.ActiveProfile.ManualVerification!.StatusFor(context.ActiveProfile).Should().Be(ManualAuthenticationVerificationStatus.Passed);
+        var json = System.Text.Json.JsonSerializer.Serialize(context);
+        json.Should().NotContain("FAKE-CLIENT-ID-SENTINEL").And.NotContain(profile.Authentication.ExpectedTenant);
+        context.ActiveProfile.Authentication.AuthenticatedTestingMethod.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy, "the saved method itself is preserved");
+        context.ActiveProfile.Authentication.VerificationMode.Should().Be(AuthenticationVerificationMode.ManualManagedEdge);
+        context.ActiveProfile.Authentication.BrowserDeliveryTrust.Should().Be(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin);
+        ReviewAuthenticationIdentity.For(context.ActiveProfile).ContextFingerprint.Should().NotBe(context.ReviewIdentity!.ContextFingerprint,
+            "this is exactly why the identity is computed by the factory and not from the copy");
     }
 
     [Fact]
-    public async Task Snapshot_PreservesEveryNonSecretAuthenticationField()
+    public async Task ManualVerification_ResolvedAgainstSavedProfile()
     {
         var profile = M2lbProfile();
         var context = await ContextFor(profile);
-        var copy = context.ActiveProfile.Authentication;
 
-        copy.VerificationMode.Should().Be(AuthenticationVerificationMode.ManualManagedEdge);
-        copy.ExpectedTenant.Should().Be(profile.Authentication.ExpectedTenant);
-        copy.ExpectedClientId.Should().Be(profile.Authentication.ExpectedClientId);
-        copy.BrowserDeliveryTrust.Should().Be(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin);
-        copy.AuthenticatedTestingMethod.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy);
-        copy.Should().NotBeSameAs(profile.Authentication, "the snapshot is a copy, not the live settings object");
+        context.ManualVerificationStatus.Should().Be(ManualAuthenticationVerificationStatus.Passed);
+        context.ManualVerificationFingerprint.Should().Be(ManualAuthenticationVerificationEvidence.Fingerprint(profile));
+    }
+
+    [Fact]
+    public async Task ManualVerification_RequiredWhenMethodIsManualOnlyAndNothingRecorded()
+    {
+        var profile = M2lbProfile();
+        profile.ManualVerification = null;
+        profile.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.ManualOnly;
+        profile.Authentication.VerificationMode = AuthenticationVerificationMode.Automated;
+
+        (await ContextFor(profile)).ManualVerificationStatus.Should().Be(ManualAuthenticationVerificationStatus.Required);
+    }
+
+    [Fact]
+    public void IdentityForContext_FallsBackToProfileCopyWhenFactoryIdentityAbsent()
+    {
+        var profile = new FrontendAnalysisProfile { Id = "dev", TargetUrl = "https://x.example.test/" };
+        profile.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.ManualOnly;
+        var context = new FrontendAnalysisContext { ActiveProfile = profile };
+
+        ReviewAuthenticationIdentity.For(context).Should().Be(ReviewAuthenticationIdentity.For(profile));
+        ReviewAuthenticationIdentity.For((FrontendAnalysisContext?)null).Method.Should().Be(AuthenticatedTestingMethod.ManagedEdgeCdp);
+    }
+
+    [Fact]
+    public async Task ResolvedAccess_FromContext_ReportsProxyMethodAndSavedManualStatus()
+    {
+        var profile = M2lbProfile();
+        var context = await ContextFor(profile);
+
+        var access = FrontendQualityTargetAccess.FromContext(context);
+
+        access.Method.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy);
+        access.ManualVerificationStatus.Should().Be(ManualAuthenticationVerificationStatus.Passed);
+        access.AuthenticatedBrowserDomAvailable.Should().BeFalse();
     }
 
     [Fact]
@@ -98,18 +133,5 @@ public sealed class FrontendAnalysisContextSnapshotIdentityTests
 
         var json = System.Text.Json.JsonSerializer.Serialize(context.ActiveProfile);
         json.Should().NotContain("eyJhbGciOiJSUzI1NiJ9").And.NotContain("FAKE-API-KEY");
-    }
-
-    [Fact]
-    public async Task ResolvedAccess_FromSnapshot_ReportsProxyMethodNotCdpDefault()
-    {
-        var profile = M2lbProfile();
-        var context = await ContextFor(profile);
-
-        var access = FrontendQualityTargetAccess.FromContext(context);
-
-        access.Method.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy);
-        access.ManualVerificationStatus.Should().Be(ManualAuthenticationVerificationStatus.Passed);
-        access.AuthenticatedBrowserDomAvailable.Should().BeFalse();
     }
 }

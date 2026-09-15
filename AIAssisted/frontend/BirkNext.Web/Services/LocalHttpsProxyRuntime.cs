@@ -56,8 +56,12 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
     public event Action? Changed;
 
     /// <summary>Status is only valid for the environment configuration it was produced for; any relevant change reads as Stale.</summary>
-    public LocalHttpsProxyStatus For(FrontendAnalysisProfile? profile) => _identity is null ||
-        (profile is not null && _identity == LocalHttpsProxyScope.Fingerprint(profile))
+    public LocalHttpsProxyStatus For(FrontendAnalysisProfile? profile) =>
+        ForFingerprint(profile is null ? null : LocalHttpsProxyScope.Fingerprint(profile));
+
+    /// <summary>Status for a precomputed proxy context fingerprint (e.g. <see cref="FrontendAnalysisContext.ReviewIdentity"/>); Stale when it does not match the running session.</summary>
+    public LocalHttpsProxyStatus ForFingerprint(string? fingerprint) => _identity is null ||
+        (fingerprint is not null && _identity == fingerprint)
         ? Status : new() { State = LocalHttpsProxyState.Stale, Evidence = "Environment settings changed. The proxy session and its in-memory credential are no longer valid; start the proxy again after saving." };
 
     public bool SessionActive => _owner is not null;

@@ -60,8 +60,12 @@ public sealed class ManagedEdgeRuntime(IManagedEdgeCdpApiService api) : IAsyncDi
     public bool Busy { get; private set; }
     public bool PreflightBusy { get; private set; }
 
-    public ManagedEdgeStatus For(FrontendAnalysisProfile? profile) => _identity is null ||
-        (profile is not null && _identity == ManualAuthenticationVerificationEvidence.Fingerprint(profile))
+    public ManagedEdgeStatus For(FrontendAnalysisProfile? profile) =>
+        ForFingerprint(profile is null ? null : ManualAuthenticationVerificationEvidence.Fingerprint(profile));
+
+    /// <summary>Status for a precomputed verification fingerprint (e.g. <see cref="FrontendAnalysisContext.ManualVerificationFingerprint"/>); Stale when it does not match the connected session.</summary>
+    public ManagedEdgeStatus ForFingerprint(string? fingerprint) => _identity is null ||
+        (fingerprint is not null && _identity == fingerprint)
         ? Status : new() { State = ManagedEdgeState.Stale, Evidence = "Environment settings changed. Reconnect and verify again." };
 
     /// <summary>A compatibility result only describes the target origin it was checked for.</summary>

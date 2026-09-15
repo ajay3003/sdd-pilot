@@ -22,19 +22,22 @@ public sealed class FrontendQualityTargetAccessResolver(
 {
     public async Task<FrontendQualityTargetAccessContext> ResolveAsync(FrontendAnalysisContext context, CancellationToken cancellationToken = default)
     {
-        var profile = context.ActiveProfile;
-        var caps = context.RequiresAuthentication && profile.Authentication.AuthenticatedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy
-            ? await SafeResolveCapabilitiesAsync(profile, cancellationToken)
+        // Identity and fingerprints come from the saved profile (computed by the context factory), never re-derived from the
+        // data-minimized profile copy: a mismatched fingerprint would hide an available proxy context and report "Stale".
+        var identity = ReviewAuthenticationIdentity.For(context);
+        var caps = context.RequiresAuthentication && identity.Method == AuthenticatedTestingMethod.LocalHttpsProxy
+            ? await SafeResolveCapabilitiesAsync(identity, cancellationToken)
             : null;
         var sessionAuthenticated = context.IsAuthenticatedSessionAvailable || await SafeSessionAuthenticatedAsync();
-        var edge = (services.GetService(typeof(ManagedEdgeRuntime)) as ManagedEdgeRuntime)?.For(profile);
-        var proxy = (services.GetService(typeof(LocalHttpsProxyRuntime)) as LocalHttpsProxyRuntime)?.For(profile);
+        var manualFingerprint = context.ManualVerificationFingerprint ?? ManualAuthenticationVerificationEvidence.Fingerprint(context.ActiveProfile);
+        var edge = (services.GetService(typeof(ManagedEdgeRuntime)) as ManagedEdgeRuntime)?.ForFingerprint(manualFingerprint);
+        var proxy = (services.GetService(typeof(LocalHttpsProxyRuntime)) as LocalHttpsProxyRuntime)?.ForFingerprint(identity.ContextFingerprint);
         return FrontendQualityTargetAccess.Build(context, caps, sessionAuthenticated, edge?.State, proxy?.State);
     }
 
-    private async Task<AuthenticatedReviewCapabilities?> SafeResolveCapabilitiesAsync(FrontendAnalysisProfile profile, CancellationToken cancellationToken)
+    private async Task<AuthenticatedReviewCapabilities?> SafeResolveCapabilitiesAsync(AuthenticatedReviewIdentity identity, CancellationToken cancellationToken)
     {
-        try { return await capabilities.ResolveAsync(ReviewAuthenticationIdentity.For(profile), cancellationToken); }
+        try { return await capabilities.ResolveAsync(identity, cancellationToken); }
         catch { return null; }
     }
 
@@ -67,12 +70,14 @@ public static class FrontendQualityTargetAccess
         LocalHttpsProxyState? proxyState)
     {
         var profile = context.ActiveProfile;
-        var method = profile.Authentication.AuthenticatedTestingMethod;
+        var method = ReviewAuthenticationIdentity.For(context).Method;
         var apiStatus = capabilities?.ContextStatus ?? AuthenticatedApiContextStatus.NotApplicable;
         var apiAvailable = capabilities?.AuthenticatedApi == true;
         var enterpriseBlocked = managedEdgeState == ManagedEdgeState.TargetTabNotInspectable;
         var domAvailable = context.RequiresAuthentication && method == AuthenticatedTestingMethod.ManagedEdgeCdp && authenticatedBrowserSessionAvailable;
-        var manual = profile.ManualVerification?.StatusFor(profile)
+        // Prefer the factory-resolved status (computed against the saved profile); fall back to the profile copy for contexts built by hand.
+        var manual = context.ManualVerificationStatus
+            ?? profile.ManualVerification?.StatusFor(profile)
             ?? (method == AuthenticatedTestingMethod.ManualOnly || profile.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge
                 ? ManualAuthenticationVerificationStatus.Required
                 : ManualAuthenticationVerificationStatus.NotRequired);

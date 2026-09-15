@@ -87,9 +87,21 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             IsAuthenticatedSessionAvailable = sessionStatus == AuthenticatedBrowserSessionStatus.Authenticated,
             ValidationWarnings          = validation.Warnings,
             ValidationErrors            = validation.Errors,
-            Integrations                = profile.Integrations.AsReadOnly()
+            Integrations                = profile.Integrations.AsReadOnly(),
+            // Identity and verification state are resolved against the SAVED profile (full authentication object), so the
+            // digests match the proxy session / manual verification record. Digests only; no configuration values.
+            ReviewIdentity              = ReviewAuthenticationIdentity.For(profile),
+            ManualVerificationFingerprint = ManualAuthenticationVerificationEvidence.Fingerprint(profile),
+            ManualVerificationStatus    = ResolveManualVerificationStatus(profile),
         };
     }
+
+    private static ManualAuthenticationVerificationStatus ResolveManualVerificationStatus(FrontendAnalysisProfile profile) =>
+        profile.ManualVerification?.StatusFor(profile)
+        ?? (profile.Authentication.AuthenticatedTestingMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManualOnly
+            || profile.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge
+                ? ManualAuthenticationVerificationStatus.Required
+                : ManualAuthenticationVerificationStatus.NotRequired);
 
     private static FrontendAnalysisProfile CreateSafeProfileSnapshot(FrontendAnalysisProfile profile)
     {
@@ -123,10 +135,11 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             AllowedRestHosts = [.. profile.AllowedRestHosts],
             AllowedGraphQlEndpoints = [.. profile.AllowedGraphQlEndpoints],
             ExpectedCdn = profile.ExpectedCdn,
-            // The full non-secret authentication configuration must be preserved: the authenticated-review identity
-            // (ReviewAuthenticationIdentity / LocalHttpsProxyScope.Fingerprint) and the manual-verification fingerprint are
-            // derived from this snapshot and must match the saved profile, otherwise the backend cannot find the memory-only
-            // proxy context and the wrong testing method is reported. None of these fields is a credential.
+            // Data-minimized copy: tenant and client identifiers stay out of the context (see
+            // GetActiveContextAsync_DiagnosticsDoNotExposeSecrets). The saved policy choices (testing method, verification mode,
+            // browser delivery trust) are plain enums and must be preserved so review pages and access resolution see the real
+            // method. Fingerprints that depend on the full authentication object are computed from the saved profile by the
+            // factory (ReviewIdentity / ManualVerificationFingerprint), never re-derived from this copy.
             Authentication = new FrontendAuthenticationSettings
             {
                 VerificationMode = profile.Authentication.VerificationMode,
@@ -135,13 +148,10 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
                 UseExistingBrowserSession = profile.Authentication.UseExistingBrowserSession,
                 AutomaticallyOpenLoginPage = profile.Authentication.AutomaticallyOpenLoginPage,
                 ExpectedAuthority = profile.Authentication.ExpectedAuthority,
-                ExpectedTenant = profile.Authentication.ExpectedTenant,
-                ExpectedClientId = profile.Authentication.ExpectedClientId,
                 AllowedRedirectUrls = [.. profile.Authentication.AllowedRedirectUrls],
                 BrowserDeliveryTrust = profile.Authentication.BrowserDeliveryTrust,
                 AuthenticatedTestingMethod = profile.Authentication.AuthenticatedTestingMethod,
             },
-            ManualVerification = profile.ManualVerification,
             Performance = profile.Performance,
             CoreWebVitals = profile.CoreWebVitals,
             Security = profile.Security,

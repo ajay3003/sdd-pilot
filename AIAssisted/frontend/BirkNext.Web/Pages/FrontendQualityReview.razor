@@ -647,7 +647,7 @@
     {
         // Optional so page-render tests that do not register it still work; when present it drives the authenticated coverage panel.
         if (ServiceProvider.GetService(typeof(IAuthenticatedReviewCapabilitiesService)) is IAuthenticatedReviewCapabilitiesService service)
-            _caps = await service.ResolveAsync(ReviewAuthenticationIdentity.For(_context?.ActiveProfile));
+            _caps = await service.ResolveAsync(ReviewAuthenticationIdentity.For(_context));
         await ResolveTargetAccess();
     }
 

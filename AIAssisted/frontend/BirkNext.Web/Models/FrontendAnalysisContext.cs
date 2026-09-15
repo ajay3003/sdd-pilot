@@ -37,6 +37,19 @@ public sealed class FrontendAnalysisContext
     public IReadOnlyList<string>             AllowedCdnHosts            { get; set; } = Array.Empty<string>();
     public bool                              IsAuthenticatedSessionAvailable { get; set; }
     public string?                           SessionId                  { get; set; }
+
+    /// <summary>
+    /// Non-secret authenticated-review identity (saved testing method, profile id, proxy context fingerprint digest) computed from
+    /// the SAVED profile by the context factory. Reviews must use this instead of re-deriving it from <see cref="ActiveProfile"/>,
+    /// whose data-minimized authentication copy omits tenant/client identifiers and therefore yields a different fingerprint.
+    /// </summary>
+    public BirkNext.LocalHttpsProxy.AuthenticatedReviewIdentity? ReviewIdentity { get; set; }
+
+    /// <summary>Manual-verification context fingerprint digest of the saved profile (never configuration values).</summary>
+    public string?                           ManualVerificationFingerprint { get; set; }
+
+    /// <summary>Manual authentication verification status resolved against the saved profile; null when not resolved by the factory.</summary>
+    public ManualAuthenticationVerificationStatus? ManualVerificationStatus { get; set; }
     public IReadOnlyList<string>             ValidationWarnings         { get; set; } = Array.Empty<string>();
     public IReadOnlyList<string>             ValidationErrors           { get; set; } = Array.Empty<string>();
 
