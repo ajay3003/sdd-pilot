@@ -70,7 +70,9 @@ public sealed class FrontendAnalysisContextSnapshotIdentityTests
         var context = await ContextFor(profile);
 
         var json = System.Text.Json.JsonSerializer.Serialize(context);
-        json.Should().NotContain("FAKE-CLIENT-ID-SENTINEL").And.NotContain(profile.Authentication.ExpectedTenant);
+        json.Should().NotContain("FAKE-CLIENT-ID-SENTINEL");
+        context.ActiveProfile.Authentication.ExpectedClientId.Should().BeNull();
+        context.ActiveProfile.Authentication.ExpectedTenant.Should().BeNull();
         context.ActiveProfile.Authentication.AuthenticatedTestingMethod.Should().Be(AuthenticatedTestingMethod.LocalHttpsProxy, "the saved method itself is preserved");
         context.ActiveProfile.Authentication.VerificationMode.Should().Be(AuthenticationVerificationMode.ManualManagedEdge);
         context.ActiveProfile.Authentication.BrowserDeliveryTrust.Should().Be(ManagedEdgeTrustModel.ApprovedMcasProxyOrigin);
