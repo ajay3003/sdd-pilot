@@ -250,7 +250,9 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             _logger.LogInformation("  CurrentProject={Project}", _artifactRepository.CurrentProject);
             _logger.LogInformation("  RequestArtifacts={Count}", artifacts.Count);
 
-            var request = new { generatedName, projectName = _artifactRepository.CurrentProject, artifacts };
+            // The project identity is always sent: the slug when a Sample Project is selected, an empty string when the
+            // user explicitly cleared the selection (the backend treats null as "not provided" and "" as "cleared").
+            var request = new { generatedName, projectName = _artifactRepository.CurrentProject ?? string.Empty, artifacts };
             _logger.LogInformation("DIAG: [AutoSaveAsync] Request object created with {ArtifactCount} artifacts", artifacts.Count);
 
             var response = await _httpClient.PostAsJsonAsync(

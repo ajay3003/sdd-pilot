@@ -32,6 +32,7 @@ public sealed class SampleProjectRestartRestorationTests : BunitContext
     {
         _autoSave.Setup(x => x.StartMonitoringAsync()).Returns(Task.CompletedTask);
         _autoSave.Setup(x => x.StopMonitoringAsync()).Returns(Task.CompletedTask);
+        _autoSave.Setup(x => x.SaveNowAsync()).ReturnsAsync(true);
 
         Services.AddSingleton<IWorkspaceArtifactRepository>(_workspace);
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);

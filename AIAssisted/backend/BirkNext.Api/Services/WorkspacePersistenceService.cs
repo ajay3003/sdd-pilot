@@ -349,9 +349,10 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             _logger.LogInformation("TRACE: No current workspace ID, calling SaveAsAsync");
             var name = generatedName ?? $"Auto_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
             var workspace = await SaveAsAsync(name, artifacts ?? new());
-            if (!string.IsNullOrWhiteSpace(projectName))
+            // null = identity not provided by the caller; "" = the user explicitly cleared the selection.
+            if (projectName is not null)
             {
-                workspace.ProjectName = projectName;
+                workspace.ProjectName = projectName.Trim();
             }
             workspace.AutoSaved = true;
             _db.SavedWorkspaces.Update(workspace);
@@ -371,10 +372,11 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             throw new InvalidOperationException($"Current workspace {_currentWorkspaceId} not found");
         }
 
-        // Update project name if provided
-        if (!string.IsNullOrWhiteSpace(projectName))
+        // Update project name if provided. null = not provided (keep); "" = explicit clear by the user (persist the clear
+        // so a restart does not resurrect the previous selection).
+        if (projectName is not null)
         {
-            current.ProjectName = projectName;
+            current.ProjectName = projectName.Trim();
         }
 
         // Update artifacts if provided

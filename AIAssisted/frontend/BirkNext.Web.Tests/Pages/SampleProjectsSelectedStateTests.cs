@@ -31,7 +31,7 @@ public sealed class SampleProjectsSelectedStateTests : BunitContext
         Services.AddSingleton<IWorkspaceArtifactStatusService>(sp =>
             new WorkspaceArtifactStatusService(sp.GetRequiredService<IWorkspaceSessionService>()));
         Services.AddSingleton<IWorkspaceUpdateCoordinator, WorkspaceUpdateCoordinator>();
-        Services.AddSingleton(Moq.Mock.Of<IWorkspaceAutoSaveService>());
+        Services.AddSingleton(Moq.Mock.Of<IWorkspaceAutoSaveService>(s => s.SaveNowAsync() == Task.FromResult(true)));
         Services.AddSingleton(new QualityReviewSessionService());
         Services.AddSingleton(Moq.Mock.Of<IDashboardSnapshotService>());
         Services.AddSingleton<ITargetEnvironmentHintExtractor>(new TargetEnvironmentHintExtractor());

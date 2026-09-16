@@ -163,6 +163,49 @@ public class WorkspacePersistenceServiceTests : IDisposable
         Assert.True(result.AutoSaved);
     }
 
+    // Sample Project selection persistence: the project identity is an explicit user choice.
+    // null = not provided by the caller (keep the stored value); "" = the user cleared the selection (persist the clear).
+    [Fact]
+    public async Task AutoSaveAsync_ProjectNameNull_KeepsStoredSelection()
+    {
+        var created = await _service.AutoSaveAsync("Auto", "person-module");
+        Assert.Equal("person-module", created.ProjectName);
+
+        var updated = await _service.AutoSaveAsync("Auto", null);
+
+        Assert.Equal(created.Id, updated.Id);
+        Assert.Equal("person-module", updated.ProjectName);
+    }
+
+    [Fact]
+    public async Task AutoSaveAsync_ProjectNameEmpty_PersistsExplicitClear()
+    {
+        var created = await _service.AutoSaveAsync("Auto", "person-module");
+
+        var cleared = await _service.AutoSaveAsync("Auto", "");
+
+        Assert.Equal(created.Id, cleared.Id);
+        Assert.Equal("", cleared.ProjectName);
+        var state = await _service.GetCurrentStateAsync();
+        Assert.Equal("", state.ProjectName);
+        Assert.Equal(0, state.ArtifactCount);
+    }
+
+    [Fact]
+    public async Task AutoSaveAsync_IdentityOnlySelection_SurvivesServiceRestart()
+    {
+        // A Sample Project selection carries no artifact copies; a fresh (per-request) service must still resolve it.
+        var created = await _service.AutoSaveAsync("Auto", "person-module");
+        Assert.Empty(created.Artifacts);
+
+        var restarted = new WorkspacePersistenceService(_db, _logger);
+        var state = await restarted.GetCurrentStateAsync();
+
+        Assert.Equal(created.Id, state.CurrentWorkspaceId);
+        Assert.Equal("person-module", state.ProjectName);
+        Assert.Equal(0, state.ArtifactCount);
+    }
+
     // Test 9: Set current workspace tracks current workspace ID
     [Fact]
     public async Task SetCurrentWorkspaceAsync_TracksCurrent()

@@ -28,6 +28,7 @@ public sealed class SampleProjectsNavigationTests : BunitContext
         };
 
         _autoSave.Setup(x => x.StartMonitoringAsync()).Returns(Task.CompletedTask);
+        _autoSave.Setup(x => x.SaveNowAsync()).ReturnsAsync(true); // selection persists immediately
 
         Services.AddSingleton<IWorkspaceArtifactRepository>(_workspace);
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);

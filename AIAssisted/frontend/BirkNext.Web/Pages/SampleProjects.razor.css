@@ -579,3 +579,13 @@
         grid-template-columns: 1fr;
     }
 }
+
+.sp-workspace-banner-stale {
+    background: #fff4e5;
+    border-color: #f0b35c;
+    color: #7a4a00;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.75rem;
+}

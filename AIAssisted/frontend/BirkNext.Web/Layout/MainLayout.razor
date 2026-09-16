@@ -56,9 +56,13 @@ else
             if (currentState?.CurrentWorkspaceId is not null && currentState.CurrentWorkspaceId != Guid.Empty)
             {
                 var workspace = await WorkspacePersistence.LoadAsync(currentState.CurrentWorkspaceId.Value);
-                if (workspace?.Artifacts.Count > 0)
+                // A Sample Project selection is persisted identity-only (project slug, no artifact copies), so a
+                // workspace with zero artifacts but a project name must be restored too. Nothing is ever substituted:
+                // an empty project name and no artifacts simply leaves the session empty.
+                if (workspace is not null && (workspace.Artifacts.Count > 0 || !string.IsNullOrWhiteSpace(workspace.ProjectName)))
                 {
-                    Logger.LogInformation("Restoring workspace: {WorkspaceName}", workspace.Name);
+                    Logger.LogInformation("Restoring workspace: {WorkspaceName} (project: {ProjectName}, artifacts: {ArtifactCount})",
+                        workspace.Name, string.IsNullOrWhiteSpace(workspace.ProjectName) ? "(none)" : workspace.ProjectName, workspace.Artifacts.Count);
                     await WorkspaceRestore.RestoreWorkspaceAsync(workspace);
                 }
             }

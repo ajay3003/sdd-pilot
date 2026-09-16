@@ -40,6 +40,13 @@ public interface IWorkspaceAutoSaveService
     long ThrottleWaitMs { get; }
 
     /// <summary>
+    /// Persist the current workspace identity and artifacts immediately, bypassing the debounce/throttle. Used for
+    /// explicit user choices (selecting or clearing a Sample Project) so the choice is durably saved before the UI
+    /// reports it as selected. Returns false when the backend rejected or could not receive the save.
+    /// </summary>
+    Task<bool> SaveNowAsync();
+
+    /// <summary>
     /// Raised when auto-save completes successfully.
     /// </summary>
     event EventHandler? AutoSaveCompleted;
@@ -55,9 +62,10 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
     private System.Threading.Timer? _autoSaveTimer;
     private DateTimeOffset _lastAutoSaveTime = DateTimeOffset.UtcNow.AddHours(-1);
-    private const int AutoSaveIntervalMs = 3000;  // Wait 3 seconds after last change
-    private const int AutoSaveThrottleMs = 30000; // Max once per 30 seconds
+    private readonly int AutoSaveIntervalMs;  // Wait after last change (default 3 seconds)
+    private readonly int AutoSaveThrottleMs;  // Max one save per window (default 30 seconds)
     private bool _isMonitoring = false;
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public event EventHandler? AutoSaveCompleted;
 
@@ -78,13 +86,17 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         IWorkspacePersistenceApiService persistence,
         IWorkspaceSessionRestoreService restore,
         IWorkspaceUpdateCoordinator updates,
-        ILogger<WorkspaceAutoSaveService> logger)
+        ILogger<WorkspaceAutoSaveService> logger,
+        int autoSaveIntervalMs = 3000,
+        int autoSaveThrottleMs = 30000)
     {
         _artifactRepository = artifactRepository;
         _persistence = persistence;
         _restore = restore;
         _updates = updates;
         _logger = logger;
+        AutoSaveIntervalMs = Math.Max(1, autoSaveIntervalMs);
+        AutoSaveThrottleMs = Math.Max(0, autoSaveThrottleMs);
 
         // Subscribe to artifacts changed events
         _updates.ArtifactsChanged += OnArtifactsChanged;
@@ -152,8 +164,13 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         }
 
         // Restart the timer
+        ScheduleAutoSave(AutoSaveIntervalMs);
+    }
+
+    private void ScheduleAutoSave(int delayMs)
+    {
         CancelAutoSaveTimer();
-        System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] Debounce timer CREATED");
+        System.Diagnostics.Debug.WriteLine($"DIAG: [AutoSave] Debounce timer CREATED ({delayMs} ms)");
 
         _autoSaveTimer = new System.Threading.Timer(
             async state =>
@@ -166,12 +183,46 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine("DIAG: [AutoSave] Timer fired but throttled");
+                    // Throttled: a pending change must never be dropped (a dropped save loses the user's selection on
+                    // restart). Re-arm the timer for the remaining throttle window instead.
+                    var wait = (int)Math.Min(int.MaxValue, Math.Max(1, ThrottleWaitMs));
+                    System.Diagnostics.Debug.WriteLine($"DIAG: [AutoSave] Timer fired but throttled; retrying in {wait} ms");
+                    ScheduleAutoSave(wait);
                 }
             },
             null,
-            AutoSaveIntervalMs,
+            Math.Max(1, delayMs),
             Timeout.Infinite);
+    }
+
+    public async Task<bool> SaveNowAsync()
+    {
+        // An explicit user choice supersedes any pending debounced save of the same state.
+        CancelAutoSaveTimer();
+        _isMonitoring = true;
+        await _saveGate.WaitAsync();
+        try
+        {
+            var result = await _persistence.AutoSaveAsync();
+            if (result is null)
+            {
+                _logger.LogWarning("Immediate workspace save failed: the backend did not accept the save");
+                return false;
+            }
+
+            _lastAutoSaveTime = DateTimeOffset.UtcNow;
+            OnAutoSaveCompleted();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Immediate workspace save failed");
+            return false;
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     private void CancelAutoSaveTimer()
@@ -188,6 +239,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
     private async Task PerformAutoSaveAsync()
     {
+        await _saveGate.WaitAsync();
         try
         {
             var repoHash = RuntimeHelpers.GetHashCode(_artifactRepository);
@@ -209,6 +261,10 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         catch (Exception ex)
         {
             _logger.LogError(ex, "TRACE: Auto-save failed");
+        }
+        finally
+        {
+            _saveGate.Release();
         }
     }
 

@@ -110,9 +110,15 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 
     public async Task RestoreWorkspaceAsync(SavedWorkspaceDto workspace)
     {
-        if (workspace?.Artifacts == null || workspace.Artifacts.Count == 0)
+        if (workspace is null)
+            return;
+
+        workspace.Artifacts ??= new();
+        var hasProjectIdentity = !string.IsNullOrWhiteSpace(workspace.ProjectName);
+        if (workspace.Artifacts.Count == 0 && !hasProjectIdentity)
         {
-            _logger.LogWarning("Cannot restore workspace {WorkspaceId}: no artifacts", workspace?.Id);
+            // Nothing to restore: no artifacts and no Sample Project identity. Never fall back to another project.
+            _logger.LogInformation("Workspace {WorkspaceId} has no artifacts and no project identity; nothing restored", workspace.Id);
             return;
         }
 
@@ -176,8 +182,12 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
                     break;
             }
 
-            // Update project name (always restored regardless of classification)
-            _artifactRepository.ProjectName = workspace.ProjectName;
+            // Update project name (always restored regardless of classification). For a Sample Project this is the
+            // canonical slug persisted identity-only; it is restored exactly as saved, even when the catalog no longer
+            // contains it, so the UI can show an explicit "unavailable" state instead of silently picking another project.
+            _artifactRepository.ProjectName = string.IsNullOrWhiteSpace(workspace.ProjectName) ? null : workspace.ProjectName;
+            if (hasProjectIdentity)
+                _logger.LogInformation("Sample Project selection restored: {ProjectSlug}", workspace.ProjectName);
 
             // Track metadata
             _currentMetadata = new CurrentWorkspaceMetadata

@@ -28,10 +28,24 @@
         var selectedProject = _projects.FirstOrDefault(p => string.Equals(p.Slug, Workspace.CurrentProject, StringComparison.Ordinal));
         if (selectedProject is not null)
         {
-            <div class="sp-workspace-banner" role="status" aria-live="polite">
+            <div class="sp-workspace-banner" role="status" aria-live="polite" data-testid="sp-selected-project">
                 Selected Sample Project: <strong>@selectedProject.Name</strong>
             </div>
         }
+        else if (!_loading)
+        {
+            @* The persisted selection points to a project that is no longer in the catalog. Say so explicitly;
+               never substitute another project. The user chooses a replacement or clears the selection. *@
+            <div class="sp-workspace-banner sp-workspace-banner-stale" role="alert" data-testid="sp-selection-unavailable">
+                Previously selected Sample Project <strong>@Workspace.CurrentProject</strong> is unavailable (not found in the catalog).
+                Select a Sample Project below or clear the selection.
+                <button type="button" class="sp-btn sp-btn-secondary" @onclick="ClearSelectionAsync" disabled="@_clearingSelection" data-testid="sp-clear-selection">Clear selection</button>
+            </div>
+        }
+    }
+    @if (_selectionError is not null)
+    {
+        <div class="sp-workspace-banner sp-workspace-banner-stale" role="alert" data-testid="sp-selection-error">@_selectionError</div>
     }
 
     @if (_loading)
@@ -466,6 +480,8 @@
     private HashSet<string> _readmeOpen = [];
     private HashSet<string> _allFilesOpen = [];
     private Dictionary<string, string> _readmeContent = [];
+    private string? _selectionError;
+    private bool _clearingSelection;
 
     private static readonly IReadOnlyList<string> IntegrationProviders =
     [
@@ -636,12 +652,26 @@
             return false;
         }
 
+        // Only set the project identity; artifact content comes from DocumentResolver
+        // (explorers and analysis features all use DocumentResolver directly).
+        // The selection is an explicit persisted user choice: save it immediately and, if the save fails, restore the
+        // previous selection so the UI never shows a choice that was not persisted.
+        var previousSelection = Workspace.CurrentProject;
+        _selectionError = null;
+        Workspace.CurrentProject = project.Slug;
+        if (!await AutoSave.SaveNowAsync())
+        {
+            Workspace.CurrentProject = previousSelection;
+            _selectionError = $"Could not save the selection of \"{project.Name}\". The previous selection was kept. Check that the BirkNext backend is running and try again.";
+            Logger.LogWarning("Sample Project selection not persisted; reverted to {PreviousSlug}", previousSelection ?? "(none)");
+            _loadingSlug = null;
+            StateHasChanged();
+            return false;
+        }
+        Logger.LogInformation("Sample Project selection changed: {ProjectSlug}", project.Slug);
+
         QualitySession.Clear();
         DashboardSnapshot.ClearQualityReview();
-
-        // Only set the project identity; artifact content comes from DocumentResolver
-        // (explorers and analysis features all use DocumentResolver directly)
-        Workspace.CurrentProject = project.Slug;
 
         // Report project selection success
         var contextOnly = project.Files
@@ -656,6 +686,29 @@
         StateHasChanged();
         System.Diagnostics.Debug.WriteLine("======== DIAG: [SelectProject] END ========");
         return true;
+    }
+
+    /// <summary>Explicit user action: clear the persisted Sample Project selection (no automatic re-selection later).</summary>
+    private async Task ClearSelectionAsync()
+    {
+        if (_clearingSelection) return;
+        var previousSelection = Workspace.CurrentProject;
+        _clearingSelection = true;
+        _selectionError = null;
+        Workspace.CurrentProject = null;
+        if (!await AutoSave.SaveNowAsync())
+        {
+            Workspace.CurrentProject = previousSelection;
+            _selectionError = "Could not clear the Sample Project selection. The previous selection was kept. Check that the BirkNext backend is running and try again.";
+        }
+        else
+        {
+            Logger.LogInformation("Sample Project selection cleared (previously {PreviousSlug})", previousSelection ?? "(none)");
+            QualitySession.Clear();
+            DashboardSnapshot.ClearQualityReview();
+        }
+        _clearingSelection = false;
+        StateHasChanged();
     }
 
     private void ClearWorkspaceArtifactSlots()
