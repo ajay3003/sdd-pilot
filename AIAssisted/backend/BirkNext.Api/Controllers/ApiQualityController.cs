@@ -18,6 +18,26 @@ public class ApiQualityController : ControllerBase
         _logger  = logger;
     }
 
+    /// <summary>
+    /// API Quality Review v2: reviews the selected REST/GraphQL targets (from Endpoint Discovery, configuration or contract) read-only,
+    /// authenticated through the review gateway when the environment's proxy context exists. Never guesses paths; fails fast on a
+    /// missing authenticated context; returns structural evidence only.
+    /// </summary>
+    [HttpPost("review")]
+    public async Task<IActionResult> Review([FromBody] BirkNext.ApiReview.ApiReviewRunRequest request, [FromServices] IApiReviewEngine engine, CancellationToken ct)
+    {
+        if (request.Targets.Count(t => t.Selected) == 0)
+            return BadRequest(new { message = "No REST or GraphQL API target is available for review." });
+        Response.Headers.CacheControl = "no-store";
+        try { return Ok(await engine.RunAsync(request, ct)); }
+        catch (OperationCanceledException) { return StatusCode(499); }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "API review failed for environment '{Name}'", request.Environment.Name);
+            return StatusCode(500, new { message = "API review failed: " + ex.GetType().Name });
+        }
+    }
+
     [HttpPost("analyze")]
     public async Task<IActionResult> Analyze([FromBody] ApiQualityReviewRequest request, CancellationToken ct)
     {

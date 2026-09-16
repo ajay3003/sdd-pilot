@@ -14,6 +14,8 @@ public interface IAuthenticatedReviewGateway
     AuthenticatedReviewCapabilities Resolve(AuthenticatedReviewIdentity identity);
     Task<AuthenticatedReviewExecutionOutcome> ExecuteRestAsync(AuthenticatedReviewIdentity identity, string httpMethod, string url, CancellationToken cancellationToken = default);
     Task<AuthenticatedReviewExecutionOutcome> ExecuteGraphQlQueryAsync(AuthenticatedReviewIdentity identity, string endpointUrl, string query, CancellationToken cancellationToken = default);
+    /// <summary>Authenticated GraphQL introspection (schema metadata only). Same identity/scope/read-only rules as a query; never a mutation.</summary>
+    Task<AuthenticatedGraphQlSchemaOutcome> FetchGraphQlSchemaAsync(AuthenticatedReviewIdentity identity, string endpointUrl, CancellationToken cancellationToken = default);
 }
 
 public sealed class AuthenticatedReviewGateway(IAuthenticatedApiExecutionService execution, ILocalHttpsProxyStatusQuery status, ILogger<AuthenticatedReviewGateway>? logger = null) : IAuthenticatedReviewGateway
@@ -72,6 +74,30 @@ public sealed class AuthenticatedReviewGateway(IAuthenticatedApiExecutionService
 
     public Task<AuthenticatedReviewExecutionOutcome> ExecuteGraphQlQueryAsync(AuthenticatedReviewIdentity identity, string endpointUrl, string query, CancellationToken cancellationToken = default) =>
         ExecuteAsync(identity, (p, f) => execution.ExecuteGraphQlQueryForProfileAsync(p, f, endpointUrl, query, cancellationToken));
+
+    public async Task<AuthenticatedGraphQlSchemaOutcome> FetchGraphQlSchemaAsync(AuthenticatedReviewIdentity identity, string endpointUrl, CancellationToken cancellationToken = default)
+    {
+        if (identity.Method == AuthenticatedTestingMethod.ManualOnly)
+            return new() { Status = AuthenticatedExecutionStatus.MethodNotProxy, Mode = ReviewExecutionMode.ManualNotExecuted, Message = ManualReason };
+        if (identity.Method != AuthenticatedTestingMethod.LocalHttpsProxy)
+            return new() { Status = AuthenticatedExecutionStatus.MethodNotProxy, Mode = ReviewExecutionMode.AuthenticatedUnavailable, Message = CdpReason };
+        if (!HasIdentity(identity))
+            return new() { Status = AuthenticatedExecutionStatus.NoContext, Mode = ReviewExecutionMode.AuthenticatedUnavailable, Message = StartProxyReason };
+        try { return await execution.ExecuteGraphQlIntrospectionForProfileAsync(identity.ProfileId!, identity.ContextFingerprint!, endpointUrl, cancellationToken); }
+        catch (AuthenticatedContextUnavailableException ex)
+        {
+            return new() { Status = ex.Status, Mode = ReviewExecutionMode.AuthenticatedUnavailable, Message = ex.Status == AuthenticatedExecutionStatus.Expired ? ExpiredReason : ex.Message };
+        }
+        catch (ArgumentException ex)
+        {
+            return new() { Status = AuthenticatedExecutionStatus.Rejected, Mode = ReviewExecutionMode.AuthenticatedUnavailable, Message = ex.Message };
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
+        {
+            logger?.LogWarning("Authenticated GraphQL introspection failed with {ExceptionType}.", ex.GetType().Name);
+            return new() { Status = AuthenticatedExecutionStatus.Rejected, Mode = ReviewExecutionMode.AuthenticatedUnavailable, Message = "The authenticated introspection request did not complete." };
+        }
+    }
 
     private async Task<AuthenticatedReviewExecutionOutcome> ExecuteAsync(AuthenticatedReviewIdentity identity, Func<string, string, Task<AuthenticatedApiExecutionResult>> execute)
     {

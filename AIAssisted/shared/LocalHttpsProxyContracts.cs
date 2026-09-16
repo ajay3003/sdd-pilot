@@ -108,7 +108,34 @@ public sealed record AuthenticatedApiExecutionResult
     [
         "strict-transport-security", "content-security-policy", "x-content-type-options", "x-frame-options",
         "referrer-policy", "permissions-policy", "cache-control", "access-control-allow-origin", "access-control-allow-credentials",
+        "access-control-allow-methods", "access-control-allow-headers", "content-encoding", "vary",
+        "x-ratelimit-limit", "x-ratelimit-remaining", "ratelimit-limit", "ratelimit-remaining", "retry-after", "server", "x-powered-by",
     ];
+
+    /// <summary>
+    /// Structural shape of a JSON response body (JSON paths and observed types, arrays as [*]) computed inside the execution service so
+    /// contract validation can compare structure without any value leaving the service. Empty when the body was not JSON.
+    /// </summary>
+    public IReadOnlyList<BirkNext.ApiReview.JsonShapeEntry> BodyShape { get; init; } = [];
+    /// <summary>Names of error-leak indicators found in the response body (e.g. "stack-trace", "exception-type"), never the text itself.</summary>
+    public IReadOnlyList<string> LeakIndicators { get; init; } = [];
+    /// <summary>The body was an RFC 7807 ProblemDetails document (application/problem+json or type/title/status shape).</summary>
+    public bool ProblemDetails { get; init; }
+    /// <summary>Body was valid JSON (when a body was present and the content type claimed JSON).</summary>
+    public bool? JsonValid { get; init; }
+}
+
+/// <summary>Sanitized outcome of an authenticated GraphQL introspection: schema metadata only (type names/fields), never user data.</summary>
+public sealed record AuthenticatedGraphQlSchemaOutcome
+{
+    public AuthenticatedExecutionStatus Status { get; init; }
+    public ReviewExecutionMode Mode { get; init; }
+    public int StatusCode { get; init; }
+    public bool IntrospectionDisabled { get; init; }
+    /// <summary>Introspection result document (the standard IntrospectionQuery response) when available; bounded.</summary>
+    public string? SchemaJson { get; init; }
+    public string Message { get; init; } = "";
+    public double ElapsedMs { get; init; }
 }
 
 /// <summary>

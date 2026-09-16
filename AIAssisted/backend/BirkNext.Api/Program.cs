@@ -318,6 +318,12 @@ builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService
     client.Timeout = TimeSpan.FromSeconds(60);
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiQualityScanner/1.0");
 });
+// API Quality Review v2 engine (public client: no cookies, no automatic decompression so compression evidence stays visible, no redirects into other hosts)
+builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiReview/2.0");
+}).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 
 // Integration Quality Review
 builder.Services.AddHttpClient<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualityReviewService, BirkNext.Api.Services.IntegrationQuality.IntegrationQualityReviewService>(client =>

@@ -121,6 +121,9 @@ public sealed class ReviewAuthenticationIntegrationTests
                 Result = new AuthenticatedApiExecutionResult { StatusCode = 200, GraphQlHasData = true, GraphQlErrorCount = 0, Outcome = "HTTP 200; GraphQL data returned without errors." },
                 Message = "HTTP 200; GraphQL data returned without errors."
             });
+
+        public Task<AuthenticatedGraphQlSchemaOutcome> FetchGraphQlSchemaAsync(AuthenticatedReviewIdentity identity, string endpointUrl, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AuthenticatedGraphQlSchemaOutcome { Status = AuthenticatedExecutionStatus.Executed, Mode = ReviewExecutionMode.AuthenticatedViaLocalHttpsProxy, StatusCode = 200, IntrospectionDisabled = true, Message = "disabled" });
     }
 
     private sealed class StubHandler : HttpMessageHandler
