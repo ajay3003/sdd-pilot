@@ -11,6 +11,8 @@ namespace BirkNext.Web.Models;
 /// </summary>
 public sealed class EndpointDiscoverySnapshot
 {
+    public WcagSettings Wcag { get; set; } = new();
+    public List<WcagManualReview> WcagApplicationReviews { get; set; } = [];
     [JsonPropertyName("pages")] public List<PageAnalysis> Pages { get; set; } = [];
     /// <summary>Endpoints that could not be safely correlated to one page (background poll, shared config, telemetry, global auth).</summary>
     [JsonPropertyName("shared")] public List<ObservedNetworkEndpoint> Shared { get; set; } = [];
@@ -20,6 +22,7 @@ public sealed class EndpointDiscoverySnapshot
 /// <summary>One analyzed application page and the endpoints it was observed to communicate with. Relationship-oriented: an endpoint used by two pages is a separate row under each page, so deleting one page never removes the other page's evidence.</summary>
 public sealed class PageAnalysis
 {
+    public List<WcagManualReview> WcagReviews { get; set; } = [];
     [JsonPropertyName("origin")] public string PageOrigin { get; set; } = "";
     [JsonPropertyName("path")] public string PagePath { get; set; } = "";
     [JsonPropertyName("displayName")] public string? DisplayName { get; set; }

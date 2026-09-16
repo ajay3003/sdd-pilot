@@ -95,6 +95,19 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
     {
         Engine = "BirkNext Accessibility Checks",
         RulesEvaluated = Clamp(a11y.RulesEvaluated),
+        VideoCount = a11y.VideoCount is { } video ? Clamp(video) : null,
+        AudioCount = a11y.AudioCount is { } audio ? Clamp(audio) : null,
+        MediaScopeComplete = a11y.MediaScopeComplete,
+        NavigationStructure = a11y.NavigationStructure.Take(100).Select(Clamp).ToList(),
+        ComponentStructure = a11y.ComponentStructure.Take(100).Select(Clamp).ToList(),
+        Checks = a11y.Checks.Where(c => Regex.IsMatch(c.CheckId ?? "", "^[a-z0-9-]{3,60}$"))
+            .Take(80).Select(c => new BrowserWcagCheck
+            {
+                CheckId = c.CheckId,
+                Outcome = c.Outcome is "Pass" or "Fail" or "ManualReviewRequired" or "NotApplicable" or "NotTested" ? c.Outcome : "NotTested",
+                Tested = Clamp(c.Tested), Failed = Clamp(c.Failed), Uncertain = Clamp(c.Uncertain),
+                Selectors = c.Selectors.Select(Selector).Where(s => s is not null).Cast<string>().Distinct().Take(5).ToList(),
+            }).ToList(),
         Findings = a11y.Findings
             .Where(f => Regex.IsMatch(f.RuleId ?? "", "^[a-z0-9-]{3,60}$"))
             .Take(BrowserCompanionLimits.MaxAccessibilityRulesPerPage)

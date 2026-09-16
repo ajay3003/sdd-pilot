@@ -6,6 +6,7 @@
 const BACKEND_CANDIDATES = ['http://127.0.0.1:5000', 'http://localhost:5000'];
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const CONTENT_SCRIPT_ID = 'birknext-companion-content';
+const MAIN_WORLD_SCRIPT_ID = 'birknext-companion-main';
 const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
 const HEARTBEAT_ALARM = 'birknext-heartbeat';
 const FLUSH_DELAY_MS = 1500;
@@ -107,13 +108,17 @@ async function validate() {
 
 async function updateContentScriptRegistration(session) {
   try {
-    const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [CONTENT_SCRIPT_ID] });
-    if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [CONTENT_SCRIPT_ID] });
+    const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [CONTENT_SCRIPT_ID, MAIN_WORLD_SCRIPT_ID] });
+    if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: existing.map(s => s.id) });
   } catch { /* none registered */ }
   if (!session || !session.approvedOrigins || session.approvedOrigins.length === 0) return;
   const matches = session.approvedOrigins.map(o => `${o}/*`);
   try {
-    await chrome.scripting.registerContentScripts([{ id: CONTENT_SCRIPT_ID, js: CONTENT_FILES, matches, runAt: 'document_start', persistAcrossSessions: true, world: 'ISOLATED' }]);
+    await chrome.scripting.registerContentScripts([
+      { id: CONTENT_SCRIPT_ID, js: CONTENT_FILES, matches, runAt: 'document_start', persistAcrossSessions: true, world: 'ISOLATED' },
+      // Listener-only forwarder for uncaught exceptions / unhandled rejections (they are not observable from the isolated world).
+      { id: MAIN_WORLD_SCRIPT_ID, js: ['main-world.js'], matches, runAt: 'document_start', persistAcrossSessions: true, world: 'MAIN' },
+    ]);
   } catch (e) {
     console.warn('BirkNext companion: content script registration failed', e && e.message);
     lastStatus = { state: 'blocked', message: `Content script could not be registered (${e && e.message}). Managed browser policy may block the companion.`, session };

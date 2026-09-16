@@ -19,7 +19,7 @@ namespace BirkNext.Web.Tests.Services;
 public sealed class BrowserCompanionQualityTests : BunitContext
 {
     private const string Origin = "https://m2lbdev.bufetat.no";
-    private static readonly DateTimeOffset T0 = new(2026, 9, 16, 10, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset T0 = new(2026, 9, 1, 10, 0, 0, TimeSpan.Zero); // firmly in the past relative to any refresh boundary
 
     private static BrowserPageEvidence Evidence(string path, DateTimeOffset visit, int seq = 1, Action<Dictionary<string, object>>? _ = null) => new()
     {

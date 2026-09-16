@@ -15,7 +15,7 @@ No Playwright. No CDP. No token, cookie or storage access. No modification of th
 | Native DOM structure evidence per page | Full axe rule coverage |
 | BirkNext Accessibility Checks (Phase 1, 14 conservative rules) | Lighthouse score equivalence |
 | Field performance metrics (TTFB, DCL, load, FCP, LCP, CLS, long tasks, resource timing) | Guaranteed WCAG conformance |
-| Runtime error events (window error, unhandled rejection, resource error) | Console interception |
+| Runtime error events (window error, unhandled rejection, resource error; script exceptions forwarded by a listener-only MAIN-world script) | Console interception |
 | Blazor WASM diagnostics (boot manifest, framework resources, error UI) | Backend RabbitMQ / Event Hub visibility |
 | Correlation with Local HTTPS Proxy network evidence per page | Access to credentials of any kind |
 

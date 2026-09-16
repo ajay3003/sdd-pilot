@@ -85,12 +85,15 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api) : I
         if (profile is null) { Stop(); return; }
         if (_profileId == profile.Id && _poll is not null) return;
         Stop();
+        // Mark the environment as followed BEFORE the first await: the Changed event raised by RefreshAsync re-renders the
+        // panel, whose OnParametersSet calls FollowAsync again; that re-entrant call must return early instead of restarting.
         _profileId = profile.Id;
         var generation = ++_generation;
+        var poll = new CancellationTokenSource();
+        _poll = poll;
         await RefreshAsync();
         if (generation != _generation) return;
-        _poll = new();
-        _ = PollAsync(_poll.Token);
+        _ = PollAsync(poll.Token);
     }
 
     public async Task StartPairingAsync(FrontendAnalysisProfile profile)

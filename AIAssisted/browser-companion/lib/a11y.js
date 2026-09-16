@@ -164,7 +164,10 @@
       }
     }
 
-    return { engine: 'BirkNext Accessibility Checks', rulesEvaluated: Object.keys(RULES).length, findings: out.results() };
+    const findings = out.results();
+    const wcag = root.BirkNextCompanion?.wcag;
+    return { engine: 'BirkNext Accessibility Checks', rulesEvaluated: Object.keys(RULES).length, findings,
+      ...(wcag ? wcag.collect(doc, win, findings, { sanitize, dom, hasAccessibleName, rules: RULES }) : {}) };
   }
 
   const api = { RULES, evaluate, hasAccessibleName, hasLabel, describe, MAX_SELECTORS_PER_RULE, MAX_FINDINGS_PER_RULE };

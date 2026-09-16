@@ -39,19 +39,18 @@
     if (kind === 'error') runtime.errorCount++; else if (kind === 'unhandledrejection') runtime.rejectionCount++; else runtime.resourceFailureCount++;
     scheduleUpdate();
   }
+  // Element load failures are DOM events visible here; script exceptions/unhandled rejections happen in the page's own world and
+  // are forwarded by main-world.js (listener only) through postMessage. Everything is sanitized in this isolated world.
   win.addEventListener('error', event => {
     if (event.target && event.target !== win && event.target.tagName) {
       const t = event.target;
       recordError('resource', `${t.tagName.toLowerCase()} failed to load`, t.src || t.href || '');
-      return;
     }
-    recordError('error', event.message, event.filename);
   }, true);
-  win.addEventListener('unhandledrejection', event => {
-    // event.reason is a main-world object; only its string form (sanitized) is used, never its properties.
-    let text = 'Unhandled promise rejection';
-    try { text = event.reason && event.reason.message ? String(event.reason.message) : String(event.reason || text); } catch { /* cross-world */ }
-    recordError('unhandledrejection', text, null);
+  win.addEventListener('message', event => {
+    if (event.source !== win || !event.data || event.data.__birkNextCompanion !== true) return;
+    const kind = event.data.kind === 'unhandledrejection' ? 'unhandledrejection' : 'error';
+    recordError(kind, event.data.message, kind === 'error' ? event.data.source : null);
   });
 
   // ── performance observers (registered once per document; entries are attributed to the current visit at snapshot time) ──
@@ -109,7 +108,7 @@
       documentTitle: C.sanitize.title(doc.title),
       browserName: browserName(),
       dom: C.dom.summarize(doc, win),
-      accessibility: { engine: a11y.engine, rulesEvaluated: a11y.rulesEvaluated, findings: a11y.findings.map(f => ({ ruleId: f.ruleId, severity: f.severity, wcag: f.wcag, title: f.title, guidance: f.guidance, count: f.count, selectors: f.selectors })) },
+      accessibility: a11y,
       performance: performanceSummary,
       runtime: { errorCount: runtime.errorCount, rejectionCount: runtime.rejectionCount, resourceFailureCount: runtime.resourceFailureCount, errors: Array.from(runtime.errors.values()), consoleCaptured: false },
       blazor: C.perf.blazorSummary(resources, blazorFlags()),

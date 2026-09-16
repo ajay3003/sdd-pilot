@@ -153,6 +153,25 @@ public sealed record BrowserAccessibilitySummary
     public string Engine { get; init; } = "BirkNext Accessibility Checks";
     public int RulesEvaluated { get; init; }
     public List<BrowserAccessibilityRuleResult> Findings { get; init; } = [];
+    /// <summary>Explicit check execution records. Missing evidence is never a pass.</summary>
+    public List<BrowserWcagCheck> Checks { get; init; } = [];
+    public int? VideoCount { get; init; }
+    public int? AudioCount { get; init; }
+    /// <summary>Embedded/custom media prevents proving absence from native media counts.</summary>
+    public bool MediaScopeComplete { get; init; }
+    public List<int> NavigationStructure { get; init; } = [];
+    public List<int> ComponentStructure { get; init; } = [];
+}
+
+/// <summary>Only fixed ids, enum-like outcomes, counts and structural selectors cross the boundary.</summary>
+public sealed record BrowserWcagCheck
+{
+    public string CheckId { get; init; } = "";
+    public string Outcome { get; init; } = "NotTested";
+    public int Tested { get; init; }
+    public int Failed { get; init; }
+    public int Uncertain { get; init; }
+    public List<string> Selectors { get; init; } = [];
 }
 
 public sealed record BrowserResourceEntry
