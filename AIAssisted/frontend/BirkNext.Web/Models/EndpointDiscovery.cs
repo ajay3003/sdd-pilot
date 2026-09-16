@@ -46,6 +46,13 @@ public sealed class PageAnalysis
     /// </summary>
     [JsonPropertyName("browserEvidence")] public BrowserPageEvidence? BrowserEvidence { get; set; }
 
+    /// <summary>
+    /// Compact, threshold-independent performance numbers per analysis generation (BirkNext Performance Quality regression history):
+    /// the current generation's entry is replaced as evidence arrives; older generations stay for Current vs Previous comparison.
+    /// Bounded; raw metrics only, never a URL, header, body or credential.
+    /// </summary>
+    [JsonPropertyName("performanceHistory")] public List<PagePerformanceHistoryEntry> PerformanceHistory { get; set; } = [];
+
     /// <summary>Stable identity: scheme+host+normalized path, no query string or credentials.</summary>
     [JsonIgnore] public string Identity => $"{PageOrigin}{PagePath}";
     [JsonIgnore] public string Title => string.IsNullOrWhiteSpace(DisplayName) ? (PagePath.Length == 0 ? "/" : PagePath) : DisplayName!;

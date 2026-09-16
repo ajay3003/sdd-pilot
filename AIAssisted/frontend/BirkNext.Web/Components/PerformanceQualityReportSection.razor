@@ -1,0 +1,65 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<div class="pqr" data-testid="fqr-performance-quality">
+    <p class="pqr-intro">
+        Native BirkNext engine (no Lighthouse, Playwright or CDP): browser metrics from the paired Browser Companion in your managed Edge,
+        API/network metrics from the Local HTTPS proxy. Initial load and SPA navigation are reported separately; missing evidence is "Not measured", never a pass.
+    </p>
+    <dl class="pqr-summary">
+        <div><dt>Assessment</dt><dd data-testid="pq-assessment">@Result.Coverage.OverallLabel</dd></div>
+        <div><dt>Pages</dt><dd data-testid="pq-pages-count">@Result.PagesWithEvidence</dd></div>
+        <div><dt>Browser evidence</dt><dd data-testid="pq-browser-evidence">@Cov(Result.Coverage.Browser)</dd></div>
+        <div><dt>Runtime</dt><dd>@Cov(Result.Coverage.Runtime)</dd></div>
+        <div><dt>Resources</dt><dd>@Cov(Result.Coverage.Resources)</dd></div>
+        <div><dt>API / network</dt><dd data-testid="pq-api-evidence">@Cov(Result.Coverage.Api)</dd></div>
+        <div><dt>Blazor</dt><dd>@Cov(Result.Coverage.Blazor)</dd></div>
+        <div><dt>Findings</dt><dd data-testid="pq-findings-count">@Result.Findings.Count()</dd></div>
+    </dl>
+    @foreach (var reason in Result.Coverage.Reasons)
+    {
+        <p class="pqr-note" data-testid="pq-coverage-reason">@reason</p>
+    }
+    @if (!Result.Assessed)
+    {
+        <p class="pqr-empty" data-testid="pq-not-assessed">Not assessed — @Result.CompanionMessage</p>
+    }
+    else
+    {
+        <h3 class="pqr-h3">Application-wide overview</h3>
+        <PerformanceQualityOverview Pages="Result.Pages" SelectedPageId="@SelectedPageId" OnSelect="id => _selected = id" />
+
+        @if (Selected is { } page)
+        {
+            <h3 class="pqr-h3">Selected page</h3>
+            <PerformanceQualityPageView Snapshot="page" Lighthouse="Lighthouse" ShowTimeline="true" />
+        }
+
+        <details class="pqr-thresholds" data-testid="pq-thresholds">
+            <summary>Thresholds used (@Result.Thresholds.Count)</summary>
+            <ul>
+                @foreach (var t in Result.Thresholds)
+                {
+                    <li><strong>@t.Name</strong>: @t.Display — <em>@t.SourceLabel</em></li>
+                }
+            </ul>
+        </details>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PerformanceQualityReviewResult Result { get; set; } = new();
+    [Parameter] public LighthouseResultDto? Lighthouse { get; set; }
+
+    private string? _selected;
+    private string? SelectedPageId => Selected?.PageId;
+    private PagePerformanceSnapshot? Selected => Result.Pages.FirstOrDefault(p => p.PageId == _selected)
+        ?? Result.Pages.OrderBy(p => PerformanceFormat.Rank(p.WorstStatus)).FirstOrDefault();
+
+    private static string Cov(PerformanceCoverageState state) => state switch
+    {
+        PerformanceCoverageState.Complete => "Complete",
+        PerformanceCoverageState.Partial => "Partial",
+        _ => "Not available",
+    };
+}

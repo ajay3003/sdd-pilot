@@ -184,10 +184,75 @@ public sealed record BrowserResourceEntry
     public long? TransferBytes { get; init; }
     public int? Status { get; init; }
     public int Count { get; init; } = 1;
+    /// <summary>How many of <see cref="Count"/> fetches actually transferred bytes over the network (the rest were browser cache hits). Null when unknown.</summary>
+    public int? NetworkCount { get; init; }
+    /// <summary>Start of the fetch relative to the visit start (initial load: relative to navigation start), for the lightweight timeline.</summary>
+    public double? StartMs { get; init; }
+    /// <summary>Decoded body size when exposed by the browser (same-origin or Timing-Allow-Origin).</summary>
+    public long? DecodedBytes { get; init; }
+    /// <summary>"cache" when the browser served the resource from its HTTP cache without a network transfer; "network" when bytes were transferred; null when not inferable.</summary>
+    public string? Delivery { get; init; }
+}
+
+/// <summary>Per-category resource totals (JavaScript, CSS, WASM, image, font, fetch/XHR, document, framework data, other).</summary>
+public sealed record BrowserResourceCategorySummary
+{
+    public string Kind { get; init; } = "other";
+    public int Count { get; init; }
+    public long TransferBytes { get; init; }
+    public int CachedCount { get; init; }
+    public BrowserResourceEntry? Largest { get; init; }
+    public BrowserResourceEntry? Slowest { get; init; }
+}
+
+/// <summary>
+/// Interaction to Next Paint evidence. INP is reported ONLY when the browser exposes Event Timing with interaction ids and enough
+/// distinct interactions were observed; otherwise <see cref="Status"/> says why and <see cref="InpMs"/> stays null. Never approximated.
+/// </summary>
+public sealed record BrowserInteractionSummary
+{
+    /// <summary>"measured" | "insufficient-samples" | "not-measured" | "not-supported".</summary>
+    public string Status { get; init; } = "not-measured";
+    public int InteractionCount { get; init; }
+    /// <summary>Minimum distinct interactions BirkNext requires before publishing an INP value.</summary>
+    public int MinimumInteractions { get; init; }
+    public double? InpMs { get; init; }
+    /// <summary>Longest single interaction latency observed (informational even below the sample minimum).</summary>
+    public double? LongestInteractionMs { get; init; }
+    public double? FirstInputDelayMs { get; init; }
+}
+
+/// <summary>DOM mutation activity after the route change, as counted by the stabilization tracker (batch counts only, never node content).</summary>
+public sealed record BrowserDomMutationSummary
+{
+    public int BatchCount { get; init; }
+    public int MutationCount { get; init; }
+    public int LargestBatch { get; init; }
+    /// <summary>Milliseconds from visit start to the last mutation observed before stabilization.</summary>
+    public double? LastMutationMs { get; init; }
+    /// <summary>Large mutation batches (≥ 50 records) observed after the page had already stabilized — a sustained-churn indicator.</summary>
+    public int LargeBatchesAfterStabilization { get; init; }
+}
+
+/// <summary>Cost of the collector itself, so the observer can never silently distort the page it measures.</summary>
+public sealed record BrowserCollectorSummary
+{
+    /// <summary>Wall time spent building this snapshot (DOM summary + performance aggregation).</summary>
+    public double? SnapshotBuildMs { get; init; }
+    /// <summary>PerformanceObserver / MutationObserver callbacks handled during this visit.</summary>
+    public int ObserverCallbacks { get; init; }
+    /// <summary>Snapshots (initial + updates + final) sent for this visit so far.</summary>
+    public int SnapshotsSent { get; init; }
+    /// <summary>Approximate serialized size of this snapshot in bytes.</summary>
+    public int PayloadBytes { get; init; }
+    /// <summary>Resource timing entries examined for this snapshot.</summary>
+    public int EntriesExamined { get; init; }
 }
 
 public sealed record BrowserPerformanceSummary
 {
+    /// <summary>"initial-load" (full document navigation: framework bootstrap included) or "spa-navigation" (client-side route change).</summary>
+    public string ObservationType { get; init; } = "initial-load";
     public double? TtfbMs { get; init; }
     public double? DomContentLoadedMs { get; init; }
     public double? LoadEventMs { get; init; }
@@ -195,10 +260,30 @@ public sealed record BrowserPerformanceSummary
     public double? FirstContentfulPaintMs { get; init; }
     public double? LcpMs { get; init; }
     public double? Cls { get; init; }
+    /// <summary>BirkNext Page Stabilization Time: route change → DOM/network quiet (bounded by the tracker's max wait). Not LCP.</summary>
+    public double? StabilizationMs { get; init; }
+    /// <summary>"quiet" when the quiet window was reached, "max-wait" when the bounded timeout ended the observation instead.</summary>
+    public string? StabilizedBy { get; init; }
+    public BrowserInteractionSummary? Interaction { get; init; }
     public int LongTaskCount { get; init; }
     public double? LongTaskTotalMs { get; init; }
     public double? LongestTaskMs { get; init; }
+    /// <summary>BirkNext main-thread blocking time: Σ max(0, duration − 50 ms) over observed long tasks during this visit. Not Lighthouse TBT (different window).</summary>
+    public double? MainThreadBlockingMs { get; init; }
+    /// <summary>Long tasks observed after the page had stabilized (runtime phase) vs. during load/navigation.</summary>
+    public int LongTasksAfterStabilization { get; init; }
+    public BrowserDomMutationSummary? Mutations { get; init; }
+    /// <summary>Informational JS heap usage where the browser exposes it (Chromium performance.memory); null = not measured.</summary>
+    public long? JsHeapUsedBytes { get; init; }
     public int ResourceCount { get; init; }
+    public int CachedResourceCount { get; init; }
+    public long DecodedBytes { get; init; }
+    public List<BrowserResourceCategorySummary> Categories { get; init; } = [];
+    public BrowserResourceEntry? LargestResource { get; init; }
+    public BrowserResourceEntry? SlowestResource { get; init; }
+    /// <summary>Chronological, bounded list of the visit's resource fetches (sanitized URL, kind, start, duration, bytes) for the lightweight timeline.</summary>
+    public List<BrowserResourceEntry> Timeline { get; init; } = [];
+    public BrowserCollectorSummary? Collector { get; init; }
     public long TransferredBytes { get; init; }
     public long JsBytes { get; init; }
     public long CssBytes { get; init; }
@@ -238,6 +323,8 @@ public sealed record BrowserRuntimeSummary
     public List<BrowserRuntimeError> Errors { get; init; } = [];
     /// <summary>Console output is not intercepted by the companion (only error events); this documents that limitation in the evidence.</summary>
     public bool ConsoleCaptured { get; init; }
+    /// <summary>Error/rejection events recorded between the route change and page stabilization (correlation only, never causality).</summary>
+    public int ErrorsBeforeStabilization { get; init; }
 }
 
 public sealed record BrowserBlazorSummary
@@ -246,10 +333,31 @@ public sealed record BrowserBlazorSummary
     public bool BlazorScriptPresent { get; init; }
     public bool BootManifestObserved { get; init; }
     public bool BootManifestFailed { get; init; }
+    public double? BootManifestMs { get; init; }
     public int FrameworkResourceCount { get; init; }
     public long FrameworkBytes { get; init; }
     public long WasmBytes { get; init; }
+    /// <summary>dotnet runtime resources (dotnet*.js, dotnet.native.*, dotnet.wasm / dotnet.native.wasm).</summary>
+    public int RuntimeResourceCount { get; init; }
+    public long RuntimeBytes { get; init; }
+    /// <summary>Managed assemblies (.dll or .wasm assemblies under _framework, excluding the runtime).</summary>
+    public int AssemblyCount { get; init; }
+    public long AssemblyBytes { get; init; }
+    /// <summary>ICU culture data (icudt*.dat) and timezone data (dotnet.timezones.blat) resources.</summary>
+    public int CultureResourceCount { get; init; }
+    public long CultureBytes { get; init; }
+    public bool TimezoneDataObserved { get; init; }
+    /// <summary>Framework JavaScript (blazor.webassembly.js, dotnet*.js).</summary>
+    public int FrameworkJsCount { get; init; }
+    /// <summary>Framework resources served from the browser cache (no bytes transferred) in this visit.</summary>
+    public int CachedFrameworkResourceCount { get; init; }
+    /// <summary>"cold" (framework transferred over the network), "warm" (framework from cache), "mixed", or "none" (no framework resources in this visit).</summary>
+    public string LoadKind { get; init; } = "none";
+    /// <summary>Framework download window relative to navigation start: first framework request → last framework response end.</summary>
+    public double? FrameworkLoadStartMs { get; init; }
+    public double? FrameworkLoadEndMs { get; init; }
     public List<BrowserResourceEntry> FrameworkFailures { get; init; } = [];
+    public BrowserResourceEntry? SlowestFrameworkResource { get; init; }
     public int RepeatedFrameworkDownloads { get; init; }
     /// <summary>The <c>#blazor-error-ui</c> element was displayed (unhandled .NET runtime error).</summary>
     public bool ErrorUiVisible { get; init; }
@@ -264,6 +372,8 @@ public static class BrowserCompanionLimits
     public const int MaxAccessibilityRulesPerPage = 40;
     public const int MaxSelectorsPerRule = 5;
     public const int MaxResourcesPerList = 20;
+    /// <summary>Chronological resource timeline entries kept per page snapshot (lightweight waterfall, not a DevTools clone).</summary>
+    public const int MaxTimelineEntries = 60;
     public const int MaxStringLength = 300;
     public const int MaxSelectorLength = 160;
     public const int MaxEnvelopeBytes = 512 * 1024;

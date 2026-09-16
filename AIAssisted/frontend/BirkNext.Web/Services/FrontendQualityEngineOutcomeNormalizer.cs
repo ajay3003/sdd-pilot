@@ -16,7 +16,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
         bool cancellationRequested = false,
         FrontendQualityEngineExecutionSnapshot? snapshot = null,
         IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason>? reasonOverrides = null,
-        bool browserQualityAdapterAvailable = true)
+        bool browserQualityAdapterAvailable = true,
+        bool performanceQualityAdapterAvailable = true)
     {
         var policy = context.EngineRequirements.ToPolicy();
         var outcomes = new List<FrontendQualityEngineOutcome>
@@ -28,6 +29,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
             Lighthouse(targetUrl, context.FeatureToggles.EnableLighthouseEngine, policy, result.LighthouseReport, result.LighthouseError, lighthouseAdapterAvailable, cancellationRequested),
             PassiveSecurity(targetUrl, context.FeatureToggles.EnablePassiveSecurityEngine, policy, result.PassiveSecurityReport, result.PassiveSecurityError, passiveSecurityAdapterAvailable, cancellationRequested),
             BrowserQuality(targetUrl, context.FeatureToggles.EnableBrowserQualityEngine, policy, result.BrowserQualityReport, result.BrowserQualityError, browserQualityAdapterAvailable, cancellationRequested),
+            PerformanceQuality(targetUrl, context.FeatureToggles.EnablePerformanceQualityEngine, policy, result.PerformanceQualityReport, result.PerformanceQualityError, performanceQualityAdapterAvailable, cancellationRequested),
         };
 
         ApplySnapshotSemantics(outcomes, snapshot);
@@ -272,6 +274,45 @@ public static class FrontendQualityEngineOutcomeNormalizer
             strength: FrontendQualityEvidenceStrength.DirectObservation,
             manual: report is null ? null : ["BirkNext Accessibility Checks are conservative native rules: manual accessibility testing remains required and no WCAG conformance is established."],
             reason: reason);
+    }
+
+    /// <summary>
+    /// BirkNext Performance Quality: assessed when at least one page of the environment has browser (Companion) or network (proxy)
+    /// performance evidence; the per-layer coverage (Complete / Partial) travels in the limitations, so a partial assessment is never
+    /// presented as a complete performance review. No evidence at all is an explicit "not assessed" with its reason, never "no findings".
+    /// </summary>
+    public static FrontendQualityEngineOutcome PerformanceQuality(
+        string targetUrl, bool enabled, FrontendQualityEngineRequirementPolicy policy,
+        PerformanceQualityReviewResult? report, string? error, bool adapterAvailable, bool cancelled = false)
+    {
+        var state = !enabled ? FrontendQualityEngineExecutionState.Disabled
+            : !adapterAvailable ? FrontendQualityEngineExecutionState.Unavailable
+            : error is not null && report is null ? FrontendQualityEngineExecutionState.EngineError
+            : report is null ? (cancelled ? FrontendQualityEngineExecutionState.Cancelled : FrontendQualityEngineExecutionState.Unavailable)
+            : report.Assessed ? FrontendQualityEngineExecutionState.Assessed
+            : FrontendQualityEngineExecutionState.Unavailable;
+        var reason = state switch
+        {
+            FrontendQualityEngineExecutionState.Assessed => FrontendQualityEngineOutcomeReason.None,
+            FrontendQualityEngineExecutionState.Disabled => FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment,
+            FrontendQualityEngineExecutionState.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
+            FrontendQualityEngineExecutionState.Cancelled => FrontendQualityEngineOutcomeReason.Cancelled,
+            _ when !adapterAvailable => FrontendQualityEngineOutcomeReason.EngineUnavailable,
+            _ => FrontendQualityEngineOutcomeReason.PerformanceEvidenceUnavailable,
+        };
+        var failure = state == FrontendQualityEngineExecutionState.Assessed ? null : error ?? report?.CompanionMessage ?? PerformanceQualityEvidenceSource.NoEvidenceMessage;
+        var limitations = report is null ? ["Requires Browser Companion and/or Local HTTPS proxy evidence recorded for pages of this Target Environment."]
+            : new List<string> { $"Assessment coverage: {report.Coverage.OverallLabel} — browser {Cov(report.Coverage.Browser)}, runtime {Cov(report.Coverage.Runtime)}, resources {Cov(report.Coverage.Resources)}, API {Cov(report.Coverage.Api)}, Blazor {Cov(report.Coverage.Blazor)}." }
+                .Concat(report.Coverage.Reasons).Concat(report.Limitations).Distinct().ToList();
+        return Base(FrontendQualityEngineId.PerformanceQuality, "BirkNext Performance Quality", enabled,
+            policy.GetRequirement(FrontendQualityEngineId.PerformanceQuality), state, targetUrl, null, report?.BrowserName, null,
+            findings: report?.Findings.Count(), evidence: report?.PagesWithEvidence, failure: failure,
+            completed: report?.EvaluatedAt.UtcDateTime, limitations: limitations, toolName: PerformanceQualitySources.EngineName,
+            strength: FrontendQualityEvidenceStrength.DirectObservation,
+            manual: report is null ? null : ["Field measurements from one browser session are indicative; confirm regressions with repeated observations before release decisions."],
+            reason: reason);
+
+        static string Cov(PerformanceCoverageState s) => s switch { PerformanceCoverageState.Complete => "complete", PerformanceCoverageState.Partial => "partial", _ => "not available" };
     }
 
     public static FrontendQualityEngineOutcome Lighthouse(
@@ -551,6 +592,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
             FrontendQualityEngineOutcomeReason.BrowserDomUnavailableForMethod or
             FrontendQualityEngineOutcomeReason.ManualOnlyMethod => FrontendQualityEngineExecutionState.NotApplicable,
             FrontendQualityEngineOutcomeReason.BrowserCompanionNotConnected or
+            FrontendQualityEngineOutcomeReason.PerformanceEvidenceUnavailable or
             FrontendQualityEngineOutcomeReason.BrowserCompanionNoEvidence => FrontendQualityEngineExecutionState.Unavailable,
             _ => FrontendQualityEngineExecutionState.SafetyBlocked,
         };
@@ -564,6 +606,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         FrontendQualityEngineId.Lighthouse => toggles.EnableLighthouseEngine,
         FrontendQualityEngineId.PassiveSecurity => toggles.EnablePassiveSecurityEngine,
         FrontendQualityEngineId.BrowserQuality => toggles.EnableBrowserQualityEngine,
+        FrontendQualityEngineId.PerformanceQuality => toggles.EnablePerformanceQualityEngine,
         _ => false,
     };
 
@@ -576,6 +619,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
         FrontendQualityEngineId.PassiveSecurity => "Passive Security",
         FrontendQualityEngineId.BrowserQuality => "Browser Quality",
+        FrontendQualityEngineId.PerformanceQuality => "BirkNext Performance Quality",
         _ => id.ToString(),
     };
 

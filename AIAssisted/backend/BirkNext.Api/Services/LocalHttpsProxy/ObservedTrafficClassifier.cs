@@ -218,6 +218,44 @@ internal sealed record NetworkRequestMetadata
     public string? GraphQlOperationName { get; init; }
     /// <summary>The request Referer header, if any. Used only to derive the correlating page origin/path; the value is never persisted.</summary>
     public string? Referer { get; init; }
+    // ── performance metadata (timing, allow-listed cache directives, presence flags, declared size) ──
+    public double? DurationMs { get; init; }
+    public string? CacheDirectives { get; init; }
+    public bool HasEtag { get; init; }
+    public bool HasLastModified { get; init; }
+    public long? ResponseBytes { get; init; }
+}
+
+/// <summary>
+/// Reduces cache-related response headers to safe metadata: only recognised Cache-Control directives (with numeric arguments) survive,
+/// in canonical order, length-capped. Header VALUES that could carry data (ETag, Set-Cookie, Vary, custom extensions) are never kept.
+/// </summary>
+internal static class CacheHeaderMetadata
+{
+    private static readonly string[] Flags = ["public", "private", "no-cache", "no-store", "no-transform", "must-revalidate", "proxy-revalidate", "immutable"];
+    private static readonly string[] Numeric = ["max-age", "s-maxage", "stale-while-revalidate", "stale-if-error"];
+
+    public static string? NormalizeCacheControl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var found = new List<string>();
+        foreach (var raw in value.Split(','))
+        {
+            var directive = raw.Trim().ToLowerInvariant();
+            if (directive.Length == 0) continue;
+            var eq = directive.IndexOf('=');
+            var name = eq < 0 ? directive : directive[..eq];
+            if (eq < 0 && Flags.Contains(name)) { if (!found.Contains(name)) found.Add(name); continue; }
+            if (eq >= 0 && Numeric.Contains(name) && long.TryParse(directive[(eq + 1)..].Trim('"'), out var seconds) && seconds >= 0)
+            {
+                var canonical = $"{name}={seconds}";
+                if (!found.Any(f => f.StartsWith(name + "=", StringComparison.Ordinal))) found.Add(canonical);
+            }
+        }
+        if (found.Count == 0) return null;
+        var joined = string.Join(", ", found);
+        return joined.Length > ObservedNetworkPerformanceLimits.MaxCacheDirectivesLength ? joined[..ObservedNetworkPerformanceLimits.MaxCacheDirectivesLength] : joined;
+    }
 }
 
 /// <summary>
@@ -263,9 +301,52 @@ internal static class NetworkTrafficClassifier
             OperationType = metadata.GraphQlOperationType,
             OperationName = metadata.GraphQlOperationName,
             PageOrigin = pageOrigin,
-            PagePath = pagePath
+            PagePath = pagePath,
+            LastDurationMs = metadata.DurationMs,
+            MinDurationMs = metadata.DurationMs,
+            MaxDurationMs = metadata.DurationMs,
+            TotalDurationMs = metadata.DurationMs ?? 0,
+            Samples = metadata.DurationMs is { } d ? [new ObservedRequestSample(observedAt, d, metadata.ResponseStatus, metadata.ResponseBytes)] : [],
+            ErrorCount = metadata.ResponseStatus >= 400 ? 1 : 0,
+            AuthRejectedCount = metadata.ResponseStatus is 401 or 403 ? 1 : 0,
+            NotModifiedCount = metadata.ResponseStatus == 304 ? 1 : 0,
+            CacheDirectives = CacheHeaderMetadata.NormalizeCacheControl(metadata.CacheDirectives),
+            HasEtag = metadata.HasEtag,
+            HasLastModified = metadata.HasLastModified,
+            LastResponseBytes = metadata.ResponseBytes,
         };
     }
+
+    /// <summary>Folds a newly observed exchange into the collapsed endpoint record: counts, statuses, bounded most-recent-first samples and latest cache metadata.</summary>
+    public static ObservedNetworkEndpoint Accumulate(ObservedNetworkEndpoint existing, ObservedNetworkEndpoint incoming)
+    {
+        var samples = incoming.Samples.Concat(existing.Samples).Take(ObservedNetworkPerformanceLimits.MaxSamplesPerEndpoint).ToList();
+        return existing with
+        {
+            Count = existing.Count + 1,
+            LastStatus = incoming.LastStatus,
+            LastObservedAt = incoming.LastObservedAt,
+            AuthObserved = existing.AuthObserved || incoming.AuthObserved,
+            Confidence = (ObservedEndpointConfidence)Math.Max((int)existing.Confidence, (int)incoming.Confidence),
+            OperationType = incoming.OperationType != GraphQlOperationType.None ? incoming.OperationType : existing.OperationType,
+            OperationName = incoming.OperationName ?? existing.OperationName,
+            LastDurationMs = incoming.LastDurationMs ?? existing.LastDurationMs,
+            MinDurationMs = Min(existing.MinDurationMs, incoming.MinDurationMs),
+            MaxDurationMs = Max(existing.MaxDurationMs, incoming.MaxDurationMs),
+            TotalDurationMs = existing.TotalDurationMs + incoming.TotalDurationMs,
+            Samples = samples,
+            ErrorCount = existing.ErrorCount + incoming.ErrorCount,
+            AuthRejectedCount = existing.AuthRejectedCount + incoming.AuthRejectedCount,
+            NotModifiedCount = existing.NotModifiedCount + incoming.NotModifiedCount,
+            CacheDirectives = incoming.CacheDirectives ?? existing.CacheDirectives,
+            HasEtag = existing.HasEtag || incoming.HasEtag,
+            HasLastModified = existing.HasLastModified || incoming.HasLastModified,
+            LastResponseBytes = incoming.LastResponseBytes ?? existing.LastResponseBytes,
+        };
+    }
+
+    private static double? Min(double? a, double? b) => a is null ? b : b is null ? a : Math.Min(a.Value, b.Value);
+    private static double? Max(double? a, double? b) => a is null ? b : b is null ? a : Math.Max(a.Value, b.Value);
 
     private static (ObservedTrafficCategory, ObservedEndpointConfidence) Categorize(NetworkRequestMetadata m, string path, string method, string? reqCt, string? respCt)
     {
@@ -360,21 +441,14 @@ internal sealed class ObservedNetworkRegistry(int capacity = 400)
 
     public void Record(ObservedNetworkEndpoint endpoint)
     {
-        var key = $"{endpoint.PageOrigin}{endpoint.PagePath}|{endpoint.Category}|{endpoint.Scheme}|{endpoint.Host}|{endpoint.Port}|{endpoint.Path}|{endpoint.Method}";
+        // GraphQL operations to one endpoint are collapsed per operation (type + name), so GetChildren ×7 and GetRoles ×5 stay distinct rows.
+        var operation = endpoint.Category == ObservedTrafficCategory.GraphQl ? $"|{endpoint.OperationType}|{endpoint.OperationName}" : "";
+        var key = $"{endpoint.PageOrigin}{endpoint.PagePath}|{endpoint.Category}|{endpoint.Scheme}|{endpoint.Host}|{endpoint.Port}|{endpoint.Path}|{endpoint.Method}{operation}";
         lock (_lock)
         {
             if (_endpoints.TryGetValue(key, out var existing))
             {
-                _endpoints[key] = existing with
-                {
-                    Count = existing.Count + 1,
-                    LastStatus = endpoint.LastStatus,
-                    LastObservedAt = endpoint.LastObservedAt,
-                    AuthObserved = existing.AuthObserved || endpoint.AuthObserved,
-                    Confidence = (ObservedEndpointConfidence)Math.Max((int)existing.Confidence, (int)endpoint.Confidence),
-                    OperationType = endpoint.OperationType != GraphQlOperationType.None ? endpoint.OperationType : existing.OperationType,
-                    OperationName = endpoint.OperationName ?? existing.OperationName
-                };
+                _endpoints[key] = NetworkTrafficClassifier.Accumulate(existing, endpoint);
                 return;
             }
             if (_endpoints.Count >= capacity) return;

@@ -847,6 +847,56 @@
                                 <span class="fa-threshold-unit">MB</span>
                             </div>
                         </div>
+                        <div class="fa-threshold-group" data-testid="fa-performance-quality-thresholds">
+                            <div class="fa-threshold-group-title">BirkNext Performance Quality</div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">API Response Warning</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1" @bind="_editProfile.Performance.ApiResponseWarningMs" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">API Response Poor</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1" @bind="_editProfile.Performance.ApiResponsePoorMs" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Page Stabilization Good</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1" @bind="_editProfile.Performance.PageStabilizationGoodMs" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Page Stabilization Poor</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1" @bind="_editProfile.Performance.PageStabilizationPoorMs" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum JavaScript Transfer</label>
+                                <input type="number" class="form-control fa-threshold-input" step="0.5" min="0"
+                                       value="@ToMB(_editProfile.Performance.MaxJsTransferBytes)"
+                                       @onchange="e => SetMaxJsTransferMb(e.Value)" />
+                                <span class="fa-threshold-unit">MB</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Slow Resource Duration</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1" @bind="_editProfile.Performance.SlowResourceMs" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Long Tasks</label>
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="_editProfile.Performance.MaxLongTasks" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">tasks</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Main-thread Blocking Warning</label>
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="_editProfile.Performance.MainThreadBlockingWarningMs" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">ms</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <label class="fa-threshold-label">Maximum Identical API Calls</label>
+                                <input type="number" class="form-control fa-threshold-input" min="1" @bind="_editProfile.Performance.MaxIdenticalApiCalls" @bind:after="MarkThresholdsCustom" />
+                                <span class="fa-threshold-unit">calls</span>
+                            </div>
+                        </div>
                     </div>
                 }
                 else
@@ -878,6 +928,15 @@
                             <div class="fa-threshold-display-row"><span>Framework</span><strong>@ToMB(perf.MaxFrameworkSizeBytes) MB</strong></div>
                             <div class="fa-threshold-display-row"><span>App Assembly</span><strong>@ToMB(perf.MaxApplicationAssemblySizeBytes) MB</strong></div>
                             <div class="fa-threshold-display-row"><span>Individual Asset</span><strong>@ToMB(perf.MaxIndividualAssetSizeBytes) MB</strong></div>
+                        </div>
+                        <div class="fa-threshold-card" data-testid="fa-performance-quality-thresholds-display">
+                            <div class="fa-threshold-card-title">BirkNext Performance Quality</div>
+                            <div class="fa-threshold-display-row"><span>API Response Warning / Poor</span><strong>@perf.ApiResponseWarningMs / @perf.ApiResponsePoorMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>Page Stabilization Good / Poor</span><strong>@perf.PageStabilizationGoodMs / @perf.PageStabilizationPoorMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>JavaScript Transfer</span><strong>@ToMB(perf.MaxJsTransferBytes) MB</strong></div>
+                            <div class="fa-threshold-display-row"><span>Slow Resource</span><strong>@perf.SlowResourceMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>Long Tasks / Blocking</span><strong>@perf.MaxLongTasks / @perf.MainThreadBlockingWarningMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>Identical API Calls</span><strong>@perf.MaxIdenticalApiCalls</strong></div>
                         </div>
                     </div>
                     <div class="fa-reset-row">
@@ -1072,6 +1131,7 @@
                         <FeatureRow Label="@($"Lighthouse ({enginePolicy.Lighthouse})")"                 Enabled="@feats.EnableLighthouseEngine"      IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableLighthouseEngine = v)" />
                         <FeatureRow Label="@($"Passive Security ({enginePolicy.PassiveSecurity})")"      Enabled="@feats.EnablePassiveSecurityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePassiveSecurityEngine = v)" />
                         <FeatureRow Label="@($"Browser Quality ({enginePolicy.BrowserQuality})")"      Enabled="@feats.EnableBrowserQualityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableBrowserQualityEngine = v)" />
+                        <FeatureRow Label="@($"BirkNext Performance Quality ({enginePolicy.PerformanceQuality})")" Enabled="@feats.EnablePerformanceQualityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePerformanceQualityEngine = v)" />
                     </div>
                     <div class="fa-features-group fa-features-group-future">
                         <div class="fa-features-group-title">Browser <span class="fa-future-badge">Not yet implemented</span></div>
@@ -2568,6 +2628,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private void SetMaxFrameworkSizeMb(object? v)   { if (_editProfile is not null) { _editProfile.Performance.MaxFrameworkSizeBytes           = MB(v); MarkThresholdsCustom(); } }
     private void SetMaxAppAssemblySizeMb(object? v) { if (_editProfile is not null) { _editProfile.Performance.MaxApplicationAssemblySizeBytes = MB(v); MarkThresholdsCustom(); } }
     private void SetMaxIndividualAssetSizeMb(object? v) { if (_editProfile is not null) { _editProfile.Performance.MaxIndividualAssetSizeBytes = MB(v); MarkThresholdsCustom(); } }
+    private void SetMaxJsTransferMb(object? v)      { if (_editProfile is not null) { _editProfile.Performance.MaxJsTransferBytes              = MB(v); MarkThresholdsCustom(); } }
 
     // ── Unit helpers ─────────────────────────────────────────────────────────
 

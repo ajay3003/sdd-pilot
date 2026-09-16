@@ -1,7 +1,8 @@
 // BirkNext Browser Companion — content script (ISOLATED world, registered only for the paired environment's approved origins).
-// Collects safe page evidence per visit: DOM structure counts, BirkNext accessibility rule results, performance timeline metrics,
-// runtime error events and Blazor framework evidence. It never reads localStorage/sessionStorage/cookies, form values, request
-// bodies or auth headers, and it never sends HTML or text content.
+// Collects safe page evidence per visit: DOM structure counts, BirkNext accessibility rule results, performance timeline metrics
+// (navigation/resource timing, LCP/CLS, Event Timing interactions, long tasks, page stabilization), runtime error events and Blazor
+// framework evidence. It never reads localStorage/sessionStorage/cookies, form values, request bodies or auth headers, and it never
+// sends HTML or text content. Evidence is batched (one snapshot per quiet window, bounded updates) so the collector stays cheap.
 (function () {
   'use strict';
   const C = globalThis.BirkNextCompanion;
@@ -19,6 +20,7 @@
   let keyboardChecks = [];
   let keyboardObservation = null;
   let layoutBusy = false;
+  let observerCallbacks = 0;
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (!['wcag:layout', 'wcag:keyboard'].includes(message?.type)) return;
     if (sender.id !== chrome.runtime.id || layoutBusy || !isApprovedVisit(visit)) { respond({ message: 'No approved active page.' }); return; }
@@ -45,8 +47,8 @@
     })().catch(() => respond({ message: 'Layout probes unavailable; no pass recorded.' }));
     return true;
   });
-  const runtime = { errors: new Map(), errorCount: 0, rejectionCount: 0, resourceFailureCount: 0 };
-  const lcpEntries = [], layoutShiftEntries = [], longTaskEntries = [];
+  const runtime = { errors: new Map(), errorCount: 0, rejectionCount: 0, resourceFailureCount: 0, errorsBeforeStabilization: 0 };
+  const lcpEntries = [], layoutShiftEntries = [], longTaskEntries = [], eventEntries = [], firstInputEntries = [];
   const observers = [];
   const unsupported = [];
 
@@ -67,6 +69,7 @@
     if (existing) { existing.count++; existing.lastAt = nowIso; }
     else if (runtime.errors.size < 50) runtime.errors.set(key, { kind, message: msg, source: src, count: 1, firstAt: nowIso, lastAt: nowIso });
     if (kind === 'error') runtime.errorCount++; else if (kind === 'unhandledrejection') runtime.rejectionCount++; else runtime.resourceFailureCount++;
+    if (visit && !visit.stabilized && kind !== 'resource') runtime.errorsBeforeStabilization++;
     scheduleUpdate();
   }
   // Element load failures are DOM events visible here; script exceptions/unhandled rejections happen in the page's own world and
@@ -84,23 +87,37 @@
   });
 
   // ── performance observers (registered once per document; entries are attributed to the current visit at snapshot time) ──
-  function observe(type, list, buffered) {
+  function observe(type, list, options) {
     try {
-      if (!('PerformanceObserver' in win) || !PerformanceObserver.supportedEntryTypes || !PerformanceObserver.supportedEntryTypes.includes(type)) { unsupported.push(type); return; }
-      const observer = new PerformanceObserver(entries => { for (const e of entries.getEntries()) list.push(e); scheduleUpdate(); });
-      observer.observe({ type, buffered: buffered !== false });
+      if (!('PerformanceObserver' in win) || !PerformanceObserver.supportedEntryTypes || !PerformanceObserver.supportedEntryTypes.includes(type)) { unsupported.push(type); return false; }
+      const observer = new PerformanceObserver(entries => {
+        observerCallbacks++;
+        for (const e of entries.getEntries()) { if (list) list.push(e); if (options && options.onEntry) options.onEntry(e); }
+        if (!options || options.schedule !== false) scheduleUpdate();
+      });
+      observer.observe(Object.assign({ type, buffered: true }, options && options.observe ? options.observe : {}));
       observers.push(observer);
-    } catch { unsupported.push(type); }
+      return true;
+    } catch { unsupported.push(type); return false; }
   }
   observe('largest-contentful-paint', lcpEntries);
   observe('layout-shift', layoutShiftEntries);
   observe('longtask', longTaskEntries);
+  // Event Timing: durationThreshold 40 ms (web-vitals convention) so short interactions are still counted toward the sample minimum.
+  const eventTimingSupported = observe('event', eventEntries, { observe: { durationThreshold: 40 } });
+  observe('first-input', firstInputEntries);
+  // Resource entries feed the network-quiet stabilization signal only (the summary re-reads the buffer at snapshot time).
+  observe('resource', null, { schedule: false, onEntry: e => { if (tracker) tracker.noteNetwork(e.name); } });
+
+  function visitStartRelMs() {
+    return visit ? new Date(visit.startedAt).getTime() - performance.timeOrigin : 0;
+  }
 
   function resourceEntriesForVisit() {
     // Resource timing is per document; for SPA visits after the first, only resources started after the visit began count.
     const all = performance.getEntriesByType('resource');
     if (!visit || visit.sequence === 1) return all;
-    const visitStart = new Date(visit.startedAt).getTime() - performance.timeOrigin;
+    const visitStart = visitStartRelMs();
     return all.filter(e => e.startTime >= visitStart - 50);
   }
 
@@ -111,24 +128,44 @@
     return { errorUiVisible: visible, blazorScriptPresent: Boolean(doc.querySelector('script[src*="_framework/blazor."]')) };
   }
 
+  function memorySnapshot() {
+    try {
+      const m = performance.memory;
+      return m && typeof m.usedJSHeapSize === 'number' ? m.usedJSHeapSize : null;
+    } catch { return null; }
+  }
+
   function buildSnapshot(kind) {
     if (!visit || !scope) return null;
+    const buildStart = performance.now();
+    const initial = visit.sequence === 1;
+    const originMs = initial ? 0 : visitStartRelMs();
+    const stabilizedAtMs = visit.stabilizedAt ? new Date(visit.stabilizedAt).getTime() - performance.timeOrigin : null;
     const resources = resourceEntriesForVisit();
     const nav = performance.getEntriesByType('navigation')[0] || null;
+    const inVisit = e => initial || (typeof e.startTime === 'number' && e.startTime >= originMs);
     const vitals = C.perf.vitalsSummary({
-      lcpEntries: visit.sequence === 1 ? lcpEntries : [],   // LCP/CLS are defined for the initial document load only
-      layoutShiftEntries: visit.sequence === 1 ? layoutShiftEntries : [],
-      longTaskEntries: longTaskEntries.filter(e => !visit || visit.sequence === 1 || e.startTime >= new Date(visit.startedAt).getTime() - performance.timeOrigin),
-      paintEntries: visit.sequence === 1 ? performance.getEntriesByType('paint') : [],
+      lcpEntries: initial ? lcpEntries : [],   // LCP/CLS are defined for the initial document load only
+      layoutShiftEntries: initial ? layoutShiftEntries : [],
+      longTaskEntries: longTaskEntries.filter(inVisit),
+      paintEntries: initial ? performance.getEntriesByType('paint') : [],
+      eventEntries: eventEntries.filter(inVisit),
+      firstInputEntries: initial ? firstInputEntries : [],
+      eventTimingSupported,
+      stabilizedAtMs,
     });
-    const navSummary = visit.sequence === 1 ? C.perf.navigationSummary(nav) : { ttfbMs: null, domContentLoadedMs: null, loadEventMs: null, navigationType: 'spa', transferBytes: null };
-    const resourceSummary = C.perf.resourceSummary(resources);
-    const performanceSummary = Object.assign({}, navSummary, vitals, resourceSummary, {
-      unsupportedMetrics: unsupported.concat(visit.sequence === 1 ? [] : ['largest-contentful-paint (SPA route)', 'layout-shift (SPA route)', 'navigation-timing (SPA route)']),
+    const navSummary = initial ? C.perf.navigationSummary(nav) : { ttfbMs: null, domContentLoadedMs: null, loadEventMs: null, navigationType: 'spa', transferBytes: null };
+    const resourceSummary = C.perf.resourceSummary(resources, { originMs });
+    const performanceSummary = Object.assign({ observationType: initial ? 'initial-load' : 'spa-navigation' }, navSummary, vitals, resourceSummary, {
+      stabilizationMs: visit.stabilized ? visit.stabilizationMs : null,
+      stabilizedBy: visit.stabilized ? visit.stabilizedBy : null,
+      mutations: Object.assign({}, visit.mutations),
+      jsHeapUsedBytes: memorySnapshot(),
+      unsupportedMetrics: unsupported.concat(initial ? [] : ['largest-contentful-paint (SPA route)', 'layout-shift (SPA route)', 'navigation-timing (SPA route)']),
     });
     const a11y = C.a11y.evaluate(doc, win);
     a11y.checks = (a11y.checks || []).concat(layoutChecks, keyboardChecks);
-    return {
+    const page = {
       profileId: scope.profileId,
       pageOrigin: visit.origin,
       pagePath: visit.path,
@@ -141,9 +178,19 @@
       dom: C.dom.summarize(doc, win),
       accessibility: a11y,
       performance: performanceSummary,
-      runtime: { errorCount: runtime.errorCount, rejectionCount: runtime.rejectionCount, resourceFailureCount: runtime.resourceFailureCount, errors: Array.from(runtime.errors.values()), consoleCaptured: false },
-      blazor: C.perf.blazorSummary(resources, blazorFlags()),
+      runtime: { errorCount: runtime.errorCount, rejectionCount: runtime.rejectionCount, resourceFailureCount: runtime.resourceFailureCount, errors: Array.from(runtime.errors.values()), consoleCaptured: false, errorsBeforeStabilization: runtime.errorsBeforeStabilization },
+      blazor: C.perf.blazorSummary(resources, blazorFlags(), { originMs }),
     };
+    // Collector overhead is part of the evidence so the observer can be audited against the page it measures.
+    const payloadBytes = JSON.stringify(page).length;
+    performanceSummary.collector = {
+      snapshotBuildMs: C.perf.round(performance.now() - buildStart, 1),
+      observerCallbacks,
+      snapshotsSent: updatesSent + 1,
+      payloadBytes,
+      entriesExamined: resources.length,
+    };
+    return page;
   }
 
   function browserName() {
@@ -170,13 +217,16 @@
   function resetVisitState() {
     keyboardObservation?.stop(); keyboardObservation = null; keyboardChecks = [];
     layoutChecks = [];
-    runtime.errors.clear(); runtime.errorCount = 0; runtime.rejectionCount = 0; runtime.resourceFailureCount = 0;
+    runtime.errors.clear(); runtime.errorCount = 0; runtime.rejectionCount = 0; runtime.resourceFailureCount = 0; runtime.errorsBeforeStabilization = 0;
     updatesSent = 0;
+    observerCallbacks = 0;
     if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }
   }
 
   const tracker = C.navigation.createTracker({
     win, doc,
+    // The visit object is shared from route change on, so errors and interactions before stabilization are attributed to it.
+    onVisitStart: v => { visit = v; },
     onVisit: async v => {
       visit = v;
       if (!isApprovedVisit(v)) return;

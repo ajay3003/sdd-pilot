@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
@@ -77,6 +78,14 @@ internal sealed class ProxyExchange
     public string? Referer { get; init; }
     /// <summary>True for a WebSocket upgrade (HTTP 101). No message bytes are ever inspected.</summary>
     public bool IsWebSocket { get; init; }
+    /// <summary>Proxy-observed duration: request head received → last response byte relayed to the browser.</summary>
+    public double DurationMs { get; init; }
+    /// <summary>Normalized, allow-listed Cache-Control directives of the response (never the raw header). Null when absent.</summary>
+    public string? CacheDirectives { get; init; }
+    public bool HasEtag { get; init; }
+    public bool HasLastModified { get; init; }
+    /// <summary>Declared response Content-Length, when present.</summary>
+    public long? ResponseBytes { get; init; }
     public override string ToString() => $"{Method} {Host}:{Port} -> HTTP {StatusCode}";
 }
 
@@ -313,9 +322,11 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             await RelayAsync(sslClient, sslUpstream, host, port, ct);
     }
 
-    private sealed class PendingRequest(string method, string? path, string? requestContentType, string? bearer, GraphQlOperationType graphQlOperation, string? graphQlOperationName, string? referer, bool upgrade)
+    private sealed class PendingRequest(string method, string? path, string? requestContentType, string? bearer, GraphQlOperationType graphQlOperation, string? graphQlOperationName, string? referer, bool upgrade, long startedTimestamp)
     {
         public string Method { get; } = method;
+        /// <summary>Stopwatch timestamp taken when the request head was received (performance metadata only).</summary>
+        public long StartedTimestamp { get; } = startedTimestamp;
         public string? Path { get; } = path;
         public string? RequestContentType { get; } = requestContentType;
         public string? Bearer { get; set; } = bearer;
@@ -342,6 +353,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             {
                 var raw = await clientReader.ReadHeadAsync(65536, cts.Token);
                 if (raw is null) break;
+                var startedTimestamp = Stopwatch.GetTimestamp();
                 if (!HttpHead.TryParse(raw, out var request) || !request.IsRequest) break;
                 var requestContentType = request.Header("Content-Type");
                 await server.WriteAsync(raw, cts.Token);
@@ -358,7 +370,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                     finally { Array.Clear(body); }
                 }
                 else await clientReader.CopyBodyAsync(server, framing, cts.Token);
-                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.Header("Referer"), request.IsUpgrade);
+                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.Header("Referer"), request.IsUpgrade, startedTimestamp);
                 await pending.Writer.WriteAsync(record, cts.Token);
                 await server.FlushAsync(cts.Token);
                 if (record.IsUpgrade)
@@ -402,7 +414,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                 if (response.StatusCode == 101)
                 {
                     current.UpgradeDecision.TrySetResult(true);
-                    Report(current, host, port, 101, responseContentType);
+                    Report(current, host, port, 101, responseContentType, response);
                     await serverReader.CopyToEndAsync(client, ct);
                     break;
                 }
@@ -410,7 +422,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                 var framing = BodyFraming.ForResponse(response, current.Method);
                 await serverReader.CopyBodyAsync(client, framing, ct);
                 await client.FlushAsync(ct);
-                Report(current, host, port, response.StatusCode, responseContentType);
+                Report(current, host, port, response.StatusCode, responseContentType, response);
                 current = null;
                 if (response.ConnectionClose || framing.Kind == BodyKind.UntilClose) break;
             }
@@ -423,14 +435,21 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
         }
     }
 
-    private void Report(PendingRequest request, string host, int port, int statusCode, string? responseContentType)
+    private void Report(PendingRequest request, string host, int port, int statusCode, string? responseContentType, HttpHead? response = null)
     {
+        // Only timing, allow-listed cache directives, header PRESENCE flags and the declared size are kept: never a header value that
+        // could carry a credential (Set-Cookie, Authorization, ETag values are reduced to a boolean).
         var exchange = new ProxyExchange
         {
             Host = host, Port = port, Method = request.Method, StatusCode = statusCode, BearerToken = request.Bearer,
             Path = request.Path, RequestContentType = request.RequestContentType, ResponseContentType = responseContentType,
             GraphQlOperationType = request.GraphQlOperation, GraphQlOperationName = request.GraphQlOperationName,
-            Referer = request.Referer, IsWebSocket = statusCode == 101
+            Referer = request.Referer, IsWebSocket = statusCode == 101,
+            DurationMs = Math.Round(Stopwatch.GetElapsedTime(request.StartedTimestamp).TotalMilliseconds, 1),
+            CacheDirectives = CacheHeaderMetadata.NormalizeCacheControl(response?.Header("Cache-Control")),
+            HasEtag = response?.Header("ETag") is { Length: > 0 },
+            HasLastModified = response?.Header("Last-Modified") is { Length: > 0 },
+            ResponseBytes = response?.ContentLength,
         };
         request.Bearer = null;
         try { observer.OnExchange(exchange); }

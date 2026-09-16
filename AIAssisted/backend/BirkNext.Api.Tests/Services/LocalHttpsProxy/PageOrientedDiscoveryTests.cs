@@ -112,4 +112,85 @@ public sealed class PageOrientedDiscoveryTests
         Assert.Equal(2, snapshot.Count);   // same endpoint, two different pages → two entries
         Assert.Equal(4, snapshot.Single(e => e.PagePath == "/barn/1").Count);
     }
+
+    // ── Performance metadata (BirkNext Performance Quality) ─────────────────────────────────────────
+
+    [Fact]
+    public void RegistryAccumulatesLatencySamplesStatusesAndCacheMetadataWithoutHeaderValues()
+    {
+        var registry = new ObservedNetworkRegistry();
+        var durations = new[] { 120.0, 480.0, 1300.0, 90.0 };
+        var statuses = new[] { 200, 200, 500, 304 };
+        for (var i = 0; i < durations.Length; i++)
+            registry.Record(NetworkTrafficClassifier.Classify(Meta("GET", "/api/children", bearer: true, referer: "https://m2lbdev.bufetat.no/barn/1", status: statuses[i]) with
+            {
+                DurationMs = durations[i], CacheDirectives = "private, max-age=60, x-custom=\"secret value\"", HasEtag = true, HasLastModified = false, ResponseBytes = 2048 + i,
+            }, Now.AddSeconds(i)));
+
+        var e = registry.Snapshot().Single();
+        Assert.Equal(4, e.Count);
+        Assert.Equal(4, e.Samples.Count);
+        Assert.Equal(90, e.Samples[0].DurationMs);                 // most recent first
+        Assert.Equal(304, e.Samples[0].Status);
+        Assert.Equal(2051, e.Samples[0].ResponseBytes);
+        Assert.Equal(90, e.MinDurationMs);
+        Assert.Equal(1300, e.MaxDurationMs);
+        Assert.Equal(1990, e.TotalDurationMs);
+        Assert.Equal(90, e.LastDurationMs);
+        Assert.Equal(1, e.ErrorCount);
+        Assert.Equal(0, e.AuthRejectedCount);
+        Assert.Equal(1, e.NotModifiedCount);
+        Assert.Equal("private, max-age=60", e.CacheDirectives);   // unknown extension with a value is dropped
+        Assert.True(e.HasEtag);
+        Assert.False(e.HasLastModified);
+        var json = JsonSerializer.Serialize(e);
+        Assert.DoesNotContain("secret value", json);
+        Assert.DoesNotContain("x-custom", json);
+    }
+
+    [Fact]
+    public void RegistrySamplesAreBoundedMostRecentFirst()
+    {
+        var registry = new ObservedNetworkRegistry();
+        for (var i = 0; i < ObservedNetworkPerformanceLimits.MaxSamplesPerEndpoint + 25; i++)
+            registry.Record(NetworkTrafficClassifier.Classify(Meta("POST", "/gql", reqCt: "application/json", gql: GraphQlOperationType.Query, gqlName: "GetChildren", referer: "https://m2lbdev.bufetat.no/sok") with { DurationMs = i }, Now.AddMilliseconds(i)));
+        var e = registry.Snapshot().Single();
+        Assert.Equal(ObservedNetworkPerformanceLimits.MaxSamplesPerEndpoint + 25, e.Count);
+        Assert.Equal(ObservedNetworkPerformanceLimits.MaxSamplesPerEndpoint, e.Samples.Count);
+        Assert.Equal(ObservedNetworkPerformanceLimits.MaxSamplesPerEndpoint + 24, e.Samples[0].DurationMs);
+        Assert.Equal(0, e.MinDurationMs);
+    }
+
+    [Fact]
+    public void ExchangeWithoutTimingProducesNoSample()
+    {
+        var e = NetworkTrafficClassifier.Classify(Meta("GET", "/api/x", referer: "https://m2lbdev.bufetat.no/a"), Now);
+        Assert.Empty(e.Samples);
+        Assert.Null(e.LastDurationMs);
+        Assert.Equal(0, e.TotalDurationMs);
+        Assert.Null(e.CacheDirectives);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("no-store", "no-store")]
+    [InlineData("public, max-age=31536000, immutable", "public, max-age=31536000, immutable")]
+    [InlineData("MAX-AGE=\"600\", must-revalidate, foo=bar, no-cache", "max-age=600, must-revalidate, no-cache")]
+    [InlineData("s-maxage=-5, private", "private")]
+    public void CacheControlIsReducedToRecognisedDirectivesOnly(string? header, string? expected)
+    {
+        Assert.Equal(expected, CacheHeaderMetadata.NormalizeCacheControl(header));
+    }
+
+    [Fact]
+    public void AuthenticationRejectionsAreCountedSeparatelyFromOtherErrors()
+    {
+        var registry = new ObservedNetworkRegistry();
+        foreach (var status in new[] { 401, 403, 500, 200 })
+            registry.Record(NetworkTrafficClassifier.Classify(Meta("GET", "/api/me", bearer: true, status: status, referer: "https://m2lbdev.bufetat.no/a") with { DurationMs = 10 }, Now));
+        var e = registry.Snapshot().Single();
+        Assert.Equal(3, e.ErrorCount);
+        Assert.Equal(2, e.AuthRejectedCount);
+    }
 }

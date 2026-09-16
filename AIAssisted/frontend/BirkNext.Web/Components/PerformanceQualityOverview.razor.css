@@ -1,0 +1,14 @@
+.pqo-tablewrap { overflow-x: auto; }
+.pqo-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.pqo-table th, .pqo-table td { text-align: left; padding: 0.45rem 0.55rem; border-bottom: 1px solid var(--border-subtle, #e2e8f0); }
+.pqo-table th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; background: #f8fafc; }
+.pqo-table th button { all: unset; cursor: pointer; font: inherit; color: inherit; }
+.pqo-table tbody tr { cursor: pointer; }
+.pqo-table tbody tr:hover { background: #f8fafc; }
+.pqo-selected { background: #eff6ff; }
+.pqo-status { display: inline-block; border-radius: 999px; padding: 0.1rem 0.55rem; font-size: 0.72rem; font-weight: 600; }
+.pqo-status-good { background: #dcfce7; color: #14532d; }
+.pqo-status-needsimprovement { background: #fef3c7; color: #78350f; }
+.pqo-status-poor { background: #fee2e2; color: #7f1d1d; }
+.pqo-status-informational { background: #e0f2fe; color: #0c4a6e; }
+.pqo-status-notmeasured { background: #e2e8f0; color: #475569; }

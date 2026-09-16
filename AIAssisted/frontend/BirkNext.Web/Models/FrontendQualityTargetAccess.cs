@@ -126,6 +126,12 @@ public static class FrontendQualityEngineAccessRegistry
                 RequiresTargetReachability: false, RequiresPublicHttp: false, RequiresAuthenticatedHttp: false,
                 RequiresBrowserDom: false, RequiresBrowserRuntime: false,
                 SupportsProxyAuthenticatedContext: false, SupportsCdp: true, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: true),
+            // BirkNext Performance Quality consumes Browser Companion evidence (page/runtime/resource/Blazor) and Local HTTPS proxy evidence
+            // (API latency/statuses/duplicates) already recorded per page. It issues no request itself; either source yields a partial assessment.
+            [FrontendQualityEngineId.PerformanceQuality] = new(FrontendQualityEngineId.PerformanceQuality,
+                RequiresTargetReachability: false, RequiresPublicHttp: false, RequiresAuthenticatedHttp: false,
+                RequiresBrowserDom: false, RequiresBrowserRuntime: false,
+                SupportsProxyAuthenticatedContext: true, SupportsCdp: true, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: true),
         };
 
     public static FrontendQualityEngineAccessRequirements For(FrontendQualityEngineId engineId) =>

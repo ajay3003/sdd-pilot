@@ -140,6 +140,8 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("lighthouseReport")]    public LighthouseResultDto?              LighthouseReport { get; init; }
     [JsonPropertyName("passiveSecurityReport")] public PassiveSecurityResultDto?       PassiveSecurityReport { get; init; }
     [JsonPropertyName("browserRuntimeReport")] public BrowserRuntimeResultDto?          BrowserRuntimeReport { get; init; }
+    /// <summary>BirkNext Performance Quality result (per-page metrics, findings, coverage, API summaries, timeline); null when the engine did not run.</summary>
+    [JsonPropertyName("performanceQualityReport")] public PerformanceQualityReviewResult? PerformanceQualityReport { get; init; }
 }
 
 public enum LighthouseExecutionStatusDto { NotAssessed, Assessed, EngineError, Skipped, AuthenticationRequired, TimedOut }

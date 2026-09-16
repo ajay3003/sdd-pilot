@@ -279,6 +279,25 @@ public sealed class FrontendPerformanceThresholds
     [JsonPropertyName("maxFrameworkSizeBytes")]           public long                  MaxFrameworkSizeBytes           { get; set; } = 5L * 1024 * 1024;
     [JsonPropertyName("maxApplicationAssemblySizeBytes")] public long                  MaxApplicationAssemblySizeBytes { get; set; } = 3L * 1024 * 1024;
     [JsonPropertyName("maxIndividualAssetSizeBytes")]     public long                  MaxIndividualAssetSizeBytes     { get; set; } = 2L * 1024 * 1024;
+
+    // ── BirkNext Performance Quality (native engine) thresholds. Documented defaults; a Target Environment may override each one. ──
+    /// <summary>Proxy-observed API response time above which a call is "needs improvement" (warning).</summary>
+    [JsonPropertyName("apiResponseWarningMs")]            public int                   ApiResponseWarningMs            { get; set; } = 500;
+    /// <summary>Proxy-observed API response time above which a call is "poor".</summary>
+    [JsonPropertyName("apiResponsePoorMs")]               public int                   ApiResponsePoorMs               { get; set; } = 1000;
+    /// <summary>BirkNext Page Stabilization Time (route change → DOM/network quiet) considered good.</summary>
+    [JsonPropertyName("pageStabilizationGoodMs")]         public int                   PageStabilizationGoodMs         { get; set; } = 2000;
+    [JsonPropertyName("pageStabilizationPoorMs")]         public int                   PageStabilizationPoorMs         { get; set; } = 5000;
+    /// <summary>Total JavaScript transferred for one page observation.</summary>
+    [JsonPropertyName("maxJsTransferBytes")]              public long                  MaxJsTransferBytes              { get; set; } = 2L * 1024 * 1024;
+    /// <summary>Single resource fetch duration (browser Resource Timing) above which the resource is slow.</summary>
+    [JsonPropertyName("slowResourceMs")]                  public int                   SlowResourceMs                  { get; set; } = 2000;
+    /// <summary>Long tasks (&gt; 50 ms) tolerated per page observation before a finding is raised.</summary>
+    [JsonPropertyName("maxLongTasks")]                    public int                   MaxLongTasks                    { get; set; } = 3;
+    /// <summary>BirkNext main-thread blocking time (Σ long task excess over 50 ms) above which the page needs improvement.</summary>
+    [JsonPropertyName("mainThreadBlockingWarningMs")]     public int                   MainThreadBlockingWarningMs     { get; set; } = 300;
+    /// <summary>Identical REST (method+host+path) / GraphQL (endpoint+operation) calls tolerated within one page generation.</summary>
+    [JsonPropertyName("maxIdenticalApiCalls")]            public int                   MaxIdenticalApiCalls            { get; set; } = 2;
 }
 
 public sealed class CoreWebVitalsThresholds
@@ -324,6 +343,8 @@ public sealed class FrontendAnalysisFeatureToggles
     [JsonPropertyName("enablePassiveSecurityEngine")] public bool EnablePassiveSecurityEngine { get; set; } = true;
     /// <summary>BirkNext Browser Quality (Browser Companion): experimental native engine that needs the paired extension, so it is opt-in per Target Environment (like Browser Runtime). Release policy Optional.</summary>
     [JsonPropertyName("enableBrowserQualityEngine")]  public bool EnableBrowserQualityEngine  { get; set; } = false;
+    /// <summary>BirkNext Performance Quality: native page/runtime/resource/API/Blazor performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse; opt-in per Target Environment. Release policy Optional.</summary>
+    [JsonPropertyName("enablePerformanceQualityEngine")] public bool EnablePerformanceQualityEngine { get; set; } = false;
 
     [JsonPropertyName("assetDiscovery")]              public bool AssetDiscovery              { get; set; } = true;
     [JsonPropertyName("startupAnalysis")]             public bool StartupAnalysis             { get; set; } = true;
@@ -350,6 +371,7 @@ public sealed class FrontendQualityEngineRequirementSettings
     [JsonPropertyName("lighthouse")] public FrontendQualityEngineRequirement Lighthouse { get; set; } = FrontendQualityEngineRequirement.Optional;
     [JsonPropertyName("passiveSecurity")] public FrontendQualityEngineRequirement PassiveSecurity { get; set; } = FrontendQualityEngineRequirement.Optional;
     [JsonPropertyName("browserQuality")] public FrontendQualityEngineRequirement BrowserQuality { get; set; } = FrontendQualityEngineRequirement.Optional;
+    [JsonPropertyName("performanceQuality")] public FrontendQualityEngineRequirement PerformanceQuality { get; set; } = FrontendQualityEngineRequirement.Optional;
 
     public FrontendQualityEngineRequirementPolicy ToPolicy() => new(new Dictionary<FrontendQualityEngineId, FrontendQualityEngineRequirement>
     {
@@ -360,6 +382,7 @@ public sealed class FrontendQualityEngineRequirementSettings
         [FrontendQualityEngineId.Lighthouse] = Lighthouse,
         [FrontendQualityEngineId.PassiveSecurity] = PassiveSecurity,
         [FrontendQualityEngineId.BrowserQuality] = BrowserQuality,
+        [FrontendQualityEngineId.PerformanceQuality] = PerformanceQuality,
     });
 }
 

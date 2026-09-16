@@ -1,0 +1,227 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<section class="pq" data-testid="pq-page" aria-label="BirkNext Performance Quality — page">
+    <header class="pq-head">
+        <div>
+            <h5 class="pq-title" data-testid="pq-page-title">@Snapshot.PageTitle</h5>
+            <p class="pq-sub"><span class="pq-mono">@Snapshot.PageId</span> · generation @Snapshot.Generation@(Snapshot.CapturedAt is { } c ? $" · captured {c.ToLocalTime():HH:mm:ss}" : "")</p>
+        </div>
+        <div class="pq-badges">
+            <span class="pq-phase pq-phase-@Snapshot.ObservationType.ToString().ToLowerInvariant()" data-testid="pq-phase">@PerformanceFormat.PhaseLabel(Snapshot.ObservationType)</span>
+            <span class="pq-coverage pq-coverage-@Snapshot.Coverage.Overall.ToString().ToLowerInvariant()" data-testid="pq-coverage">@Snapshot.Coverage.OverallLabel</span>
+        </div>
+    </header>
+
+    <div class="pq-coverage-row" data-testid="pq-coverage-layers">
+        @foreach (var (label, state) in new[] { ("Browser", Snapshot.Coverage.Browser), ("Runtime", Snapshot.Coverage.Runtime), ("Resources", Snapshot.Coverage.Resources), ("API", Snapshot.Coverage.Api), ("Blazor", Snapshot.Coverage.Blazor) })
+        {
+            <span class="pq-cov pq-cov-@state.ToString().ToLowerInvariant()" data-testid="pq-cov-@label.ToLowerInvariant()">@label: @CoverageLabel(state)</span>
+        }
+    </div>
+    @foreach (var note in Snapshot.Notes.Concat(Snapshot.Coverage.Reasons).Distinct())
+    {
+        <p class="pq-note" data-testid="pq-note">@note</p>
+    }
+
+    <div class="pq-grid">
+        @foreach (var (layer, title, ids) in Layout)
+        {
+            var metrics = ids.Select(Snapshot.Metric).Where(m => m is not null).Cast<PerformanceQualityMetric>().ToList();
+            <div class="pq-card" data-testid="pq-layer-@layer.ToString().ToLowerInvariant()">
+                <h6>@title</h6>
+                @if (metrics.Count == 0)
+                {
+                    <p class="pq-empty">Not measured — no evidence for this layer.</p>
+                }
+                else
+                {
+                    <dl class="pq-metrics">
+                        @foreach (var m in metrics)
+                        {
+                            <div class="pq-metric" data-testid="pq-metric-@m.Id" title="@Tooltip(m)">
+                                <dt>@m.Name</dt>
+                                <dd>
+                                    <span class="pq-value" data-testid="pq-value-@m.Id">@m.Display</span>
+                                    <span class="pq-status pq-status-@m.Status.ToString().ToLowerInvariant()" data-testid="pq-status-@m.Id">@PerformanceFormat.StatusLabel(m.Status)</span>
+                                    @if (m.Threshold is { } t && (t.Good is not null || t.Poor is not null))
+                                    {
+                                        <span class="pq-threshold" data-testid="pq-threshold-@m.Id">@t.Display · <em>@t.SourceLabel</em></span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(m.Note))
+                                    {
+                                        <span class="pq-metric-note" data-testid="pq-metric-note-@m.Id">@m.Note</span>
+                                    }
+                                </dd>
+                            </div>
+                        }
+                    </dl>
+                }
+            </div>
+        }
+    </div>
+
+    @if (Snapshot.Comparison is { } cmp)
+    {
+        <div class="pq-block" data-testid="pq-comparison">
+            <h6>Current vs previous generation <span class="pq-muted">(generation @cmp.CurrentGeneration vs @cmp.PreviousGeneration, @cmp.PreviousCapturedAt.ToLocalTime():yyyy-MM-dd HH:mm)</span></h6>
+            @if (!cmp.SamePhase)
+            {
+                <p class="pq-note">The previous generation was a different observation phase (initial load vs SPA navigation); compare with care.</p>
+            }
+            <div class="pq-tablewrap">
+                <table class="pq-table">
+                    <thead><tr><th>Metric</th><th>Current</th><th>Previous</th><th>Change</th></tr></thead>
+                    <tbody>
+                        @foreach (var d in cmp.Deltas)
+                        {
+                            <tr data-testid="pq-delta"><td>@d.Metric</td><td>@d.Current</td><td>@d.Previous</td><td class="@(d.Worse == true ? "pq-worse" : d.Worse == false ? "pq-better" : "")">@d.Change</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+
+    @if (Snapshot.Findings.Count > 0)
+    {
+        <div class="pq-block" data-testid="pq-findings">
+            <h6>Findings <span class="pq-muted">(@Snapshot.Findings.Count)</span></h6>
+            <div class="pq-tablewrap">
+                <table class="pq-table pq-findings">
+                    <thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>Observed</th><th>Threshold</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+                    <tbody>
+                        @foreach (var f in Snapshot.Findings)
+                        {
+                            <tr data-testid="pq-finding" data-rule-id="@f.RuleId">
+                                <td><span class="pq-sev pq-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span></td>
+                                <td>@f.Category <span class="pq-muted">· @PerformanceFormat.PhaseLabel(f.Phase)</span></td>
+                                <td><strong>@f.Title</strong><br /><span class="pq-explain">@f.Explanation</span></td>
+                                <td class="pq-mono">@f.ObservedValue</td>
+                                <td class="pq-mono">@f.Threshold@if (f.ThresholdSource is { } s) { <br /><em class="pq-muted">@PerformanceFormat.SourceLabel(s)</em> }</td>
+                                <td><span class="pq-source">@f.EvidenceSource</span> <span class="pq-muted">· @f.Confidence confidence</span><br /><span class="pq-mono pq-evidence">@string.Join(" · ", f.Evidence.Take(5))</span></td>
+                                <td>@f.Recommendation</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else if (Snapshot.HasEvidence)
+    {
+        <p class="pq-ok" data-testid="pq-no-findings">No performance findings for the assessed layers. Layers marked "Not available" were not assessed.</p>
+    }
+
+    @if (Snapshot.Api.Available && Snapshot.Api.Operations.Count > 0)
+    {
+        <div class="pq-block" data-testid="pq-api">
+            <h6>API operations <span class="pq-muted">(Local HTTPS proxy · REST @Snapshot.Api.RestCalls · GraphQL @Snapshot.Api.GraphQlCalls · WebSocket @Snapshot.Api.WebSocketConnections@(Snapshot.Api.Bursts.Count > 0 ? $" · {Snapshot.Api.Bursts.Count} burst(s)" : ""))</span></h6>
+            @if (!Snapshot.Api.TimingAvailable)
+            {
+                <p class="pq-note">Recorded traffic carries no timing samples; counts only.</p>
+            }
+            <div class="pq-tablewrap">
+                <table class="pq-table">
+                    <thead><tr><th>Operation</th><th>Calls</th><th>Latency</th><th>p95</th><th>Max</th><th>Status</th><th>Errors</th><th>Flags</th></tr></thead>
+                    <tbody>
+                        @foreach (var op in Snapshot.Api.Operations.Take(40))
+                        {
+                            <tr data-testid="pq-operation" data-operation="@op.Display">
+                                <td class="pq-mono">@op.Display</td>
+                                <td data-testid="pq-operation-count">@op.Count</td>
+                                <td>@(op.Statistics.Representative is { } r ? $"{PerformanceFormat.Value(r, "ms")} ({op.Statistics.RepresentativeLabel})" : "—")</td>
+                                <td>@(op.Statistics.Sufficient ? PerformanceFormat.Value(op.Statistics.P95, "ms") : $"n/a ({op.Statistics.SampleCount} samples)")</td>
+                                <td>@PerformanceFormat.Value(op.Statistics.Max, "ms")</td>
+                                <td><span class="pq-status pq-status-@op.LatencyStatus.ToString().ToLowerInvariant()">@PerformanceFormat.StatusLabel(op.LatencyStatus)</span></td>
+                                <td>@(op.ErrorCount == 0 ? "—" : $"{op.ErrorCount}{(op.AuthRejectedCount > 0 ? $" ({op.AuthRejectedCount} auth)" : "")}")</td>
+                                <td>@(op.IsDuplicate ? "duplicate " : "")@(op.IsPollingLike ? "polling-like " : "")@(op.CacheDirectives is { Length: > 0 } cd ? $"cache: {cd}" : "")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @foreach (var pattern in Snapshot.Api.SequentialPatterns)
+            {
+                <p class="pq-note" data-testid="pq-sequential">Observed sequential request pattern: @string.Join(" → ", pattern.Operations) (@PerformanceFormat.Value(pattern.TotalMs, "ms")).</p>
+            }
+        </div>
+    }
+
+    @if (LighthouseRows.Count > 0)
+    {
+        <div class="pq-block" data-testid="pq-lighthouse-comparison">
+            <h6>Lighthouse comparison <span class="pq-muted">(field vs lab)</span></h6>
+            <div class="pq-tablewrap">
+                <table class="pq-table">
+                    <thead><tr><th>Metric</th><th>BirkNext (field)</th><th>Lighthouse (lab)</th><th>Difference</th><th>Note</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in LighthouseRows)
+                        {
+                            <tr><td>@row.Metric</td><td>@row.BirkNext</td><td>@row.Lighthouse</td><td>@row.Difference</td><td>@row.Note</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="pq-note">@PerformanceLighthouseComparison.Methodology</p>
+        </div>
+    }
+
+    @if (ShowTimeline && Snapshot.Timeline.Count > 0)
+    {
+        <div class="pq-block" data-testid="pq-timeline">
+            <h6>Timeline <span class="pq-muted">(first @Snapshot.Timeline.Count request(s), relative to the observed navigation)</span></h6>
+            <div class="pq-tablewrap">
+                <table class="pq-table pq-timeline">
+                    <thead><tr><th>Start</th><th>Duration</th><th>Kind</th><th>Request</th><th>Bytes</th><th>Status</th><th>Source</th></tr></thead>
+                    <tbody>
+                        @{ var max = Math.Max(1, Snapshot.Timeline.Max(t => t.StartMs + (t.DurationMs ?? 0))); }
+                        @foreach (var t in Snapshot.Timeline)
+                        {
+                            <tr data-testid="pq-timeline-row">
+                                <td class="pq-mono">@PerformanceFormat.Value(t.StartMs, "ms")</td>
+                                <td class="pq-mono">
+                                    <span class="pq-bar" style="margin-left:@(t.StartMs / max * 100)%; width:@(Math.Max(0.5, (t.DurationMs ?? 0) / max * 100))%"></span>
+                                    @PerformanceFormat.Value(t.DurationMs, "ms")
+                                </td>
+                                <td>@t.Kind@(t.Delivery is "cache" ? " (cache)" : "")</td>
+                                <td class="pq-mono pq-path">@t.Label</td>
+                                <td>@(t.Bytes is { } b ? PerformanceFormat.Bytes(b) : "—")</td>
+                                <td>@(t.Status?.ToString() ?? "—")</td>
+                                <td><span class="pq-source">@t.Source</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PagePerformanceSnapshot Snapshot { get; set; } = new();
+    [Parameter] public bool ShowTimeline { get; set; } = true;
+    [Parameter] public LighthouseResultDto? Lighthouse { get; set; }
+
+    private IReadOnlyList<PerformanceLighthouseRow> LighthouseRows => PerformanceLighthouseComparison.Build(Snapshot, Lighthouse);
+
+    private static readonly (PerformanceLayer Layer, string Title, string[] Ids)[] Layout =
+    [
+        (PerformanceLayer.Page, "Core", ["lcp", "cls", "inp", "stabilization", "fcp", "ttfb", "dcl", "load"]),
+        (PerformanceLayer.Runtime, "Runtime", ["long-tasks", "main-thread-blocking", "longest-task", "long-tasks-after-stabilization", "longest-interaction", "dom-mutation-batches", "js-heap", "runtime-errors"]),
+        (PerformanceLayer.Resources, "Resources", ["requests", "transfer", "largest-resource", "slowest-resource", "js-bytes", "css-bytes", "wasm-bytes", "image-bytes", "font-bytes", "duplicate-resources", "failed-resources"]),
+        (PerformanceLayer.Api, "API", ["rest-calls", "graphql-calls", "websocket-connections", "slow-calls", "duplicate-calls", "slowest-api", "api-p50", "api-p95", "api-errors"]),
+        (PerformanceLayer.Blazor, "Blazor", ["blazor-detected", "blazor-framework-bytes", "blazor-wasm-bytes", "blazor-assemblies", "blazor-startup", "blazor-boot-manifest", "blazor-load-kind"]),
+    ];
+
+    private static string CoverageLabel(PerformanceCoverageState state) => state switch
+    {
+        PerformanceCoverageState.Complete => "Complete",
+        PerformanceCoverageState.Partial => "Partial",
+        _ => "Not available",
+    };
+
+    private static string Tooltip(PerformanceQualityMetric m) =>
+        $"{m.Name}: {m.Display} ({PerformanceFormat.StatusLabel(m.Status)}). Source: {m.Source}; confidence {m.Confidence}." +
+        (m.Threshold is { } t ? $" Threshold {t.Display} [{t.SourceLabel}]." : "") + (m.Note is { Length: > 0 } n ? $" {n}" : "");
+}

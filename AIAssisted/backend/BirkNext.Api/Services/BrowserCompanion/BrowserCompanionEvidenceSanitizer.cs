@@ -122,13 +122,45 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
 
     private BrowserPerformanceSummary SanitizePerformance(BrowserPerformanceSummary p) => new()
     {
+        ObservationType = p.ObservationType is "spa-navigation" ? "spa-navigation" : "initial-load",
         TtfbMs = Metric(p.TtfbMs), DomContentLoadedMs = Metric(p.DomContentLoadedMs), LoadEventMs = Metric(p.LoadEventMs),
         NavigationType = string.IsNullOrWhiteSpace(p.NavigationType) ? null : Text(p.NavigationType, 20),
         FirstContentfulPaintMs = Metric(p.FirstContentfulPaintMs), LcpMs = Metric(p.LcpMs), Cls = Metric(p.Cls),
+        StabilizationMs = Metric(p.StabilizationMs),
+        StabilizedBy = p.StabilizedBy is "quiet" or "max-wait" ? p.StabilizedBy : null,
+        Interaction = p.Interaction is null ? null : new BrowserInteractionSummary
+        {
+            Status = p.Interaction.Status is "measured" or "insufficient-samples" or "not-measured" or "not-supported" ? p.Interaction.Status : "not-measured",
+            InteractionCount = Clamp(p.Interaction.InteractionCount), MinimumInteractions = Clamp(p.Interaction.MinimumInteractions),
+            // An INP value is accepted only when the extension itself says it was measured: never fabricated on the backend either.
+            InpMs = p.Interaction.Status == "measured" ? Metric(p.Interaction.InpMs) : null,
+            LongestInteractionMs = Metric(p.Interaction.LongestInteractionMs), FirstInputDelayMs = Metric(p.Interaction.FirstInputDelayMs),
+        },
         LongTaskCount = Clamp(p.LongTaskCount), LongTaskTotalMs = Metric(p.LongTaskTotalMs), LongestTaskMs = Metric(p.LongestTaskMs),
-        ResourceCount = Clamp(p.ResourceCount), TransferredBytes = ClampBytes(p.TransferredBytes), JsBytes = ClampBytes(p.JsBytes), CssBytes = ClampBytes(p.CssBytes),
+        MainThreadBlockingMs = Metric(p.MainThreadBlockingMs), LongTasksAfterStabilization = Clamp(p.LongTasksAfterStabilization),
+        Mutations = p.Mutations is null ? null : new BrowserDomMutationSummary
+        {
+            BatchCount = Clamp(p.Mutations.BatchCount), MutationCount = Clamp(p.Mutations.MutationCount), LargestBatch = Clamp(p.Mutations.LargestBatch),
+            LastMutationMs = Metric(p.Mutations.LastMutationMs), LargeBatchesAfterStabilization = Clamp(p.Mutations.LargeBatchesAfterStabilization),
+        },
+        JsHeapUsedBytes = p.JsHeapUsedBytes is { } heap && heap >= 0 ? ClampBytes(heap) : null,
+        ResourceCount = Clamp(p.ResourceCount), CachedResourceCount = Clamp(p.CachedResourceCount), DecodedBytes = ClampBytes(p.DecodedBytes),
+        TransferredBytes = ClampBytes(p.TransferredBytes), JsBytes = ClampBytes(p.JsBytes), CssBytes = ClampBytes(p.CssBytes),
         ImageBytes = ClampBytes(p.ImageBytes), WasmBytes = ClampBytes(p.WasmBytes), FontBytes = ClampBytes(p.FontBytes), ApiBytes = ClampBytes(p.ApiBytes),
         FrameworkDataBytes = ClampBytes(p.FrameworkDataBytes), OtherBytes = ClampBytes(p.OtherBytes),
+        Categories = p.Categories.Where(c => Regex.IsMatch(c.Kind ?? "", "^[a-z-]{1,20}$")).Take(12).Select(c => new BrowserResourceCategorySummary
+        {
+            Kind = c.Kind, Count = Clamp(c.Count), TransferBytes = ClampBytes(c.TransferBytes), CachedCount = Clamp(c.CachedCount),
+            Largest = c.Largest is null ? null : Resource(c.Largest), Slowest = c.Slowest is null ? null : Resource(c.Slowest),
+        }).ToList(),
+        LargestResource = p.LargestResource is null ? null : Resource(p.LargestResource),
+        SlowestResource = p.SlowestResource is null ? null : Resource(p.SlowestResource),
+        Timeline = p.Timeline.Take(BrowserCompanionLimits.MaxTimelineEntries).Select(Resource).ToList(),
+        Collector = p.Collector is null ? null : new BrowserCollectorSummary
+        {
+            SnapshotBuildMs = Metric(p.Collector.SnapshotBuildMs), ObserverCallbacks = Clamp(p.Collector.ObserverCallbacks), SnapshotsSent = Clamp(p.Collector.SnapshotsSent),
+            PayloadBytes = Clamp(p.Collector.PayloadBytes), EntriesExamined = Clamp(p.Collector.EntriesExamined),
+        },
         DuplicateFetchCount = Clamp(p.DuplicateFetchCount), DuplicateResources = Resources(p.DuplicateResources),
         FailedResourceCount = Clamp(p.FailedResourceCount), FailedResources = Resources(p.FailedResources), LongestResources = Resources(p.LongestResources),
         UnsupportedMetrics = p.UnsupportedMetrics.Select(m => Text(m, 40)).Take(20).ToList(),
@@ -137,6 +169,7 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
     private BrowserRuntimeSummary SanitizeRuntime(BrowserRuntimeSummary r) => new()
     {
         ErrorCount = Clamp(r.ErrorCount), RejectionCount = Clamp(r.RejectionCount), ResourceFailureCount = Clamp(r.ResourceFailureCount),
+        ErrorsBeforeStabilization = Clamp(r.ErrorsBeforeStabilization),
         ConsoleCaptured = false,
         Errors = r.Errors.Take(BrowserCompanionLimits.MaxRuntimeErrorsPerPage).Select(e => new BrowserRuntimeError
         {
@@ -149,18 +182,31 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
     private BrowserBlazorSummary SanitizeBlazor(BrowserBlazorSummary b) => new()
     {
         Detected = b.Detected, BlazorScriptPresent = b.BlazorScriptPresent, BootManifestObserved = b.BootManifestObserved, BootManifestFailed = b.BootManifestFailed,
+        BootManifestMs = Metric(b.BootManifestMs),
         FrameworkResourceCount = Clamp(b.FrameworkResourceCount), FrameworkBytes = ClampBytes(b.FrameworkBytes), WasmBytes = ClampBytes(b.WasmBytes),
-        FrameworkFailures = Resources(b.FrameworkFailures), RepeatedFrameworkDownloads = Clamp(b.RepeatedFrameworkDownloads), ErrorUiVisible = b.ErrorUiVisible,
+        RuntimeResourceCount = Clamp(b.RuntimeResourceCount), RuntimeBytes = ClampBytes(b.RuntimeBytes),
+        AssemblyCount = Clamp(b.AssemblyCount), AssemblyBytes = ClampBytes(b.AssemblyBytes),
+        CultureResourceCount = Clamp(b.CultureResourceCount), CultureBytes = ClampBytes(b.CultureBytes), TimezoneDataObserved = b.TimezoneDataObserved,
+        FrameworkJsCount = Clamp(b.FrameworkJsCount), CachedFrameworkResourceCount = Clamp(b.CachedFrameworkResourceCount),
+        LoadKind = b.LoadKind is "cold" or "warm" or "mixed" or "none" or "unknown" ? b.LoadKind : "unknown",
+        FrameworkLoadStartMs = Metric(b.FrameworkLoadStartMs), FrameworkLoadEndMs = Metric(b.FrameworkLoadEndMs),
+        FrameworkFailures = Resources(b.FrameworkFailures), SlowestFrameworkResource = b.SlowestFrameworkResource is null ? null : Resource(b.SlowestFrameworkResource),
+        RepeatedFrameworkDownloads = Clamp(b.RepeatedFrameworkDownloads), ErrorUiVisible = b.ErrorUiVisible,
     };
 
     private List<BrowserResourceEntry> Resources(IEnumerable<BrowserResourceEntry> entries) => entries
         .Take(BrowserCompanionLimits.MaxResourcesPerList)
-        .Select(e => new BrowserResourceEntry
-        {
-            Url = Url(e.Url), Kind = Regex.IsMatch(e.Kind ?? "", "^[a-z-]{1,20}$") ? e.Kind! : "other",
-            DurationMs = Metric(e.DurationMs), TransferBytes = e.TransferBytes is { } t ? ClampBytes(t) : null,
-            Status = e.Status is >= 0 and <= 999 ? e.Status : null, Count = Clamp(e.Count),
-        }).ToList();
+        .Select(Resource).ToList();
+
+    private BrowserResourceEntry Resource(BrowserResourceEntry e) => new()
+    {
+        Url = Url(e.Url), Kind = Regex.IsMatch(e.Kind ?? "", "^[a-z-]{1,20}$") ? e.Kind! : "other",
+        DurationMs = Metric(e.DurationMs), TransferBytes = e.TransferBytes is { } t ? ClampBytes(t) : null,
+        Status = e.Status is >= 0 and <= 999 ? e.Status : null, Count = Clamp(e.Count),
+        NetworkCount = e.NetworkCount is { } n ? Clamp(n) : null, StartMs = Metric(e.StartMs),
+        DecodedBytes = e.DecodedBytes is { } d ? ClampBytes(d) : null,
+        Delivery = e.Delivery is "cache" or "network" ? e.Delivery : null,
+    };
 
     private static int Clamp(int value) => Math.Clamp(value, 0, 10_000_000);
     private static long ClampBytes(long value) => Math.Clamp(value, 0, 100L * 1024 * 1024 * 1024);

@@ -152,6 +152,7 @@ public static class FrontendQualityLogicalIssueGrouper
         "Lighthouse" => FrontendQualityEngineId.Lighthouse,
         "ZAP Passive" => FrontendQualityEngineId.PassiveSecurity,
         BrowserQualityRules.CompanionSource or BrowserQualityRules.CorrelatedSource or "BirkNext Browser Quality" => FrontendQualityEngineId.BrowserQuality,
+        PerformanceQualitySources.EngineName => FrontendQualityEngineId.PerformanceQuality,
         _ => FrontendQualityEngineId.StaticSecurity,
     };
 

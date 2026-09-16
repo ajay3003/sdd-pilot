@@ -1,0 +1,78 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<div class="pqo" data-testid="pq-overview">
+    <div class="pqo-tablewrap">
+        <table class="pqo-table" data-testid="pq-overview-table">
+            <thead>
+                <tr>
+                    <th><button type="button" @onclick='() => SortBy("page")'>Page @Glyph("page")</button></th>
+                    <th>Phase</th>
+                    <th><button type="button" @onclick='() => SortBy("lcp")'>LCP @Glyph("lcp")</button></th>
+                    <th><button type="button" @onclick='() => SortBy("stabilization")'>Stabilization @Glyph("stabilization")</button></th>
+                    <th><button type="button" @onclick='() => SortBy("transfer")'>Transfer @Glyph("transfer")</button></th>
+                    <th><button type="button" @onclick='() => SortBy("api")'>API calls @Glyph("api")</button></th>
+                    <th><button type="button" @onclick='() => SortBy("slow")'>Slow calls @Glyph("slow")</button></th>
+                    <th><button type="button" @onclick='() => SortBy("longtasks")'>Long tasks @Glyph("longtasks")</button></th>
+                    <th><button type="button" @onclick='() => SortBy("status")'>Status @Glyph("status")</button></th>
+                    <th>Coverage</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in Sorted)
+                {
+                    <tr data-testid="pq-overview-row" data-page-id="@row.PageId" class="@(row.PageId == SelectedPageId ? "pqo-selected" : "")" @onclick="() => OnSelect.InvokeAsync(row.PageId)">
+                        <td><strong>@row.Title</strong></td>
+                        <td>@PerformanceFormat.PhaseLabel(row.Phase)</td>
+                        <td>@Cell(row.Lcp)</td>
+                        <td>@Cell(row.Stabilization)</td>
+                        <td>@Cell(row.Transfer)</td>
+                        <td>@Cell(row.ApiCalls)</td>
+                        <td>@Cell(row.SlowCalls)</td>
+                        <td>@Cell(row.LongTasks)</td>
+                        <td><span class="pqo-status pqo-status-@row.Status.ToString().ToLowerInvariant()" data-testid="pq-overview-status">@PerformanceFormat.StatusLabel(row.Status)</span>@(row.WorstMetric is { } w ? $" ({w})" : "")</td>
+                        <td>@(row.Coverage == PerformanceAssessmentState.Complete ? "Complete" : row.Coverage == PerformanceAssessmentState.Partial ? "Partial" : "Not assessed")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PagePerformanceSnapshot> Pages { get; set; } = [];
+    [Parameter] public string? SelectedPageId { get; set; }
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    private string _sort = "status";
+    private bool _desc = false;
+
+    private IEnumerable<PerformanceOverviewRow> Sorted
+    {
+        get
+        {
+            var rows = PerformanceQualityRules.Overview(Pages);
+            IOrderedEnumerable<PerformanceOverviewRow> ordered = _sort switch
+            {
+                "page" => rows.OrderBy(r => r.Title),
+                "lcp" => rows.OrderByDescending(r => r.Lcp?.Value ?? double.MinValue),
+                "stabilization" => rows.OrderByDescending(r => r.Stabilization?.Value ?? double.MinValue),
+                "transfer" => rows.OrderByDescending(r => r.Transfer?.Value ?? double.MinValue),
+                "api" => rows.OrderByDescending(r => r.ApiCalls?.Value ?? double.MinValue),
+                "slow" => rows.OrderByDescending(r => r.SlowCalls?.Value ?? double.MinValue),
+                "longtasks" => rows.OrderByDescending(r => r.LongTasks?.Value ?? double.MinValue),
+                _ => rows.OrderBy(r => PerformanceFormat.Rank(r.Status)),
+            };
+            return _desc ? ordered.Reverse() : ordered;
+        }
+    }
+
+    private void SortBy(string column)
+    {
+        if (_sort == column) _desc = !_desc; else { _sort = column; _desc = false; }
+    }
+
+    private string Glyph(string column) => _sort == column ? (_desc ? "▴" : "▾") : "";
+
+    private static string Cell(PerformanceQualityMetric? m) => m is null ? "—" : m.Status == PerformanceMetricStatus.NotMeasured ? "Not measured" : m.Display;
+}

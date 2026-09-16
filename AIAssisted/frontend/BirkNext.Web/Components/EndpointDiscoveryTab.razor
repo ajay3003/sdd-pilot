@@ -137,6 +137,18 @@
                         <p class="ed-note" data-testid="discovery-page-state">Waiting for fresh traffic. Use this page in the target application to collect fresh endpoint traffic.</p>
                     }
                     @RenderPageQuality(sel)
+                    <section class="ed-quality" data-testid="discovery-page-performance" aria-label="BirkNext Performance Quality">
+                        <h5 class="ed-section-title">Performance <span class="ed-quality-engine">BirkNext Performance Quality</span></h5>
+                        @{ var performance = PerformanceQualityRules.Evaluate(sel, Thresholds, Vitals); }
+                        @if (!performance.HasEvidence)
+                        {
+                            <p class="ed-empty" data-testid="discovery-page-performance-empty">Not assessed — no performance evidence collected for this page. Pair the Browser Companion and/or run the Local HTTPS proxy, then visit this page in your managed Edge.</p>
+                        }
+                        else
+                        {
+                            <PerformanceQualityPageView Snapshot="performance" ShowTimeline="true" />
+                        }
+                    </section>
                     @if (Profile is not null)
                     {
                         <WcagWorkspace @key="sel.Identity" ProfileId="Profile.Id" Snapshot="Snapshot" Page="sel" />

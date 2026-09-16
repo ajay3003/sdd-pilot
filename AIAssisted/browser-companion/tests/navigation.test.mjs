@@ -101,3 +101,46 @@ test('dispose restores the original history methods (no leak into the host appli
   tracker.dispose();
   assert.equal(b.win.history.pushState, originalPush);
 });
+
+test('page stabilization records BirkNext stabilization time and how it ended; network activity delays quiet, polling does not', () => {
+  const b = fakeBrowser('https://m2lbdev.bufetat.no/children');
+  const visits = [], started = [];
+  const tracker = navigation.createTracker({ win: b.win, doc: b.doc, now: b.now, onVisit: v => visits.push(v), onVisitStart: v => started.push(v), options: { quietMs: 800, maxWaitMs: 6000 } });
+  tracker.start();
+  assert.equal(started.length, 1, 'visit start is announced before stabilization');
+  assert.equal(started[0].stabilized, false);
+  b.advance(500); assert.equal(tracker.noteNetwork('https://api/children?page=1'), true);   // new request → quiet restarts
+  b.advance(500); assert.equal(tracker.noteNetwork('https://api/roles'), true);
+  b.advance(500); tracker.noteMutation(120);
+  assert.equal(visits.length, 0, 'quiet window keeps moving while new activity arrives');
+  b.advance(800);
+  assert.equal(visits.length, 1);
+  assert.equal(visits[0].stabilizedBy, 'quiet');
+  assert.equal(visits[0].stabilizationMs, 2300, '1500 ms of activity + 800 ms quiet');
+  assert.equal(visits[0].mutations.batchCount, 1);
+  assert.equal(visits[0].mutations.mutationCount, 120);
+  assert.equal(visits[0].mutations.largestBatch, 120);
+  assert.equal(visits[0].mutations.lastMutationMs, 1500);
+  assert.equal(started[0], visits[0], 'the same visit object is shared from start to stabilization');
+
+  // A polling endpoint on the next page: the first two hits count, the rest never reset the quiet window.
+  b.win.history.pushState({}, '', '/dashboard');
+  for (let i = 0; i < 12; i++) { b.advance(300); tracker.noteNetwork('https://api/poll?tick=' + i); }
+  assert.equal(visits.length, 2, 'stabilized despite continuous polling');
+  assert.equal(visits[1].stabilizedBy, 'quiet');
+  assert.ok(visits[1].stabilizationMs < 6000, 'well before the max-wait bound');
+  tracker.dispose();
+});
+
+test('mutation batches after stabilization are counted as churn only when large; network after stabilization is ignored', () => {
+  const b = fakeBrowser('https://m2lbdev.bufetat.no/a');
+  const visits = [];
+  const tracker = navigation.createTracker({ win: b.win, doc: b.doc, now: b.now, onVisit: v => visits.push(v), options: { quietMs: 800, maxWaitMs: 3000, largeBatch: 50 } });
+  tracker.start(); b.advance(1000);
+  assert.equal(visits.length, 1);
+  tracker.noteMutation(3); tracker.noteMutation(80); tracker.noteMutation(200);
+  assert.equal(visits[0].mutations.largeBatchesAfterStabilization, 2);
+  assert.equal(visits[0].mutations.batchCount, 3);
+  assert.equal(tracker.noteNetwork('https://api/x'), false);
+  tracker.dispose();
+});

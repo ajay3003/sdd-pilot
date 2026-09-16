@@ -57,7 +57,7 @@
         @if (_activeEngines is { } landingEngines)
         {
             <FrontendQualityActiveEnginesPanel Snapshot="landingEngines" />
-            @if (_context is not null && _context.FeatureToggles.EnableBrowserQualityEngine && _companionRuntime is not null)
+            @if (_context is not null && (_context.FeatureToggles.EnableBrowserQualityEngine || _context.FeatureToggles.EnablePerformanceQualityEngine) && _companionRuntime is not null)
             {
                 <BrowserCompanionPanel Profile="_context.ActiveProfile" Runtime="_companionRuntime" ProxyRunning="@ProxyRunningForLanding" />
             }
@@ -321,6 +321,14 @@
                     <p><strong>Lighthouse engine:</strong> @lighthouse.ExecutionStatus — @lighthouse.EngineError</p>
                 }
                 <p><strong>Measurement:</strong> Synthetic / Lab. Field data is not included; INP requires real-user field data.</p>
+            </section>
+        }
+
+        @if (report.PerformanceQualityReport is { } performanceQuality)
+        {
+            <section class="fqr-section" aria-label="BirkNext Performance Quality">
+                <SectionHeader Title="BirkNext Performance Quality" />
+                <PerformanceQualityReportSection Result="performanceQuality" Lighthouse="report.LighthouseReport" />
             </section>
         }
 
@@ -1066,6 +1074,7 @@
             new("Lighthouse", _context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
             new("Passive Security", _context.FeatureToggles.EnablePassiveSecurityEngine ? "Enabled (ZAP passive only)" : "Disabled"),
             new("Browser Quality", _context.FeatureToggles.EnableBrowserQualityEngine ? "Enabled (Browser Companion, native checks)" : "Disabled"),
+            new("BirkNext Performance Quality", _context.FeatureToggles.EnablePerformanceQualityEngine ? "Enabled (Browser Companion + Local HTTPS proxy evidence, native)" : "Disabled"),
         ];
     }
 
@@ -1244,9 +1253,9 @@
         {
             FrontendQualityCategory.Security => [FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassiveSecurity],
             FrontendQualityCategory.Standards => [FrontendQualityEngineId.StaticSecurity],
-            FrontendQualityCategory.Performance => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.BrowserQuality],
+            FrontendQualityCategory.Performance => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineId.PerformanceQuality],
             FrontendQualityCategory.Readiness => [FrontendQualityEngineId.PassivePerformance],
-            FrontendQualityCategory.BlazorWasm => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality],
+            FrontendQualityCategory.BlazorWasm => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineId.PerformanceQuality],
             FrontendQualityCategory.Accessibility => [FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.BrowserQuality],
             _ => [],
         };

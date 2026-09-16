@@ -250,8 +250,40 @@ public sealed record ObservedNetworkEndpoint
     public string? PageOrigin { get; init; }
     /// <summary>Path of the correlating page (query stripped). Null when it cannot be safely correlated → Shared / background traffic.</summary>
     public string? PagePath { get; init; }
+
+    // ── Performance metadata (BirkNext Performance Quality). Timing/status/size only — never a header value, body or query. ──
+    /// <summary>Proxy-observed duration of the most recent exchange: request head received → last response byte relayed.</summary>
+    public double? LastDurationMs { get; init; }
+    public double? MinDurationMs { get; init; }
+    public double? MaxDurationMs { get; init; }
+    /// <summary>Sum of all observed durations (for total latency of repeated calls).</summary>
+    public double TotalDurationMs { get; init; }
+    /// <summary>Bounded, most-recent-first request samples (timestamp, duration, status, response size) for latency statistics, bursts and sequential-pattern detection.</summary>
+    public List<ObservedRequestSample> Samples { get; init; } = [];
+    /// <summary>Responses with status ≥ 400 (401/403 are counted separately in <see cref="AuthRejectedCount"/> as well).</summary>
+    public int ErrorCount { get; init; }
+    public int AuthRejectedCount { get; init; }
+    /// <summary>HTTP 304 responses (conditional revalidation succeeded; no body transferred).</summary>
+    public int NotModifiedCount { get; init; }
+    /// <summary>Normalized cache directives of the most recent response (e.g. "max-age=31536000, immutable"); only recognised directives are kept. Null when no Cache-Control header was present.</summary>
+    public string? CacheDirectives { get; init; }
+    public bool HasEtag { get; init; }
+    public bool HasLastModified { get; init; }
+    /// <summary>Content-Length of the most recent response, when declared.</summary>
+    public long? LastResponseBytes { get; init; }
+
     public string Origin => Port is 443 or 80 ? $"{Scheme}://{Host}" : $"{Scheme}://{Host}:{Port}";
     public string Display => $"{Origin}{Path}";
+}
+
+/// <summary>One observed exchange of an endpoint: when it completed, how long it took, its status and declared response size. No header value, body or query.</summary>
+public sealed record ObservedRequestSample(DateTimeOffset At, double DurationMs, int Status, long? ResponseBytes);
+
+/// <summary>Bounds for the performance metadata carried per observed endpoint (memory-only on the backend, persisted per page on the frontend).</summary>
+public static class ObservedNetworkPerformanceLimits
+{
+    public const int MaxSamplesPerEndpoint = 50;
+    public const int MaxCacheDirectivesLength = 120;
 }
 
 /// <summary>Runtime evidence only. Never contains a credential; never persisted with environment profiles.</summary>

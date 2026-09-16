@@ -107,6 +107,7 @@ public static class FrontendQualityActiveEngines
         FrontendQualityEngineId.Lighthouse => toggles.EnableLighthouseEngine,
         FrontendQualityEngineId.PassiveSecurity => toggles.EnablePassiveSecurityEngine,
         FrontendQualityEngineId.BrowserQuality => toggles.EnableBrowserQualityEngine,
+        FrontendQualityEngineId.PerformanceQuality => toggles.EnablePerformanceQualityEngine,
         _ => false,
     };
 
@@ -123,6 +124,7 @@ public static class FrontendQualityActiveEngines
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
         FrontendQualityEngineId.PassiveSecurity => "Passive Security",
         FrontendQualityEngineId.BrowserQuality => "Browser Quality",
+        FrontendQualityEngineId.PerformanceQuality => "BirkNext Performance Quality",
         _ => id.ToString(),
     };
 }

@@ -13,6 +13,8 @@ public enum FrontendQualityEngineId
     PassiveSecurity,
     /// <summary>BirkNext Browser Quality: native DOM/accessibility/performance/runtime/Blazor checks from the paired Browser Companion (no CDP, no Playwright).</summary>
     BrowserQuality,
+    /// <summary>BirkNext Performance Quality: native page/runtime/resource/API/Blazor WASM performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse.</summary>
+    PerformanceQuality,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -72,6 +74,8 @@ public enum FrontendQualityEngineOutcomeReason
     BrowserCompanionNotConnected,
     /// <summary>The Browser Companion is connected but no page of this Target Environment has evidence yet.</summary>
     BrowserCompanionNoEvidence,
+    /// <summary>Neither Browser Companion nor Local HTTPS proxy evidence exists for any page of this Target Environment (BirkNext Performance Quality).</summary>
+    PerformanceEvidenceUnavailable,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

@@ -56,7 +56,9 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     FrontendQualityActiveEngineSnapshot? ActiveEngines = null,
     BirkNext.LocalHttpsProxy.FrontendAuthenticatedApiSurfaceResult? AuthenticatedApiSurface = null,
     BrowserQualityReviewResult? BrowserQualityReport = null,
-    string? BrowserQualityError = null)
+    string? BrowserQualityError = null,
+    PerformanceQualityReviewResult? PerformanceQualityReport = null,
+    string? PerformanceQualityError = null)
 {
     public List<string> SkippedEngines { get; init; } = SkippedEngines ?? [];
     public Dictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason> OutcomeReasons { get; init; } = [];
@@ -89,6 +91,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendQualityTargetAccessResolver? _accessResolver;
     private readonly IFrontendAuthenticatedApiSurfaceService? _apiSurface;
     private readonly IBrowserQualityEvidenceSource? _browserQuality;
+    private readonly IPerformanceQualityEvidenceSource? _performanceQuality;
     internal IAuthenticatedReviewOrchestrationObserver AuthenticatedObserver { get; set; } = NoOpAuthenticatedReviewOrchestrationObserver.Instance;
 
     public FrontendQualityReviewOrchestrator(
@@ -104,10 +107,12 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         IFrontendQualityEngineStatusApiService? engineStatusService = null,
         IFrontendQualityTargetAccessResolver? accessResolver = null,
         IFrontendAuthenticatedApiSurfaceService? apiSurface = null,
-        IBrowserQualityEvidenceSource? browserQuality = null)
+        IBrowserQualityEvidenceSource? browserQuality = null,
+        IPerformanceQualityEvidenceSource? performanceQuality = null)
     {
         _apiSurface = apiSurface;
         _browserQuality = browserQuality;
+        _performanceQuality = performanceQuality;
         _security = security;
         _performance = performance;
         _preflight = preflight;
@@ -477,6 +482,26 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Browser Quality"] };
         }
 
+        // ── BirkNext Performance Quality — recorded Browser Companion + Local HTTPS proxy evidence per page; no request to the target ──
+        if (active.IsActive(FrontendQualityEngineId.PerformanceQuality) && _performanceQuality is not null && decisions[FrontendQualityEngineId.PerformanceQuality].IsReady)
+        {
+            try
+            {
+                var performanceQuality = await _performanceQuality.CollectAsync(context, cancellationToken);
+                result = result with { PerformanceQualityReport = performanceQuality };
+                if (!performanceQuality.Assessed)
+                    result = result with { SkippedEngines = [.. result.SkippedEngines, "BirkNext Performance Quality"] };
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                result = result with { PerformanceQualityError = ex.Message, SkippedEngines = [.. result.SkippedEngines, "BirkNext Performance Quality"] };
+            }
+        }
+        else
+        {
+            result = result with { SkippedEngines = [.. result.SkippedEngines, "BirkNext Performance Quality"] };
+        }
+
         var qualityReport = _quality.BuildReport(targetUrl, result.SecurityReport, result.PerformanceReport);
         var accessibilitySkipped = result.AccessibilityReport?.ExecutionStatus is
             AccessibilityExecutionStatusDto.Skipped or AccessibilityExecutionStatusDto.AuthenticationRequired;
@@ -495,10 +520,11 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         // Last, so the intermediate engine merges (which copy properties explicitly) cannot drop it.
         enrichedReport = ApplyAuthenticatedApiSurface(enrichedReport, result.AuthenticatedApiSurface, context, active);
         enrichedReport = ApplyBrowserQuality(enrichedReport, result.BrowserQualityReport);
+        enrichedReport = ApplyPerformanceQuality(enrichedReport, result.PerformanceQualityReport);
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll(
             targetUrl, context, result, _runtime is not null, _accessibility is not null,
             _lighthouse is not null, _passiveSecurity is not null, cancellationToken.IsCancellationRequested,
-            snapshot, result.OutcomeReasons, _browserQuality is not null);
+            snapshot, result.OutcomeReasons, _browserQuality is not null, _performanceQuality is not null);
         outcomes = FrontendQualityEngineOutcomeNormalizer.ApplyAccessDecisions(outcomes, decisions);
 
         return result with
@@ -675,7 +701,52 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         ActiveEngines = activeEngines ?? report.ActiveEngines, TargetEnvironment = report.TargetEnvironment,
         AuthenticatedApiSurface = report.AuthenticatedApiSurface,
         AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
-        PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport
+        PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport,
+        PerformanceQualityReport = report.PerformanceQualityReport
+        };
+    }
+
+    /// <summary>
+    /// Adds the BirkNext Performance Quality findings (deterministic rule output over sanitized evidence) and its limitations, and attaches
+    /// the per-page result so the report can render metrics, coverage, API summaries, timeline and comparison.
+    /// </summary>
+    private static FrontendQualityReviewReport ApplyPerformanceQuality(FrontendQualityReviewReport report, PerformanceQualityReviewResult? performance)
+    {
+        if (performance is null) return report;
+        var findings = performance.Findings.Select(f => new FrontendQualityFinding
+        {
+            Id = $"performance-quality-{f.RuleId}-{Math.Abs(f.Page.GetHashCode()) % 100000}-{Math.Abs(f.Title.GetHashCode()) % 1000}",
+            Title = $"{f.Title} — {f.Page}", Severity = f.Severity,
+            Category = f.Category == PerformanceLayer.Blazor ? FrontendQualityCategory.BlazorWasm : FrontendQualityCategory.Performance,
+            Description = $"[{PerformanceFormat.PhaseLabel(f.Phase)}] {f.Explanation} Observed: {f.ObservedValue}; threshold: {f.Threshold}{(f.ThresholdSource is { } s ? $" ({PerformanceFormat.SourceLabel(s)})" : "")}; confidence: {f.Confidence}.",
+            Recommendation = f.Recommendation,
+            Evidence = [$"Page: {f.Page}", $"Phase: {PerformanceFormat.PhaseLabel(f.Phase)}", .. f.Evidence], SourceSystem = PerformanceQualitySources.EngineName,
+            EngineId = FrontendQualityEngineId.PerformanceQuality, SourceRuleId = f.RuleId, Status = CheckExecutionStatus.Failed,
+        }).ToList();
+        return new FrontendQualityReviewReport
+        {
+            Wcag = report.Wcag,
+            TargetUrl = report.TargetUrl, FinalUrl = report.FinalUrl, GeneratedAt = report.GeneratedAt,
+            CompletedAt = report.CompletedAt, DurationMs = report.DurationMs, OverallScore = report.OverallScore,
+            PerformanceScore = report.PerformanceScore, SecurityScore = report.SecurityScore,
+            AccessibilityScore = report.AccessibilityScore, StandardsScore = report.StandardsScore,
+            WasmScore = report.WasmScore, ReadinessScore = report.ReadinessScore,
+            Findings = report.Findings.Concat(findings).ToList(),
+            LogicalIssues = report.LogicalIssues, ManualReviewItems = report.ManualReviewItems,
+            CategoryScores = report.CategoryScores, Recommendations = report.Recommendations, Risks = report.Risks,
+            Limitations = report.Limitations.Concat(performance.Limitations).Distinct().ToList(),
+            IsBlazorWasm = report.IsBlazorWasm || performance.Pages.Any(p => p.Blazor is { Detected: true }), ErrorMessage = report.ErrorMessage,
+            Coverage = report.Coverage, ReleaseDisposition = report.ReleaseDisposition, EngineOutcomes = report.EngineOutcomes,
+            Completeness = report.Completeness,
+            AssessedEngines = performance.Assessed ? report.AssessedEngines.Append("BirkNext Performance Quality").Distinct().ToList() : report.AssessedEngines,
+            FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
+            PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
+            RedirectOccurred = report.RedirectOccurred, TargetAccess = report.TargetAccess,
+            ActiveEngines = report.ActiveEngines, TargetEnvironment = report.TargetEnvironment,
+            AuthenticatedApiSurface = report.AuthenticatedApiSurface,
+            AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
+            PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport,
+            PerformanceQualityReport = performance,
         };
     }
 

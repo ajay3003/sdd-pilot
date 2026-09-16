@@ -136,6 +136,7 @@ public static class FrontendQualityTargetAccess
     /// Local HTTPS proxy, and every blocker is reported with its precise reason instead of waiting for a timeout.
     /// </summary>
     public const string BrowserCompanionLabel = "Browser Companion (your managed Edge session)";
+    public const string PerformanceQualityLabel = "Browser Companion + Local HTTPS Proxy evidence (passive)";
 
     public static FrontendQualityEngineAccessDecision Decide(FrontendQualityEngineAccessRequirements engine, FrontendQualityTargetAccessContext access)
     {
@@ -144,6 +145,11 @@ public static class FrontendQualityTargetAccess
         if (engine.EngineId == FrontendQualityEngineId.BrowserQuality)
             return Ready(engine, FrontendQualityEngineAccessKind.BrowserCompanion, BrowserCompanionLabel,
                 "Evidence is collected by the BirkNext Browser Companion extension in your normal managed Edge; no CDP, Playwright or token handoff.");
+        // BirkNext Performance Quality reads recorded page evidence from both passive sources; it never contacts the target, so it is
+        // always Ready here and reports its own coverage (browser vs API) as Complete / Partial / Not assessed per evidence category.
+        if (engine.EngineId == FrontendQualityEngineId.PerformanceQuality)
+            return Ready(engine, FrontendQualityEngineAccessKind.BrowserCompanion, PerformanceQualityLabel,
+                "Browser metrics come from the BirkNext Browser Companion in your managed Edge; API/network metrics from the Local HTTPS proxy. No Playwright, CDP, Lighthouse or token handoff.");
 
         var publicKind = engine.PublicAccess;
         if (!access.RequiresAuthentication)

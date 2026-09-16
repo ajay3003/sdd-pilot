@@ -254,7 +254,17 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         MaxWasmRuntimeSizeBytes         = 2L  * 1024 * 1024,
         MaxFrameworkSizeBytes           = 3L  * 1024 * 1024,
         MaxApplicationAssemblySizeBytes = 2L  * 1024 * 1024,
-        MaxIndividualAssetSizeBytes     = 1L  * 1024 * 1024
+        MaxIndividualAssetSizeBytes     = 1L  * 1024 * 1024,
+        // BirkNext Performance Quality (strict preset)
+        ApiResponseWarningMs            = 300,
+        ApiResponsePoorMs               = 800,
+        PageStabilizationGoodMs         = 1500,
+        PageStabilizationPoorMs         = 4000,
+        MaxJsTransferBytes              = 1536L * 1024,
+        SlowResourceMs                  = 1500,
+        MaxLongTasks                    = 2,
+        MainThreadBlockingWarningMs     = 200,
+        MaxIdenticalApiCalls            = 1
     };
 
     public CoreWebVitalsThresholds GetDefaultCoreWebVitals() => new()

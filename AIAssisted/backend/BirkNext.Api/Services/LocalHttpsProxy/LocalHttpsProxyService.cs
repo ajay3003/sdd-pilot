@@ -439,7 +439,12 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
                 IsWebSocket = exchange.IsWebSocket,
                 GraphQlOperationType = exchange.GraphQlOperationType,
                 GraphQlOperationName = exchange.GraphQlOperationName,
-                Referer = exchange.Referer
+                Referer = exchange.Referer,
+                DurationMs = exchange.DurationMs,
+                CacheDirectives = exchange.CacheDirectives,
+                HasEtag = exchange.HasEtag,
+                HasLastModified = exchange.HasLastModified,
+                ResponseBytes = exchange.ResponseBytes,
             }, clock()));
         }
 

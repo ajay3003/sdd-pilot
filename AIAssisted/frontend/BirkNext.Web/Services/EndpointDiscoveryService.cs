@@ -237,12 +237,34 @@ public static class EndpointDiscoveryMerge
             // runtime observations (still held by the live proxy session) never repopulate a just-refreshed page.
             if (page.RefreshedAtUtc is { } boundary && endpoint.LastObservedAt < boundary)
                 continue;
-            changed |= Upsert(page.Endpoints, endpoint);
-            if (page.FirstObservedAt == default || endpoint.FirstObservedAt < page.FirstObservedAt) page.FirstObservedAt = endpoint.FirstObservedAt;
-            if (endpoint.LastObservedAt > page.LastObservedAt) page.LastObservedAt = endpoint.LastObservedAt;
+            var scoped = page.RefreshedAtUtc is { } refreshed ? RestrictToGeneration(endpoint, refreshed) : endpoint;
+            changed |= Upsert(page.Endpoints, scoped);
+            if (page.FirstObservedAt == default || scoped.FirstObservedAt < page.FirstObservedAt) page.FirstObservedAt = scoped.FirstObservedAt;
+            if (scoped.LastObservedAt > page.LastObservedAt) page.LastObservedAt = scoped.LastObservedAt;
+            PerformanceHistoryRecorder.Record(page);
         }
         if (changed) snapshot.UpdatedAt = now;
         return changed;
+    }
+
+    /// <summary>
+    /// The live proxy registry is cumulative across the session; after "Refresh analysis" only the request samples observed at or after the
+    /// boundary belong to the new generation. When samples exist, counts, statuses and latency aggregates are recomputed from them, so old
+    /// calls never inflate the refreshed page. Without samples (legacy traffic) the cumulative counts are kept as before.
+    /// </summary>
+    public static ObservedNetworkEndpoint RestrictToGeneration(ObservedNetworkEndpoint endpoint, DateTimeOffset boundary)
+    {
+        if (endpoint.Samples.Count == 0) return endpoint with { FirstObservedAt = endpoint.FirstObservedAt < boundary ? boundary : endpoint.FirstObservedAt };
+        var samples = endpoint.Samples.Where(s => s.At >= boundary).ToList();
+        if (samples.Count == 0) return endpoint with { Samples = [], Count = 0, FirstObservedAt = boundary, TotalDurationMs = 0, MinDurationMs = null, MaxDurationMs = null, LastDurationMs = null, ErrorCount = 0, AuthRejectedCount = 0, NotModifiedCount = 0 };
+        return endpoint with
+        {
+            Samples = samples,
+            Count = samples.Count < endpoint.Samples.Count ? samples.Count : endpoint.Count,
+            FirstObservedAt = samples.Min(s => s.At) < boundary ? boundary : samples.Min(s => s.At),
+            TotalDurationMs = samples.Sum(s => s.DurationMs), MinDurationMs = samples.Min(s => s.DurationMs), MaxDurationMs = samples.Max(s => s.DurationMs), LastDurationMs = samples[0].DurationMs,
+            ErrorCount = samples.Count(s => s.Status >= 400), AuthRejectedCount = samples.Count(s => s.Status is 401 or 403), NotModifiedCount = samples.Count(s => s.Status == 304),
+        };
     }
 
     /// <summary>
@@ -274,14 +296,20 @@ public static class EndpointDiscoveryMerge
             if (string.IsNullOrWhiteSpace(page.DisplayName) && !string.IsNullOrWhiteSpace(evidence.DocumentTitle)) page.DisplayName = evidence.DocumentTitle;
             if (page.FirstObservedAt == default || evidence.VisitStartedAt < page.FirstObservedAt) page.FirstObservedAt = evidence.VisitStartedAt;
             if (evidence.CapturedAt > page.LastObservedAt) page.LastObservedAt = evidence.CapturedAt;
+            PerformanceHistoryRecorder.Record(page);
             changed = true;
         }
         if (changed) snapshot.UpdatedAt = now;
         return changed;
     }
 
-    /// <summary>Collapse identity within a page/shared list: category + scheme + host + port + path + method.</summary>
-    public static string Key(ObservedNetworkEndpoint e) => $"{e.Category}|{e.Scheme}|{e.Host}|{e.Port}|{e.Path}|{e.Method}";
+    /// <summary>
+    /// Collapse identity within a page/shared list: category + scheme + host + port + path + method, plus the operation for GraphQL so
+    /// distinct operations to one endpoint (GetChildren, GetRoles) are separate rows with their own counts and latency samples.
+    /// </summary>
+    public static string Key(ObservedNetworkEndpoint e) => e.Category == ObservedTrafficCategory.GraphQl
+        ? $"{e.Category}|{e.Scheme}|{e.Host}|{e.Port}|{e.Path}|{e.Method}|{e.OperationType}|{e.OperationName}"
+        : $"{e.Category}|{e.Scheme}|{e.Host}|{e.Port}|{e.Path}|{e.Method}";
 
     private static bool Upsert(List<ObservedNetworkEndpoint> list, ObservedNetworkEndpoint incoming)
     {
@@ -289,6 +317,9 @@ public static class EndpointDiscoveryMerge
         var index = list.FindIndex(e => Key(e) == key);
         if (index < 0) { list.Add(incoming); return true; }
         var existing = list[index];
+        // The live registry is cumulative, so an incoming record with at least as many observations carries the freshest performance
+        // metadata (samples, statuses, cache directives); a smaller count (proxy restarted) keeps the persisted aggregates.
+        var takeIncoming = incoming.Count >= existing.Count;
         list[index] = existing with
         {
             Count = Math.Max(existing.Count, incoming.Count),
@@ -298,8 +329,49 @@ public static class EndpointDiscoveryMerge
             FirstObservedAt = incoming.FirstObservedAt < existing.FirstObservedAt ? incoming.FirstObservedAt : existing.FirstObservedAt,
             LastObservedAt = incoming.LastObservedAt > existing.LastObservedAt ? incoming.LastObservedAt : existing.LastObservedAt,
             OperationType = incoming.OperationType != GraphQlOperationType.None ? incoming.OperationType : existing.OperationType,
-            OperationName = incoming.OperationName ?? existing.OperationName
+            OperationName = incoming.OperationName ?? existing.OperationName,
+            Samples = takeIncoming && incoming.Samples.Count > 0 ? incoming.Samples : existing.Samples,
+            LastDurationMs = incoming.LastDurationMs ?? existing.LastDurationMs,
+            MinDurationMs = takeIncoming && incoming.MinDurationMs is not null ? incoming.MinDurationMs : existing.MinDurationMs,
+            MaxDurationMs = takeIncoming && incoming.MaxDurationMs is not null ? incoming.MaxDurationMs : existing.MaxDurationMs,
+            TotalDurationMs = takeIncoming && incoming.TotalDurationMs > 0 ? incoming.TotalDurationMs : existing.TotalDurationMs,
+            ErrorCount = takeIncoming ? incoming.ErrorCount : existing.ErrorCount,
+            AuthRejectedCount = takeIncoming ? incoming.AuthRejectedCount : existing.AuthRejectedCount,
+            NotModifiedCount = takeIncoming ? incoming.NotModifiedCount : existing.NotModifiedCount,
+            CacheDirectives = incoming.CacheDirectives ?? existing.CacheDirectives,
+            HasEtag = existing.HasEtag || incoming.HasEtag,
+            HasLastModified = existing.HasLastModified || incoming.HasLastModified,
+            LastResponseBytes = incoming.LastResponseBytes ?? existing.LastResponseBytes,
         };
         return true;
+    }
+}
+
+/// <summary>
+/// Records the compact per-generation performance history of a page (BirkNext Performance Quality). Called whenever browser or proxy
+/// evidence of the page changes; the current generation's entry is replaced, older generations are kept (bounded) for comparison.
+/// Threshold-independent raw numbers only.
+/// </summary>
+public static class PerformanceHistoryRecorder
+{
+    public static void Record(PageAnalysis page)
+    {
+        var perf = page.BrowserEvidence?.Performance;
+        var api = page.Endpoints.Where(e => e.Category is ObservedTrafficCategory.Rest or ObservedTrafficCategory.GraphQl).ToList();
+        if (perf is null && api.Count == 0) return;
+        var entry = new PagePerformanceHistoryEntry
+        {
+            Generation = page.AnalysisGeneration,
+            ObservationType = perf?.ObservationType ?? "unknown",
+            CapturedAt = page.BrowserEvidence?.CapturedAt ?? page.LastObservedAt,
+            LcpMs = perf?.LcpMs, Cls = perf?.Cls, StabilizationMs = perf?.StabilizationMs,
+            TransferredBytes = perf?.TransferredBytes, LongTaskCount = perf?.LongTaskCount, ResourceCount = perf?.ResourceCount,
+            ApiCalls = api.Count == 0 ? null : api.Sum(e => e.Count),
+            GraphQlCalls = api.Count == 0 ? null : api.Where(e => e.Category == ObservedTrafficCategory.GraphQl).Sum(e => e.Count),
+            WasmBytes = page.BrowserEvidence?.Blazor?.WasmBytes ?? perf?.WasmBytes, FrameworkBytes = page.BrowserEvidence?.Blazor?.FrameworkBytes,
+        };
+        page.PerformanceHistory.RemoveAll(h => h.Generation == entry.Generation);
+        page.PerformanceHistory.Add(entry);
+        page.PerformanceHistory = page.PerformanceHistory.OrderByDescending(h => h.Generation).Take(PagePerformanceHistoryEntry.MaxEntries).OrderBy(h => h.Generation).ToList();
     }
 }

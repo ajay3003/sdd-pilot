@@ -351,6 +351,9 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("<p>Field data is not included. Lighthouse is a synthetic lab measurement; INP and real-user Core Web Vitals require field data.</p>\n</section>\n");
         }
 
+        if (report.PerformanceQualityReport is { } performanceQuality)
+            AppendPerformanceQuality(sb, performanceQuality, report.LighthouseReport);
+
         if (report.PassiveSecurityReport is { } passive)
         {
             sb.Append("<section class=\"block\">\n<h2>Passive Security Assessment</h2>\n");
@@ -711,6 +714,88 @@ public sealed class ReportExportService : IReportExportService
             sb.Append(Table(["Category", "Finding", "Sanitized evidence"], (runtime.Findings ?? []).Select(f => new[] { Esc(f.Category), Esc(SanitizePassive(f.Title)), Esc(SanitizePassive(string.Join(" | ", f.Evidence ?? []))) })));
             sb.Append($"<p><strong>Limitations:</strong> {Esc(SanitizePassive(string.Join(" ", runtime.Limitations ?? [])))}</p></section>\n");
         }
+    }
+
+    /// <summary>
+    /// BirkNext Performance Quality export: coverage, per-page phase/metrics/status/threshold (with source), findings, API and Blazor
+    /// summaries and missing evidence. Only sanitized values (metrics, counts, operation names, query-stripped URLs) — never a token,
+    /// cookie, header value, body or query value.
+    /// </summary>
+    private static void AppendPerformanceQuality(StringBuilder sb, PerformanceQualityReviewResult result, LighthouseResultDto? lighthouse)
+    {
+        sb.Append("<section class=\"block\">\n<h2>BirkNext Performance Quality</h2>\n");
+        sb.Append("<p>Native engine: browser metrics from the Browser Companion in the user's managed Edge (field, PerformanceObserver); API/network metrics from the Local HTTPS proxy. Independent of Lighthouse, Playwright and CDP. Initial load and SPA navigation are reported separately.</p>\n");
+        sb.Append($"<p><strong>Assessment:</strong> {Esc(result.Coverage.OverallLabel)} &nbsp; <strong>Pages with evidence:</strong> {result.PagesWithEvidence} &nbsp; <strong>Findings:</strong> {result.Findings.Count()}</p>\n");
+        sb.Append(Table(["Evidence category", "Coverage"],
+        [
+            ["Browser", Cov(result.Coverage.Browser)], ["Runtime", Cov(result.Coverage.Runtime)], ["Resources", Cov(result.Coverage.Resources)],
+            ["API / network", Cov(result.Coverage.Api)], ["Blazor WASM", Cov(result.Coverage.Blazor)],
+        ]));
+        foreach (var reason in result.Coverage.Reasons) sb.Append($"<p><em>Missing evidence:</em> {Esc(reason)}</p>\n");
+        if (!result.Assessed)
+        {
+            sb.Append($"<p><strong>Not assessed</strong> — {Esc(result.CompanionMessage)}</p>\n</section>\n");
+            return;
+        }
+        sb.Append("<h3>Application-wide overview</h3>\n");
+        sb.Append(Table(["Page", "Phase", "LCP", "Stabilization", "Transfer", "API calls", "Slow calls", "Long tasks", "Status", "Coverage"],
+            PerformanceQualityRules.Overview(result.Pages).Select(r => new[]
+            {
+                Esc(r.Title), Esc(PerformanceFormat.PhaseLabel(r.Phase)), Esc(MetricCell(r.Lcp)), Esc(MetricCell(r.Stabilization)), Esc(MetricCell(r.Transfer)),
+                Esc(MetricCell(r.ApiCalls)), Esc(MetricCell(r.SlowCalls)), Esc(MetricCell(r.LongTasks)), Esc(PerformanceFormat.StatusLabel(r.Status)), Esc(r.Coverage.ToString()),
+            })));
+        foreach (var page in result.Pages)
+        {
+            sb.Append($"<h3>{Esc(page.PageTitle)} <small>({Esc(page.PageId)} · {Esc(PerformanceFormat.PhaseLabel(page.ObservationType))} · generation {page.Generation} · {Esc(page.Coverage.OverallLabel)})</small></h3>\n");
+            foreach (var note in page.Notes.Concat(page.Coverage.Reasons).Distinct()) sb.Append($"<p><em>{Esc(note)}</em></p>\n");
+            sb.Append(Table(["Layer", "Phase", "Metric", "Result", "Status", "Threshold", "Threshold source", "Source", "Note"],
+                page.Metrics.Select(m => new[]
+                {
+                    Esc(m.Layer.ToString()), Esc(PerformanceFormat.PhaseLabel(m.Phase)), Esc(m.Name), Esc(m.Display), Esc(PerformanceFormat.StatusLabel(m.Status)),
+                    Esc(m.Threshold?.Display ?? "—"), Esc(m.Threshold?.SourceLabel ?? "—"), Esc(m.Source), Esc(m.Note ?? ""),
+                })));
+            if (page.Findings.Count > 0)
+                sb.Append(Table(["Severity", "Category", "Phase", "Finding", "Observed", "Threshold", "Threshold source", "Evidence", "Confidence", "Recommendation"],
+                    page.Findings.Select(f => new[]
+                    {
+                        Badge(f.Severity.ToString()), Esc(f.Category.ToString()), Esc(PerformanceFormat.PhaseLabel(f.Phase)), $"<strong>{Esc(f.Title)}</strong><br/>{Esc(f.Explanation)}",
+                        Esc(f.ObservedValue), Esc(f.Threshold), Esc(f.ThresholdSource is { } s ? PerformanceFormat.SourceLabel(s) : "—"),
+                        Esc($"{f.EvidenceSource}: {string.Join("; ", f.Evidence)}"), Esc(f.Confidence.ToString()), Esc(f.Recommendation),
+                    })));
+            else sb.Append("<p>No performance findings for the assessed layers.</p>\n");
+            if (page.Api.Available)
+            {
+                sb.Append($"<p><strong>API / network (Local HTTPS proxy):</strong> REST {page.Api.RestCalls} · GraphQL {page.Api.GraphQlCalls} · WebSocket {page.Api.WebSocketConnections} · slow {page.Api.SlowCalls} · duplicate operations {page.Api.DuplicateOperations.Count} · errors {page.Api.ErrorResponses} (auth {page.Api.AuthRejected}) · bursts {page.Api.Bursts.Count}{(page.Api.TimingAvailable ? "" : " · counts only (no timing samples)")}</p>\n");
+                sb.Append(Table(["Operation", "Calls", "Latency", "p95", "Max", "Status", "Errors", "Flags"],
+                    page.Api.Operations.Take(40).Select(o => new[]
+                    {
+                        Esc(o.Display), o.Count.ToString(), Esc(o.Statistics.Representative is { } r ? $"{PerformanceFormat.Value(r, "ms")} ({o.Statistics.RepresentativeLabel})" : "—"),
+                        Esc(o.Statistics.Sufficient ? PerformanceFormat.Value(o.Statistics.P95, "ms") : $"n/a ({o.Statistics.SampleCount} samples)"), Esc(PerformanceFormat.Value(o.Statistics.Max, "ms")),
+                        Esc(PerformanceFormat.StatusLabel(o.LatencyStatus)), o.ErrorCount.ToString(), Esc($"{(o.IsDuplicate ? "duplicate " : "")}{(o.IsPollingLike ? "polling-like " : "")}{(o.CacheDirectives is { Length: > 0 } cd ? $"cache: {cd}" : "")}"),
+                    })));
+                foreach (var p in page.Api.SequentialPatterns) sb.Append($"<p>Observed sequential request pattern: {Esc(string.Join(" → ", p.Operations))} ({Esc(PerformanceFormat.Value(p.TotalMs, "ms"))}).</p>\n");
+            }
+            else sb.Append("<p><strong>API / network:</strong> Not available — no Local HTTPS proxy traffic recorded for this page.</p>\n");
+            if (page.Blazor is { Detected: true } blazor)
+                sb.Append($"<p><strong>Blazor WASM:</strong> framework {FormatBytes(blazor.FrameworkBytes)} ({blazor.FrameworkResourceCount} resources, {blazor.CachedFrameworkResourceCount} cached, load {Esc(blazor.LoadKind)}) · WASM {FormatBytes(blazor.WasmBytes)} · assemblies {blazor.AssemblyCount} ({FormatBytes(blazor.AssemblyBytes)}) · runtime {blazor.RuntimeResourceCount} · culture/timezone {blazor.CultureResourceCount} · boot manifest {(blazor.BootManifestFailed ? "failed" : blazor.BootManifestObserved ? "loaded" : "not observed")} · framework load window {Esc(PerformanceFormat.Value(blazor.FrameworkLoadEndMs, "ms"))} · failures {blazor.FrameworkFailures.Count} · repeated {blazor.RepeatedFrameworkDownloads}</p>\n");
+            else if (page.Resources is not null) sb.Append("<p><strong>Blazor WASM:</strong> no framework resources observed on this page.</p>\n");
+            if (page.Comparison is { } cmp)
+                sb.Append(Table(["Metric", $"Current (gen {cmp.CurrentGeneration})", $"Previous (gen {cmp.PreviousGeneration})", "Change"],
+                    cmp.Deltas.Select(d => new[] { Esc(d.Metric), Esc(d.Current), Esc(d.Previous), Esc(d.Change) })));
+            var rows = PerformanceLighthouseComparison.Build(page, lighthouse);
+            if (rows.Count > 0)
+            {
+                sb.Append(Table(["Metric", "BirkNext (field)", "Lighthouse (lab)", "Difference", "Note"], rows.Select(r => new[] { Esc(r.Metric), Esc(r.BirkNext), Esc(r.Lighthouse), Esc(r.Difference), Esc(r.Note) })));
+                sb.Append($"<p>{Esc(PerformanceLighthouseComparison.Methodology)}</p>\n");
+            }
+        }
+        sb.Append("<h3>Thresholds</h3>\n");
+        sb.Append(Table(["Threshold", "Value", "Source"], result.Thresholds.Select(t => new[] { Esc(t.Name), Esc(t.Display), Esc(t.SourceLabel) })));
+        foreach (var limitation in result.Limitations) sb.Append($"<p><em>{Esc(limitation)}</em></p>\n");
+        sb.Append("</section>\n");
+
+        static string Cov(PerformanceCoverageState s) => s switch { PerformanceCoverageState.Complete => "Complete", PerformanceCoverageState.Partial => "Partial", _ => "Not available" };
+        static string MetricCell(PerformanceQualityMetric? m) => m is null ? "—" : m.Status == PerformanceMetricStatus.NotMeasured ? "Not measured" : m.Display;
     }
 
     private static string CategoryLabel(FrontendQualityCategory c) => c switch

@@ -148,6 +148,7 @@ builder.Services.AddHttpClient<IBrowserCompanionApiService, BrowserCompanionApiS
 });
 builder.Services.AddScoped<BrowserCompanionRuntime>();
 builder.Services.AddScoped<IBrowserQualityEvidenceSource, BrowserQualityEvidenceSource>();
+builder.Services.AddScoped<IPerformanceQualityEvidenceSource, PerformanceQualityEvidenceSource>();
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
 {
     client.BaseAddress = new Uri(backendUrl);

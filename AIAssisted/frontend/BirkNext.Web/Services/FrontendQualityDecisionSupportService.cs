@@ -83,6 +83,7 @@ public static class FrontendQualityDecisionSupportService
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
         FrontendQualityEngineId.PassiveSecurity => "Passive Security / ZAP",
         FrontendQualityEngineId.BrowserQuality => "Browser Quality / Browser Companion",
+        FrontendQualityEngineId.PerformanceQuality => "BirkNext Performance Quality / Browser Companion + Local HTTPS Proxy",
         _ => id.ToString(),
     };
 
