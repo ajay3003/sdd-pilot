@@ -40,7 +40,7 @@
                     <dl class="aqr-dl">
                         <div><dt>Active target</dt><dd><span class="aqr-env-badge aqr-env-badge-@_context.ActiveProfile.EnvironmentType.ToString().ToLowerInvariant()">@_context.ActiveProfile.EnvironmentType</span> <strong data-testid="aqr-env-name">@_context.ActiveProfile.Name</strong></dd></div>
                         <div><dt>Frontend URL</dt><dd class="aqr-mono">@_context.TargetUrl</dd></div>
-                        <div><dt>Authenticated testing method</dt><dd>@AuthenticatedTestingMethodLabels.Label(_context.ActiveProfile.Authentication.AuthenticatedTestingMethod)</dd></div>
+                        <div><dt>Authenticated testing method</dt><dd>@AuthenticatedTestingMethodLabels.Option(_context.ActiveProfile.Authentication.AuthenticatedTestingMethod)</dd></div>
                         <div><dt>Production policy</dt><dd>@(IsProduction ? "Passive read-only review; error probes disabled" : "Read-only review with safe error probes")</dd></div>
                     </dl>
                 }

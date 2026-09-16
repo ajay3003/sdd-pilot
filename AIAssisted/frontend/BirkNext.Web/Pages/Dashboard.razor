@@ -764,8 +764,8 @@
                 </div>
                 @if (_aqrReport is { } aqrCard)
                 {
-                    @{ var aqrCompleted = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Completed); }
-                    @{ var aqrBlocked = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Blocked); }
+                    var aqrCompleted = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Completed);
+                    var aqrBlocked = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Blocked);
                     <div class="db-analysis-score">@aqrCompleted/@aqrCard.Targets.Count</div>
                     <span class="db-analysis-status @(aqrBlocked > 0 ? "db-status-warn" : "db-status-ok")">@(aqrBlocked > 0 ? $"{aqrBlocked} target(s) blocked" : "API targets reviewed")</span>
                     @if (aqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topAqrFinding)
