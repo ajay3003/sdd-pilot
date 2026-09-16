@@ -205,7 +205,7 @@
     };
     private FrontendPerformanceThresholds Thresholds => Profile?.Performance ?? new();
     private CoreWebVitalsThresholds Vitals => Profile?.CoreWebVitals ?? new();
-    private IReadOnlyList<BrowserQualityFinding> PageFindings(PageAnalysis page) => BrowserQualityRules.Evaluate(page, Thresholds, Vitals);
+    private IReadOnlyList<BrowserQualityFinding> PageFindings(PageAnalysis page) => BrowserQualityRules.Evaluate(page, Thresholds, Vitals, Snapshot.Wcag);
 
     private string _view = "overview";
     private string? _selectedPage;
@@ -276,7 +276,7 @@
                             <ul class="ed-findings">
                                 @foreach (var f in a11y.Findings.OrderBy(f => BrowserQualityRules.Severity(f.Severity)))
                                 {
-                                    <li data-testid="discovery-a11y-finding"><span class="ed-sev ed-sev-@f.Severity.ToLowerInvariant()">@f.Severity</span> <strong>@f.Title</strong> ×@f.Count @(f.Wcag is { Length: > 0 } ? $"· WCAG {f.Wcag}" : "")
+                                    <li data-testid="discovery-a11y-finding"><span class="ed-sev ed-sev-@f.Severity.ToLowerInvariant()">@f.Severity</span> <strong>@f.Title</strong> ×@f.Count @(f.Wcag == "4.1.1" && Snapshot.Wcag.Version == WcagVersion.Wcag22 ? "· Markup guidance; 4.1.1 is obsolete in WCAG 2.2" : f.Wcag is { Length: > 0 } ? $"· WCAG {f.Wcag}" : "")
                                         @if (f.Selectors.Count > 0) { <span class="ed-mono ed-selectors">@string.Join(", ", f.Selectors)</span> }
                                     </li>
                                 }

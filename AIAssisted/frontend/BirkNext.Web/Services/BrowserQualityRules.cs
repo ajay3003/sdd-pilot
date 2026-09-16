@@ -23,7 +23,7 @@ public static class BrowserQualityRules
     /// <summary>Repeated identical authenticated API calls within one page generation that are worth reviewing.</summary>
     public const int RepeatedApiCallThreshold = 3;
 
-    public static IReadOnlyList<BrowserQualityFinding> Evaluate(PageAnalysis page, FrontendPerformanceThresholds performance, CoreWebVitalsThresholds vitals)
+    public static IReadOnlyList<BrowserQualityFinding> Evaluate(PageAnalysis page, FrontendPerformanceThresholds performance, CoreWebVitalsThresholds vitals, WcagSettings? wcag = null)
     {
         var evidence = page.BrowserEvidence;
         if (evidence is null) return [];
@@ -54,14 +54,20 @@ public static class BrowserQualityRules
         // ── Accessibility (rule results computed in the browser; guidance/severity fixed per rule id) ──
         if (evidence.Accessibility is { } a11y)
             foreach (var rule in a11y.Findings.Where(f => f.Count > 0))
+            {
+                var criterion = rule.Wcag == "4.1.1" && (wcag?.Version ?? WcagVersion.Wcag22) == WcagVersion.Wcag22 ? null : rule.Wcag;
                 findings.Add(new BrowserQualityFinding
                 {
                     RuleId = rule.RuleId, Category = BrowserQualityCategory.Accessibility, Severity = Severity(rule.Severity), Page = identity, ObservedAt = at,
-                    Title = rule.Title, Wcag = rule.Wcag,
+                    Title = rule.Title, Wcag = criterion,
+                    Level = WcagRegistry.All.FirstOrDefault(d => d.CriterionId == criterion)?.Level,
+                    Element = rule.Selectors.FirstOrDefault(), Observed = $"{rule.Count} matching element(s)",
+                    Expected = rule.Guidance, Confidence = WcagConfidence.Medium, EvidenceSource = WcagEvidenceSource.DOM,
                     Explanation = $"{rule.Count} element(s) matched the BirkNext accessibility check \"{rule.Title}\" on this page. Automated checks do not establish WCAG conformance.",
-                    Evidence = [$"Occurrences: {rule.Count}", .. rule.Selectors.Select(s => $"Selector: {s}"), .. (rule.Wcag is { Length: > 0 } w ? [$"WCAG: {w}"] : Array.Empty<string>())],
+                    Evidence = [$"Occurrences: {rule.Count}", .. rule.Selectors.Select(s => $"Selector: {s}"), .. (criterion is { Length: > 0 } w ? [$"WCAG: {w}"] : Array.Empty<string>())],
                     Recommendation = rule.Guidance,
                 });
+            }
 
         // ── Performance ──
         if (evidence.Performance is { } perf)

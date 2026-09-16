@@ -38,7 +38,7 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
             .OrderByDescending(p => p.LastObservedAt)
             .ToList();
         var proxyEvidence = pages.Any(p => p.Endpoints.Count > 0);
-        var findings = pages.SelectMany(p => BrowserQualityRules.Evaluate(p, context.PerformanceThresholds, context.CoreWebVitalsThresholds)).ToList();
+        var findings = pages.SelectMany(p => BrowserQualityRules.Evaluate(p, context.PerformanceThresholds, context.CoreWebVitalsThresholds, discovery.GetSnapshot(profileId).Wcag)).ToList();
 
         var limitations = new List<string>
         {
