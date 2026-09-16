@@ -51,10 +51,11 @@ public static class FrontendQualityEngineOutcomeNormalizer
     {
         var policy = context.EngineRequirements.ToPolicy();
         var (state, outcomeReason) = PreflightOutcome(status);
-        return Enum.GetValues<FrontendQualityEngineId>().Select(id => Base(
-            id, DisplayName(id), Enabled(id, context.FeatureToggles), policy.GetRequirement(id),
-            Enabled(id, context.FeatureToggles) ? state : FrontendQualityEngineExecutionState.Disabled,
-            targetUrl, failure: reason, reason: outcomeReason)).ToList();
+        // Disabled engines were not part of the review: they keep the "disabled" reason, not the target/preflight failure.
+        return Enum.GetValues<FrontendQualityEngineId>().Select(id => Enabled(id, context.FeatureToggles)
+            ? Base(id, DisplayName(id), true, policy.GetRequirement(id), state, targetUrl, failure: reason, reason: outcomeReason)
+            : Base(id, DisplayName(id), false, policy.GetRequirement(id), FrontendQualityEngineExecutionState.Disabled, targetUrl,
+                reason: FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment)).ToList();
     }
 
     /// <summary>
@@ -426,6 +427,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
 
     private static FrontendQualityEngineOutcomeReason ReasonForState(FrontendQualityEngineExecutionState state) => state switch
     {
+        FrontendQualityEngineExecutionState.Disabled => FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment,
         FrontendQualityEngineExecutionState.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
         FrontendQualityEngineExecutionState.Cancelled => FrontendQualityEngineOutcomeReason.Cancelled,
         FrontendQualityEngineExecutionState.Unavailable => FrontendQualityEngineOutcomeReason.ReadinessUnavailable,
@@ -468,7 +470,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
             var layer2 = snapshot.Layer2Enabled.TryGetValue(pair.Item2, out var layer2Value) && layer2Value;
             var auth = snapshot.AuthModeSupported.TryGetValue(pair.Item2, out var authValue) && authValue;
 
-            var reason = !outcomes[index].Enabled ? FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
+            var reason = !outcomes[index].Enabled ? FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment
                 : !layer1 ? FrontendQualityEngineOutcomeReason.BlockedByDeploymentPolicy
                 : !layer2 ? FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
                 : !selected ? FrontendQualityEngineOutcomeReason.NotSelected
@@ -489,7 +491,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
         {
             FrontendQualityEngineOutcomeReason.None => fallback,
             FrontendQualityEngineOutcomeReason.NotSelected => FrontendQualityEngineExecutionState.NotApplicable,
-            FrontendQualityEngineOutcomeReason.DisabledInSystemSettings => FrontendQualityEngineExecutionState.Disabled,
+            FrontendQualityEngineOutcomeReason.DisabledInSystemSettings or
+            FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment => FrontendQualityEngineExecutionState.Disabled,
             FrontendQualityEngineOutcomeReason.AuthenticationRequired or
             FrontendQualityEngineOutcomeReason.AuthenticationModeUnsupported => FrontendQualityEngineExecutionState.Unavailable,
             FrontendQualityEngineOutcomeReason.AuthenticationCancelled or

@@ -234,6 +234,11 @@
             </div>
         }
 
+        @if (report.ActiveEngines is { } reportEngines)
+        {
+            <FrontendQualityActiveEnginesPanel Snapshot="reportEngines" />
+        }
+
         @if (report.TargetAccess is { } reportAccess)
         {
             <FrontendQualityTargetAccessPanel Access="reportAccess" ShowActions="false" />
@@ -925,6 +930,7 @@
             PreflightStatus = qualityReport.PreflightStatus,
             PreflightMessage = qualityReport.PreflightMessage,
             TargetAccess = qualityReport.TargetAccess,
+            ActiveEngines = qualityReport.ActiveEngines,
             AccessibilityReport = qualityReport.AccessibilityReport,
             LighthouseReport = qualityReport.LighthouseReport,
             PassiveSecurityReport = qualityReport.PassiveSecurityReport,

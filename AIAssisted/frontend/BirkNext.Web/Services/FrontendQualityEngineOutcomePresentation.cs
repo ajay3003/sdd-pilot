@@ -114,6 +114,9 @@ public static class FrontendQualityEngineOutcomePresentation
             FrontendQualityEngineOutcomeReason.ManualOnlyMethod =>
                 new("Manual verification only", "The environment's authentication method supports manual verification only; no automated authenticated access exists.", OutcomePresentationCategory.AuthUnsupported, false),
 
+            FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment =>
+                new("Disabled", "The engine is disabled in the Target Environment configuration and was not part of this review.", OutcomePresentationCategory.SettingsDisabled, false),
+
             _ => new("Unknown", "An unexpected outcome was encountered.", OutcomePresentationCategory.EngineFailed, false),
         };
 

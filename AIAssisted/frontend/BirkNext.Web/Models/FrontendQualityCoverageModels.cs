@@ -64,6 +64,8 @@ public enum FrontendQualityEngineOutcomeReason
     BrowserDomUnavailableForMethod,
     /// <summary>The environment's authentication method is manual verification only; no automated authenticated access exists.</summary>
     ManualOnlyMethod,
+    /// <summary>The engine is disabled in the saved Target Environment configuration; it was not part of this review.</summary>
+    DisabledInTargetEnvironment,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -230,7 +232,8 @@ public sealed class FrontendQualityCoverage
     public static bool IsInactive(FrontendQualityEngineOutcome outcome) =>
         !outcome.Enabled ||
         outcome.ExecutionState == FrontendQualityEngineExecutionState.Disabled ||
-        outcome.OutcomeReason is FrontendQualityEngineOutcomeReason.NotSelected or FrontendQualityEngineOutcomeReason.DisabledInSystemSettings;
+        outcome.OutcomeReason is FrontendQualityEngineOutcomeReason.NotSelected or FrontendQualityEngineOutcomeReason.DisabledInSystemSettings
+            or FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment;
 
     public AssessmentCompleteness ToLegacyCompleteness() => RequiredCoverageState switch
     {
