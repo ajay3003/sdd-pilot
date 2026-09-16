@@ -440,6 +440,10 @@
                                         <div><dt>Last observed</dt><dd class="ed-mono">@Time(e.LastObservedAt)</dd></div>
                                         <div><dt>Calls</dt><dd>@e.Count</dd></div>
                                         <div><dt>Last status</dt><dd>@(e.LastStatus > 0 ? e.LastStatus.ToString() : "—")</dd></div>
+                                        @if (e.Category is ObservedTrafficCategory.Rest or ObservedTrafficCategory.GraphQl)
+                                        {
+                                            <div><dt>API Quality Review</dt><dd><a class="ed-analyze-link" data-testid="discovery-analyze-api" href="@AnalyzeHref(e)">Analyze in API Review →</a></dd></div>
+                                        }
                                     </dl>
                                 </td></tr>
                             }
@@ -451,6 +455,11 @@
     };
 
     private void Toggle(string key) { if (!_expanded.Remove(key)) _expanded.Add(key); }
+
+    /// <summary>Safe navigation reference: the API review target id (type + origin + base path digest), never a query string or credential.</summary>
+    private static string AnalyzeHref(ObservedNetworkEndpoint e) => e.Category == ObservedTrafficCategory.GraphQl
+        ? $"/api-quality-review?target={ApiReviewTargetResolver.Id(BirkNext.ApiReview.ApiReviewTargetType.GraphQl, e.Origin, e.Path)}"
+        : $"/api-quality-review?target={ApiReviewTargetResolver.Id(BirkNext.ApiReview.ApiReviewTargetType.Rest, e.Origin, ApiReviewTargetResolver.BasePathOf(e.Path))}";
 
     private static readonly (string Key, string Label)[] Filters =
         [("app", "Application"), ("rest", "REST"), ("graphql", "GraphQL"), ("websocket", "WebSocket"), ("auth", "Auth"), ("other", "Other"), ("static", "Static/CDN"), ("telemetry", "Telemetry"), ("all", "All")];

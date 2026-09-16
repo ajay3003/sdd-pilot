@@ -1,3 +1,4 @@
+using BirkNext.ApiReview;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -77,7 +78,7 @@ public sealed class RuntimeReviewSessionService
     public RuntimeReviewSessionState<WasmSecurityReviewReport>     SecurityReview    { get; } = new();
     public RuntimeReviewSessionState<WasmPerformanceReviewReport>  PerformanceReview { get; } = new();
     public RuntimeReviewSessionState<FrontendQualityReviewReport>  QualityReview     { get; } = new();
-    public RuntimeReviewSessionState<ApiQualityReviewReport>       ApiQualityReview  { get; } = new();
+    public RuntimeReviewSessionState<ApiReviewReport>       ApiQualityReview  { get; } = new();
     public RuntimeReviewSessionState<IntegrationQualityReport>      IntegrationQualityReview { get; } = new();
 
     public void MarkSecurityRunning(FrontendAnalysisContext context) =>
@@ -116,8 +117,8 @@ public sealed class RuntimeReviewSessionService
     public void MarkApiQualityRunning(FrontendAnalysisContext context) =>
         ApiQualityReview.MarkRunning(CreateApiQualitySnapshot(context));
 
-    public void SaveApiQualityResult(ApiQualityReviewReport report, FrontendAnalysisContext context) =>
-        ApiQualityReview.Complete(report, CreateApiQualitySnapshot(context), ToOffset(report.GeneratedAt));
+    public void SaveApiQualityResult(ApiReviewReport report, FrontendAnalysisContext context) =>
+        ApiQualityReview.Complete(report, CreateApiQualitySnapshot(context), report.GeneratedAt);
 
     public void MarkApiQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
         ApiQualityReview.Fail(CreateApiQualitySnapshot(context), errorMessage);

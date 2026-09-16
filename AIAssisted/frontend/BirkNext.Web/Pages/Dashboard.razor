@@ -764,19 +764,21 @@
                 </div>
                 @if (_aqrReport is { } aqrCard)
                 {
-                    <div class="db-analysis-score @ScoreClass(aqrCard.OverallScore)">@aqrCard.OverallScore</div>
-                    <span class="db-analysis-status @KpiStatusClass(aqrCard.OverallScore, true)">@KpiStatusLabel(aqrCard.OverallScore, true)</span>
+                    @{ var aqrCompleted = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Completed); }
+                    @{ var aqrBlocked = aqrCard.Targets.Count(t => t.Status == BirkNext.ApiReview.ApiReviewTargetStatus.Blocked); }
+                    <div class="db-analysis-score">@aqrCompleted/@aqrCard.Targets.Count</div>
+                    <span class="db-analysis-status @(aqrBlocked > 0 ? "db-status-warn" : "db-status-ok")">@(aqrBlocked > 0 ? $"{aqrBlocked} target(s) blocked" : "API targets reviewed")</span>
                     @if (aqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topAqrFinding)
                     {
                         <div class="db-analysis-finding">@topAqrFinding.Title</div>
                     }
                     <div class="db-analysis-chips">
-                        @{ var aqrCritical = aqrCard.Findings.Count(f => f.Severity == ApiQualitySeverity.Critical); }
-                        @{ var aqrHigh     = aqrCard.Findings.Count(f => f.Severity == ApiQualitySeverity.High); }
+                        @{ var aqrCritical = aqrCard.Findings.Count(f => f.Severity == BirkNext.ApiReview.ApiReviewSeverity.Critical); }
+                        @{ var aqrHigh     = aqrCard.Findings.Count(f => f.Severity == BirkNext.ApiReview.ApiReviewSeverity.High); }
                         @if (aqrCritical > 0) { <span class="db-count-chip db-count-poor">@aqrCritical critical</span> }
                         @if (aqrHigh > 0)     { <span class="db-count-chip db-count-poor">@aqrHigh high</span> }
                         @if (aqrCritical == 0 && aqrHigh == 0)
-                        { <span class="db-count-chip db-count-good">@(aqrCard.IsDeploymentReady ? "Deployment Ready" : "No critical findings")</span> }
+                        { <span class="db-count-chip db-count-good">@(aqrCard.AnyCompleted ? "No high findings" : "Not assessed")</span> }
                     </div>
                 }
                 else if (RuntimeReviews.ApiQualityReview.Status != RuntimeReviewStatus.NotRun)
@@ -941,7 +943,7 @@
     private WasmSecurityReviewReport?    _securityReport => RuntimeReviews.SecurityReview.Report;
     private WasmPerformanceReviewReport? _perfReport     => RuntimeReviews.PerformanceReview.Report;
     private FrontendQualityReviewReport? _fqrReport      => RuntimeReviews.QualityReview.Report;
-    private ApiQualityReviewReport?      _aqrReport      => RuntimeReviews.ApiQualityReview.Report;
+    private BirkNext.ApiReview.ApiReviewReport? _aqrReport => RuntimeReviews.ApiQualityReview.Report;
     private IntegrationQualityReport?    _iqrReport      => RuntimeReviews.IntegrationQualityReview.Report;
 
     // ── Snapshot aliases ──────────────────────────────────────────────────────

@@ -116,6 +116,7 @@ builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
 
 builder.Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
 builder.Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
+builder.Services.AddSingleton<IApiReviewHistoryService, ApiReviewHistoryService>();
 builder.Services.AddSingleton<ITargetEnvironmentService, TargetEnvironmentService>();
 builder.Services.AddSingleton<ITargetEnvironmentHintExtractor, TargetEnvironmentHintExtractor>();
 builder.Services.AddSingleton<IIntegrationTargetRegistryService, IntegrationTargetRegistryService>();
@@ -173,7 +174,7 @@ builder.Services.AddSingleton<ISampleProjectDocumentResolver>(sp =>
         sp.GetRequiredService<SampleProjectsApiService>(),
         sp.GetRequiredService<IWorkspaceSessionService>()));
 
-builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService>(client =>
+builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddHttpClient<IIntegrationQualityReviewService, IntegrationQualityReviewService>(client =>
