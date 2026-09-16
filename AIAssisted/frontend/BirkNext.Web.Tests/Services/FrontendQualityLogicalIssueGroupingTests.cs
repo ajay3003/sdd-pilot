@@ -209,7 +209,7 @@ public sealed class FrontendQualityLogicalIssueGroupingTests
         var issues = FrontendQualityLogicalIssueGrouper.Group(findings);
 
         issues.SelectMany(issue => issue.FindingInstances).Should().HaveCount(findings.Count);
-        outcomes.Should().HaveCount(7).And.OnlyContain(outcome => outcome.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+        outcomes.Should().HaveCount(8).And.OnlyContain(outcome => outcome.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
         coverage.RequiredCoverageState.Should().Be(FrontendQualityRequiredCoverageState.AllRequiredAssessed);
         typeof(FrontendQualityLogicalIssueGrouper).GetConstructors().Should().BeEmpty("grouping is pure and cannot invoke engine services");
     }

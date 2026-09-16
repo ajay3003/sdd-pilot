@@ -45,7 +45,8 @@ internal static class OrchestrationTestHelpers
         IFrontendPassiveSecurityApiService? passiveSecurity = null,
         IAuthenticatedBrowserSessionService? authenticatedSessions = null,
         IFrontendQualityEngineStatusApiService? readiness = null,
-        IBrowserQualityEvidenceSource? browserQuality = null)
+        IBrowserQualityEvidenceSource? browserQuality = null,
+        IPerformanceQualityEvidenceSource? performanceQuality = null)
     {
         return new FrontendQualityReviewOrchestrator(
             security ?? new MockSecurityScanner(),
@@ -60,7 +61,40 @@ internal static class OrchestrationTestHelpers
             readiness ?? CreateAlwaysReadyMockService(),
             accessResolver: null,
             apiSurface: null,
-            browserQuality: browserQuality);
+            browserQuality: browserQuality,
+            performanceQuality: performanceQuality);
+    }
+
+    /// <summary>Performance Quality evidence source that reports one page with complete browser + API evidence and no findings.</summary>
+    public sealed class AssessedPerformanceQualitySource : IPerformanceQualityEvidenceSource
+    {
+        public int CallCount { get; private set; }
+        public Task<PerformanceQualityReviewResult> CollectAsync(FrontendAnalysisContext context, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            var coverage = new PerformanceCoverage
+            {
+                Browser = PerformanceCoverageState.Complete, Runtime = PerformanceCoverageState.Complete, Resources = PerformanceCoverageState.Complete,
+                Api = PerformanceCoverageState.Complete, Blazor = PerformanceCoverageState.Complete,
+            };
+            return Task.FromResult(new PerformanceQualityReviewResult
+            {
+                CompanionState = BirkNext.BrowserCompanion.BrowserCompanionState.Connected, CompanionMessage = "1 page(s) with performance evidence (Complete assessment).",
+                ProxyEvidenceAvailable = true, Coverage = coverage, EvaluatedAt = DateTimeOffset.UtcNow, BrowserName = "Microsoft Edge",
+                Pages = [new PagePerformanceSnapshot { PageId = context.TargetUrl.TrimEnd('/') + "/", PageTitle = "/", Generation = 1, Coverage = coverage }],
+            });
+        }
+    }
+
+    /// <summary>Performance Quality evidence source with no evidence at all: the engine must report "not assessed", never "no findings".</summary>
+    public sealed class NoEvidencePerformanceQualitySource : IPerformanceQualityEvidenceSource
+    {
+        public Task<PerformanceQualityReviewResult> CollectAsync(FrontendAnalysisContext context, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PerformanceQualityReviewResult
+            {
+                CompanionState = BirkNext.BrowserCompanion.BrowserCompanionState.NotPaired, CompanionMessage = PerformanceQualityEvidenceSource.NoEvidenceMessage,
+                Coverage = new PerformanceCoverage { Reasons = ["No performance evidence collected for any page."] }, EvaluatedAt = DateTimeOffset.UtcNow,
+            });
     }
 
     /// <summary>Browser Quality evidence source that reports a connected companion with one assessed page (no findings).</summary>

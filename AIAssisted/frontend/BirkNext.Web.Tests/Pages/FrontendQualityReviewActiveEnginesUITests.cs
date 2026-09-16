@@ -72,7 +72,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
         page.Find("[data-testid=fqr-active-count]").TextContent.Should().Be("2 enabled");
         page.Find("[data-testid=fqr-active-breakdown]").TextContent.Should().Be("Required 2 · Optional 0");
         page.FindAll("[data-testid=fqr-active-engine]").Select(e => e.TextContent).Should().Contain(t => t.Contains("Static Security")).And.Contain(t => t.Contains("Passive Performance"));
-        page.Find("[data-testid=fqr-inactive-engines]").TextContent.Should().Contain("5 engines not active").And.Contain("Browser Runtime (disabled)");
+        page.Find("[data-testid=fqr-inactive-engines]").TextContent.Should().Contain("6 engines not active").And.Contain("Browser Runtime (disabled)");
         status.Verify(s => s.GetStatusAsync(It.IsAny<ReviewAuthenticationModeDto>(), It.IsAny<ReviewEngineSelectionDto>(), It.IsAny<CancellationToken>()), Times.Never,
             "no backend engine is active, so no readiness probe is made");
         RunButton(page).HasAttribute("disabled").Should().BeFalse();
@@ -156,7 +156,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
 
         page.Find("[data-testid=fqr-active-count]").TextContent.Should().Be("5 enabled");
         page.Find("[data-testid=fqr-active-breakdown]").TextContent.Should().Be("Required 2 · Optional 3");
-        page.Find("[data-testid=fqr-inactive-engines]").TextContent.Should().Contain("2 engines not active:").And.Contain("Browser Runtime (disabled)").And.Contain("Browser Quality (disabled)");
+        page.Find("[data-testid=fqr-inactive-engines]").TextContent.Should().Contain("3 engines not active:").And.Contain("Browser Runtime (disabled)").And.Contain("Browser Quality (disabled)");
         // Phase 1 (layers, no probe) answered immediately → Run enabled; phase 2 (readiness) still pending and informational.
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness-pending]").TextContent.Should().Contain("Checking runtime readiness of 3 active engines"));
@@ -201,12 +201,12 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
 
         cut.Find("[data-testid=fqr-required-assessed]").TextContent.Trim().Should().Be("2 / 2");
         cut.Find("[data-testid=fqr-optional-assessed]").TextContent.Trim().Should().Be("0 / 0 (no optional engine enabled)");
-        cut.Find("[data-testid=fqr-inactive-count]").TextContent.Should().Contain("5 engines not active");
+        cut.Find("[data-testid=fqr-inactive-count]").TextContent.Should().Contain("6 engines not active");
         cut.FindAll("tr[data-engine-id]").Should().HaveCount(2, "disabled engines are hidden by default");
         cut.Markup.Should().NotContain("Not assessed");
 
         cut.Find("[data-testid=fqr-show-inactive]").Change(true);
-        cut.FindAll("tr[data-engine-id]").Should().HaveCount(7);
+        cut.FindAll("tr[data-engine-id]").Should().HaveCount(8);
         var lighthouse = cut.Find("tr[data-engine-id='Lighthouse']");
         lighthouse.GetAttribute("data-engine-active").Should().Be("false");
         lighthouse.QuerySelector("[data-testid=fqr-enabled]")!.TextContent.Should().Be("No");

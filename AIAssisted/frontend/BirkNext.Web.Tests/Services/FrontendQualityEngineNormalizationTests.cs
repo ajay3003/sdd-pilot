@@ -43,10 +43,11 @@ public sealed class FrontendQualityEngineNormalizationTests
         context.FeatureToggles.EnableLighthouseEngine = false;
         context.FeatureToggles.EnablePassiveSecurityEngine = false;
         context.FeatureToggles.EnableBrowserQualityEngine = false;
+        context.FeatureToggles.EnablePerformanceQualityEngine = false;
 
         var report = (await fixture.RunAsync(context)).QualityReport!;
 
-        report.EngineOutcomes.Should().HaveCount(7);
+        report.EngineOutcomes.Should().HaveCount(8);
         report.EngineOutcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Optional)
             .Should().OnlyContain(o => o.ExecutionState == FrontendQualityEngineExecutionState.Disabled);
         report.Coverage!.RequiredCoverageState.Should().Be(FrontendQualityRequiredCoverageState.AllRequiredAssessed);
@@ -99,7 +100,7 @@ public sealed class FrontendQualityEngineNormalizationTests
 
         var report = (await fixture.RunAsync(context)).QualityReport!;
 
-        report.EngineOutcomes.Should().HaveCount(7);
+        report.EngineOutcomes.Should().HaveCount(8);
         report.EngineOutcomes.Single(o => o.EngineId == FrontendQualityEngineId.BrowserRuntime).ExecutionState
             .Should().Be(FrontendQualityEngineExecutionState.EngineError);
         report.EngineOutcomes.Where(o => o.EngineId != FrontendQualityEngineId.BrowserRuntime)
@@ -199,7 +200,7 @@ public sealed class FrontendQualityEngineNormalizationTests
 
         var report = (await fixture.RunAsync(AllEnabled())).QualityReport!;
 
-        report.EngineOutcomes.Should().HaveCount(7);
+        report.EngineOutcomes.Should().HaveCount(8);
         report.EngineOutcomes.Single(o => o.EngineId == failed).ExecutionState.Should().Be(FrontendQualityEngineExecutionState.EngineError);
         report.EngineOutcomes.Where(o => o.EngineId != failed).Should().OnlyContain(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
         fixture.Runtime.CallCount.Should().Be(1);
@@ -219,10 +220,10 @@ public sealed class FrontendQualityEngineNormalizationTests
 
         session.QualityReview.Report.Should().BeSameAs(report);
         var restored = JsonSerializer.Deserialize<FrontendQualityReviewReport>(JsonSerializer.Serialize(session.QualityReview.Report));
-        restored!.EngineOutcomes.Should().HaveCount(7);
+        restored!.EngineOutcomes.Should().HaveCount(8);
         restored.BrowserRuntimeReport.Should().NotBeNull();
         restored.Coverage!.RequiredCoverageState.Should().Be(FrontendQualityRequiredCoverageState.AllRequiredAssessed);
-        restored.AssessedEngines.Should().HaveCount(7);
+        restored.AssessedEngines.Should().HaveCount(8);
     }
 
     private static BrowserRuntimeFindingDto RuntimeFinding(string id, string category,
@@ -243,7 +244,7 @@ public sealed class FrontendQualityEngineNormalizationTests
         {
             EnableSecurityEngine = true, EnablePerformanceEngine = true, EnableBrowserRuntimeEngine = true,
             EnableAccessibilityEngine = true, EnableLighthouseEngine = true, EnablePassiveSecurityEngine = true,
-            EnableBrowserQualityEngine = true,
+            EnableBrowserQualityEngine = true, EnablePerformanceQualityEngine = true,
         },
         EngineRequirements = new(),
     };
@@ -259,10 +260,11 @@ public sealed class FrontendQualityEngineNormalizationTests
             Metrics: [], Audits: [], Limitations: ["Lab only"]));
         public PassiveSecuritySpy PassiveSecurity { get; set; } = new(Passive(PassiveSecurityExecutionStatusDto.Assessed, version: "2.16.1"));
         public OrchestrationTestHelpers.AssessedBrowserQualitySource BrowserQuality { get; set; } = new();
+        public OrchestrationTestHelpers.AssessedPerformanceQualitySource PerformanceQuality { get; set; } = new();
 
         public Task<FrontendQualityReviewOrchestrationResult> RunAsync(FrontendAnalysisContext context) =>
             OrchestrationTestHelpers.CreateOrchestrator(new SecuritySpy(), new PerformanceSpy(), new Preflight(),
-                new FrontendQualityReviewService(), Runtime, Accessibility, Lighthouse, PassiveSecurity, browserQuality: BrowserQuality)
+                new FrontendQualityReviewService(), Runtime, Accessibility, Lighthouse, PassiveSecurity, browserQuality: BrowserQuality, performanceQuality: PerformanceQuality)
                 .RunAsync(context.TargetUrl, context);
     }
 

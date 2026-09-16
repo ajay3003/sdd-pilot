@@ -31,15 +31,16 @@ public sealed class FrontendQualityActiveEnginesTests
     {
         var snapshot = FrontendQualityActiveEngines.Resolve(Context(Profile()));
 
-        snapshot.Engines.Should().HaveCount(7);
+        snapshot.Engines.Should().HaveCount(8);
         snapshot.ActiveCount.Should().Be(5);
         snapshot.RequiredActiveCount.Should().Be(2);
         snapshot.OptionalActiveCount.Should().Be(3);
-        snapshot.DisabledCount.Should().Be(2);
+        snapshot.DisabledCount.Should().Be(3);
         snapshot.Active.Select(e => e.EngineId).Should().BeEquivalentTo([
             FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance,
             FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.PassiveSecurity]);
-        snapshot.Inactive.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality);
+        snapshot.Inactive.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineId.PerformanceQuality);
+        snapshot.Get(FrontendQualityEngineId.PerformanceQuality)!.Enabled.Should().BeFalse("BirkNext Performance Quality is opt-in until Companion/proxy evidence exists");
         snapshot.Get(FrontendQualityEngineId.BrowserRuntime)!.Enabled.Should().BeFalse("Browser Runtime is opt-in");
         snapshot.Get(FrontendQualityEngineId.BrowserQuality)!.Enabled.Should().BeFalse("Browser Quality (Browser Companion) is opt-in until the extension is paired");
         snapshot.RequiredButDisabled.Should().BeEmpty();
