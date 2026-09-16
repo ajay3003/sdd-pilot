@@ -155,7 +155,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             if (!exec.Executed)
             {
                 operations.Add(new ApiReviewOperationResult { Display = display, Method = op.Method, Path = op.Path, AccessMode = mode, Executed = false, Result = exec.Timeout ? ApiReviewCheckResult.NotTested : ApiReviewCheckResult.Blocked, Note = exec.Message });
-                if (!exec.Timeout) findings.Add(Finding(target, "rest-not-executed", ApiReviewSeverity.Medium, ApiReviewFindingType.Rest, display, "Reachability", "Operation could not be executed", exec.Message, "Check reachability and the authenticated context.", [], ApiReviewCheckResult.Blocked, targetFindings));
+                if (!exec.Timeout) findings.Add(Finding(target, "rest-not-executed", ApiReviewSeverity.Medium, ApiReviewFindingType.Rest, display, "Reachability", "Operation could not be executed", exec.Message, "Check reachability and the authenticated context.", [], ApiReviewCheckResult.Blocked));
                 continue;
             }
             statuses[key] = exec.StatusCode;
@@ -707,8 +707,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     private static void Add(List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> all, ApiReviewFinding finding) { targetFindings.Add(finding); all.Add(finding); }
 
     private static ApiReviewFinding Finding(ApiReviewTarget target, string id, ApiReviewSeverity severity, ApiReviewFindingType type, string endpoint, string check, string title, string description,
-        string recommendation, List<string> evidence, ApiReviewCheckResult result = ApiReviewCheckResult.Fail, List<ApiReviewFinding>? _ = null) =>
-        OpenApiDocumentReview.Finding(target.TargetId, id, severity, type, endpoint, check, title, description, recommendation, evidence, result);
+        string recommendation, List<string> evidence, ApiReviewCheckResult result = ApiReviewCheckResult.Fail, ApiReviewDriftClassification? drift = null) =>
+        OpenApiDocumentReview.Finding(target.TargetId, id, severity, type, endpoint, check, title, description, recommendation, evidence, result, drift);
 
     private static ApiReviewCheck Check(string id, ApiReviewFindingType area, string title, ApiReviewCheckResult result, string detail, List<string>? evidence = null) =>
         OpenApiDocumentReview.Check(id, area, title, result, detail, evidence);

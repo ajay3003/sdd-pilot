@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using BirkNext.Api.Services.ContractAnalysis;
 using BirkNext.ApiReview;
+using BirkNext.LocalHttpsProxy;
 
 namespace BirkNext.Api.Services.ApiQuality;
 
