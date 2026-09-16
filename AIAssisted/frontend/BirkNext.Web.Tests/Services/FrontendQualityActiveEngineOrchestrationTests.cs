@@ -72,7 +72,7 @@ public sealed class FrontendQualityActiveEngineOrchestrationTests
         var result = await fixture.Orchestrator.RunAsync(Target, fixture.Context, fixture.Snapshot());
 
         result.ActiveEngines!.ActiveCount.Should().Be(2);
-        result.AccessDecisions!.Keys.Should().HaveCount(7, "decisions are computed cheaply for all engines but only active ones are acted upon");
+        result.AccessDecisions!.Keys.Should().HaveCount(8, "decisions are computed cheaply for all engines but only active ones are acted upon");
         fixture.Preflight.Calls.Should().Be(1, "one shared target reachability probe per review");
         fixture.Security.Calls.Should().Be(1);
         fixture.Performance.Calls.Should().Be(1);
@@ -83,7 +83,7 @@ public sealed class FrontendQualityActiveEngineOrchestrationTests
         coverage.RequiredAssessed.Should().Be(2);
         coverage.RequiredTotal.Should().Be(2);
         coverage.OptionalTotal.Should().Be(0);
-        coverage.InactiveCount.Should().Be(5, "four disabled backend engines plus the opt-in Browser Quality engine");
+        coverage.InactiveCount.Should().Be(6, "four disabled backend engines plus the opt-in Browser Quality and BirkNext Performance Quality engines");
         result.QualityReport.ReleaseDisposition.Should().Be(FrontendQualityReleaseDisposition.NoAutomatedBlockDetected);
         result.QualityReport.ActiveEngines.Should().BeSameAs(result.ActiveEngines);
         foreach (var id in new[] { FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.PassiveSecurity })
@@ -185,7 +185,7 @@ public sealed class FrontendQualityActiveEngineOrchestrationTests
         fixture.Readiness.Calls.Should().BeEmpty();
         Outcome(result, FrontendQualityEngineId.BrowserRuntime).OutcomeReason.Should().Be(FrontendQualityEngineOutcomeReason.NotSelected);
         result.QualityReport!.Coverage!.OptionalTotal.Should().Be(0);
-        result.QualityReport.Coverage.InactiveCount.Should().Be(5);
+        result.QualityReport.Coverage.InactiveCount.Should().Be(6);
     }
 
     [Fact]
