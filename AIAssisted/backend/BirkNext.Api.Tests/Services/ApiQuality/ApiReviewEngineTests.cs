@@ -172,7 +172,7 @@ public sealed class ApiReviewEngineTests
         Assert.All(fixture.Requests, r => Assert.Equal("/api/graphql-v2", r.RequestUri!.AbsolutePath));
         Assert.DoesNotContain(fixture.Requests, r => r.RequestUri!.AbsolutePath == "/graphql");
         Assert.All(fixture.Requests.Where(r => r.Method == HttpMethod.Post), _ => { });
-        Assert.DoesNotContain(fixture.Bodies, b => System.Text.RegularExpressions.Regex.IsMatch(b, @"""query"":""s*mutation"));
+        Assert.DoesNotContain(fixture.Bodies, b => System.Text.RegularExpressions.Regex.IsMatch(b, @"""query"":""\s*mutation"));
         Assert.Contains(fixture.Bodies, b => b.Contains("query { __typename }"));
         Assert.Contains(target.Checks, c => c.CheckId == "gql-reachability" && c.Result == ApiReviewCheckResult.Pass);
         Assert.Contains(target.Checks, c => c.CheckId == "gql-mutations" && c.Result == ApiReviewCheckResult.ManualReview && c.Evidence.Contains("deleteChild"));
@@ -183,7 +183,8 @@ public sealed class ApiReviewEngineTests
         Assert.Contains(target.GraphQlOperationMatches, m => m.Operation == "Query GetPlacements" && m.Result == ApiReviewCheckResult.ManualReview);
         Assert.Contains(report.Findings, f => f.Id.StartsWith("gql-observed-mutation") && f.Result == ApiReviewCheckResult.ManualReview);
         Assert.Contains(report.Findings, f => f.Id.StartsWith("gql-deprecated-fields"));
-        Assert.Equal(1, report.Coverage.GraphQlOperationsMatched); Assert.Equal(3, report.Coverage.GraphQlOperationsObserved);
+        Assert.Contains(target.GraphQlOperationMatches, m => m.Operation == "Mutation DeleteChild" && m.MatchedRootField == "deleteChild");
+        Assert.Equal(2, report.Coverage.GraphQlOperationsMatched); Assert.Equal(3, report.Coverage.GraphQlOperationsObserved);
         Assert.DoesNotContain("query {", JsonSerializer.Serialize(report.Targets.Select(t => t.Target)));
     }
 
