@@ -239,7 +239,7 @@ public sealed class ApiReviewTargetResolverTests
         var selected = new HashSet<string> { targets.First(t => t.BasePath == "/api/children").TargetId };
         var history = new ApiReviewHistory { Baselines = { [selected.Single()] = new ApiReviewBaseline { TargetId = selected.Single(), ContractHash = "h" }, ["other"] = new ApiReviewBaseline { TargetId = "other" } } };
 
-        var request = Pages.ApiQualityReview.BuildRequest(context, context.ReviewIdentity!, targets, selected, history);
+        var request = BirkNext.Web.Pages.ApiQualityReview.BuildRequest(context, context.ReviewIdentity!, targets, selected, history);
 
         request.Environment.Should().Match<ApiReviewEnvironmentSnapshot>(e => e.EnvironmentId == "dev" && e.Name == "DEV" && e.TargetUrl == Origin + "/" && e.RequiresAuthentication && e.ContextIdentityDigest == "FP" && !e.IsProduction);
         request.Targets.Should().ContainSingle().Which.BasePath.Should().Be("/api/children");

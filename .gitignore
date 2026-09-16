@@ -209,3 +209,6 @@ AIAssisted/bisect-wt/
 # Ephemeral Chromium profiles created by Lighthouse runs. These may contain
 # cookies and browser storage and must never be committed.
 .lighthouse-profile-*/
+
+# Redirected build output used for isolated test/build runs (never commit)
+.ar-out/
