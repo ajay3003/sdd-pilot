@@ -39,7 +39,7 @@ public enum ApiReviewSeverity { Critical, High, Medium, Low, Info }
 
 /// <summary>Type column of the results table.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ApiReviewFindingType { Rest, GraphQl, Contract, Security, Errors, Performance, Documentation, Drift, Authorization }
+public enum ApiReviewFindingType { Rest, GraphQl, Contract, Security, Errors, Performance, Documentation, Drift, AccessControl }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ApiReviewDriftClassification { Breaking, PotentiallyBreaking, NonBreaking, Informational }

@@ -46,7 +46,9 @@ public sealed class AuthenticatedApiExecutionServiceTests
         var json = JsonSerializer.Serialize(result);
         Assert.DoesNotContain(Token, json);
         Assert.DoesNotContain("eyJ", json);
-        Assert.DoesNotContain("user", json);
+        Assert.DoesNotContain("\"user\":\"x\"", json);   // values never leave the service
+        Assert.Contains("$.user", json);                // only the structural shape (path + type) is kept for contract validation
+        Assert.DoesNotContain("\"x\"", json);
     }
 
     [Theory]

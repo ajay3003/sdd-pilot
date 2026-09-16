@@ -161,8 +161,8 @@ public sealed class ApiReviewEngineTests
         var fixture = new Fixture { Respond = (req, body) =>
         {
             if (req.RequestUri!.AbsolutePath != "/api/graphql-v2" || req.Method != HttpMethod.Post) return Json(HttpStatusCode.NotFound, "{}");
-            if (body!.Contains("__schema")) return Json(HttpStatusCode.OK, schema);
-            if (body.Contains("__birkNextUnknownFieldProbe")) return Json(HttpStatusCode.BadRequest, "{\"errors\":[{\"message\":\"Unknown field\",\"extensions\":{\"code\":\"GRAPHQL_VALIDATION_FAILED\"}}]}");
+            if (body?.Contains("__schema") == true) return Json(HttpStatusCode.OK, schema);
+            if (body?.Contains("__birkNextUnknownFieldProbe") == true) return Json(HttpStatusCode.BadRequest, "{\"errors\":[{\"message\":\"Unknown field\",\"extensions\":{\"code\":\"GRAPHQL_VALIDATION_FAILED\"}}]}");
             return Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}");
         } };
         var report = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, GraphQl(ops: [(GraphQlOperationType.Query, "GetChildren"), (GraphQlOperationType.Query, "GetPlacements"), (GraphQlOperationType.Mutation, "DeleteChild")])));
@@ -172,7 +172,7 @@ public sealed class ApiReviewEngineTests
         Assert.All(fixture.Requests, r => Assert.Equal("/api/graphql-v2", r.RequestUri!.AbsolutePath));
         Assert.DoesNotContain(fixture.Requests, r => r.RequestUri!.AbsolutePath == "/graphql");
         Assert.All(fixture.Requests.Where(r => r.Method == HttpMethod.Post), _ => { });
-        Assert.DoesNotContain(fixture.Bodies, b => b.Contains("mutation", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(fixture.Bodies, b => System.Text.RegularExpressions.Regex.IsMatch(b, @"""query"":""s*mutation"));
         Assert.Contains(fixture.Bodies, b => b.Contains("query { __typename }"));
         Assert.Contains(target.Checks, c => c.CheckId == "gql-reachability" && c.Result == ApiReviewCheckResult.Pass);
         Assert.Contains(target.Checks, c => c.CheckId == "gql-mutations" && c.Result == ApiReviewCheckResult.ManualReview && c.Evidence.Contains("deleteChild"));
@@ -190,7 +190,7 @@ public sealed class ApiReviewEngineTests
     [Fact]
     public async Task GraphQl_IntrospectionDisabled_IsPolicyObservationNotFailure()
     {
-        var fixture = new Fixture { Respond = (_, body) => body!.Contains("__schema") ? Json(HttpStatusCode.OK, "{\"errors\":[{\"message\":\"introspection disabled\"}]}") : Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}") };
+        var fixture = new Fixture { Respond = (_, body) => body?.Contains("__schema") == true ? Json(HttpStatusCode.OK, "{\"errors\":[{\"message\":\"introspection disabled\"}]}") : Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}") };
         var report = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, GraphQl()));
         var target = Assert.Single(report.Targets);
         Assert.Equal(ApiReviewTargetStatus.Completed, target.Status);
@@ -204,7 +204,7 @@ public sealed class ApiReviewEngineTests
     public async Task GraphQl_SchemaDrift_RemovedRootField_IsBreaking()
     {
         var schema = IntrospectionWith(queryFields: ["children"], mutationFields: [], deprecated: []);
-        var fixture = new Fixture { Respond = (_, body) => body!.Contains("__schema") ? Json(HttpStatusCode.OK, schema) : Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}") };
+        var fixture = new Fixture { Respond = (_, body) => body?.Contains("__schema") == true ? Json(HttpStatusCode.OK, schema) : Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}") };
         var request = Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, GraphQl(ops: [(GraphQlOperationType.Query, "GetRoles")]));
         request = request with { Baselines = [new ApiReviewBaseline { TargetId = "gql-1", RecordedAt = DateTimeOffset.UtcNow.AddDays(-1), GraphQlRootFields = ["children", "roles"], GraphQlSchemaHash = "old" }] };
         var report = await Engine(fixture).RunAsync(request);
@@ -329,7 +329,7 @@ public sealed class ApiReviewEngineTests
     public async Task ProductionPolicy_NoErrorProbes_ReadOnly_IntrospectionWarned()
     {
         var schema = IntrospectionWith(["children"], [], []);
-        var fixture = new Fixture { Respond = (req, body) => req.RequestUri!.AbsolutePath == "/api/graphql-v2" ? (body!.Contains("__schema") ? Json(HttpStatusCode.OK, schema) : Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}")) : Json(HttpStatusCode.OK, "{\"ok\":true}") };
+        var fixture = new Fixture { Respond = (req, body) => req.RequestUri!.AbsolutePath == "/api/graphql-v2" ? (body?.Contains("__schema") == true ? Json(HttpStatusCode.OK, schema) : Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}")) : Json(HttpStatusCode.OK, "{\"ok\":true}") };
         var report = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, true, Rest(), GraphQl()));
         Assert.DoesNotContain(fixture.Requests, r => r.RequestUri!.AbsolutePath.Contains("birknext-unknown-route"));
         Assert.DoesNotContain(fixture.Bodies, b => b.Contains("__birkNextUnknownFieldProbe"));

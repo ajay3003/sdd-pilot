@@ -280,7 +280,7 @@
                 var areas = _tab switch
                 {
                     "Contracts" => new[] { ApiReviewFindingType.Contract, ApiReviewFindingType.Documentation, ApiReviewFindingType.Drift },
-                    "Security" => new[] { ApiReviewFindingType.Security, ApiReviewFindingType.Authorization },
+                    "Security" => new[] { ApiReviewFindingType.Security, ApiReviewFindingType.AccessControl },
                     "Errors" => new[] { ApiReviewFindingType.Errors },
                     _ => new[] { ApiReviewFindingType.Performance },
                 };

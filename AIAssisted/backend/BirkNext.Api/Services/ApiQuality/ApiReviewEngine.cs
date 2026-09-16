@@ -48,7 +48,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         var manual = new List<string>
         {
             "Write operations (POST/PUT/PATCH/DELETE, GraphQL mutations): behaviour, idempotency and side effects.",
-            "Authorization between roles/tenants.",
+            "Access control between roles/tenants.",
             "Business correctness of returned data.",
         };
 
@@ -175,11 +175,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             if (exec.StatusCode >= 500)
                 Add(targetFindings, findings, Finding(target, "rest-5xx", ApiReviewSeverity.High, ApiReviewFindingType.Rest, display, "Status code", $"Server error HTTP {exec.StatusCode}", "A safe GET returned a server error.", "Investigate server logs for this operation.", [$"HTTP {exec.StatusCode}"]));
             else if (exec.StatusCode is 401 or 403 && mode == ApiReviewAccessMode.AuthenticatedHttp)
-                Add(targetFindings, findings, Finding(target, "rest-auth-rejected", ApiReviewSeverity.Medium, ApiReviewFindingType.Authorization, display, "Authentication", $"Authenticated request rejected (HTTP {exec.StatusCode})", "The in-memory credential was rejected; the API audience or scopes may differ from the observed traffic.", "Verify the API audience/scopes; the review cannot assess this operation's contract.", [$"HTTP {exec.StatusCode}"], ApiReviewCheckResult.Warning));
+                Add(targetFindings, findings, Finding(target, "rest-auth-rejected", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, display, "Authentication", $"Authenticated request rejected (HTTP {exec.StatusCode})", "The in-memory credential was rejected; the API audience or scopes may differ from the observed traffic.", "Verify the API audience/scopes; the review cannot assess this operation's contract.", [$"HTTP {exec.StatusCode}"], ApiReviewCheckResult.Warning));
             else if (exec.StatusCode is 401 or 403 && mode == ApiReviewAccessMode.PublicHttp && op.AuthObserved)
-                opChecks.Add(Check("rest-auth-enforced", ApiReviewFindingType.Authorization, "Authentication enforced without credential", ApiReviewCheckResult.Pass, $"HTTP {exec.StatusCode} without credential, as expected for an authenticated endpoint."));
+                opChecks.Add(Check("rest-auth-enforced", ApiReviewFindingType.AccessControl, "Authentication enforced without credential", ApiReviewCheckResult.Pass, $"HTTP {exec.StatusCode} without credential, as expected for an authenticated endpoint."));
             else if (exec.StatusCode is >= 200 and < 300 && mode == ApiReviewAccessMode.PublicHttp && op.AuthObserved)
-                Add(targetFindings, findings, Finding(target, "rest-unexpectedly-public", ApiReviewSeverity.High, ApiReviewFindingType.Authorization, display, "Authentication", "Endpoint answers without authentication although traffic carried a bearer", "The observed traffic used a bearer token, yet an anonymous request succeeded.", "Confirm whether the endpoint is intentionally public; otherwise enforce authentication.", [$"HTTP {exec.StatusCode} without credential"]));
+                Add(targetFindings, findings, Finding(target, "rest-unexpectedly-public", ApiReviewSeverity.High, ApiReviewFindingType.AccessControl, display, "Authentication", "Endpoint answers without authentication although traffic carried a bearer", "The observed traffic used a bearer token, yet an anonymous request succeeded.", "Confirm whether the endpoint is intentionally public; otherwise enforce authentication.", [$"HTTP {exec.StatusCode} without credential"]));
 
             // Content type & JSON validity
             var json = JsonBodyInspector.IsJsonMediaType(exec.ContentType);
@@ -452,9 +452,9 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (!json)
             Add(targetFindings, findings, Finding(target, "gql-non-json", ApiReviewSeverity.Medium, ApiReviewFindingType.GraphQl, endpoint, "Content type", "GraphQL response is not JSON", $"Content-Type: {probe.ContentType ?? "absent"}.", "Return application/json or application/graphql-response+json.", [$"Content-Type: {probe.ContentType ?? "absent"}"], ApiReviewCheckResult.Warning));
         if (probe.StatusCode is 401 or 403 && mode == ApiReviewAccessMode.AuthenticatedHttp)
-            Add(targetFindings, findings, Finding(target, "gql-auth-rejected", ApiReviewSeverity.Medium, ApiReviewFindingType.Authorization, endpoint, "Authentication", $"Authenticated GraphQL query rejected (HTTP {probe.StatusCode})", "The in-memory credential was rejected by the GraphQL endpoint.", "Verify the API audience/scopes.", [$"HTTP {probe.StatusCode}"], ApiReviewCheckResult.Warning));
+            Add(targetFindings, findings, Finding(target, "gql-auth-rejected", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, endpoint, "Authentication", $"Authenticated GraphQL query rejected (HTTP {probe.StatusCode})", "The in-memory credential was rejected by the GraphQL endpoint.", "Verify the API audience/scopes.", [$"HTTP {probe.StatusCode}"], ApiReviewCheckResult.Warning));
         else if (probe.StatusCode is >= 200 and < 300 && probe.GraphQlHasData == true && mode == ApiReviewAccessMode.PublicHttp && target.AuthRequired)
-            Add(targetFindings, findings, Finding(target, "gql-unexpectedly-public", ApiReviewSeverity.Medium, ApiReviewFindingType.Authorization, endpoint, "Authentication", "GraphQL endpoint answers queries without authentication", "Observed traffic carried a bearer, yet an anonymous __typename query succeeded (the endpoint may enforce auth per field).", "Confirm field-level authorization or require authentication at the endpoint.", [$"HTTP {probe.StatusCode}"], ApiReviewCheckResult.Warning));
+            Add(targetFindings, findings, Finding(target, "gql-unexpectedly-public", ApiReviewSeverity.Medium, ApiReviewFindingType.AccessControl, endpoint, "Authentication", "GraphQL endpoint answers queries without authentication", "Observed traffic carried a bearer, yet an anonymous __typename query succeeded (the endpoint may enforce auth per field).", "Confirm field-level authorization or require authentication at the endpoint.", [$"HTTP {probe.StatusCode}"], ApiReviewCheckResult.Warning));
         else if (probe.StatusCode >= 500)
             Add(targetFindings, findings, Finding(target, "gql-5xx", ApiReviewSeverity.High, ApiReviewFindingType.GraphQl, endpoint, "Status code", $"GraphQL endpoint returned HTTP {probe.StatusCode}", "A trivial query caused a server error.", "Investigate the GraphQL server.", [$"HTTP {probe.StatusCode}"]));
         var latency = probe.ElapsedMs ?? 0;
