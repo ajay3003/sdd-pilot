@@ -134,11 +134,67 @@ public sealed class WcagAssessmentTests
         Assert.DoesNotContain("100% compliant", html);
     }
 
+    [Fact]
+    public async Task CrossPageApprovalBecomesStaleWhenAnyParticipatingPageRefreshes()
+    {
+        var js = new Store(); var service = new EndpointDiscoveryService();
+        await service.MergeBrowserEvidenceAsync(js, "dev", [Evidence("/a"), Evidence("/b")]);
+        var s = service.GetSnapshot("dev");
+        await service.RecordWcagReviewAsync(js, "dev", null, new()
+        {
+            CriterionId = "3.2.3", Version = WcagVersion.Wcag22, ScopeGeneration = WcagAssessmentEngine.ScopeGeneration(s),
+            Result = WcagStatus.Pass, EvidenceNote = "Navigation compared across both pages", ReviewedBy = "tester",
+        });
+        Assert.Equal(WcagStatus.Pass, Result(s, "3.2.3").Status);
+        await service.RefreshPageAsync(js, "dev", s.Pages[1].Identity);
+        Assert.True(Result(s, "3.2.3").ManualReviewStale);
+        Assert.Equal(WcagStatus.NotTested, Result(s, "3.2.3").Status);
+    }
+
+    [Fact]
+    public void CurrentAutomatedFailureCannotBeOverriddenByManualApproval()
+    {
+        var s = Snapshot(new() { Checks = [new() { CheckId = "text-contrast", Outcome = "Fail", Failed = 1 }] });
+        s.Pages[0].WcagReviews.Add(new() { CriterionId = "1.4.3", Version = WcagVersion.Wcag22, Generation = 1, Result = WcagStatus.Pass });
+        Assert.Equal(WcagStatus.Fail, Result(s, "1.4.3").Status);
+    }
+
+    [Fact]
+    public async Task ChangedTargetAndOldEditorCannotSilentlyApproveNewGeneration()
+    {
+        var js = new Store(); var service = new EndpointDiscoveryService();
+        await service.MergeBrowserEvidenceAsync(js, "dev", [Evidence()]);
+        var s = service.GetSnapshot("dev");
+        var review = new WcagManualReview { CriterionId = "3.3.4", Version = WcagVersion.Wcag22, Generation = 1,
+            Result = WcagStatus.NotApplicable, EvidenceNote = "No high-impact workflow in scope", ReviewedBy = "tester" };
+        await service.RecordWcagReviewAsync(js, "dev", s.Pages[0].Identity, review);
+        await service.SaveWcagSettingsAsync(js, "dev", new() { Version = WcagVersion.Wcag21 });
+        Assert.True(Result(s, "3.3.4").ManualReviewStale);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RecordWcagReviewAsync(js, "dev", s.Pages[0].Identity, review));
+    }
+
+    [Fact]
+    public async Task StorageFailureDoesNotLeaveAnApparentlySavedApproval()
+    {
+        var js = new Store(); var service = new EndpointDiscoveryService();
+        await service.MergeBrowserEvidenceAsync(js, "dev", [Evidence()]);
+        js.FailWrites = true;
+        var page = service.GetSnapshot("dev").Pages[0];
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.RecordWcagReviewAsync(js, "dev", page.Identity, new()
+        {
+            CriterionId = "3.3.4", Version = WcagVersion.Wcag22, Generation = 1, Result = WcagStatus.Pass,
+            EvidenceNote = "Checked workflow", ReviewedBy = "tester",
+        }));
+        Assert.Empty(page.WcagReviews);
+    }
+
     private sealed class Store : IJSRuntime
     {
+        public bool FailWrites;
         private string? _json;
         public ValueTask<TValue> InvokeAsync<TValue>(string id, object?[]? args)
         {
+            if (id == "birkNextStorage.setDiscovery" && FailWrites) throw new JSException("Storage unavailable");
             if (id == "birkNextStorage.setDiscovery") _json = (string?)args![0];
             return new(id == "birkNextStorage.getDiscovery" ? (TValue)(object)_json! : default!);
         }
