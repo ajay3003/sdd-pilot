@@ -55,14 +55,24 @@
     }
     private async Task ChangeVersion(ChangeEventArgs e)
     {
-        if (Enum.TryParse<WcagVersion>(e.Value?.ToString(), out var v))
-            await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = v, Level = Snapshot.Wcag.Level });
+        try
+        {
+            if (Enum.TryParse<WcagVersion>(e.Value?.ToString(), out var v))
+                await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = v, Level = Snapshot.Wcag.Level });
+            _error = null;
+        }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
         _editing = null;
     }
     private async Task ChangeLevel(ChangeEventArgs e)
     {
-        if (Enum.TryParse<WcagLevel>(e.Value?.ToString(), out var level))
-            await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = Snapshot.Wcag.Version, Level = level });
+        try
+        {
+            if (Enum.TryParse<WcagLevel>(e.Value?.ToString(), out var level))
+                await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = Snapshot.Wcag.Version, Level = level });
+            _error = null;
+        }
+        catch (InvalidOperationException ex) { _error = ex.Message; }
         _editing = null;
     }
 }

@@ -12,8 +12,8 @@ public sealed record BackendIntegration(string Name, string Protocol, string? Re
 
 public interface IEndpointDiscoveryService
 {
-    Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => Task.CompletedTask;
-    Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review) => Task.CompletedTask;
+    Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings);
+    Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review);
     Task LoadAsync(IJSRuntime js);
     EndpointDiscoverySnapshot GetSnapshot(string profileId);
     /// <summary>Folds the current runtime's observed endpoints into the persisted per-page snapshot and persists. Returns true when anything changed.</summary>
@@ -38,14 +38,14 @@ public interface IEndpointDiscoveryService
 /// </summary>
 public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
 {
-    public Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => MutateAsync(js, profileId, s =>
+    public Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => MutateWcagAsync(js, profileId, s =>
     {
         if (!Enum.IsDefined(settings.Version) || !Enum.IsDefined(settings.Level)) throw new ArgumentException("Invalid WCAG target.");
         s.Wcag = new WcagSettings { Version = settings.Version, Level = settings.Level };
         return true;
     });
 
-    public Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review) => MutateAsync(js, profileId, s =>
+    public Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review) => MutateWcagAsync(js, profileId, s =>
     {
         var definition = WcagRegistry.For(s.Wcag).SingleOrDefault(d => d.CriterionId == review.CriterionId)
             ?? throw new ArgumentException("Unknown criterion for this target.");
@@ -80,6 +80,26 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     };
 
     private Dictionary<string, EndpointDiscoverySnapshot> _byProfile = new(StringComparer.Ordinal);
+
+    // A recorded approval must not appear saved when storage failed. Keep existing discovery's best-effort behavior separate.
+    private async Task MutateWcagAsync(IJSRuntime js, string profileId, Func<EndpointDiscoverySnapshot, bool> mutate)
+    {
+        if (!_byProfile.TryGetValue(profileId, out var snapshot)) throw new InvalidOperationException("Collect page evidence before recording a review.");
+        var oldSettings = snapshot.Wcag;
+        var oldAt = snapshot.UpdatedAt;
+        var oldApplication = snapshot.WcagApplicationReviews.ToList();
+        var oldReviews = snapshot.Pages.ToDictionary(p => p, p => p.WcagReviews.ToList());
+        mutate(snapshot);
+        snapshot.UpdatedAt = DateTimeOffset.UtcNow;
+        try { await js.InvokeVoidAsync("birkNextStorage.setDiscovery", JsonSerializer.Serialize(_byProfile, JsonOptions)); }
+        catch
+        {
+            snapshot.Wcag = oldSettings; snapshot.UpdatedAt = oldAt;
+            snapshot.WcagApplicationReviews = oldApplication;
+            foreach (var (page, reviews) in oldReviews) page.WcagReviews = reviews;
+            throw new InvalidOperationException("WCAG review could not be persisted. Check browser storage and retry.");
+        }
+    }
 
     public async Task LoadAsync(IJSRuntime js)
     {
