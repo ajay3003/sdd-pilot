@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BirkNext.BrowserCompanion;
 
 namespace BirkNext.Web.Models;
 
@@ -43,6 +44,7 @@ public sealed record WcagManualReview
 
 public sealed record WcagCriterionResult
 {
+    public List<BrowserWcagCheck> Checks { get; init; } = [];
     public WcagCriterionDefinition Definition { get; init; } = null!;
     public string Page { get; init; } = "";
     public int Generation { get; init; }

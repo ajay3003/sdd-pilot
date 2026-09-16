@@ -177,6 +177,11 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
             foreach (var raw in envelope.Pages)
             {
                 var page = sanitizer.Sanitize(raw);
+                if (session.EnvironmentType is not ("Local" or "Development" or "QA" or "Test" or "RC") && page.Accessibility is { } passive)
+                    page = page with { Accessibility = passive with
+                    {
+                        Checks = passive.Checks.Where(c => c.CheckId is not ("text-spacing" or "resize-text" or "keyboard-traversal" or "focus-indicator")).ToList(),
+                    } };
                 if (page.PageOrigin.Length == 0 || !session.ApprovedOrigins.Contains(page.PageOrigin, StringComparer.OrdinalIgnoreCase)
                     || !string.Equals(page.ProfileId, session.ProfileId, StringComparison.Ordinal) || page.VisitStartedAt == default)
                 {

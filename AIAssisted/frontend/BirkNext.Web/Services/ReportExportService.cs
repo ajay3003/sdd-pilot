@@ -315,7 +315,8 @@ public sealed class ReportExportService : IReportExportService
                 {
                     Esc(r.Page), Esc(r.Definition.CriterionId), Esc(r.Definition.Level.ToString()), Esc(r.Definition.Title),
                     Esc(r.Definition.AutomationLevel.ToString()), Esc(r.Status.ToString()), r.Findings.ToString(),
-                    Esc(r.Confidence?.ToString() ?? "—"), Esc($"{r.EvidenceSource}: {r.AutomatedEvidence}"),
+                    Esc(r.Confidence?.ToString() ?? "—"), Esc($"{r.EvidenceSource}: {r.AutomatedEvidence} " + string.Join("; ", r.Checks.Select(c =>
+                        $"{c.CheckId}: {c.Outcome}; tested {c.Tested}; failed {c.Failed}; uncertain {c.Uncertain}; {string.Join(", ", c.Selectors)}"))),
                     Esc(r.LastTested?.ToString("u") ?? "—"),
                     r.ManualReview is { } m ? Esc($"{(r.ManualReviewStale ? "STALE — " : "")}{m.Result}; {m.ReviewedBy}; {m.ReviewedAt:u}; {m.Comment}; {m.EvidenceNote}") : "No manual review recorded",
                 })));

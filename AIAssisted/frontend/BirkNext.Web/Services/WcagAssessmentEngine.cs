@@ -52,6 +52,7 @@ public static class WcagAssessmentEngine
         var result = new WcagCriterionResult
         {
             Definition = d, Page = page.Identity, Generation = page.AnalysisGeneration, Status = status,
+            Checks = checks,
             Findings = failures, Confidence = failures > 0 ? WcagConfidence.High : tested ? WcagConfidence.Medium : null,
             EvidenceSource = a is null || d.AutomationLevel == WcagAutomation.Manual ? WcagEvidenceSource.Manual : WcagEvidenceSource.DOM,
             LastTested = tested || noMedia || noVideo || failures > 0 ? evidence?.CapturedAt : null,
@@ -59,7 +60,7 @@ public static class WcagAssessmentEngine
                 : noMedia || noVideo ? "No relevant media detected in a complete native DOM media scope."
                 : failures > 0 ? $"{failures} deterministic failure(s) in tested elements."
                 : !tested ? "Not tested by automation. Human review is required for unobserved behavior."
-                : "No automated failure detected in tested elements; semantic and unobserved behavior still require review.",
+                : $"No automated failure detected in tested elements. {checks.Sum(c => c.Uncertain)} observation(s) require confirmation; semantic and unobserved behavior still require review.",
         };
         return ApplyManual(result, page.WcagReviews, snapshot.Wcag.Version, "", obsolete);
     }

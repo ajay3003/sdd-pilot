@@ -26,7 +26,13 @@
                 <td><strong>@row.Definition.Title</strong><small>@row.Page</small></td><td>@row.Definition.AutomationLevel</td>
                 <td><span class="wcag-state state-@row.Status">@Label(row.Status)</span>@if (row.ManualReviewStale) { <small>Prior manual evidence is stale</small> }</td>
                 <td>@row.Findings</td><td>@(row.EvidenceSource == WcagEvidenceSource.Manual ? "Human review" : row.Confidence?.ToString() ?? "—")</td>
-                <td><details><summary>@row.EvidenceSource</summary><p>@row.AutomatedEvidence</p>@if (row.ManualReview is { } m) { <p>@m.Result · @m.ReviewedBy · @m.ReviewedAt.ToString("u")</p><p>@m.Comment</p><p>@m.EvidenceNote</p> }</details></td>
+                <td><details><summary>@row.EvidenceSource</summary><p>@row.AutomatedEvidence</p>
+                    @foreach (var check in row.Checks)
+                    {
+                        <p>@check.CheckId: @check.Outcome · tested @check.Tested · failed @check.Failed · uncertain @check.Uncertain</p>
+                        @foreach (var selector in check.Selectors) { <small>@selector</small> }
+                    }
+                    @if (row.ManualReview is { } m) { <p>@m.Result · @m.ReviewedBy · @m.ReviewedAt.ToString("u")</p><p>@m.Comment</p><p>@m.EvidenceNote</p> }</details></td>
                 <td>@(row.LastTested?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
                 @if (Review.HasDelegate) { <td><button type="button" @onclick="() => Review.InvokeAsync(row)">Review</button></td> }
             </tr>
