@@ -53,8 +53,9 @@ public sealed class FrontendQualityTargetAccessDecisionTests
         passivePerformance.RequiresBrowserRuntime.Should().BeFalse("runtime metrics are explicitly out of scope for the passive engine");
         FrontendQualityEngineAccessRegistry.For(FrontendQualityEngineId.BrowserRuntime).RequiresBrowserDom.Should().BeTrue();
         FrontendQualityEngineAccessRegistry.For(FrontendQualityEngineId.Accessibility).RequiresBrowserDom.Should().BeTrue();
-        FrontendQualityEngineAccessRegistry.All.Should().OnlyContain(r => !r.SupportsProxyAuthenticatedContext,
-            "no shipped engine issues authenticated API requests, so none may claim the proxy context");
+        FrontendQualityEngineAccessRegistry.All.Where(r => r.SupportsProxyAuthenticatedContext).Select(r => r.EngineId)
+            .Should().BeEquivalentTo([FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance],
+                "only the HTTP engines consume the proxy's authenticated API-surface probes; a bearer never signs a browser into the SPA");
     }
 
     [Fact]

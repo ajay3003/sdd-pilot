@@ -629,6 +629,28 @@ public sealed class ReportExportService : IReportExportService
             })));
         sb.Append("</section>\n");
 
+        if (report.AuthenticatedApiSurface is { } surface)
+        {
+            sb.Append("<section class=\"block\">\n<h2>Authenticated API surface (Local HTTPS Proxy)</h2>\n");
+            if (surface.ContextAvailable && surface.Checks.Count > 0)
+            {
+                sb.Append("<p>Approved read-only requests executed by the backend gateway with the memory-only proxy credential; bodies and non-allow-listed headers are never captured.</p>\n");
+                sb.Append(Table(
+                    ["Check", "Endpoint", "Mode", "Status", "Latency", "Outcome", "Security headers"],
+                    surface.Checks.Select(c => new[]
+                    {
+                        Esc(c.Label), Esc(c.Url), Esc(c.Mode.ToString()), Esc(c.StatusCode.HasValue ? $"HTTP {c.StatusCode}" : c.Status.ToString()),
+                        c.ElapsedMs.HasValue ? $"{c.ElapsedMs:0} ms" : "—", Esc(SanitizePassive(c.Outcome)),
+                        Esc(c.SecurityHeaders.Count == 0 ? "—" : string.Join(" · ", c.SecurityHeaders.Select(h => $"{h.Key}: {h.Value}")))
+                    })));
+            }
+            else
+            {
+                sb.Append($"<p><strong>Not checked.</strong> {Esc(surface.NotExecutedReason)}</p>\n");
+            }
+            sb.Append("</section>\n");
+        }
+
         sb.Append("<section class=\"block\">\n<h2>Logical issues</h2>\n");
         if (report.LogicalIssues.Count == 0)
             sb.Append("<p>No automated findings were produced. This does not remove manual review obligations or assessment limitations.</p>\n");

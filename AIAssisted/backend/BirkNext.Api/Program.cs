@@ -235,6 +235,7 @@ builder.Services.AddSingleton<ILocalHttpsProxyStatusQuery>(sp => sp.GetRequiredS
 builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<IAuthenticatedApiExecutionService, AuthenticatedApiExecutionService>();
 builder.Services.AddSingleton<IAuthenticatedReviewGateway, AuthenticatedReviewGateway>();
+builder.Services.AddSingleton<BirkNext.Api.Services.FrontendQualityEngines.IFrontendAuthenticatedApiSurfaceService, BirkNext.Api.Services.FrontendQualityEngines.FrontendAuthenticatedApiSurfaceService>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
 builder.Services.AddSingleton<AuthenticationOriginPolicy>();

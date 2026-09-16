@@ -186,8 +186,25 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         return new AuthenticatedApiExecutionResult
         {
             StatusCode = status, ContentType = mediaType, ContentLength = length, ElapsedMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1),
-            GraphQlErrorCount = errors, GraphQlHasData = hasData, Outcome = DescribeOutcome(status, mediaType, length, graphQl, errors, hasData)
+            GraphQlErrorCount = errors, GraphQlHasData = hasData, Outcome = DescribeOutcome(status, mediaType, length, graphQl, errors, hasData),
+            SecurityHeaders = CollectSecurityHeaders(response)
         };
+    }
+
+    /// <summary>Allow-listed security posture headers only (transport, content-type sniffing, framing, CORS). Nothing else leaves the service.</summary>
+    internal static IReadOnlyDictionary<string, string> CollectSecurityHeaders(HttpResponseMessage response)
+    {
+        const int maxValueLength = 512;
+        var collected = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in AuthenticatedApiExecutionResult.SecurityHeaderAllowList)
+        {
+            if (response.Headers.TryGetValues(name, out var values) || response.Content.Headers.TryGetValues(name, out values))
+            {
+                var value = string.Join(", ", values);
+                collected[name] = value.Length > maxValueLength ? value[..maxValueLength] : value;
+            }
+        }
+        return collected;
     }
 
     private static string DescribeOutcome(int status, string? mediaType, long length, bool graphQl, int? errors, bool? hasData)

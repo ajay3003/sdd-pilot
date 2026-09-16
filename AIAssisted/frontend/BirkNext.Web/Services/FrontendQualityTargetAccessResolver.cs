@@ -143,8 +143,18 @@ public static class FrontendQualityTargetAccess
 
         // Engines that only need the public frontend document/assets keep running for a protected application: the SPA shell is
         // served publicly and the engine analyses exactly that. The reachability probe reports a host-level authentication gate.
+        // When the engine can also consume the Local HTTPS proxy API context, the label says so; the context state decides whether
+        // the authenticated API-surface probes actually run (missing/expired context is reported, never downgraded silently).
         if (!engine.RequiresBrowserDom && !engine.RequiresBrowserRuntime && !engine.RequiresAuthenticatedHttp)
+        {
+            if (engine.SupportsProxyAuthenticatedContext && access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
+                return access.AuthenticatedApiAvailable
+                    ? Ready(engine, FrontendQualityEngineAccessKind.PublicHttp, "Public HTTP (frontend shell) + Authenticated HTTP (Local HTTPS Proxy)",
+                        $"{PublicShellNote} Authenticated API-surface probes run through the proxy gateway.")
+                    : Ready(engine, FrontendQualityEngineAccessKind.PublicHttp, "Public HTTP (frontend shell); authenticated API surface not available",
+                        $"{PublicShellNote} {(access.ApiContextStatus == AuthenticatedApiContextStatus.Expired ? ProxyContextExpiredReason : ProxyContextMissingReason)}");
             return Ready(engine, FrontendQualityEngineAccessKind.PublicHttp, "Public HTTP (frontend shell)", PublicShellNote);
+        }
 
         if (engine.RequiresAuthenticatedHttp)
         {

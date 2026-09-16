@@ -118,6 +118,8 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("targetAccess")]       public FrontendQualityTargetAccessContext? TargetAccess    { get; init; }
     /// <summary>Engine activation (policy, enabled, selected) captured at review start; coverage and exports are bound to it, not to later settings.</summary>
     [JsonPropertyName("activeEngines")]      public FrontendQualityActiveEngineSnapshot? ActiveEngines  { get; init; }
+    /// <summary>Authenticated API-surface probes executed through the Local HTTPS proxy gateway (sanitized), or the typed reason they did not run.</summary>
+    [JsonPropertyName("authenticatedApiSurface")] public BirkNext.LocalHttpsProxy.FrontendAuthenticatedApiSurfaceResult? AuthenticatedApiSurface { get; init; }
     [JsonPropertyName("assessedEngines")]    public List<string> AssessedEngines
     {
         get => EngineOutcomes.Count > 0 ? FrontendQualityEngineCompatibility.Assessed(EngineOutcomes) : _legacyAssessedEngines;

@@ -1,3 +1,4 @@
+@using BirkNext.LocalHttpsProxy
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
@@ -70,6 +71,40 @@
         </table>
     </div>
 </section>
+
+@if (Report.AuthenticatedApiSurface is { } surface)
+{
+    <section class="fqr-section" aria-label="Authenticated API surface" data-testid="fqr-auth-api-surface">
+        <SectionHeader Title="Authenticated API surface (Local HTTPS Proxy)" />
+        @if (surface.ContextAvailable && surface.Checks.Count > 0)
+        {
+            <p>Approved read-only requests executed by the backend gateway with the memory-only proxy credential. Response bodies, headers other than the security allow-list, and the credential itself are never captured.</p>
+            <div class="fqr-table-wrap">
+                <table class="fqr-findings-table">
+                    <thead><tr><th>Check</th><th>Endpoint</th><th>Mode</th><th>Status</th><th>Latency</th><th>Outcome</th><th>Security headers</th></tr></thead>
+                    <tbody>
+                        @foreach (var check in surface.Checks)
+                        {
+                            <tr data-testid="fqr-auth-api-check" data-check="@check.Label">
+                                <td><strong>@check.Label</strong></td>
+                                <td>@check.Url</td>
+                                <td>@ModeLabel(check.Mode)</td>
+                                <td>@(check.StatusCode.HasValue ? $"HTTP {check.StatusCode}" : check.Status.ToString())</td>
+                                <td>@(check.ElapsedMs.HasValue ? $"{check.ElapsedMs:0} ms" : "—")</td>
+                                <td>@check.Outcome</td>
+                                <td>@(check.SecurityHeaders.Count == 0 ? "—" : string.Join(" · ", check.SecurityHeaders.Select(h => $"{h.Key}: {h.Value}")))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else
+        {
+            <div class="fqr-empty-panel" data-testid="fqr-auth-api-not-executed"><strong>Not checked.</strong> @surface.NotExecutedReason</div>
+        }
+    </section>
+}
 
 <section class="fqr-section" aria-label="Logical issues">
     <SectionHeader Title="Logical issues" />
@@ -180,6 +215,14 @@
         FrontendQualityRequiredCoverageState.AllRequiredAssessed => "All required engines assessed",
         FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed => "Some required engines not assessed",
         _ => "No trustworthy required assessment" };
+    private static string ModeLabel(ReviewExecutionMode mode) => mode switch
+    {
+        ReviewExecutionMode.AuthenticatedViaLocalHttpsProxy => "Authenticated via Local HTTPS Proxy",
+        ReviewExecutionMode.AuthenticatedViaManagedEdgeCdp => "Authenticated via Managed Edge (CDP)",
+        ReviewExecutionMode.AuthenticatedUnavailable => "Authenticated context unavailable",
+        ReviewExecutionMode.ManualNotExecuted => "Manual only — not executed",
+        _ => "Public",
+    };
     private static string ToolLabel(FrontendQualityEngineOutcome outcome) => string.Join(" · ", new[] { outcome.ToolName, outcome.ToolVersion, outcome.BrowserName, outcome.BrowserVersion }.Where(v => !string.IsNullOrWhiteSpace(v)));
     private static string EvidenceLabel(FrontendQualityEvidenceStrength strength) => strength switch { FrontendQualityEvidenceStrength.DirectObservation => "Direct observation", FrontendQualityEvidenceStrength.ToolDiagnostic => "Tool diagnostic", FrontendQualityEvidenceStrength.StaticIndicator => "Static indicator", _ => "Derived summary" };
     private static string DispositionLabelFor(FrontendQualityReviewDisposition disposition) => disposition switch { FrontendQualityReviewDisposition.ManualVerificationRequired => "Manual verification required", FrontendQualityReviewDisposition.Informational => "Informational", _ => "Automated finding" };

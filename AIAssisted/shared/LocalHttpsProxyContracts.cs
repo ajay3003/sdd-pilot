@@ -98,6 +98,59 @@ public sealed record AuthenticatedApiExecutionResult
     public int? GraphQlErrorCount { get; init; }
     public bool? GraphQlHasData { get; init; }
     public string Outcome { get; init; } = "";
+    /// <summary>
+    /// Allow-listed, non-secret security-relevant response headers (lower-case names, values capped) so reviews can assess the
+    /// API's transport/CORS posture. Never contains Set-Cookie, Authorization, WWW-Authenticate or any other header.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> SecurityHeaders { get; init; } = new Dictionary<string, string>();
+
+    public static readonly IReadOnlyList<string> SecurityHeaderAllowList =
+    [
+        "strict-transport-security", "content-security-policy", "x-content-type-options", "x-frame-options",
+        "referrer-policy", "permissions-policy", "cache-control", "access-control-allow-origin", "access-control-allow-credentials",
+    ];
+}
+
+/// <summary>
+/// Request from the Frontend Quality Review for the approved authenticated API-surface probes of the active Target Environment.
+/// Carries the non-secret review identity and configured endpoint URLs only.
+/// </summary>
+public sealed record FrontendAuthenticatedApiSurfaceRequest(
+    AuthenticatedReviewIdentity Identity,
+    string? RestBaseUrl,
+    string? HealthEndpoint,
+    string? GraphQlEndpoint);
+
+/// <summary>One approved authenticated probe (REST GET or GraphQL query) with its sanitized result or typed non-execution reason.</summary>
+public sealed record FrontendAuthenticatedApiCheck
+{
+    public string Label { get; init; } = "";
+    /// <summary>Endpoint URL without query string. Never a credential.</summary>
+    public string Url { get; init; } = "";
+    public ReviewExecutionMode Mode { get; init; } = ReviewExecutionMode.AuthenticatedUnavailable;
+    public AuthenticatedExecutionStatus Status { get; init; }
+    public int? StatusCode { get; init; }
+    public string? ContentType { get; init; }
+    public double? ElapsedMs { get; init; }
+    public bool? GraphQlHasData { get; init; }
+    public int? GraphQlErrorCount { get; init; }
+    public string Outcome { get; init; } = "";
+    public IReadOnlyDictionary<string, string> SecurityHeaders { get; init; } = new Dictionary<string, string>();
+    public bool Executed => Status == AuthenticatedExecutionStatus.Executed && StatusCode.HasValue;
+    public bool AuthenticationRejected => StatusCode is 401 or 403;
+}
+
+/// <summary>Result of the Frontend Quality Review's authenticated API-surface probes. Sanitized; no token, header dump, cookie or body.</summary>
+public sealed record FrontendAuthenticatedApiSurfaceResult
+{
+    public AuthenticatedReviewCapabilities Capabilities { get; init; } = new();
+    /// <summary>True when the context allowed at least one probe to be attempted.</summary>
+    public bool ContextAvailable { get; init; }
+    /// <summary>Why nothing was executed (no context, expired, method not proxy, no endpoints configured); empty when checks ran.</summary>
+    public string NotExecutedReason { get; init; } = "";
+    public IReadOnlyList<FrontendAuthenticatedApiCheck> Checks { get; init; } = [];
+    public DateTimeOffset CheckedAt { get; init; } = DateTimeOffset.UtcNow;
+    public int ExecutedCount => Checks.Count(c => c.Executed);
 }
 
 public sealed record ProxyCertificateStatus

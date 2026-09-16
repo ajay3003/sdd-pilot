@@ -1,3 +1,4 @@
+using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -52,7 +53,8 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     FrontendQualityTargetAccessContext? AccessContext = null,
     IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision>? AccessDecisions = null,
     TargetPreflightResult? Preflight = null,
-    FrontendQualityActiveEngineSnapshot? ActiveEngines = null)
+    FrontendQualityActiveEngineSnapshot? ActiveEngines = null,
+    BirkNext.LocalHttpsProxy.FrontendAuthenticatedApiSurfaceResult? AuthenticatedApiSurface = null)
 {
     public List<string> SkippedEngines { get; init; } = SkippedEngines ?? [];
     public Dictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason> OutcomeReasons { get; init; } = [];
@@ -83,6 +85,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IAuthenticatedBrowserSessionService? _authenticatedSessions;
     private readonly IFrontendQualityEngineStatusApiService? _engineStatusService;
     private readonly IFrontendQualityTargetAccessResolver? _accessResolver;
+    private readonly IFrontendAuthenticatedApiSurfaceService? _apiSurface;
     internal IAuthenticatedReviewOrchestrationObserver AuthenticatedObserver { get; set; } = NoOpAuthenticatedReviewOrchestrationObserver.Instance;
 
     public FrontendQualityReviewOrchestrator(
@@ -96,8 +99,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         IFrontendPassiveSecurityApiService? passiveSecurity = null,
         IAuthenticatedBrowserSessionService? authenticatedSessions = null,
         IFrontendQualityEngineStatusApiService? engineStatusService = null,
-        IFrontendQualityTargetAccessResolver? accessResolver = null)
+        IFrontendQualityTargetAccessResolver? accessResolver = null,
+        IFrontendAuthenticatedApiSurfaceService? apiSurface = null)
     {
+        _apiSurface = apiSurface;
         _security = security;
         _performance = performance;
         _preflight = preflight;
@@ -214,6 +219,32 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                 PreflightBlockReason = $"Preflight error: {ex.Message}"
             };
             return blocked with { QualityReport = BuildPreflightReport(targetUrl, context, blocked, PreflightStatus.InvalidTarget) };
+        }
+
+        // ── Authenticated API surface (Local HTTPS proxy) — one shared probe set for the HTTP engines ───────────
+        // Runs only when the environment requires authentication, the saved method is the Local HTTPS proxy and an active
+        // engine declares support. The backend gateway executes approved read-only requests with the memory-only credential;
+        // the review only ever sees sanitized results or a typed "not executed" reason.
+        if (access.RequiresAuthentication && access.Method == AuthenticatedTestingMethod.LocalHttpsProxy && _apiSurface is not null
+            && active.Active.Any(e => e.Access.SupportsProxyAuthenticatedContext && decisions[e.EngineId].IsReady))
+        {
+            try
+            {
+                var surface = await _apiSurface.ProbeAsync(new FrontendAuthenticatedApiSurfaceRequest(
+                    ReviewAuthenticationIdentity.ForContext(context), context.RestBaseUrl, context.HealthEndpoint, context.GraphQlEndpoint), cancellationToken);
+                result = result with { AuthenticatedApiSurface = surface };
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                result = result with
+                {
+                    AuthenticatedApiSurface = new FrontendAuthenticatedApiSurfaceResult
+                    {
+                        ContextAvailable = false, NotExecutedReason = "Authenticated API surface not checked: the probe request failed.",
+                        Capabilities = new AuthenticatedReviewCapabilities { Method = access.Method },
+                    }
+                };
+            }
         }
 
         // ── Static Security — public HTTP engine; runs whenever its access decision is Ready ──────────────
@@ -436,6 +467,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         enrichedReport = ApplyAccessibility(enrichedReport, result.AccessibilityReport, accessibilityAssessed);
         enrichedReport = ApplyLighthouse(enrichedReport, result.LighthouseReport);
         enrichedReport = ApplyPassiveSecurity(enrichedReport, result.PassiveSecurityReport);
+        // Last, so the intermediate engine merges (which copy properties explicitly) cannot drop it.
+        enrichedReport = ApplyAuthenticatedApiSurface(enrichedReport, result.AuthenticatedApiSurface, context, active);
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll(
             targetUrl, context, result, _runtime is not null, _accessibility is not null,
             _lighthouse is not null, _passiveSecurity is not null, cancellationToken.IsCancellationRequested,
@@ -613,6 +646,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         PreflightStatus = preflightStatus, PreflightMessage = preflightMessage,
         RedirectOccurred = report.RedirectOccurred, TargetAccess = access ?? report.TargetAccess,
         ActiveEngines = activeEngines ?? report.ActiveEngines, TargetEnvironment = report.TargetEnvironment,
+        AuthenticatedApiSurface = report.AuthenticatedApiSurface,
         AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
         PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport
         };
@@ -641,6 +675,39 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             PreflightMessage = result.PreflightBlockReason,
             TargetAccess = result.AccessContext,
             ActiveEngines = result.ActiveEngines,
+        };
+    }
+
+    /// <summary>
+    /// Merges the sanitized authenticated API-surface probes into the report: findings for the active HTTP engines, provenance
+    /// limitations, and the probe results themselves for the UI/export. Nothing is added when no probe was attempted.
+    /// </summary>
+    private static FrontendQualityReviewReport ApplyAuthenticatedApiSurface(
+        FrontendQualityReviewReport report,
+        FrontendAuthenticatedApiSurfaceResult? surface,
+        FrontendAnalysisContext context,
+        FrontendQualityActiveEngineSnapshot active)
+    {
+        if (surface is null) return report;
+        var findings = FrontendQualityAuthenticatedApiSurfaceFindings.Build(surface, context.PerformanceThresholds,
+            active.IsActive(FrontendQualityEngineId.StaticSecurity), active.IsActive(FrontendQualityEngineId.PassivePerformance));
+        return new FrontendQualityReviewReport
+        {
+            TargetUrl = report.TargetUrl, FinalUrl = report.FinalUrl, GeneratedAt = report.GeneratedAt,
+            CompletedAt = report.CompletedAt, DurationMs = report.DurationMs, OverallScore = report.OverallScore,
+            PerformanceScore = report.PerformanceScore, SecurityScore = report.SecurityScore,
+            AccessibilityScore = report.AccessibilityScore, StandardsScore = report.StandardsScore,
+            WasmScore = report.WasmScore, ReadinessScore = report.ReadinessScore,
+            Findings = report.Findings.Concat(findings).ToList(), CategoryScores = report.CategoryScores,
+            Recommendations = report.Recommendations, Risks = report.Risks,
+            Limitations = report.Limitations.Concat(FrontendQualityAuthenticatedApiSurfaceFindings.Limitations(surface)).Distinct().ToList(),
+            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage,
+            PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
+            RedirectOccurred = report.RedirectOccurred, AssessedEngines = report.AssessedEngines,
+            FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
+            AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
+            PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport,
+            AuthenticatedApiSurface = surface,
         };
     }
 

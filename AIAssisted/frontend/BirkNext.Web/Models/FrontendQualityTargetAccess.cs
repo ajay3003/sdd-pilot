@@ -80,22 +80,26 @@ public sealed record FrontendQualityEngineAccessRequirements(
 /// <item>Lighthouse — anonymous synthetic navigation; no authenticated mode exists.</item>
 /// <item>Passive Security — OWASP ZAP passive scan of anonymous traffic; no authenticated mode exists.</item>
 /// </list>
-/// The Local HTTPS proxy provides an authenticated <em>API</em> context only. No shipped engine issues authenticated API requests,
-/// so <c>SupportsProxyAuthenticatedContext</c> is false everywhere; it is declared so orchestration can use it the day an engine does.
+/// The Local HTTPS proxy provides an authenticated <em>API</em> context only. The two HTTP engines consume it through the shared
+/// authenticated API-surface probes (approved REST GET / GraphQL query executed by the backend gateway; engines never see the token):
+/// Static Security assesses the API's security headers and CORS posture, Passive Performance the authenticated latency/status.
+/// DOM/runtime engines cannot use it: a bearer for the API does not sign a browser into an MSAL-protected SPA.
 /// </summary>
 public static class FrontendQualityEngineAccessRegistry
 {
     private static readonly IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessRequirements> Requirements =
         new Dictionary<FrontendQualityEngineId, FrontendQualityEngineAccessRequirements>
         {
+            // Both HTTP engines additionally consume the shared authenticated API-surface probes (approved REST GET / GraphQL query via
+            // the Local HTTPS proxy gateway): Static Security assesses API security headers/CORS, Passive Performance authenticated latency.
             [FrontendQualityEngineId.StaticSecurity] = new(FrontendQualityEngineId.StaticSecurity,
                 RequiresTargetReachability: true, RequiresPublicHttp: true, RequiresAuthenticatedHttp: false,
                 RequiresBrowserDom: false, RequiresBrowserRuntime: false,
-                SupportsProxyAuthenticatedContext: false, SupportsCdp: false, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: false),
+                SupportsProxyAuthenticatedContext: true, SupportsCdp: false, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: false),
             [FrontendQualityEngineId.PassivePerformance] = new(FrontendQualityEngineId.PassivePerformance,
                 RequiresTargetReachability: true, RequiresPublicHttp: true, RequiresAuthenticatedHttp: false,
                 RequiresBrowserDom: false, RequiresBrowserRuntime: false,
-                SupportsProxyAuthenticatedContext: false, SupportsCdp: false, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: false),
+                SupportsProxyAuthenticatedContext: true, SupportsCdp: false, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: false),
             [FrontendQualityEngineId.BrowserRuntime] = new(FrontendQualityEngineId.BrowserRuntime,
                 RequiresTargetReachability: true, RequiresPublicHttp: false, RequiresAuthenticatedHttp: false,
                 RequiresBrowserDom: true, RequiresBrowserRuntime: true,

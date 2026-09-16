@@ -173,6 +173,11 @@ builder.Services.AddHttpClient<IIntegrationQualityReviewService, IntegrationQual
 
 builder.Services.AddHttpClient<IAuthenticatedReviewCapabilitiesService, AuthenticatedReviewCapabilitiesService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<IFrontendAuthenticatedApiSurfaceService, FrontendAuthenticatedApiSurfaceService>(client =>
+{
+    client.BaseAddress = new Uri("http://localhost:5000/");
+    client.Timeout = TimeSpan.FromSeconds(60);
+});
 
 builder.Services.AddHttpClient<IFrontendBrowserRuntimeReviewApiService, FrontendBrowserRuntimeReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
