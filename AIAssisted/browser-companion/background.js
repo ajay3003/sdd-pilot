@@ -7,7 +7,7 @@ const BACKEND_CANDIDATES = ['http://127.0.0.1:5000', 'http://localhost:5000'];
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const CONTENT_SCRIPT_ID = 'birknext-companion-content';
 const MAIN_WORLD_SCRIPT_ID = 'birknext-companion-main';
-const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
+const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
 const HEARTBEAT_ALARM = 'birknext-heartbeat';
 const FLUSH_DELAY_MS = 1500;
 const MAX_PAGES_PER_ENVELOPE = 20;
@@ -174,6 +174,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     switch (message && message.type) {
       case 'popup:status': sendResponse(await validate()); break;
+      case 'popup:wcag-keyboard':
       case 'popup:wcag-layout': {
         if (sender.tab) { sendResponse({ message: 'Popup action required.' }); break; }
         const status = await validate();
@@ -181,7 +182,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             !['Local', 'Development', 'QA', 'Test', 'RC'].includes(status.session.environmentType)) {
           sendResponse({ message: 'Layout probes require a paired non-production page. Re-pair after changing environment policy.' }); break;
         }
-        sendResponse(await chrome.tabs.sendMessage(wcagTab.id, { type: 'wcag:layout' }));
+        sendResponse(await chrome.tabs.sendMessage(wcagTab.id, { type: message.type === 'popup:wcag-keyboard' ? 'wcag:keyboard' : 'wcag:layout' }));
         break;
       }
       case 'popup:pair': sendResponse(await pair(message.pairingCode)); break;

@@ -8,7 +8,7 @@ const interaction = require('../lib/wcag-interaction.js');
 // Test harness only, matching the existing companion fixtures. The shipped engine has no browser automation dependency.
 const { chromium } = require('C:/Users/ajaan/AppData/Roaming/npm/node_modules/playwright');
 let browser, page;
-const libs = ['sanitize', 'dom', 'wcag', 'wcag-interaction', 'a11y'].map(f => readFileSync(new URL(`../lib/${f}.js`, import.meta.url), 'utf8')).join('\n');
+const libs = ['sanitize', 'dom', 'wcag', 'wcag-interaction', 'wcag-keyboard', 'a11y'].map(f => readFileSync(new URL(`../lib/${f}.js`, import.meta.url), 'utf8')).join('\n');
 before(async () => { browser = await chromium.launch({ headless: true }); page = await browser.newPage(); });
 after(async () => { await browser?.close(); });
 async function load(body, css = '') {
@@ -97,4 +97,57 @@ test('navigation/component evidence contains counts only across page fixtures', 
     await load(body); results.push((await collect()).navigationStructure);
   }
   assert.deepEqual(results, [[1], [2], [1]]);
+});
+async function startKeyboard() {
+  await page.evaluate(() => {
+    window.observation = BirkNextCompanion.wcagKeyboard.observe(document, window,
+      { environment: 'Development', approved: true }, r => { window.observed = r; });
+  });
+}
+async function tab() { await page.keyboard.press('Tab'); await page.evaluate(() => new Promise(requestAnimationFrame)); }
+test('trusted keyboard observation is bounded, detects focus candidates and never activates controls', async () => {
+  await load('<button onclick="window.actions++">Delete</button><button>Next</button>', 'button:focus{outline:none;box-shadow:none}');
+  await page.evaluate(() => { window.actions = 0; });
+  await startKeyboard(); await tab(); await tab();
+  const r = await page.evaluate(() => ({ checks: window.observation.stop(), actions: window.actions }));
+  assert.equal(r.actions, 0); assert.equal(check(r, 'keyboard-traversal').tested, 2);
+  assert.equal(check(r, 'focus-indicator').uncertain, 2);
+});
+test('prevented Tab is a possible trap and valid modal trapping is not failed', async () => {
+  await load('<button onkeydown="if(event.key===\'Tab\')event.preventDefault()">Trapped</button>');
+  await startKeyboard(); await tab(); await tab();
+  let r = await page.evaluate(() => ({ checks: window.observation.stop() }));
+  assert.ok(check(r, 'keyboard-traversal').uncertain > 0);
+  assert.equal(check(r, 'keyboard-traversal').failed, 0);
+  await load('<div role="dialog" aria-modal="true" aria-label="Dialog"><button onkeydown="if(event.key===\'Tab\')event.preventDefault()">Close</button></div>');
+  await startKeyboard(); await tab(); await tab();
+  r = await page.evaluate(() => ({ checks: window.observation.stop() }));
+  assert.equal(check(r, 'keyboard-traversal').uncertain, 0);
+  assert.equal(check(r, 'keyboard-traversal').outcome, 'ManualReviewRequired');
+});
+test('synthetic keys do not produce fabricated traversal evidence; stopped listeners no longer collect', async () => {
+  await load('<button>Next</button>'); await startKeyboard();
+  const r = await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+    return { checks: window.observation.stop() };
+  });
+  assert.equal(check(r, 'keyboard-traversal').outcome, 'NotTested');
+  await tab();
+  assert.deepEqual(await page.evaluate(() => window.observation.stop()), []);
+});
+test('native names, labels, lang, ARIA and contrast agree with axe on deterministic fixtures',
+  { skip: !process.env.BIRKNEXT_AXE_SCRIPT && 'Set BIRKNEXT_AXE_SCRIPT to the bundled axe reference script.' }, async () => {
+  await load('<button></button><input><img><p aria-labelledby="missing">Text</p><p style="color:#aaa">Poor contrast</p>');
+  await page.evaluate(() => document.documentElement.removeAttribute('lang'));
+  const native = await collect();
+  await page.addScriptTag({ content: readFileSync(process.env.BIRKNEXT_AXE_SCRIPT, 'utf8') });
+  const axe = await page.evaluate(async () => (await window.axe.run(document, {
+    runOnly: { type: 'rule', values: ['button-name', 'label', 'image-alt', 'html-has-lang', 'color-contrast'] },
+  })).violations.map(v => v.id));
+  for (const [ours, reference] of [['a11y-button-name', 'button-name'], ['a11y-control-label', 'label'],
+    ['a11y-image-alt', 'image-alt'], ['a11y-document-lang', 'html-has-lang'], ['text-contrast', 'color-contrast']]) {
+    assert.ok(check(native, ours).failed > 0, ours); assert.ok(axe.includes(reference), reference);
+  }
+  assert.equal(check(native, 'a11y-aria-reference').failed, 1);
+  // axe versions differ in duplicate-id/ARIA-reference treatment; no rule-count equivalence is asserted.
 });

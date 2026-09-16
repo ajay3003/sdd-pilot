@@ -38,6 +38,10 @@
     try { const result = await send({ type: 'popup:wcag-layout' }); $('message').textContent = result?.message || 'Layout probes unavailable.'; }
     finally { $('wcagLayout').disabled = false; }
   });
+  $('wcagKeyboard').addEventListener('click', async () => {
+    const result = await send({ type: 'popup:wcag-keyboard' });
+    $('message').textContent = result?.message || 'Keyboard observation unavailable.';
+  });
   $('saveBackend').addEventListener('click', async () => {
     const value = $('backend').value.trim();
     if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(value)) { $('message').textContent = 'Only a loopback backend (http://127.0.0.1:port or http://localhost:port) is allowed.'; return; }

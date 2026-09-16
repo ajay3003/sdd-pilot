@@ -56,6 +56,8 @@
     }
     if (el.tagName.toLowerCase() === 'input') {
       const type = (el.getAttribute('type') || '').toLowerCase();
+      // Native submit/reset controls have a user-agent supplied name when value is absent.
+      if ((type === 'submit' || type === 'reset') && !el.hasAttribute('value')) return true;
       if ((type === 'submit' || type === 'reset' || type === 'button') && hasText(el.getAttribute('value'))) return true;
       if (type === 'image' && hasText(el.getAttribute('alt'))) return true;
     }
@@ -104,7 +106,9 @@
     const out = collector();
     const html = doc.documentElement;
 
-    if (!html || !hasText(html.getAttribute('lang'))) out.add('a11y-document-lang', html);
+    const language = html?.getAttribute('lang') || '';
+    // Validate tag shape, not whether the language matches the content (that remains manual).
+    if (!hasText(language) || !/^(?:[a-z]{2,8}(?:-[a-z0-9]{1,8})*|[ix](?:-[a-z0-9]{1,8})+)$/i.test(language)) out.add('a11y-document-lang', html);
     if (!hasText(doc.title)) out.add('a11y-page-title', null);
 
     for (const img of doc.querySelectorAll('img')) {

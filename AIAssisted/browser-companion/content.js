@@ -16,15 +16,28 @@
   let updateTimer = null;
   let updatesSent = 0;
   let layoutChecks = [];
+  let keyboardChecks = [];
+  let keyboardObservation = null;
   let layoutBusy = false;
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
-    if (message?.type !== 'wcag:layout') return;
+    if (!['wcag:layout', 'wcag:keyboard'].includes(message?.type)) return;
     if (sender.id !== chrome.runtime.id || layoutBusy || !isApprovedVisit(visit)) { respond({ message: 'No approved active page.' }); return; }
     (async () => {
       layoutBusy = true;
       try {
         scope = await send({ type: 'content:session' });
         if (!isApprovedVisit(visit) || !C.wcagInteraction.allowed(scope?.environmentType, true)) { respond({ message: 'Passive checks only for this environment.' }); return; }
+        if (message.type === 'wcag:keyboard') {
+          keyboardObservation?.stop();
+          const observedVisit = visit;
+          keyboardObservation = C.wcagKeyboard.observe(doc, win, { environment: scope.environmentType, approved: true }, checks => {
+            if (visit !== observedVisit) return;
+            keyboardChecks = checks;
+            emit('update');
+          });
+          respond({ message: 'Close this popup and use Tab / Shift+Tab for 30 seconds. Focus observations require review; no controls are activated automatically.' });
+          return;
+        }
         layoutChecks = await C.wcagInteraction.layout(doc, win, { environment: scope.environmentType, approved: true });
         await emit('update');
         respond({ message: 'Layout probes completed on the last visited visible page; original styles restored. Review results in BirkNext.' });
@@ -114,7 +127,7 @@
       unsupportedMetrics: unsupported.concat(visit.sequence === 1 ? [] : ['largest-contentful-paint (SPA route)', 'layout-shift (SPA route)', 'navigation-timing (SPA route)']),
     });
     const a11y = C.a11y.evaluate(doc, win);
-    a11y.checks = (a11y.checks || []).concat(layoutChecks);
+    a11y.checks = (a11y.checks || []).concat(layoutChecks, keyboardChecks);
     return {
       profileId: scope.profileId,
       pageOrigin: visit.origin,
@@ -155,6 +168,7 @@
   }
 
   function resetVisitState() {
+    keyboardObservation?.stop(); keyboardObservation = null; keyboardChecks = [];
     layoutChecks = [];
     runtime.errors.clear(); runtime.errorCount = 0; runtime.rejectionCount = 0; runtime.resourceFailureCount = 0;
     updatesSent = 0;

@@ -17,7 +17,7 @@
     const nodes = Array.from(doc.querySelectorAll('body *')).slice(0, MAX_ELEMENTS);
     const total = doc.querySelectorAll('body *').length;
     const base = nodes.map(el => metrics(el, win));
-    const sanitize = root.BirkNextCompanion.sanitize;
+    const sanitize = root.BirkNextCompanion.wcag;
     const result = [];
     const scroll = [win.scrollX, win.scrollY];
     for (const checkId of ids) {

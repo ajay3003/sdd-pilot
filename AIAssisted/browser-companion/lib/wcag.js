@@ -2,6 +2,14 @@
 (function (root) {
   'use strict';
   const MAX_ELEMENTS = 3000;
+  function selectorFor(el) {
+    const path = [];
+    for (let p = el; p?.parentElement; p = p.parentElement) {
+      path.unshift(`:nth-child(${Array.prototype.indexOf.call(p.parentElement.children, p) + 1})`);
+      if (path.length > 8) return null;
+    }
+    return ':root' + (path.length ? ' > ' + path.join(' > ') : '');
+  }
   function channel(v) { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }
   function luminance(c) { return 0.2126 * channel(c[0]) + 0.7152 * channel(c[1]) + 0.0722 * channel(c[2]); }
   function composite(fg, bg) {
@@ -43,7 +51,7 @@
     function record(id, tested, failed = [], uncertain = 0, na = false) {
       const count = typeof failed === 'number' ? failed : failed.length;
       checks.push({ checkId: id, outcome: count ? 'Fail' : uncertain ? 'ManualReviewRequired' : na ? 'NotApplicable' : 'Pass',
-        tested, failed: count, uncertain, selectors: Array.isArray(failed) ? failed.slice(0, 5).map(sanitize.selectorFor).filter(Boolean) : [] });
+        tested, failed: count, uncertain, selectors: Array.isArray(failed) ? failed.slice(0, 5).map(selectorFor).filter(Boolean) : [] });
     }
     // These are explicit executions of the existing check catalogue, not criterion-level passes.
     for (const id of Object.keys(dependencies.rules)) {
@@ -105,7 +113,7 @@
     const mediaScopeComplete = !truncated && !doc.querySelector('iframe, object, embed, canvas') && !bounded.some(el => el.shadowRoot || el.tagName.includes('-'));
     return { checks, videoCount: videos.length, audioCount: audios.length, mediaScopeComplete, navigationStructure: nav, componentStructure: components };
   }
-  const api = { collect, ratio, color, composite, luminance, threshold, MAX_ELEMENTS };
+  const api = { collect, ratio, color, composite, luminance, threshold, selectorFor, MAX_ELEMENTS };
   root.BirkNextCompanion = Object.assign(root.BirkNextCompanion || {}, { wcag: api });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
