@@ -27,17 +27,20 @@ public sealed class FrontendQualityActiveEnginesTests
     };
 
     [Fact]
-    public void Defaults_TwoRequiredHttpEnginesActive_FourOptionalDisabled()
+    public void Defaults_EveryEngineEnabledExceptBrowserRuntime()
     {
         var snapshot = FrontendQualityActiveEngines.Resolve(Context(Profile()));
 
         snapshot.Engines.Should().HaveCount(6);
-        snapshot.ActiveCount.Should().Be(2);
+        snapshot.ActiveCount.Should().Be(5);
         snapshot.RequiredActiveCount.Should().Be(2);
-        snapshot.OptionalActiveCount.Should().Be(0);
-        snapshot.DisabledCount.Should().Be(4);
-        snapshot.Active.Select(e => e.EngineId).Should().BeEquivalentTo([FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance]);
-        snapshot.Inactive.Should().OnlyContain(e => !e.Enabled && e.Policy == FrontendQualityEngineRequirement.Optional);
+        snapshot.OptionalActiveCount.Should().Be(3);
+        snapshot.DisabledCount.Should().Be(1);
+        snapshot.Active.Select(e => e.EngineId).Should().BeEquivalentTo([
+            FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance,
+            FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.PassiveSecurity]);
+        snapshot.Inactive.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.BrowserRuntime);
+        snapshot.Get(FrontendQualityEngineId.BrowserRuntime)!.Enabled.Should().BeFalse("Browser Runtime is the only opt-in engine");
         snapshot.RequiredButDisabled.Should().BeEmpty();
         snapshot.ProfileId.Should().Be("dev");
     }
@@ -61,13 +64,13 @@ public sealed class FrontendQualityActiveEnginesTests
     [Fact]
     public void SelectionNeverActivatesADisabledEngine()
     {
-        var profile = Profile(selection: s => { s.BrowserRuntimeSelected = true; s.LighthouseSelected = true; });
+        var profile = Profile(toggles: t => t.EnableLighthouseEngine = false, selection: s => { s.BrowserRuntimeSelected = true; s.LighthouseSelected = true; });
 
         var snapshot = FrontendQualityActiveEngines.Resolve(Context(profile));
 
         snapshot.IsActive(FrontendQualityEngineId.BrowserRuntime).Should().BeFalse();
         snapshot.IsActive(FrontendQualityEngineId.Lighthouse).Should().BeFalse();
-        snapshot.ActiveCount.Should().Be(2);
+        snapshot.ActiveCount.Should().Be(4);
     }
 
     [Fact]
@@ -94,7 +97,11 @@ public sealed class FrontendQualityActiveEnginesTests
     [Fact]
     public void ZeroActiveEngines_IsExplicit()
     {
-        var profile = Profile(toggles: t => { t.EnableSecurityEngine = false; t.EnablePerformanceEngine = false; });
+        var profile = Profile(toggles: t =>
+        {
+            t.EnableSecurityEngine = false; t.EnablePerformanceEngine = false; t.EnableBrowserRuntimeEngine = false;
+            t.EnableAccessibilityEngine = false; t.EnableLighthouseEngine = false; t.EnablePassiveSecurityEngine = false;
+        });
 
         var snapshot = FrontendQualityActiveEngines.Resolve(Context(profile));
 
@@ -111,8 +118,9 @@ public sealed class FrontendQualityActiveEnginesTests
 
         var snapshot = FrontendQualityActiveEngines.Resolve(Context(profile));
 
-        snapshot.Active.Select(e => e.EngineId).Should().BeEquivalentTo([FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance]);
+        snapshot.ActiveCount.Should().Be(5, "legacy profiles get the same deterministic defaults as new ones");
         snapshot.Get(FrontendQualityEngineId.StaticSecurity)!.Policy.Should().Be(FrontendQualityEngineRequirement.Required);
+        snapshot.Get(FrontendQualityEngineId.Accessibility)!.Should().Match<FrontendQualityEngineActivation>(a => a.Active && a.Policy == FrontendQualityEngineRequirement.Optional);
         snapshot.Get(FrontendQualityEngineId.BrowserRuntime)!.Should().Match<FrontendQualityEngineActivation>(a => !a.Enabled && a.Selected && a.Policy == FrontendQualityEngineRequirement.Optional);
     }
 
@@ -126,17 +134,17 @@ public sealed class FrontendQualityActiveEnginesTests
         var after = FrontendQualityActiveEngines.Resolve(Context(restored.Profiles[0]));
 
         after.Engines.Select(e => (e.EngineId, e.Enabled, e.Selected, e.Policy)).Should().Equal(before.Engines.Select(e => (e.EngineId, e.Enabled, e.Selected, e.Policy)));
-        after.ActiveCount.Should().Be(3);
+        after.ActiveCount.Should().Be(4, "Static Security, Accessibility, Lighthouse and Passive Security remain enabled; Passive Performance was turned off");
     }
 
     [Fact]
     public void ProfileSwitch_LoadsEachProfilesOwnEngineSet_NoLeakage()
     {
-        var a = Profile("a");
-        var b = Profile("b", toggles: t => { t.EnableBrowserRuntimeEngine = true; t.EnableAccessibilityEngine = true; });
+        var a = Profile("a", toggles: t => { t.EnableAccessibilityEngine = false; t.EnableLighthouseEngine = false; t.EnablePassiveSecurityEngine = false; });
+        var b = Profile("b", toggles: t => t.EnableBrowserRuntimeEngine = true);
 
         FrontendQualityActiveEngines.Resolve(Context(a)).ActiveCount.Should().Be(2);
-        FrontendQualityActiveEngines.Resolve(Context(b)).ActiveCount.Should().Be(4);
+        FrontendQualityActiveEngines.Resolve(Context(b)).ActiveCount.Should().Be(6);
         FrontendQualityActiveEngines.Resolve(Context(a)).ActiveCount.Should().Be(2, "resolving B must not change A");
     }
 

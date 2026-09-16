@@ -16,9 +16,14 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
 {
+    /// <summary>Baseline for scenario tests: only the two HTTP engines enabled. <see cref="FactoryDefaults"/> uses the real defaults.</summary>
     private static FrontendAnalysisContext Context(Action<FrontendAnalysisFeatureToggles>? toggles = null)
     {
         var profile = new FrontendAnalysisProfile { Id = "dev", Name = "M2LB DEV", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.example.test/" };
+        profile.Features.EnableBrowserRuntimeEngine = false;
+        profile.Features.EnableAccessibilityEngine = false;
+        profile.Features.EnableLighthouseEngine = false;
+        profile.Features.EnablePassiveSecurityEngine = false;
         toggles?.Invoke(profile.Features);
         return new FrontendAnalysisContext
         {
@@ -100,18 +105,68 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
         page.Find("[data-testid=fqr-active-count]").TextContent.Should().Be("3 enabled");
         page.Find("[data-testid=fqr-engine-status-pending]").TextContent.Should().Be("Checking 1 active engine…");
         RunButton(page).TextContent.Trim().Should().Be("Checking 1 active engine…");
-        RunButton(page).HasAttribute("disabled").Should().BeTrue("Layer 1–3 status for the active backend engine feeds the execution snapshot");
+        RunButton(page).HasAttribute("disabled").Should().BeTrue("Layer 1–2 status for the active backend engine feeds the execution snapshot");
         status.Verify(s => s.GetStatusAsync(It.IsAny<ReviewAuthenticationModeDto>(),
-            It.Is<ReviewEngineSelectionDto>(sel => sel.ReadinessEngines != null && sel.ReadinessEngines.Count == 1 && sel.ReadinessEngines[0] == FrontendQualityEngineIdDto.BrowserRuntime),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.Is<ReviewEngineSelectionDto>(sel => sel.ReadinessEngines != null && sel.ReadinessEngines.Count == 0),
+            It.IsAny<CancellationToken>()), Times.Once, "phase 1 fetches layers only, no readiness probe");
 
         pending.SetResult(new FrontendQualityEngineStatusReportDto
         {
             Engines = [new() { EngineId = FrontendQualityEngineIdDto.BrowserRuntime, DisplayName = "Browser Runtime", Layer1Allowed = true, Layer2Enabled = true, AuthModeSupported = true, Available = true }],
         });
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
+        page.WaitForAssertion(() => status.Verify(s => s.GetStatusAsync(It.IsAny<ReviewAuthenticationModeDto>(),
+            It.Is<ReviewEngineSelectionDto>(sel => sel.ReadinessEngines != null && sel.ReadinessEngines.Count == 1 && sel.ReadinessEngines[0] == FrontendQualityEngineIdDto.BrowserRuntime),
+            It.IsAny<CancellationToken>()), Times.Once, "phase 2 probes readiness for the active backend engine only"));
         page.FindAll(".fqr-engine-card").Should().ContainSingle().Which.GetAttribute("data-engine-id").Should().Be("BrowserRuntime");
         await Task.CompletedTask;
+    }
+
+    [Fact]
+    public void FactoryDefaults_AllEnginesEnabledExceptBrowserRuntime_RunWaitsOnlyForLayersNotReadiness()
+    {
+        // Real defaults: a fresh profile has every engine enabled except Browser Runtime.
+        var profile = new FrontendAnalysisProfile { Id = "dev", Name = "M2LB DEV", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.example.test/" };
+        var context = new FrontendAnalysisContext { ActiveProfile = profile, TargetUrl = profile.TargetUrl!, FeatureToggles = profile.Features, EngineRequirements = profile.EngineRequirements, ReviewEngineSelection = profile.ReviewEngineSelection };
+        var readiness = new TaskCompletionSource<FrontendQualityEngineStatusReportDto?>();
+        var calls = new List<List<FrontendQualityEngineIdDto>>();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        var status = new Mock<IFrontendQualityEngineStatusApiService>();
+        status.Setup(s => s.GetStatusAsync(It.IsAny<ReviewAuthenticationModeDto>(), It.IsAny<ReviewEngineSelectionDto>(), It.IsAny<CancellationToken>()))
+            .Returns((ReviewAuthenticationModeDto _, ReviewEngineSelectionDto selection, CancellationToken _) =>
+            {
+                calls.Add(selection.ReadinessEngines ?? [FrontendQualityEngineIdDto.BrowserRuntime]);
+                var layers = new FrontendQualityEngineStatusReportDto
+                {
+                    Engines = Enum.GetValues<FrontendQualityEngineIdDto>().Select(id => new FrontendQualityEngineStatusDto { EngineId = id, DisplayName = id.ToString(), Layer1Allowed = true, Layer2Enabled = true, AuthModeSupported = true, Available = true }).ToList(),
+                };
+                return selection.ReadinessEngines is { Count: 0 } ? Task.FromResult<FrontendQualityEngineStatusReportDto?>(layers) : readiness.Task;
+            });
+        var factory = new Mock<IFrontendAnalysisContextFactory>();
+        factory.Setup(f => f.GetActiveContextAsync()).ReturnsAsync(context);
+        Services.AddSingleton(status.Object);
+        Services.AddSingleton(factory.Object);
+        Services.AddSingleton(Mock.Of<IFrontendQualityReviewOrchestrator>());
+        Services.AddSingleton<RuntimeReviewSessionService>();
+        Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
+        Services.AddSingleton(Mock.Of<IReportExportService>());
+        Services.AddSingleton(Mock.Of<IAuthenticatedBrowserSessionService>());
+
+        var page = Render<FrontendQualityReview>();
+
+        page.Find("[data-testid=fqr-active-count]").TextContent.Should().Be("5 enabled");
+        page.Find("[data-testid=fqr-active-breakdown]").TextContent.Should().Be("Required 2 · Optional 3");
+        page.Find("[data-testid=fqr-inactive-engines]").TextContent.Should().Contain("1 engine not active:").And.Contain("Browser Runtime (disabled)");
+        // Phase 1 (layers, no probe) answered immediately → Run enabled; phase 2 (readiness) still pending and informational.
+        page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness-pending]").TextContent.Should().Contain("Checking runtime readiness of 3 active engines"));
+        calls.Should().HaveCount(2);
+        calls[0].Should().BeEmpty("first call fetches Layer 1–2 only");
+        calls[1].Should().BeEquivalentTo([FrontendQualityEngineIdDto.Accessibility, FrontendQualityEngineIdDto.Lighthouse, FrontendQualityEngineIdDto.PassiveSecurity], "readiness is probed only for active backend engines");
+        page.FindAll(".fqr-engine-card").Select(c => c.GetAttribute("data-engine-id")).Should().BeEquivalentTo(["Accessibility", "Lighthouse", "PassiveSecurity"]);
+
+        readiness.SetResult(new FrontendQualityEngineStatusReportDto { Engines = [] });
+        page.WaitForAssertion(() => page.FindAll("[data-testid=fqr-readiness-pending]").Should().BeEmpty());
     }
 
     [Fact]
@@ -130,7 +185,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
     public void DecisionSupport_HidesInactiveEnginesByDefault_ShowsThemOnDemand_WithDisabledWording()
     {
         var policy = new FrontendQualityEngineRequirementSettings().ToPolicy();
-        var context = new FrontendAnalysisContext();
+        var context = Context();
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll("https://m2lbdev.example.test/", context, new FrontendQualityReviewOrchestrationResult(
             SecurityReport: new WasmSecurityReviewReport { ScannedAt = DateTime.UtcNow, Findings = [], Assets = [new WasmDiscoveredAsset { Url = "x", AssetType = "HTML", Status = "200 OK", Analyzed = true }] },
             PerformanceReport: new WasmPerformanceReviewReport { ReviewedAt = DateTime.UtcNow, Assets = [new DiscoveredAsset { Url = "x", Type = AssetType.Index, StatusCode = 200 }] }),
@@ -164,8 +219,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
     [Fact]
     public void Export_PreservesActiveEngineSnapshotAndActiveDenominators()
     {
-        var context = new FrontendAnalysisContext();
-        context.FeatureToggles.EnableAccessibilityEngine = true;
+        var context = Context(t => t.EnableAccessibilityEngine = true);
         var active = FrontendQualityActiveEngines.Resolve(context);
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll("https://m2lbdev.example.test/", context, new FrontendQualityReviewOrchestrationResult(
             SecurityReport: new WasmSecurityReviewReport { ScannedAt = DateTime.UtcNow, Assets = [new WasmDiscoveredAsset { Url = "x", AssetType = "HTML", Status = "200 OK", Analyzed = true }] },

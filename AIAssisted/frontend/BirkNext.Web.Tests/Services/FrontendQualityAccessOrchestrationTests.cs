@@ -36,7 +36,12 @@ public sealed class FrontendQualityAccessOrchestrationTests
             {
                 ActiveProfile = profile, TargetUrl = Target, RequiresAuthentication = requiresAuth, IsAuthenticatedSessionAvailable = sessionAvailable,
                 AuthenticationType = profile.Authentication.AuthenticationType,
-                FeatureToggles = new() { EnableSecurityEngine = enableSecurity, EnablePerformanceEngine = enablePerformance, EnableBrowserRuntimeEngine = enableRuntime },
+                FeatureToggles = new()
+                {
+                    EnableSecurityEngine = enableSecurity, EnablePerformanceEngine = enablePerformance, EnableBrowserRuntimeEngine = enableRuntime,
+                    // Fixture baseline: the other backend engines stay off so each scenario exercises exactly the engines it names.
+                    EnableAccessibilityEngine = false, EnableLighthouseEngine = false, EnablePassiveSecurityEngine = false,
+                },
                 AllowedBackendDomains = [], AllowedRestHosts = [], AllowedGraphQlEndpoints = [], AllowedCdnHosts = [], SecuritySettings = new(),
             };
         }

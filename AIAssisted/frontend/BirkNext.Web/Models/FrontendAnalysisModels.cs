@@ -313,12 +313,15 @@ public sealed class FrontendSecuritySettings
 
 public sealed class FrontendAnalysisFeatureToggles
 {
+    // Default engine activation for a new (or legacy, toggle-less) Target Environment: every quality engine is enabled except
+    // Browser Runtime, which stays opt-in. Deployment policy / System Settings (Layer 1–2) may still keep an enabled engine
+    // unavailable; that is reported as a capability blocker, never as "not enabled".
     [JsonPropertyName("enableSecurityEngine")]        public bool EnableSecurityEngine        { get; set; } = true;
     [JsonPropertyName("enablePerformanceEngine")]     public bool EnablePerformanceEngine     { get; set; } = true;
     [JsonPropertyName("enableBrowserRuntimeEngine")]  public bool EnableBrowserRuntimeEngine  { get; set; } = false;
-    [JsonPropertyName("enableAccessibilityEngine")]   public bool EnableAccessibilityEngine   { get; set; } = false;
-    [JsonPropertyName("enableLighthouseEngine")]      public bool EnableLighthouseEngine      { get; set; } = false;
-    [JsonPropertyName("enablePassiveSecurityEngine")] public bool EnablePassiveSecurityEngine { get; set; } = false;
+    [JsonPropertyName("enableAccessibilityEngine")]   public bool EnableAccessibilityEngine   { get; set; } = true;
+    [JsonPropertyName("enableLighthouseEngine")]      public bool EnableLighthouseEngine      { get; set; } = true;
+    [JsonPropertyName("enablePassiveSecurityEngine")] public bool EnablePassiveSecurityEngine { get; set; } = true;
 
     [JsonPropertyName("assetDiscovery")]              public bool AssetDiscovery              { get; set; } = true;
     [JsonPropertyName("startupAnalysis")]             public bool StartupAnalysis             { get; set; } = true;

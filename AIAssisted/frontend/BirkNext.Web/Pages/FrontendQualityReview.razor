@@ -128,6 +128,10 @@
             <section class="fqr-engine-selection" aria-label="Quality engines">
                 <h2>Review Engines</h2>
                 <p class="fa-section-note">Capability and readiness are shown for the engines that are active in the saved configuration. Disabled engines are not probed.</p>
+                @if (_readinessPending)
+                {
+                    <p class="wsr-scan-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @activeBackendIds.Count active engine@(activeBackendIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
+                }
                 <div class="fqr-engine-grid">
                     @foreach (var engine in _engineStatus.Engines.Where(e => activeBackendIds.Contains(e.EngineId)).OrderBy(e => e.EngineId))
                     {
@@ -626,6 +630,8 @@
     /// <summary>Layer 1–3 status is being fetched for the ACTIVE backend engines only; null when no backend engine is active.</summary>
     private Task? _engineStatusTask;
     private bool _engineStatusPending;
+    /// <summary>Layer 3 readiness probes for the active backend engines are in flight (informational; Run does not wait).</summary>
+    private bool _readinessPending;
     private IReadOnlyList<FrontendQualityEngineIdDto> ActiveBackendEngineIds =>
         _activeEngines is null ? []
         : FrontendQualityActiveEngines.BackendEngineIds.Where(pair => _activeEngines.IsActive(pair.Key)).Select(pair => pair.Value).ToList();
@@ -712,6 +718,7 @@
     private void StartEngineStatusFetch()
     {
         _engineStatus = null;
+        _readinessPending = false;
         if (_context is null || _context.ActiveTargetError is not null || ActiveBackendEngineIds.Count == 0)
         {
             _engineStatusTask = null;
@@ -722,13 +729,38 @@
         _engineStatusTask = FetchEngineStatusAndRenderAsync();
     }
 
+    /// <summary>
+    /// Two phases so Run never waits on runtime probes: (1) Layer 1–2 status (deployment policy / System Settings, no readiness
+    /// probe) — this is what the execution snapshot needs, so Run is enabled as soon as it arrives; (2) Layer 3 readiness for the
+    /// active backend engines only, informational for the engine cards. Readiness is revalidated per engine at execution anyway.
+    /// </summary>
     private async Task FetchEngineStatusAndRenderAsync()
     {
-        try { await FetchEngineStatus(); }
+        try { await FetchEngineStatus(withReadiness: false); }
         catch { _engineStatus = null; }
         finally
         {
             _engineStatusPending = false;
+            await InvokeAsync(StateHasChanged);
+        }
+        if (_engineStatus is null) return;
+        _ = FetchReadinessAndRenderAsync(); // informational; Run does not wait for it
+    }
+
+    private async Task FetchReadinessAndRenderAsync()
+    {
+        _readinessPending = true;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var layers = _engineStatus;
+            await FetchEngineStatus(withReadiness: true);
+            _engineStatus ??= layers;
+        }
+        catch { }
+        finally
+        {
+            _readinessPending = false;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -759,7 +791,7 @@
         _access = FrontendQualityTargetAccess.FromContext(_context);
     }
 
-    private async Task FetchEngineStatus()
+    private async Task FetchEngineStatus(bool withReadiness = true)
     {
         if (_context is null || _context.ActiveTargetError is not null) return;
 
@@ -773,8 +805,8 @@
                 .ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value),
-            // Only the ACTIVE backend engines get the expensive Layer 3 readiness probe.
-            ReadinessEngines = ActiveBackendEngineIds.ToList(),
+            // Only the ACTIVE backend engines get the expensive Layer 3 readiness probe, and only in the informational phase.
+            ReadinessEngines = withReadiness ? ActiveBackendEngineIds.ToList() : [],
         };
 
         _engineStatus = await EngineStatusService.GetStatusAsync(authMode, selection);

@@ -159,7 +159,7 @@ public sealed class FrontendQualityTargetFetchClassificationTests
     [Fact]
     public void ApplyAccessDecisions_OverridesOnlyEnginesThatDidNotRun()
     {
-        var context = new FrontendAnalysisContext { FeatureToggles = new() { EnableBrowserRuntimeEngine = true } };
+        var context = new FrontendAnalysisContext { FeatureToggles = new() { EnableBrowserRuntimeEngine = true, EnableAccessibilityEngine = false } };
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll("https://x.example.test/", context, new FrontendQualityReviewOrchestrationResult(
             SecurityReport: Security("200 OK", analyzed: true)), true, true, true, true);
         var decisions = new Dictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision>

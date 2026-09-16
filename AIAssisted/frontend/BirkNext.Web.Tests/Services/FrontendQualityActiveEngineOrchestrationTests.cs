@@ -29,6 +29,11 @@ public sealed class FrontendQualityActiveEngineOrchestrationTests
             var profile = new FrontendAnalysisProfile { Id = "dev", Name = "M2LB DEV", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = Target, Performance = new() };
             profile.Authentication.RequiresAuthentication = requiresAuth;
             profile.Authentication.AuthenticatedTestingMethod = method;
+            // Fixture baseline: only the two HTTP engines enabled; each test enables what it exercises.
+            profile.Features.EnableBrowserRuntimeEngine = false;
+            profile.Features.EnableAccessibilityEngine = false;
+            profile.Features.EnableLighthouseEngine = false;
+            profile.Features.EnablePassiveSecurityEngine = false;
             toggles?.Invoke(profile.Features);
             selection?.Invoke(profile.ReviewEngineSelection);
             Context = new FrontendAnalysisContext
