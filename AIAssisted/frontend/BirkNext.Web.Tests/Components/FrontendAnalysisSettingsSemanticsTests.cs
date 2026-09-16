@@ -112,7 +112,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
 
         cut.Markup.Should().Contain("Detection result");
         cut.Markup.Should().Contain("Needs re-check");
-        cut.Markup.Should().Contain("Frontend URL changed. Run Detect settings again before activating.");
+        cut.Markup.Should().Contain("Frontend URL changed. Run Detect settings again to refresh detection evidence.");
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeTrue();
         _settings.Settings.ActiveProfileId.Should().Be("local");
     }
@@ -132,16 +132,16 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
     }
 
     [Fact]
-    public void UndetectedSelectedProfile_BlocksActivationWithAccessibleReason()
+    public void UndetectedSelectedProfile_AllowsTargetSelectionAndShowsDetectionReadiness()
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
 
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Not checked");
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
-        activate.HasAttribute("disabled").Should().BeTrue();
-        activate.GetAttribute("aria-describedby").Should().Be("activation-gate-reason");
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Run Detect settings");
+        activate.HasAttribute("disabled").Should().BeFalse();
+        activate.GetAttribute("aria-describedby").Should().BeNull();
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings");
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
     }
 
     [Fact]
-    public void FailedDetection_PreservesConfigurationAndBlocksActivation()
+    public void FailedDetection_PreservesConfigurationAndAllowsTargetSelection()
     {
         _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult { Success = false, Message = "Target could not be reached safely." });
@@ -170,7 +170,7 @@ public sealed class FrontendAnalysisSettingsSemanticsTests : BunitContext
         cut.WaitForAssertion(() => cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Detection failed"));
         cut.Markup.Should().Contain("Target could not be reached safely.");
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active").HasAttribute("disabled").Should().BeFalse();
         _settings.Settings.Profiles.Single(p => p.Id == "qa").TargetUrl.Should().Be("https://application-qa.example.test");
         _settings.Settings.ActiveProfileId.Should().Be("local");
     }

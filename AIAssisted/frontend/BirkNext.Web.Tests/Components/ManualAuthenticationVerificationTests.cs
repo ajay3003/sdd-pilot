@@ -57,12 +57,12 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         cut.WaitForAssertion(() => Assert.Contains("Manual authentication verification required", cut.Markup));
         Assert.DoesNotContain("Detection failed", cut.Markup);
         Assert.DoesNotContain("Continue detection in browser", cut.Markup);
-        Assert.True(ActivationDisabled(cut));
+        Assert.False(ActivationDisabled(cut));
         Click(cut, "Open verification instructions");
         Assert.Contains("Manual authentication verification pending", cut.Markup);
         Assert.Contains("MCAS / Defender for Cloud Apps", cut.Markup);
         Assert.Null(_settings.Settings.Profiles.Single(x => x.Id == "dev").ManualVerification);
-        Assert.True(ActivationDisabled(cut));
+        Assert.False(ActivationDisabled(cut));
         _api.Verify(x => x.DetectFromUrlAsync(Url, default), Times.Once);
         _api.VerifyNoOtherCalls();
     }
@@ -80,7 +80,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         cut.WaitForAssertion(() => Assert.NotNull(profile.ManualVerification));
         Assert.Equal(passed ? ManualAuthenticationVerificationStatus.Passed : ManualAuthenticationVerificationStatus.Failed, profile.ManualVerification!.Result);
         Assert.NotNull(profile.ManualVerification.VerifiedAt);
-        Assert.Equal(!passed, ActivationDisabled(cut));
+        Assert.False(ActivationDisabled(cut));
         Assert.Equal("local", _settings.Settings.ActiveProfileId);
         Assert.DoesNotContain("BrowserResourceFailure", cut.Markup);
         if (!passed)
@@ -93,7 +93,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         var reloaded = Open();
         Assert.Contains("Previous manual authentication verification", reloaded.Markup);
         Assert.DoesNotContain("Manual authentication verification failed", reloaded.Markup);
-        Assert.True(ActivationDisabled(reloaded));
+        Assert.False(ActivationDisabled(reloaded));
     }
 
     [Theory]
@@ -139,7 +139,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void OtherDetectionGates_StillBlockActivationAfterManualPass(bool warning)
+    public void OtherDetectionGates_DoNotChangeExplicitTargetSelection(bool warning)
     {
         _api.Setup(x => x.DetectFromUrlAsync(Url, default)).ReturnsAsync(new TargetEnvironmentDetectionResult
         {
@@ -154,7 +154,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Click(cut, "Open verification instructions");
         Click(cut, "Mark verification passed");
         Assert.Contains("Manual authentication verification passed", cut.Markup);
-        Assert.True(ActivationDisabled(cut));
+        Assert.False(ActivationDisabled(cut));
     }
 
     [Fact]

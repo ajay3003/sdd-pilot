@@ -58,9 +58,10 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     public FrontendAnalysisSettings  Settings      => _settings;
     public bool                      IsLoaded      { get; private set; }
     public FrontendAnalysisProfile?  ActiveProfile =>
-        _settings.ActiveProfileId is null
+        _settings.ActiveResolutionError is not null || string.IsNullOrWhiteSpace(_settings.ActiveProfileId)
             ? null
-            : _settings.Profiles.FirstOrDefault(p => p.Id == _settings.ActiveProfileId);
+            : _settings.Profiles.Where(p => p.Id == _settings.ActiveProfileId).ToList() is { Count: 1 } matches
+                ? matches[0] : null;
 
     // ── Persistence ───────────────────────────────────────────────────────────
 
@@ -74,15 +75,25 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
             if (!string.IsNullOrWhiteSpace(json))
             {
                 var loaded = JsonSerializer.Deserialize<FrontendAnalysisSettings>(json, JsonOptions);
-                if (loaded is not null && loaded.Profiles.Count > 0)
+                if (loaded is not null)
                 {
+                    using var document = JsonDocument.Parse(json);
+                    if (document.RootElement.TryGetProperty("profiles", out var profiles) &&
+                        profiles.EnumerateArray().Count(p => p.EnumerateObject().Any(field =>
+                            field.Name.Equals("isActive", StringComparison.OrdinalIgnoreCase) &&
+                            field.Value.ValueKind == JsonValueKind.True)) > 1)
+                        loaded.ActiveResolutionError = "Multiple active Target Environments were found in saved settings. Select a Target Environment and choose Set as Active.";
                     _settings = loaded;
                     IsLoaded  = true;
                     return;
                 }
             }
         }
-        catch { }
+        catch
+        {
+            _settings = new() { ActiveResolutionError = "Target Environment settings could not be loaded. Reload the application or repair the saved settings." };
+            return;
+        }
 
         _settings = BuildSeedSettings();
         IsLoaded  = true;
@@ -90,12 +101,8 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public async Task SaveAsync(IJSRuntime js)
     {
-        try
-        {
-            var json = JsonSerializer.Serialize(_settings, JsonOptions);
-            await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, json);
-        }
-        catch { }
+        var json = JsonSerializer.Serialize(_settings, JsonOptions);
+        await js.InvokeVoidAsync("birkNextStorage.setItem", StorageKey, json);
     }
 
     // ── Detection snapshots (separate evidence store, never part of the saved profile) ──────────
@@ -186,7 +193,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     {
         _settings.Profiles.RemoveAll(p => p.Id == profileId);
         if (_settings.ActiveProfileId == profileId)
-            _settings.ActiveProfileId = _settings.Profiles.FirstOrDefault()?.Id;
+            _settings.ActiveProfileId = null;
     }
 
     public FrontendAnalysisProfile DuplicateProfile(string profileId)
@@ -202,8 +209,11 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
     public void SelectActiveProfile(string profileId)
     {
-        if (_settings.Profiles.Any(p => p.Id == profileId))
+        if (_settings.Profiles.Count(p => p.Id == profileId) == 1)
+        {
             _settings.ActiveProfileId = profileId;
+            _settings.ActiveResolutionError = null;
+        }
     }
 
     public void UpdateProfile(FrontendAnalysisProfile profile)
@@ -454,7 +464,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
 
         return new FrontendAnalysisSettings
         {
-            ActiveProfileId = localId,
+            ActiveProfileId = null,
             Profiles =
             [
                 MakeProfile(localId, "Local",       FrontendEnvironmentType.Local,       "Local development environment", "https://localhost:5001"),

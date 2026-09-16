@@ -35,12 +35,6 @@
                 <span class="fa-active-card-name">@ap.Name</span>
             </div>
         </div>
-        @if (FaSettings.ActiveProfile is null)
-        {
-            <div class="fa-active-fallback-warning" role="status">
-                No active target is saved. Reviews currently use the first configured target, @ap.Name, as a fallback.
-            </div>
-        }
         <div class="fa-active-card-grid">
             <div class="fa-active-stat">
                 <span class="fa-active-stat-label">Frontend URL</span>
@@ -61,7 +55,9 @@
     }
     else
     {
-        <p class="fa-active-bar-none">No target environments are configured.</p>
+        <p class="fa-active-bar-none" role="status">@(FaSettings.Settings.ActiveResolutionError ??
+            (string.IsNullOrWhiteSpace(FaSettings.Settings.ActiveProfileId) ? "No active Target Environment" : "Active Target Environment is unavailable."))
+            Select a Target Environment and choose “Set as Active”.</p>
     }
 </section>
 
@@ -144,7 +140,11 @@
                     </PrimaryButton>
                     @if (profile.Id != EffectiveActiveProfile?.Id)
                     {
-                        <SecondaryButton OnClick="SetActiveProfileAsync" Disabled="@(!CanActivateSelected)" aria-describedby="activation-gate-reason">Set as Active</SecondaryButton>
+                        <SecondaryButton OnClick="SetActiveProfileAsync" Disabled="@(!CanSetActiveTarget)">Set as Active</SecondaryButton>
+                    }
+                    else
+                    {
+                        <span class="fa-active-badge">Active environment</span>
                     }
                 }
             </div>
@@ -173,9 +173,13 @@
             }
 
             <p class="fa-detection-help">Detect settings checks this Frontend URL and proposes configuration. Nothing is saved automatically.</p>
-            @if (profile.Id != EffectiveActiveProfile?.Id && !CanActivateSelected)
+            @if (profile.Id != EffectiveActiveProfile?.Id && !CanSetActiveTarget)
             {
-                <p id="activation-gate-reason" class="fa-activation-reason">@ActivationBlockedReason</p>
+                <p id="activation-gate-reason" class="fa-activation-reason">Save a valid Target Environment with a Frontend URL before setting it active.</p>
+            }
+            @if (profile.Id != EffectiveActiveProfile?.Id && !DetectionReady)
+            {
+                <p id="detection-readiness-reason" class="fa-detection-help">@DetectionReadinessReason</p>
             }
             @if (_detectionError is not null)
             {
@@ -1119,9 +1123,9 @@
                     <div class="fa-dl-row">
                         <dt>Activation readiness</dt>
                         <dd>
-                            @if (!CanActivateSelected)
+                            @if (!DetectionReady)
                             {
-                                <span style="color:var(--color-text-muted)">Not ready — @ActivationBlockedReason</span>
+                                <span style="color:var(--color-text-muted)">Not ready — @DetectionReadinessReason</span>
                             }
                             else if (!_isEditMode || IsDirty == false)
                             {
@@ -1597,7 +1601,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             : FaSettings.Settings.Profiles.FirstOrDefault(p => p.Id == _selectedProfileId);
 
     private FrontendAnalysisProfile? EffectiveActiveProfile =>
-        FaSettings.ActiveProfile ?? FaSettings.Settings.Profiles.FirstOrDefault();
+        FaSettings.ActiveProfile;
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
@@ -1723,9 +1727,21 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private async Task SetActiveProfileAsync()
     {
-        if (_selectedProfileId is null || !CanActivateSelected) return;
+        if (_selectedProfileId is null || !CanSetActiveTarget) return;
+        var previousId = FaSettings.Settings.ActiveProfileId;
+        var previousError = FaSettings.Settings.ActiveResolutionError;
         FaSettings.SelectActiveProfile(_selectedProfileId);
-        await FaSettings.SaveAsync(JS);
+        try
+        {
+            await FaSettings.SaveAsync(JS);
+            _saveError = null;
+        }
+        catch
+        {
+            FaSettings.Settings.ActiveProfileId = previousId;
+            FaSettings.Settings.ActiveResolutionError = previousError;
+            _saveError = "The active Target Environment could not be saved. Your previous active target is unchanged. Try again.";
+        }
     }
 
     private async Task DuplicateProfileAsync()
@@ -2190,10 +2206,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _ => "The target URL changed since the last detection. Run detection again to refresh."
         };
 
-    private string DiscoveryStaleActivationReason => CurrentDiscoveryStaleReason switch
+    private string DiscoveryStaleReadinessReason => CurrentDiscoveryStaleReason switch
     {
-        TargetDiscoveryStaleReason.ProfileChanged => "Selected environment changed. Run Detect settings again before activating.",
-        _ => "Frontend URL changed. Run Detect settings again before activating."
+        TargetDiscoveryStaleReason.ProfileChanged => "Selected environment changed. Run Detect settings again to refresh detection evidence.",
+        _ => "Frontend URL changed. Run Detect settings again to refresh detection evidence."
     };
 
     private string DiscoveryStaleDetail => CurrentDiscoveryStaleReason switch
@@ -2212,7 +2228,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         {
             DetectionState.Checking => "Detecting...",
             DetectionState.Complete => "Detection complete",
-            DetectionState.ManualAuthenticationVerificationRequired when CanActivateSelected => "Target detection complete",
+            DetectionState.ManualAuthenticationVerificationRequired when DetectionReady => "Target detection complete",
             DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification required",
             DetectionState.AuthenticationRequired => "Authentication required",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Needs browser inspection",
@@ -2243,7 +2259,12 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             _ => "unknown"
         };
 
-    private bool CanActivateSelected => ManualVerificationRequired
+    // Selecting an execution target does not assert reachability or grant authenticated access.
+    // Detection and engine readiness retain their independent checks below.
+    private bool CanSetActiveTarget => !_isEditMode && SelectedProfile is { } profile &&
+        FrontendAnalysisSettingsService.IsValidUrl(profile.TargetUrl ?? "") && FaSettings.ValidateProfile(profile).IsValid;
+
+    private bool DetectionReady => ManualVerificationRequired
         ? CanRecordManualVerification && _detectionResult?.DetectedClientFramework.HasValue == true &&
           _detectionResult.Warnings.Count == 0 && (ManualStatus == ManualAuthenticationVerificationStatus.Passed || EdgeStatus.AuthenticatedBrowserAvailable || ProxyApiContextAvailable)
         : _detectionResult?.IsActivationReady == true && CurrentDetectionState == DetectionState.Complete;
@@ -2316,7 +2337,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (_detectionResult is { ManualAuthenticationVerificationRequired: true } detection)
         {
             detection.ManualAuthenticationVerificationStatus = ManualStatus;
-            detection.IsActivationReady = CanActivateSelected;
+            detection.IsActivationReady = DetectionReady;
         }
     }
 
@@ -2394,19 +2415,19 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     private bool IsDetectionStale => CurrentDetectionState == DetectionState.Stale;
 
-    private string ActivationBlockedReason =>
+    private string DetectionReadinessReason =>
         CurrentDetectionState switch
         {
-            DetectionState.NotChecked => "Run Detect settings before activating this environment.",
-            DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Unsaved changes. Save changes and pass manual authentication verification before activation.",
-            DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Settings changed since detection. Run Detect settings again and pass manual authentication verification before activation.",
-            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification must pass before activation.",
+            DetectionState.NotChecked => "Run Detect settings to verify this environment.",
+            DetectionState.ManualAuthenticationVerificationRequired when IsDirty => "Unsaved changes. Save changes and pass manual authentication verification to verify authenticated access.",
+            DetectionState.ManualAuthenticationVerificationRequired when !ManualVerificationContextCurrent => "Settings changed since detection. Run Detect settings again and pass manual authentication verification to verify authenticated access.",
+            DetectionState.ManualAuthenticationVerificationRequired => "Manual authentication verification must pass to verify authenticated access.",
             DetectionState.AuthenticationRequired => "Interactive browser detection is required to complete authentication. Click 'Continue detection in browser' above.",
             DetectionState.Partial when _browserRuntimeInspectionRequired == true => "Complete the authentication confirmation in the browser and try again.",
             DetectionState.Partial => "Partial detection. Run interactive browser detection again to complete authentication.",
-            DetectionState.Stale => DiscoveryStaleActivationReason,
-            DetectionState.Failed => "Detection failed. Run Detect settings successfully before activating.",
-            _ => "Unable to activate. Run Detect settings first."
+            DetectionState.Stale => DiscoveryStaleReadinessReason,
+            DetectionState.Failed => "Detection failed. Run Detect settings successfully to refresh detection evidence.",
+            _ => "Detection is not complete. Run Detect settings first."
         };
 
     private static bool UrlsMatch(string? left, string? right) => TargetUrlNormalizer.Match(left, right);

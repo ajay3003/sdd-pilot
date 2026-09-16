@@ -701,11 +701,10 @@
         await FrontendSettings.LoadAsync(JS);
         await IntegrationRegistry.LoadAsync(JS);
 
-        var profile = FrontendSettings.ActiveProfile ?? FrontendSettings.Settings.Profiles.FirstOrDefault();
+        var profile = FrontendSettings.ActiveProfile;
         if (profile is null)
         {
             profile = FrontendSettings.CreateProfile(hints.ProjectName, hints.EnvironmentType ?? FrontendEnvironmentType.Local);
-            FrontendSettings.SelectActiveProfile(profile.Id);
         }
 
         var frontendUrl = NormalizeAbsoluteUrl(hints.FrontendUrl);

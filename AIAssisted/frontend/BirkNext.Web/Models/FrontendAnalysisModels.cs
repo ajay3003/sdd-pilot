@@ -166,6 +166,8 @@ public sealed class IntegrationConfig
 
 public sealed class FrontendAnalysisSettings
 {
+    // The only persisted activity marker. UI selection is component-local.
+    [JsonPropertyName("activeResolutionError")] public string? ActiveResolutionError { get; set; }
     [JsonPropertyName("profiles")]        public List<FrontendAnalysisProfile> Profiles        { get; set; } = [];
     [JsonPropertyName("activeProfileId")] public string?                       ActiveProfileId { get; set; }
 }

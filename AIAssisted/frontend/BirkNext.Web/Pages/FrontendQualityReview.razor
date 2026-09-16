@@ -32,8 +32,8 @@
                        Description="Review performance, security, accessibility, standards, Blazor WASM behavior, and QA readiness for the active target environment. Assessment completeness depends on available engines and target configuration."
                        PrimaryButtonText="@(_running ? "Analysing..." : "Run Frontend Quality Review")"
                        PrimaryRun="RunReview"
-                       PrimaryDisabled="@(_running || _context is null || !_context.HasTargetUrl)"
-                       SecondaryActionText="Target Environments"
+                       PrimaryDisabled="@(_running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl)"
+                       SecondaryActionText="Open Target Environments"
                        SecondaryActionHref="/admin/system-settings?section=target-environments"
                        TargetFields="BuildFrontendTargetFields()"
                        Configuration="BuildFrontendConfiguration()"
@@ -215,6 +215,19 @@
         @if (report.TargetAccess is { } reportAccess)
         {
             <FrontendQualityTargetAccessPanel Access="reportAccess" ShowActions="false" />
+        }
+        @if (report.TargetEnvironment is { } target)
+        {
+            <section aria-label="Review target identity" data-testid="fqr-result-target">
+                <h2>Target Environment</h2>
+                <dl>
+                    <dt>Environment name</dt><dd>@target.Name</dd>
+                    <dt>Environment ID</dt><dd>@target.EnvironmentId</dd>
+                    <dt>Target URL</dt><dd>@target.TargetUrl</dd>
+                    <dt>Environment Type</dt><dd>@target.EnvironmentType</dd>
+                    <dt>Review started</dt><dd>@target.StartedAt.ToString("u")</dd>
+                </dl>
+            </section>
         }
 
         <FrontendQualityDecisionSupport Report="report" />
@@ -645,6 +658,12 @@
 
     private async Task ResolveAuthenticatedCapabilities()
     {
+        if (_context is null || _context.ActiveTargetError is not null)
+        {
+            _caps = null;
+            _access = null;
+            return;
+        }
         // Optional so page-render tests that do not register it still work; when present it drives the authenticated coverage panel.
         if (ServiceProvider.GetService(typeof(IAuthenticatedReviewCapabilitiesService)) is IAuthenticatedReviewCapabilitiesService service)
             _caps = await service.ResolveAsync(ReviewAuthenticationIdentity.ForContext(_context));
@@ -665,7 +684,7 @@
 
     private async Task FetchEngineStatus()
     {
-        if (_context is null) return;
+        if (_context is null || _context.ActiveTargetError is not null) return;
 
         var authMode = _context.RequiresAuthentication && _context.IsAuthenticatedSessionAvailable
             ? ReviewAuthenticationModeDto.Authenticated
@@ -727,9 +746,22 @@
 
     private async Task RunReview()
     {
-        if (_context is null || !_context.HasTargetUrl) return;
-
+        if (_running) return;
         _running     = true;
+        // Resolve again at execution time; UI selection never participates. Preserve
+        // this page's engine choices only when the target identity is unchanged.
+        var previousContext = _context;
+        _context = await ContextFactory.GetActiveContextAsync();
+        if (_context.ActiveTargetError is not null || !_context.HasTargetUrl)
+        {
+            _running = false;
+            _access = null;
+            _caps = null;
+            return;
+        }
+        if (previousContext?.ActiveProfile.Id == _context.ActiveProfile.Id)
+            _context.ReviewEngineSelection = previousContext.ReviewEngineSelection;
+        await ResolveAuthenticatedCapabilities();
         _secError    = null;
         _perfError   = null;
         _report      = null;
@@ -737,6 +769,9 @@
         StateHasChanged();
 
         var startTime = DateTime.UtcNow;
+        var targetIdentity = new FrontendReviewTargetIdentity(
+            _context.ActiveProfile.Id, _context.ActiveProfile.Name,
+            _context.ActiveProfile.EnvironmentType.ToString(), _context.TargetUrl, startTime);
         _progressMessage = "Running enabled review engines...";
         StateHasChanged();
 
@@ -766,6 +801,7 @@
         // Enhance report with timing and completion info.
         var completedReport = new FrontendQualityReviewReport
         {
+            TargetEnvironment = targetIdentity,
             TargetUrl = qualityReport.TargetUrl,
             FinalUrl = qualityReport.FinalUrl,
             GeneratedAt = qualityReport.GeneratedAt,
@@ -808,12 +844,13 @@
         ClearFilters();
     }
 
-    private void BackToReview()
+    private async Task BackToReview()
     {
         _report = null;
         _running = false;
         _progressMessage = "";
         ClearFilters();
+        await RefreshContext();
     }
 
     private async Task ExportHtml()
@@ -830,6 +867,7 @@
 
     private async Task RefreshContext()
     {
+        if (_running) return;
         _context = await ContextFactory.GetActiveContextAsync();
         await ResolveAuthenticatedCapabilities();
     }
@@ -847,10 +885,18 @@
             ];
         }
 
+        if (_context.ActiveTargetError is { } error)
+            return
+            [
+                new("Target Environment", error, ReviewLanding.FieldStatus.Missing),
+                new("Active", "No", ReviewLanding.FieldStatus.Missing)
+            ];
+
         return
         [
             new("Environment Type", _context.ActiveProfile.EnvironmentType.ToString(), ReviewLanding.FieldStatus.Configured),
-            new("Profile", _context.ActiveProfile.Name, ReviewLanding.FieldStatus.Configured),
+            new("Target Environment", _context.ActiveProfile.Name, ReviewLanding.FieldStatus.Configured),
+            new("Active", _context.ActiveTargetError is null ? "Yes" : "No", ReviewLanding.FieldStatus.Informational),
             new("Target URL", _context.HasTargetUrl ? _context.TargetUrl : "Not configured", _context.HasTargetUrl ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
             new("Authentication", _context.AuthenticationType.ToString(), ReviewLanding.FieldStatus.Informational),
             new("Auth Status", _context.IsAuthenticatedSessionAvailable ? "Authenticated" : _context.RequiresAuthentication ? "Session unavailable" : "Not required",
@@ -882,6 +928,11 @@
                 "The active frontend analysis profile is still loading.",
                 []);
         }
+
+        if (_context.ActiveTargetError is { } activeError)
+            return new(ReviewLanding.ConfigurationStatus.Error, activeError,
+                "Select a Target Environment and choose “Set as Active”.", [],
+                "Open Target Environments", "/admin/system-settings?section=target-environments");
 
         var missing = new List<string>();
         if (!_context.HasTargetUrl)

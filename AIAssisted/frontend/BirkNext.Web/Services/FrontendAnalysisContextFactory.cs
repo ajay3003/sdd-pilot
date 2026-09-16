@@ -34,25 +34,33 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
         await _settings.LoadAsync(_js);
 
         var profile       = _settings.ActiveProfile;
-        var sessionStatus = await _sessionService.GetStatusAsync();
-
         if (profile is null)
         {
-            profile = _settings.Settings.Profiles.FirstOrDefault();
-
-            if (profile is null)
+            var error = _settings.Settings.ActiveResolutionError ??
+                (string.IsNullOrWhiteSpace(_settings.Settings.ActiveProfileId)
+                    ? "No active Target Environment"
+                    : "Active Target Environment is unavailable.");
+            return new FrontendAnalysisContext
             {
-                return new FrontendAnalysisContext
-                {
-                    ValidationWarnings = [
-                        "No active Target Environment is configured. " +
-                        "Open System Settings → Target Environments to create and activate an environment."
-                    ]
-                };
-            }
+                ActiveTargetError = error,
+                ValidationWarnings = [error],
+                ValidationErrors = [error]
+            };
         }
 
+        // Detach all mutable configuration before yielding. Secrets remain memory-only;
+        // the diagnostic/report profile below deliberately omits them.
+        var credentials = profile.ApiAuth;
+        profile = System.Text.Json.JsonSerializer.Deserialize<FrontendAnalysisProfile>(
+            System.Text.Json.JsonSerializer.Serialize(profile))!;
+        profile.ApiAuth = new TargetApiCredentials
+        {
+            AuthType = credentials.AuthType, ApiKeyHeaderName = credentials.ApiKeyHeaderName,
+            BasicUsername = credentials.BasicUsername, BearerToken = credentials.BearerToken,
+            ApiKey = credentials.ApiKey, BasicPassword = credentials.BasicPassword
+        };
         var validation = _settings.ValidateProfile(profile);
+        var sessionStatus = await _sessionService.GetStatusAsync();
 
         var allowedRestHosts        = (IReadOnlyList<string>) profile.AllowedRestHosts;
         var allowedGraphQlEndpoints = (IReadOnlyList<string>) profile.AllowedGraphQlEndpoints;
@@ -80,6 +88,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             FeatureToggles              = profile.Features,
             EngineRequirements          = profile.EngineRequirements,
             ReleasePolicy               = profile.ReleasePolicy,
+            ReviewEngineSelection       = profile.ReviewEngineSelection,
             AllowedRestHosts            = allowedRestHosts,
             AllowedGraphQlEndpoints     = allowedGraphQlEndpoints,
             AllowedBackendDomains       = allowedBackendDomains,

@@ -2,6 +2,7 @@ namespace BirkNext.Web.Models;
 
 public sealed class FrontendAnalysisContext
 {
+    public string? ActiveTargetError { get; init; }
     public FrontendAnalysisProfile           ActiveProfile              { get; set; } = new();
 
     // Frontend URL (= TargetUrl on the profile — used by Frontend Quality Review)

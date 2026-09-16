@@ -15,6 +15,7 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
 
     public SystemSettingsEnvironmentDiagnosticsTests()
     {
+        JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult(null);
         var httpClient = new HttpClient(_handler)
         {
             BaseAddress = new Uri("http://localhost:5000/")

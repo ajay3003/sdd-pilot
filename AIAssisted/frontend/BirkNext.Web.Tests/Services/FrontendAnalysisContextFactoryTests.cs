@@ -182,7 +182,7 @@ public sealed class FrontendAnalysisContextFactoryTests
     }
 
     [Fact]
-    public async Task GetActiveContextAsync_WhenNoActiveProfileButFallbackExists_UsesFallbackProfile()
+    public async Task GetActiveContextAsync_WhenNoActiveProfileButProfilesExist_DoesNotUseFallback()
     {
         var fallback = new FrontendAnalysisProfile
         {
@@ -209,8 +209,9 @@ public sealed class FrontendAnalysisContextFactoryTests
 
         var ctx = await factory.GetActiveContextAsync();
 
-        ctx.TargetUrl.Should().Be("https://localhost:5001");
-        ctx.ActiveProfile.Name.Should().Be("Fallback");
+        ctx.TargetUrl.Should().BeEmpty();
+        ctx.ActiveProfile.Name.Should().BeEmpty();
+        ctx.ActiveTargetError.Should().Be("No active Target Environment");
     }
 
     // ── Validation errors/warnings passed through ─────────────────────────────

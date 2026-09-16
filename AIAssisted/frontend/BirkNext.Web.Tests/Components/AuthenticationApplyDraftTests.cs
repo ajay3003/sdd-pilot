@@ -211,7 +211,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Markup.Should().Contain("Manual authentication verification required");
         cut.Markup.Should().NotContain("Manual authentication verification passed");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Unsaved changes");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Unsaved changes");
 
         // Target discovery remains current — the previous bug produced "Discoveries are stale" here
         AssertDiscoveryCurrent(cut);
@@ -268,8 +268,8 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Persisted().ManualVerification.Should().BeNull();
         cut.Markup.Should().Contain("Manual authentication verification required");
         _settings.Settings.ActiveProfileId.Should().Be("local");
-        ButtonDisabled(cut, "Set as Active").Should().BeTrue();
-        cut.Find("#activation-gate-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass before activation.");
+        ButtonDisabled(cut, "Set as Active").Should().BeFalse();
+        cut.Find("#detection-readiness-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass to verify authenticated access.");
 
         AssertDiscoveryCurrent(cut, editing: false);
     }
@@ -376,7 +376,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
         cut.Markup.Should().NotContain("changed since detection");
         cut.Markup.Should().NotContain("Run Detect settings again");
-        cut.Find("#activation-gate-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass before activation.");
+        cut.Find("#detection-readiness-reason").TextContent.Trim().Should().Be("Manual authentication verification must pass to verify authenticated access.");
         AssertDiscoveryCurrent(cut, editing: false);
 
         Click(cut, "Open verification instructions");
@@ -403,7 +403,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 
         cut.Markup.Should().Contain("Authentication or environment settings changed since detection.");
         cut.Markup.Should().Contain("Run Detect settings again before recording manual verification.");
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Run Detect settings again");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings again");
         Click(cut, "Open verification instructions");
         ButtonDisabled(cut, "Mark verification passed").Should().BeTrue();
         // Discovery itself is still not stale: only the verification context diverged
@@ -481,7 +481,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         DetectionLabel(cut).Should().Be("Needs re-check");
         cut.Markup.Should().Contain("Discoveries are stale");
         cut.Markup.Should().Contain("The target URL changed since detection.");
-        cut.Markup.Should().Contain("Frontend URL changed. Run Detect settings again before activating.");
+        cut.Markup.Should().Contain("Frontend URL changed. Run Detect settings again to refresh detection evidence.");
         cut.Markup.Should().NotContain("Apply REST");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
     }

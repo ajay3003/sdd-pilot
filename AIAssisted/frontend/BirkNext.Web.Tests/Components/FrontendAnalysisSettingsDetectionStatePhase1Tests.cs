@@ -27,7 +27,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
     }
 
     [Fact]
-    public void NotChecked_DisplaysNotCheckedState_AndBlocksActivation()
+    public void NotChecked_DisplaysNotCheckedState_AndAllowsExplicitTargetSelection()
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
@@ -36,13 +36,13 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Not checked");
         cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-not-checked");
 
-        // Activation should be blocked
+        // Explicit target selection does not assert detection readiness
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
-        activate.HasAttribute("disabled").Should().BeTrue();
-        activate.GetAttribute("aria-describedby").Should().Be("activation-gate-reason");
+        activate.HasAttribute("disabled").Should().BeFalse();
+        activate.GetAttribute("aria-describedby").Should().BeNull();
 
         // Activation blocked reason should be clear
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Run Detect settings");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings");
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
     }
 
     [Fact]
-    public void AuthenticationRequired_DisplaysAuthRequiredState_AndBlocksActivationWithMessage()
+    public void AuthenticationRequired_DisplaysAuthRequiredState_AndKeepsDetectionReadinessMessage()
     {
         _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult
@@ -97,17 +97,17 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-auth-required");
         });
 
-        // Activation should be blocked
+        // Explicit target selection does not assert detection readiness
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
-        activate.HasAttribute("disabled").Should().BeTrue();
+        activate.HasAttribute("disabled").Should().BeFalse();
 
         // Blocked reason should mention auth
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Interactive browser detection is required");
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Continue detection in browser");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Interactive browser detection is required");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Continue detection in browser");
     }
 
     [Fact]
-    public void Partial_DisplaysPartialState_AndBlocksActivationWithMessage()
+    public void Partial_DisplaysPartialState_AndKeepsDetectionReadinessMessage()
     {
         _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult
@@ -128,16 +128,16 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-partial");
         });
 
-        // Activation should be blocked
+        // Explicit target selection does not assert detection readiness
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
-        activate.HasAttribute("disabled").Should().BeTrue();
+        activate.HasAttribute("disabled").Should().BeFalse();
 
         // Blocked reason should mention partial
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Partial detection");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Partial detection");
     }
 
     [Fact]
-    public void Stale_DisplaysStaleState_AndBlocksActivationWithMessage()
+    public void Stale_DisplaysStaleState_AndKeepsDetectionReadinessMessage()
     {
         _detection.Setup(x => x.DetectFromUrlAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult
@@ -161,17 +161,17 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
         cut.Find(".fa-detection-value").TextContent.Trim().Should().Be("Needs re-check");
         cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-stale");
 
-        // Activation should be blocked
+        // Explicit target selection does not assert detection readiness
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
         activate.HasAttribute("disabled").Should().BeTrue();
 
         // Blocked reason should mention URL changed
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("URL changed");
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Run Detect settings");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("URL changed");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Run Detect settings");
     }
 
     [Fact]
-    public void Failed_DisplaysFailedState_AndBlocksActivation()
+    public void Failed_DisplaysFailedState_AndAllowsExplicitTargetSelection()
     {
         _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult
@@ -190,12 +190,12 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase1Tests : BunitCon
             cut.Find(".fa-detection-value").GetAttribute("class").Should().Contain("fa-detection-failed");
         });
 
-        // Activation should be blocked
+        // Explicit target selection does not assert detection readiness
         var activate = cut.FindAll("button").Single(b => b.TextContent.Trim() == "Set as Active");
-        activate.HasAttribute("disabled").Should().BeTrue();
+        activate.HasAttribute("disabled").Should().BeFalse();
 
         // Blocked reason should mention failure
-        cut.Find("#activation-gate-reason").TextContent.Should().Contain("Detection failed");
+        cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Detection failed");
     }
 
     [Fact]

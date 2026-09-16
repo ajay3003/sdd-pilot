@@ -73,20 +73,20 @@ public sealed class FrontendAnalysisSettingsInitialStateTests : BunitContext
     /// But the reason should indicate historical state, not active failure.
     /// </summary>
     [Fact]
-    public void InitialLoad_WithPersistedFailedDetection_BlocksActivationButHistoricalNotActive()
+    public void InitialLoad_WithPersistedFailedDetection_AllowsTargetSelectionWithoutChangingHistoricalStatus()
     {
         var cut = Render<TargetSettingsComponent>();
         cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("QA")).Click();
 
-        // Activation should be blocked
+        // A historical failure does not prevent explicit target selection
         var activate = cut.FindAll("button").SingleOrDefault(b => b.TextContent.Trim() == "Set as Active");
         if (activate is not null)
         {
-            activate.HasAttribute("disabled").Should().BeTrue();
+            activate.HasAttribute("disabled").Should().BeFalse();
         }
 
         // The blocked reason should reference detection state (historical or current as appropriate)
-        var blockReason = cut.Find("#activation-gate-reason");
+        var blockReason = cut.Find("#detection-readiness-reason");
         blockReason.TextContent.Should().NotBeNullOrEmpty();
     }
 

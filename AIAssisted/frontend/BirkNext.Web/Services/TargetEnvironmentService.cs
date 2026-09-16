@@ -39,7 +39,7 @@ public sealed class TargetEnvironmentService : ITargetEnvironmentService
 
     public IReadOnlyList<TargetEnvironment> Environments =>
         _settings.Settings.Profiles
-            .Select(p => Map(p, p.Id == _settings.Settings.ActiveProfileId)!)
+            .Select(p => Map(p, ReferenceEquals(p, _settings.ActiveProfile))!)
             .Where(e => e is not null)
             .ToList();
 

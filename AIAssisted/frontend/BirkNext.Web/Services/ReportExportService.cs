@@ -249,6 +249,15 @@ public sealed class ReportExportService : IReportExportService
     public string ExportFrontendQualityReview(FrontendQualityReviewReport report, string? projectName)
     {
         var sb = new StringBuilder();
+        if (report.TargetEnvironment is { } target)
+        {
+            sb.Append("<section class=\"block\"><h2>Target Environment</h2><dl>");
+            sb.Append($"<dt>Environment name</dt><dd>{Esc(target.Name)}</dd>");
+            sb.Append($"<dt>Environment ID</dt><dd>{Esc(target.EnvironmentId)}</dd>");
+            sb.Append($"<dt>Target URL</dt><dd>{Esc(target.TargetUrl)}</dd>");
+            sb.Append($"<dt>Environment Type</dt><dd>{Esc(target.EnvironmentType)}</dd>");
+            sb.Append($"<dt>Review started</dt><dd>{target.StartedAt:u}</dd></dl></section>");
+        }
         AppendFrontendDecisionSupport(sb, report);
 
         // ── Assessment Metadata ────────────────────────────────────────

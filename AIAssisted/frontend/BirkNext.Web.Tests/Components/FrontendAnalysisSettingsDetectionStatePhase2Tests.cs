@@ -506,7 +506,7 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
     }
 
     [Fact]
-    public void SetAsActive_Enabled_Only_After_Successful_Complete_Detection()
+    public void SetAsActive_IsIndependentOfDetectionReadiness()
     {
         _detection.Setup(x => x.DetectFromUrlAsync("https://application-qa.example.test", It.IsAny<CancellationToken>()))
             .ReturnsAsync(new TargetEnvironmentDetectionResult
@@ -523,10 +523,10 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
 
         cut.WaitForAssertion(() =>
         {
-            // Set as Active should be disabled
+            // Target selection remains explicit and independent of detection
             var setActive = cut.FindAll("button")
                 .Single(b => b.TextContent.Trim() == "Set as Active");
-            setActive.HasAttribute("disabled").Should().BeTrue();
+            setActive.HasAttribute("disabled").Should().BeFalse();
         });
     }
 
@@ -891,13 +891,13 @@ public sealed class FrontendAnalysisSettingsDetectionStatePhase2Tests : BunitCon
             resultMessage.Should().NotContain("Detection completed successfully");
             resultMessage.Should().NotBeEmpty();
 
-            // Set as Active button must be disabled (not ready)
+            // Selecting a target does not claim authenticated readiness
             var setActiveBtn = cut.FindAll("button")
                 .Where(b => b.TextContent.Contains("Set as Active"))
                 .FirstOrDefault();
             if (setActiveBtn != null)
             {
-                setActiveBtn.HasAttribute("disabled").Should().BeTrue();
+                setActiveBtn.HasAttribute("disabled").Should().BeFalse();
             }
         });
     }
