@@ -1,712 +1,495 @@
 @page "/api-quality-review"
+@using BirkNext.ApiReview
+@using BirkNext.LocalHttpsProxy
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
-@inject IApiQualityReviewService ReviewService
+@using Microsoft.AspNetCore.WebUtilities
+@inject IApiReviewService ReviewService
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject IEndpointDiscoveryService Discovery
+@inject IApiReviewHistoryService History
+@inject IAuthenticatedReviewCapabilitiesService Capabilities
 @inject RuntimeReviewSessionService RuntimeReviews
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
+@inject NavigationManager Navigation
 @inject IJSRuntime JS
 
 <PageTitle>API Quality Review</PageTitle>
 
 <div class="aqr-page">
-
     <PageHeader Title="API Quality Review"
-                Description="Deterministic quality, security, performance, and readiness analysis of a deployed REST and/or GraphQL API using the active Target Environment." />
+                Description="Is this API correct, safe, robust, contractually sound and performant? Read-only review of the REST services and GraphQL endpoints of the active Target Environment: discovered by Endpoint Discovery, configured, or described by a contract." />
 
-    @if (_report is null)
-    {
-        <ReviewLanding Title="Run a production-style API audit"
-                       Description="Review connectivity, REST and GraphQL behavior, OpenAPI completeness, API security, performance, design quality, and deployment readiness for the active target environment."
-                       PrimaryButtonText="@(_running ? "Analysing..." : "Run API Quality Review")"
-                       PrimaryRun="RunReview"
-                       PrimaryDisabled="@(_running || _context is null || !_hasAnyEndpoint)"
-                       SecondaryActionText="Target Environments"
-                       SecondaryActionHref="/admin/system-settings"
-                       TargetFields="BuildApiTargetFields()"
-                       Configuration="BuildApiConfiguration()"
-                       AnalysisCards="ApiAnalysisCards"
-                       Checks="ApiChecks"
-                       Metadata="BuildApiMetadata()"
-                       EstimatedDuration="1-3 minutes" />
-    }
+    @* ── Setup: target environment · API targets · access · contracts · run ── *@
+    <section class="aqr-setup" data-testid="aqr-setup" aria-label="Review setup">
+        <div class="aqr-setup-grid">
+            <div class="aqr-card" data-testid="aqr-environment">
+                <h3>Target Environment</h3>
+                @if (_context is null)
+                {
+                    <p class="aqr-muted">Loading the active Target Environment…</p>
+                }
+                else if (_context.ActiveTargetError is { Length: > 0 } activeError)
+                {
+                    <p class="aqr-error-inline" data-testid="aqr-active-target-error">@activeError</p>
+                }
+                else
+                {
+                    <dl class="aqr-dl">
+                        <div><dt>Active target</dt><dd><span class="aqr-env-badge aqr-env-badge-@_context.ActiveProfile.EnvironmentType.ToString().ToLowerInvariant()">@_context.ActiveProfile.EnvironmentType</span> <strong data-testid="aqr-env-name">@_context.ActiveProfile.Name</strong></dd></div>
+                        <div><dt>Frontend URL</dt><dd class="aqr-mono">@_context.TargetUrl</dd></div>
+                        <div><dt>Authenticated testing method</dt><dd>@AuthenticatedTestingMethodLabels.Label(_context.ActiveProfile.Authentication.AuthenticatedTestingMethod)</dd></div>
+                        <div><dt>Production policy</dt><dd>@(IsProduction ? "Passive read-only review; error probes disabled" : "Read-only review with safe error probes")</dd></div>
+                    </dl>
+                }
+            </div>
 
-    @* ── Compact target summary ── always visible ─────────────────────────────── *@
-    @if (_report is not null)
-    {
-    <div class="aqr-target-summary">
-        <div class="aqr-target-header">
-            @if (_context is not null)
-            {
-                <div class="aqr-target-env">
-                    <span class="aqr-env-badge aqr-env-badge-@(_context.ActiveProfile.EnvironmentType.ToString().ToLowerInvariant())">
-                        @_context.ActiveProfile.EnvironmentType
-                    </span>
-                    <span class="aqr-env-name">@_context.ActiveProfile.Name</span>
-                    <span class="aqr-target-auth">
-                        Auth: <span class="aqr-auth-value">@_context.ActiveProfile.ApiAuth.AuthType</span>
-                    </span>
-                    @if (_report is not null)
+            <div class="aqr-card" data-testid="aqr-access">
+                <h3>Authentication / access</h3>
+                @if (_capabilities is { } caps)
+                {
+                    <p data-testid="aqr-access-mode"><strong>@(caps.AuthenticatedApi ? "Authenticated HTTP via Local HTTPS Proxy" : "Public HTTP only")</strong></p>
+                    <p class="aqr-muted">@caps.Reason</p>
+                    @if (!caps.AuthenticatedApi && _targets.Any(t => t.AuthRequired))
                     {
-                        <span class="aqr-last-review">
-                            Last review: @_report.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC
-                        </span>
+                        <p class="aqr-warn" data-testid="aqr-auth-missing">@ApiReviewRunEligibility.NoAuthContextReason @ApiReviewRunEligibility.NoAuthContextAction</p>
                     }
-                </div>
+                }
+                else
+                {
+                    <p class="aqr-muted">Resolving authenticated capabilities…</p>
+                }
+                <p class="aqr-muted">Authenticated requests are executed by the backend gateway (GET/HEAD/OPTIONS, GraphQL queries); the review never receives a token.</p>
+            </div>
+
+            <div class="aqr-card" data-testid="aqr-contracts">
+                <h3>Contracts</h3>
+                @{ var openApi = _targets.Where(t => t.ContractSource is not null).Select(t => t.ContractSource!).Distinct().ToList(); }
+                @if (openApi.Count > 0)
+                {
+                    <p><strong>OpenAPI:</strong> @string.Join(", ", openApi)</p>
+                }
+                else
+                {
+                    <p class="aqr-muted">No OpenAPI / Swagger URL configured — live responses are reviewed structurally; contract validation needs a published contract.</p>
+                }
+                <p><strong>GraphQL schema:</strong> @(_targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl) ? "retrieved by introspection at run time (query only; disabled introspection is a policy observation, not a failure)" : "no GraphQL endpoint known")</p>
+                @if (_history?.Baselines.Count > 0)
+                {
+                    <p class="aqr-muted" data-testid="aqr-baselines">@_history.Baselines.Count baseline(s) from previous runs enable contract-drift detection.</p>
+                }
+            </div>
+        </div>
+
+        <div class="aqr-card" data-testid="aqr-targets">
+            <div class="aqr-card-head">
+                <h3>API targets <span class="aqr-muted">(@_targets.Count)</span></h3>
+                <a class="aqr-link" href="@ApiReviewRunEligibility.TargetEnvironmentsHref">Endpoint Discovery / configuration →</a>
+            </div>
+            @if (_targets.Count == 0)
+            {
+                <p class="aqr-empty" data-testid="aqr-no-targets">@ApiReviewRunEligibility.NoTargetsReason Run the Local HTTPS proxy and use the application (Endpoint Discovery), or configure a REST base URL, GraphQL endpoint or OpenAPI URL on the Target Environment.</p>
             }
             else
             {
-                <span class="aqr-target-auth">Loading environment…</span>
-            }
-            <div class="aqr-target-actions">
-                <a href="/admin/system-settings" class="btn-secondary" style="font-size:.8rem;padding:.3rem .7rem">
-                    Configure Environments
-                </a>
-                @if (_report is not null)
+                @foreach (var group in new[] { ApiReviewTargetType.Rest, ApiReviewTargetType.GraphQl })
                 {
-                    <SecondaryButton OnClick="RefreshContext">Refresh</SecondaryButton>
+                    var items = _targets.Where(t => t.ApiType == group).ToList();
+                    if (items.Count == 0) continue;
+                    <h4 class="aqr-group-title">@(group == ApiReviewTargetType.Rest ? "REST" : "GraphQL")</h4>
+                    <ul class="aqr-target-list">
+                        @foreach (var t in items)
+                        {
+                            <li class="aqr-target @(_selected.Contains(t.TargetId) ? "aqr-target-selected" : "")" data-testid="aqr-target" data-target-id="@t.TargetId" data-auth="@t.AuthRequired.ToString().ToLowerInvariant()">
+                                <label>
+                                    <input type="checkbox" checked="@_selected.Contains(t.TargetId)" @onchange="e => ToggleTarget(t.TargetId, (bool)e.Value!)" data-testid="aqr-target-checkbox" />
+                                    <span class="aqr-target-name">@t.ServiceName</span>
+                                    <span class="aqr-mono aqr-target-url">@t.Url</span>
+                                </label>
+                                <div class="aqr-target-meta">
+                                    <span class="aqr-chip">@t.Source</span>
+                                    <span class="aqr-chip">@t.Confidence</span>
+                                    <span class="aqr-chip @(t.AuthRequired ? "aqr-chip-auth" : "")">@(t.AuthRequired ? "Authentication required" : "Public")</span>
+                                    <span class="aqr-chip">@t.Operations.Count operation(s)@(t.Operations.Any(o => !o.IsSafe) ? $", {t.Operations.Count(o => !o.IsSafe)} write (not executed)" : "")</span>
+                                    @if (t.ContractSource is not null) { <span class="aqr-chip">OpenAPI</span> }
+                                </div>
+                                @if (t.Operations.Count > 0)
+                                {
+                                    <details class="aqr-ops">
+                                        <summary>Operations</summary>
+                                        <ul>
+                                            @foreach (var o in t.Operations.Take(30))
+                                            {
+                                                <li class="aqr-mono">@o.Display <span class="aqr-muted">· @(o.ObservedCount > 0 ? $"{o.ObservedCount}× observed" : o.Source.ToString())@(o.IsSafe ? "" : " · write, manual review")</span></li>
+                                            }
+                                        </ul>
+                                    </details>
+                                }
+                            </li>
+                        }
+                    </ul>
                 }
-                <PrimaryButton OnClick="RunReview"
-                               Disabled="@(_running || _context is null || !_hasAnyEndpoint)"
-                               aria-label="Run API Quality Review">
-                    @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
-                    @(_running ? "Analysing…" : "Run Review")
-                </PrimaryButton>
-            </div>
+            }
         </div>
 
-        @if (_report?.Authentication is { } auth)
-        {
-            <AuthenticatedReviewStatus Capabilities="auth.Capabilities" />
-            @if (auth.Checks.Count > 0)
+        <div class="aqr-run-row" data-testid="aqr-run-row">
+            <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review">
+                @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
+                @(_running ? "Reviewing…" : "Run API Quality Review")
+            </PrimaryButton>
+            <span class="aqr-run-reason @(Eligibility.Enabled ? "aqr-run-ok" : "aqr-run-blocked")" data-testid="aqr-run-reason">@Eligibility.Reason</span>
+            @if (!Eligibility.Enabled && Eligibility.ActionText is not null)
             {
-                <dl class="fa-detail-list" data-testid="aqr-authenticated-checks">
-                    @foreach (var check in auth.Checks)
+                <a class="aqr-link" data-testid="aqr-run-action" href="@(Eligibility.ActionHref ?? ApiReviewRunEligibility.TargetEnvironmentsHref)">@Eligibility.ActionText</a>
+            }
+            @if (_report is not null)
+            {
+                <button type="button" class="btn-secondary aqr-btn-sm" @onclick="ExportHtml" data-testid="aqr-export">Export HTML</button>
+            }
+        </div>
+        @if (_running)
+        {
+            <p class="aqr-progress" role="status" aria-live="polite"><span class="aqr-spinner" aria-hidden="true">⟳</span> @_progressMessage</p>
+        }
+        @if (_errorMessage is not null)
+        {
+            <div class="aqr-error" role="alert" data-testid="aqr-error">@_errorMessage</div>
+        }
+    </section>
+
+    @* ── Results ── *@
+    @if (_report is { } report)
+    {
+        <section class="aqr-results" data-testid="aqr-results" aria-label="Review results">
+            <div class="aqr-overview" data-testid="aqr-overview">
+                <div class="aqr-kpi"><span class="aqr-kpi-label">Target</span><span class="aqr-kpi-value" data-testid="aqr-result-env">@report.Environment.Name</span><span class="aqr-muted">@report.Environment.EnvironmentType · @report.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span></div>
+                <div class="aqr-kpi"><span class="aqr-kpi-label">Services</span><span class="aqr-kpi-value">REST @report.RestServices · GraphQL @report.GraphQlServices</span></div>
+                <div class="aqr-kpi"><span class="aqr-kpi-label">Access</span><span class="aqr-kpi-value aqr-kpi-small" data-testid="aqr-result-access">@ApiReviewExport.AccessLabel(report)</span></div>
+                <div class="aqr-kpi" data-testid="aqr-coverage">
+                    <span class="aqr-kpi-label">Coverage</span>
+                    <span class="aqr-kpi-small">REST operations @report.Coverage.RestOperationsReviewed / @report.Coverage.RestOperationsTotal</span>
+                    <span class="aqr-kpi-small">GraphQL operations @report.Coverage.GraphQlOperationsMatched / @report.Coverage.GraphQlOperationsObserved schema-matched</span>
+                    <span class="aqr-kpi-small">Contract checks @report.Coverage.ContractChecks · Security checks @report.Coverage.SecurityChecks</span>
+                    <span class="aqr-kpi-small">Authenticated @report.Coverage.AuthenticatedExecuted / @report.Coverage.AuthenticatedPlanned · Public @report.Coverage.PublicExecuted / @report.Coverage.PublicPlanned@(report.Coverage.TargetsBlocked > 0 ? $" · {report.Coverage.TargetsBlocked} blocked" : "")</span>
+                </div>
+                <div class="aqr-kpi" data-testid="aqr-finding-counts">
+                    <span class="aqr-kpi-label">Findings</span>
+                    <span class="aqr-counts">
+                        @foreach (var sev in Enum.GetValues<ApiReviewSeverity>())
+                        {
+                            var n = report.Findings.Count(f => f.Severity == sev);
+                            <span class="aqr-sev aqr-sev-@sev.ToString().ToLowerInvariant()">@sev @n</span>
+                        }
+                    </span>
+                </div>
+            </div>
+
+            <nav class="aqr-tabs" role="tablist">
+                @foreach (var tab in Tabs)
+                {
+                    <button type="button" class="aqr-tab @(_tab == tab ? "aqr-tab-active" : "")" role="tab" aria-selected="@(_tab == tab)" data-testid="aqr-tab-@tab.ToLowerInvariant()" @onclick="() => _tab = tab">@tab</button>
+                }
+            </nav>
+
+            @if (_tab == "Overview")
+            {
+                <div class="aqr-tablewrap">
+                    <table class="aqr-table" data-testid="aqr-services-table">
+                        <thead><tr><th>Service</th><th>Type</th><th>Endpoint</th><th>Source</th><th>Access</th><th>Status</th><th>Contract</th><th>Findings</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in report.Targets)
+                            {
+                                <tr data-testid="aqr-service-row" data-target-id="@t.Target.TargetId">
+                                    <td><strong>@t.Target.ServiceName</strong></td>
+                                    <td>@t.Target.ApiType</td>
+                                    <td class="aqr-mono">@t.Target.Url</td>
+                                    <td>@t.Target.Source</td>
+                                    <td><span class="aqr-chip">@t.AccessMode</span></td>
+                                    <td><span class="aqr-state aqr-state-@t.Status.ToString().ToLowerInvariant()" data-testid="aqr-service-status">@StatusLabel(t.Status)</span>@if (t.RequiredAction is not null) { <br /><span class="aqr-muted">@t.RequiredAction</span> }</td>
+                                    <td>@(t.Contract is null ? "—" : $"{t.Contract.Kind}: {ResultLabel(t.Contract.Status)}")</td>
+                                    <td data-testid="aqr-service-findings">@(t.FindingCount is null ? "Not tested" : t.FindingCount.Value.ToString())</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (report.ManualReviewItems.Count > 0)
+                {
+                    <h4 class="aqr-group-title">Manual review</h4>
+                    <ul class="aqr-list">@foreach (var m in report.ManualReviewItems) { <li>@m</li> }</ul>
+                }
+                @if (report.Limitations.Count > 0)
+                {
+                    <h4 class="aqr-group-title">Limitations</h4>
+                    <ul class="aqr-list aqr-muted">@foreach (var l in report.Limitations) { <li>@l</li> }</ul>
+                }
+            }
+            else if (_tab is "REST" or "GraphQL")
+            {
+                var type = _tab == "REST" ? ApiReviewTargetType.Rest : ApiReviewTargetType.GraphQl;
+                var targets = report.Targets.Where(t => t.Target.ApiType == type).ToList();
+                @if (targets.Count == 0) { <p class="aqr-empty">No @_tab targets in this review.</p> }
+                @foreach (var t in targets)
+                {
+                    <div class="aqr-card aqr-target-result" data-testid="aqr-target-result" data-target-id="@t.Target.TargetId">
+                        <div class="aqr-card-head">
+                            <h3>@t.Target.ServiceName <span class="aqr-mono aqr-muted">@t.Target.Url</span></h3>
+                            <span class="aqr-state aqr-state-@t.Status.ToString().ToLowerInvariant()">@StatusLabel(t.Status)</span>
+                        </div>
+                        <p class="aqr-muted"><strong>Access:</strong> @t.AccessMode — @t.AccessReason @if (t.RequiredAction is not null) { <strong>Action:</strong> @t.RequiredAction }</p>
+                        @if (t.Contract is { } contract)
+                        {
+                            <p><strong>@contract.Kind:</strong> <span class="aqr-state aqr-state-@contract.Status.ToString().ToLowerInvariant()">@ResultLabel(contract.Status)</span> @contract.Note @(contract.Hash is null ? "" : $"· hash {contract.Hash}")</p>
+                        }
+                        @if (t.Operations.Count > 0)
+                        {
+                            <div class="aqr-tablewrap">
+                                <table class="aqr-table">
+                                    <thead><tr><th>Operation</th><th>Executed</th><th>Status</th><th>Content type</th><th>Latency</th><th>Bytes</th><th>Result</th><th>Contract</th><th>Note</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var o in t.Operations)
+                                        {
+                                            <tr data-testid="aqr-operation-row">
+                                                <td class="aqr-mono">@o.Display</td>
+                                                <td>@(o.Executed ? $"yes ({o.AccessMode})" : "no")</td>
+                                                <td>@(o.Executed ? o.StatusCode.ToString() : "—")</td>
+                                                <td>@(o.ContentType ?? "—")</td>
+                                                <td>@(o.ElapsedMs is { } ms ? $"{ms:0} ms" : "—")</td>
+                                                <td>@(o.ContentLength?.ToString() ?? "—")</td>
+                                                <td><span class="aqr-state aqr-state-@o.Result.ToString().ToLowerInvariant()">@ResultLabel(o.Result)</span></td>
+                                                <td>@(o.ContractMatched is null ? "—" : o.ContractMatched.Value ? "matched" : "not documented")</td>
+                                                <td class="aqr-muted">@o.Note</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        @RenderChecks(t.Checks.Concat(t.Operations.SelectMany(o => o.Checks.Select(c => c with { Title = $"{o.Display}: {c.Title}" }))).ToList(), null)
+                    </div>
+                }
+            }
+            else if (_tab == "Findings")
+            {
+                @RenderFindings(report.Findings, null)
+            }
+            else
+            {
+                var areas = _tab switch
+                {
+                    "Contracts" => new[] { ApiReviewFindingType.Contract, ApiReviewFindingType.Documentation, ApiReviewFindingType.Drift },
+                    "Security" => new[] { ApiReviewFindingType.Security, ApiReviewFindingType.Authorization },
+                    "Errors" => new[] { ApiReviewFindingType.Errors },
+                    _ => new[] { ApiReviewFindingType.Performance },
+                };
+                @if (_tab == "Contracts")
+                {
+                    <div class="aqr-tablewrap">
+                        <table class="aqr-table" data-testid="aqr-contracts-table">
+                            <thead><tr><th>Service</th><th>Contract</th><th>Status</th><th>Version</th><th>Operations / types</th><th>Mutations</th><th>Deprecated</th><th>Introspection</th><th>Hash</th><th>Note</th></tr></thead>
+                            <tbody>
+                                @foreach (var t in report.Targets.Where(t => t.Contract is not null))
+                                {
+                                    var c = t.Contract!;
+                                    <tr><td>@t.Target.ServiceName</td><td>@c.Kind</td><td><span class="aqr-state aqr-state-@c.Status.ToString().ToLowerInvariant()">@ResultLabel(c.Status)</span></td><td>@(c.Version ?? "—")</td><td>@c.OperationCount / @c.TypeCount</td><td>@c.MutationCount</td><td>@c.DeprecatedCount</td><td>@(c.IntrospectionEnabled is null ? "—" : c.IntrospectionEnabled.Value ? "enabled" : "disabled")</td><td class="aqr-mono">@(c.Hash ?? "—")</td><td class="aqr-muted">@c.Note</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @foreach (var t in report.Targets.Where(t => t.GraphQlOperationMatches.Count > 0))
                     {
-                        <div class="fa-dl-row"><dt>@check.Label (authenticated)</dt><dd>@check.Outcome</dd></div>
+                        <h4 class="aqr-group-title">@t.Target.ServiceName · observed operations</h4>
+                        <div class="aqr-tablewrap">
+                            <table class="aqr-table" data-testid="aqr-gql-operations">
+                                <thead><tr><th>Observed operation</th><th>Root field</th><th>Result</th><th>Note</th></tr></thead>
+                                <tbody>@foreach (var m in t.GraphQlOperationMatches) { <tr><td class="aqr-mono">@m.Operation</td><td class="aqr-mono">@(m.MatchedRootField ?? "—")</td><td><span class="aqr-state aqr-state-@m.Result.ToString().ToLowerInvariant()">@ResultLabel(m.Result)</span></td><td class="aqr-muted">@m.Note</td></tr> }</tbody>
+                            </table>
+                        </div>
                     }
-                </dl>
+                }
+                @RenderChecks(report.Targets.SelectMany(t => t.Checks.Concat(t.Operations.SelectMany(o => o.Checks)).Where(c => areas.Contains(c.Area)).Select(c => c with { Title = $"{t.Target.ServiceName}: {c.Title}" })).ToList(), areas)
+                @RenderFindings(report.Findings.Where(f => areas.Contains(f.Type)).ToList(), areas)
             }
-        }
-
-        @* ── Endpoint status chips ──────────────────────────────────────── *@
-        @if (_context is not null)
-        {
-            var restOk    = _context.HasRestBaseUrl;
-            var gqlOk     = _context.HasGraphQlEndpoint;
-            var oasOk     = !string.IsNullOrWhiteSpace(_context.SwaggerUrl);
-            var healthOk  = !string.IsNullOrWhiteSpace(_context.HealthEndpoint);
-
-            <div class="aqr-ep-grid">
-                <div class="aqr-ep-chip @(restOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(restOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(restOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">REST Base URL</span>
-                    </div>
-                    @if (restOk)
-                    { <span class="aqr-ep-url" title="@_context.RestBaseUrl">@_context.RestBaseUrl</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-
-                <div class="aqr-ep-chip @(gqlOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(gqlOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(gqlOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">GraphQL Endpoint</span>
-                    </div>
-                    @if (gqlOk)
-                    { <span class="aqr-ep-url" title="@_context.GraphQlEndpoint">@_context.GraphQlEndpoint</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-
-                <div class="aqr-ep-chip @(oasOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(oasOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(oasOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">OpenAPI / Swagger URL</span>
-                    </div>
-                    @if (oasOk)
-                    { <span class="aqr-ep-url" title="@_context.SwaggerUrl">@_context.SwaggerUrl</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-
-                <div class="aqr-ep-chip @(healthOk ? "aqr-ep-chip-ok" : "aqr-ep-chip-missing")">
-                    <div class="aqr-ep-head">
-                        <span class="@(healthOk ? "aqr-ep-icon-ok" : "aqr-ep-icon-missing")">@(healthOk ? "✓" : "✗")</span>
-                        <span class="aqr-ep-label">Health Endpoint</span>
-                    </div>
-                    @if (healthOk)
-                    { <span class="aqr-ep-url" title="@_context.HealthEndpoint">@_context.HealthEndpoint</span> }
-                    else
-                    { <span class="aqr-ep-none">Not configured</span> }
-                </div>
-            </div>
-        }
-    </div>
+        </section>
     }
-
-    @* ── Running progress ──────────────────────────────────────────────────────── *@
-    @if (_running)
-    {
-        <div class="aqr-progress" role="status" aria-live="polite">
-            <span class="aqr-spinner" aria-hidden="true">⟳</span>
-            @_progressMessage
-        </div>
-    }
-
-    @* ── Error banner ──────────────────────────────────────────────────────────── *@
-    @if (_errorMessage is not null)
-    {
-        <div class="aqr-error" role="alert">@_errorMessage</div>
-    }
-
-    @* ── Report (post-run) ─────────────────────────────────────────────────────── *@
-    @if (_report is not null)
-    {
-        var report = _report;
-
-        <div class="aqr-report-toolbar">
-            <button style="background:#1d4ed8;color:#fff;border:none;padding:.35rem .85rem;border-radius:5px;cursor:pointer;font-size:.78rem"
-                    @onclick="ExportHtml">Export HTML</button>
-        </div>
-
-        @* ── Overall score ────────────────────────────────────────────────── *@
-        <div class="aqr-score-bar aqr-@ScoreClass(report.OverallScore)"
-             aria-label="Overall API quality score: @report.OverallScore out of 100">
-            <div>
-                <div class="aqr-score-num">@report.OverallScore</div>
-                <div class="aqr-score-label">out of 100</div>
-            </div>
-            <div class="aqr-score-meta">
-                <span class="aqr-score-quality">@QualityLabel(report.OverallScore)</span>
-                <span class="aqr-score-sub">Overall API Quality Score</span>
-            </div>
-            <div class="aqr-count-pills" aria-label="Finding counts by severity">
-                @{ var critical = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Critical); }
-                @{ var high     = report.Findings.Count(f => f.Severity == ApiQualitySeverity.High); }
-                @{ var medium   = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Medium); }
-                @{ var low      = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Low); }
-                @{ var info     = report.Findings.Count(f => f.Severity == ApiQualitySeverity.Info); }
-                @if (critical > 0) { <div class="aqr-count-pill aqr-count-critical"><span class="aqr-count-value">@critical</span><span class="aqr-count-lbl">Critical</span></div> }
-                @if (high > 0)     { <div class="aqr-count-pill aqr-count-high"><span class="aqr-count-value">@high</span><span class="aqr-count-lbl">High</span></div> }
-                @if (medium > 0)   { <div class="aqr-count-pill aqr-count-medium"><span class="aqr-count-value">@medium</span><span class="aqr-count-lbl">Medium</span></div> }
-                @if (low > 0)      { <div class="aqr-count-pill aqr-count-low"><span class="aqr-count-value">@low</span><span class="aqr-count-lbl">Low</span></div> }
-                @if (info > 0)     { <div class="aqr-count-pill aqr-count-info"><span class="aqr-count-value">@info</span><span class="aqr-count-lbl">Info</span></div> }
-                @if (critical == 0 && high == 0 && medium == 0 && low == 0 && info == 0)
-                { <span class="aqr-all-clear">No findings — all checks passed</span> }
-            </div>
-            <span class="aqr-ready-badge @(report.IsDeploymentReady ? "aqr-ready-yes" : "aqr-ready-no")">
-                @(report.IsDeploymentReady ? "✓ Deployment Ready" : "✗ Not Ready")
-            </span>
-        </div>
-
-        @* ── Category scores ──────────────────────────────────────────────── *@
-        <div class="aqr-section-header">Category Scores</div>
-        <div class="aqr-cat-grid" role="list" aria-label="API quality category scores">
-            @foreach (var cs in report.CategoryScores)
-            {
-                var worstSeverity = report.Findings
-                    .Where(f => f.Category == cs.Category && f.Severity != ApiQualitySeverity.Info)
-                    .Select(f => (ApiQualitySeverity?)f.Severity)
-                    .OrderBy(s => s)
-                    .FirstOrDefault();
-
-                <button class="aqr-cat-card @CatCardClass(worstSeverity, cs.Assessed)"
-                        role="listitem"
-                        @onclick='() => SetCategoryFilter(cs.Category)'
-                        title="View @CategoryLabel(cs.Category) findings"
-                        aria-label="@CategoryLabel(cs.Category): @(cs.Assessed ? cs.Score.ToString() : "not assessed")">
-                    <div class="aqr-cat-name">@CategoryLabel(cs.Category)</div>
-                    <div class="aqr-cat-score @(cs.Assessed ? "" : "aqr-cat-score-na")">
-                        @(cs.Assessed ? cs.Score.ToString() : "—")
-                    </div>
-                    <div class="aqr-cat-status">@(cs.Assessed ? CatStatusLabel(worstSeverity) : "Not assessed")</div>
-                    <div class="aqr-cat-findings">
-                        @if (!cs.Assessed) { <span>Not assessed</span> }
-                        else if (cs.FindingCount == 0) { <span>No issues</span> }
-                        else { <span>@cs.FindingCount finding@(cs.FindingCount != 1 ? "s" : "")</span> }
-                    </div>
-                </button>
-            }
-        </div>
-
-        @* ── Connectivity table ────────────────────────────────────────────── *@
-        <div class="aqr-section-header">Connectivity</div>
-        <div class="aqr-conn-table-wrap">
-            <table class="aqr-conn-table">
-                <thead>
-                    <tr>
-                        <th>Endpoint</th>
-                        <th>Status</th>
-                        <th>TLS</th>
-                        <th>Response Time</th>
-                        <th>HTTP Code</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @ConnectivityRow("REST API", report.RestResult)
-                    @ConnectivityRow("Health", report.HealthResult)
-                    @ConnectivityRow("OpenAPI / Swagger", report.SwaggerResult)
-                    @ConnectivityRow("GraphQL", report.GraphQlResult)
-                </tbody>
-            </table>
-        </div>
-
-        @* ── Top risks ────────────────────────────────────────────────────── *@
-        var topRisks = report.Findings
-            .Where(f => f.Severity is ApiQualitySeverity.Critical or ApiQualitySeverity.High)
-            .OrderBy(f => f.Severity)
-            .Take(3)
-            .ToList();
-        @if (topRisks.Count > 0)
-        {
-            <div class="aqr-section-header">Top Risks</div>
-            <div class="issue-cards">
-                @foreach (var risk in topRisks)
-                {
-                    <IssueCard Severity="@risk.Severity.ToString()"
-                               Component="@CategoryLabel(risk.Category)"
-                               Description="@(string.IsNullOrEmpty(risk.Description) ? risk.Title : $"{risk.Title} — {risk.Description}")"
-                               SuggestedFix="@risk.Recommendation" />
-                }
-            </div>
-        }
-
-        @* ── Findings ─────────────────────────────────────────────────────── *@
-        <div class="aqr-section-header">Findings</div>
-        <div class="aqr-findings-toolbar" role="group" aria-label="Filter findings">
-            <input type="search"
-                   class="form-control aqr-search"
-                   placeholder="Search findings…"
-                   aria-label="Search findings"
-                   value="@_findingSearch"
-                   @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
-            <div class="aqr-filter-chips">
-                @foreach (var sev in Enum.GetValues<ApiQualitySeverity>())
-                {
-                    var count = report.Findings.Count(f => f.Severity == sev);
-                    if (count == 0) continue;
-                    <button class="aqr-chip aqr-chip-@sev.ToString().ToLowerInvariant() @(_sevFilter == sev ? "is-active" : "")"
-                            @onclick="() => ToggleSev(sev)"
-                            aria-pressed="@(_sevFilter == sev)">
-                        @sev <span class="aqr-chip-count">@count</span>
-                    </button>
-                }
-                @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrEmpty(_findingSearch))
-                {
-                    <button class="aqr-chip" @onclick="ClearFilters">Clear ×</button>
-                }
-            </div>
-            <div class="aqr-filter-chips" aria-label="Filter by category">
-                @foreach (var cat in Enum.GetValues<ApiQualityCategory>())
-                {
-                    var count = report.Findings.Count(f => f.Category == cat);
-                    if (count == 0) continue;
-                    <button class="aqr-chip @(_catFilter == cat ? "is-active" : "")"
-                            @onclick="() => SetCategoryFilter(cat)"
-                            aria-pressed="@(_catFilter == cat)">
-                        @CategoryLabel(cat) <span class="aqr-chip-count">@count</span>
-                    </button>
-                }
-            </div>
-        </div>
-
-        var filteredFindings = FilteredFindings(report.Findings).ToList();
-        @if (filteredFindings.Count == 0)
-        {
-            <div class="aqr-empty-filter">No findings match the current filter.</div>
-        }
-        else
-        {
-            <div class="aqr-findings-list" aria-label="API quality findings">
-                @foreach (var f in filteredFindings)
-                {
-                    @FindingCard(f)
-                }
-            </div>
-        }
-
-        @* ── Recommendations ──────────────────────────────────────────────── *@
-        @if (report.Recommendations.Count > 0)
-        {
-            <div class="aqr-section-header">Recommendations</div>
-            <ol class="aqr-rec-list">
-                @{ int rIdx = 0; }
-                @foreach (var rec in report.Recommendations)
-                {
-                    rIdx++;
-                    <li class="aqr-rec-item">
-                        <div class="aqr-rec-num" aria-hidden="true">@rIdx</div>
-                        <div class="aqr-rec-body">@rec</div>
-                    </li>
-                }
-            </ol>
-        }
-
-        @* ── Limitations ──────────────────────────────────────────────────── *@
-        @if (report.Limitations.Count > 0)
-        {
-            <div class="aqr-section-header">Review Limitations</div>
-            <div class="aqr-limitations">
-                <ul>
-                    @foreach (var l in report.Limitations) { <li>@l</li> }
-                </ul>
-            </div>
-        }
-    }
-
-    @* ── Landing (pre-run, not running) ───────────────────────────────────────── *@
 </div>
 
 @code {
+    private static readonly string[] Tabs = ["Overview", "REST", "GraphQL", "Contracts", "Security", "Errors", "Performance", "Findings"];
+
     private FrontendAnalysisContext? _context;
-
-    private bool    _running;
-    private string  _progressMessage = "";
+    private AuthenticatedReviewCapabilities? _capabilities;
+    private List<ApiReviewTarget> _targets = [];
+    private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
+    private ApiReviewHistory? _history;
+    private ApiReviewReport? _report;
+    private bool _running;
+    private string _progressMessage = "";
     private string? _errorMessage;
+    private string _tab = "Overview";
+    private string? _requestedTargetId;
 
-    private ApiQualityReviewReport? _report;
-
-    private string?               _findingSearch;
-    private ApiQualitySeverity?   _sevFilter;
-    private ApiQualityCategory?   _catFilter;
-    private readonly HashSet<string> _expandedFindings = [];
-
-    private bool _hasAnyEndpoint =>
-        _context is not null &&
-        (_context.HasRestBaseUrl || _context.HasGraphQlEndpoint ||
-         !string.IsNullOrWhiteSpace(_context.HealthEndpoint) ||
-         !string.IsNullOrWhiteSpace(_context.SwaggerUrl));
-
-    // ── Analysis card data ────────────────────────────────────────────────────
-
-    private static readonly ReviewLanding.AnalysisCard[] ApiAnalysisCards =
-    [
-        new("NET",  "Connectivity",    "Probes each configured API endpoint for reachability, TLS, redirect behaviour, and HTTP status codes."),
-        new("REST", "REST API",        "Validates compression, versioning headers, cache-control, and error response format consistency."),
-        new("GQL",  "GraphQL",         "Detects introspection exposure and validates response content type compliance."),
-        new("OAS",  "OpenAPI",         "Checks schema completeness, operationId coverage, response definitions, and security scheme declarations."),
-        new("SEC",  "Security",        "Inspects HSTS, CORS wildcard policy, rate limiting headers, and server header exposure."),
-        new("PERF", "Performance",     "Measures response times and flags endpoints that exceed acceptable latency thresholds."),
-        new("DSN",  "API Design",      "Evaluates REST versioning patterns, error response consistency, and API contract quality."),
-        new("RDY",  "QA Readiness",    "Assesses health endpoint structure, status fields, and overall deployment readiness."),
-    ];
-
-    private static readonly string[] ApiChecks =
-    [
-        "HTTP status validation",
-        "Response time",
-        "TLS / HTTPS",
-        "OpenAPI completeness",
-        "REST endpoint discovery",
-        "GraphQL schema validation",
-        "Security headers",
-        "Authentication",
-        "CORS",
-        "Compression",
-        "Health endpoint",
-        "Versioning",
-        "Error responses",
-        "Rate limiting",
-        "Observability",
-    ];
-
-    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    private bool IsProduction => _context?.ActiveProfile.EnvironmentType == FrontendEnvironmentType.Production;
+    private ApiReviewRunEligibility Eligibility => ApiReviewRunEligibility.Evaluate(_context, _targets, _selected, _capabilities);
 
     protected override async Task OnInitializedAsync()
     {
-        _context = await ContextFactory.GetActiveContextAsync();
-        _report  = RuntimeReviews.ApiQualityReview.Report;
+        var query = QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        if (query.TryGetValue("target", out var requested)) _requestedTargetId = requested.ToString();
+        _report = RuntimeReviews.ApiQualityReview.Report;
+        await History.LoadAsync(JS);
+        await Discovery.LoadAsync(JS);
+        await RefreshContextAsync();
     }
 
-    // ── Actions ───────────────────────────────────────────────────────────────
+    private async Task RefreshContextAsync()
+    {
+        _context = await ContextFactory.GetActiveContextAsync();
+        if (_context.ActiveTargetError is not null) { _targets = []; _selected.Clear(); _capabilities = null; return; }
+        _history = History.For(_context.ActiveProfile.Id);
+        _report ??= _history.LastReport is { } last && last.Environment.EnvironmentId == _context.ActiveProfile.Id ? last : null;
+        _targets = ApiReviewTargetResolver.Resolve(_context, Discovery.GetSnapshot(_context.ActiveProfile.Id));
+        _selected.Clear();
+        foreach (var t in _targets.Where(t => t.Selected)) _selected.Add(t.TargetId);
+        if (_requestedTargetId is not null && _targets.Any(t => t.TargetId == _requestedTargetId)) _selected.Add(_requestedTargetId);
+        _capabilities = null;
+        var identity = _context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(_context);
+        try { _capabilities = await Capabilities.ResolveAsync(identity); }
+        catch { _capabilities = new AuthenticatedReviewCapabilities { Method = identity.Method, PublicApi = true, Reason = "Authenticated capabilities could not be resolved; public targets only." }; }
+    }
 
+    private void ToggleTarget(string id, bool selected) { if (selected) _selected.Add(id); else _selected.Remove(id); }
+
+    /// <summary>Creates the immutable review snapshot from the active environment at Run; settings edited while the review runs never affect it.</summary>
     private async Task RunReview()
     {
-        if (_context is null || !_hasAnyEndpoint) return;
-
-        _running         = true;
-        _errorMessage    = null;
-        _report          = null;
-        _progressMessage = "Analysing API endpoints…";
-        RuntimeReviews.MarkApiQualityRunning(_context);
+        if (_running || _context is null || !Eligibility.Enabled) return;
+        _running = true; _errorMessage = null; _progressMessage = "Reviewing selected API targets (read-only)…";
+        var context = _context;
+        var identity = context.ReviewIdentity ?? ReviewAuthenticationIdentity.ForContext(context);
+        var request = BuildRequest(context, identity, _targets, _selected, _history);
+        RuntimeReviews.MarkApiQualityRunning(context);
         StateHasChanged();
-
         try
         {
-            var request = BuildRequest(_context);
-            var (report, error) = await ReviewService.AnalyzeAsync(request);
-
-            if (error is not null)
+            var (report, error) = await ReviewService.RunAsync(request);
+            if (error is not null || report is null)
             {
-                _errorMessage = error;
-                RuntimeReviews.MarkApiQualityFailed(_context, error);
+                _errorMessage = error ?? "The review returned no result.";
+                RuntimeReviews.MarkApiQualityFailed(context, _errorMessage);
             }
-            else if (report is not null)
+            else
             {
                 _report = report;
-                RuntimeReviews.SaveApiQualityResult(_report, _context);
-                _expandedFindings.Clear();
-                _findingSearch = null;
-                _sevFilter     = null;
-                _catFilter     = null;
+                _tab = "Overview";
+                RuntimeReviews.SaveApiQualityResult(report, context);
+                await History.RecordAsync(JS, context.ActiveProfile.Id, report);
+                _history = History.For(context.ActiveProfile.Id);
             }
         }
         catch (Exception ex)
         {
-            _errorMessage = "Review failed: " + ex.Message;
-            RuntimeReviews.MarkApiQualityFailed(_context, _errorMessage);
+            _errorMessage = "Review failed: " + ex.GetType().Name;
+            RuntimeReviews.MarkApiQualityFailed(context, _errorMessage);
         }
-        finally
+        finally { _running = false; }
+    }
+
+    public static ApiReviewRunRequest BuildRequest(FrontendAnalysisContext context, AuthenticatedReviewIdentity identity, IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected, ApiReviewHistory? history)
+    {
+        var production = context.ActiveProfile.EnvironmentType == FrontendEnvironmentType.Production;
+        var selectedTargets = targets.Select(t => t with { Selected = selected.Contains(t.TargetId) }).Where(t => t.Selected).ToList();
+        return new ApiReviewRunRequest
         {
-            _running = false;
-        }
+            Environment = new ApiReviewEnvironmentSnapshot
+            {
+                EnvironmentId = context.ActiveProfile.Id, Name = context.ActiveProfile.Name, EnvironmentType = context.ActiveProfile.EnvironmentType.ToString(), TargetUrl = context.TargetUrl,
+                AuthenticatedTestingMethod = identity.Method, RequiresAuthentication = context.RequiresAuthentication, ContextIdentityDigest = identity.ContextFingerprint, IsProduction = production, CapturedAt = DateTimeOffset.UtcNow,
+            },
+            Identity = identity, Targets = selectedTargets,
+            Policy = new ApiReviewPolicy
+            {
+                ReadOnly = true, ErrorHandlingProbes = !production, SlowWarningMs = context.PerformanceThresholds.ApiResponseWarningMs, SlowPoorMs = context.PerformanceThresholds.ApiResponsePoorMs,
+                LargePayloadBytes = Math.Max(context.PerformanceThresholds.MaxRestPayloadBytes, context.PerformanceThresholds.MaxGraphQlPayloadBytes), IntrospectionExpectedDisabled = production,
+            },
+            Baselines = history is null ? [] : selectedTargets.Where(t => history.Baselines.ContainsKey(t.TargetId)).Select(t => history.Baselines[t.TargetId]).ToList(),
+            FrontendOrigin = Uri.TryCreate(context.TargetUrl, UriKind.Absolute, out var origin) ? origin.GetLeftPart(UriPartial.Authority) : null,
+        };
     }
 
     private async Task ExportHtml()
     {
         if (_report is null) return;
-        var html = ExportService.ExportApiQualityReview(_report, Workspace.ProjectName);
+        var html = ExportService.ExportApiReview(_report, Workspace.ProjectName);
         await JS.InvokeVoidAsync("downloadHtmlFile", $"api-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
-    private async Task RefreshContext()
+    private RenderFragment RenderChecks(IReadOnlyList<ApiReviewCheck> checks, ApiReviewFindingType[]? areas) => __builder =>
     {
-        _context = await ContextFactory.GetActiveContextAsync();
-    }
-
-    // ── Request builder ───────────────────────────────────────────────────────
-
-    private IReadOnlyList<ReviewLanding.TargetField> BuildApiTargetFields()
-    {
-        if (_context is null)
-        {
-            return
-            [
-                new("Environment", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("REST Base URL", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("GraphQL Endpoint", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("OpenAPI / Swagger", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("Health Endpoint", "Loading...", ReviewLanding.FieldStatus.Informational),
-            ];
-        }
-
-        return
-        [
-            new("Environment", $"{_context.ActiveProfile.EnvironmentType} - {_context.ActiveProfile.Name}", ReviewLanding.FieldStatus.Configured),
-            new("REST Base URL", _context.HasRestBaseUrl ? _context.RestBaseUrl ?? "Configured" : "Not configured", _context.HasRestBaseUrl ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-            new("GraphQL Endpoint", _context.HasGraphQlEndpoint ? _context.GraphQlEndpoint ?? "Configured" : "Not configured", _context.HasGraphQlEndpoint ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-            new("OpenAPI / Swagger", !string.IsNullOrWhiteSpace(_context.SwaggerUrl) ? _context.SwaggerUrl : "Not configured", !string.IsNullOrWhiteSpace(_context.SwaggerUrl) ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-            new("Health Endpoint", !string.IsNullOrWhiteSpace(_context.HealthEndpoint) ? _context.HealthEndpoint : "Not configured", !string.IsNullOrWhiteSpace(_context.HealthEndpoint) ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-        ];
-    }
-
-    private IReadOnlyList<ReviewLanding.MetadataItem> BuildApiMetadata()
-    {
-        if (_context is null) return [];
-        return
-        [
-            new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
-            new("Authentication", _context.ActiveProfile.ApiAuth.AuthType.ToString()),
-        ];
-    }
-
-    private ReviewLanding.ConfigurationState BuildApiConfiguration()
-    {
-        if (_context is null)
-        {
-            return new(
-                ReviewLanding.ConfigurationStatus.Warning,
-                "Loading target environment",
-                "The active API target environment is still loading.",
-                []);
-        }
-
-        if (!_hasAnyEndpoint)
-        {
-            return new(
-                ReviewLanding.ConfigurationStatus.Error,
-                "Configuration incomplete",
-                "Add at least one executable API endpoint before running the review.",
-                ["At least one executable API endpoint: REST Base URL, GraphQL endpoint, OpenAPI / Swagger URL, or Health endpoint"],
-                "Configure Target Environment",
-                "/admin/system-settings");
-        }
-
-        return new(
-            ReviewLanding.ConfigurationStatus.Success,
-            "Ready to run",
-            "API endpoint configuration is sufficient for a quality review.",
-            []);
-    }
-
-    private static ApiQualityReviewRequest BuildRequest(FrontendAnalysisContext ctx)
-    {
-        var identity = ReviewAuthenticationIdentity.ForContext(ctx);
-        return new()
-        {
-            RestBaseUrl       = ctx.RestBaseUrl,
-            HealthEndpoint    = ctx.HealthEndpoint,
-            SwaggerUrl        = ctx.SwaggerUrl,
-            GraphQlEndpoint   = ctx.GraphQlEndpoint,
-            TimeoutSeconds    = ctx.RequestTimeoutSeconds,
-            RetryCount        = ctx.RetryCount,
-            EnvironmentName   = ctx.ActiveProfile.Name,
-            AuthenticatedTestingMethod = identity.Method,
-            ProfileId         = identity.ProfileId,
-            ContextFingerprint = identity.ContextFingerprint,
-        };
-    }
-
-    // ── Filters ───────────────────────────────────────────────────────────────
-
-    private void SetCategoryFilter(ApiQualityCategory cat)
-    {
-        _catFilter     = _catFilter == cat ? null : cat;
-        _findingSearch = null;
-        _sevFilter     = null;
-    }
-
-    private void ToggleSev(ApiQualitySeverity sev) =>
-        _sevFilter = _sevFilter == sev ? null : sev;
-
-    private void ClearFilters()
-    {
-        _sevFilter     = null;
-        _catFilter     = null;
-        _findingSearch = null;
-    }
-
-    private IEnumerable<ApiQualityFinding> FilteredFindings(IReadOnlyList<ApiQualityFinding> all)
-    {
-        IEnumerable<ApiQualityFinding> q = all.OrderBy(f => f.Severity).ThenBy(f => f.Category);
-        if (_sevFilter.HasValue) q = q.Where(f => f.Severity == _sevFilter.Value);
-        if (_catFilter.HasValue) q = q.Where(f => f.Category == _catFilter.Value);
-        if (!string.IsNullOrWhiteSpace(_findingSearch))
-        {
-            var term = _findingSearch.Trim();
-            q = q.Where(f =>
-                f.Title.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                f.Description.Contains(term, StringComparison.OrdinalIgnoreCase) ||
-                CategoryLabel(f.Category).Contains(term, StringComparison.OrdinalIgnoreCase));
-        }
-        return q;
-    }
-
-    // ── Finding card ──────────────────────────────────────────────────────────
-
-    private RenderFragment<ApiQualityFinding> FindingCard => f => __builder =>
-    {
-        var expanded = _expandedFindings.Contains(f.Id);
-        var sevCls   = f.Severity.ToString().ToLowerInvariant();
-        <div class="aqr-finding aqr-finding-@sevCls">
-            <button class="aqr-finding-toggle"
-                    @onclick="() => ToggleFinding(f.Id)"
-                    aria-expanded="@expanded.ToString().ToLowerInvariant()">
-                <span class="aqr-sev-badge aqr-sev-@sevCls">@f.Severity</span>
-                <span class="aqr-finding-title">@f.Title</span>
-                <span class="aqr-cat-chip">@CategoryLabel(f.Category)</span>
-                <span class="aqr-chevron" aria-hidden="true">@(expanded ? "▲" : "▼")</span>
-            </button>
-            @if (expanded)
-            {
-                <div class="aqr-finding-body">
-                    <div>
-                        <span class="aqr-detail-label">Description</span>
-                        <p class="aqr-detail-text">@f.Description</p>
-                    </div>
-                    <div>
-                        <span class="aqr-detail-label">Recommendation</span>
-                        <p class="aqr-detail-text aqr-detail-action">@f.Recommendation</p>
-                    </div>
-                    @if (f.Evidence.Count > 0)
-                    {
-                        <div>
-                            <span class="aqr-detail-label">Evidence</span>
-                            <ul class="aqr-evidence-list">
-                                @foreach (var ev in f.Evidence) { <li>@ev</li> }
-                            </ul>
-                        </div>
-                    }
-                </div>
-            }
-        </div>
+        if (checks.Count == 0) return;
+        <details class="aqr-checks" open="@(areas is not null)">
+            <summary>Checks (@checks.Count) · @string.Join(" · ", checks.GroupBy(c => c.Result).OrderBy(g => g.Key).Select(g => $"{ResultLabel(g.Key)} {g.Count()}"))</summary>
+            <div class="aqr-tablewrap">
+                <table class="aqr-table aqr-checks-table" data-testid="aqr-checks-table">
+                    <thead><tr><th>Area</th><th>Check</th><th>Result</th><th>Detail</th><th>Evidence</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in checks)
+                        {
+                            <tr data-testid="aqr-check-row" data-check-id="@c.CheckId" data-result="@c.Result"><td>@c.Area</td><td>@c.Title</td><td><span class="aqr-state aqr-state-@c.Result.ToString().ToLowerInvariant()">@ResultLabel(c.Result)</span></td><td>@c.Detail</td><td class="aqr-mono aqr-muted">@string.Join(" · ", c.Evidence.Take(5))</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </details>
     };
 
-    private void ToggleFinding(string id)
+    private RenderFragment RenderFindings(IReadOnlyList<ApiReviewFinding> findings, ApiReviewFindingType[]? areas) => __builder =>
     {
-        if (!_expandedFindings.Remove(id))
-            _expandedFindings.Add(id);
-    }
-
-    // ── Connectivity row ──────────────────────────────────────────────────────
-
-    private RenderFragment ConnectivityRow(string label, ApiQualityEndpointResult? r) => __builder =>
-    {
-        if (r is null) return;
-        var isOk       = r.Reachable && r.StatusCode < 400;
-        var statusText = r.Reachable
-            ? (r.StatusCode < 400 ? "Reachable" : $"HTTP {r.StatusCode}")
-            : (r.Error is not null ? "Unreachable" : $"HTTP {r.StatusCode}");
-        <tr>
-            <td class="aqr-conn-label">@label</td>
-            <td class="@(isOk ? "aqr-conn-ok" : "aqr-conn-err")">@statusText</td>
-            <td class="@(r.IsHttps ? "aqr-conn-tls-ok" : "aqr-conn-tls-err")">
-                @(r.IsHttps ? "✓ HTTPS" : "✗ HTTP")
-            </td>
-            <td class="aqr-conn-muted">@r.ResponseTimeMs ms</td>
-            <td class="aqr-conn-muted">@(r.StatusCode > 0 ? r.StatusCode.ToString() : "—")</td>
-        </tr>
+        <h4 class="aqr-group-title">Findings (@findings.Count)</h4>
+        @if (findings.Count == 0)
+        {
+            <p class="aqr-empty" data-testid="aqr-no-findings">No findings@(areas is null ? "" : " in this area") on the completed targets. Blocked or not-tested targets are listed as such, never as passes.</p>
+        }
+        else
+        {
+            <div class="aqr-tablewrap">
+                <table class="aqr-table aqr-findings-table" data-testid="aqr-findings-table">
+                    <thead><tr><th>Severity</th><th>Type</th><th>Endpoint / operation</th><th>Check</th><th>Result</th><th>Finding</th><th>Evidence</th><th>Recommendation</th></tr></thead>
+                    <tbody>
+                        @foreach (var f in findings)
+                        {
+                            <tr data-testid="aqr-finding-row" data-finding-id="@f.Id">
+                                <td><span class="aqr-sev aqr-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span></td>
+                                <td>@f.Type@(f.Drift is { } d ? $" · {DriftLabel(d)}" : "")</td>
+                                <td class="aqr-mono">@f.Endpoint</td>
+                                <td>@f.Check</td>
+                                <td><span class="aqr-state aqr-state-@f.Result.ToString().ToLowerInvariant()">@ResultLabel(f.Result)</span></td>
+                                <td><strong>@f.Title</strong><br /><span class="aqr-muted">@f.Description</span></td>
+                                <td class="aqr-mono aqr-evidence">@string.Join(" · ", f.Evidence.Take(6))</td>
+                                <td>@f.Recommendation</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     };
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static string CategoryLabel(ApiQualityCategory c) => c switch
+    private static string StatusLabel(ApiReviewTargetStatus status) => status switch
     {
-        ApiQualityCategory.Connectivity => "Connectivity",
-        ApiQualityCategory.Performance  => "Performance",
-        ApiQualityCategory.Security     => "Security",
-        ApiQualityCategory.Rest         => "REST API",
-        ApiQualityCategory.GraphQL      => "GraphQL",
-        ApiQualityCategory.OpenApi      => "OpenAPI",
-        ApiQualityCategory.Readiness    => "Readiness",
-        _                               => c.ToString(),
+        ApiReviewTargetStatus.Completed => "Completed", ApiReviewTargetStatus.PartiallyCompleted => "Partially completed", ApiReviewTargetStatus.Blocked => "Blocked", _ => "Not tested",
     };
 
-    private static string ScoreClass(int score) =>
-        score >= 80 ? "score-good" : score >= 50 ? "score-warn" : "score-poor";
-
-    private static string QualityLabel(int score) =>
-        score >= 90 ? "Excellent" :
-        score >= 80 ? "Good" :
-        score >= 65 ? "Needs Attention" :
-        score >= 50 ? "At Risk" : "Critical";
-
-    private static string CatCardClass(ApiQualitySeverity? worst, bool assessed)
+    private static string ResultLabel(ApiReviewCheckResult result) => result switch
     {
-        if (!assessed) return "aqr-cat-unknown";
-        return worst switch
-        {
-            ApiQualitySeverity.Critical => "aqr-cat-critical",
-            ApiQualitySeverity.High     => "aqr-cat-high",
-            ApiQualitySeverity.Medium   => "aqr-cat-medium",
-            ApiQualitySeverity.Low      => "aqr-cat-low",
-            null                        => "aqr-cat-good",
-            _                           => "aqr-cat-low",
-        };
-    }
+        ApiReviewCheckResult.Pass => "Pass", ApiReviewCheckResult.Fail => "Fail", ApiReviewCheckResult.Warning => "Warning", ApiReviewCheckResult.ManualReview => "Manual review",
+        ApiReviewCheckResult.NotApplicable => "Not applicable", ApiReviewCheckResult.Blocked => "Blocked", _ => "Not tested",
+    };
 
-    private static string CatStatusLabel(ApiQualitySeverity? worst) =>
-        worst switch
-        {
-            ApiQualitySeverity.Critical => "Critical",
-            ApiQualitySeverity.High     => "High Risk",
-            ApiQualitySeverity.Medium   => "Warning",
-            ApiQualitySeverity.Low      => "Low Risk",
-            null                        => "Passed",
-            _                           => "Info",
-        };
+    private static string DriftLabel(ApiReviewDriftClassification d) => d switch
+    {
+        ApiReviewDriftClassification.Breaking => "Breaking", ApiReviewDriftClassification.PotentiallyBreaking => "Potentially breaking", ApiReviewDriftClassification.NonBreaking => "Non-breaking", _ => "Informational",
+    };
 }
