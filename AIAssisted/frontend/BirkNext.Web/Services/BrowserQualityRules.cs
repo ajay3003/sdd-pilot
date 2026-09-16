@@ -30,6 +30,26 @@ public static class BrowserQualityRules
         var findings = new List<BrowserQualityFinding>();
         var at = evidence.CapturedAt;
         var identity = page.Identity;
+        if (evidence.Accessibility is { } wcagEvidence)
+        {
+            foreach (var check in wcagEvidence.Checks.Where(c => c.Failed > 0 && c.CheckId is "text-contrast" or "label-in-name" or "a11y-image-name"))
+            {
+                var definition = WcagRegistry.All.First(d => d.SupportedChecks.Contains(check.CheckId));
+                findings.Add(new BrowserQualityFinding
+                {
+                    RuleId = check.CheckId, Wcag = definition.CriterionId, Level = definition.Level,
+                    Category = BrowserQualityCategory.Accessibility, Severity = FrontendQualitySeverity.High,
+                    Page = identity, Element = check.Selectors.FirstOrDefault(), Title = definition.Title,
+                    Observed = $"{check.Failed} failed element(s) in {check.Tested} tested elements.",
+                    Expected = check.CheckId == "text-contrast" ? "Text contrast at least 4.5:1, or 3:1 for large text."
+                        : check.CheckId == "label-in-name" ? "Accessible name contains the visible text label." : "Exposed images have an accessible name.",
+                    Explanation = "A deterministic native check detected a failure. Remaining criterion coverage still needs review.",
+                    Recommendation = "Inspect the structural selector, correct the failing property and collect a fresh snapshot.",
+                    Evidence = check.Selectors.Select(s => $"Selector: {s}").ToList(),
+                    Confidence = WcagConfidence.High, EvidenceSource = WcagEvidenceSource.DOM, ObservedAt = at,
+                });
+            }
+        }
 
         // ── Accessibility (rule results computed in the browser; guidance/severity fixed per rule id) ──
         if (evidence.Accessibility is { } a11y)

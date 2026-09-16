@@ -15,6 +15,12 @@ public enum BrowserQualityCategory { Accessibility, Performance, Runtime, Dom, N
 /// </summary>
 public sealed record BrowserQualityFinding
 {
+    public WcagLevel? Level { get; init; }
+    public string? Element { get; init; }
+    public string? Observed { get; init; }
+    public string? Expected { get; init; }
+    public WcagConfidence? Confidence { get; init; }
+    public WcagEvidenceSource? EvidenceSource { get; init; }
     [JsonPropertyName("ruleId")] public string RuleId { get; init; } = "";
     [JsonPropertyName("category")] public BrowserQualityCategory Category { get; init; }
     [JsonPropertyName("severity")] public FrontendQualitySeverity Severity { get; init; }
