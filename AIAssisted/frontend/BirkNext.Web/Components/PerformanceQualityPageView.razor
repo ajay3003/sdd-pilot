@@ -98,7 +98,7 @@
                                 <td>@f.Category <span class="pq-muted">· @PerformanceFormat.PhaseLabel(f.Phase)</span></td>
                                 <td><strong>@f.Title</strong><br /><span class="pq-explain">@f.Explanation</span></td>
                                 <td class="pq-mono">@f.ObservedValue</td>
-                                <td class="pq-mono">@f.Threshold@if (f.ThresholdSource is { } s) { <br /><em class="pq-muted">@PerformanceFormat.SourceLabel(s)</em> }</td>
+                                <td class="pq-mono">@f.Threshold @if (f.ThresholdSource is { } s) { <br /><em class="pq-muted">@PerformanceFormat.SourceLabel(s)</em> }</td>
                                 <td><span class="pq-source">@f.EvidenceSource</span> <span class="pq-muted">· @f.Confidence confidence</span><br /><span class="pq-mono pq-evidence">@string.Join(" · ", f.Evidence.Take(5))</span></td>
                                 <td>@f.Recommendation</td>
                             </tr>

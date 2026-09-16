@@ -364,7 +364,8 @@ public static class PerformanceQualityRules
     }
 
     private static IEnumerable<BrowserResourceEntry> AllResources(BrowserPerformanceSummary perf) =>
-        perf.LongestResources.Concat(perf.Timeline).Concat(perf.Categories.SelectMany(c => new[] { c.Largest, c.Slowest }).Where(r => r is not null)!);
+        new[] { perf.LargestResource, perf.SlowestResource }.Where(r => r is not null).Cast<BrowserResourceEntry>()
+            .Concat(perf.LongestResources).Concat(perf.Timeline).Concat(perf.Categories.SelectMany(c => new[] { c.Largest, c.Slowest }).Where(r => r is not null).Cast<BrowserResourceEntry>());
 
     private static IEnumerable<string> TopOf(BrowserPerformanceSummary perf, string kind)
     {
