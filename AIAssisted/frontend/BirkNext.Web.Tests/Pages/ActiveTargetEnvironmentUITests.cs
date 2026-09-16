@@ -100,6 +100,37 @@ public sealed class ActiveTargetEnvironmentUITests : BunitContext
     }
 
     [Fact]
+    public async Task RunWithActiveRemovedAfterLanding_ShowsReviewNotStartedBannerAndDoesNotRun()
+    {
+        await Register("dev");
+        var page = Render<FrontendQualityReview>();
+        page.FindAll("[data-testid=fqr-run-not-started]").Should().BeEmpty();
+
+        // Active target disappears between landing and clicking Run (e.g. deleted in another tab).
+        _settings.Settings.ActiveProfileId = null;
+        var run = page.FindAll("button").Single(b => b.TextContent.Contains("Run Frontend Quality Review"));
+        run.HasAttribute("disabled").Should().BeFalse("landing was rendered while the target was still active");
+        await run.ClickAsync(new());
+
+        page.WaitForAssertion(() =>
+        {
+            var banner = page.Find("[data-testid=fqr-run-not-started]");
+            banner.GetAttribute("role").Should().Be("alert");
+            banner.TextContent.Should().Contain("Review not started")
+                .And.Contain("No active Target Environment")
+                .And.Contain("Select a Target Environment and choose Set as Active.");
+            banner.QuerySelectorAll("a").Should().Contain(a => a.TextContent.Contains("Open Target Environments"));
+        });
+        _orchestrator.Invocations.Should().BeEmpty();
+        page.FindAll("button").Single(b => b.TextContent.Contains("Run Frontend Quality Review")).HasAttribute("disabled").Should().BeTrue();
+
+        // Transient: dismiss removes it; the landing configuration state still explains the missing target.
+        page.Find("[data-testid=fqr-run-not-started] button").Click();
+        page.FindAll("[data-testid=fqr-run-not-started]").Should().BeEmpty();
+        page.Markup.Should().Contain("No active Target Environment");
+    }
+
+    [Fact]
     public async Task RunReresolvesActiveAndKeepsSnapshotUntilCompletionThenNextRunUsesNewActive()
     {
         await Register("qa");

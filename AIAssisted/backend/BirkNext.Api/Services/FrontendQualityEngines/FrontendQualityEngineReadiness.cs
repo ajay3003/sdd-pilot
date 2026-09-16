@@ -16,7 +16,9 @@ public enum FrontendQualityEngineReadinessReason
     ContainerRuntimeUnavailable,
     EngineUnavailable,
     CheckTimedOut,
-    ProviderError
+    ProviderError,
+    /// <summary>Readiness was deliberately not probed because the engine is not active for the requesting review.</summary>
+    NotChecked
 }
 
 public interface IFrontendQualityEngineReadinessProvider

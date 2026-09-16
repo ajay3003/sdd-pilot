@@ -9,6 +9,8 @@ public enum FrontendQualityEngineUnavailableReason
     RuntimeStatusUnknown,
     NotApplicableToReview,
     AuthenticationModeUnsupported,
+    /// <summary>Engine is not active for this review (disabled or deselected in the saved configuration); readiness was not probed.</summary>
+    NotActiveForReview,
 }
 
 public sealed record FrontendQualityEngineStatus(

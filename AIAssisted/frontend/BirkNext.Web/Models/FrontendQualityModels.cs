@@ -116,6 +116,8 @@ public sealed class FrontendQualityReviewReport
     [JsonPropertyName("redirectOccurred")]   public bool                             RedirectOccurred   { get; init; }
     /// <summary>Resolved Target Environment access (method, authenticated context, DOM availability) the review executed under. Non-secret.</summary>
     [JsonPropertyName("targetAccess")]       public FrontendQualityTargetAccessContext? TargetAccess    { get; init; }
+    /// <summary>Engine activation (policy, enabled, selected) captured at review start; coverage and exports are bound to it, not to later settings.</summary>
+    [JsonPropertyName("activeEngines")]      public FrontendQualityActiveEngineSnapshot? ActiveEngines  { get; init; }
     [JsonPropertyName("assessedEngines")]    public List<string> AssessedEngines
     {
         get => EngineOutcomes.Count > 0 ? FrontendQualityEngineCompatibility.Assessed(EngineOutcomes) : _legacyAssessedEngines;

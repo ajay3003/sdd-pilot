@@ -20,6 +20,13 @@ public sealed class ReviewEngineSelectionDto
 {
     [JsonPropertyName("selected")]
     public Dictionary<FrontendQualityEngineIdDto, bool> Selected { get; set; } = new();
+
+    /// <summary>
+    /// Engines whose expensive Layer 3 readiness should be probed: the ACTIVE engines of this review. Null probes every engine
+    /// (legacy behaviour); an empty list probes none. Inactive engines are reported with policy/system layers only.
+    /// </summary>
+    [JsonPropertyName("readinessEngines")]
+    public List<FrontendQualityEngineIdDto>? ReadinessEngines { get; set; }
 }
 
 /// <summary>Four supported frontend quality engines (capability model, not execution outcomes).</summary>
@@ -41,6 +48,8 @@ public enum FrontendQualityEngineUnavailableReasonDto
     RuntimeStatusUnknown = 4,
     NotApplicableToReview = 5,
     AuthenticationModeUnsupported = 6,
+    /// <summary>The engine is not active for this review (disabled or deselected in the saved configuration); readiness was not probed.</summary>
+    NotActiveForReview = 7,
 }
 
 /// <summary>Layer 3 runtime readiness status for one engine.</summary>

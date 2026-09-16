@@ -565,7 +565,6 @@ public sealed class ReportExportService : IReportExportService
             _ => "No trustworthy required assessment",
         };
         var required = report.EngineOutcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Required).ToList();
-        var optional = report.EngineOutcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Optional).ToList();
 
         sb.Append("<section class=\"block\">\n<h2>Release disposition</h2>\n");
         sb.Append($"<p><strong>{Esc(disposition.ToString())}</strong> — {Esc(dispositionText)}</p>\n");
@@ -586,12 +585,30 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</dl>\n</section>\n");
         }
 
-        var requiredAssessed = required.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
-        sb.Append("<section class=\"block\">\n<h2>Automated coverage</h2>\n");
-        sb.Append($"<p><strong>{Esc(coverageText)}</strong></p><p><strong>Required assessed:</strong> {requiredAssessed} / {required.Count} &nbsp; <strong>Optional assessed:</strong> {optional.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)} / {optional.Count}</p>\n");
-        if (required.Count > 0 && requiredAssessed < required.Count)
+        var counts = report.Coverage is { } c && c.RequiredTotal + c.OptionalTotal + c.InactiveCount > 0 ? c : FrontendQualityCoverage.Evaluate(report.EngineOutcomes);
+        var requiredAssessed = counts.RequiredAssessed;
+        if (report.ActiveEngines is { } activeEngines)
         {
-            sb.Append($"<p>{requiredAssessed} of {required.Count} required engines completed.</p>\n<ul>\n");
+            // Activation is the snapshot captured when the review started, never the settings at export time.
+            sb.Append("<section class=\"block\">\n<h2>Active review engines</h2>\n");
+            sb.Append($"<p><strong>{activeEngines.ActiveCount} enabled</strong> (required {activeEngines.RequiredActiveCount}, optional {activeEngines.OptionalActiveCount}); {activeEngines.Inactive.Count} not active at review start ({activeEngines.CapturedAtUtc:u}).</p>\n");
+            sb.Append(Table(
+                ["Engine", "Policy", "Enabled at review start", "Selected", "Active"],
+                activeEngines.Engines.OrderBy(e => e.EngineId).Select(e => new[]
+                {
+                    Esc(e.DisplayName), Esc(e.Policy.ToString()), e.Enabled ? "Yes" : "No", e.Selected ? "Yes" : "No", e.Active ? "Yes" : "No"
+                })));
+            if (activeEngines.RequiredButDisabled.Count > 0)
+                sb.Append($"<p><strong>Configuration inconsistency:</strong> required engine(s) disabled — {Esc(string.Join(", ", activeEngines.RequiredButDisabled.Select(e => e.DisplayName)))}.</p>\n");
+            sb.Append("</section>\n");
+        }
+        sb.Append("<section class=\"block\">\n<h2>Automated coverage</h2>\n");
+        var optionalText = counts.OptionalTotal == 0 ? "0 / 0 (no optional engine enabled)" : $"{counts.OptionalAssessed} / {counts.OptionalTotal}";
+        var inactiveText = counts.InactiveCount > 0 ? $" &nbsp; {counts.InactiveCount} engine(s) not active — excluded from coverage" : "";
+        sb.Append($"<p><strong>{Esc(coverageText)}</strong></p><p><strong>Required assessed:</strong> {requiredAssessed} / {counts.RequiredTotal} &nbsp; <strong>Optional assessed:</strong> {Esc(optionalText)}{inactiveText}</p>\n");
+        if (counts.RequiredTotal > 0 && requiredAssessed < counts.RequiredTotal)
+        {
+            sb.Append($"<p>{requiredAssessed} of {counts.RequiredTotal} required engines completed.</p>\n<ul>\n");
             foreach (var o in required.Where(o => o.ExecutionState != FrontendQualityEngineExecutionState.Assessed).OrderBy(o => o.EngineId))
                 sb.Append($"<li>{Esc(o.DisplayName)}: {Esc(FrontendQualityEngineOutcomePresentation.StateLabel(o))} — {Esc(SanitizePassive(o.SanitizedFailureReason ?? FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason)))}</li>\n");
             sb.Append("</ul>\n");
@@ -600,7 +617,7 @@ public sealed class ReportExportService : IReportExportService
             ["Engine", "Policy", "Enabled", "Assessment", "Access", "Outcome", "Evidence / findings", "Duration", "Tool / browser", "Reason / required action"],
             report.EngineOutcomes.OrderBy(o => o.EngineId).Select(o => new[]
             {
-                Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Enabled" : "Disabled",
+                Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Yes" : "No",
                 Esc(FrontendQualityEngineOutcomePresentation.AssessmentLabel(o)),
                 Esc(o.AccessLabel ?? (o.AccessKind.HasValue ? FrontendQualityEngineOutcomePresentation.AccessKindLabel(o.AccessKind.Value) : "—")),
                 Esc($"{FrontendQualityEngineOutcomePresentation.StateLabel(o)} · {FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason)}"),

@@ -28,11 +28,21 @@
 
     @if (_report is null)
     {
+        @if (_runNotStartedReason is { } notStarted)
+        {
+            <div class="wsr-banner wsr-banner-error wsr-banner-standalone fqr-run-not-started" role="alert" data-testid="fqr-run-not-started">
+                <span aria-hidden="true">⚠</span>
+                <strong>Review not started</strong> — @notStarted
+                <a href="/admin/system-settings?section=target-environments" class="wsr-banner-action">Open Target Environments</a>
+                <button type="button" class="btn-secondary fqr-banner-dismiss" @onclick="() => _runNotStartedReason = null" aria-label="Dismiss">Dismiss</button>
+            </div>
+        }
+
         <ReviewLanding Title="Run a production-style frontend audit"
                        Description="Review performance, security, accessibility, standards, Blazor WASM behavior, and QA readiness for the active target environment. Assessment completeness depends on available engines and target configuration."
-                       PrimaryButtonText="@(_running ? "Analysing..." : "Run Frontend Quality Review")"
+                       PrimaryButtonText="@RunButtonText"
                        PrimaryRun="RunReview"
-                       PrimaryDisabled="@(_running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl)"
+                       PrimaryDisabled="@RunDisabled"
                        SecondaryActionText="Open Target Environments"
                        SecondaryActionHref="/admin/system-settings?section=target-environments"
                        TargetFields="BuildFrontendTargetFields()"
@@ -42,6 +52,11 @@
                        NotAssessedItems="FrontendNotAssessedItems"
                        Metadata="BuildFrontendMetadata()"
                        EstimatedDuration="Review duration depends on target size and enabled checks." />
+
+        @if (_activeEngines is { } landingEngines)
+        {
+            <FrontendQualityActiveEnginesPanel Snapshot="landingEngines" />
+        }
 
         @if (_access is { } landingAccess)
         {
@@ -102,12 +117,19 @@
             </section>
         }
 
+        @if (_engineStatusPending && _report is null)
+        {
+            <p class="wsr-scan-progress" aria-live="polite" data-testid="fqr-engine-status-pending">Checking @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")…</p>
+        }
+
         @if (_engineStatus != null && _report is null)
         {
+            var activeBackendIds = ActiveBackendEngineIds;
             <section class="fqr-engine-selection" aria-label="Quality engines">
                 <h2>Review Engines</h2>
+                <p class="fa-section-note">Capability and readiness are shown for the engines that are active in the saved configuration. Disabled engines are not probed.</p>
                 <div class="fqr-engine-grid">
-                    @foreach (var engine in _engineStatus.Engines.OrderBy(e => e.EngineId))
+                    @foreach (var engine in _engineStatus.Engines.Where(e => activeBackendIds.Contains(e.EngineId)).OrderBy(e => e.EngineId))
                     {
                         <div class="fqr-engine-card" data-engine-id="@engine.EngineId">
                             <div class="fqr-engine-header">
@@ -327,6 +349,10 @@
                 @if (cat.Assessed && cat.Score.HasValue)
                 {
                     <MetricCard Value="@cat.Score.Value.ToString()" Label="@CategoryLabel(cat.Category)" Sublabel="@QualityLabel(cat.Score.Value)" Variant="@ScoreVariant(cat.Score.Value)" />
+                }
+                else if (CategoryEnginesNotEnabled(report, cat.Category))
+                {
+                    <MetricCard Value="—" Label="@CategoryLabel(cat.Category)" Sublabel="Not enabled" Variant="neutral" />
                 }
                 else if (cat.Assessed)
                 {
@@ -590,6 +616,19 @@
     private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
 
     private FrontendQualityEngineStatusReportDto? _engineStatus;
+    /// <summary>Engines active for the next review, resolved from the saved configuration of the active Target Environment.</summary>
+    private FrontendQualityActiveEngineSnapshot? _activeEngines;
+    /// <summary>Layer 1–3 status is being fetched for the ACTIVE backend engines only; null when no backend engine is active.</summary>
+    private Task? _engineStatusTask;
+    private bool _engineStatusPending;
+    private IReadOnlyList<FrontendQualityEngineIdDto> ActiveBackendEngineIds =>
+        _activeEngines is null ? []
+        : FrontendQualityActiveEngines.BackendEngineIds.Where(pair => _activeEngines.IsActive(pair.Key)).Select(pair => pair.Value).ToList();
+    private string RunButtonText => _running ? "Analysing..."
+        : _engineStatusPending ? $"Checking {ActiveBackendEngineIds.Count} active engine{(ActiveBackendEngineIds.Count == 1 ? "" : "s")}…"
+        : "Run Frontend Quality Review";
+    private bool RunDisabled => _running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl
+        || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending;
     private static readonly ReviewLanding.AnalysisCard[] FrontendAnalysisCards =
     [
         new("PF", "Performance", "Passive asset analysis: measures bundle size, HTTP timing, compression, and caching heuristics."),
@@ -625,6 +664,8 @@
     private FrontendAnalysisContext? _context;
     private BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities? _caps;
     private FrontendQualityTargetAccessContext? _access;
+    /// <summary>Transient reason the last Run click did not start a review (active target missing at execution time). Cleared on the next Run or refresh.</summary>
+    private string? _runNotStartedReason;
     private AuthenticatedBrowserSession? _authSession;
     private bool _authPolling;
 
@@ -651,9 +692,40 @@
     {
         _context = await ContextFactory.GetActiveContextAsync();
         _report  = RuntimeReviews.QualityReview.Report;
+        ResolveActiveEngines();
 
         await ResolveAuthenticatedCapabilities();
-        await FetchEngineStatus();
+        // Expensive Layer 3 readiness is fetched for the ACTIVE backend engines only and never blocks the first render.
+        // With no active backend engine (e.g. only Static Security + Passive Performance) nothing is fetched at all.
+        StartEngineStatusFetch();
+    }
+
+    /// <summary>Saved configuration → active engine set. Never inferred from capability or readiness.</summary>
+    private void ResolveActiveEngines() =>
+        _activeEngines = _context is null || _context.ActiveTargetError is not null ? null : FrontendQualityActiveEngines.Resolve(_context);
+
+    private void StartEngineStatusFetch()
+    {
+        _engineStatus = null;
+        if (_context is null || _context.ActiveTargetError is not null || ActiveBackendEngineIds.Count == 0)
+        {
+            _engineStatusTask = null;
+            _engineStatusPending = false;
+            return;
+        }
+        _engineStatusPending = true;
+        _engineStatusTask = FetchEngineStatusAndRenderAsync();
+    }
+
+    private async Task FetchEngineStatusAndRenderAsync()
+    {
+        try { await FetchEngineStatus(); }
+        catch { _engineStatus = null; }
+        finally
+        {
+            _engineStatusPending = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task ResolveAuthenticatedCapabilities()
@@ -695,7 +767,9 @@
             Selected = _context.ReviewEngineSelection.ToSelectionMap()
                 .ToDictionary(
                     kvp => kvp.Key,
-                    kvp => kvp.Value)
+                    kvp => kvp.Value),
+            // Only the ACTIVE backend engines get the expensive Layer 3 readiness probe.
+            ReadinessEngines = ActiveBackendEngineIds.ToList(),
         };
 
         _engineStatus = await EngineStatusService.GetStatusAsync(authMode, selection);
@@ -751,16 +825,35 @@
         // Resolve again at execution time; UI selection never participates. Preserve
         // this page's engine choices only when the target identity is unchanged.
         var previousContext = _context;
+        _runNotStartedReason = null;
         _context = await ContextFactory.GetActiveContextAsync();
         if (_context.ActiveTargetError is not null || !_context.HasTargetUrl)
         {
+            // The run attempt itself is reported, not only the landing configuration state: the
+            // active target changed or disappeared between landing and clicking Run.
+            _runNotStartedReason = _context.ActiveTargetError is { Length: > 0 } error
+                ? $"{error} Select a Target Environment and choose Set as Active."
+                : "The active Target Environment has no Frontend URL. Save a valid Frontend URL before running the review.";
             _running = false;
             _access = null;
             _caps = null;
+            StateHasChanged();
             return;
         }
         if (previousContext?.ActiveProfile.Id == _context.ActiveProfile.Id)
             _context.ReviewEngineSelection = previousContext.ReviewEngineSelection;
+        // Active engines are captured from the SAVED configuration now; the orchestrator snapshots them for this run, so
+        // settings edited while the review runs only affect the next review. Zero active engines never starts a review.
+        ResolveActiveEngines();
+        if (_activeEngines is not { HasActiveEngines: true })
+        {
+            _runNotStartedReason = $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}";
+            _running = false;
+            StateHasChanged();
+            return;
+        }
+        if (_engineStatusTask is { } pendingStatus)
+            await pendingStatus; // Layer 1–3 status for the active backend engines feeds the execution snapshot.
         await ResolveAuthenticatedCapabilities();
         _secError    = null;
         _perfError   = null;
@@ -868,8 +961,11 @@
     private async Task RefreshContext()
     {
         if (_running) return;
+        _runNotStartedReason = null;
         _context = await ContextFactory.GetActiveContextAsync();
+        ResolveActiveEngines();
         await ResolveAuthenticatedCapabilities();
+        StartEngineStatusFetch();
     }
 
     private IReadOnlyList<ReviewLanding.TargetField> BuildFrontendTargetFields()
@@ -933,6 +1029,11 @@
             return new(ReviewLanding.ConfigurationStatus.Error, activeError,
                 "Select a Target Environment and choose “Set as Active”.", [],
                 "Open Target Environments", "/admin/system-settings?section=target-environments");
+
+        if (_activeEngines is { HasActiveEngines: false })
+            return new(ReviewLanding.ConfigurationStatus.Error, FrontendQualityActiveEngines.NoActiveEnginesMessage,
+                FrontendQualityActiveEngines.NoActiveEnginesAction, ["At least one enabled Frontend Quality Review engine"],
+                "Open Target Environment", "/admin/system-settings?section=target-environments");
 
         var missing = new List<string>();
         if (!_context.HasTargetUrl)
@@ -1077,6 +1178,26 @@
         }
     }
 
+    /// <summary>
+    /// A category whose contributing engines were all disabled/not selected at review start shows "Not enabled" rather than a
+    /// dash that reads like a failed assessment. Uses the review's own activation snapshot, never current settings.
+    /// </summary>
+    private static bool CategoryEnginesNotEnabled(FrontendQualityReviewReport report, FrontendQualityCategory category)
+    {
+        if (report.ActiveEngines is not { } active) return false;
+        FrontendQualityEngineId[] engines = category switch
+        {
+            FrontendQualityCategory.Security => [FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassiveSecurity],
+            FrontendQualityCategory.Standards => [FrontendQualityEngineId.StaticSecurity],
+            FrontendQualityCategory.Performance => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.Lighthouse],
+            FrontendQualityCategory.Readiness => [FrontendQualityEngineId.PassivePerformance],
+            FrontendQualityCategory.BlazorWasm => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.BrowserRuntime],
+            FrontendQualityCategory.Accessibility => [FrontendQualityEngineId.Accessibility],
+            _ => [],
+        };
+        return engines.Length > 0 && engines.All(id => !active.IsActive(id));
+    }
+
     private static string RecommendationPriority(FrontendQualitySeverity severity) => severity switch
     {
         FrontendQualitySeverity.Critical => "Critical",
@@ -1137,6 +1258,7 @@
         var selection = _context.ReviewEngineSelection.ToSelectionMap();
         selection[engineId] = selected;
         _context.ReviewEngineSelection = ReviewEngineSelection.FromSelectionMap(selection);
+        ResolveActiveEngines(); // selection is a per-review opt-out among ENABLED engines; it never enables a disabled one
     }
 
     private FrontendQualityEngineExecutionSnapshot CaptureExecutionSnapshot()
@@ -1159,11 +1281,11 @@
             }
         }
 
-        var selections = _context?.ReviewEngineSelection.ToSelectionMap() ?? new();
-        foreach (var kvp in selections)
-        {
-            snapshot.SelectedEngines[kvp.Key] = kvp.Value;
-        }
+        // Selection in the execution snapshot = the activation rule (saved Enabled toggle && per-review selection).
+        // A disabled engine is never selected for execution, whatever the checkbox state says.
+        var activation = _activeEngines ?? (_context is null ? null : FrontendQualityActiveEngines.Resolve(_context));
+        foreach (var (engineId, dto) in FrontendQualityActiveEngines.BackendEngineIds)
+            snapshot.SelectedEngines[dto] = activation?.IsActive(engineId) == true;
 
         return snapshot;
     }

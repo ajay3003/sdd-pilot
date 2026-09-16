@@ -1060,6 +1060,17 @@
                         <div class="fa-features-group-title">Blazor Runtime</div>
                         <FeatureRow Label="Blazor Architecture Review" Enabled="@feats.BlazorArchitectureReview" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.BlazorArchitectureReview = v)" />
                     </div>
+                    @{ var enginePolicy = (_isEditMode && _editProfile is not null ? _editProfile : profile).EngineRequirements; }
+                    <div class="fa-features-group" data-testid="fa-review-engines">
+                        <div class="fa-features-group-title">Frontend Quality Review engines</div>
+                        <p class="fa-features-note">Saved per Target Environment. Only enabled engines are preflighted, executed and counted in review coverage; Required/Optional is the release policy of each engine.</p>
+                        <FeatureRow Label="@($"Static Security ({enginePolicy.StaticSecurity})")"        Enabled="@feats.EnableSecurityEngine"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableSecurityEngine = v)" />
+                        <FeatureRow Label="@($"Passive Performance ({enginePolicy.PassivePerformance})")" Enabled="@feats.EnablePerformanceEngine"     IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePerformanceEngine = v)" />
+                        <FeatureRow Label="@($"Browser Runtime ({enginePolicy.BrowserRuntime})")"        Enabled="@feats.EnableBrowserRuntimeEngine"  IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableBrowserRuntimeEngine = v)" />
+                        <FeatureRow Label="@($"Accessibility ({enginePolicy.Accessibility})")"           Enabled="@feats.EnableAccessibilityEngine"   IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableAccessibilityEngine = v)" />
+                        <FeatureRow Label="@($"Lighthouse ({enginePolicy.Lighthouse})")"                 Enabled="@feats.EnableLighthouseEngine"      IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableLighthouseEngine = v)" />
+                        <FeatureRow Label="@($"Passive Security ({enginePolicy.PassiveSecurity})")"      Enabled="@feats.EnablePassiveSecurityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePassiveSecurityEngine = v)" />
+                    </div>
                     <div class="fa-features-group fa-features-group-future">
                         <div class="fa-features-group-title">Browser <span class="fa-future-badge">Not yet implemented</span></div>
                         <FeatureRow Label="Authenticated Browser Review"  Enabled="@feats.AuthenticatedBrowserReview"  IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.AuthenticatedBrowserReview = v)" />

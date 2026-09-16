@@ -51,7 +51,8 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     PreflightStatus PreflightStatus = PreflightStatus.Ready,
     FrontendQualityTargetAccessContext? AccessContext = null,
     IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision>? AccessDecisions = null,
-    TargetPreflightResult? Preflight = null)
+    TargetPreflightResult? Preflight = null,
+    FrontendQualityActiveEngineSnapshot? ActiveEngines = null)
 {
     public List<string> SkippedEngines { get; init; } = SkippedEngines ?? [];
     public Dictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason> OutcomeReasons { get; init; } = [];
@@ -116,6 +117,14 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         FrontendQualityEngineExecutionSnapshot? snapshot = null,
         CancellationToken cancellationToken = default)
     {
+        // ── Active engine set (saved configuration only) ───────────────────────────────────────────────
+        // Which engines participate is decided BEFORE any capability, readiness or network work: Enabled (profile
+        // toggle) && Selected (per-review opt-out). The snapshot is immutable for this run; later settings edits
+        // affect the next review only. Zero active engines never produces an "empty successful review".
+        var active = FrontendQualityActiveEngines.Resolve(context);
+        if (!active.HasActiveEngines)
+            return BuildNoActiveEnginesResult(targetUrl, context, active);
+
         // ── Target Environment access resolution (no request to the target) ─────────────────────────────
         // Which access each engine needs (public HTTP, authenticated HTTP, authenticated browser session) is matched
         // against what the selected Target Environment currently provides. Known blockers fail fast here with a
@@ -144,10 +153,10 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             }
         }
 
-        var result = new FrontendQualityReviewOrchestrationResult(AccessContext: access, AccessDecisions: decisions);
+        var result = new FrontendQualityReviewOrchestrationResult(AccessContext: access, AccessDecisions: decisions, ActiveEngines: active);
 
-        // Fail fast: every enabled/selected engine is blocked by the current access situation → no request, no timeout.
-        var candidates = EnabledEngineIds(context, snapshot).ToList();
+        // Fail fast: every ACTIVE engine is blocked by the current access situation → no request, no timeout.
+        var candidates = active.Active.Select(e => e.EngineId).ToList();
         if (candidates.Count > 0 && candidates.All(id => !decisions[id].IsReady))
         {
             var blocked = result with
@@ -208,7 +217,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         }
 
         // ── Static Security — public HTTP engine; runs whenever its access decision is Ready ──────────────
-        if (context.FeatureToggles.EnableSecurityEngine && decisions[FrontendQualityEngineId.StaticSecurity].IsReady)
+        if (active.IsActive(FrontendQualityEngineId.StaticSecurity) && decisions[FrontendQualityEngineId.StaticSecurity].IsReady)
         {
             try
             {
@@ -231,7 +240,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         }
 
         // ── Passive Performance — public HTTP engine; runs whenever its access decision is Ready ───────────
-        if (context.FeatureToggles.EnablePerformanceEngine && decisions[FrontendQualityEngineId.PassivePerformance].IsReady)
+        if (active.IsActive(FrontendQualityEngineId.PassivePerformance) && decisions[FrontendQualityEngineId.PassivePerformance].IsReady)
         {
             try
             {
@@ -252,7 +261,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         }
 
         // ── Browser Runtime scanner — uses snapshot eligibility + Layer 3 readiness ─────────────
-        var browserRuntimeEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.BrowserRuntime) && _runtime != null
+        var browserRuntimeEligible = active.IsActive(FrontendQualityEngineId.BrowserRuntime)
+            && IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.BrowserRuntime) && _runtime != null
             && decisions[FrontendQualityEngineId.BrowserRuntime].IsReady;
         if (browserRuntimeEligible)
         {
@@ -312,7 +322,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             }
         }
 
-        var accessibilityEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Accessibility) && _accessibility is not null
+        var accessibilityEligible = active.IsActive(FrontendQualityEngineId.Accessibility)
+            && IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Accessibility) && _accessibility is not null
             && decisions[FrontendQualityEngineId.Accessibility].IsReady;
         var accessibilityShortCircuited = result.OutcomeReasons.ContainsKey(FrontendQualityEngineId.Accessibility);
         if (accessibilityEligible && !accessibilityShortCircuited)
@@ -354,7 +365,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Accessibility"] };
         }
 
-        var lighthouseEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Lighthouse) && _lighthouse is not null
+        var lighthouseEligible = active.IsActive(FrontendQualityEngineId.Lighthouse)
+            && IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Lighthouse) && _lighthouse is not null
             && decisions[FrontendQualityEngineId.Lighthouse].IsReady;
         if (lighthouseEligible)
         {
@@ -382,7 +394,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Lighthouse"] };
         }
 
-        var passiveSecurityEligible = IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.PassiveSecurity) && _passiveSecurity is not null
+        var passiveSecurityEligible = active.IsActive(FrontendQualityEngineId.PassiveSecurity)
+            && IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.PassiveSecurity) && _passiveSecurity is not null
             && decisions[FrontendQualityEngineId.PassiveSecurity].IsReady;
         if (passiveSecurityEligible)
         {
@@ -437,7 +450,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
                 result.PreflightStatus,
                 result.PreflightBlockReason,
                 context.ReleasePolicy,
-                access)
+                access,
+                active)
         };
     }
 
@@ -448,15 +462,41 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         catch { return FrontendQualityTargetAccess.FromContext(context); }
     }
 
-    /// <summary>Engines the user has enabled/selected for this run, i.e. the ones whose access actually matters.</summary>
-    private static IEnumerable<FrontendQualityEngineId> EnabledEngineIds(FrontendAnalysisContext context, FrontendQualityEngineExecutionSnapshot snapshot)
+    /// <summary>
+    /// No engine is active in the saved configuration: nothing is preflighted or executed, and the result is an explicit
+    /// configuration blocker (never "Completed / 0 findings").
+    /// </summary>
+    private static FrontendQualityReviewOrchestrationResult BuildNoActiveEnginesResult(
+        string targetUrl,
+        FrontendAnalysisContext context,
+        FrontendQualityActiveEngineSnapshot active)
     {
-        if (context.FeatureToggles.EnableSecurityEngine) yield return FrontendQualityEngineId.StaticSecurity;
-        if (context.FeatureToggles.EnablePerformanceEngine) yield return FrontendQualityEngineId.PassivePerformance;
-        if (IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.BrowserRuntime)) yield return FrontendQualityEngineId.BrowserRuntime;
-        if (IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Accessibility)) yield return FrontendQualityEngineId.Accessibility;
-        if (IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.Lighthouse)) yield return FrontendQualityEngineId.Lighthouse;
-        if (IsEngineEligibleToExecute(snapshot, FrontendQualityEngineIdDto.PassiveSecurity)) yield return FrontendQualityEngineId.PassiveSecurity;
+        var message = $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}";
+        var result = new FrontendQualityReviewOrchestrationResult(
+            SkippedEngines: ["Security", "Performance", "BrowserRuntime", "Accessibility", "Lighthouse", "Passive Security"],
+            PreflightBlocked: true,
+            PreflightBlockReason: message,
+            PreflightStatus: PreflightStatus.Ready,
+            AccessContext: FrontendQualityTargetAccess.FromContext(context),
+            ActiveEngines: active);
+        var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll(
+            targetUrl, context, result, true, true, true, true, false, CaptureDefaultSnapshot(context), result.OutcomeReasons);
+        return result with
+        {
+            QualityReport = new FrontendQualityReviewReport
+            {
+                TargetUrl = targetUrl,
+                GeneratedAt = DateTime.UtcNow,
+                EngineOutcomes = outcomes,
+                Coverage = FrontendQualityCoverage.Evaluate(outcomes),
+                ReleaseDisposition = FrontendQualityReleaseDisposition.Blocked,
+                PreflightStatus = PreflightStatus.Ready,
+                PreflightMessage = message,
+                ErrorMessage = message,
+                TargetAccess = result.AccessContext,
+                ActiveEngines = active,
+            },
+        };
     }
 
     private static IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision> BlockAuthenticatedBrowserEngines(
@@ -502,6 +542,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             PreflightStatus = result.PreflightStatus,
             PreflightMessage = result.PreflightBlockReason,
             TargetAccess = result.AccessContext,
+            ActiveEngines = result.ActiveEngines,
         };
     }
 
@@ -550,7 +591,8 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         PreflightStatus preflightStatus,
         string? preflightMessage,
         FrontendQualityReleasePolicySettings releasePolicy,
-        FrontendQualityTargetAccessContext? access = null)
+        FrontendQualityTargetAccessContext? access = null,
+        FrontendQualityActiveEngineSnapshot? activeEngines = null)
     {
         var coverage = FrontendQualityCoverage.Evaluate(outcomes);
         var issues = FrontendQualityLogicalIssueGrouper.Group(report.Findings);
@@ -570,6 +612,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         Coverage = coverage, ReleaseDisposition = disposition, EngineOutcomes = outcomes,
         PreflightStatus = preflightStatus, PreflightMessage = preflightMessage,
         RedirectOccurred = report.RedirectOccurred, TargetAccess = access ?? report.TargetAccess,
+        ActiveEngines = activeEngines ?? report.ActiveEngines, TargetEnvironment = report.TargetEnvironment,
         AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
         PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport
         };
@@ -597,6 +640,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             PreflightStatus = status,
             PreflightMessage = result.PreflightBlockReason,
             TargetAccess = result.AccessContext,
+            ActiveEngines = result.ActiveEngines,
         };
     }
 
@@ -758,12 +802,11 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             CapturedAtUtc = DateTime.UtcNow,
         };
 
-        // For default snapshot (no explicit UI selection), use feature toggles
-        // ReviewEngineSelection is only used when explicitly captured from the UI
-        snapshot.SelectedEngines[FrontendQualityEngineIdDto.BrowserRuntime] = context.FeatureToggles.EnableBrowserRuntimeEngine;
-        snapshot.SelectedEngines[FrontendQualityEngineIdDto.Accessibility] = context.FeatureToggles.EnableAccessibilityEngine;
-        snapshot.SelectedEngines[FrontendQualityEngineIdDto.Lighthouse] = context.FeatureToggles.EnableLighthouseEngine;
-        snapshot.SelectedEngines[FrontendQualityEngineIdDto.PassiveSecurity] = context.FeatureToggles.EnablePassiveSecurityEngine;
+        // Default snapshot (no UI-captured snapshot): selection = saved toggle (Enabled) && per-review selection, i.e. the
+        // same activation rule as FrontendQualityActiveEngines. Selection alone never activates a disabled engine.
+        var activation = FrontendQualityActiveEngines.Resolve(context);
+        foreach (var (engineId, dto) in FrontendQualityActiveEngines.BackendEngineIds)
+            snapshot.SelectedEngines[dto] = activation.IsActive(engineId);
 
         // Set defaults for layer 1 & 2 based on feature toggles
         snapshot.Layer1Allowed[FrontendQualityEngineIdDto.BrowserRuntime] = true;

@@ -12,7 +12,14 @@
 <section class="fqr-section" aria-label="Automated coverage and engine outcomes">
     <SectionHeader Title="Automated coverage" />
     <p><strong data-testid="fqr-coverage-label">@CoverageLabel</strong></p>
-    <p><strong>Required assessed:</strong> <span data-testid="fqr-required-assessed">@RequiredAssessed / @RequiredTotal</span> &nbsp; <strong>Optional assessed:</strong> @OptionalAssessed / @OptionalTotal</p>
+    <p>
+        <strong>Required assessed:</strong> <span data-testid="fqr-required-assessed">@RequiredAssessed / @RequiredTotal</span> &nbsp;
+        <strong>Optional assessed:</strong> <span data-testid="fqr-optional-assessed">@(OptionalTotal == 0 ? "0 / 0 (no optional engine enabled)" : $"{OptionalAssessed} / {OptionalTotal}")</span>
+        @if (InactiveCount > 0) { <span class="fqr-muted" data-testid="fqr-inactive-count"> &nbsp; @InactiveCount @(InactiveCount == 1 ? "engine" : "engines") not active (disabled or not selected) — excluded from coverage</span> }
+    </p>
+    <p class="fqr-engine-filter">
+        <label><input type="checkbox" checked="@_showInactive" @onchange="@((ChangeEventArgs e) => _showInactive = (bool)e.Value!)" data-testid="fqr-show-inactive" /> Show disabled / not selected engines</label>
+    </p>
     @if (RequiredTotal > 0 && RequiredAssessed < RequiredTotal)
     {
         <div class="fqr-coverage-summary" data-testid="fqr-coverage-summary">
@@ -29,12 +36,12 @@
         <table class="fqr-findings-table fqr-engine-matrix">
             <thead><tr><th>Engine</th><th>Policy</th><th>Enabled</th><th>Assessment</th><th>Access</th><th>Outcome</th><th>Evidence / findings</th><th>Duration</th><th>Tool / browser</th><th>Reason / required action</th></tr></thead>
             <tbody>
-                @foreach (var outcome in Report.EngineOutcomes.OrderBy(item => item.EngineId))
+                @foreach (var outcome in Report.EngineOutcomes.Where(item => _showInactive || !FrontendQualityCoverage.IsInactive(item)).OrderBy(item => item.EngineId))
                 {
-                    <tr data-engine-id="@outcome.EngineId" data-engine-state="@FrontendQualityEngineOutcomePresentation.StateClass(outcome)">
+                    <tr data-engine-id="@outcome.EngineId" data-engine-state="@FrontendQualityEngineOutcomePresentation.StateClass(outcome)" data-engine-active="@((!FrontendQualityCoverage.IsInactive(outcome)).ToString().ToLowerInvariant())">
                         <td><strong>@outcome.DisplayName</strong></td>
                         <td>@outcome.Requirement</td>
-                        <td>@(outcome.Enabled ? "Enabled" : "Disabled")</td>
+                        <td data-testid="fqr-enabled">@(outcome.Enabled ? "Yes" : "No")</td>
                         <td data-testid="fqr-assessment">@FrontendQualityEngineOutcomePresentation.AssessmentLabel(outcome)</td>
                         <td data-testid="fqr-access">@(outcome.AccessLabel ?? (outcome.AccessKind.HasValue ? FrontendQualityEngineOutcomePresentation.AccessKindLabel(outcome.AccessKind.Value) : "—"))</td>
                         <td>
@@ -146,13 +153,20 @@
 
 @code {
     [Parameter, EditorRequired] public FrontendQualityReviewReport Report { get; set; } = default!;
-    private int RequiredTotal => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required);
-    private int RequiredAssessed => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Required && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+    /// <summary>Disabled / not-selected engines are hidden by default; they were not part of this review and are not missed work.</summary>
+    private bool _showInactive;
+    private FrontendQualityCoverage CoverageCounts =>
+        Report.Coverage is { } coverage && coverage.RequiredTotal + coverage.OptionalTotal + coverage.InactiveCount > 0
+            ? coverage
+            : FrontendQualityCoverage.Evaluate(Report.EngineOutcomes);
+    private int RequiredTotal => CoverageCounts.RequiredTotal;
+    private int RequiredAssessed => CoverageCounts.RequiredAssessed;
     private IEnumerable<FrontendQualityEngineOutcome> RequiredNotAssessed => Report.EngineOutcomes
         .Where(o => o.Requirement == FrontendQualityEngineRequirement.Required && o.ExecutionState != FrontendQualityEngineExecutionState.Assessed)
         .OrderBy(o => o.EngineId);
-    private int OptionalTotal => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Optional);
-    private int OptionalAssessed => Report.EngineOutcomes.Count(o => o.Requirement == FrontendQualityEngineRequirement.Optional && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+    private int OptionalTotal => CoverageCounts.OptionalTotal;
+    private int OptionalAssessed => CoverageCounts.OptionalAssessed;
+    private int InactiveCount => CoverageCounts.InactiveCount;
     private int CriticalHighCount => Report.LogicalIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High);
     private string DispositionLabel => Report.ReleaseDisposition?.ToString() ?? "ReviewRequired";
     private string DispositionText => Report.ReleaseDisposition switch {

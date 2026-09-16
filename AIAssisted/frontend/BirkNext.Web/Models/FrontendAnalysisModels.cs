@@ -387,11 +387,16 @@ public sealed class FrontendAnalysisDiagnostics
 /// Selected tracks user choice for this review; enabled tracks System Settings.
 /// Selected=false + Available=true is valid (engine can run, user didn't select it).
 /// </summary>
+/// <summary>
+/// Per-review opt-out for the optional backend engines. Selection never activates an engine on its own: an engine is active only
+/// when its saved feature toggle is enabled AND it is selected (see <see cref="FrontendQualityActiveEngines"/>). Defaults are
+/// "selected", so enabling an engine in the Target Environment makes it active without a second step.
+/// </summary>
 public sealed class ReviewEngineSelection
 {
     [JsonPropertyName("browserRuntimeSelected")]  public bool BrowserRuntimeSelected  { get; set; } = true;
-    [JsonPropertyName("accessibilitySelected")]   public bool AccessibilitySelected   { get; set; } = false;
-    [JsonPropertyName("lighthouseSelected")]      public bool LighthouseSelected      { get; set; } = false;
+    [JsonPropertyName("accessibilitySelected")]   public bool AccessibilitySelected   { get; set; } = true;
+    [JsonPropertyName("lighthouseSelected")]      public bool LighthouseSelected      { get; set; } = true;
     [JsonPropertyName("passiveSecuritySelected")] public bool PassiveSecuritySelected { get; set; } = true;
 
     public Dictionary<FrontendQualityEngineIdDto, bool> ToSelectionMap() => new()

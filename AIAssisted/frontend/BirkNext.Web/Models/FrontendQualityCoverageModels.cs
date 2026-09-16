@@ -197,10 +197,20 @@ public sealed class FrontendQualityCoverage
     [JsonPropertyName("requiredCoverageState")]
     public FrontendQualityRequiredCoverageState RequiredCoverageState { get; init; }
 
+    /// <summary>Required engines by policy. A required engine that is disabled stays in the denominator: it is a configuration inconsistency that keeps required coverage incomplete, never a silently excluded engine.</summary>
+    [JsonPropertyName("requiredTotal")] public int RequiredTotal { get; init; }
+    [JsonPropertyName("requiredAssessed")] public int RequiredAssessed { get; init; }
+    /// <summary>Optional engines that were ACTIVE for this review (enabled and selected). Disabled or not-selected optional engines are not missed assessments and are excluded.</summary>
+    [JsonPropertyName("optionalTotal")] public int OptionalTotal { get; init; }
+    [JsonPropertyName("optionalAssessed")] public int OptionalAssessed { get; init; }
+    /// <summary>Engines excluded from the denominators because they were disabled or not selected for this review.</summary>
+    [JsonPropertyName("inactiveCount")] public int InactiveCount { get; init; }
+
     public static FrontendQualityCoverage Evaluate(IReadOnlyCollection<FrontendQualityEngineOutcome> outcomes)
     {
         var required = outcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Required).ToList();
         var assessed = required.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+        var optionalActive = outcomes.Where(o => o.Requirement == FrontendQualityEngineRequirement.Optional && !IsInactive(o)).ToList();
         return new FrontendQualityCoverage
         {
             RequiredCoverageState = required.Count > 0 && assessed == required.Count
@@ -208,8 +218,19 @@ public sealed class FrontendQualityCoverage
                 : assessed > 0
                     ? FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed
                     : FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment,
+            RequiredTotal = required.Count,
+            RequiredAssessed = assessed,
+            OptionalTotal = optionalActive.Count,
+            OptionalAssessed = optionalActive.Count(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed),
+            InactiveCount = outcomes.Count(IsInactive),
         };
     }
+
+    /// <summary>An engine that was not part of this review: disabled in the saved configuration or deselected for this run.</summary>
+    public static bool IsInactive(FrontendQualityEngineOutcome outcome) =>
+        !outcome.Enabled ||
+        outcome.ExecutionState == FrontendQualityEngineExecutionState.Disabled ||
+        outcome.OutcomeReason is FrontendQualityEngineOutcomeReason.NotSelected or FrontendQualityEngineOutcomeReason.DisabledInSystemSettings;
 
     public AssessmentCompleteness ToLegacyCompleteness() => RequiredCoverageState switch
     {

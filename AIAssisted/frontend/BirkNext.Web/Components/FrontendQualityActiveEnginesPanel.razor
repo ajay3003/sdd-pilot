@@ -1,0 +1,47 @@
+@using BirkNext.Web.Models
+
+@* Compact summary of the engines that are ACTIVE for this review, derived from the saved Target Environment configuration
+   (Enabled toggle && per-review selection). Capability and readiness are shown elsewhere; this panel only answers
+   "which engines participate". *@
+<section class="fqr-active-engines fqr-active-engines-@(Snapshot.HasActiveEngines ? "ready" : "blocked")" aria-label="Active review engines" data-testid="fqr-active-engines">
+    <div class="fqr-active-engines-head">
+        <h2>Active review engines</h2>
+        <span class="fqr-active-engines-count" data-testid="fqr-active-count">@Snapshot.ActiveCount enabled</span>
+        <span class="fqr-muted" data-testid="fqr-active-breakdown">Required @Snapshot.RequiredActiveCount · Optional @Snapshot.OptionalActiveCount</span>
+    </div>
+    @if (Snapshot.HasActiveEngines)
+    {
+        <ul class="fqr-active-engines-list">
+            @foreach (var engine in Snapshot.Active)
+            {
+                <li data-engine-id="@engine.EngineId" data-testid="fqr-active-engine"><span>@engine.DisplayName</span><span class="fqr-policy fqr-policy-@engine.Policy.ToString().ToLowerInvariant()">@engine.Policy</span></li>
+            }
+        </ul>
+    }
+    else
+    {
+        <p class="fqr-active-engines-none" role="alert" data-testid="fqr-active-none">
+            <strong>@FrontendQualityActiveEngines.NoActiveEnginesMessage</strong> @FrontendQualityActiveEngines.NoActiveEnginesAction
+            <a href="@ConfigurationHref">Open Target Environment</a>
+        </p>
+    }
+    @if (Snapshot.Inactive.Count > 0)
+    {
+        <p class="fqr-active-engines-inactive" data-testid="fqr-inactive-engines">
+            <strong>@(Snapshot.Inactive.Count == 1 ? "1 engine not active:" : $"{Snapshot.Inactive.Count} engines not active:")</strong>
+            @string.Join(", ", Snapshot.Inactive.Select(e => $"{e.DisplayName} ({(e.Enabled ? "not selected" : "disabled")})"))
+        </p>
+    }
+    @if (Snapshot.RequiredButDisabled.Count > 0)
+    {
+        <p class="fqr-active-engines-warning" role="status" data-testid="fqr-required-disabled">
+            <strong>Configuration inconsistency:</strong> required engine(s) disabled — @string.Join(", ", Snapshot.RequiredButDisabled.Select(e => e.DisplayName)).
+            Required coverage cannot be completed until they are enabled or made optional.
+        </p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityActiveEngineSnapshot Snapshot { get; set; } = new();
+    [Parameter] public string ConfigurationHref { get; set; } = "/admin/system-settings?section=target-environments";
+}

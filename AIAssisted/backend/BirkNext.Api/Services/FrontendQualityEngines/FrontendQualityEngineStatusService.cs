@@ -34,7 +34,10 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
     public async Task<FrontendQualityEngineStatusReport> GetStatusAsync(FrontendQualityEngineStatusQuery? query = null, CancellationToken ct = default)
     {
         query ??= new();
-        var readinessResults = await _readinessAggregator.CheckAllAsync(ct);
+        // Expensive Layer 3 probes run only for the engines the review declares active. Legacy callers (no list) keep probing all.
+        var readinessResults = query.Selection?.ReadinessEngines is { } activeEngines
+            ? await _readinessAggregator.CheckAsync(activeEngines, ct)
+            : await _readinessAggregator.CheckAllAsync(ct);
 
         var statuses = AllEngines.Select(engineId => ComputeEngineStatus(
             engineId,
@@ -84,7 +87,9 @@ public sealed class FrontendQualityEngineStatusService : IFrontendQualityEngineS
 
         if (!layer3Available)
         {
-            if (readiness.Reason is FrontendQualityEngineReadinessReason.CheckTimedOut or
+            if (readiness.Reason == FrontendQualityEngineReadinessReason.NotChecked)
+                reasons.Add(FrontendQualityEngineUnavailableReason.NotActiveForReview);
+            else if (readiness.Reason is FrontendQualityEngineReadinessReason.CheckTimedOut or
                 FrontendQualityEngineReadinessReason.ProviderError)
                 reasons.Add(FrontendQualityEngineUnavailableReason.RuntimeStatusUnknown);
             else

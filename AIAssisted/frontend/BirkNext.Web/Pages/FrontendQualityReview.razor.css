@@ -367,6 +367,30 @@
 ::deep .fqr-outcome-reason { display: block; margin-top: 0.2rem; font-size: 0.78rem; color: var(--clr-text-subtle); }
 ::deep .fqr-required-action { display: block; margin-top: 0.2rem; font-size: 0.85rem; }
 
+/* ── Active review engines summary (child component → ::deep) ── */
+::deep .fqr-active-engines {
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid var(--clr-success, #2e7d32);
+    background: var(--clr-surface);
+    border-radius: var(--radius-md);
+    padding: 0.85rem 1rem;
+    margin-top: 1rem;
+}
+
+::deep .fqr-active-engines-blocked { border-left-color: var(--clr-danger, #c62828); }
+::deep .fqr-active-engines-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.75rem; }
+::deep .fqr-active-engines-head h2 { margin: 0; font-size: 1rem; }
+::deep .fqr-active-engines-count { font-weight: 600; }
+::deep .fqr-active-engines-list { list-style: none; margin: 0.5rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+::deep .fqr-active-engines-list li { display: inline-flex; gap: 0.4rem; align-items: center; font-size: 0.9rem; }
+::deep .fqr-policy { font-size: 0.75rem; padding: 0.05rem 0.45rem; border-radius: 999px; border: 1px solid var(--clr-border); color: var(--clr-text-subtle); }
+::deep .fqr-policy-required { border-color: var(--clr-warning, #b26a00); color: var(--clr-warning, #b26a00); }
+::deep .fqr-active-engines-inactive,
+::deep .fqr-active-engines-none,
+::deep .fqr-active-engines-warning { margin: 0.6rem 0 0; font-size: 0.85rem; color: var(--clr-text-subtle); }
+::deep .fqr-active-engines-warning { color: var(--clr-danger, #c62828); }
+::deep .fqr-engine-filter { font-size: 0.85rem; margin: 0.25rem 0 0.5rem; }
+
 .fqr-technical-grid {
     border-top: 1px solid var(--clr-border);
     display: grid;

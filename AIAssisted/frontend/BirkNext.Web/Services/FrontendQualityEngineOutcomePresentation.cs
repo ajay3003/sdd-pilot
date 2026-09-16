@@ -151,7 +151,10 @@ public static class FrontendQualityEngineOutcomePresentation
 
     /// <summary>"Assessed" only when the engine actually ran against the target and produced a result; everything else is "Not assessed".</summary>
     public static string AssessmentLabel(FrontendQualityEngineOutcome outcome) =>
-        outcome.ExecutionState == FrontendQualityEngineExecutionState.Assessed ? "Assessed" : "Not assessed";
+        outcome.ExecutionState == FrontendQualityEngineExecutionState.Assessed ? "Assessed"
+        : outcome.OutcomeReason == FrontendQualityEngineOutcomeReason.NotSelected ? "Not selected"
+        : !outcome.Enabled || outcome.ExecutionState == FrontendQualityEngineExecutionState.Disabled ? "Disabled"
+        : "Not assessed";
 
     /// <summary>The engine cannot work with the selected access mode/method (as opposed to a prerequisite that is merely missing).</summary>
     public static bool IsUnsupported(FrontendQualityEngineOutcomeReason reason) => reason is
