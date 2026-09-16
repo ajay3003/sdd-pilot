@@ -43,7 +43,7 @@ public sealed class PerformanceQualityRulesTests
 
     private static PageAnalysis Page(BrowserPageEvidence? evidence = null, params ObservedNetworkEndpoint[] endpoints) => new()
     {
-        PageOrigin = Origin, PagePath = "/children/search", DisplayName = "Children Search", FirstObservedAt = T0, LastObservedAt = T0.AddSeconds(5), BrowserEvidence = evidence, Endpoints = endpoints.ToList(),
+        PageOrigin = Origin, PagePath = evidence?.PagePath ?? "/children/search", DisplayName = evidence is null || evidence.PagePath == "/children/search" ? "Children Search" : null, FirstObservedAt = T0, LastObservedAt = T0.AddSeconds(5), BrowserEvidence = evidence, Endpoints = endpoints.ToList(),
     };
 
     private static ObservedNetworkEndpoint Rest(string path, params (double Ms, int Status, int Sec)[] samples) => new()

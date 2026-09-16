@@ -31,7 +31,7 @@ public sealed class FrontendQualityCoverageContractTests
         values.Should().OnlyHaveUniqueItems();
         values.Select(v => v.ToString()).Should().Equal(
             "StaticSecurity", "PassivePerformance", "BrowserRuntime",
-            "Accessibility", "Lighthouse", "PassiveSecurity", "BrowserQuality");
+            "Accessibility", "Lighthouse", "PassiveSecurity", "BrowserQuality", "PerformanceQuality");
 
         var outcome = Outcome(FrontendQualityEngineId.BrowserRuntime,
             FrontendQualityEngineExecutionState.Assessed) with { DisplayName = "Renamed browser presentation" };

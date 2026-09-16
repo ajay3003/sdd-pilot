@@ -306,7 +306,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
                 .Concat(report.Coverage.Reasons).Concat(report.Limitations).Distinct().ToList();
         return Base(FrontendQualityEngineId.PerformanceQuality, "BirkNext Performance Quality", enabled,
             policy.GetRequirement(FrontendQualityEngineId.PerformanceQuality), state, targetUrl, null, report?.BrowserName, null,
-            findings: report?.Findings.Count(), evidence: report?.PagesWithEvidence, failure: failure,
+            findings: report?.Assessed == true ? report.Findings.Count() : null, evidence: report?.Assessed == true ? report.PagesWithEvidence : null, failure: failure,
             completed: report?.EvaluatedAt.UtcDateTime, limitations: limitations, toolName: PerformanceQualitySources.EngineName,
             strength: FrontendQualityEvidenceStrength.DirectObservation,
             manual: report is null ? null : ["Field measurements from one browser session are indicative; confirm regressions with repeated observations before release decisions."],

@@ -356,15 +356,18 @@ public static class PerformanceFormat
         var v = value.Value;
         return unit switch
         {
-            "ms" => v >= 1000 ? $"{v / 1000:0.0} s" : $"{v:0} ms",
+            "ms" => v >= 1000 ? Inv(v / 1000, "0.0") + " s" : Inv(v, "0") + " ms",
             "bytes" => Bytes((long)v),
-            "score" => v.ToString("0.###"),
-            "count" => v.ToString("0"),
-            _ => v.ToString("0.##"),
+            "score" => Inv(v, "0.###"),
+            "count" => Inv(v, "0"),
+            _ => Inv(v, "0.##"),
         };
     }
 
-    public static string Bytes(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.0} MB" : bytes >= 1024 ? $"{bytes / 1024d:0} KB" : $"{bytes} B";
+    public static string Bytes(long bytes) => bytes >= 1024 * 1024 ? Inv(bytes / 1024d / 1024d, "0.0") + " MB" : bytes >= 1024 ? Inv(bytes / 1024d, "0") + " KB" : Inv(bytes, "0") + " B";
+
+    /// <summary>All numbers are rendered with the invariant culture: the Blazor WASM app inherits the browser culture (e.g. nb-NO "2,9"), and metric strings must be stable in UI, exports and tests.</summary>
+    public static string Inv(double value, string format) => value.ToString(format, System.Globalization.CultureInfo.InvariantCulture);
 
     public static string SourceLabel(PerformanceThresholdSource source) => source switch
     {

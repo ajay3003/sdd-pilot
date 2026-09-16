@@ -181,7 +181,7 @@
                             <tr data-testid="pq-timeline-row">
                                 <td class="pq-mono">@PerformanceFormat.Value(t.StartMs, "ms")</td>
                                 <td class="pq-mono">
-                                    <span class="pq-bar" style="margin-left:@(t.StartMs / max * 100)%; width:@(Math.Max(0.5, (t.DurationMs ?? 0) / max * 100))%"></span>
+                                    <span class="pq-bar" style="margin-left:@(PerformanceFormat.Inv(t.StartMs / max * 100, "0.##"))%; width:@(PerformanceFormat.Inv(Math.Max(0.5, (t.DurationMs ?? 0) / max * 100), "0.##"))%"></span>
                                     @PerformanceFormat.Value(t.DurationMs, "ms")
                                 </td>
                                 <td>@t.Kind@(t.Delivery is "cache" ? " (cache)" : "")</td>

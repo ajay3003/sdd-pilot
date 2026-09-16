@@ -203,8 +203,8 @@ public static class PerformanceQualityRules
             if (status != PerformanceMetricStatus.Good)
                 findings.Add(Finding("perf-cls", PerformanceLayer.Page, status == PerformanceMetricStatus.Poor ? FrontendQualitySeverity.Medium : FrontendQualitySeverity.Low, page, phase, at,
                     $"Cumulative Layout Shift {(status == PerformanceMetricStatus.Poor ? "is poor" : "needs improvement")}",
-                    $"CLS {cls:0.###} summed from layout-shift entries without recent input.", cls.ToString("0.###"), t.Cls,
-                    ["Metric: CLS", $"Observed: {cls:0.###}", $"Threshold: {t.Cls.Display}"],
+                    $"CLS {N(cls, "0.###")} summed from layout-shift entries without recent input.", N(cls, "0.###"), t.Cls,
+                    ["Metric: CLS", $"Observed: {N(cls, "0.###")}", $"Threshold: {t.Cls.Display}"],
                     "Reserve space for late content (images, tables, skeletons) and avoid inserting content above existing content."));
         }
         if (interaction?.Status == "measured" && interaction.InpMs is { } inp)
@@ -260,7 +260,7 @@ public static class PerformanceQualityRules
                 "Long main-thread tasks",
                 $"{perf.LongTaskCount} long task(s) over 50 ms detected during this {PerformanceFormat.PhaseLabel(phase).ToLowerInvariant()} observation (total {Ms(perf.LongTaskTotalMs)}, longest {Ms(perf.LongestTaskMs)}; {perf.LongTasksAfterStabilization} after stabilization).",
                 perf.LongTaskCount.ToString(), t.LongTasks,
-                [$"Count: {perf.LongTaskCount}", $"Total: {Ms(perf.LongTaskTotalMs)}", $"Longest: {Ms(perf.LongestTaskMs)}", $"Phase: {PerformanceFormat.PhaseLabel(phase)}", $"Threshold: max {t.LongTasks.Good:0}"],
+                [$"Count: {perf.LongTaskCount}", $"Total: {Ms(perf.LongTaskTotalMs)}", $"Longest: {Ms(perf.LongestTaskMs)}", $"Phase: {PerformanceFormat.PhaseLabel(phase)}", $"Threshold: max {N(t.LongTasks.Good, "0")}"],
                 "Investigate synchronous work on the main thread: split heavy JavaScript/.NET interop, defer non-critical startup work and avoid rendering large collections synchronously."));
         }
         if (longTasksSupported && perf.MainThreadBlockingMs is { } blocking && blocking > t.MainThreadBlocking.Good)
@@ -531,21 +531,21 @@ public static class PerformanceQualityRules
             var isGql = dup.Kind == ApiOperationKind.GraphQl;
             findings.Add(Finding(isGql ? "api-duplicate-graphql" : "api-duplicate-rest", PerformanceLayer.Api, dup.Count > t.IdenticalApiCalls.Good * 3 ? FrontendQualitySeverity.High : FrontendQualitySeverity.Medium, page, phase, at,
                 $"Repeated {(isGql ? "GraphQL operation" : "REST call")}: {dup.Display}" + (dup.IsPollingLike ? " (polling-like cadence)" : ""),
-                $"{dup.Display} was called {dup.Count}× within one page generation ({window:0} s window, statuses {StatusSummary(dup)}{(dup.Statistics.Total > 0 ? $", total latency {Ms(dup.Statistics.Total)}" : "")}), correlated with this page by the request Referer. " +
+                $"{dup.Display} was called {dup.Count}× within one page generation ({N(window, "0")} s window, statuses {StatusSummary(dup)}{(dup.Statistics.Total > 0 ? $", total latency {Ms(dup.Statistics.Total)}" : "")}), correlated with this page by the request Referer. " +
                 (dup.IsPollingLike ? "The regular cadence looks like polling; no configured polling classification exists, so this is a heuristic and the finding is kept at low confidence." : "Repeated identical fetches are usually avoidable."),
                 $"{dup.Count} calls", t.IdenticalApiCalls,
-                [$"Operation: {dup.Display}", $"Calls: {dup.Count}", $"Window: {window:0} s", $"Statuses: {StatusSummary(dup)}", $"Total latency: {(dup.Statistics.Total > 0 ? Ms(dup.Statistics.Total) : "n/a")}", $"Threshold: max {t.IdenticalApiCalls.Good:0}"],
+                [$"Operation: {dup.Display}", $"Calls: {dup.Count}", $"Window: {N(window, "0")} s", $"Statuses: {StatusSummary(dup)}", $"Total latency: {(dup.Statistics.Total > 0 ? Ms(dup.Statistics.Total) : "n/a")}", $"Threshold: max {N(t.IdenticalApiCalls.Good, "0")}"],
                 isGql ? "Cache or de-duplicate the query client-side (shared store, request coalescing) and check components that re-query on every render." : "De-duplicate the call client-side (shared state, request coalescing) or cache the response.",
                 correlated, dup.IsPollingLike ? PerformanceConfidence.Low : PerformanceConfidence.Medium));
         }
         foreach (var burst in api.Bursts.Take(3))
             findings.Add(Finding("api-burst", PerformanceLayer.Api, FrontendQualitySeverity.Low, page, phase, at, "Network burst",
-                $"{burst.RequestCount} API requests ({burst.GraphQlCount} GraphQL, {burst.RestCount} REST) completed within {burst.WindowMs / 1000:0.#} s after the page was in use.",
-                $"{burst.RequestCount} requests", null, [$"Requests: {burst.RequestCount}", $"GraphQL: {burst.GraphQlCount}", $"REST: {burst.RestCount}", $"Window: {burst.WindowMs:0} ms", $"Started: {burst.StartedAt:HH:mm:ss.fff}"],
-                "Batch requests (GraphQL batching/aggregate queries) or defer non-critical data loads.", src, PerformanceConfidence.Medium, thresholdText: $"≥ {BurstMinRequests} requests in {BurstWindowMs:0} ms (documented default)"));
+                $"{burst.RequestCount} API requests ({burst.GraphQlCount} GraphQL, {burst.RestCount} REST) completed within {N(burst.WindowMs / 1000, "0.#")} s after the page was in use.",
+                $"{burst.RequestCount} requests", null, [$"Requests: {burst.RequestCount}", $"GraphQL: {burst.GraphQlCount}", $"REST: {burst.RestCount}", $"Window: {N(burst.WindowMs, "0")} ms", $"Started: {burst.StartedAt:HH:mm:ss.fff}"],
+                "Batch requests (GraphQL batching/aggregate queries) or defer non-critical data loads.", src, PerformanceConfidence.Medium, thresholdText: $"≥ {BurstMinRequests} requests in {N(BurstWindowMs, "0")} ms (documented default)"));
         foreach (var pattern in api.SequentialPatterns.Take(3))
             findings.Add(Finding("api-sequential", PerformanceLayer.Api, FrontendQualitySeverity.Low, page, phase, at, "Observed sequential request pattern",
-                $"Observed sequential request pattern: {string.Join(" → ", pattern.Operations)} ({Ms(pattern.TotalMs)} end to end, each starting within {SequentialGapMs:0} ms of the previous completion). This is an observation of timing, not proof of a dependency.",
+                $"Observed sequential request pattern: {string.Join(" → ", pattern.Operations)} ({Ms(pattern.TotalMs)} end to end, each starting within {N(SequentialGapMs, "0")} ms of the previous completion). This is an observation of timing, not proof of a dependency.",
                 $"{pattern.Operations.Count} requests in sequence", null, [$"Sequence: {string.Join(" → ", pattern.Operations)}", $"Total: {Ms(pattern.TotalMs)}", $"Max gap: {Ms(pattern.MaxGapMs)}"],
                 "If these requests are independent, issue them in parallel; if dependent, consider a combined endpoint/query.", src, PerformanceConfidence.Low, thresholdText: "observation"));
         var serverErrors = api.Operations.Where(o => o.ErrorCount - o.AuthRejectedCount > 0).ToList();
@@ -654,8 +654,8 @@ public static class PerformanceQualityRules
         {
             if (cur is null && prev is null) return;
             var change = cur is null || prev is null ? "n/a"
-                : unit == "count" ? $"{(cur - prev >= 0 ? "+" : "")}{cur - prev:0}"
-                : prev == 0 ? (cur == 0 ? "±0%" : "new") : $"{(cur - prev >= 0 ? "+" : "")}{(cur - prev) / prev * 100:0}%";
+                : unit == "count" ? $"{(cur - prev >= 0 ? "+" : "")}{N(cur - prev, "0")}"
+                : prev == 0 ? (cur == 0 ? "±0%" : "new") : $"{(cur - prev >= 0 ? "+" : "")}{N((cur - prev) / prev * 100, "0")}%";
             deltas.Add(new PerformanceDelta(name, cur is null ? "Not measured" : PerformanceFormat.Value(cur, unit), prev is null ? "Not measured" : PerformanceFormat.Value(prev, unit), change,
                 cur is null || prev is null ? null : cur > prev));
         }
@@ -702,5 +702,6 @@ public static class PerformanceQualityRules
     };
 
     private static string Ms(double? v) => PerformanceFormat.Value(v, "ms");
+    private static string N(double? v, string format) => v is null ? "—" : PerformanceFormat.Inv(v.Value, format);
     private static string Bytes(long v) => PerformanceFormat.Bytes(v);
 }

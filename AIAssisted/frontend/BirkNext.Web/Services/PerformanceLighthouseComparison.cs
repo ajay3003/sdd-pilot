@@ -37,7 +37,7 @@ public static class PerformanceLighthouseComparison
         if (labValue is { } lv && unit == "ms" && string.Equals(lab?.Unit, "s", StringComparison.OrdinalIgnoreCase)) labValue = lv * 1000;
         if (labValue is { } kb && unit == "bytes" && (lab?.Unit ?? "").Contains("KiB", StringComparison.OrdinalIgnoreCase)) labValue = kb * 1024;
         var diff = fieldValue is { } f && labValue is { } l
-            ? (l == 0 ? "n/a" : $"{(f - l >= 0 ? "+" : "")}{(f - l) / l * 100:0}% (field vs lab)")
+            ? (l == 0 ? "n/a" : $"{(f - l >= 0 ? "+" : "")}{PerformanceFormat.Inv((f - l) / l * 100, "0")}% (field vs lab)")
             : "n/a";
         rows.Add(new PerformanceLighthouseRow(name,
             fieldValue is null ? "Not measured" : PerformanceFormat.Value(fieldValue, unit),

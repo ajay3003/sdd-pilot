@@ -147,8 +147,7 @@ public sealed class PerformanceQualityEngineTests : BunitContext
         var paths = new[] { "/p1", "/p2", "/p3", "/p4", "/p5" };
         await discovery.MergeBrowserEvidenceAsync(js.Object, "dev", paths.Select(p => Evidence(p, T0)).ToList());
         await discovery.MergeObservedAsync(js.Object, "dev", paths.Select(p => Endpoint(p, "/api/x", 3, T0)).ToList());
-        var before = discovery.GetSnapshot("dev").Pages.ToDictionary(p => p.PagePath, p => (p.AnalysisGeneration, p.Endpoints.Count, p.BrowserEvidence is not null, p.PerformanceHistory.Count));
-        before.Values.Should().OnlyContain(v => v.AnalysisGeneration == 1 && v.Count == 1 && v.Item3 && v.Item4 == 1);
+        discovery.GetSnapshot("dev").Pages.Should().HaveCount(5).And.OnlyContain(p => p.AnalysisGeneration == 1 && p.Endpoints.Count == 1 && p.BrowserEvidence != null && p.PerformanceHistory.Count == 1);
 
         await discovery.RefreshPageAsync(js.Object, "dev", Origin + "/p3");
 
