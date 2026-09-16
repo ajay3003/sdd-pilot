@@ -15,6 +15,23 @@
   let snapshotSequence = 0;
   let updateTimer = null;
   let updatesSent = 0;
+  let layoutChecks = [];
+  let layoutBusy = false;
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message?.type !== 'wcag:layout') return;
+    if (sender.id !== chrome.runtime.id || layoutBusy || !isApprovedVisit(visit)) { respond({ message: 'No approved active page.' }); return; }
+    (async () => {
+      layoutBusy = true;
+      try {
+        scope = await send({ type: 'content:session' });
+        if (!isApprovedVisit(visit) || !C.wcagInteraction.allowed(scope?.environmentType, true)) { respond({ message: 'Passive checks only for this environment.' }); return; }
+        layoutChecks = await C.wcagInteraction.layout(doc, win, { environment: scope.environmentType, approved: true });
+        await emit('update');
+        respond({ message: 'Layout probes completed on the last visited visible page; original styles restored. Review results in BirkNext.' });
+      } finally { layoutBusy = false; }
+    })().catch(() => respond({ message: 'Layout probes unavailable; no pass recorded.' }));
+    return true;
+  });
   const runtime = { errors: new Map(), errorCount: 0, rejectionCount: 0, resourceFailureCount: 0 };
   const lcpEntries = [], layoutShiftEntries = [], longTaskEntries = [];
   const observers = [];
@@ -97,6 +114,7 @@
       unsupportedMetrics: unsupported.concat(visit.sequence === 1 ? [] : ['largest-contentful-paint (SPA route)', 'layout-shift (SPA route)', 'navigation-timing (SPA route)']),
     });
     const a11y = C.a11y.evaluate(doc, win);
+    a11y.checks = (a11y.checks || []).concat(layoutChecks);
     return {
       profileId: scope.profileId,
       pageOrigin: visit.origin,
@@ -137,6 +155,7 @@
   }
 
   function resetVisitState() {
+    layoutChecks = [];
     runtime.errors.clear(); runtime.errorCount = 0; runtime.rejectionCount = 0; runtime.resourceFailureCount = 0;
     updatesSent = 0;
     if (updateTimer) { clearTimeout(updateTimer); updateTimer = null; }

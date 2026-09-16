@@ -45,6 +45,7 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
 
     private sealed class Session
     {
+        public string? EnvironmentType { get; init; }
         public required string SessionId { get; init; }
         public required string ProfileId { get; init; }
         public required string EnvironmentName { get; init; }
@@ -98,6 +99,7 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
             var session = new Session
             {
                 SessionId = NewSessionId(), ProfileId = challenge.ProfileId, EnvironmentName = challenge.EnvironmentName,
+                EnvironmentType = challenge.EnvironmentType,
                 ApprovedOrigins = challenge.ApprovedOrigins, ExtensionOrigin = extensionOrigin, PairedAt = now, LastSeenAt = now,
                 ExtensionVersion = Safe(request.ExtensionVersion, 40),
             };
@@ -107,7 +109,7 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
             return new BrowserCompanionPairResult
             {
                 Accepted = true, SessionId = session.SessionId, ProfileId = session.ProfileId, EnvironmentName = session.EnvironmentName,
-                ApprovedOrigins = session.ApprovedOrigins, ExpiresAt = session.AbsoluteExpiry, Message = "Paired.",
+                ApprovedOrigins = session.ApprovedOrigins, ExpiresAt = session.AbsoluteExpiry, Message = "Paired.", EnvironmentType = session.EnvironmentType,
             };
         }
     }
@@ -121,7 +123,7 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
             return new BrowserCompanionPairResult
             {
                 Accepted = true, SessionId = session.SessionId, ProfileId = session.ProfileId, EnvironmentName = session.EnvironmentName,
-                ApprovedOrigins = session.ApprovedOrigins, ExpiresAt = session.AbsoluteExpiry, Message = "Session valid.",
+                ApprovedOrigins = session.ApprovedOrigins, ExpiresAt = session.AbsoluteExpiry, Message = "Session valid.", EnvironmentType = session.EnvironmentType,
             };
         }
     }

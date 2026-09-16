@@ -62,6 +62,12 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
 
         return new BrowserQualityReviewResult
         {
+            Wcag = WcagAssessmentEngine.Evaluate(new EndpointDiscoverySnapshot
+            {
+                Pages = discovery.GetSnapshot(profileId).Pages.Where(p => approved.Contains(p.PageOrigin, StringComparer.OrdinalIgnoreCase)).ToList(),
+                Wcag = discovery.GetSnapshot(profileId).Wcag,
+                WcagApplicationReviews = discovery.GetSnapshot(profileId).WcagApplicationReviews,
+            }),
             CompanionState = status.State, CompanionMessage = message, ProxyEvidenceAvailable = proxyEvidence,
             PagesWithEvidence = pages.Count, PageIdentities = pages.Select(p => p.Identity).ToList(), Findings = findings,
             Limitations = limitations, EvaluatedAt = DateTimeOffset.UtcNow, BrowserName = pages.Select(p => p.BrowserEvidence!.BrowserName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),

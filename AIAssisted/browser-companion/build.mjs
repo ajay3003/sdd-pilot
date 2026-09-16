@@ -24,7 +24,7 @@ for (const h of manifest.host_permissions || []) {
 if ((manifest.optional_host_permissions || []).includes('<all_urls>')) fail('optional_host_permissions must not contain <all_urls>');
 if (!manifest.background || !manifest.background.service_worker) fail('service worker missing');
 
-const files = ['background.js', 'content.js', 'main-world.js', 'popup.js', 'lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js'];
+const files = ['background.js', 'content.js', 'main-world.js', 'popup.js', 'lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js'];
 for (const f of files) {
   if (!existsSync(path.join(root, f))) fail(`missing ${f}`);
   execFileSync(process.execPath, ['--check', path.join(root, f)], { stdio: 'inherit' });

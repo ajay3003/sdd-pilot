@@ -1,0 +1,50 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+<section class="wcag-panel" aria-label="WCAG coverage" data-testid="wcag-coverage">
+    <header><div><span class="wcag-eyebrow">Accessibility / WCAG</span><h3>@Assessment.TargetLabel</h3></div><span class="wcag-tag">Automated assessment</span></header>
+    <p>@WcagAssessment.Disclaimer</p>
+    <div class="wcag-counts">
+        <div><strong>@Count(WcagStatus.Fail)</strong><span>Failed criteria</span></div>
+        <div><strong>@Count(WcagStatus.ManualReviewRequired)</strong><span>Require manual review</span></div>
+        <div><strong>@Count(WcagStatus.NotTested)</strong><span>Not tested</span></div>
+        <div><strong>@Count(WcagStatus.Pass)</strong><span>Passed criteria</span></div>
+    </div>
+    <p class="wcag-note">Counts are criterion results per page plus application-scope results. Automatic: @Assessment.Results.Count(r => r.Definition.AutomationLevel == WcagAutomation.Automatic) · Partial: @Assessment.Results.Count(r => r.Definition.AutomationLevel == WcagAutomation.Partial) · Manual: @Assessment.Results.Count(r => r.Definition.AutomationLevel == WcagAutomation.Manual)</p>
+    <div class="wcag-filters">
+        <label>Status <select @bind="_status"><option value="">All</option>@foreach (var s in Enum.GetValues<WcagStatus>()) { <option value="@s">@Label(s)</option> }</select></label>
+        <label>Level <select @bind="_level"><option value="">A + AA</option><option>A</option><option>AA</option></select></label>
+        <label>Automation <select @bind="_automation"><option value="">All</option>@foreach (var a in Enum.GetValues<WcagAutomation>()) { <option>@a</option> }</select></label>
+    </div>
+    <div class="wcag-table"><table>
+        <caption class="wcag-note">Criterion coverage and evidence</caption>
+        <thead><tr><th>Criterion</th><th>Level</th><th>Title / scope</th><th>Automation</th><th>Status</th><th>Findings</th><th>Confidence</th><th>Evidence</th><th>Last tested</th>@if (Review.HasDelegate) { <th>Review</th> }</tr></thead>
+        <tbody>@foreach (var row in Filtered)
+        {
+            <tr>
+                <td>@row.Definition.CriterionId</td><td>@row.Definition.Level</td>
+                <td><strong>@row.Definition.Title</strong><small>@row.Page</small></td><td>@row.Definition.AutomationLevel</td>
+                <td><span class="wcag-state state-@row.Status">@Label(row.Status)</span>@if (row.ManualReviewStale) { <small>Prior manual evidence is stale</small> }</td>
+                <td>@row.Findings</td><td>@(row.EvidenceSource == WcagEvidenceSource.Manual ? "Human review" : row.Confidence?.ToString() ?? "—")</td>
+                <td><details><summary>@row.EvidenceSource</summary><p>@row.AutomatedEvidence</p>@if (row.ManualReview is { } m) { <p>@m.Result · @m.ReviewedBy · @m.ReviewedAt.ToString("u")</p><p>@m.Comment</p><p>@m.EvidenceNote</p> }</details></td>
+                <td>@(row.LastTested?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                @if (Review.HasDelegate) { <td><button type="button" @onclick="() => Review.InvokeAsync(row)">Review</button></td> }
+            </tr>
+        }</tbody>
+    </table></div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public WcagAssessment Assessment { get; set; } = new();
+    [Parameter] public EventCallback<WcagCriterionResult> Review { get; set; }
+    private string _status = "", _level = "", _automation = "";
+    private int Count(WcagStatus status) => Assessment.Results.Count(r => r.Status == status);
+    private IEnumerable<WcagCriterionResult> Filtered => Assessment.Results.Where(r =>
+        (_status == "" || r.Status.ToString() == _status) && (_level == "" || r.Definition.Level.ToString() == _level) &&
+        (_automation == "" || r.Definition.AutomationLevel.ToString() == _automation));
+    public static string Label(WcagStatus status) => status switch
+    {
+        WcagStatus.Pass => "Passed", WcagStatus.Fail => "Failed", WcagStatus.ManualReviewRequired => "Manual review required",
+        WcagStatus.NotApplicable => "Not applicable", _ => "Not tested",
+    };
+}

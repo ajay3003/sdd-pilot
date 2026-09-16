@@ -306,6 +306,21 @@ public sealed class ReportExportService : IReportExportService
         sb.Append("</section>\n");
 
         // ── KPI Scores (with null safety) ──────────────────────────────
+        if (report.Wcag is { } wcag)
+        {
+            sb.Append($"<section class=\"block\"><h2>{Esc(wcag.TargetLabel)} — Accessibility / WCAG</h2>");
+            sb.Append($"<p>{Esc(WcagAssessment.Disclaimer)}</p>");
+            sb.Append(Table(["Page", "Criterion", "Level", "Title", "Automation", "Result", "Findings", "Confidence", "Evidence", "Last tested", "Manual review"],
+                wcag.Results.Select(r => new[]
+                {
+                    Esc(r.Page), Esc(r.Definition.CriterionId), Esc(r.Definition.Level.ToString()), Esc(r.Definition.Title),
+                    Esc(r.Definition.AutomationLevel.ToString()), Esc(r.Status.ToString()), r.Findings.ToString(),
+                    Esc(r.Confidence?.ToString() ?? "—"), Esc($"{r.EvidenceSource}: {r.AutomatedEvidence}"),
+                    Esc(r.LastTested?.ToString("u") ?? "—"),
+                    r.ManualReview is { } m ? Esc($"{(r.ManualReviewStale ? "STALE — " : "")}{m.Result}; {m.ReviewedBy}; {m.ReviewedAt:u}; {m.Comment}; {m.EvidenceNote}") : "No manual review recorded",
+                })));
+            sb.Append("</section>");
+        }
         if (report.AccessibilityReport is { } accessibility)
         {
             sb.Append("<section class=\"block\">\n<h2>Automated Accessibility Checks</h2>\n");

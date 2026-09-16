@@ -32,6 +32,7 @@ public sealed record BrowserQualityFinding
 /// <summary>Result of the Browser Quality engine for one review: which pages had evidence and the findings derived from them.</summary>
 public sealed record BrowserQualityReviewResult
 {
+    public WcagAssessment? Wcag { get; init; }
     [JsonPropertyName("companionState")] public BrowserCompanionState CompanionState { get; init; }
     [JsonPropertyName("companionMessage")] public string CompanionMessage { get; init; } = "";
     [JsonPropertyName("proxyEvidenceAvailable")] public bool ProxyEvidenceAvailable { get; init; }

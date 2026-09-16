@@ -1,0 +1,68 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.JSInterop
+@inject IEndpointDiscoveryService Discovery
+@inject IJSRuntime JS
+
+<div class="wcag-workspace">
+    <label>WCAG target <select value="@Snapshot.Wcag.Version" @onchange="ChangeVersion"><option value="Wcag21">WCAG 2.1</option><option value="Wcag22">WCAG 2.2</option></select></label>
+    <label>Conformance level <select value="@Snapshot.Wcag.Level" @onchange="ChangeLevel"><option value="A">A</option><option value="AA">A + AA</option></select></label>
+    <WcagCoverage Assessment="WcagAssessmentEngine.Evaluate(Snapshot, Page)" Review="OpenReview" />
+    @if (_editing is { } row)
+    {
+        <section class="wcag-editor" aria-label="Manual WCAG review">
+            <h4>Review @row.Definition.CriterionId · @row.Definition.Title</h4>
+            <p>@row.Page · Generation @row.Generation. Enter review observations only; omit personal data and credentials.</p>
+            <label>Decision <select @bind="_decision"><option value="Pass">Pass</option><option value="Fail">Fail</option><option value="NotApplicable">Not applicable</option></select></label>
+            <label>Comment <textarea @bind="_comment" maxlength="1000"></textarea></label>
+            <label>Evidence note <textarea @bind="_evidence" maxlength="1000" required></textarea></label>
+            <label>Reviewed by (tester alias) <input @bind="_reviewer" maxlength="100" required /></label>
+            <button type="button" @onclick="SaveReview">Save review</button><button type="button" @onclick="() => _editing = null">Cancel</button>
+        </section>
+    }
+    @if (_error is not null) { <p role="alert">@_error</p> }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string ProfileId { get; set; } = "";
+    [Parameter, EditorRequired] public EndpointDiscoverySnapshot Snapshot { get; set; } = new();
+    [Parameter] public PageAnalysis? Page { get; set; }
+    private WcagCriterionResult? _editing;
+    private WcagVersion _reviewVersion;
+    private string _scope = "", _comment = "", _evidence = "", _reviewer = "";
+    private string? _error;
+    private WcagStatus _decision = WcagStatus.Pass;
+    private void OpenReview(WcagCriterionResult result)
+    {
+        _editing = result; _reviewVersion = Snapshot.Wcag.Version;
+        _scope = result.Definition.RequiresCrossPageEvidence ? WcagAssessmentEngine.ScopeGeneration(Snapshot) : "";
+        _comment = ""; _evidence = ""; _reviewer = ""; _error = null;
+        _decision = WcagStatus.Pass;
+    }
+    private async Task SaveReview()
+    {
+        if (_editing is not { } row) return;
+        try
+        {
+            await Discovery.RecordWcagReviewAsync(JS, ProfileId, row.Definition.RequiresCrossPageEvidence ? null : row.Page,
+                new WcagManualReview { CriterionId = row.Definition.CriterionId, Generation = row.Generation,
+                    Version = _reviewVersion, ScopeGeneration = _scope, Result = _decision,
+                    Comment = _comment, EvidenceNote = _evidence, ReviewedBy = _reviewer });
+            _editing = null; _error = null;
+        }
+        catch (ArgumentException e) { _error = e.Message; }
+        catch (InvalidOperationException e) { _error = e.Message; }
+    }
+    private async Task ChangeVersion(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<WcagVersion>(e.Value?.ToString(), out var v))
+            await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = v, Level = Snapshot.Wcag.Level });
+        _editing = null;
+    }
+    private async Task ChangeLevel(ChangeEventArgs e)
+    {
+        if (Enum.TryParse<WcagLevel>(e.Value?.ToString(), out var level))
+            await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = Snapshot.Wcag.Version, Level = level });
+        _editing = null;
+    }
+}

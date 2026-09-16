@@ -33,6 +33,11 @@
   });
   $('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('pair').click(); });
   $('unpair').addEventListener('click', async () => render(await send({ type: 'popup:unpair' })));
+  $('wcagLayout').addEventListener('click', async () => {
+    $('wcagLayout').disabled = true;
+    try { const result = await send({ type: 'popup:wcag-layout' }); $('message').textContent = result?.message || 'Layout probes unavailable.'; }
+    finally { $('wcagLayout').disabled = false; }
+  });
   $('saveBackend').addEventListener('click', async () => {
     const value = $('backend').value.trim();
     if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(value)) { $('message').textContent = 'Only a loopback backend (http://127.0.0.1:port or http://localhost:port) is allowed.'; return; }

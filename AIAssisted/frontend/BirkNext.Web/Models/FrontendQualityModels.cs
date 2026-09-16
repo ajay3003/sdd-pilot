@@ -71,6 +71,7 @@ public sealed class FrontendQualityCategoryScore
 
 public sealed class FrontendQualityReviewReport
 {
+    public WcagAssessment? Wcag { get; init; }
     [JsonPropertyName("targetEnvironment")] public FrontendReviewTargetIdentity? TargetEnvironment { get; init; }
     private List<string> _legacyAssessedEngines = [];
     private List<string> _legacyFailedEngines = [];

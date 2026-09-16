@@ -217,6 +217,10 @@
 
     @if (_report is not null)
     {
+        @if (_report.Wcag is { } wcag)
+        {
+            <WcagCoverage Assessment="wcag" />
+        }
         var report = _report;
         var topRisks = report.Findings
             .Where(f => f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)

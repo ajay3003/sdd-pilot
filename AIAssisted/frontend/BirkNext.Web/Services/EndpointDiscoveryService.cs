@@ -12,6 +12,8 @@ public sealed record BackendIntegration(string Name, string Protocol, string? Re
 
 public interface IEndpointDiscoveryService
 {
+    Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => Task.CompletedTask;
+    Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review) => Task.CompletedTask;
     Task LoadAsync(IJSRuntime js);
     EndpointDiscoverySnapshot GetSnapshot(string profileId);
     /// <summary>Folds the current runtime's observed endpoints into the persisted per-page snapshot and persists. Returns true when anything changed.</summary>
@@ -36,6 +38,40 @@ public interface IEndpointDiscoveryService
 /// </summary>
 public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
 {
+    public Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => MutateAsync(js, profileId, s =>
+    {
+        if (!Enum.IsDefined(settings.Version) || !Enum.IsDefined(settings.Level)) throw new ArgumentException("Invalid WCAG target.");
+        s.Wcag = new WcagSettings { Version = settings.Version, Level = settings.Level };
+        return true;
+    });
+
+    public Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review) => MutateAsync(js, profileId, s =>
+    {
+        var definition = WcagRegistry.For(s.Wcag).SingleOrDefault(d => d.CriterionId == review.CriterionId)
+            ?? throw new ArgumentException("Unknown criterion for this target.");
+        if (review.Result is not (WcagStatus.Pass or WcagStatus.Fail or WcagStatus.NotApplicable))
+            throw new ArgumentException("A manual decision must be Pass, Fail or NotApplicable.");
+        var page = pageIdentity is null ? null : s.Pages.SingleOrDefault(p => p.Identity == pageIdentity)
+            ?? throw new ArgumentException("Page does not exist.");
+        if (definition.RequiresCrossPageEvidence != (page is null)) throw new ArgumentException("Incorrect review scope.");
+        // Do not silently attach an editor opened on a prior generation to a newer snapshot.
+        if (review.Generation != (page?.AnalysisGeneration ?? 0) || review.Version != s.Wcag.Version ||
+            review.ScopeGeneration != (page is null ? WcagAssessmentEngine.ScopeGeneration(s) : ""))
+            throw new InvalidOperationException("Analysis changed. Reopen the review against the current generation.");
+        var safe = review with
+        {
+            Comment = WcagReviewText.Validate(review.Comment, 1000),
+            EvidenceNote = WcagReviewText.Validate(review.EvidenceNote, 1000),
+            ReviewedBy = WcagReviewText.Validate(review.ReviewedBy, 100),
+            ReviewedAt = DateTimeOffset.UtcNow,
+        };
+        if (string.IsNullOrWhiteSpace(safe.ReviewedBy) || string.IsNullOrWhiteSpace(safe.EvidenceNote))
+            throw new ArgumentException("Reviewer and evidence note are required.");
+        var reviews = page?.WcagReviews ?? s.WcagApplicationReviews;
+        if (reviews.Count >= 1000) throw new InvalidOperationException("Manual review history limit reached.");
+        reviews.Add(safe);
+        return true;
+    });
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

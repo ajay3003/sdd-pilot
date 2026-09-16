@@ -660,6 +660,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             coverage, outcomes, issues, manualItems, releasePolicy);
         return new FrontendQualityReviewReport
         {
+        Wcag = report.Wcag,
         TargetUrl = report.TargetUrl, FinalUrl = report.FinalUrl, GeneratedAt = report.GeneratedAt,
         CompletedAt = report.CompletedAt, DurationMs = report.DurationMs, OverallScore = report.OverallScore,
         PerformanceScore = report.PerformanceScore, SecurityScore = report.SecurityScore,
@@ -811,7 +812,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     /// <summary>Adds the Browser Quality findings (already sanitized, deterministic rule output) and its limitations to the report.</summary>
     private static FrontendQualityReviewReport ApplyBrowserQuality(FrontendQualityReviewReport report, BrowserQualityReviewResult? browserQuality)
     {
-        if (browserQuality is null || !browserQuality.Assessed) return report;
+        if (browserQuality is null) return report;
         var findings = browserQuality.Findings.Select(f => new FrontendQualityFinding
         {
             Id = $"browser-quality-{f.RuleId}-{Math.Abs(f.Page.GetHashCode()) % 100000}", Title = $"{f.Title} — {f.Page}", Severity = f.Severity,
@@ -827,6 +828,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             AccessibilityScore = report.AccessibilityScore, StandardsScore = report.StandardsScore,
             WasmScore = report.WasmScore, ReadinessScore = report.ReadinessScore,
             Findings = report.Findings.Concat(findings).ToList(),
+            Wcag = browserQuality.Wcag,
             LogicalIssues = report.LogicalIssues, ManualReviewItems = report.ManualReviewItems,
             CategoryScores = report.CategoryScores, Recommendations = report.Recommendations, Risks = report.Risks,
             Limitations = report.Limitations.Concat(browserQuality.Limitations).Distinct().ToList(),

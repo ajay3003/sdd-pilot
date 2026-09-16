@@ -7,7 +7,7 @@ const BACKEND_CANDIDATES = ['http://127.0.0.1:5000', 'http://localhost:5000'];
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const CONTENT_SCRIPT_ID = 'birknext-companion-content';
 const MAIN_WORLD_SCRIPT_ID = 'birknext-companion-main';
-const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
+const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
 const HEARTBEAT_ALARM = 'birknext-heartbeat';
 const FLUSH_DELAY_MS = 1500;
 const MAX_PAGES_PER_ENVELOPE = 20;
@@ -54,7 +54,7 @@ async function pair(pairingCode) {
     return lastStatus;
   }
   const r = result.json;
-  const session = { sessionId: r.sessionId, profileId: r.profileId, environmentName: r.environmentName, approvedOrigins: r.approvedOrigins || [], expiresAt: r.expiresAt, pairedAt: new Date().toISOString() };
+  const session = { sessionId: r.sessionId, profileId: r.profileId, environmentName: r.environmentName, environmentType: r.environmentType, approvedOrigins: r.approvedOrigins || [], expiresAt: r.expiresAt, pairedAt: new Date().toISOString() };
   // Ask for host permission on exactly the approved origins (user gesture comes from the popup click that triggered pairing).
   const granted = await requestOriginPermissions(session.approvedOrigins);
   if (!granted) {
@@ -165,6 +165,7 @@ async function heartbeat(currentPage) {
 }
 
 let lastKnownPage = null;
+let wcagTab = null;
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === HEARTBEAT_ALARM) heartbeat(lastKnownPage); });
 
 // ── Messages from popup and content scripts ────────────────────────────────
@@ -173,13 +174,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     switch (message && message.type) {
       case 'popup:status': sendResponse(await validate()); break;
+      case 'popup:wcag-layout': {
+        if (sender.tab) { sendResponse({ message: 'Popup action required.' }); break; }
+        const status = await validate();
+        if (status.state !== 'connected' || !wcagTab || wcagTab.profileId !== status.session.profileId ||
+            !['Local', 'Development', 'QA', 'Test', 'RC'].includes(status.session.environmentType)) {
+          sendResponse({ message: 'Layout probes require a paired non-production page. Re-pair after changing environment policy.' }); break;
+        }
+        sendResponse(await chrome.tabs.sendMessage(wcagTab.id, { type: 'wcag:layout' }));
+        break;
+      }
       case 'popup:pair': sendResponse(await pair(message.pairingCode)); break;
       case 'popup:unpair': sendResponse(await unpair()); break;
       case 'popup:setBackend': await chrome.storage.local.set({ backend: message.backend }); sendResponse({ ok: true }); break;
       case 'content:session': {
         // Content scripts only receive scope information (profile id + approved origins), never the session id.
         const session = await getSession();
-        sendResponse(session ? { profileId: session.profileId, approvedOrigins: session.approvedOrigins } : null);
+        sendResponse(session ? { profileId: session.profileId, approvedOrigins: session.approvedOrigins, environmentType: session.environmentType } : null);
         break;
       }
       case 'content:evidence': {
@@ -188,7 +199,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ queued: Boolean(session) });
         break;
       }
-      case 'content:page': lastKnownPage = message.page || null; heartbeat(lastKnownPage); sendResponse({ ok: true }); break;
+      case 'content:page': {
+        lastKnownPage = message.page || null;
+        const session = await getSession();
+        if (session && sender.tab && session.approvedOrigins.includes(new URL(sender.url).origin)) wcagTab = { id: sender.tab.id, profileId: session.profileId };
+        heartbeat(lastKnownPage); sendResponse({ ok: true }); break;
+      }
       default: sendResponse({ error: 'unknown message' });
     }
   })().catch(e => sendResponse({ error: String(e && e.message) }));

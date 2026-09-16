@@ -38,6 +38,7 @@ public sealed record BrowserCompanionPairRequest(string PairingCode, string Exte
 
 public sealed record BrowserCompanionPairResult
 {
+    public string? EnvironmentType { get; init; }
     public bool Accepted { get; init; }
     /// <summary>Random session identifier bound to one Target Environment and one extension origin. Not a credential for anything else.</summary>
     public string? SessionId { get; init; }

@@ -40,6 +40,10 @@
 
     @if (_view == "overview")
     {
+        @if (Profile is not null && Snapshot.Pages.Count > 0)
+        {
+            <WcagWorkspace @key="Profile.Id" ProfileId="Profile.Id" Snapshot="Snapshot" />
+        }
         <div class="ed-panel">
             @if (AllEndpoints.Count == 0 && BackendIntegrations.Count == 0)
             {
@@ -133,6 +137,10 @@
                         <p class="ed-note" data-testid="discovery-page-state">Waiting for fresh traffic. Use this page in the target application to collect fresh endpoint traffic.</p>
                     }
                     @RenderPageQuality(sel)
+                    @if (Profile is not null)
+                    {
+                        <WcagWorkspace @key="sel.Identity" ProfileId="Profile.Id" Snapshot="Snapshot" Page="sel" />
+                    }
                     <h5 class="ed-section-title">Network</h5>
                     @RenderEndpointTable(VisibleEndpoints(sel.Endpoints), "discovery-page-table", "No endpoints observed for this page yet.")
                 }
