@@ -130,9 +130,11 @@
       wrapHistory('replaceState');
       win.addEventListener('popstate', () => startVisit('popstate'));
       win.addEventListener('hashchange', () => startVisit('hashchange'));
-      if (typeof win.MutationObserver === 'function' && doc.documentElement) {
+      if (typeof win.MutationObserver === 'function') {
+        // Observe the document node itself: at document_start the <html> element may not exist yet, and observing the document
+        // with subtree covers everything that is parsed or rendered later (counts only, never content).
         observer = new win.MutationObserver(records => noteMutation(records ? records.length : 1));
-        observer.observe(doc.documentElement, { childList: true, subtree: true });
+        try { observer.observe(doc.documentElement || doc, { childList: true, subtree: true }); } catch { observer = null; }
       }
       pollTimer = win.setInterval(() => { const id = currentIdentity(); if (id && (!current || current.identity !== id.identity)) startVisit('poll'); }, opts.pollMs);
       startVisit('initial');
