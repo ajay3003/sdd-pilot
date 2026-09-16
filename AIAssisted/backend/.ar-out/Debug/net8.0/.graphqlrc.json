@@ -1,0 +1,12 @@
+{
+  "schema": "schema.graphql",
+  "documents": "GraphQL/**/*.graphql",
+  "extensions": {
+    "strawberryShake": {
+      "name": "BirkNextClient",
+      "namespace": "BirkNext.Web.GraphQL",
+      "url": "http://localhost:5000/graphql",
+      "dependencyInjection": true
+    }
+  }
+}
