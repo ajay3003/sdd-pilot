@@ -322,6 +322,8 @@ public sealed class FrontendAnalysisFeatureToggles
     [JsonPropertyName("enableAccessibilityEngine")]   public bool EnableAccessibilityEngine   { get; set; } = true;
     [JsonPropertyName("enableLighthouseEngine")]      public bool EnableLighthouseEngine      { get; set; } = true;
     [JsonPropertyName("enablePassiveSecurityEngine")] public bool EnablePassiveSecurityEngine { get; set; } = true;
+    /// <summary>BirkNext Browser Quality (Browser Companion): experimental native engine that needs the paired extension, so it is opt-in per Target Environment (like Browser Runtime). Release policy Optional.</summary>
+    [JsonPropertyName("enableBrowserQualityEngine")]  public bool EnableBrowserQualityEngine  { get; set; } = false;
 
     [JsonPropertyName("assetDiscovery")]              public bool AssetDiscovery              { get; set; } = true;
     [JsonPropertyName("startupAnalysis")]             public bool StartupAnalysis             { get; set; } = true;
@@ -347,6 +349,7 @@ public sealed class FrontendQualityEngineRequirementSettings
     [JsonPropertyName("accessibility")] public FrontendQualityEngineRequirement Accessibility { get; set; } = FrontendQualityEngineRequirement.Optional;
     [JsonPropertyName("lighthouse")] public FrontendQualityEngineRequirement Lighthouse { get; set; } = FrontendQualityEngineRequirement.Optional;
     [JsonPropertyName("passiveSecurity")] public FrontendQualityEngineRequirement PassiveSecurity { get; set; } = FrontendQualityEngineRequirement.Optional;
+    [JsonPropertyName("browserQuality")] public FrontendQualityEngineRequirement BrowserQuality { get; set; } = FrontendQualityEngineRequirement.Optional;
 
     public FrontendQualityEngineRequirementPolicy ToPolicy() => new(new Dictionary<FrontendQualityEngineId, FrontendQualityEngineRequirement>
     {
@@ -356,6 +359,7 @@ public sealed class FrontendQualityEngineRequirementSettings
         [FrontendQualityEngineId.Accessibility] = Accessibility,
         [FrontendQualityEngineId.Lighthouse] = Lighthouse,
         [FrontendQualityEngineId.PassiveSecurity] = PassiveSecurity,
+        [FrontendQualityEngineId.BrowserQuality] = BrowserQuality,
     });
 }
 

@@ -117,6 +117,12 @@ public static class FrontendQualityEngineOutcomePresentation
             FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment =>
                 new("Disabled", "The engine is disabled in the Target Environment configuration and was not part of this review.", OutcomePresentationCategory.SettingsDisabled, false),
 
+            FrontendQualityEngineOutcomeReason.BrowserCompanionNotConnected =>
+                new("Browser Companion not connected", "Pair the BirkNext Browser Companion for this Target Environment and open the application in your managed Edge.", OutcomePresentationCategory.NotReady, false),
+
+            FrontendQualityEngineOutcomeReason.BrowserCompanionNoEvidence =>
+                new("No page evidence yet", "The Browser Companion is connected but no page of this environment has been visited yet.", OutcomePresentationCategory.NotReady, false),
+
             _ => new("Unknown", "An unexpected outcome was encountered.", OutcomePresentationCategory.EngineFailed, false),
         };
 
@@ -171,6 +177,7 @@ public static class FrontendQualityEngineOutcomePresentation
         FrontendQualityEngineAccessKind.AuthenticatedHttp => "Authenticated HTTP",
         FrontendQualityEngineAccessKind.AuthenticatedBrowserSession => "Authenticated browser session",
         FrontendQualityEngineAccessKind.BrowserRuntime => "Browser runtime",
+        FrontendQualityEngineAccessKind.BrowserCompanion => "Browser Companion",
         _ => kind.ToString(),
     };
 

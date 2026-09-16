@@ -11,6 +11,8 @@ public enum FrontendQualityEngineId
     Accessibility,
     Lighthouse,
     PassiveSecurity,
+    /// <summary>BirkNext Browser Quality: native DOM/accessibility/performance/runtime/Blazor checks from the paired Browser Companion (no CDP, no Playwright).</summary>
+    BrowserQuality,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -66,6 +68,10 @@ public enum FrontendQualityEngineOutcomeReason
     ManualOnlyMethod,
     /// <summary>The engine is disabled in the saved Target Environment configuration; it was not part of this review.</summary>
     DisabledInTargetEnvironment,
+    /// <summary>The BirkNext Browser Companion is not paired/connected for this Target Environment (no CDP timeout is ever involved).</summary>
+    BrowserCompanionNotConnected,
+    /// <summary>The Browser Companion is connected but no page of this Target Environment has evidence yet.</summary>
+    BrowserCompanionNoEvidence,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

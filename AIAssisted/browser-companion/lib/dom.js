@@ -51,11 +51,18 @@
     return Array.from(seen.entries()).filter(([, c]) => c > 1).map(([id, count]) => ({ id, count }));
   }
 
+  // Hidden through itself or any ancestor (hidden attribute, aria-hidden, display:none, visibility:hidden).
   function isHidden(el, win) {
-    if (el.hidden || el.getAttribute('aria-hidden') === 'true') return true;
-    if (!win || typeof win.getComputedStyle !== 'function') return false;
-    const style = win.getComputedStyle(el);
-    return style.display === 'none' || style.visibility === 'hidden';
+    let node = el;
+    while (node && node.nodeType === 1) {
+      if (node.hidden || node.getAttribute('aria-hidden') === 'true') return true;
+      if (win && typeof win.getComputedStyle === 'function') {
+        const style = win.getComputedStyle(node);
+        if (style.display === 'none' || style.visibility === 'hidden') return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
   }
 
   function hiddenFocusable(doc, win) {

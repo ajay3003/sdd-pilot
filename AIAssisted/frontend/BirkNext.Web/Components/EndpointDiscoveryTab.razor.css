@@ -83,3 +83,20 @@
 .ed-empty { color: var(--clr-text-muted, #6b7280); font-style: italic; padding: 0.75rem 0; }
 .ed-note { color: var(--clr-text-muted, #6b7280); font-size: 0.82rem; margin: 0 0 0.6rem; }
 .ed-warn { color: var(--clr-danger); font-size: 0.82rem; margin: 0.3rem 0 0.6rem; }
+
+/* ── page quality (Browser Companion) ──────────────────────────────────────── */
+.ed-section-title { margin: 1rem 0 0.4rem; font-size: 0.9rem; }
+.ed-quality-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 0.6rem; margin-bottom: 0.6rem; }
+.ed-quality-card { border: 1px solid var(--border-color, #e2e6ee); border-radius: 6px; padding: 0.55rem 0.7rem; background: var(--surface, #fff); }
+.ed-quality-card h6 { margin: 0 0 0.35rem; font-size: 0.82rem; }
+.ed-quality-engine { font-weight: 400; color: var(--text-muted, #5b6472); font-size: 0.72rem; margin-left: 0.3rem; }
+.ed-findings { margin: 0; padding-left: 1rem; font-size: 0.8rem; }
+.ed-findings li { margin: 0.15rem 0; }
+.ed-selectors { display: block; color: var(--text-muted, #5b6472); font-size: 0.72rem; }
+.ed-ok { color: #146c2e; font-size: 0.8rem; margin: 0; }
+.ed-sev { font-size: 0.7rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 999px; background: #eef1f5; color: #4b5563; }
+.ed-sev-critical, .ed-sev-high { background: #fdecec; color: #7a1f1f; }
+.ed-sev-medium { background: #fff4e5; color: #7a4a00; }
+.ed-source-browser { background: #e8f0fe; color: #1d4ed8; }
+.ed-source-correlated { background: #ede9fe; color: #5b21b6; }
+.ed-evidence { max-width: 28rem; white-space: normal; font-size: 0.72rem; }

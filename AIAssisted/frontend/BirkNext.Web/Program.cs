@@ -141,6 +141,13 @@ builder.Services.AddHttpClient<ILocalHttpsProxyApiService, LocalHttpsProxyApiSer
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 builder.Services.AddScoped<LocalHttpsProxyRuntime>();
+builder.Services.AddHttpClient<IBrowserCompanionApiService, BrowserCompanionApiService>(client =>
+{
+    client.BaseAddress = new Uri(backendUrl);
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
+builder.Services.AddScoped<BrowserCompanionRuntime>();
+builder.Services.AddScoped<IBrowserQualityEvidenceSource, BrowserQualityEvidenceSource>();
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>
 {
     client.BaseAddress = new Uri(backendUrl);

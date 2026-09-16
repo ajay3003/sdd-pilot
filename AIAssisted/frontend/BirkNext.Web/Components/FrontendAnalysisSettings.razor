@@ -737,7 +737,8 @@
                     evidence is safe metadata only — never a credential, cookie or request body — and never auto-saved into configuration.
                 </p>
 
-                <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus" />
+                <BrowserCompanionPanel Profile="CurrentProfile" Runtime="_companionRuntime" ProxyRunning="@(ProxyStatus.State is LocalHttpsProxyState.Listening or LocalHttpsProxyState.WaitingForAuthenticatedTraffic or LocalHttpsProxyState.AuthenticatedTrafficDetected or LocalHttpsProxyState.Ready)" />
+                <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus" CompanionStatus="@(_companionRuntime?.For(CurrentProfile?.Id) ?? new())" />
             }
 
             @* ── Performance Thresholds ── *@
@@ -1070,6 +1071,7 @@
                         <FeatureRow Label="@($"Accessibility ({enginePolicy.Accessibility})")"           Enabled="@feats.EnableAccessibilityEngine"   IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableAccessibilityEngine = v)" />
                         <FeatureRow Label="@($"Lighthouse ({enginePolicy.Lighthouse})")"                 Enabled="@feats.EnableLighthouseEngine"      IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableLighthouseEngine = v)" />
                         <FeatureRow Label="@($"Passive Security ({enginePolicy.PassiveSecurity})")"      Enabled="@feats.EnablePassiveSecurityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePassiveSecurityEngine = v)" />
+                        <FeatureRow Label="@($"Browser Quality ({enginePolicy.BrowserQuality})")"      Enabled="@feats.EnableBrowserQualityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableBrowserQualityEngine = v)" />
                     </div>
                     <div class="fa-features-group fa-features-group-future">
                         <div class="fa-features-group-title">Browser <span class="fa-future-badge">Not yet implemented</span></div>
@@ -1568,6 +1570,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private ManagedEdgeRuntime? _edgeRuntime;
     private LocalHttpsProxyRuntime? _proxyRuntime;
+    private BrowserCompanionRuntime? _companionRuntime;
     private IEndpointDiscoveryService? _discovery;
     private bool _disposed;
     private ManagedEdgeStatus EdgeStatus => _edgeRuntime?.For(CurrentProfile) ?? new();
@@ -1622,6 +1625,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         if (_edgeRuntime is not null) _edgeRuntime.Changed += EdgeRuntimeChanged;
         _proxyRuntime = ServiceProvider.GetService<LocalHttpsProxyRuntime>();
         if (_proxyRuntime is not null) _proxyRuntime.Changed += EdgeRuntimeChanged;
+        _companionRuntime = ServiceProvider.GetService<BrowserCompanionRuntime>();
+        if (_companionRuntime is not null) _companionRuntime.Changed += EdgeRuntimeChanged;
         _discovery = ServiceProvider.GetService<IEndpointDiscoveryService>();
         await FaSettings.LoadAsync(JS);
         // Detection snapshots live in a separate evidence store (never in the saved profile), so load them before restoring.

@@ -38,6 +38,8 @@ public enum FrontendQualityEngineAccessKind
     AuthenticatedBrowserSession,
     /// <summary>Anonymous browser navigation/runtime instrumentation.</summary>
     BrowserRuntime,
+    /// <summary>The user's own signed-in managed Edge session, observed by the paired BirkNext Browser Companion (extension). No CDP, no Playwright, no token.</summary>
+    BrowserCompanion,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -79,6 +81,9 @@ public sealed record FrontendQualityEngineAccessRequirements(
 /// <item>Accessibility — axe-core over the rendered DOM in Playwright. Same session model as Browser Runtime.</item>
 /// <item>Lighthouse — anonymous synthetic navigation; no authenticated mode exists.</item>
 /// <item>Passive Security — OWASP ZAP passive scan of anonymous traffic; no authenticated mode exists.</item>
+/// <item>Browser Quality — BirkNext-native checks computed from Browser Companion evidence collected in the user's normal managed Edge session
+/// (DOM, accessibility, performance, runtime, Blazor) and correlated with proxy network evidence per page. Needs neither public HTTP, CDP nor a
+/// review browser session: it works for public and protected applications alike because the browser is already signed in.</item>
 /// </list>
 /// The Local HTTPS proxy provides an authenticated <em>API</em> context only. The two HTTP engines consume it through the shared
 /// authenticated API-surface probes (approved REST GET / GraphQL query executed by the backend gateway; engines never see the token):
@@ -116,6 +121,11 @@ public static class FrontendQualityEngineAccessRegistry
                 RequiresTargetReachability: true, RequiresPublicHttp: true, RequiresAuthenticatedHttp: false,
                 RequiresBrowserDom: false, RequiresBrowserRuntime: false,
                 SupportsProxyAuthenticatedContext: false, SupportsCdp: false, SupportsManualOnly: false, SupportsAuthenticatedBrowserSession: false),
+            // Browser Quality consumes evidence the paired Browser Companion collected in the user's own browser; it issues no request itself.
+            [FrontendQualityEngineId.BrowserQuality] = new(FrontendQualityEngineId.BrowserQuality,
+                RequiresTargetReachability: false, RequiresPublicHttp: false, RequiresAuthenticatedHttp: false,
+                RequiresBrowserDom: false, RequiresBrowserRuntime: false,
+                SupportsProxyAuthenticatedContext: false, SupportsCdp: true, SupportsManualOnly: true, SupportsAuthenticatedBrowserSession: true),
         };
 
     public static FrontendQualityEngineAccessRequirements For(FrontendQualityEngineId engineId) =>

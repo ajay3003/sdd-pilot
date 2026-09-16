@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BirkNext.BrowserCompanion;
 using BirkNext.LocalHttpsProxy;
 
 namespace BirkNext.Web.Models;
@@ -35,9 +36,17 @@ public sealed class PageAnalysis
     /// <summary>UTC boundary of the current analysis generation, set by "Refresh analysis". Null means the page has never been refreshed (all observed traffic counts).</summary>
     [JsonPropertyName("refreshedAtUtc")] public DateTimeOffset? RefreshedAtUtc { get; set; }
 
+    /// <summary>
+    /// Latest safe Browser Companion evidence for this page (DOM/accessibility/performance/runtime/Blazor summaries from the user's own
+    /// managed Edge session). Same generation rule as endpoints: only a visit that started at or after <see cref="RefreshedAtUtc"/> counts.
+    /// Never raw DOM, never a credential.
+    /// </summary>
+    [JsonPropertyName("browserEvidence")] public BrowserPageEvidence? BrowserEvidence { get; set; }
+
     /// <summary>Stable identity: scheme+host+normalized path, no query string or credentials.</summary>
     [JsonIgnore] public string Identity => $"{PageOrigin}{PagePath}";
     [JsonIgnore] public string Title => string.IsNullOrWhiteSpace(DisplayName) ? (PagePath.Length == 0 ? "/" : PagePath) : DisplayName!;
-    /// <summary>The page was refreshed and no traffic has been observed for the new generation yet.</summary>
-    [JsonIgnore] public bool IsWaitingForFreshTraffic => RefreshedAtUtc is not null && Endpoints.Count == 0;
+    /// <summary>The page was refreshed and neither traffic nor browser evidence has been observed for the new generation yet.</summary>
+    [JsonIgnore] public bool IsWaitingForFreshTraffic => RefreshedAtUtc is not null && Endpoints.Count == 0 && BrowserEvidence is null;
+    [JsonIgnore] public bool HasBrowserEvidence => BrowserEvidence is not null;
 }

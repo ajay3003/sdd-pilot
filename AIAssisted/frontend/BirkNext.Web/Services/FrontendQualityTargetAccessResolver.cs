@@ -135,8 +135,16 @@ public static class FrontendQualityTargetAccess
     /// public-HTTP engines stay Ready for a protected application whose frontend shell is public, DOM engines are Unsupported with the
     /// Local HTTPS proxy, and every blocker is reported with its precise reason instead of waiting for a timeout.
     /// </summary>
+    public const string BrowserCompanionLabel = "Browser Companion (your managed Edge session)";
+
     public static FrontendQualityEngineAccessDecision Decide(FrontendQualityEngineAccessRequirements engine, FrontendQualityTargetAccessContext access)
     {
+        // The Browser Companion observes the user's own signed-in browser: the access path is the same for public and protected
+        // applications and for every authenticated testing method. Whether evidence exists is decided by the engine itself.
+        if (engine.EngineId == FrontendQualityEngineId.BrowserQuality)
+            return Ready(engine, FrontendQualityEngineAccessKind.BrowserCompanion, BrowserCompanionLabel,
+                "Evidence is collected by the BirkNext Browser Companion extension in your normal managed Edge; no CDP, Playwright or token handoff.");
+
         var publicKind = engine.PublicAccess;
         if (!access.RequiresAuthentication)
             return Ready(engine, publicKind, publicKind == FrontendQualityEngineAccessKind.PublicHttp ? "Public HTTP" : "Browser runtime (public)");

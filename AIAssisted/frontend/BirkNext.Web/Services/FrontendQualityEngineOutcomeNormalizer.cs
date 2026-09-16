@@ -15,7 +15,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
         bool passiveSecurityAdapterAvailable,
         bool cancellationRequested = false,
         FrontendQualityEngineExecutionSnapshot? snapshot = null,
-        IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason>? reasonOverrides = null)
+        IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason>? reasonOverrides = null,
+        bool browserQualityAdapterAvailable = true)
     {
         var policy = context.EngineRequirements.ToPolicy();
         var outcomes = new List<FrontendQualityEngineOutcome>
@@ -26,6 +27,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
             Accessibility(targetUrl, context.FeatureToggles.EnableAccessibilityEngine, policy, result.AccessibilityReport, result.AccessibilityError, accessibilityAdapterAvailable, cancellationRequested),
             Lighthouse(targetUrl, context.FeatureToggles.EnableLighthouseEngine, policy, result.LighthouseReport, result.LighthouseError, lighthouseAdapterAvailable, cancellationRequested),
             PassiveSecurity(targetUrl, context.FeatureToggles.EnablePassiveSecurityEngine, policy, result.PassiveSecurityReport, result.PassiveSecurityError, passiveSecurityAdapterAvailable, cancellationRequested),
+            BrowserQuality(targetUrl, context.FeatureToggles.EnableBrowserQualityEngine, policy, result.BrowserQualityReport, result.BrowserQualityError, browserQualityAdapterAvailable, cancellationRequested),
         };
 
         ApplySnapshotSemantics(outcomes, snapshot);
@@ -234,6 +236,42 @@ public static class FrontendQualityEngineOutcomeNormalizer
             toolVersion: report?.AxeVersion, strength: FrontendQualityEvidenceStrength.ToolDiagnostic,
             manual: report is null ? null : ["Manual accessibility testing remains required; automated results do not establish WCAG conformance."],
             reason: AccessibilityReason(report, state));
+    }
+
+    /// <summary>
+    /// BirkNext Browser Quality: assessed when the paired Browser Companion delivered evidence for at least one page of the environment.
+    /// A missing companion is an explicit, immediate blocker (never a timeout); a connected companion without visited pages is "no evidence".
+    /// </summary>
+    public static FrontendQualityEngineOutcome BrowserQuality(
+        string targetUrl, bool enabled, FrontendQualityEngineRequirementPolicy policy,
+        BrowserQualityReviewResult? report, string? error, bool adapterAvailable, bool cancelled = false)
+    {
+        var state = !enabled ? FrontendQualityEngineExecutionState.Disabled
+            : !adapterAvailable ? FrontendQualityEngineExecutionState.Unavailable
+            : error is not null && report is null ? FrontendQualityEngineExecutionState.EngineError
+            : report is null ? (cancelled ? FrontendQualityEngineExecutionState.Cancelled : FrontendQualityEngineExecutionState.Unavailable)
+            : report.Assessed ? FrontendQualityEngineExecutionState.Assessed
+            : FrontendQualityEngineExecutionState.Unavailable;
+        var reason = state switch
+        {
+            FrontendQualityEngineExecutionState.Assessed => FrontendQualityEngineOutcomeReason.None,
+            FrontendQualityEngineExecutionState.Disabled => FrontendQualityEngineOutcomeReason.DisabledInTargetEnvironment,
+            FrontendQualityEngineExecutionState.EngineError => FrontendQualityEngineOutcomeReason.EngineError,
+            FrontendQualityEngineExecutionState.Cancelled => FrontendQualityEngineOutcomeReason.Cancelled,
+            _ when !adapterAvailable => FrontendQualityEngineOutcomeReason.EngineUnavailable,
+            _ when report is { CompanionState: BirkNext.BrowserCompanion.BrowserCompanionState.Connected or BirkNext.BrowserCompanion.BrowserCompanionState.Disconnected, PagesWithEvidence: 0 }
+                => FrontendQualityEngineOutcomeReason.BrowserCompanionNoEvidence,
+            _ => FrontendQualityEngineOutcomeReason.BrowserCompanionNotConnected,
+        };
+        var failure = state == FrontendQualityEngineExecutionState.Assessed ? null : error ?? report?.CompanionMessage ?? BrowserQualityEvidenceSource.NotConnectedMessage;
+        var limitations = report?.Limitations ?? ["Requires the BirkNext Browser Companion paired to this Target Environment."];
+        return Base(FrontendQualityEngineId.BrowserQuality, "Browser Quality", enabled,
+            policy.GetRequirement(FrontendQualityEngineId.BrowserQuality), state, targetUrl, null, report?.BrowserName, null,
+            findings: report?.Findings.Count, evidence: report?.PagesWithEvidence, failure: failure,
+            completed: report?.EvaluatedAt.UtcDateTime, limitations: limitations, toolName: "BirkNext Browser Companion",
+            strength: FrontendQualityEvidenceStrength.DirectObservation,
+            manual: report is null ? null : ["BirkNext Accessibility Checks are conservative native rules: manual accessibility testing remains required and no WCAG conformance is established."],
+            reason: reason);
     }
 
     public static FrontendQualityEngineOutcome Lighthouse(
@@ -512,6 +550,8 @@ public static class FrontendQualityEngineOutcomeNormalizer
             FrontendQualityEngineOutcomeReason.EnterpriseBrowserProtectionBlocked => FrontendQualityEngineExecutionState.Unavailable,
             FrontendQualityEngineOutcomeReason.BrowserDomUnavailableForMethod or
             FrontendQualityEngineOutcomeReason.ManualOnlyMethod => FrontendQualityEngineExecutionState.NotApplicable,
+            FrontendQualityEngineOutcomeReason.BrowserCompanionNotConnected or
+            FrontendQualityEngineOutcomeReason.BrowserCompanionNoEvidence => FrontendQualityEngineExecutionState.Unavailable,
             _ => FrontendQualityEngineExecutionState.SafetyBlocked,
         };
 
@@ -523,6 +563,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         FrontendQualityEngineId.Accessibility => toggles.EnableAccessibilityEngine,
         FrontendQualityEngineId.Lighthouse => toggles.EnableLighthouseEngine,
         FrontendQualityEngineId.PassiveSecurity => toggles.EnablePassiveSecurityEngine,
+        FrontendQualityEngineId.BrowserQuality => toggles.EnableBrowserQualityEngine,
         _ => false,
     };
 
@@ -534,6 +575,7 @@ public static class FrontendQualityEngineOutcomeNormalizer
         FrontendQualityEngineId.Accessibility => "Accessibility",
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
         FrontendQualityEngineId.PassiveSecurity => "Passive Security",
+        FrontendQualityEngineId.BrowserQuality => "Browser Quality",
         _ => id.ToString(),
     };
 

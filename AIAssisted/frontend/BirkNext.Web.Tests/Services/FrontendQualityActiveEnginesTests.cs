@@ -31,16 +31,17 @@ public sealed class FrontendQualityActiveEnginesTests
     {
         var snapshot = FrontendQualityActiveEngines.Resolve(Context(Profile()));
 
-        snapshot.Engines.Should().HaveCount(6);
+        snapshot.Engines.Should().HaveCount(7);
         snapshot.ActiveCount.Should().Be(5);
         snapshot.RequiredActiveCount.Should().Be(2);
         snapshot.OptionalActiveCount.Should().Be(3);
-        snapshot.DisabledCount.Should().Be(1);
+        snapshot.DisabledCount.Should().Be(2);
         snapshot.Active.Select(e => e.EngineId).Should().BeEquivalentTo([
             FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance,
             FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.PassiveSecurity]);
-        snapshot.Inactive.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.BrowserRuntime);
-        snapshot.Get(FrontendQualityEngineId.BrowserRuntime)!.Enabled.Should().BeFalse("Browser Runtime is the only opt-in engine");
+        snapshot.Inactive.Select(e => e.EngineId).Should().Equal(FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality);
+        snapshot.Get(FrontendQualityEngineId.BrowserRuntime)!.Enabled.Should().BeFalse("Browser Runtime is opt-in");
+        snapshot.Get(FrontendQualityEngineId.BrowserQuality)!.Enabled.Should().BeFalse("Browser Quality (Browser Companion) is opt-in until the extension is paired");
         snapshot.RequiredButDisabled.Should().BeEmpty();
         snapshot.ProfileId.Should().Be("dev");
     }

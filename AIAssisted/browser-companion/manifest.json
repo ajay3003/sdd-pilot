@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "BirkNext Browser Companion",
+  "version": "0.1.0",
+  "description": "Collects safe page quality evidence (DOM, accessibility, performance, runtime) from approved Target Environment pages in your normal browser session and reports it to the local BirkNext backend. Reads no credentials, cookies or storage.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "storage",
+    "scripting",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "BirkNext Browser Companion",
+    "default_popup": "popup.html"
+  },
+  "icons": {
+    "128": "icon128.png"
+  }
+}

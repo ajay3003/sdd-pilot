@@ -1,0 +1,23 @@
+.bcp { border: 1px solid var(--border-color, #d9dee7); border-radius: var(--radius-sm, 6px); padding: 0.9rem 1rem; margin: 0 0 1rem; background: var(--surface, #fff); }
+.bcp-head { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; flex-wrap: wrap; }
+.bcp-title { margin: 0 0 0.25rem; font-size: 1rem; }
+.bcp-sub { margin: 0; font-size: 0.82rem; color: var(--text-muted, #5b6472); max-width: 60ch; }
+.bcp-state { font-size: 0.78rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 999px; white-space: nowrap; }
+.bcp-state-ok { background: #e6f6ec; color: #146c2e; }
+.bcp-state-pending { background: #fff4e5; color: #7a4a00; }
+.bcp-state-warn { background: #fff4e5; color: #7a4a00; }
+.bcp-state-off { background: #eef1f5; color: #4b5563; }
+.bcp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.4rem 1rem; margin: 0.75rem 0; }
+.bcp-grid div { display: flex; flex-direction: column; }
+.bcp-grid dt { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted, #5b6472); }
+.bcp-grid dd { margin: 0; font-size: 0.86rem; }
+.bcp-mono { font-family: ui-monospace, Consolas, monospace; font-size: 0.8rem; word-break: break-all; }
+.bcp-pairing { border: 1px dashed #f0b35c; background: #fff8ec; padding: 0.6rem 0.8rem; border-radius: 4px; margin: 0.5rem 0; }
+.bcp-pairing p { margin: 0 0 0.35rem; font-size: 0.85rem; }
+.bcp-code { font-size: 1.5rem; letter-spacing: 0.25em; font-weight: 700; font-family: ui-monospace, Consolas, monospace; }
+.bcp-note { font-size: 0.82rem; color: var(--text-muted, #5b6472); margin: 0.25rem 0; }
+.bcp-warn { font-size: 0.82rem; color: #7a1f1f; background: #fdecec; border: 1px solid #f3b4b4; padding: 0.4rem 0.6rem; border-radius: 4px; margin: 0.25rem 0; }
+.bcp-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
+.bcp-install { margin-top: 0.6rem; font-size: 0.82rem; }
+.bcp-install summary { cursor: pointer; color: var(--link-color, #1d4ed8); }
+.bcp-install ol { margin: 0.4rem 0 0.4rem 1.2rem; padding: 0; }

@@ -82,6 +82,7 @@ public static class FrontendQualityDecisionSupportService
         FrontendQualityEngineId.Accessibility => "Accessibility / axe-core",
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
         FrontendQualityEngineId.PassiveSecurity => "Passive Security / ZAP",
+        FrontendQualityEngineId.BrowserQuality => "Browser Quality / Browser Companion",
         _ => id.ToString(),
     };
 

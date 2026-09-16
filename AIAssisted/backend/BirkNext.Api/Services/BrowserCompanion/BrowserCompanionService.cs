@@ -286,7 +286,8 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
         if (!CryptographicOperations.FixedTimeEquals(System.Text.Encoding.UTF8.GetBytes(session.SessionId), System.Text.Encoding.UTF8.GetBytes(sessionId)))
         { session.RejectedMessages++; reason = "Session does not match this environment. Pair again in BirkNext."; return null; }
         if (!string.Equals(session.ExtensionOrigin, extensionOrigin, StringComparison.Ordinal)) { session.RejectedMessages++; reason = "Session was paired by a different extension."; return null; }
-        if (session.Expired(time.GetUtcNow())) { _sessionsByProfile.Remove(profileId); reason = "Companion session expired. Pair again in BirkNext."; return null; }
+        // Expired sessions stay until Status reports them as Expired (or the purge loop removes them), so the UI can say why.
+        if (session.Expired(time.GetUtcNow())) { reason = "Companion session expired. Pair again in BirkNext."; return null; }
         return session;
     }
 

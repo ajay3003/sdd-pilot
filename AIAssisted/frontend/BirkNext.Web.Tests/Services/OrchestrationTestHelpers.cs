@@ -44,7 +44,8 @@ internal static class OrchestrationTestHelpers
         IFrontendLighthouseReviewApiService? lighthouse = null,
         IFrontendPassiveSecurityApiService? passiveSecurity = null,
         IAuthenticatedBrowserSessionService? authenticatedSessions = null,
-        IFrontendQualityEngineStatusApiService? readiness = null)
+        IFrontendQualityEngineStatusApiService? readiness = null,
+        IBrowserQualityEvidenceSource? browserQuality = null)
     {
         return new FrontendQualityReviewOrchestrator(
             security ?? new MockSecurityScanner(),
@@ -56,7 +57,32 @@ internal static class OrchestrationTestHelpers
             lighthouse,
             passiveSecurity,
             authenticatedSessions,
-            readiness ?? CreateAlwaysReadyMockService());
+            readiness ?? CreateAlwaysReadyMockService(),
+            accessResolver: null,
+            apiSurface: null,
+            browserQuality: browserQuality);
+    }
+
+    /// <summary>Browser Quality evidence source that reports a connected companion with one assessed page (no findings).</summary>
+    public sealed class AssessedBrowserQualitySource : IBrowserQualityEvidenceSource
+    {
+        public int CallCount { get; private set; }
+        public Task<BrowserQualityReviewResult> CollectAsync(FrontendAnalysisContext context, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return Task.FromResult(new BrowserQualityReviewResult
+            {
+                CompanionState = BirkNext.BrowserCompanion.BrowserCompanionState.Connected, CompanionMessage = "Browser Companion connected; 1 page(s) with evidence.",
+                PagesWithEvidence = 1, PageIdentities = [context.TargetUrl.TrimEnd('/') + "/"], Findings = [], EvaluatedAt = DateTimeOffset.UtcNow, BrowserName = "Microsoft Edge",
+            });
+        }
+    }
+
+    /// <summary>Browser Quality evidence source that reports "not connected" (the accurate blocker, never a timeout).</summary>
+    public sealed class DisconnectedBrowserQualitySource : IBrowserQualityEvidenceSource
+    {
+        public Task<BrowserQualityReviewResult> CollectAsync(FrontendAnalysisContext context, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new BrowserQualityReviewResult { CompanionState = BirkNext.BrowserCompanion.BrowserCompanionState.NotPaired, CompanionMessage = BrowserQualityEvidenceSource.NotConnectedMessage, EvaluatedAt = DateTimeOffset.UtcNow });
     }
 
     private sealed class MockSecurityScanner : ISecurityScanner

@@ -1050,6 +1050,7 @@
             new("Accessibility", _context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
             new("Lighthouse", _context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
             new("Passive Security", _context.FeatureToggles.EnablePassiveSecurityEngine ? "Enabled (ZAP passive only)" : "Disabled"),
+            new("Browser Quality", _context.FeatureToggles.EnableBrowserQualityEngine ? "Enabled (Browser Companion, native checks)" : "Disabled"),
         ];
     }
 
@@ -1228,10 +1229,10 @@
         {
             FrontendQualityCategory.Security => [FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassiveSecurity],
             FrontendQualityCategory.Standards => [FrontendQualityEngineId.StaticSecurity],
-            FrontendQualityCategory.Performance => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.Lighthouse],
+            FrontendQualityCategory.Performance => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.BrowserQuality],
             FrontendQualityCategory.Readiness => [FrontendQualityEngineId.PassivePerformance],
-            FrontendQualityCategory.BlazorWasm => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.BrowserRuntime],
-            FrontendQualityCategory.Accessibility => [FrontendQualityEngineId.Accessibility],
+            FrontendQualityCategory.BlazorWasm => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality],
+            FrontendQualityCategory.Accessibility => [FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.BrowserQuality],
             _ => [],
         };
         return engines.Length > 0 && engines.All(id => !active.IsActive(id));

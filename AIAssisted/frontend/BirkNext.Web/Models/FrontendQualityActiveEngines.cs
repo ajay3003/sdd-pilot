@@ -106,6 +106,7 @@ public static class FrontendQualityActiveEngines
         FrontendQualityEngineId.Accessibility => toggles.EnableAccessibilityEngine,
         FrontendQualityEngineId.Lighthouse => toggles.EnableLighthouseEngine,
         FrontendQualityEngineId.PassiveSecurity => toggles.EnablePassiveSecurityEngine,
+        FrontendQualityEngineId.BrowserQuality => toggles.EnableBrowserQualityEngine,
         _ => false,
     };
 
@@ -121,6 +122,7 @@ public static class FrontendQualityActiveEngines
         FrontendQualityEngineId.Accessibility => "Accessibility",
         FrontendQualityEngineId.Lighthouse => "Lighthouse",
         FrontendQualityEngineId.PassiveSecurity => "Passive Security",
+        FrontendQualityEngineId.BrowserQuality => "Browser Quality",
         _ => id.ToString(),
     };
 }

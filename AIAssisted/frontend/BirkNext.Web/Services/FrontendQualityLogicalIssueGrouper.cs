@@ -151,12 +151,13 @@ public static class FrontendQualityLogicalIssueGrouper
         "Accessibility" or "axe-core" => FrontendQualityEngineId.Accessibility,
         "Lighthouse" => FrontendQualityEngineId.Lighthouse,
         "ZAP Passive" => FrontendQualityEngineId.PassiveSecurity,
+        BrowserQualityRules.CompanionSource or BrowserQualityRules.CorrelatedSource or "BirkNext Browser Quality" => FrontendQualityEngineId.BrowserQuality,
         _ => FrontendQualityEngineId.StaticSecurity,
     };
 
     private static FrontendQualityEvidenceStrength Strength(FrontendQualityEngineId engineId) => engineId switch
     {
-        FrontendQualityEngineId.BrowserRuntime => FrontendQualityEvidenceStrength.DirectObservation,
+        FrontendQualityEngineId.BrowserRuntime or FrontendQualityEngineId.BrowserQuality => FrontendQualityEvidenceStrength.DirectObservation,
         FrontendQualityEngineId.Accessibility or FrontendQualityEngineId.Lighthouse or FrontendQualityEngineId.PassiveSecurity
             => FrontendQualityEvidenceStrength.ToolDiagnostic,
         _ => FrontendQualityEvidenceStrength.StaticIndicator,

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using BirkNext.BrowserCompanion;
 using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Models;
 using Microsoft.JSInterop;
@@ -15,6 +16,8 @@ public interface IEndpointDiscoveryService
     EndpointDiscoverySnapshot GetSnapshot(string profileId);
     /// <summary>Folds the current runtime's observed endpoints into the persisted per-page snapshot and persists. Returns true when anything changed.</summary>
     Task<bool> MergeObservedAsync(IJSRuntime js, string profileId, IReadOnlyList<ObservedNetworkEndpoint> observed);
+    /// <summary>Folds Browser Companion page evidence into the same per-page snapshot (one PageAnalysis per page identity for proxy and browser evidence alike) and persists. Returns true when anything changed.</summary>
+    Task<bool> MergeBrowserEvidenceAsync(IJSRuntime js, string profileId, IReadOnlyList<BrowserPageEvidence> pages);
     Task DeletePageAsync(IJSRuntime js, string profileId, string pageIdentity);
     /// <summary>
     /// Refresh analysis for exactly one existing page: keep the page entry and identity, start a new analysis generation, reset its current
@@ -67,6 +70,17 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
         return true;
     }
 
+    public async Task<bool> MergeBrowserEvidenceAsync(IJSRuntime js, string profileId, IReadOnlyList<BrowserPageEvidence> pages)
+    {
+        if (pages.Count == 0) return false;
+        var snapshot = _byProfile.TryGetValue(profileId, out var existing) ? existing : new EndpointDiscoverySnapshot();
+        var changed = EndpointDiscoveryMerge.MergeBrowserEvidence(snapshot, pages, DateTimeOffset.UtcNow);
+        if (!changed) return false;
+        _byProfile[profileId] = snapshot;
+        await PersistAsync(js);
+        return true;
+    }
+
     public Task DeletePageAsync(IJSRuntime js, string profileId, string pageIdentity) => MutateAsync(js, profileId, s =>
         s.Pages.RemoveAll(p => p.Identity == pageIdentity) > 0);
 
@@ -77,6 +91,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
         page.AnalysisGeneration++;
         page.RefreshedAtUtc = DateTimeOffset.UtcNow;
         page.Endpoints.Clear();
+        page.BrowserEvidence = null;      // browser evidence starts a fresh generation too; it repopulates only from a visit after the boundary
         page.LastObservedAt = default;    // no traffic observed yet in the new generation; never show the old "last observed" as current
         return true;
     });
@@ -169,6 +184,41 @@ public static class EndpointDiscoveryMerge
             changed |= Upsert(page.Endpoints, endpoint);
             if (page.FirstObservedAt == default || endpoint.FirstObservedAt < page.FirstObservedAt) page.FirstObservedAt = endpoint.FirstObservedAt;
             if (endpoint.LastObservedAt > page.LastObservedAt) page.LastObservedAt = endpoint.LastObservedAt;
+        }
+        if (changed) snapshot.UpdatedAt = now;
+        return changed;
+    }
+
+    /// <summary>
+    /// Browser Companion evidence converges on the same page identity as proxy traffic (origin + normalized path), so a page seen by both
+    /// is one PageAnalysis, never two. Respects the refresh boundary through the evidence's VisitStartedAt: a visit that started before
+    /// "Refresh analysis" never repopulates the refreshed page. Other pages are untouched.
+    /// </summary>
+    public static bool MergeBrowserEvidence(EndpointDiscoverySnapshot snapshot, IReadOnlyList<BrowserPageEvidence> pages, DateTimeOffset now)
+    {
+        var changed = false;
+        foreach (var evidence in pages)
+        {
+            if (string.IsNullOrWhiteSpace(evidence.PageOrigin) || string.IsNullOrWhiteSpace(evidence.PagePath) || evidence.VisitStartedAt == default) continue;
+            var identity = evidence.Identity;
+            var page = snapshot.Pages.FirstOrDefault(p => p.Identity == identity);
+            if (page is null)
+            {
+                page = new PageAnalysis { PageOrigin = evidence.PageOrigin, PagePath = evidence.PagePath, FirstObservedAt = evidence.VisitStartedAt, LastObservedAt = evidence.CapturedAt };
+                snapshot.Pages.Add(page);
+                changed = true;
+            }
+            if (page.RefreshedAtUtc is { } boundary && evidence.VisitStartedAt < boundary)
+                continue;
+            var current = page.BrowserEvidence;
+            if (current is not null && (current.VisitStartedAt > evidence.VisitStartedAt ||
+                (current.VisitStartedAt == evidence.VisitStartedAt && current.SnapshotSequence >= evidence.SnapshotSequence && current.CapturedAt >= evidence.CapturedAt)))
+                continue;
+            page.BrowserEvidence = evidence;
+            if (string.IsNullOrWhiteSpace(page.DisplayName) && !string.IsNullOrWhiteSpace(evidence.DocumentTitle)) page.DisplayName = evidence.DocumentTitle;
+            if (page.FirstObservedAt == default || evidence.VisitStartedAt < page.FirstObservedAt) page.FirstObservedAt = evidence.VisitStartedAt;
+            if (evidence.CapturedAt > page.LastObservedAt) page.LastObservedAt = evidence.CapturedAt;
+            changed = true;
         }
         if (changed) snapshot.UpdatedAt = now;
         return changed;

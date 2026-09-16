@@ -1,0 +1,124 @@
+@using BirkNext.BrowserCompanion
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@implements IDisposable
+
+<section class="bcp" data-testid="browser-companion-panel" aria-label="Browser Companion">
+    <div class="bcp-head">
+        <div>
+            <h4 class="bcp-title">Browser Companion</h4>
+            <p class="bcp-sub">Safe DOM, accessibility, performance and runtime evidence from your normal managed Edge session. No Playwright, no CDP, no token handoff; only pages of this Target Environment are observed.</p>
+        </div>
+        <span class="bcp-state bcp-state-@StateClass" data-testid="browser-companion-state">@StateLabel</span>
+    </div>
+
+    <dl class="bcp-grid">
+        <div><dt>Target</dt><dd data-testid="browser-companion-target">@(Profile?.Name ?? "—")</dd></div>
+        <div><dt>Current page</dt><dd class="bcp-mono" data-testid="browser-companion-current-page">@CurrentPage</dd></div>
+        <div><dt>Pages with evidence</dt><dd data-testid="browser-companion-pages">@Status.PagesWithEvidence</dd></div>
+        <div><dt>DOM quality</dt><dd data-testid="browser-companion-dom">@Availability</dd></div>
+        <div><dt>Performance</dt><dd data-testid="browser-companion-performance">@Availability</dd></div>
+        <div><dt>Accessibility</dt><dd data-testid="browser-companion-accessibility">@Availability</dd></div>
+        <div><dt>Network correlation</dt><dd data-testid="browser-companion-network">@(ProxyRunning ? "Available (Local HTTPS proxy running)" : "Unavailable (start the Local HTTPS proxy)")</dd></div>
+        <div><dt>Approved origins</dt><dd class="bcp-mono" data-testid="browser-companion-origins">@(ApprovedOrigins.Count == 0 ? "—" : string.Join(", ", ApprovedOrigins))</dd></div>
+    </dl>
+
+    @if (Status.State == BrowserCompanionState.PairingPending)
+    {
+        <div class="bcp-pairing" role="status" data-testid="browser-companion-pairing">
+            <p>Enter this code in the <strong>BirkNext Browser Companion</strong> extension (toolbar icon → Pair) within @Remaining:</p>
+            <code class="bcp-code" data-testid="browser-companion-code">@Status.PairingCode</code>
+        </div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Status.Message) && Status.State != BrowserCompanionState.PairingPending)
+    {
+        <p class="bcp-note" data-testid="browser-companion-message">@Status.Message</p>
+    }
+    @if (Runtime?.BackendUnavailable == true)
+    {
+        <p class="bcp-warn" role="alert" data-testid="browser-companion-backend">The local BirkNext backend is not reachable; companion status cannot be read.</p>
+    }
+    @if (Runtime?.LastError is { Length: > 0 } error)
+    {
+        <p class="bcp-warn" role="alert" data-testid="browser-companion-error">@error</p>
+    }
+
+    <div class="bcp-actions">
+        @if (Profile is not null && Runtime is not null)
+        {
+            @if (Status.State is BrowserCompanionState.NotPaired or BrowserCompanionState.Expired or BrowserCompanionState.PairingPending)
+            {
+                <button type="button" class="btn-primary fa-btn-sm" data-testid="browser-companion-pair" disabled="@(Runtime.Busy || ApprovedOrigins.Count == 0)" @onclick="Pair">
+                    @(Status.State == BrowserCompanionState.PairingPending ? "New pairing code" : "Pair browser companion")
+                </button>
+            }
+            else
+            {
+                <button type="button" class="btn-secondary fa-btn-sm" data-testid="browser-companion-unpair" disabled="@Runtime.Busy" @onclick="Unpair">Unpair</button>
+                <button type="button" class="btn-secondary fa-btn-sm" data-testid="browser-companion-repair" disabled="@Runtime.Busy" @onclick="Pair">Pair again</button>
+            }
+        }
+    </div>
+    <details class="bcp-install">
+        <summary>Install the extension (DEV)</summary>
+        <ol>
+            <li>In Edge open <code>edge://extensions</code>, enable <em>Developer mode</em>.</li>
+            <li>Choose <em>Load unpacked</em> and select <code>AIAssisted/browser-companion</code> from the BirkNext repository.</li>
+            <li>Click the extension icon, enter the pairing code shown above.</li>
+            <li>Sign in to the target application as usual and navigate its pages; evidence appears per page in Endpoint Discovery.</li>
+        </ol>
+        <p>If managed Edge policy blocks unpacked extensions, the state stays "Not paired" and the extension page shows the policy message; BirkNext never falls back to token injection or CDP.</p>
+    </details>
+</section>
+
+@code {
+    [Parameter] public FrontendAnalysisProfile? Profile { get; set; }
+    [Parameter] public BrowserCompanionRuntime? Runtime { get; set; }
+    [Parameter] public bool ProxyRunning { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private BrowserCompanionStatus Status => Runtime?.For(Profile?.Id) ?? new();
+    private IReadOnlyList<string> ApprovedOrigins => Status.ApprovedOrigins.Count > 0 ? Status.ApprovedOrigins : BrowserCompanionScope.ApprovedOrigins(Profile);
+    private string CurrentPage => Status.CurrentPageOrigin is { Length: > 0 } o ? $"{o}{Status.CurrentPagePath}" : (Status.State == BrowserCompanionState.Connected ? "No approved page open" : "—");
+    private string Availability => Status.State switch
+    {
+        BrowserCompanionState.Connected => Status.PagesWithEvidence > 0 ? "Available" : "Waiting for a page visit",
+        BrowserCompanionState.Disconnected => Status.PagesWithEvidence > 0 ? "Available (collected earlier this session)" : "Unavailable",
+        _ => "Unavailable",
+    };
+    private string StateLabel => Status.State switch
+    {
+        BrowserCompanionState.Connected => "Connected",
+        BrowserCompanionState.Disconnected => "Paired · not reporting",
+        BrowserCompanionState.PairingPending => "Pairing…",
+        BrowserCompanionState.Expired => "Session expired",
+        _ => "Not connected",
+    };
+    private string StateClass => Status.State switch
+    {
+        BrowserCompanionState.Connected => "ok",
+        BrowserCompanionState.PairingPending => "pending",
+        BrowserCompanionState.Disconnected => "warn",
+        _ => "off",
+    };
+    private string Remaining => Status.PairingExpiresAt is { } exp ? $"{Math.Max(0, (int)(exp - DateTimeOffset.UtcNow).TotalSeconds)} s" : "3 min";
+
+    private BrowserCompanionRuntime? _subscribed;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!ReferenceEquals(_subscribed, Runtime))
+        {
+            if (_subscribed is not null) _subscribed.Changed -= OnRuntimeChanged;
+            _subscribed = Runtime;
+            if (_subscribed is not null) _subscribed.Changed += OnRuntimeChanged;
+        }
+        if (Runtime is not null && Profile is not null) await Runtime.FollowAsync(Profile);
+    }
+
+    private async Task Pair() { if (Runtime is not null && Profile is not null) await Runtime.StartPairingAsync(Profile); }
+    private async Task Unpair() { if (Runtime is not null) await Runtime.UnpairAsync(); }
+    private void OnRuntimeChanged() => _ = InvokeAsync(async () => { StateHasChanged(); if (Changed.HasDelegate) await Changed.InvokeAsync(); });
+
+    public void Dispose() { if (_subscribed is not null) _subscribed.Changed -= OnRuntimeChanged; }
+}

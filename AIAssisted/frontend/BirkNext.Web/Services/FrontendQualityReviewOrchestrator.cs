@@ -54,7 +54,9 @@ public sealed record FrontendQualityReviewOrchestrationResult(
     IReadOnlyDictionary<FrontendQualityEngineId, FrontendQualityEngineAccessDecision>? AccessDecisions = null,
     TargetPreflightResult? Preflight = null,
     FrontendQualityActiveEngineSnapshot? ActiveEngines = null,
-    BirkNext.LocalHttpsProxy.FrontendAuthenticatedApiSurfaceResult? AuthenticatedApiSurface = null)
+    BirkNext.LocalHttpsProxy.FrontendAuthenticatedApiSurfaceResult? AuthenticatedApiSurface = null,
+    BrowserQualityReviewResult? BrowserQualityReport = null,
+    string? BrowserQualityError = null)
 {
     public List<string> SkippedEngines { get; init; } = SkippedEngines ?? [];
     public Dictionary<FrontendQualityEngineId, FrontendQualityEngineOutcomeReason> OutcomeReasons { get; init; } = [];
@@ -86,6 +88,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     private readonly IFrontendQualityEngineStatusApiService? _engineStatusService;
     private readonly IFrontendQualityTargetAccessResolver? _accessResolver;
     private readonly IFrontendAuthenticatedApiSurfaceService? _apiSurface;
+    private readonly IBrowserQualityEvidenceSource? _browserQuality;
     internal IAuthenticatedReviewOrchestrationObserver AuthenticatedObserver { get; set; } = NoOpAuthenticatedReviewOrchestrationObserver.Instance;
 
     public FrontendQualityReviewOrchestrator(
@@ -100,9 +103,11 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         IAuthenticatedBrowserSessionService? authenticatedSessions = null,
         IFrontendQualityEngineStatusApiService? engineStatusService = null,
         IFrontendQualityTargetAccessResolver? accessResolver = null,
-        IFrontendAuthenticatedApiSurfaceService? apiSurface = null)
+        IFrontendAuthenticatedApiSurfaceService? apiSurface = null,
+        IBrowserQualityEvidenceSource? browserQuality = null)
     {
         _apiSurface = apiSurface;
+        _browserQuality = browserQuality;
         _security = security;
         _performance = performance;
         _preflight = preflight;
@@ -452,6 +457,26 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             result = result with { SkippedEngines = [.. result.SkippedEngines, "Passive Security"] };
         }
 
+        // ── BirkNext Browser Quality — evidence from the paired Browser Companion (user's managed Edge); no request to the target ──
+        if (active.IsActive(FrontendQualityEngineId.BrowserQuality) && _browserQuality is not null && decisions[FrontendQualityEngineId.BrowserQuality].IsReady)
+        {
+            try
+            {
+                var browserQuality = await _browserQuality.CollectAsync(context, cancellationToken);
+                result = result with { BrowserQualityReport = browserQuality };
+                if (!browserQuality.Assessed)
+                    result = result with { SkippedEngines = [.. result.SkippedEngines, "Browser Quality"] };
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                result = result with { BrowserQualityError = ex.Message, SkippedEngines = [.. result.SkippedEngines, "Browser Quality"] };
+            }
+        }
+        else
+        {
+            result = result with { SkippedEngines = [.. result.SkippedEngines, "Browser Quality"] };
+        }
+
         var qualityReport = _quality.BuildReport(targetUrl, result.SecurityReport, result.PerformanceReport);
         var accessibilitySkipped = result.AccessibilityReport?.ExecutionStatus is
             AccessibilityExecutionStatusDto.Skipped or AccessibilityExecutionStatusDto.AuthenticationRequired;
@@ -469,10 +494,11 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
         enrichedReport = ApplyPassiveSecurity(enrichedReport, result.PassiveSecurityReport);
         // Last, so the intermediate engine merges (which copy properties explicitly) cannot drop it.
         enrichedReport = ApplyAuthenticatedApiSurface(enrichedReport, result.AuthenticatedApiSurface, context, active);
+        enrichedReport = ApplyBrowserQuality(enrichedReport, result.BrowserQualityReport);
         var outcomes = FrontendQualityEngineOutcomeNormalizer.NormalizeAll(
             targetUrl, context, result, _runtime is not null, _accessibility is not null,
             _lighthouse is not null, _passiveSecurity is not null, cancellationToken.IsCancellationRequested,
-            snapshot, result.OutcomeReasons);
+            snapshot, result.OutcomeReasons, _browserQuality is not null);
         outcomes = FrontendQualityEngineOutcomeNormalizer.ApplyAccessDecisions(outcomes, decisions);
 
         return result with
@@ -506,7 +532,7 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
     {
         var message = $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}";
         var result = new FrontendQualityReviewOrchestrationResult(
-            SkippedEngines: ["Security", "Performance", "BrowserRuntime", "Accessibility", "Lighthouse", "Passive Security"],
+            SkippedEngines: ["Security", "Performance", "BrowserRuntime", "Accessibility", "Lighthouse", "Passive Security", "Browser Quality"],
             PreflightBlocked: true,
             PreflightBlockReason: message,
             PreflightStatus: PreflightStatus.Ready,
@@ -779,6 +805,42 @@ public sealed class FrontendQualityReviewOrchestrator : IFrontendQualityReviewOr
             FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
             AccessibilityReport = accessibility, LighthouseReport = report.LighthouseReport,
             PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport
+        };
+    }
+
+    /// <summary>Adds the Browser Quality findings (already sanitized, deterministic rule output) and its limitations to the report.</summary>
+    private static FrontendQualityReviewReport ApplyBrowserQuality(FrontendQualityReviewReport report, BrowserQualityReviewResult? browserQuality)
+    {
+        if (browserQuality is null || !browserQuality.Assessed) return report;
+        var findings = browserQuality.Findings.Select(f => new FrontendQualityFinding
+        {
+            Id = $"browser-quality-{f.RuleId}-{Math.Abs(f.Page.GetHashCode()) % 100000}", Title = $"{f.Title} — {f.Page}", Severity = f.Severity,
+            Category = BrowserQualityRules.ToReportCategory(f.Category), Description = f.Explanation, Recommendation = f.Recommendation,
+            Evidence = [$"Page: {f.Page}", .. f.Evidence], SourceSystem = f.Source, EngineId = FrontendQualityEngineId.BrowserQuality,
+            SourceRuleId = f.RuleId, Status = CheckExecutionStatus.Failed,
+        }).ToList();
+        return new FrontendQualityReviewReport
+        {
+            TargetUrl = report.TargetUrl, FinalUrl = report.FinalUrl, GeneratedAt = report.GeneratedAt,
+            CompletedAt = report.CompletedAt, DurationMs = report.DurationMs, OverallScore = report.OverallScore,
+            PerformanceScore = report.PerformanceScore, SecurityScore = report.SecurityScore,
+            AccessibilityScore = report.AccessibilityScore, StandardsScore = report.StandardsScore,
+            WasmScore = report.WasmScore, ReadinessScore = report.ReadinessScore,
+            Findings = report.Findings.Concat(findings).ToList(),
+            LogicalIssues = report.LogicalIssues, ManualReviewItems = report.ManualReviewItems,
+            CategoryScores = report.CategoryScores, Recommendations = report.Recommendations, Risks = report.Risks,
+            Limitations = report.Limitations.Concat(browserQuality.Limitations).Distinct().ToList(),
+            IsBlazorWasm = report.IsBlazorWasm, ErrorMessage = report.ErrorMessage,
+            Coverage = report.Coverage, ReleaseDisposition = report.ReleaseDisposition, EngineOutcomes = report.EngineOutcomes,
+            Completeness = report.Completeness,
+            AssessedEngines = report.AssessedEngines.Append("Browser Quality").Distinct().ToList(),
+            FailedEngines = report.FailedEngines, SkippedEngines = report.SkippedEngines,
+            PreflightStatus = report.PreflightStatus, PreflightMessage = report.PreflightMessage,
+            RedirectOccurred = report.RedirectOccurred, TargetAccess = report.TargetAccess,
+            ActiveEngines = report.ActiveEngines, TargetEnvironment = report.TargetEnvironment,
+            AuthenticatedApiSurface = report.AuthenticatedApiSurface,
+            AccessibilityReport = report.AccessibilityReport, LighthouseReport = report.LighthouseReport,
+            PassiveSecurityReport = report.PassiveSecurityReport, BrowserRuntimeReport = report.BrowserRuntimeReport,
         };
     }
 
