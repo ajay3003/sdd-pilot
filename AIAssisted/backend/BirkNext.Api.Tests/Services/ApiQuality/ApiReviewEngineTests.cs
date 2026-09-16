@@ -93,7 +93,7 @@ public sealed class ApiReviewEngineTests
         Assert.Contains(target.Checks, c => c.CheckId == "errors-unknown-route" && c.Result == ApiReviewCheckResult.Pass);
         Assert.Contains(target.Checks, c => c.CheckId == "errors-format" && c.Result == ApiReviewCheckResult.Pass);
         Assert.Contains(target.Checks, c => c.CheckId == "rest-compression" && c.Result == ApiReviewCheckResult.Pass);
-        Assert.All(fixture.Requests, r => Assert.True(r.Method == HttpMethod.Get || r.Method == HttpMethod.Options), "read-only: only GET/OPTIONS");
+        Assert.All(fixture.Requests, r => Assert.True(r.Method == HttpMethod.Get || r.Method == HttpMethod.Options));
         Assert.All(fixture.Requests, r => Assert.Null(r.Headers.Authorization));
         Assert.Equal(1, report.Coverage.PublicExecuted); Assert.Equal(0, report.Coverage.AuthenticatedPlanned);
         Assert.DoesNotContain("\"name\":\"x\"", JsonSerializer.Serialize(report));
@@ -112,7 +112,7 @@ public sealed class ApiReviewEngineTests
         Assert.Equal(ApiReviewAccessMode.AuthenticatedHttp, target.AccessMode);
         Assert.Equal(ApiReviewTargetStatus.Completed, target.Status);
         Assert.True(gateway.RestCalls >= 2, "operation GET + unknown-route probe go through the gateway");
-        Assert.DoesNotContain(fixture.Requests, r => r.Method == HttpMethod.Get, "the engine never sends an authenticated GET itself");
+        Assert.DoesNotContain(fixture.Requests, r => r.Method == HttpMethod.Get);
         Assert.All(target.Operations.Where(o => o.Executed), o => Assert.Equal(ApiReviewAccessMode.AuthenticatedHttp, o.AccessMode));
         var json = JsonSerializer.Serialize(report);
         Assert.DoesNotContain("Bearer", json); Assert.DoesNotContain("Authorization", json); Assert.DoesNotContain("eyJ", json); Assert.DoesNotContain(FakeGateway.SecretToken, json);
@@ -184,7 +184,7 @@ public sealed class ApiReviewEngineTests
         Assert.Contains(report.Findings, f => f.Id.StartsWith("gql-observed-mutation") && f.Result == ApiReviewCheckResult.ManualReview);
         Assert.Contains(report.Findings, f => f.Id.StartsWith("gql-deprecated-fields"));
         Assert.Equal(1, report.Coverage.GraphQlOperationsMatched); Assert.Equal(3, report.Coverage.GraphQlOperationsObserved);
-        Assert.DoesNotContain("query {", JsonSerializer.Serialize(report.Targets.Select(t => t.Target)), "operation bodies are never persisted");
+        Assert.DoesNotContain("query {", JsonSerializer.Serialize(report.Targets.Select(t => t.Target)));
     }
 
     [Fact]

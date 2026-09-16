@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "BirkNext.Web",
   "resources": {
-    "hash": "sha256-TDBSTBu1AnjR41m3Qb73BEbRP9g6c2vSFpwBprGjCDU=",
+    "hash": "sha256-z3wi4ardI8SDUe4fzTpcicJKIh/GtCst2eSi9sxf+u4=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-9NoXeVUo4WNrEqrjAp/y3Yc8NmDcymQkzMGOIbIpGio="
     },
@@ -227,10 +227,10 @@
       "mscorlib.wasm": "sha256-pP80UGziulDYhvVdeUaGEq9FlrHQDQmnCqVvx1FJZis=",
       "netstandard.wasm": "sha256-ARMsMyhWuSDjvzisfZbnEptnxh8Vh7VpHPhuT6iazy0=",
       "System.Private.CoreLib.wasm": "sha256-+28m4yuZsdz9ij1sJHvNH896fSI8gXgrQ9bhGO76Qqo=",
-      "BirkNext.Web.wasm": "sha256-3Js7J6ITV13ClZUzyOzLBf2l0dbI1LRp2ld/Vuczo7Y="
+      "BirkNext.Web.wasm": "sha256-NxNcvX/gvHTQanH3p18d76zg2ZjBLt/acTO4jWxpgKM="
     },
     "pdb": {
-      "BirkNext.Web.pdb": "sha256-r0pZf3L9pE9P0GiY5usHXDC+3OidgL8yH0wzWCVLrq0="
+      "BirkNext.Web.pdb": "sha256-STZ035jAlcEeYVRfyCGu1WM61D0nJGMwtDSkAnrJ3D0="
     }
   },
   "cacheBootResources": true,
