@@ -237,6 +237,12 @@ builder.Services.AddSingleton<IAuthenticatedApiExecutionService, AuthenticatedAp
 builder.Services.AddSingleton<IAuthenticatedReviewGateway, AuthenticatedReviewGateway>();
 builder.Services.AddSingleton<BirkNext.Api.Services.FrontendQualityEngines.IFrontendAuthenticatedApiSurfaceService, BirkNext.Api.Services.FrontendQualityEngines.FrontendAuthenticatedApiSurfaceService>();
 builder.Services.AddSingleton(TimeProvider.System);
+// BirkNext Browser Companion: loopback-only pairing + safe page evidence from the user's normal managed Edge (no CDP, no Playwright, no token).
+builder.Services.AddSingleton<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionEvidenceSanitizer>(sp => new BirkNext.Api.Services.BrowserCompanion.BrowserCompanionEvidenceSanitizer(new BrowserEvidenceSanitizer()));
+builder.Services.AddSingleton<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>();
+builder.Services.AddSingleton<BirkNext.Api.Services.BrowserCompanion.IBrowserCompanionService>(sp => sp.GetRequiredService<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>());
+builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>());
+builder.Services.AddScoped<BirkNext.Api.Controllers.BrowserCompanionExtensionCallerFilter>();
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
 builder.Services.AddSingleton<AuthenticationOriginPolicy>();
 builder.Services.AddSingleton<AuthenticatedBrowserSessionManager>();
