@@ -3,64 +3,60 @@ using BirkNext.Api.Services.ContractAnalysis;
 namespace BirkNext.Api.Services.IntegrationQuality;
 
 /// <summary>
-/// Phase 3, Checkpoint 5: resolves the previous contract for drift from persisted snapshot
-/// history.
+/// Phase 3, Checkpoint 5: resolves the previous contract for drift from a snapshot that was
+/// already loaded before the current review began.
 ///
-/// Lookup is by environment plus baseline key only. Display name and IntegrationId are never
-/// used, and a lookup never crosses environments, so a Dev baseline cannot leak into QA.
+/// The provider is deliberately scoped to one already-resolved snapshot rather than querying the
+/// repository per integration. Because it can only ever see history that existed before the
+/// current run, a review physically cannot compare itself against its own snapshot no matter how
+/// the save is later ordered.
+///
+/// Lookup is by baseline key within that snapshot's environment. Display name and IntegrationId
+/// are never used, and a snapshot belongs to exactly one environment, so a Dev baseline cannot
+/// resolve for QA.
 /// </summary>
-public sealed class SnapshotContractBaselineProvider : IContractBaselineProvider
+public sealed class SnapshotScopedBaselineProvider : IContractBaselineProvider
 {
-    private readonly IIntegrationQualitySnapshotRepository _repository;
-    private readonly ILogger<SnapshotContractBaselineProvider> _logger;
+    private readonly IntegrationQualitySnapshot? _previous;
+    private readonly Dictionary<string, IntegrationSnapshotEntry> _byBaselineKey;
 
-    public SnapshotContractBaselineProvider(
-        IIntegrationQualitySnapshotRepository repository,
-        ILogger<SnapshotContractBaselineProvider> logger)
+    public SnapshotScopedBaselineProvider(IntegrationQualitySnapshot? previousSnapshot)
     {
-        _repository = repository;
-        _logger = logger;
+        _previous = previousSnapshot;
+
+        _byBaselineKey = previousSnapshot is null
+            ? new Dictionary<string, IntegrationSnapshotEntry>(StringComparer.Ordinal)
+            : previousSnapshot.Integrations
+                .GroupBy(e => e.BaselineKey, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
     }
 
-    /// <summary>
-    /// The environment and baseline key for the current resolution. Set per review by the
-    /// orchestrating service, because IContractBaselineProvider is addressed per integration.
-    /// </summary>
-    public string? EnvironmentId { get; set; }
+    public IntegrationQualitySnapshot? PreviousSnapshot => _previous;
 
-    public async Task<ContractBaseline?> GetBaselineAsync(
-        string integrationId,
+    public bool HasBaseline => _previous is not null;
+
+    /// <summary>
+    /// Resolves the previous normalized contract for one integration. The key argument is a
+    /// baseline key, not an IntegrationId; IntegrationId is not a stable history key.
+    /// </summary>
+    public Task<ContractBaseline?> GetBaselineAsync(
+        string baselineKey,
         string contractName,
         CancellationToken ct = default)
     {
-        // integrationId is not a usable history key; callers supply the baseline key instead.
-        return await GetBaselineByKeyAsync(EnvironmentId, integrationId, ct);
-    }
+        if (_previous is null || string.IsNullOrWhiteSpace(baselineKey))
+            return Task.FromResult<ContractBaseline?>(null);
 
-    /// <summary>
-    /// Resolves the previous normalized contract for one integration in one environment.
-    /// Returns null when there is no history, when the stored entry predates contract capture,
-    /// or when the stored baseline identity version no longer matches the current algorithm.
-    /// </summary>
-    public async Task<ContractBaseline?> GetBaselineByKeyAsync(
-        string? environmentId,
-        string baselineKey,
-        CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(baselineKey))
-            return null;
+        if (!_byBaselineKey.TryGetValue(baselineKey, out var entry) || entry.NormalizedContract is null)
+            return Task.FromResult<ContractBaseline?>(null);
 
-        var entry = await _repository.GetLatestForIntegrationAsync(environmentId, baselineKey, ct);
-
-        if (entry?.NormalizedContract is null)
-            return null;
-
-        var snapshot = await _repository.GetLatestAsync(environmentId, ct);
-
-        return new ContractBaseline
+        return Task.FromResult<ContractBaseline?>(new ContractBaseline
         {
             Contract = entry.NormalizedContract,
-            CapturedAt = snapshot?.CapturedAt.UtcDateTime
-        };
+            CapturedAt = _previous.CapturedAt.UtcDateTime
+        });
     }
+
+    public IntegrationSnapshotEntry? FindEntry(string baselineKey) =>
+        _byBaselineKey.TryGetValue(baselineKey, out var entry) ? entry : null;
 }

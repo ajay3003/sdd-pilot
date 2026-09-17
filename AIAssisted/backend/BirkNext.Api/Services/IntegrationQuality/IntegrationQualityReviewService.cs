@@ -16,8 +16,9 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
     // working; when absent, contract fields stay null and read as "not captured".
     private readonly IContractDiscoveryService? _contractDiscovery;
     private readonly IMessageSchemaDiscoveryService? _messageSchemaDiscovery;
-    private readonly IContractBaselineProvider? _baselineProvider;
     private readonly IContractComparer _contractComparer;
+    private readonly IIntegrationQualitySnapshotRepository? _snapshotRepository;
+    private readonly IntegrationHistoryComparer _historyComparer = new();
 
     private static readonly HashSet<IntegrationType> AsyncTypes =
     [
@@ -32,8 +33,8 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         IntegrationRelationshipPopulationService relationshipPopulation,
         IContractDiscoveryService? contractDiscovery = null,
         IMessageSchemaDiscoveryService? messageSchemaDiscovery = null,
-        IContractBaselineProvider? baselineProvider = null,
-        IContractComparer? contractComparer = null)
+        IContractComparer? contractComparer = null,
+        IIntegrationQualitySnapshotRepository? snapshotRepository = null)
     {
         _client = client;
         _logger = logger;
@@ -41,8 +42,8 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         _relationshipPopulation = relationshipPopulation;
         _contractDiscovery = contractDiscovery;
         _messageSchemaDiscovery = messageSchemaDiscovery;
-        _baselineProvider = baselineProvider;
         _contractComparer = contractComparer ?? new ContractComparer();
+        _snapshotRepository = snapshotRepository;
     }
 
     /// <summary>
@@ -84,6 +85,16 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
 
         // Populate producer/consumer relationships with source tracking (Phase 3)
         _relationshipPopulation.PopulateRelationships(request.Integrations);
+
+        // History is resolved BEFORE the current review runs and before anything is saved, so a
+        // run can never resolve its own snapshot as its baseline.
+        var environmentId = ResolveEnvironmentId(request);
+        var previousSnapshot = _snapshotRepository is null || string.IsNullOrWhiteSpace(environmentId)
+            ? null
+            : await _snapshotRepository.GetLatestAsync(environmentId, ct);
+
+        var baselineProvider = new SnapshotScopedBaselineProvider(previousSnapshot);
+        var snapshotEntries = new List<IntegrationSnapshotEntry>();
 
         foreach (var intg in request.Integrations)
         {
@@ -218,7 +229,13 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
                 MissingFields    = missingFields
             };
 
-            await ApplyContractAnalysisAsync(intg, status, intgFindings, ct);
+            var identity = IntegrationBaselineIdentity.Describe(environmentId, intg);
+            status.BaselineKey = identity.Key;
+
+            var currentContract = await ApplyContractAnalysisAsync(
+                intg, status, intgFindings, identity.Key, baselineProvider, ct);
+
+            snapshotEntries.Add(BuildSnapshotEntry(intg, status, identity, currentContract, null));
 
             statuses.Add(status);
 
@@ -251,7 +268,15 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
 
         var authentication = await BuildAuthenticationSummaryAsync(request, ct);
 
-        return new IntegrationQualityReport
+        // History is computed against the snapshot loaded before the review ran.
+        var historicalChanges = _historyComparer.Compare(previousSnapshot, snapshotEntries);
+
+        foreach (var status in statuses.Where(s => !string.IsNullOrWhiteSpace(s.BaselineKey)))
+            status.HistoricalChanges = historicalChanges
+                .Where(c => string.Equals(c.BaselineKey, status.BaselineKey, StringComparison.Ordinal))
+                .ToList();
+
+        var report = new IntegrationQualityReport
         {
             EnvironmentName    = request.EnvironmentName,
             GeneratedAt        = DateTime.UtcNow,
@@ -264,8 +289,20 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
             Statuses           = statuses,
             Recommendations    = recommendations,
             Limitations        = limitations,
-            Authentication     = authentication
+            Authentication     = authentication,
+
+            PreviousSnapshotId = previousSnapshot?.SnapshotId,
+            PreviousSnapshotCapturedAt = previousSnapshot?.CapturedAt,
+            BaselineAvailable = previousSnapshot is not null,
+            HistoricalChanges = historicalChanges.ToList(),
+            HistoricalChangeCount = historicalChanges.Count
         };
+
+        // Saved last, after the report is finalised. The baseline used above was loaded before
+        // the review began, so this save can never become its own baseline.
+        await PersistSnapshotAsync(report, environmentId, previousSnapshot, snapshotEntries, limitations, ct);
+
+        return report;
     }
 
     private async Task<bool> ProbeUrlAsync(string url, CancellationToken ct)
@@ -292,10 +329,12 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
     /// any deterministic findings. The two states are independent; neither is derived from the
     /// other. A failure here is contained to this integration and never aborts the review.
     /// </summary>
-    private async Task ApplyContractAnalysisAsync(
+    private async Task<NormalizedContract?> ApplyContractAnalysisAsync(
         IntegrationConfigDto intg,
         IntegrationStatus status,
         List<IntegrationFinding> intgFindings,
+        string baselineKey,
+        SnapshotScopedBaselineProvider baselineProvider,
         CancellationToken ct)
     {
         status.ProducerService = intg.LogicalProducerService;
@@ -341,13 +380,14 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         // ── Drift ────────────────────────────────────────────────────────────
         // Baseline persistence is owned by Checkpoint 5. Until a provider supplies one this
         // resolves to BaselineUnavailable rather than an assumed "no change".
+        NormalizedContract? currentContract = null;
+
         try
         {
-            var currentContract = await ResolveCurrentContractAsync(intg, ct);
+            currentContract = await ResolveCurrentContractAsync(intg, ct);
 
-            var baseline = _baselineProvider is null
-                ? null
-                : await _baselineProvider.GetBaselineAsync(intg.Id, contractName, ct);
+            // Resolved from the snapshot loaded before this review started, keyed by baseline key.
+            var baseline = await baselineProvider.GetBaselineAsync(baselineKey, contractName, ct);
 
             var drift = _contractComparer.CompareForDrift(
                 currentContract, baseline?.Contract, contractName, baseline?.CapturedAt);
@@ -373,6 +413,8 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
 
             status.DriftState = ContractDriftState.NotComparable;
         }
+
+        return currentContract;
     }
 
     /// <summary>
@@ -395,6 +437,140 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
             : null;
     }
 
+    /// <summary>
+    /// Authoritative environment identity for history. ProfileId is preferred because the
+    /// environment display name can be edited freely; the name is only a fallback.
+    /// </summary>
+    private static string ResolveEnvironmentId(IntegrationQualityRequest request) =>
+        !string.IsNullOrWhiteSpace(request.ProfileId)
+            ? request.ProfileId!.Trim()
+            : (request.EnvironmentName ?? "").Trim();
+
+    /// <summary>
+    /// Builds the per-integration entry retained for future comparison. Endpoint values come from
+    /// the canonicalised structural identity, which has user info and query stripped, so no
+    /// credentials reach persisted history.
+    /// </summary>
+    private static IntegrationSnapshotEntry BuildSnapshotEntry(
+        IntegrationConfigDto integration,
+        IntegrationStatus status,
+        IntegrationStructuralIdentity identity,
+        NormalizedContract? currentContract,
+        IntegrationAuthenticationSummary? authentication)
+    {
+        var checksExecuted = authentication?.Checks
+            .Count(c => c.IntegrationId == integration.Id) ?? 0;
+
+        return new IntegrationSnapshotEntry
+        {
+            BaselineKey = identity.Key,
+            IntegrationId = integration.Id,
+            DisplayName = status.Name,
+            IntegrationType = integration.Type,
+            CanonicalEndpoint = identity.CanonicalEndpoint,
+            CanonicalResource = identity.CanonicalResource,
+
+            Producer = integration.LogicalProducerService,
+            Consumer = integration.LogicalConsumerService,
+            RelationshipSource = integration.ProducerConsumerSource,
+
+            ContractState = status.CompatibilityState,
+            ContractName = integration.ContractName,
+            ContractSourceType = integration.ContractSourceType,
+            ContractSource = status.ProducerContractSource,
+            ContractFingerprint = currentContract is null
+                ? null
+                : ContractComparer.Fingerprint(currentContract),
+            NormalizedContract = currentContract,
+
+            RuntimeEvidenceState = status.RuntimeEvidenceSummary is null
+                ? RuntimeEvidenceState.Unknown
+                : status.RuntimeEvidenceSummary.HasRuntimeEvidence
+                    ? RuntimeEvidenceState.Observed
+                    : RuntimeEvidenceState.NoEvidence,
+            LatestObservedAt = status.RuntimeEvidenceSummary?.LastObservedAt,
+            EvidenceCount = status.RuntimeEvidenceSummary?.EvidenceCount ?? 0,
+            EvidenceSources = status.RuntimeEvidenceSummary?.Sources ?? [],
+
+            AuthenticationRequired = integration.AuthType != IntegrationAuthType.None,
+            AuthenticatedCapabilityAvailable = authentication?.Capabilities.AuthenticatedRest,
+            AuthenticatedChecksExecuted = checksExecuted
+
+            // Performance is left null; Checkpoint 6 owns it. A fabricated zero would be
+            // indistinguishable from a real measurement of zero.
+        };
+    }
+
+    /// <summary>
+    /// Persists the completed review as an immutable snapshot.
+    ///
+    /// This runs only after the report has been finalised, and the previous snapshot it links to
+    /// was loaded before the review began, so a run can never baseline against itself. A failure
+    /// here is recorded as a typed persistence state and a limitation; the completed review, and
+    /// the compatibility and drift already computed, are always preserved.
+    /// </summary>
+    private async Task PersistSnapshotAsync(
+        IntegrationQualityReport report,
+        string environmentId,
+        IntegrationQualitySnapshot? previousSnapshot,
+        List<IntegrationSnapshotEntry> entries,
+        List<string> limitations,
+        CancellationToken ct)
+    {
+        if (_snapshotRepository is null || string.IsNullOrWhiteSpace(environmentId))
+        {
+            report.SnapshotPersistenceState = SnapshotPersistenceState.NotAttempted;
+            return;
+        }
+
+        // A review that produced no assessable integration is not a usable baseline.
+        if (entries.Count == 0)
+        {
+            report.SnapshotPersistenceState = SnapshotPersistenceState.SkippedIncompleteReview;
+            limitations.Add("No historical snapshot was recorded because this review assessed no integrations.");
+            return;
+        }
+
+        var completeness = report.Statuses.Any(s => s.Enabled && !s.HasRequiredFields)
+            ? SnapshotCompleteness.Partial
+            : SnapshotCompleteness.Complete;
+
+        var snapshot = new IntegrationQualitySnapshot
+        {
+            SnapshotId = Guid.NewGuid(),
+            EnvironmentId = environmentId,
+            CapturedAt = DateTimeOffset.UtcNow,
+            SnapshotVersion = IntegrationQualitySnapshot.CurrentSnapshotVersion,
+            BaselineIdentityVersion = IntegrationBaselineIdentity.Version,
+            PreviousSnapshotId = previousSnapshot?.SnapshotId,
+            Completeness = completeness,
+            Integrations = entries
+        };
+
+        try
+        {
+            await _snapshotRepository.SaveAsync(snapshot, ct);
+
+            report.CurrentSnapshotId = snapshot.SnapshotId;
+            report.SnapshotPersistenceState = SnapshotPersistenceState.Saved;
+
+            if (completeness == SnapshotCompleteness.Partial)
+                limitations.Add(
+                    "This review was recorded as a partial snapshot because some integrations have missing required fields. It will not be treated as a complete baseline.");
+        }
+        catch (Exception ex)
+        {
+            // The review itself succeeded. Report the persistence failure honestly rather than
+            // discarding the result or implying the snapshot was stored.
+            _logger.LogError(ex,
+                "Failed to persist Integration Quality snapshot for environment {EnvironmentId}", environmentId);
+
+            report.SnapshotPersistenceState = SnapshotPersistenceState.Failed;
+            limitations.Add(
+                "This review completed, but could not be recorded as a historical snapshot. Future reviews will not be able to compare against it.");
+        }
+    }
+
     private static IntegrationFinding Finding(
         string id, string integrationId, string integrationName,
         string title, string description, string recommendation,
@@ -411,3 +587,4 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
             Evidence        = evidence.ToList()
         };
 }
+

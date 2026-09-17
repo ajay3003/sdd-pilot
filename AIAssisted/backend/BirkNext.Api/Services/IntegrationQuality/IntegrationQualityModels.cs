@@ -368,6 +368,13 @@ public sealed class IntegrationStatus
     [JsonPropertyName("previousContractFingerprint")]
     public string? PreviousContractFingerprint { get; set; }
 
+    // History (Phase 3, Checkpoint 5).
+    [JsonPropertyName("baselineKey")]
+    public string? BaselineKey { get; set; }
+
+    [JsonPropertyName("historicalChanges")]
+    public List<IntegrationHistoricalChange> HistoricalChanges { get; set; } = [];
+
     [JsonPropertyName("score")]            public int             Score            { get; init; }
     [JsonPropertyName("missingFields")]    public List<string>    MissingFields    { get; init; } = [];
     [JsonPropertyName("contractCompatibility")] public object? ContractCompatibility { get; set; }
@@ -388,4 +395,40 @@ public sealed class IntegrationQualityReport
     [JsonPropertyName("limitations")]        public List<string>             Limitations       { get; init; } = [];
     /// <summary>Authenticated availability and provenance for this review. Null when the environment has no authenticated-testing identity.</summary>
     [JsonPropertyName("authentication")]     public IntegrationAuthenticationSummary? Authentication { get; init; }
+
+    // Snapshot history (Phase 3, Checkpoint 5). Nullable so a report written before history
+    // existed reads as "not captured" rather than as an absent baseline.
+    [JsonPropertyName("currentSnapshotId")]
+    public Guid? CurrentSnapshotId { get; set; }
+
+    [JsonPropertyName("previousSnapshotId")]
+    public Guid? PreviousSnapshotId { get; set; }
+
+    [JsonPropertyName("previousSnapshotCapturedAt")]
+    public DateTimeOffset? PreviousSnapshotCapturedAt { get; set; }
+
+    [JsonPropertyName("baselineAvailable")]
+    public bool BaselineAvailable { get; set; }
+
+    [JsonPropertyName("historicalChangeCount")]
+    public int HistoricalChangeCount { get; set; }
+
+    [JsonPropertyName("historicalChanges")]
+    public List<IntegrationHistoricalChange> HistoricalChanges { get; set; } = [];
+
+    [JsonPropertyName("snapshotPersistenceState")]
+    public SnapshotPersistenceState SnapshotPersistenceState { get; set; } = SnapshotPersistenceState.NotAttempted;
+}
+
+
+/// <summary>
+/// Outcome of persisting this review as a historical snapshot. A failure here must never be
+/// reported as a successful save, and must never discard the completed review.
+/// </summary>
+public enum SnapshotPersistenceState
+{
+    NotAttempted = 0,
+    Saved = 1,
+    Failed = 2,
+    SkippedIncompleteReview = 3
 }

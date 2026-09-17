@@ -38,14 +38,46 @@ public class ContractAnalysisWiringTests
     private static IntegrationQualityReviewService Service(
         IContractDiscoveryService? discovery = null,
         IMessageSchemaDiscoveryService? messaging = null,
-        IContractBaselineProvider? baseline = null) =>
+        IIntegrationQualitySnapshotRepository? snapshots = null) =>
         new(new HttpClient(new StubHandler()) { BaseAddress = new Uri("https://unused.example.test/") },
             NullLogger<IntegrationQualityReviewService>.Instance,
             new FakeGateway(),
             new IntegrationRelationshipPopulationService(),
             discovery,
             messaging,
-            baseline);
+            null,
+            snapshots);
+
+    /// <summary>
+    /// Seeds history the way a previous review would have: one saved snapshot whose entry is
+    /// keyed by the same deterministic baseline key the service will compute.
+    /// </summary>
+    private static IIntegrationQualitySnapshotRepository SeededHistory(
+        IntegrationConfigDto integration,
+        NormalizedContract baselineContract,
+        DateTimeOffset? capturedAt = null)
+    {
+        var repository = new InMemoryIntegrationQualitySnapshotRepository();
+
+        repository.SaveAsync(new IntegrationQualitySnapshot
+        {
+            EnvironmentId = "Dev",
+            CapturedAt = capturedAt ?? DateTimeOffset.UtcNow.AddDays(-1),
+            Integrations =
+            [
+                new IntegrationSnapshotEntry
+                {
+                    BaselineKey = IntegrationBaselineIdentity.Compute("Dev", integration),
+                    IntegrationId = integration.Id,
+                    DisplayName = integration.Name,
+                    IntegrationType = integration.Type,
+                    NormalizedContract = baselineContract
+                }
+            ]
+        }).GetAwaiter().GetResult();
+
+        return repository;
+    }
 
     private static IntegrationQualityRequest Request(params IntegrationConfigDto[] integrations) =>
         new() { EnvironmentName = "Dev", Integrations = integrations.ToList() };
@@ -201,18 +233,18 @@ public class ContractAnalysisWiringTests
     {
         var current = Contract("PlacementUpdated", ("placementId", "string", true));
         var baseline = Contract("PlacementUpdated", ("placementId", "string", true), ("legacy", "string", true));
-        var capturedAt = new DateTime(2026, 3, 1, 9, 0, 0, DateTimeKind.Utc);
+        var capturedAt = new DateTimeOffset(2026, 3, 1, 9, 0, 0, TimeSpan.Zero);
 
         var report = await Service(
                 messaging: new FakeMessageSchemaDiscovery(current),
-                baseline: new FakeBaselineProvider(baseline, capturedAt))
+                snapshots: SeededHistory(EventHub(), baseline, capturedAt))
             .AnalyzeAsync(Request(EventHub()));
 
         var status = report.Statuses.Single(s => s.IntegrationId == "m1");
 
         Assert.Equal(ContractDriftState.BreakingChange, status.DriftState);
         Assert.True(status.DriftBreakingCount > 0);
-        Assert.Equal(capturedAt, status.PreviousBaselineTimestamp);
+        Assert.Equal(capturedAt.UtcDateTime, status.PreviousBaselineTimestamp);
         Assert.NotNull(status.CurrentContractFingerprint);
         Assert.NotNull(status.PreviousContractFingerprint);
     }
@@ -225,7 +257,7 @@ public class ContractAnalysisWiringTests
 
         var report = await Service(
                 messaging: new FakeMessageSchemaDiscovery(current),
-                baseline: new FakeBaselineProvider(baseline, null))
+                snapshots: SeededHistory(EventHub(), baseline))
             .AnalyzeAsync(Request(EventHub()));
 
         var finding = report.Findings.SingleOrDefault(f => f.Id == "contract-drift-m1");
@@ -241,7 +273,7 @@ public class ContractAnalysisWiringTests
 
         var report = await Service(
                 messaging: new FakeMessageSchemaDiscovery(current),
-                baseline: new FakeBaselineProvider(baseline, null))
+                snapshots: SeededHistory(EventHub(), baseline))
             .AnalyzeAsync(Request(EventHub()));
 
         Assert.Equal(ContractDriftState.NoChange,
@@ -266,7 +298,7 @@ public class ContractAnalysisWiringTests
         var report = await Service(
                 new FakeDiscovery(compatible),
                 new FakeMessageSchemaDiscovery(current),
-                new FakeBaselineProvider(baseline, null))
+                SeededHistory(EventHub(), baseline))
             .AnalyzeAsync(Request(EventHub()));
 
         var status = report.Statuses.Single(s => s.IntegrationId == "m1");
@@ -398,18 +430,6 @@ public class ContractAnalysisWiringTests
                 integration.Id, contract.Name, contract,
                 ContractSourceType.Assembly, "/fake.dll",
                 integration.LogicalProducerService, integration.LogicalConsumerService));
-    }
-
-    private sealed class FakeBaselineProvider(NormalizedContract contract, DateTime? capturedAt)
-        : IContractBaselineProvider
-    {
-        public Task<ContractBaseline?> GetBaselineAsync(
-            string integrationId, string contractName, CancellationToken ct = default) =>
-            Task.FromResult<ContractBaseline?>(new ContractBaseline
-            {
-                Contract = contract,
-                CapturedAt = capturedAt
-            });
     }
 
     private sealed class FakeGateway : IAuthenticatedReviewGateway
