@@ -17,7 +17,7 @@ public sealed class RuntimeEvidencePopulationService
         if (!evidence.Any())
             return new RuntimeEvidenceSummary { HasRuntimeEvidence = false, EvidenceCount = 0 };
 
-        var durations = evidence.Where(e => e.DurationMs.HasValue).Select(e => e.DurationMs.Value).ToList();
+        var durations = evidence.Select(e => e.DurationMs).OfType<double>().ToList();
 
         return new RuntimeEvidenceSummary
         {

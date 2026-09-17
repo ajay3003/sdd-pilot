@@ -506,7 +506,7 @@ public class MessageSchemaDiscoveryTests
         var result = await _service.ExtractSchemaAsync(integration);
 
         Assert.Equal(MessageSchemaState.NotAvailable, result.State);
-        Assert.Contains("not configured", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("No schema configured", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     #endregion
