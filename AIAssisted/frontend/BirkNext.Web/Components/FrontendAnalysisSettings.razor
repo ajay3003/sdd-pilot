@@ -1362,18 +1362,83 @@
                                                 { <option value="@t">@t</option> }
                                             </select>
                                         </div>
+                                        @* Transport-aware fields. Labels and visibility follow
+                                           IntegrationConfigPresenter so the editor cannot drift from
+                                           the rules the review and readiness checks use. *@
                                         <div class="form-field fa-field-full">
-                                            <label class="fa-label">Endpoint / Namespace <span class="form-optional">(host or namespace)</span></label>
-                                            <input type="text" class="form-control" placeholder="e.g. myns.servicebus.windows.net or https://api.example.com" @bind="intg.Endpoint" />
+                                            <label class="fa-label" for="@($"fa-endpoint-{intg.Id}")">@EndpointLabel(intg.Type)</label>
+                                            <input id="@($"fa-endpoint-{intg.Id}")" type="text" class="form-control"
+                                                   data-testid="fa-field-endpoint"
+                                                   placeholder="@EndpointPlaceholder(intg.Type)" @bind="intg.Endpoint" />
+                                        </div>
+
+                                        @if (IntegrationConfigPresenter.ShowsResourceKind(intg))
+                                        {
+                                            <div class="form-field">
+                                                <label class="fa-label" for="@($"fa-kind-{intg.Id}")">Resource kind</label>
+                                                <select id="@($"fa-kind-{intg.Id}")" class="form-control"
+                                                        data-testid="fa-field-resourcekind" @bind="intg.ResourceKind">
+                                                    <option value="@IntegrationResourceKind.Unknown">Select...</option>
+                                                    @foreach (var kind in IntegrationConfigPresenter.ResourceKindChoices(intg.Type))
+                                                    {
+                                                        <option value="@kind">@IntegrationConfigPresenter.ResourceKindLabel(kind)</option>
+                                                    }
+                                                </select>
+                                            </div>
+                                        }
+
+                                        @if (intg.Type != IntegrationType.REST && intg.Type != IntegrationType.GraphQL)
+                                        {
+                                            <div class="form-field">
+                                                <label class="fa-label" for="@($"fa-resource-{intg.Id}")">@ResourceLabel(intg.Type)</label>
+                                                <input id="@($"fa-resource-{intg.Id}")" type="text" class="form-control"
+                                                       data-testid="fa-field-resource"
+                                                       placeholder="@ResourcePlaceholder(intg.Type)" @bind="intg.Resource" />
+                                            </div>
+                                        }
+
+                                        @if (IntegrationConfigPresenter.ShowsConsumerGroup(intg))
+                                        {
+                                            <div class="form-field">
+                                                <label class="fa-label" for="@($"fa-consumergroup-{intg.Id}")">Consumer group</label>
+                                                <input id="@($"fa-consumergroup-{intg.Id}")" type="text" class="form-control"
+                                                       data-testid="fa-field-consumergroup"
+                                                       placeholder="e.g. $Default" @bind="intg.Consumer" />
+                                            </div>
+                                        }
+                                        else if (IntegrationConfigPresenter.ShowsSubscriptionName(intg))
+                                        {
+                                            <div class="form-field">
+                                                <label class="fa-label" for="@($"fa-subscription-{intg.Id}")">Subscription name</label>
+                                                <input id="@($"fa-subscription-{intg.Id}")" type="text" class="form-control"
+                                                       data-testid="fa-field-subscription"
+                                                       placeholder="e.g. my-subscription" @bind="intg.Consumer" />
+                                            </div>
+                                        }
+
+                                        <div class="form-field">
+                                            <label class="fa-label" for="@($"fa-producer-{intg.Id}")">Producer <span class="form-optional">(optional)</span></label>
+                                            <input id="@($"fa-producer-{intg.Id}")" type="text" class="form-control"
+                                                   data-testid="fa-field-producer"
+                                                   placeholder="Unknown if not known" @bind="intg.LogicalProducerService" />
                                         </div>
                                         <div class="form-field">
-                                            <label class="fa-label">Resource <span class="form-optional">(topic / queue / event hub)</span></label>
-                                            <input type="text" class="form-control" placeholder="e.g. orders-topic" @bind="intg.Resource" />
+                                            <label class="fa-label" for="@($"fa-consumer-{intg.Id}")">Consumer <span class="form-optional">(optional)</span></label>
+                                            <input id="@($"fa-consumer-{intg.Id}")" type="text" class="form-control"
+                                                   data-testid="fa-field-consumer"
+                                                   placeholder="Unknown if not known" @bind="intg.LogicalConsumerService" />
                                         </div>
-                                        <div class="form-field">
-                                            <label class="fa-label">Consumer <span class="form-optional">(group / subscription)</span></label>
-                                            <input type="text" class="form-control" placeholder="e.g. orders-consumer-group" @bind="intg.Consumer" />
-                                        </div>
+
+                                        @{
+                                            var missingFields = IntegrationConfigPresenter.MissingRequiredFields(intg);
+                                        }
+                                        @if (missingFields.Count > 0)
+                                        {
+                                            <p class="form-field fa-field-full" data-testid="fa-missing-fields"
+                                               id="@($"fa-missing-{intg.Id}")" role="status">
+                                                Configuration incomplete. Missing: @string.Join(", ", missingFields).
+                                            </p>
+                                        }
                                         <div class="form-field">
                                             <label class="fa-label">Authentication Type</label>
                                             <select class="form-control" @bind="intg.AuthType">
@@ -2737,6 +2802,45 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     // ── Integration helpers ────────────────────────────────────────────────────
 
     private string? _editingIntegrationId;
+
+    // ── Transport-specific field wording ───────────────────────────────────────
+    // Only wording lives here. Which fields appear is decided by IntegrationConfigPresenter.
+
+    private static string EndpointLabel(IntegrationType type) => type switch
+    {
+        IntegrationType.REST or IntegrationType.GraphQL => "Endpoint",
+        IntegrationType.EventHub or IntegrationType.ServiceBus => "Namespace",
+        IntegrationType.Kafka or IntegrationType.RabbitMQ => "Broker",
+        _ => "Endpoint / Namespace"
+    };
+
+    private static string EndpointPlaceholder(IntegrationType type) => type switch
+    {
+        IntegrationType.REST or IntegrationType.GraphQL => "https://api.example.com/...",
+        IntegrationType.EventHub => "e.g. myns.servicebus.windows.net",
+        IntegrationType.ServiceBus => "e.g. myns.servicebus.windows.net",
+        IntegrationType.Kafka => "e.g. broker:9092",
+        IntegrationType.RabbitMQ => "e.g. amqp://host",
+        _ => ""
+    };
+
+    private static string ResourceLabel(IntegrationType type) => type switch
+    {
+        IntegrationType.EventHub => "Event Hub",
+        IntegrationType.ServiceBus => "Entity name",
+        IntegrationType.Kafka => "Topic",
+        IntegrationType.RabbitMQ => "Exchange or queue",
+        _ => "Resource"
+    };
+
+    private static string ResourcePlaceholder(IntegrationType type) => type switch
+    {
+        IntegrationType.EventHub => "e.g. m2lb-cdc-qa.birk.dbo.person",
+        IntegrationType.ServiceBus => "e.g. leselogg",
+        IntegrationType.Kafka => "e.g. orders",
+        IntegrationType.RabbitMQ => "e.g. orders-queue",
+        _ => ""
+    };
 
     // ── Add-integration flow ───────────────────────────────────────────────────
     private bool _addingIntegration;
