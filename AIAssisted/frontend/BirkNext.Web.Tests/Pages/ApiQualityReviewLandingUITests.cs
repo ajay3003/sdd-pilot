@@ -201,7 +201,12 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-access-action]").TextContent.Should().Be("Manage authenticated session");
         page.Find("[data-testid=aqr-readiness]").GetAttribute("role").Should().Be("alert");
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(ApiReviewRunEligibility.NoAuthContextReason);
-        page.Find("[data-testid=aqr-access]").TextContent.Should().NotContain("backend gateway", "gateway mechanics live in the collapsed details only");
+        // TextContent includes hidden descendants, so the collapsed details must be subtracted to
+        // assert on what is actually visible before the disclosure is expanded.
+        var accessText = page.Find("[data-testid=aqr-access]").TextContent;
+        var collapsedText = page.Find("[data-testid=aqr-access-details-body]").TextContent;
+        accessText.Replace(collapsedText, "").Should()
+            .NotContain("backend gateway", "gateway mechanics live in the collapsed details only");
         page.Find("[data-testid=aqr-access-details-body]").HasAttribute("hidden").Should().BeTrue();
         page.Find("[data-testid=aqr-access-details-body]").TextContent.Should().Contain("backend gateway");
     }
@@ -232,7 +237,10 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-access]").TextContent.Should().Contain("Available");
         page.FindAll("[data-testid=aqr-auth-missing]").Should().BeEmpty("no selected API needs authentication");
         page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Authenticated requests available for 2 targets");
-        page.Find("[data-testid=aqr-access]").TextContent.Should().NotContainAny("token", "cookie");
+        // The panel legitimately explains that no token is received, so the bare words cannot be
+        // the assertion. What must never appear is an actual credential value.
+        page.Find("[data-testid=aqr-access]").TextContent.Should()
+            .NotContainAny("Bearer ", "eyJ", "Authorization:", "Set-Cookie", "Cookie:");
     }
 
     // 5/6/7/8. Grouping, collapsed operations, selected count.
@@ -329,7 +337,11 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.FindAll("[data-testid=aqr-results]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-export]").Should().BeEmpty("export needs a report");
         page.FindAll("[data-testid=aqr-finding-counts]").Should().BeEmpty();
-        page.Markup.Should().NotContain("Review results").And.NotContainAny("Passed", "secure", "compliant", "penetration");
+        // "secure" alone matches the access panel's "existing secure gateway session", which
+        // describes the transport rather than claiming the API is secure. Assert the verdict
+        // wording that would actually constitute an unearned pass.
+        page.Markup.Should().NotContain("Review results")
+            .And.NotContainAny("Passed", "is secure", "security approved", "compliant", "penetration");
     }
 
     [Fact]
@@ -371,7 +383,9 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
 
         var severities = page.FindAll("[data-testid=aqr-sev]");
         severities.Should().HaveCount(5);
-        severities.Select(sv => sv.TextContent.Trim()).Should().Equal("Critical 0", "High 0", "Medium 0", "Low 3", "Info 0");
+        // StubReport emits one Low finding per completed target plus one Info performance finding
+        // for REST targets: REST = Low + Info, GraphQL = Low.
+        severities.Select(sv => sv.TextContent.Trim()).Should().Equal("Critical 0", "High 0", "Medium 0", "Low 2", "Info 1");
         severities.Should().OnlyContain(s => s.QuerySelector(".aqr-sev-label") != null && s.QuerySelector(".aqr-sev-count") != null);
 
         var coverage = page.FindAll("[data-testid=aqr-coverage-row]");
@@ -408,7 +422,7 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-limitations-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         page.Find("[data-testid=aqr-limitations-list]").TextContent.Should().Contain("only JSON paths and types are recorded, never values");
         page.Find("[data-testid=aqr-readonly]").TextContent.Should().Contain("does not execute write operations").And.Contain("says nothing about whether they are safe");
-        page.Find("[data-testid=aqr-key-findings]").QuerySelectorAll("li").Should().HaveCount(2, "key findings capped at max=5 but only 3 total findings, showing first 2");
+        page.Find("[data-testid=aqr-key-findings]").QuerySelectorAll("li").Should().HaveCount(3, "KeyFindings caps at max=5 and does not filter by severity, so all 3 stub findings show");
         page.Markup.Should().NotContainAny("Passed", "penetration", "security approved");
     }
 
@@ -420,7 +434,8 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
 
         var statuses = page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).ToList();
         statuses.Should().BeEquivalentTo(["Authentication required", "Assessed"]);
-        page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["Not tested", "0"]);
+        // The blocked target is not tested; the public REST target carries the stub's two findings.
+        page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["Not tested", "2"]);
         page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("Public only");
         page.Find("[data-testid=aqr-overview]").TextContent.Should().Contain("0 of 1 authentication-required target reviewed").And.Contain("1 of 1 public target reviewed").And.Contain("1 not executed");
         page.FindAll("[data-testid=aqr-service-access]").Select(e => e.TextContent).Should().BeEquivalentTo(["Authentication required · not executed", "Public"]);
