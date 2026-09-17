@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<SavedWorkspace> SavedWorkspaces => Set<SavedWorkspace>();
     public DbSet<SavedWorkspaceArtifact> SavedWorkspaceArtifacts => Set<SavedWorkspaceArtifact>();
     public DbSet<WorkspaceReviewProgress> WorkspaceReviewProgress => Set<WorkspaceReviewProgress>();
+    public DbSet<IntegrationQualitySnapshotRecord> IntegrationQualitySnapshots => Set<IntegrationQualitySnapshotRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
