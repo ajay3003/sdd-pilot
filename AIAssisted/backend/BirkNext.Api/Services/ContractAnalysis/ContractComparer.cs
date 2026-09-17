@@ -17,6 +17,12 @@ public interface IContractComparer
         string? producerSource,
         string? consumerSource);
 
+    ContractDriftResult CompareForDrift(
+        NormalizedContract? current,
+        NormalizedContract? baseline,
+        string contractName,
+        DateTime? baselineCapturedAt = null);
+
     ContractCompatibilityResult CompareGraphQL(
         GraphQlNormalizedContract producer,
         GraphQlNormalizedContract consumer,
@@ -62,17 +68,40 @@ public sealed class ContractComparer : IContractComparer
             CompareSchemas(producerSchema, consumerSchema, differences);
         }
 
-        // Determine overall status
+        // Directional: the producer must satisfy every consumer expectation. A schema the
+        // consumer expects but the producer never defines is breaking.
+        foreach (var consumerSchema in consumer.Schemas)
+        {
+            if (producer.Schemas.Any(s => s.Name == consumerSchema.Name))
+                continue;
+
+            differences.Add(new ContractDifference
+            {
+                Type = ContractDifferenceType.MissingOperation,
+                Path = consumerSchema.Name,
+                Severity = ContractDifferenceSeverity.Breaking,
+                ProducerValue = "Not defined",
+                ConsumerValue = "Expected",
+                Explanation = $"Consumer expects schema '{consumerSchema.Name}' that producer does not define"
+            });
+        }
+
+        // Determine overall status. Absence of differences is not evidence of compatibility:
+        // if either side declared no contract content, no comparison actually occurred and the
+        // result must not claim compatibility. Differences found are still reported.
+        var comparisonOccurred = HasComparableContent(producer) && HasComparableContent(consumer);
         var hasBreaking = differences.Any(d => d.Severity == ContractDifferenceSeverity.Breaking);
-        var status = hasBreaking
-            ? ContractCompatibilityStatus.Breaking
-            : differences.Count > 0
-                ? ContractCompatibilityStatus.Warning
-                : ContractCompatibilityStatus.Compatible;
+        var status = !comparisonOccurred
+            ? ContractCompatibilityStatus.NotComparable
+            : hasBreaking
+                ? ContractCompatibilityStatus.Breaking
+                : differences.Count > 0
+                    ? ContractCompatibilityStatus.Warning
+                    : ContractCompatibilityStatus.Compatible;
 
         return new ContractCompatibilityResult
         {
-            Compatible = !hasBreaking,
+            Compatible = comparisonOccurred && !hasBreaking,
             Status = status,
             Producer = producerService,
             Consumer = consumerService,
@@ -80,10 +109,14 @@ public sealed class ContractComparer : IContractComparer
             ProducerSource = RedactUrl(producerSource),
             ConsumerSource = RedactUrl(consumerSource),
             Differences = differences.OrderBy(d => d.Path).ThenBy(d => d.Property).ToList(),
-            AnalysisReadiness = ContractAnalysisReadiness.Ready,
+            AnalysisReadiness = comparisonOccurred
+                ? ContractAnalysisReadiness.Ready
+                : ContractAnalysisReadiness.NotReady,
+            ReadyReason = comparisonOccurred ? null : NotComparableReason(producer, consumer),
             Message = status switch
             {
-                ContractCompatibilityStatus.Compatible => "Producer and consumer are fully compatible",
+                ContractCompatibilityStatus.NotComparable => $"Not comparable: {NotComparableReason(producer, consumer)}",
+                ContractCompatibilityStatus.Compatible => "No breaking incompatibility detected in compared contract evidence",
                 ContractCompatibilityStatus.Warning => $"{differences.Count} non-breaking differences detected",
                 ContractCompatibilityStatus.Breaking => $"{differences.Count(d => d.Severity == ContractDifferenceSeverity.Breaking)} breaking differences detected",
                 _ => ""
@@ -714,5 +747,173 @@ public sealed class ContractComparer : IContractComparer
         {
             return url;
         }
+    }
+
+    /// <summary>
+    /// A contract carries comparable content when it declares at least one operation or at least
+    /// one schema property. An empty shell (for example an extractor placeholder) carries no
+    /// information, so comparing it must never be reported as compatibility.
+    /// </summary>
+    private static bool HasComparableContent(NormalizedContract contract)
+        => contract.Operations.Count > 0 || contract.Schemas.Count > 0;
+
+    /// <summary>
+    /// Explains which side of the comparison carried no declared contract content.
+    /// </summary>
+    private static string NotComparableReason(NormalizedContract producer, NormalizedContract consumer)
+    {
+        var producerHas = HasComparableContent(producer);
+        var consumerHas = HasComparableContent(consumer);
+
+        return (producerHas, consumerHas) switch
+        {
+            (false, false) => "neither producer contract nor consumer expectation is available",
+            (false, true)  => "producer contract unavailable",
+            (true, false)  => "consumer expectation unavailable",
+            _              => "contract content not comparable"
+        };
+    }
+
+    /// <summary>
+    /// Deterministic semantic fingerprint of a normalized contract. Canonically ordered so that
+    /// property or schema reordering does not register as a change. Excludes timestamps, source
+    /// locations and other transient presentation values.
+    /// </summary>
+    public static string Fingerprint(NormalizedContract contract)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("contract:").Append(contract.Name).Append('\n');
+
+        foreach (var schema in contract.Schemas.OrderBy(s => s.Name, StringComparer.Ordinal))
+        {
+            sb.Append("schema:").Append(schema.Name)
+              .Append('|').Append(schema.Type)
+              .Append("|nullable=").Append(schema.Nullable)
+              .Append('\n');
+
+            foreach (var prop in schema.Properties.OrderBy(x => x.Name, StringComparer.Ordinal))
+            {
+                sb.Append("  prop:").Append(prop.Name)
+                  .Append('|').Append(prop.Type)
+                  .Append("|req=").Append(prop.Required)
+                  .Append("|null=").Append(prop.Nullable)
+                  .Append("|fmt=").Append(prop.Format ?? "")
+                  .Append("|item=").Append(prop.ArrayItemType ?? "")
+                  .Append("|enum=").Append(prop.EnumValues == null
+                        ? ""
+                        : string.Join(",", prop.EnumValues.OrderBy(v => v, StringComparer.Ordinal)))
+                  .Append('\n');
+            }
+
+            foreach (var required in schema.Required.OrderBy(r => r, StringComparer.Ordinal))
+                sb.Append("  required:").Append(required).Append('\n');
+        }
+
+        var hash = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(sb.ToString()));
+        return Convert.ToHexString(hash).ToLowerInvariant()[..16];
+    }
+
+    /// <summary>
+    /// Drift: current contract against its previous baseline. Independent of producer/consumer
+    /// compatibility and never derived from it.
+    /// </summary>
+    public ContractDriftResult CompareForDrift(
+        NormalizedContract? current,
+        NormalizedContract? baseline,
+        string contractName,
+        DateTime? baselineCapturedAt = null)
+    {
+        if (baseline == null)
+            return new ContractDriftResult
+            {
+                State = ContractDriftState.BaselineUnavailable,
+                Contract = contractName,
+                CurrentFingerprint = current == null ? null : Fingerprint(current),
+                Message = "No previous baseline available for comparison"
+            };
+
+        if (current == null || !HasComparableContent(current) || !HasComparableContent(baseline))
+            return new ContractDriftResult
+            {
+                State = ContractDriftState.NotComparable,
+                Contract = contractName,
+                BaselineCapturedAt = baselineCapturedAt,
+                CurrentFingerprint = current == null ? null : Fingerprint(current),
+                BaselineFingerprint = Fingerprint(baseline),
+                Message = "Contract content unavailable or unsupported; drift could not be determined"
+            };
+
+        var currentFingerprint = Fingerprint(current);
+        var baselineFingerprint = Fingerprint(baseline);
+
+        if (currentFingerprint == baselineFingerprint)
+            return new ContractDriftResult
+            {
+                State = ContractDriftState.NoChange,
+                Contract = contractName,
+                BaselineCapturedAt = baselineCapturedAt,
+                CurrentFingerprint = currentFingerprint,
+                BaselineFingerprint = baselineFingerprint,
+                Message = "No change since previous baseline"
+            };
+
+        var differences = new List<ContractDifference>();
+
+        // The current contract must still satisfy what the baseline provided.
+        foreach (var baselineSchema in baseline.Schemas)
+        {
+            var currentSchema = current.Schemas.FirstOrDefault(s => s.Name == baselineSchema.Name);
+
+            if (currentSchema == null)
+            {
+                differences.Add(new ContractDifference
+                {
+                    Type = ContractDifferenceType.MissingOperation,
+                    Path = baselineSchema.Name,
+                    Severity = ContractDifferenceSeverity.Breaking,
+                    ProducerValue = "Not defined",
+                    ConsumerValue = "Present in baseline",
+                    Explanation = $"Schema '{baselineSchema.Name}' present in the baseline is no longer defined"
+                });
+                continue;
+            }
+
+            CompareSchemas(currentSchema, baselineSchema, differences);
+        }
+
+        // Schemas added since the baseline are additive and informational.
+        foreach (var currentSchema in current.Schemas)
+        {
+            if (baseline.Schemas.Any(s => s.Name == currentSchema.Name))
+                continue;
+
+            differences.Add(new ContractDifference
+            {
+                Type = ContractDifferenceType.UnsupportedSchema,
+                Path = currentSchema.Name,
+                Severity = ContractDifferenceSeverity.Info,
+                ProducerValue = "Present",
+                ConsumerValue = "Not in baseline",
+                Explanation = $"Schema '{currentSchema.Name}' is new since the previous baseline"
+            });
+        }
+
+        var breakingCount = differences.Count(d => d.Severity == ContractDifferenceSeverity.Breaking);
+
+        return new ContractDriftResult
+        {
+            State = breakingCount > 0 ? ContractDriftState.BreakingChange : ContractDriftState.NonBreakingChange,
+            Contract = contractName,
+            Differences = differences.OrderBy(d => d.Path).ThenBy(d => d.Property).ToList(),
+            BaselineCapturedAt = baselineCapturedAt,
+            CurrentFingerprint = currentFingerprint,
+            BaselineFingerprint = baselineFingerprint,
+            Message = breakingCount > 0
+                ? $"{breakingCount} breaking change(s) since previous baseline"
+                : differences.Count > 0
+                    ? $"{differences.Count} non-breaking change(s) since previous baseline"
+                    : "Contract changed since previous baseline without structural differences"
+        };
     }
 }
