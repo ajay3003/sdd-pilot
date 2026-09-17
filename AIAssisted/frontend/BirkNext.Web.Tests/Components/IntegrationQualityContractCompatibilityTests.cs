@@ -10,14 +10,17 @@ namespace BirkNext.Web.Tests.Components;
 /// </summary>
 public class IntegrationQualityContractCompatibilityTests
 {
-    // Test 1: Compatible Result Renders PASS
+    // Test 1: Compatible result is reported without an absolute compatibility claim.
+    // The review compares contract evidence; it does not certify that an integration works.
     [Fact]
-    public void CompatibleResult_DisplaysPassStatus()
+    public void CompatibleResult_DisplaysNonAbsoluteWording()
     {
         var result = CreateCompatibleResult();
 
         result.Status.Should().Be(ContractCompatibilityStatus.Compatible);
-        result.Message.Should().Contain("fully compatible");
+        result.Message.Should().Contain("No breaking incompatibility detected");
+        result.Message.Should().NotContain("fully compatible");
+        result.Message.Should().NotContain("passed");
     }
 
     // Test 2: Breaking Result Renders BREAKING
@@ -153,7 +156,7 @@ public class IntegrationQualityContractCompatibilityTests
             Contract = "UserEvent",
             ProducerSource = "https://api.example.com/swagger.json",
             ConsumerSource = "https://api2.example.com/swagger.json",
-            Message = "Producer and consumer are fully compatible",
+            Message = "No breaking incompatibility detected in compared contract evidence",
             Differences = new List<ContractDifference>()
         };
     }
