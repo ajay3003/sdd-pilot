@@ -10,18 +10,20 @@
 
     <div class="ed-overview" data-testid="discovery-overview">
         <div class="ed-ov-item"><span class="ed-ov-label">Target</span><span class="ed-ov-value" data-testid="discovery-target">@(Profile?.Name ?? "—")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Discovery</span><span class="ed-ov-value @(DiscoveryActive ? "ed-active" : "")" data-testid="discovery-active">@(DiscoveryActive ? "Active" : "Inactive")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Pages analysed</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Snapshot.Pages.Count</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Discovery session (live)</span><span class="ed-ov-value @(DiscoveryActive ? "ed-active" : "")" data-testid="discovery-active">@(DiscoveryActive ? "Active" : "Inactive")</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Saved application analyses</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Snapshot.Pages.Count</span></div>
         <div class="ed-ov-item"><span class="ed-ov-label">Authenticated context</span><span class="ed-ov-value" data-testid="discovery-auth-context">@(ProxyStatus.AuthenticatedCredentialAvailable ? "Available" : "Not available")</span></div>
         <div class="ed-ov-item"><span class="ed-ov-label">Browser Companion</span><span class="ed-ov-value @(CompanionStatus.Connected ? "ed-active" : "")" data-testid="discovery-companion">@CompanionLabel</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Last traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@LastTrafficLabel</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Last observed traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@LastTrafficLabel</span></div>
     </div>
 
+    <p class="ed-note">Live connection state is separate from saved evidence. Last browser evidence: @(Snapshot.Pages.Where(p => p.BrowserEvidence is not null).Select(p => (DateTimeOffset?)p.BrowserEvidence!.CapturedAt).Max()?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "None")</p>
     <nav class="ed-nav" role="tablist">
         <button type="button" class="ed-navbtn @(_view == "overview" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-overview" @onclick='() => _view = "overview"'>Overview</button>
         <button type="button" class="ed-navbtn @(_view == "pages" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-pages" @onclick='() => _view = "pages"'>Pages (@Snapshot.Pages.Count)</button>
         <button type="button" class="ed-navbtn @(_view == "shared" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-shared" @onclick='() => _view = "shared"'>Shared / background (@Snapshot.Shared.Count)</button>
         <button type="button" class="ed-navbtn @(_view == "integrations" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-integrations" @onclick='() => _view = "integrations"'>Backend integrations (@BackendIntegrations.Count)</button>
+        <button type="button" class="ed-navbtn" data-testid="discovery-nav-quality" @onclick='() => _view = "quality"'>Browser Quality</button>
         @if (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0)
         {
             @if (_confirmDeleteAll)
@@ -40,10 +42,12 @@
 
     @if (_view == "overview")
     {
-        @if (Profile is not null && Snapshot.Pages.Count > 0)
-        {
-            <WcagWorkspace @key="Profile.Id" ProfileId="Profile.Id" Snapshot="Snapshot" />
-        }
+        <section class="ed-panel" data-testid="browser-quality-summary">
+            <h4>Browser Quality</h4>
+            <p>WCAG: @WcagAssessmentSummary.State(Discovery.GetAssessment(Profile?.Id ?? ""))</p>
+            <p>Performance: @(Snapshot.Pages.Any(p => p.BrowserEvidence?.Performance is not null) ? $"{Snapshot.Pages.Count(p => p.BrowserEvidence?.Performance is not null)} saved pages with evidence" : "Awaiting browser evidence")</p>
+            <button type="button" @onclick='() => _view = "quality"'>View WCAG assessment / performance</button>
+        </section>
         <div class="ed-panel">
             @if (AllEndpoints.Count == 0 && BackendIntegrations.Count == 0)
             {
@@ -83,6 +87,25 @@
                         </tbody>
                     </table>
                 </div>
+            }
+        </div>
+    }
+    else if (_view == "quality")
+    {
+        <div class="ed-panel" data-testid="browser-quality-view">
+            <h4>Browser Quality</h4>
+            @if (Profile is not null)
+            {
+                <WcagWorkspace @key="Profile.Id" ProfileId="Profile.Id" Snapshot="Snapshot" />
+                <h4>Performance</h4>
+                @if (!Snapshot.Pages.Any(p => p.BrowserEvidence?.Performance is not null))
+                {
+                    <p>Awaiting browser evidence. Connect Browser Companion in the Target Environment and visit an application page.</p>
+                }
+                @foreach (var page in Snapshot.Pages.Where(p => p.BrowserEvidence?.Performance is not null))
+                {
+                    <details><summary>@(page.Title)</summary><PerformanceQualityPageView Snapshot="PerformanceQualityRules.Evaluate(page, Thresholds, Vitals)" ShowTimeline="true" /></details>
+                }
             }
         </div>
     }
@@ -243,6 +266,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (Profile is not null) Discovery.ConfigureTarget(Profile);
         // Fold the live runtime's observed endpoints into the persisted per-page snapshot as traffic arrives, without leaving the tab.
         if (Profile is not null && ProxyStatus.ObservedNetworkEndpoints.Count > 0)
             await Discovery.MergeObservedAsync(JS, Profile.Id, ProxyStatus.ObservedNetworkEndpoints);

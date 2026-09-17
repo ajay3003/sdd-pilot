@@ -5,9 +5,11 @@
 @inject IJSRuntime JS
 
 <div class="wcag-workspace">
-    <label>WCAG target <select value="@Snapshot.Wcag.Version" @onchange="ChangeVersion"><option value="Wcag21">WCAG 2.1</option><option value="Wcag22">WCAG 2.2</option></select></label>
-    <label>Conformance level <select value="@Snapshot.Wcag.Level" @onchange="ChangeLevel"><option value="A">A</option><option value="AA">A + AA</option></select></label>
-    <WcagCoverage Assessment="WcagAssessmentEngine.Evaluate(Snapshot, Page)" Review="OpenReview" />
+    <label>WCAG assessment profile <select value="@Snapshot.Wcag.ProfileId" @onchange="ChangeProfile">
+        @if (Snapshot.Wcag.ProfileId.StartsWith("legacy-")) { <option value="@Snapshot.Wcag.ProfileId">@Snapshot.Wcag.Profile.Label</option> }
+        @foreach (var profile in WcagProfiles.Available) { <option value="@profile.ProfileId">@profile.Label (@profile.CriterionIds.Count criteria)</option> }
+    </select></label>
+    <WcagCoverage Assessment="Discovery.GetAssessment(ProfileId, Page)" Review="OpenReview" />
     @if (_editing is { } row)
     {
         <section class="wcag-editor" aria-label="Manual WCAG review">
@@ -29,12 +31,13 @@
     [Parameter] public PageAnalysis? Page { get; set; }
     private WcagCriterionResult? _editing;
     private WcagVersion _reviewVersion;
+    private string? _reviewProfileId;
     private string _scope = "", _comment = "", _evidence = "", _reviewer = "";
     private string? _error;
     private WcagStatus _decision = WcagStatus.Pass;
     private void OpenReview(WcagCriterionResult result)
     {
-        _editing = result; _reviewVersion = Snapshot.Wcag.Version;
+        _editing = result; _reviewProfileId = Snapshot.Wcag.ProfileId; _reviewVersion = Snapshot.Wcag.Version;
         _scope = result.Definition.RequiresCrossPageEvidence ? WcagAssessmentEngine.ScopeGeneration(Snapshot) : "";
         _comment = ""; _evidence = ""; _reviewer = ""; _error = null;
         _decision = WcagStatus.Pass;
@@ -46,33 +49,22 @@
         {
             await Discovery.RecordWcagReviewAsync(JS, ProfileId, row.Definition.RequiresCrossPageEvidence ? null : row.Page,
                 new WcagManualReview { CriterionId = row.Definition.CriterionId, Generation = row.Generation,
-                    Version = _reviewVersion, ScopeGeneration = _scope, Result = _decision,
+                    Version = _reviewVersion, AssessmentProfileId = _reviewProfileId, ScopeGeneration = _scope, Result = _decision,
                     Comment = _comment, EvidenceNote = _evidence, ReviewedBy = _reviewer });
             _editing = null; _error = null;
         }
         catch (ArgumentException e) { _error = e.Message; }
         catch (InvalidOperationException e) { _error = e.Message; }
     }
-    private async Task ChangeVersion(ChangeEventArgs e)
+    private async Task ChangeProfile(ChangeEventArgs e)
     {
         try
         {
-            if (Enum.TryParse<WcagVersion>(e.Value?.ToString(), out var v))
-                await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = v, Level = Snapshot.Wcag.Level });
+            await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { ProfileId = e.Value?.ToString() ?? WcagProfiles.NorwegianId });
+            Snapshot = Discovery.GetSnapshot(ProfileId);
             _error = null;
         }
-        catch (InvalidOperationException ex) { _error = ex.Message; }
-        _editing = null;
-    }
-    private async Task ChangeLevel(ChangeEventArgs e)
-    {
-        try
-        {
-            if (Enum.TryParse<WcagLevel>(e.Value?.ToString(), out var level))
-                await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { Version = Snapshot.Wcag.Version, Level = level });
-            _error = null;
-        }
-        catch (InvalidOperationException ex) { _error = ex.Message; }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { _error = ex.Message; }
         _editing = null;
     }
 }

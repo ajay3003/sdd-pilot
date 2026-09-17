@@ -393,7 +393,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
             await page.GotoAsync($"{_fixture.FrontendUrl}/frontend-quality-review", new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
             // Wait for cards to render
-            await page.Locator("article.review-landing-card").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
+            await page.Locator("article.fqr-dimension-card").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
 
             foreach (var (width, height) in viewports)
             {
@@ -404,7 +404,7 @@ public sealed class QualityReviewPlaywrightTests_PreStarted : IAsyncLifetime
 
                 scrollWidth.Should().BeLessThanOrEqualTo(clientWidth, $"No horizontal overflow at {width}x{height}");
 
-                var cards = await page.Locator("article.review-landing-card").CountAsync();
+                var cards = await page.Locator("article.fqr-dimension-card").CountAsync();
                 cards.Should().BeGreaterThan(0, "Analysis cards must be visible");
             }
         }

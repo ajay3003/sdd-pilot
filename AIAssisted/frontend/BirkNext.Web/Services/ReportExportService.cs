@@ -310,6 +310,8 @@ public sealed class ReportExportService : IReportExportService
         {
             sb.Append($"<section class=\"block\"><h2>{Esc(wcag.TargetLabel)} — Accessibility / WCAG</h2>");
             sb.Append($"<p>{Esc(WcagAssessment.Disclaimer)}</p>");
+            sb.Append($"<p>Profile: {Esc(wcag.Profile?.ProfileId ?? "Unknown (legacy)")} ? Version: {Esc(wcag.Profile?.VersionLabel ?? "Legacy recorded target")} ? Criteria: {wcag.Profile?.CriterionIds.Count ?? wcag.Results.Select(r => r.Definition.CriterionId).Distinct().Count()} ? Assessment timestamp: {Esc(wcag.AssessedAt?.ToString("u") ?? "Unknown (legacy)")} ? Pages with evidence: {wcag.PagesWithEvidence}</p>");
+            sb.Append("<p>Automatic check evidence and manual decisions are reported separately. Missing evidence is not a pass; partial rule coverage does not establish complete criterion coverage.</p>");
             sb.Append(Table(["Page", "Criterion", "Level", "Title", "Automation", "Result", "Findings", "Confidence", "Evidence", "Last tested", "Manual review"],
                 wcag.Results.Select(r => new[]
                 {

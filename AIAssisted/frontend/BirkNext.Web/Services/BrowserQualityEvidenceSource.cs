@@ -43,7 +43,7 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
         var limitations = new List<string>
         {
             "BirkNext Browser Quality evaluates pages the user visited manually in the paired browser; it does not crawl.",
-            "BirkNext Accessibility Checks are a conservative native rule set, not full axe coverage and not WCAG conformance.",
+            "Browser evidence includes native checks and axe-core when execution is available. Partial positive evidence does not prove complete WCAG criteria or conformance.",
             "Browser performance metrics are field measurements from the user's browser, not Lighthouse lab scores.",
             "Console output is not intercepted; runtime evidence comes from window error, unhandledrejection and resource error events.",
             proxyEvidence ? "Network evidence for these pages comes from the Local HTTPS proxy (Endpoint Discovery) and is correlated by page identity, not by causality."
@@ -62,12 +62,7 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
 
         return new BrowserQualityReviewResult
         {
-            Wcag = WcagAssessmentEngine.Evaluate(new EndpointDiscoverySnapshot
-            {
-                Pages = discovery.GetSnapshot(profileId).Pages.Where(p => approved.Contains(p.PageOrigin, StringComparer.OrdinalIgnoreCase)).ToList(),
-                Wcag = discovery.GetSnapshot(profileId).Wcag,
-                WcagApplicationReviews = discovery.GetSnapshot(profileId).WcagApplicationReviews,
-            }),
+            Wcag = discovery.GetAssessment(profileId),
             CompanionState = status.State, CompanionMessage = message, ProxyEvidenceAvailable = proxyEvidence,
             PagesWithEvidence = pages.Count, PageIdentities = pages.Select(p => p.Identity).ToList(), Findings = findings,
             Limitations = limitations, EvaluatedAt = DateTimeOffset.UtcNow, BrowserName = pages.Select(p => p.BrowserEvidence!.BrowserName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n)),
