@@ -24,6 +24,48 @@ public enum ContractSourceType
     Unknown = 7            // Undetermined
 }
 
+/// <summary>
+/// How an integration's configuration came to exist. Distinct from RelationshipSource, which
+/// records where producer/consumer came from: an integration can be entered manually while its
+/// relationship is derived from messaging metadata, and both facts are worth keeping.
+///
+/// Deliberately excluded from the baseline key: promoting a suggestion to a manual entry, or
+/// having discovery confirm a manual one, must not orphan that integration's history.
+/// </summary>
+public enum IntegrationConfigurationSource
+{
+    /// <summary>Provenance not recorded. The safe default for configuration written before this existed.</summary>
+    Unknown = 0,
+
+    /// <summary>Proposed from traffic the Local HTTPS Proxy actually observed.</summary>
+    EndpointDiscovery = 1,
+
+    /// <summary>Pre-filled from a value proven in the target application's own source. Editable, and never claimed as runtime-verified.</summary>
+    CodeSuggested = 2,
+
+    /// <summary>Entered or edited by a person. Highest configuration authority.</summary>
+    Manual = 3
+}
+
+/// <summary>
+/// The transport entity an integration addresses. The generic Endpoint/Resource pair cannot
+/// distinguish a Service Bus queue from a topic or a subscription, which changes both what the
+/// configuration means and which fields are required.
+/// </summary>
+public enum IntegrationResourceKind
+{
+    Unknown = 0,
+    RestEndpoint = 1,
+    GraphQlEndpoint = 2,
+    EventHub = 3,
+    ServiceBusQueue = 4,
+    ServiceBusTopic = 5,
+    ServiceBusSubscription = 6,
+    KafkaTopic = 7,
+    RabbitExchange = 8,
+    RabbitQueue = 9
+}
+
 public enum RelationshipSource
 {
     Configured = 0,        // Explicitly configured producer/consumer
@@ -167,6 +209,20 @@ public sealed class IntegrationConfigDto
 
     [JsonPropertyName("logicalConsumerService")]
     public string? LogicalConsumerService { get; set; }
+
+    /// <summary>
+    /// Where this configuration came from. Absent in legacy configuration, which reads as
+    /// Unknown rather than claiming a provenance it never had.
+    /// </summary>
+    [JsonPropertyName("configurationSource")]
+    public IntegrationConfigurationSource ConfigurationSource { get; set; } = IntegrationConfigurationSource.Unknown;
+
+    /// <summary>
+    /// Which transport entity Resource names. Legacy configuration reads as Unknown, so nothing
+    /// is inferred about entities recorded before the distinction existed.
+    /// </summary>
+    [JsonPropertyName("resourceKind")]
+    public IntegrationResourceKind ResourceKind { get; set; } = IntegrationResourceKind.Unknown;
 
     // Relationship source (Phase 3)
     [JsonPropertyName("producerConsumerSource")]
