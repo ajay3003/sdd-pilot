@@ -171,9 +171,31 @@ public sealed class IntegrationPerformanceSummary
     [JsonPropertyName("maxDurationMs")]
     public double? MaxDurationMs { get; init; }
 
+    [JsonPropertyName("averageDurationMs")]
+    public double? AverageDurationMs { get; init; }
+
     [JsonPropertyName("p50DurationMs")]
     public double? P50DurationMs { get; init; }
 
     [JsonPropertyName("p95DurationMs")]
     public double? P95DurationMs { get; init; }
+
+    [JsonPropertyName("p99DurationMs")]
+    public double? P99DurationMs { get; init; }
+
+    [JsonPropertyName("errorRate")]
+    public double? ErrorRate { get; init; }
+
+    [JsonPropertyName("requestsPerSecond")]
+    public double? RequestsPerSecond { get; init; }
+
+    [JsonPropertyName("firstObservedAt")]
+    public DateTime? FirstObservedAt { get; init; }
+
+    [JsonPropertyName("lastObservedAt")]
+    public DateTime? LastObservedAt { get; init; }
+
+    /// <summary>Carried forward so a later run can tell "measured weakly" from "not measured".</summary>
+    [JsonPropertyName("evidenceState")]
+    public PerformanceEvidenceState EvidenceState { get; init; } = PerformanceEvidenceState.Unavailable;
 }
