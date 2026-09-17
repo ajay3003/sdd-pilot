@@ -44,10 +44,10 @@
     @if (ShowCriteria)
     {
         <div class="wcag-filters" data-testid="wcag-filters">
-            <label>Status <select class="form-select" @bind="_status"><option value="">All</option>@foreach (var s in Enum.GetValues<WcagStatus>()) { <option value="@s">@Label(s)</option> }</select></label>
-            <label>Level <select class="form-select" @bind="_level"><option value="">A + AA</option><option>A</option><option>AA</option></select></label>
-            <label>Automation <select class="form-select" @bind="_automation"><option value="">All</option>@foreach (var a in Enum.GetValues<WcagAutomation>()) { <option>@a</option> }</select></label>
-            <label class="wcag-search">Search <input class="form-control" type="search" @bind="_search" @bind:event="oninput" placeholder="Criterion or title" /></label>
+            <div class="wcag-field"><label for="@(_matrixId + "-status")">Status</label><select id="@(_matrixId + "-status")" class="form-select" @bind="_status"><option value="">All</option>@foreach (var s in Enum.GetValues<WcagStatus>()) { <option value="@s">@Label(s)</option> }</select></div>
+            <div class="wcag-field"><label for="@(_matrixId + "-level")">Level</label><select id="@(_matrixId + "-level")" class="form-select" @bind="_level"><option value="">A + AA</option><option>A</option><option>AA</option></select></div>
+            <div class="wcag-field"><label for="@(_matrixId + "-automation")">Automation</label><select id="@(_matrixId + "-automation")" class="form-select" @bind="_automation"><option value="">All</option>@foreach (var a in Enum.GetValues<WcagAutomation>()) { <option>@a</option> }</select></div>
+            <div class="wcag-field wcag-search"><label for="@(_matrixId + "-search")">Search</label><input id="@(_matrixId + "-search")" class="form-control" type="search" @bind="_search" @bind:event="oninput" placeholder="Criterion or title" /></div>
         </div>
         @if (!Filtered.Any()) { <p role="status">No criteria match these filters.</p> }
         @foreach (var group in Filtered.GroupBy(r => r.Definition.CriterionId.Split('.')[0]))

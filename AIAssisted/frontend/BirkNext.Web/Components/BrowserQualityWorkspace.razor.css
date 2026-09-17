@@ -1,4 +1,4 @@
-.bq-workspace { min-width: 0; color: var(--clr-text); }
+.bq-workspace { min-width: 0; color: var(--clr-text-body); }
 .bq-header { margin-bottom: 1rem; }
 .bq-header h3 { font-size: 1.25rem; font-weight: 650; color: var(--clr-text-heading); margin: 0 0 .25rem; }
 .bq-header p, .bq-muted { font-size: .875rem; color: var(--clr-text-muted); margin-bottom: .75rem; overflow-wrap: anywhere; }
@@ -10,4 +10,8 @@ h4 { font-size: 1.125rem; font-weight: 600; margin: 0; }
 summary { cursor: pointer; font-size: .875rem; font-weight: 600; padding: .5rem 0; }
 summary:focus-visible, [role=tabpanel]:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
 .bq-metrics > div { min-width: 0; }
+.bq-metrics { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); }
+.bq-performance { grid-template-columns: minmax(0, 1fr); }
+.bq-performance ::deep .status-chip-not-assessed { color: var(--clr-text-muted); }
 .bq-metrics ::deep .metric-card { height: 100%; }
+.bq-metrics ::deep .metric-sublabel { color: var(--clr-text-muted); font-size: .8125rem; }

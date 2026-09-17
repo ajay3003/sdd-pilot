@@ -19,9 +19,6 @@ fs.mkdirSync(out, { recursive: true });
       const page = await context.newPage();
       const errors = [];
       page.on('pageerror', e => errors.push(e.message));
-      // An old physical scoped-CSS bundle exists on this workstation. Use the current generated build artifact.
-      const css = path.resolve(__dirname, '../AIAssisted/frontend/BirkNext.Web/obj/Debug/net8.0/scopedcss/bundle/BirkNext.Web.styles.css');
-      await page.route('**/BirkNext.Web.styles.css', route => route.fulfill({ path: css, contentType: 'text/css' }));
       await page.route('**/api/**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({
         state: 'NotPaired', profileId: 'quality-fixture', pages: [], message: 'Fixture: disconnected'
       }) }));
@@ -44,7 +41,7 @@ fs.mkdirSync(out, { recursive: true });
       await page.goto(base + '/admin/system-settings?section=target-environments');
       // The route may mount before the query-selected settings section is applied.
       await page.getByRole('button', { name: 'Target Environments', exact: true }).click();
-      await page.getByRole('button', { name: 'Endpoint Discovery', exact: true }).click().catch(async error => {
+      await page.getByRole('tab', { name: 'Endpoint Discovery', exact: true }).click().catch(async error => {
         fs.writeFileSync(path.join(out, 'navigation-debug.txt'), await page.locator('body').innerText());
         await page.screenshot({ path: path.join(out, 'navigation-debug.png'), fullPage: true });
         throw error;
@@ -52,6 +49,13 @@ fs.mkdirSync(out, { recursive: true });
       await page.locator('[data-testid=browser-quality-open]').click();
       const workspace = page.locator('.bq-workspace');
       await workspace.waitFor();
+      await page.addScriptTag({ path: path.resolve(__dirname, '../AIAssisted/browser-companion/vendor/axe.min.js') });
+      const checkAccessibility = async name => {
+        const violations = await page.evaluate(async () => (await axe.run(document.querySelector('.bq-workspace'), {
+          runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa'] }
+        })).violations.map(v => ({ id: v.id, targets: v.nodes.map(n => n.target) })));
+        check(violations.length === 0, `${name}: ${JSON.stringify(violations)}`);
+      };
       const selector = page.getByLabel('Assessment profile', { exact: true });
       const expectedId = scenario === 'saved-version' ? 'legacy-22-AA' : legal;
       check(await selector.inputValue() === expectedId, 'Selected profile is restored');
@@ -68,6 +72,7 @@ fs.mkdirSync(out, { recursive: true });
         check(await page.locator('[data-testid=wcag-toggle-criteria]').getAttribute('aria-expanded') === 'false', 'Disclosure state is collapsed');
       }
       await workspace.screenshot({ path: path.join(out, `${scenario}-wcag.png`) });
+      await checkAccessibility('WCAG surface accessibility');
       await wcag.focus();
       await page.keyboard.press('ArrowRight');
       check(await perf.getAttribute('aria-selected') === 'true', 'ArrowRight activates Performance');
@@ -78,6 +83,7 @@ fs.mkdirSync(out, { recursive: true });
         check(await page.locator('[data-testid=bq-core-ttfb] .metric-value').first().innerText() === 'Not available', 'Unavailable timing is not zero');
       } else check(await page.getByText('No browser performance evidence has been collected yet', { exact: true }).isVisible(), 'Performance empty state');
       await workspace.screenshot({ path: path.join(out, `${scenario}-performance.png`) });
+      await checkAccessibility('Performance surface accessibility');
       await page.keyboard.press('Home');
       check(await wcag.getAttribute('aria-selected') === 'true', 'Home returns to WCAG');
       const toggle = page.locator('[data-testid=wcag-toggle-criteria]');
@@ -103,10 +109,12 @@ fs.mkdirSync(out, { recursive: true });
       check(await page.locator('[data-criterion="3.3.8"]').count() === 0, 'WCAG 2.2-only criterion removed');
       await page.getByLabel('Search', { exact: true }).fill('1.1.1');
       await page.waitForFunction(() => document.querySelectorAll('[data-testid=wcag-criterion-row]').length === 1);
-      check(await page.locator('tbody .status-chip').innerText() === (populated ? 'Failed' : 'Not tested'), 'Textual exact status, not color alone');
+      check((await workspace.locator('tbody .status-chip').textContent()).trim() === (populated ? 'Failed' : 'Not tested'), 'Textual exact status, not color alone');
       await page.getByLabel('Search', { exact: true }).fill('');
       await workspace.screenshot({ path: path.join(out, `${scenario}-criteria.png`) });
       await page.setViewportSize({ width: 1024, height: 900 });
+      await workspace.screenshot({ path: path.join(out, `${scenario}-laptop.png`) });
+      await checkAccessibility('Expanded laptop criteria accessibility');
       check(await workspace.evaluate(e => e.scrollWidth <= e.clientWidth + 1), 'Laptop layout contains overflow');
       await workspace.screenshot({ path: path.join(out, `${scenario}-laptop.png`) });
       check(await toggle.evaluate(e => e.classList.contains('btn-secondary') && getComputedStyle(e).borderRadius !== '0px'), 'Action uses shared rendered styling');

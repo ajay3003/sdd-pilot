@@ -7,12 +7,13 @@
 <div class="wcag-workspace">
     <WcagCoverage @key="Snapshot.Wcag.ProfileId" Assessment="Assessment" Review="OpenReview">
         <ProfileSelector>
-            <label class="wcag-profile">Assessment profile
-                <select class="form-select" data-testid="wcag-profile" @bind:get="Snapshot.Wcag.ProfileId" @bind:set="ChangeProfile">
+            <div class="wcag-profile">
+                <label for="@_profileSelectId">Assessment profile</label>
+                <select id="@_profileSelectId" class="form-select" data-testid="wcag-profile" @bind:get="Snapshot.Wcag.ProfileId" @bind:set="ChangeProfile">
                     @if (Snapshot.Wcag.ProfileId.StartsWith("legacy-")) { <option value="@Snapshot.Wcag.ProfileId">@Snapshot.Wcag.Profile.Label</option> }
                     @foreach (var profile in WcagProfiles.Available) { <option value="@profile.ProfileId">@profile.Label</option> }
                 </select>
-            </label>
+            </div>
         </ProfileSelector>
     </WcagCoverage>
     @if (_editing is { } row)
@@ -37,6 +38,7 @@
     private WcagAssessment Assessment => BrowserQualityAssessmentService.ForPage(BrowserQualityAssessmentService.Assess(Snapshot), Page);
     [Parameter] public PageAnalysis? Page { get; set; }
     private WcagCriterionResult? _editing;
+    private readonly string _profileSelectId = $"wcag-profile-{Guid.NewGuid():N}";
     private WcagVersion _reviewVersion;
     private string? _reviewProfileId;
     private string _scope = "", _comment = "", _evidence = "", _reviewer = "";

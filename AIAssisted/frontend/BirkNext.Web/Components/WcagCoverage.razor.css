@@ -1,4 +1,4 @@
-.wcag-panel { display: grid; gap: 1rem; min-width: 0; color: var(--clr-text); }
+.wcag-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; color: var(--clr-text-body); }
 .wcag-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
 h3 { font-size: 1.125rem; font-weight: 650; margin: 0 0 .5rem; color: var(--clr-text-heading); }
 .wcag-title { font-size: 1rem; font-weight: 600; margin: 0 0 .3rem; }
@@ -6,14 +6,17 @@ h3 { font-size: 1.125rem; font-weight: 650; margin: 0 0 .5rem; color: var(--clr-
 .wcag-header p { margin-bottom: .25rem; }
 .wcag-state-line { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1rem; }
 .wcag-disclaimer { margin: .65rem 0 0; }
-.wcag-cards { gap: .75rem; }
+.wcag-cards { grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: .75rem; }
 .wcag-cards ::deep .metric-card { min-width: 0; padding: 1rem; }
 .wcag-cards ::deep .metric-label { text-transform: none; letter-spacing: normal; font-size: .875rem; color: var(--clr-text); }
 .wcag-cards ::deep .metric-sublabel { color: var(--clr-text-muted); font-size: .8125rem; line-height: 1.4; margin-top: .4rem; }
 .wcag-counter-note { margin: -.35rem 0 0; }
+.wcag-panel ::deep .empty-state { margin: 0; max-width: none; padding: 1.5rem; }
+.wcag-panel ::deep .status-chip-not-assessed { color: var(--clr-text-muted); }
+.wcag-panel ::deep .status-chip-critical { background: var(--clr-surface-white); }
 .wcag-matrix-control { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
 .wcag-filters { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; }
-.wcag-filters label { display: flex; flex-direction: column; gap: .35rem; flex: 1 1 130px; font-size: .875rem; font-weight: 500; }
+.wcag-field { display: flex; flex-direction: column; gap: .35rem; flex: 1 1 130px; font-size: .875rem; font-weight: 500; }
 .wcag-filters .wcag-search { flex: 2 1 200px; }
 .wcag-filters select, .wcag-filters input { min-width: 0; width: 100%; font-size: .875rem; }
 .wcag-principle { border: 1px solid var(--clr-border); border-radius: var(--radius-lg); margin-bottom: .75rem; background: var(--clr-surface-white); overflow: hidden; }
@@ -31,4 +34,3 @@ tbody th { width: 6rem; }
 .wcag-editor h4, .wcag-editor h5 { font-size: 1rem; overflow-wrap: anywhere; }
 .wcag-editor small { display: block; overflow-wrap: anywhere; }
 summary:focus-visible, .wcag-table:focus-visible, .wcag-editor:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: -2px; }
-@media (max-width: 1000px) { .wcag-cards { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
