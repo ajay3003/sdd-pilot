@@ -237,6 +237,84 @@
                     </table>
                 </div>
 
+                @* Scope: what this review covers, read from Target Environment configuration.
+                   Read-only by design; configuration is edited in Target Environment. *@
+                <div class="iqr-scope" data-testid="iqr-scope">
+                    <h3>Scope</h3>
+                    @{
+                        var scopeIntegrations = _context?.Integrations ?? [];
+                        var httpScope = scopeIntegrations
+                            .Where(i => IntegrationConfigPresenter.IsHttpIntegration(i.Type)).ToList();
+                        var messagingScope = scopeIntegrations
+                            .Where(i => !IntegrationConfigPresenter.IsHttpIntegration(i.Type)).ToList();
+                    }
+
+                    @if (scopeIntegrations.Count == 0)
+                    {
+                        <p class="iqr-empty" data-testid="iqr-scope-empty">
+                            No integrations are configured for this environment.
+                        </p>
+                    }
+
+                    @if (httpScope.Count > 0)
+                    {
+                        <h4 data-testid="iqr-scope-http-heading">REST / GraphQL</h4>
+                        <ul class="iqr-scope-list">
+                            @foreach (var integration in httpScope)
+                            {
+                                <li data-testid="iqr-scope-item" data-integration-id="@integration.Id">
+                                    <strong>@integration.Name</strong>
+                                    <span data-testid="iqr-scope-type">@integration.Type</span>
+                                    <span data-testid="iqr-scope-endpoint">@integration.Endpoint</span>
+                                    <span data-testid="iqr-scope-source">
+                                        Source: @IntegrationConfigPresenter.SourceLabel(integration.ConfigurationSource)
+                                    </span>
+                                    @if (!IntegrationConfigPresenter.IsComplete(integration))
+                                    {
+                                        <span data-testid="iqr-scope-incomplete">
+                                            @IntegrationConfigPresenter.ConfigurationState(integration)
+                                        </span>
+                                        <a href="/system-settings" data-testid="iqr-scope-edit-target">Edit Target Environment</a>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    @if (messagingScope.Count > 0)
+                    {
+                        <h4 data-testid="iqr-scope-messaging-heading">Messaging</h4>
+                        <ul class="iqr-scope-list">
+                            @foreach (var integration in messagingScope)
+                            {
+                                <li data-testid="iqr-scope-item" data-integration-id="@integration.Id">
+                                    <strong>@integration.Name</strong>
+                                    <span data-testid="iqr-scope-type">@integration.Type</span>
+                                    <span data-testid="iqr-scope-resource">@integration.Resource</span>
+                                    <span data-testid="iqr-scope-source">
+                                        Source: @IntegrationConfigPresenter.SourceLabel(integration.ConfigurationSource)
+                                    </span>
+                                    @* Relationships are shown only as recorded. Nothing is inferred
+                                       from a display name, a URL path or a resource name. *@
+                                    <span data-testid="iqr-scope-producer">
+                                        Producer: @(string.IsNullOrWhiteSpace(integration.LogicalProducerService) ? "Unknown" : integration.LogicalProducerService)
+                                    </span>
+                                    <span data-testid="iqr-scope-consumer">
+                                        Consumer: @(string.IsNullOrWhiteSpace(integration.LogicalConsumerService) ? "Unknown" : integration.LogicalConsumerService)
+                                    </span>
+                                    @if (!IntegrationConfigPresenter.IsComplete(integration))
+                                    {
+                                        <span data-testid="iqr-scope-incomplete">
+                                            @IntegrationConfigPresenter.ConfigurationState(integration)
+                                        </span>
+                                        <a href="/system-settings" data-testid="iqr-scope-edit-target">Edit Target Environment</a>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+
                 @* History summary: concise by default, detail collapsed. *@
                 <div class="iqr-history" data-testid="iqr-history">
                     <span class="iqr-history-label">History</span>

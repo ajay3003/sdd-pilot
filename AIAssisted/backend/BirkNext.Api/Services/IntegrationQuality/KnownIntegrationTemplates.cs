@@ -79,8 +79,10 @@ public sealed record KnownIntegrationTemplate
 /// resource names were evidenced — a DEV or PROD name produced by substituting "qa" would be an
 /// invention, not a suggestion.
 ///
-/// Namespaces, consumer groups and subscription names were not established by the audit and are
-/// therefore absent throughout.
+/// Namespaces and subscription names were not established by the audit and are absent throughout.
+/// Event Hub consumer groups are populated: the audited source shows service consumers configured
+/// through EventHub:ConsumerGroup with "$Default", so the value is evidence rather than a
+/// convention assumed because it is common.
 /// </summary>
 public static class KnownIntegrationTemplates
 {
@@ -180,6 +182,19 @@ public static class KnownIntegrationTemplates
         return templates;
     }
 
+    /// <summary>
+    /// The consumer group the audited source shows service consumers configured with, through
+    /// EventHub:ConsumerGroup.
+    ///
+    /// One local HendelseAdapter configuration uses the lower-case "$default". Azure treats the
+    /// name case-insensitively, but the audited majority spelling is used here and the casing
+    /// difference is left for that service to align rather than being mirrored into suggestions.
+    ///
+    /// This is distinct from the emulator's ConsumerGroups: [] setting, which describes emulator
+    /// topology rather than how a service consumer is configured, and is not represented here.
+    /// </summary>
+    public const string AuditedEventHubConsumerGroup = "$Default";
+
     private static KnownIntegrationTemplate EventHub(
         string id,
         string displayName,
@@ -195,8 +210,9 @@ public static class KnownIntegrationTemplates
             ResourceKind = IntegrationResourceKind.EventHub,
             Resource = resource,
             SuggestedProducer = producer,
-            SuggestedConsumer = consumer
-            // Namespace and consumer group were not established by the audit and stay null.
+            SuggestedConsumer = consumer,
+            SuggestedConsumerGroup = AuditedEventHubConsumerGroup
+            // Namespace was not established by the audit and stays null.
         };
 
     private static KnownIntegrationTemplate ServiceBus(
@@ -219,5 +235,7 @@ public static class KnownIntegrationTemplates
             SuggestedConsumer = consumer,
             RelationshipNote = relationshipNote
             // Namespace and subscription name were not established by the audit and stay null.
+            // Service Bus has subscriptions rather than consumer groups, so no consumer group is
+            // carried here.
         };
 }

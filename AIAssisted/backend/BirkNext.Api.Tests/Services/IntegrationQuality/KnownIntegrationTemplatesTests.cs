@@ -122,12 +122,52 @@ public class KnownIntegrationTemplatesTests
         Assert.All(Qa(), t => Assert.Null(t.EndpointOrNamespace));
 
     [Fact]
-    public void NoTemplateInventsAConsumerGroup()
+    public void EventHubTemplates_CarryTheAuditedConsumerGroup()
     {
-        Assert.All(Qa(), t => Assert.Null(t.SuggestedConsumerGroup));
+        // Earlier this asserted no consumer group existed, on the grounds that "$Default" is a
+        // common convention rather than evidence. The audit has since shown service consumers
+        // configured through EventHub:ConsumerGroup with that value, so it is now evidence and
+        // the previous expectation is obsolete.
+        var eventHubs = Qa().Where(t => t.IntegrationType == IntegrationType.EventHub).ToList();
 
-        // "$Default" is a common convention, not evidence.
-        Assert.DoesNotContain(Qa(), t => t.SuggestedConsumerGroup == "$Default");
+        Assert.NotEmpty(eventHubs);
+        Assert.All(eventHubs, t => Assert.Equal("$Default", t.SuggestedConsumerGroup));
+    }
+
+    [Fact]
+    public void NoTemplateUsesTheLowerCaseConsumerGroupSpelling()
+    {
+        // One local HendelseAdapter configuration uses "$default". Azure compares the name
+        // case-insensitively, but suggestions follow the audited majority spelling rather than
+        // propagating the outlier.
+        Assert.DoesNotContain(Qa(), t => t.SuggestedConsumerGroup == "$default");
+    }
+
+    [Fact]
+    public void ServiceBusTemplates_CarryNoConsumerGroup()
+    {
+        // Service Bus has subscriptions, not consumer groups. Nothing here should acquire one,
+        // and the emulator's ConsumerGroups setting describes emulator topology rather than how a
+        // service consumer is configured.
+        Assert.All(
+            Qa().Where(t => t.IntegrationType == IntegrationType.ServiceBus),
+            t => Assert.Null(t.SuggestedConsumerGroup));
+    }
+
+    [Fact]
+    public void ConsumerGroupChange_DoesNotMoveBaselineKey()
+    {
+        var integration = Qa().Single(t => t.Resource == "m2lb-cdc-qa.birk.dbo.person")
+            .ToIntegration("i1");
+        integration.Endpoint = "ns.servicebus.windows.net";
+
+        var before = IntegrationBaselineIdentity.Compute("QA", integration);
+
+        integration.Consumer = "a-different-consumer-group";
+
+        // Consumer group is operational metadata, deliberately outside structural identity, so
+        // changing it must not look like a new integration appearing.
+        Assert.Equal(before, IntegrationBaselineIdentity.Compute("QA", integration));
     }
 
     // ── Environment discipline ───────────────────────────────────────────────
