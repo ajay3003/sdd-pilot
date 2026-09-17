@@ -114,9 +114,6 @@ public static class IntegrationConfigPresenter
     public static bool ShowsResourceKind(IntegrationConfig integration) =>
         integration.Type is IntegrationType.ServiceBus or IntegrationType.RabbitMQ;
 
-    public static bool ShowsRoutingKey(IntegrationConfig integration) =>
-        integration.Type == IntegrationType.RabbitMQ;
-
     /// <summary>Resource kinds offered for a transport. Empty where the transport has only one.</summary>
     public static IReadOnlyList<IntegrationResourceKind> ResourceKindChoices(IntegrationType type) => type switch
     {

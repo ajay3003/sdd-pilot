@@ -177,10 +177,16 @@ public class IntegrationConfigPresenterTests
     }
 
     [Fact]
-    public void RoutingKeyShowsOnlyForRabbitMq()
+    public void RoutingKeyIsNotOffered()
     {
-        IntegrationConfigPresenter.ShowsRoutingKey(Config(IntegrationType.RabbitMQ)).Should().BeTrue();
-        IntegrationConfigPresenter.ShowsRoutingKey(Config(IntegrationType.EventHub)).Should().BeFalse();
+        // IntegrationConfig has no routing-key field, so the editor must not imply one exists.
+        // A helper that claimed otherwise was removed rather than left describing a capability
+        // the model does not have.
+        typeof(IntegrationConfig).GetProperties().Select(p => p.Name)
+            .Should().NotContain(name => name.Contains("RoutingKey", StringComparison.OrdinalIgnoreCase));
+
+        typeof(IntegrationConfigPresenter).GetMethods().Select(m => m.Name)
+            .Should().NotContain("ShowsRoutingKey");
     }
 
     [Fact]
