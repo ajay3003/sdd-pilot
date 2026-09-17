@@ -98,7 +98,7 @@ public class RuntimeEvidencePopulationTests
     }
 
     [Fact]
-    public void AuthenticatedCheckWithError_Marks4xxAs Error()
+    public void AuthenticatedCheckWithError_MarksClientErrorAsError()
     {
         var evidence = _service.CreateAuthenticatedCheckEvidence(
             integrationId: "auth-2",

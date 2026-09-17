@@ -325,9 +325,10 @@ builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiReview/2.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 
-// Integration Quality Review
+// Integration Quality Review & Contract Analysis (Phase 3)
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationRelationshipPopulationService>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationQuality.RuntimeEvidencePopulationService>();
+builder.Services.AddScoped<BirkNext.Api.Services.ContractAnalysis.IMessageSchemaDiscoveryService, BirkNext.Api.Services.ContractAnalysis.MessageSchemaDiscoveryService>();
 builder.Services.AddHttpClient<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualityReviewService, BirkNext.Api.Services.IntegrationQuality.IntegrationQualityReviewService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(60);
