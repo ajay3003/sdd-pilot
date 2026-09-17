@@ -32,6 +32,111 @@ public enum RelationshipSource
     Unknown = 3            // Relationship source not determined
 }
 
+public enum RuntimeEvidenceType
+{
+    HttpRequestObserved = 0,      // REST API request observed
+    GraphQlOperationObserved = 1, // GraphQL query/mutation observed
+    MessagePublished = 2,          // Message published (not currently observed)
+    MessageConsumed = 3,           // Message consumed (not currently observed)
+    Unknown = 4                    // Evidence type unknown
+}
+
+public enum RuntimeEvidenceSource
+{
+    EndpointDiscovery = 0,  // From Endpoint Discovery (Browser Companion traffic)
+    AuthenticatedProxy = 1, // From Local HTTPS Proxy authenticated checks
+    MessagingAdapter = 2,   // From messaging system telemetry (not yet implemented)
+    BrowserCompanion = 3,   // From Browser Companion direct observation
+    OtherAuthoritative = 4  // Other authoritative source
+}
+
+public enum RuntimeEvidenceDirection
+{
+    Outbound = 0,  // Outbound from this service
+    Inbound = 1,   // Inbound to this service
+    Unknown = 2    // Direction unknown
+}
+
+public enum RuntimeEvidenceOutcome
+{
+    Success = 0,  // Successful observation (2xx status or no error)
+    Error = 1,    // Error observed (4xx/5xx or error state)
+    Unknown = 2   // Outcome unknown or not determined
+}
+
+/// <summary>
+/// Represents a runtime observation of integration activity (Phase 3, Checkpoint 2).
+/// Distinct from reachability probes. Contains evidence that actual traffic flowed.
+/// </summary>
+public sealed class RuntimeIntegrationEvidence
+{
+    [JsonPropertyName("integrationId")]
+    public string IntegrationId { get; init; } = "";
+
+    [JsonPropertyName("evidenceType")]
+    public RuntimeEvidenceType EvidenceType { get; init; }
+
+    [JsonPropertyName("source")]
+    public RuntimeEvidenceSource Source { get; init; }
+
+    [JsonPropertyName("direction")]
+    public RuntimeEvidenceDirection Direction { get; init; }
+
+    [JsonPropertyName("outcome")]
+    public RuntimeEvidenceOutcome Outcome { get; init; }
+
+    [JsonPropertyName("observedAt")]
+    public DateTime ObservedAt { get; init; }
+
+    [JsonPropertyName("durationMs")]
+    public double? DurationMs { get; init; }  // Optional; only if measured
+
+    [JsonPropertyName("operationOrMessage")]
+    public string? OperationOrMessage { get; set; }  // GraphQL operation name, message type, etc.
+
+    [JsonPropertyName("protocol")]
+    public IntegrationType? Protocol { get; set; }
+
+    [JsonPropertyName("statusCodeOrOutcome")]
+    public string? StatusCodeOrOutcome { get; set; }  // "200", "404", "error", etc.
+
+    [JsonPropertyName("sampleCount")]
+    public int SampleCount { get; set; } = 1;  // For aggregated evidence
+
+    [JsonPropertyName("metadata")]
+    public Dictionary<string, string> Metadata { get; init; } = new();  // Sanitized metadata only
+}
+
+/// <summary>
+/// Summarizes runtime evidence state for an integration.
+/// </summary>
+public sealed class RuntimeEvidenceSummary
+{
+    [JsonPropertyName("hasRuntimeEvidence")]
+    public bool HasRuntimeEvidence { get; init; }
+
+    [JsonPropertyName("evidenceCount")]
+    public int EvidenceCount { get; init; }
+
+    [JsonPropertyName("sources")]
+    public List<RuntimeEvidenceSource> Sources { get; init; } = new();
+
+    [JsonPropertyName("lastObservedAt")]
+    public DateTime? LastObservedAt { get; init; }
+
+    [JsonPropertyName("evidenceTypes")]
+    public List<RuntimeEvidenceType> EvidenceTypes { get; init; } = new();
+
+    [JsonPropertyName("minDurationMs")]
+    public double? MinDurationMs { get; init; }
+
+    [JsonPropertyName("maxDurationMs")]
+    public double? MaxDurationMs { get; init; }
+
+    [JsonPropertyName("avgDurationMs")]
+    public double? AvgDurationMs { get; init; }
+}
+
 public enum ContractMetadataReadiness
 {
     NotConfigured = 0,     // No relationship metadata provided
@@ -198,8 +303,15 @@ public sealed class IntegrationStatus
     [JsonPropertyName("type")]             public IntegrationType Type             { get; init; }
     [JsonPropertyName("enabled")]          public bool            Enabled          { get; init; }
     [JsonPropertyName("hasRequiredFields")] public bool           HasRequiredFields { get; init; }
+
+    // Reachability (separate from runtime evidence)
     [JsonPropertyName("healthReachable")]  public bool?           HealthReachable  { get; init; }
     [JsonPropertyName("workerReachable")]  public bool?           WorkerReachable  { get; init; }
+
+    // Runtime evidence (Phase 3)
+    [JsonPropertyName("runtimeEvidenceSummary")]
+    public RuntimeEvidenceSummary? RuntimeEvidenceSummary { get; set; }
+
     [JsonPropertyName("score")]            public int             Score            { get; init; }
     [JsonPropertyName("missingFields")]    public List<string>    MissingFields    { get; init; } = [];
     [JsonPropertyName("contractCompatibility")] public object? ContractCompatibility { get; set; }

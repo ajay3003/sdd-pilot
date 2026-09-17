@@ -327,6 +327,7 @@ builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
 
 // Integration Quality Review
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationRelationshipPopulationService>();
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationQuality.RuntimeEvidencePopulationService>();
 builder.Services.AddHttpClient<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualityReviewService, BirkNext.Api.Services.IntegrationQuality.IntegrationQualityReviewService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(60);
