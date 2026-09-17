@@ -36,6 +36,7 @@ for (const f of files.filter(f => !f.startsWith('vendor/'))) {
     if (src.includes(banned)) fail(`${f} must not reference ${banned}`);
   }
 }
+execFileSync(process.execPath, [path.join(root, 'generate-axe-catalog.cjs'), '--check'], { stdio: 'inherit' });
 console.log(`manifest ok: ${manifest.name} ${manifest.version}; ${files.length} scripts syntax-checked; credential-API scan clean`);
 
 if (!skipTests) {
@@ -44,6 +45,7 @@ if (!skipTests) {
 }
 
 const dist = path.join(root, 'dist');
+if (path.dirname(path.resolve(dist)) !== path.resolve(root)) fail('package output must be inside companion workspace');
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 const zipName = `birknext-browser-companion-${manifest.version}.zip`;

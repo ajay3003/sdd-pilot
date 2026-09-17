@@ -14,7 +14,7 @@ public sealed class WcagArchitectureTests
     {
         ProfileId = "dev", PageOrigin = Origin, PagePath = path, VisitStartedAt = DateTimeOffset.UtcNow.AddMinutes(-1),
         CapturedAt = DateTimeOffset.UtcNow, SnapshotSequence = 1,
-        Accessibility = new() { Axe = new() { State = "Completed", Version = "4.11.1", EvidenceVersion = "visit-1",
+        Accessibility = new() { Axe = new() { State = "Completed", Version = AxeRuleCatalog.Version, EvidenceVersion = "visit-1",
             Rules = [new() { RuleId = "image-alt", CriterionIds = ["1.1.1"], Outcome = outcome, Count = 1 }] } }
     };
 

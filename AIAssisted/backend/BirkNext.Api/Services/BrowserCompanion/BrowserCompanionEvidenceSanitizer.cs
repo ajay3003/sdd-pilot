@@ -95,14 +95,14 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
     {
         Axe = a11y.Axe is null ? null : new BrowserAxeEvidence
         {
-            State = a11y.Axe.State == "Completed" ? "Completed" : "Unavailable",
+            State = a11y.Axe.State == "Completed" && a11y.Axe.Version == AxeRuleCatalog.Version ? "Completed" : "Unavailable",
             Version = Regex.IsMatch(a11y.Axe.Version ?? "", @"^\d{1,2}\.\d{1,2}\.\d{1,2}$") ? a11y.Axe.Version : null,
             EvidenceVersion = Text(a11y.Axe.EvidenceVersion, 200),
-            Rules = a11y.Axe.State != "Completed" ? [] : a11y.Axe.Rules.Where(r => Regex.IsMatch(r.RuleId ?? "", "^[a-z0-9-]{1,80}$"))
+            Rules = a11y.Axe.State != "Completed" || a11y.Axe.Version != AxeRuleCatalog.Version ? [] : a11y.Axe.Rules.Where(r => Regex.IsMatch(r.RuleId ?? "", "^[a-z0-9-]{1,80}$"))
                 .Take(300).Select(r => new BrowserAxeRule
                 {
                     RuleId = r.RuleId, Outcome = r.Outcome is "Pass" or "Fail" or "ManualReviewRequired" or "NotApplicable" ? r.Outcome : "NotTested",
-                    CriterionIds = r.CriterionIds.Where(id => Regex.IsMatch(id ?? "", @"^[1-4]\.[1-5]\.[1-9][0-9]?$")).Distinct().Take(10).ToList(),
+                    CriterionIds = AxeRuleCatalog.Criteria(r.RuleId).ToList(),
                     Count = Clamp(r.Count)
                 }).ToList()
         },

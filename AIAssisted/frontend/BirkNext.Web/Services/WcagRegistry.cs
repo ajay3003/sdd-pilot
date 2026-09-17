@@ -1,4 +1,5 @@
 using BirkNext.Web.Models;
+using BirkNext.BrowserCompanion;
 
 namespace BirkNext.Web.Services;
 
@@ -8,9 +9,9 @@ public static class WcagRegistry
     private static WcagCriterionDefinition D(string id, WcagLevel level, string title,
         string checks = "", bool interaction = false, bool crossPage = false, bool manual = true,
         WcagVersion since = WcagVersion.Wcag21) => new(id, level, title,
-            checks.Length == 0 ? WcagAutomation.Manual : manual ? WcagAutomation.Partial : WcagAutomation.Automatic,
+            checks.Length == 0 && !AxeRuleCatalog.CanEvaluate(id) ? WcagAutomation.Manual : manual ? WcagAutomation.Partial : WcagAutomation.Automatic,
             checks.Split(',', StringSplitOptions.RemoveEmptyEntries), interaction, crossPage, manual,
-            checks.Length == 0 ? "No reliable native automated proof; human review required." : "Results cover tested elements only; semantic adequacy and unobserved states require review.", since);
+            checks.Length == 0 && !AxeRuleCatalog.CanEvaluate(id) ? "No reliable native automated proof; human review required." : "Results cover tested elements only; semantic adequacy and unobserved states require review.", since);
 
     public static IReadOnlyList<WcagCriterionDefinition> All { get; } = Array.AsReadOnly(new[]
     {

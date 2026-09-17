@@ -55,11 +55,11 @@ public sealed class BrowserQualityBoundaryTests
     public void AxeEvidenceIsBoundedSanitizedAndTyped()
     {
         var sanitizer = new BrowserCompanionEvidenceSanitizer(new BrowserEvidenceSanitizer());
-        var page = sanitizer.Sanitize(new() { Accessibility = new() { Axe = new() { State = "Completed", Version = "Bearer secret", EvidenceVersion = "Bearer secret",
+        var page = sanitizer.Sanitize(new() { Accessibility = new() { Axe = new() { State = "Completed", Version = AxeRuleCatalog.Version, EvidenceVersion = AxeRuleCatalog.Version,
             Rules = Enumerable.Range(0, 400).Select(_ => new BrowserAxeRule { RuleId = "image-alt", Outcome = "Compliant", Count = -1,
                 CriterionIds = ["1.1.1", "<html>", "1.1.1", "Bearer secret"] }).ToList() } } });
         var axe = page.Accessibility!.Axe!;
-        Assert.Equal(300, axe.Rules.Count); Assert.Null(axe.Version); Assert.DoesNotContain("secret", axe.EvidenceVersion);
+        Assert.Equal(300, axe.Rules.Count); Assert.Equal(AxeRuleCatalog.Version, axe.Version); Assert.DoesNotContain("secret", axe.EvidenceVersion);
         Assert.All(axe.Rules, rule => { Assert.Equal("NotTested", rule.Outcome); Assert.Equal(0, rule.Count); Assert.Equal("1.1.1", Assert.Single(rule.CriterionIds)); });
     }
 }

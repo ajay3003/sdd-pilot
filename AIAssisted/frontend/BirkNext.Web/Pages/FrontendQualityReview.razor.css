@@ -127,6 +127,12 @@
     margin: 0;
 }
 
+/* The target card keeps one field per row so URLs never break mid-word. */
+::deep .fqr-target-list {
+    grid-template-columns: 1fr;
+    gap: 0;
+}
+
 ::deep .fqr-target-list > div,
 ::deep .fqr-technical-list-grid > div {
     display: grid;
@@ -254,7 +260,7 @@
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.85rem;
 }
 
@@ -364,6 +370,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
     gap: 1rem;
+    align-items: start;
 }
 
 ::deep .fqr-capability-group h3 { margin: 0 0 0.5rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--clr-text-muted); }
@@ -453,7 +460,7 @@
 ::deep .fqr-auth-steps { margin: 0; padding-left: 1.2rem; font-size: 0.9rem; line-height: 1.6; color: var(--clr-text-body); }
 
 ::deep .fqr-evidence-list { margin: 0; display: grid; gap: 0.25rem; }
-::deep .fqr-evidence-row { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 0.5rem; font-size: 0.9rem; }
+::deep .fqr-evidence-row { display: grid; grid-template-columns: 13rem minmax(0, 1fr); gap: 0.5rem; font-size: 0.9rem; }
 ::deep .fqr-evidence-row dt { color: var(--clr-text-muted); }
 ::deep .fqr-evidence-row dd { margin: 0; color: var(--clr-text-body); }
 ::deep .fqr-evidence-row[data-available="true"] dd { color: var(--clr-success); font-weight: 600; }
@@ -909,6 +916,16 @@
 /* ── Responsive ── */
 @media (max-width: 1100px) {
     .fqr-landing-top {
+        grid-template-columns: 1fr;
+    }
+
+    ::deep .fqr-dimension-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    ::deep .fqr-dimension-grid {
         grid-template-columns: 1fr;
     }
 }

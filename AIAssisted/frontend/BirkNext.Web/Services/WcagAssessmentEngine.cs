@@ -36,7 +36,7 @@ public static class WcagAssessmentEngine
         // Older companions report only failures, so their empty list cannot prove execution or absence.
         if (checks.Count == 0)
             failures = a?.Findings.Where(f => d.SupportedChecks.Contains(f.RuleId) && DeterministicFailures.Contains(f.RuleId)).Sum(f => f.Count) ?? 0;
-        var axe = a?.Axe is { State: "Completed" } ax ? ax.Rules.Where(r => r.CriterionIds.Contains(d.CriterionId)).ToList() : [];
+        var axe = a?.Axe is { State: "Completed", Version: AxeRuleCatalog.Version } ax ? ax.Rules.Where(r => AxeRuleCatalog.Criteria(r.RuleId).Contains(d.CriterionId)).ToList() : [];
         failures += axe.Where(r => r.Outcome == "Fail").Sum(r => r.Count);
         checks.AddRange(axe.Select(r => new BrowserWcagCheck { CheckId = "axe-" + r.RuleId, Outcome = r.Outcome,
             Tested = r.Count, Failed = r.Outcome == "Fail" ? r.Count : 0, Uncertain = r.Outcome == "ManualReviewRequired" ? r.Count : 0 }));

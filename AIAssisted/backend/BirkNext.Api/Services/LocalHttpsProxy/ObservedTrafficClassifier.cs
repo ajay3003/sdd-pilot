@@ -368,7 +368,7 @@ internal static class NetworkTrafficClassifier
     /// <summary>A GET returning an HTML document is itself a page; every other request is correlated to the page named by its Referer.</summary>
     private static (string?, string?) CorrelatePage(NetworkRequestMetadata m, ObservedTrafficCategory category, string method, string? respCt)
     {
-        if (ApplicationPagePolicy.IsInfrastructureHost(m.Host) || m.ResponseStatus is >= 300 and < 400) return (null, null);
+        if (ApplicationPagePolicy.IsInfrastructureHost(m.Host) || m.ResponseStatus is 300 or 301 or 302 or 303 or 307 or 308) return (null, null);
         if (category is ObservedTrafficCategory.OtherHttp && method == "GET" && IsHtml(respCt))
         {
             var origin = m.Port is 443 or 80 ? $"https://{m.Host}" : $"https://{m.Host}:{m.Port}";

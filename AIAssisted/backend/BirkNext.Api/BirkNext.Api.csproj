@@ -41,6 +41,7 @@
   <ItemGroup>
     <Compile Include="../../shared/ManagedEdgeCdpContracts.cs" Link="Models/ManagedEdgeCdpContracts.cs" />
     <Compile Include="../../shared/LocalHttpsProxyContracts.cs" Link="Models/LocalHttpsProxyContracts.cs" />
+    <Compile Include="../../shared/AxeRuleCatalog.cs" Link="Models/AxeRuleCatalog.cs" />
     <Compile Include="../../shared/BrowserCompanionContracts.cs" Link="Models/BrowserCompanionContracts.cs" />
     <Compile Include="../../shared/ApiReviewContracts.cs" Link="Models/ApiReviewContracts.cs" />
   </ItemGroup>
