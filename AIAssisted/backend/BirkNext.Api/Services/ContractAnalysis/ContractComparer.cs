@@ -426,17 +426,21 @@ public sealed class ContractComparer : IContractComparer
             CompareGraphQlOperations(consumerOp, producerOp, producerTypeMap, consumerTypeMap, differences);
         }
 
-        // Determine overall status
+        // Determine overall status. As with the generic comparer, absence of differences is not
+        // evidence of compatibility when one side declared no schema or operations.
+        var comparisonOccurred = HasComparableContent(producer) && HasComparableContent(consumer);
         var hasBreaking = differences.Any(d => d.Severity == ContractDifferenceSeverity.Breaking);
-        var status = hasBreaking
-            ? ContractCompatibilityStatus.Breaking
-            : differences.Count > 0
-                ? ContractCompatibilityStatus.Warning
-                : ContractCompatibilityStatus.Compatible;
+        var status = !comparisonOccurred
+            ? ContractCompatibilityStatus.NotComparable
+            : hasBreaking
+                ? ContractCompatibilityStatus.Breaking
+                : differences.Count > 0
+                    ? ContractCompatibilityStatus.Warning
+                    : ContractCompatibilityStatus.Compatible;
 
         return new ContractCompatibilityResult
         {
-            Compatible = !hasBreaking,
+            Compatible = comparisonOccurred && !hasBreaking,
             Status = status,
             Producer = producerService,
             Consumer = consumerService,
@@ -444,10 +448,14 @@ public sealed class ContractComparer : IContractComparer
             ProducerSource = RedactUrl(producerSource),
             ConsumerSource = RedactUrl(consumerSource),
             Differences = differences.OrderBy(d => d.Operation).ThenBy(d => d.Path).ThenBy(d => d.Property).ToList(),
-            AnalysisReadiness = ContractAnalysisReadiness.Ready,
+            AnalysisReadiness = comparisonOccurred
+                ? ContractAnalysisReadiness.Ready
+                : ContractAnalysisReadiness.NotReady,
+            ReadyReason = comparisonOccurred ? null : NotComparableReason(producer, consumer),
             Message = status switch
             {
-                ContractCompatibilityStatus.Compatible => "Producer and consumer GraphQL schemas are compatible",
+                ContractCompatibilityStatus.NotComparable => $"Not comparable: {NotComparableReason(producer, consumer)}",
+                ContractCompatibilityStatus.Compatible => "No breaking incompatibility detected in compared GraphQL contract evidence",
                 ContractCompatibilityStatus.Warning => $"{differences.Count} non-breaking GraphQL differences detected",
                 ContractCompatibilityStatus.Breaking => $"{differences.Count(d => d.Severity == ContractDifferenceSeverity.Breaking)} breaking GraphQL differences detected",
                 _ => ""
@@ -756,6 +764,28 @@ public sealed class ContractComparer : IContractComparer
     /// </summary>
     private static bool HasComparableContent(NormalizedContract contract)
         => contract.Operations.Count > 0 || contract.Schemas.Count > 0;
+
+    /// <summary>
+    /// A GraphQL contract carries comparable content when it declares at least one operation or
+    /// at least one type.
+    /// </summary>
+    private static bool HasComparableContent(GraphQlNormalizedContract contract)
+        => contract.Operations.Count > 0 || contract.Types.Count > 0;
+
+    private static string NotComparableReason(
+        GraphQlNormalizedContract producer, GraphQlNormalizedContract consumer)
+    {
+        var producerHas = HasComparableContent(producer);
+        var consumerHas = HasComparableContent(consumer);
+
+        return (producerHas, consumerHas) switch
+        {
+            (false, false) => "neither producer schema nor consumer expectation is available",
+            (false, true)  => "producer schema unavailable",
+            (true, false)  => "consumer expectation unavailable",
+            _              => "schema content not comparable"
+        };
+    }
 
     /// <summary>
     /// Explains which side of the comparison carried no declared contract content.
