@@ -71,6 +71,6 @@ public sealed record WcagAssessment
     public WcagVersion Version { get; init; } = WcagVersion.Wcag22;
     public WcagLevel Level { get; init; } = WcagLevel.AA;
     public List<WcagCriterionResult> Results { get; init; } = [];
-    public string TargetLabel => Profile?.Label ?? $"Legacy WCAG assessment — Profile unknown (recorded WCAG {(Version == WcagVersion.Wcag21 ? "2.1" : "2.2")} { (Level == WcagLevel.AA ? "A + AA" : "A")})";
+    public string TargetLabel => Profile?.Label ?? $"Saved assessment — Profile unknown (recorded WCAG {(Version == WcagVersion.Wcag21 ? "2.1" : "2.2")} { (Level == WcagLevel.AA ? "A + AA" : "A")})";
     public const string Disclaimer = "No automated failure detected does not establish WCAG conformance. Human review and complete processes remain necessary.";
 }

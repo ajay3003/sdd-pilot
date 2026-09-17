@@ -5,11 +5,16 @@
 @inject IJSRuntime JS
 
 <div class="wcag-workspace">
-    <label>WCAG assessment profile <select value="@Snapshot.Wcag.ProfileId" @onchange="ChangeProfile">
-        @if (Snapshot.Wcag.ProfileId.StartsWith("legacy-")) { <option value="@Snapshot.Wcag.ProfileId">@Snapshot.Wcag.Profile.Label</option> }
-        @foreach (var profile in WcagProfiles.Available) { <option value="@profile.ProfileId">@profile.Label (@profile.CriterionIds.Count criteria)</option> }
-    </select></label>
-    <WcagCoverage Assessment="Discovery.GetAssessment(ProfileId, Page)" Review="OpenReview" />
+    <WcagCoverage @key="Snapshot.Wcag.ProfileId" Assessment="Assessment" Review="OpenReview">
+        <ProfileSelector>
+            <label class="wcag-profile">Assessment profile
+                <select class="form-select" data-testid="wcag-profile" @bind:get="Snapshot.Wcag.ProfileId" @bind:set="ChangeProfile">
+                    @if (Snapshot.Wcag.ProfileId.StartsWith("legacy-")) { <option value="@Snapshot.Wcag.ProfileId">@Snapshot.Wcag.Profile.Label</option> }
+                    @foreach (var profile in WcagProfiles.Available) { <option value="@profile.ProfileId">@profile.Label</option> }
+                </select>
+            </label>
+        </ProfileSelector>
+    </WcagCoverage>
     @if (_editing is { } row)
     {
         <section class="wcag-editor" aria-label="Manual WCAG review">
@@ -19,7 +24,7 @@
             <label>Comment <textarea @bind="_comment" maxlength="1000"></textarea></label>
             <label>Evidence note <textarea @bind="_evidence" maxlength="1000" required></textarea></label>
             <label>Reviewed by (tester alias) <input @bind="_reviewer" maxlength="100" required /></label>
-            <button type="button" @onclick="SaveReview">Save review</button><button type="button" @onclick="() => _editing = null">Cancel</button>
+            <PrimaryButton OnClick="SaveReview">Save review</PrimaryButton><SecondaryButton OnClick="() => _editing = null">Cancel</SecondaryButton>
         </section>
     }
     @if (_error is not null) { <p role="alert">@_error</p> }
@@ -27,7 +32,9 @@
 
 @code {
     [Parameter, EditorRequired] public string ProfileId { get; set; } = "";
+    // One authoritative snapshot for configuration, selector, criteria, results and review generation.
     [Parameter, EditorRequired] public EndpointDiscoverySnapshot Snapshot { get; set; } = new();
+    private WcagAssessment Assessment => BrowserQualityAssessmentService.ForPage(BrowserQualityAssessmentService.Assess(Snapshot), Page);
     [Parameter] public PageAnalysis? Page { get; set; }
     private WcagCriterionResult? _editing;
     private WcagVersion _reviewVersion;
@@ -56,11 +63,11 @@
         catch (ArgumentException e) { _error = e.Message; }
         catch (InvalidOperationException e) { _error = e.Message; }
     }
-    private async Task ChangeProfile(ChangeEventArgs e)
+    private async Task ChangeProfile(string profileId)
     {
         try
         {
-            await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { ProfileId = e.Value?.ToString() ?? WcagProfiles.NorwegianId });
+            await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { ProfileId = profileId });
             Snapshot = Discovery.GetSnapshot(ProfileId);
             _error = null;
         }

@@ -46,7 +46,7 @@
             <h4>Browser Quality</h4>
             <p>WCAG: @WcagAssessmentSummary.State(Discovery.GetAssessment(Profile?.Id ?? ""))</p>
             <p>Performance: @(Snapshot.Pages.Any(p => p.BrowserEvidence?.Performance is not null) ? $"{Snapshot.Pages.Count(p => p.BrowserEvidence?.Performance is not null)} saved pages with evidence" : "Awaiting browser evidence")</p>
-            <button type="button" @onclick='() => _view = "quality"'>View WCAG assessment / performance</button>
+            <SecondaryButton OnClick='() => _view = "quality"' data-testid="browser-quality-open">View WCAG assessment / performance</SecondaryButton>
         </section>
         <div class="ed-panel">
             @if (AllEndpoints.Count == 0 && BackendIntegrations.Count == 0)
@@ -93,19 +93,9 @@
     else if (_view == "quality")
     {
         <div class="ed-panel" data-testid="browser-quality-view">
-            <h4>Browser Quality</h4>
             @if (Profile is not null)
             {
-                <WcagWorkspace @key="Profile.Id" ProfileId="Profile.Id" Snapshot="Snapshot" />
-                <h4>Performance</h4>
-                @if (!Snapshot.Pages.Any(p => p.BrowserEvidence?.Performance is not null))
-                {
-                    <p>Awaiting browser evidence. Connect Browser Companion in the Target Environment and visit an application page.</p>
-                }
-                @foreach (var page in Snapshot.Pages.Where(p => p.BrowserEvidence?.Performance is not null))
-                {
-                    <details><summary>@(page.Title)</summary><PerformanceQualityPageView Snapshot="PerformanceQualityRules.Evaluate(page, Thresholds, Vitals)" ShowTimeline="true" /></details>
-                }
+                <BrowserQualityWorkspace @key="Profile.Id" Profile="Profile" />
             }
         </div>
     }
@@ -174,7 +164,7 @@
                     </section>
                     @if (Profile is not null)
                     {
-                        <WcagWorkspace @key="sel.Identity" ProfileId="Profile.Id" Snapshot="Snapshot" Page="sel" />
+                        <WcagWorkspace @key="sel.Identity" ProfileId="@Profile.Id" Snapshot="Snapshot" Page="sel" />
                     }
                     <h5 class="ed-section-title">Network</h5>
                     @RenderEndpointTable(VisibleEndpoints(sel.Endpoints), "discovery-page-table", "No endpoints observed for this page yet.")

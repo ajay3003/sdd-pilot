@@ -238,7 +238,10 @@
   const tracker = C.navigation.createTracker({
     win, doc,
     // The visit object is shared from route change on, so errors and interactions before stabilization are attributed to it.
-    onVisitStart: v => { visit = v; },
+    onVisitStart: v => {
+      visit = v;
+      if (isApprovedVisit(v)) send({ type: 'content:page' });
+    },
     onVisit: async v => {
       visit = v;
       if (!isApprovedVisit(v)) return;
@@ -252,11 +255,17 @@
     },
   });
 
-  win.addEventListener('pagehide', () => { if (visit && visit.stabilized) emit('final'); for (const o of observers) { try { o.disconnect(); } catch { } } tracker.dispose(); });
+  let pageHeartbeat = null;
+  win.addEventListener('pagehide', () => { clearInterval(pageHeartbeat); if (visit && visit.stabilized) emit('final'); for (const o of observers) { try { o.disconnect(); } catch { } } tracker.dispose(); });
 
   (async () => {
     scope = await send({ type: 'content:session' });
     if (!scope || !scope.profileId) return; // not paired: stay completely passive
     tracker.start();
+    // Reporting is independent of evidence stabilization, update limits and which browser tab is active.
+    // The worker rechecks sender origin, profile and current permissions on every message.
+    pageHeartbeat = setInterval(() => {
+      if (isApprovedVisit(visit)) send({ type: 'content:page' });
+    }, 15000);
   })();
 })();

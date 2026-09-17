@@ -3,6 +3,8 @@
 // credential of the target application), registering the content script ONLY for the environment's approved origins, batching
 // evidence from content scripts and posting it to the backend, heartbeats. It never reads cookies, storage or headers of any page.
 
+importScripts('lib/page-identity.js', 'lib/sanitize.js');
+const { pageIdentity, sanitize } = globalThis.BirkNextCompanion;
 const BACKEND_CANDIDATES = ['http://127.0.0.1:5000', 'http://localhost:5000'];
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const CONTENT_SCRIPT_ID = 'birknext-companion-content';
@@ -22,11 +24,28 @@ async function getSession() {
 }
 
 async function setSession(session) {
+  await chrome.storage.session.remove('reportingPage');
+  wcagTab = null;
   if (session) await chrome.storage.local.set({ session });
   else await chrome.storage.local.remove('session');
-  await updateContentScriptRegistration(session);
   await chrome.alarms.clear(HEARTBEAT_ALARM);
-  if (session) chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.25 });
+  await ensureHeartbeatAlarm(session);
+  await updateContentScriptRegistration(session);
+}
+
+async function ensureHeartbeatAlarm(session) {
+  if (session && (await chrome.alarms.get(HEARTBEAT_ALARM))?.periodInMinutes !== 0.5)
+    await chrome.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 0.5 });
+}
+
+function approved(session, url) {
+  return pageIdentity.isApprovedOrigin(pageIdentity.originOf(url), session?.approvedOrigins);
+}
+
+async function approvedSender(session, sender) {
+  return Boolean(session && sender.id === chrome.runtime.id && sender.tab && !sender.tab.incognito &&
+    sender.frameId === 0 && approved(session, sender.url) &&
+    await chrome.permissions.contains({ origins: [`${pageIdentity.originOf(sender.url)}/*`] }));
 }
 
 async function backendBase() {
@@ -61,7 +80,8 @@ async function pair(pairingCode) {
     lastStatus = { state: 'not-paired', message: 'Permission for the approved origins was not granted; the companion cannot observe the application.' };
     return lastStatus;
   }
-  await setSession(session);
+  try { await setSession(session); }
+  catch { return lastStatus; }
   lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
   return lastStatus;
 }
@@ -92,6 +112,8 @@ async function validate() {
   try {
     const result = await post('validate', { sessionId: session.sessionId, profileId: session.profileId, currentPageOrigin: null, currentPagePath: null, extensionVersion: EXTENSION_VERSION });
     if (result.ok && result.json && result.json.accepted) {
+      await updateContentScriptRegistration(session);
+      await ensureHeartbeatAlarm(session);
       lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
     } else if (result.status === 403 || (result.json && result.json.accepted === false)) {
       lastStatus = { state: 'stale', message: (result.json && result.json.message) || 'Session no longer valid. Pair again in BirkNext.', session };
@@ -99,6 +121,7 @@ async function validate() {
       lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback.', session };
     }
   } catch {
+    if (lastStatus.state === 'blocked') return lastStatus;
     lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback (is BirkNext running?).', session };
   }
   return lastStatus;
@@ -114,6 +137,7 @@ async function updateContentScriptRegistration(session) {
   if (!session || !session.approvedOrigins || session.approvedOrigins.length === 0) return;
   const matches = session.approvedOrigins.map(o => `${o}/*`);
   try {
+    if (!await chrome.permissions.contains({ origins: matches })) throw new Error('Permission for approved origins is missing');
     await chrome.scripting.registerContentScripts([
       { id: CONTENT_SCRIPT_ID, js: CONTENT_FILES, matches, runAt: 'document_start', persistAcrossSessions: true, world: 'ISOLATED' },
       // Listener-only forwarder for uncaught exceptions / unhandled rejections (they are not observable from the isolated world).
@@ -122,6 +146,7 @@ async function updateContentScriptRegistration(session) {
   } catch (e) {
     console.warn('BirkNext companion: content script registration failed', e && e.message);
     lastStatus = { state: 'blocked', message: `Content script could not be registered (${e && e.message}). Managed browser policy may block the companion.`, session };
+    throw e;
   }
 }
 
@@ -151,9 +176,21 @@ async function flush() {
   }
 }
 
-async function heartbeat(currentPage) {
+async function heartbeat() {
   const session = await getSession();
   if (!session) return;
+  let currentPage = null;
+  const { reportingPage } = await chrome.storage.session.get('reportingPage');
+  if (reportingPage?.profileId === session.profileId) {
+    try {
+      const tab = await chrome.tabs.get(reportingPage.tabId);
+      if (!tab.incognito && approved(session, tab.url) &&
+          await chrome.permissions.contains({ origins: [`${pageIdentity.originOf(tab.url)}/*`] })) {
+        const identity = pageIdentity.identityOf(sanitize.url(tab.url));
+        currentPage = identity;
+      }
+    } catch { /* The reporting tab was closed or its host permission was removed. */ }
+  }
   try {
     const result = await post('heartbeat', {
       sessionId: session.sessionId, profileId: session.profileId, extensionVersion: EXTENSION_VERSION,
@@ -164,9 +201,8 @@ async function heartbeat(currentPage) {
   } catch { lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback.', session }; }
 }
 
-let lastKnownPage = null;
 let wcagTab = null;
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === HEARTBEAT_ALARM) heartbeat(lastKnownPage); });
+chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === HEARTBEAT_ALARM) heartbeat(); });
 
 // ── Messages from popup and content scripts ────────────────────────────────
 
@@ -191,20 +227,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'content:session': {
         // Content scripts only receive scope information (profile id + approved origins), never the session id.
         const session = await getSession();
-        sendResponse(session ? { profileId: session.profileId, approvedOrigins: session.approvedOrigins, environmentType: session.environmentType } : null);
+        sendResponse(await approvedSender(session, sender) ? { profileId: session.profileId, approvedOrigins: session.approvedOrigins, environmentType: session.environmentType } : null);
         break;
       }
       case 'content:evidence': {
         const session = await getSession();
-        if (session && message.page && message.page.profileId === session.profileId) queueEvidence(message.page);
-        sendResponse({ queued: Boolean(session) });
+        const allowed = await approvedSender(session, sender) && message.page?.profileId === session.profileId &&
+          message.page.pageOrigin === pageIdentity.originOf(sender.url);
+        if (allowed) queueEvidence(message.page);
+        sendResponse({ queued: Boolean(allowed) });
         break;
       }
       case 'content:page': {
-        lastKnownPage = message.page || null;
         const session = await getSession();
-        if (session && sender.tab && session.approvedOrigins.includes(new URL(sender.url).origin)) wcagTab = { id: sender.tab.id, profileId: session.profileId };
-        heartbeat(lastKnownPage); sendResponse({ ok: true }); break;
+        if (!await approvedSender(session, sender)) { sendResponse({ ok: false }); break; }
+        // Store only the tab/environment association, never a raw URL or page credentials.
+        await chrome.storage.session.set({ reportingPage: { tabId: sender.tab.id, profileId: session.profileId } });
+        wcagTab = { id: sender.tab.id, profileId: session.profileId };
+        await heartbeat(); sendResponse({ ok: true }); break;
       }
       default: sendResponse({ error: 'unknown message' });
     }
@@ -212,5 +252,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // async response
 });
 
-chrome.runtime.onInstalled.addListener(async () => { await updateContentScriptRegistration(await getSession()); });
-chrome.runtime.onStartup.addListener(async () => { await updateContentScriptRegistration(await getSession()); });
+async function restoreReporting() {
+  const session = await getSession();
+  await ensureHeartbeatAlarm(session);
+  try { await updateContentScriptRegistration(session); } catch { /* Preserve the actionable blocked status. */ }
+}
+chrome.runtime.onInstalled.addListener(restoreReporting);
+chrome.runtime.onStartup.addListener(restoreReporting);
+// MV3 wakes a fresh worker for messages/alarms too, without firing onStartup.
+getSession().then(ensureHeartbeatAlarm).catch(() => {});

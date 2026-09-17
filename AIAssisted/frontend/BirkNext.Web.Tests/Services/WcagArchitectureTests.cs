@@ -112,7 +112,8 @@ public sealed class WcagArchitectureTests
         reloaded = new EndpointDiscoveryService();
         await reloaded.LoadAsync(js);
         Assert.Equal("legacy-22-AA", reloaded.GetSnapshot("dev").Wcag.ProfileId);
-        Assert.Contains("Legacy", reloaded.GetSnapshot("dev").Quality.Assessment!.TargetLabel);
+        Assert.Contains("General A + AA assessment", reloaded.GetSnapshot("dev").Quality.Assessment!.TargetLabel);
+        Assert.DoesNotContain("Legacy", reloaded.GetSnapshot("dev").Quality.Assessment!.TargetLabel);
         Assert.Contains("Profile unknown", JsonSerializer.Deserialize<WcagAssessment>("{}")!.TargetLabel);
     }
 
@@ -184,7 +185,7 @@ public sealed class WcagArchitectureTests
     {
         var html = new ReportExportService().ExportFrontendQualityReview(new() { Wcag = new() { Version = WcagVersion.Wcag22 } }, "fixture");
         Assert.Contains("Profile unknown", html); Assert.Contains("WCAG 2.2", html);
-        Assert.DoesNotContain("Norwegian legal requirements", html);
+        Assert.DoesNotContain("Norwegian legal baseline", html);
     }
 
     internal sealed class Store : IJSRuntime

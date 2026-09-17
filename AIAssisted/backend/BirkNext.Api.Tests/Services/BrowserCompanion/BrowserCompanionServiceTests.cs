@@ -68,6 +68,35 @@ public sealed class BrowserCompanionServiceTests
     }
 
     [Fact]
+    public void PairThenApprovedM2lbPage_HeartbeatsKeepReportingAndOnlyEvidenceIncrementsPages()
+    {
+        var paired = Pair();
+        const string origin = "https://m2lbdev.bufetat.no";
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected);
+        for (var i = 0; i < 4; i++)
+        {
+            _time.Advance(TimeSpan.FromSeconds(30));
+            _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", origin, "/", "0.1.0"), Extension)
+                .Accepted.Should().BeTrue();
+            var reporting = _service.Status("dev");
+            reporting.State.Should().Be(BrowserCompanionState.Connected);
+            reporting.CurrentPageOrigin.Should().Be(origin);
+            reporting.CurrentPagePath.Should().Be("/");
+            reporting.PagesWithEvidence.Should().Be(0);
+        }
+        _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope
+        {
+            SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", origin, "/", _time.GetUtcNow())]
+        }, Extension).Accepted.Should().BeTrue();
+        _service.Status("dev").PagesWithEvidence.Should().Be(1);
+        _time.Advance(TimeSpan.FromSeconds(30));
+        _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", origin, "/", "0.1.0"), Extension);
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected);
+        _service.Status("dev").PagesWithEvidence.Should().Be(1);
+    }
+
+    [Fact]
     public void InvalidNonce_Rejected()
     {
         Start();

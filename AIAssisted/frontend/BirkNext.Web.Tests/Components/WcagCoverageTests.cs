@@ -18,7 +18,7 @@ public sealed class WcagCoverageTests : BunitContext
         Assert.Contains("No automated failure detected does not establish", cut.Markup);
         cut.FindAll("select")[0].Change("ManualReviewRequired");
         Assert.Single(cut.FindAll("tbody tr"));
-        Assert.Contains("Manual review required", cut.Find("tbody").TextContent);
+        Assert.Contains("Require manual review", cut.Find("tbody").TextContent);
         cut.FindAll("select")[0].Change("NotApplicable");
         Assert.Contains("Not applicable", cut.Find("tbody").TextContent);
     }

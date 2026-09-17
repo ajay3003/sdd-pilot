@@ -127,7 +127,7 @@ public sealed class WcagAssessmentTests
     {
         var report = new FrontendQualityReviewReport { Wcag = WcagAssessmentEngine.Evaluate(Snapshot()) };
         var html = new ReportExportService().ExportFrontendQualityReview(report, "test");
-        Assert.Contains("Norwegian legal requirements", html);
+        Assert.Contains("Norwegian legal baseline", html);
         Assert.DoesNotContain("ManualReviewRequired", html);
         Assert.Contains("NotTested", html);
         Assert.Contains("No manual review recorded", html);

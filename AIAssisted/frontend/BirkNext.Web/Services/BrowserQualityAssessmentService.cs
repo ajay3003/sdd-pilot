@@ -66,6 +66,9 @@ public sealed record WcagCriterionSummary(WcagCriterionDefinition Definition, Wc
 {
     public string Scope => Definition.RequiresCrossPageEvidence ? "Application / process" : "Page";
     public int EvidenceCount => Instances.Count(r => r.LastTested is not null || r.ManualReview is not null && !r.ManualReviewStale);
+    public int BrowserPages => Instances.Where(r => !r.Definition.RequiresCrossPageEvidence && r.LastTested is not null).Select(r => r.Page).Distinct().Count();
+    public int ApplicationChecks => Instances.Count(r => r.Definition.RequiresCrossPageEvidence && r.LastTested is not null);
+    public int ManualReviews => Instances.Count(r => r.ManualReview is not null && !r.ManualReviewStale);
 }
 
 /// <summary>Criterion-level presentation; explicit review outcomes and manual-only coverage remain separate.</summary>

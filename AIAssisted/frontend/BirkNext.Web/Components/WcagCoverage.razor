@@ -1,85 +1,138 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
-<section class="wcag-panel" aria-label="WCAG coverage" data-testid="wcag-coverage">
-    <header><h3>@Assessment.TargetLabel</h3><span class="wcag-tag">@WcagAssessmentSummary.State(Assessment)</span></header>
-    <p>@WcagAssessment.Disclaimer</p>
-    <p>@Rows.Count criteria ? @Assessment.Results.Count assessment instances ? @Assessment.PagesWithEvidence pages with browser evidence</p>
-    <div class="wcag-counts">
-        <div><strong>@Count(WcagStatus.Fail)</strong><span>Failed criteria</span></div>
-        <div><strong>@Count(WcagStatus.ManualReviewRequired)</strong><span>Require manual review</span></div>
-        <div><strong>@Rows.Count(r => r.Definition.AutomationLevel == WcagAutomation.Manual && r.Status == WcagStatus.NotTested)</strong><span>Manual-only remaining</span></div>
-        <div><strong>@Count(WcagStatus.NotTested)</strong><span>Not yet assessed</span></div>
-        <div><strong>@Rows.Count(r => r.EvidenceCount > 0)</strong><span>Evidence available</span></div>
+<section class="wcag-panel" aria-label="WCAG assessment" data-testid="wcag-coverage" data-profile="@Assessment.Profile?.ProfileId">
+    <Card>
+        <div class="wcag-header">
+            <div>
+                <h3>WCAG assessment</h3>
+                <p class="wcag-title" data-testid="wcag-assessment-title">@Assessment.TargetLabel</p>
+                <p class="wcag-muted">@Rows.Count criteria <span aria-hidden="true">·</span> @(Assessment.Profile?.IsLegalBaseline == true ? "Norwegian public-sector baseline" : "Purpose-specific assessment")</p>
+            </div>
+            @ProfileSelector
+        </div>
+        <div class="wcag-state-line">
+            <StatusChip Status="@(Assessment.PagesWithEvidence == 0 ? "not-assessed" : "partial")"
+                        Label="@(Assessment.PagesWithEvidence == 0 ? "Awaiting browser evidence" : $"{Assessment.PagesWithEvidence} pages with browser evidence")" />
+            <span class="wcag-muted">@Rows.Count(r => r.Instances.Any(i => i.LastTested is not null)) criteria with execution evidence</span>
+        </div>
+        <p class="wcag-muted wcag-disclaimer">@WcagAssessment.Disclaimer</p>
+    </Card>
+    <div class="metric-grid-5 wcag-cards" data-testid="wcag-summary-cards">
+        <MetricCard Value="@Count(WcagStatus.Fail).ToString()" Label="Failed criteria" Sublabel="Recorded failures" Variant="@(Count(WcagStatus.Fail) > 0 ? "danger" : null)" />
+        <MetricCard Value="@Count(WcagStatus.ManualReviewRequired).ToString()" Label="Require manual review" Sublabel="Explicit review-required results" />
+        <MetricCard Value="@($"{Rows.Count(r => r.Definition.AutomationLevel == WcagAutomation.Manual)} of {Rows.Count}")" Label="Manual assessment required" Sublabel="Manual-only subset; not an extra total" />
+        <MetricCard Value="@Count(WcagStatus.NotTested).ToString()" Label="Not yet assessed" Sublabel="Not tested is not a failure" />
+        <MetricCard Value="@Rows.Count(r => r.EvidenceCount > 0).ToString()" Label="Criteria with evidence" Sublabel="Execution or current manual review" />
     </div>
-    <p class="wcag-note">Automatic checks: @Rows.Count(r => r.Instances.Any(i => i.Checks.Any(c => c.Outcome != "NotTested"))) criteria with execution evidence / @Rows.Count(r => r.Definition.AutomationLevel != WcagAutomation.Manual) available. Explicit manual review: @Assessment.Results.Count(r => r.Status == WcagStatus.ManualReviewRequired) assessment instances.</p>
-    <p class="wcag-note">Require manual review counts explicit review-required results. Manual-only criteria are separate. Positive automatic evidence covers tested elements only.</p>
-    @if (Assessment.PagesWithEvidence == 0 && !Assessment.Results.Any(r => r.LastTested is not null || r.ManualReview is not null))
+    <p class="wcag-muted wcag-counter-note">Cards overlap: evidence may support an unresolved criterion. Manual-only describes how a criterion is assessed, not its result.</p>
+    @if (Assessment.PagesWithEvidence == 0)
     {
-        <p class="wcag-note" data-testid="wcag-awaiting">Connect Browser Companion in the Target Environment and visit an application page to run automated accessibility checks.</p>
+        <div data-testid="wcag-awaiting">
+            <EmptyState Title="No browser evidence collected yet" Description="Open an approved application page with Browser Companion connected to run automated accessibility checks.">
+                @if (Rows.Any(r => r.ManualReviews > 0)) { <p>Saved manual reviews are shown separately. They are not browser evidence.</p> }
+            </EmptyState>
+        </div>
     }
-    <div class="wcag-filters">
-        <label>Status <select @bind="_status"><option value="">All</option>@foreach (var s in Enum.GetValues<WcagStatus>()) { <option value="@s">@Label(s)</option> }</select></label>
-        <label>Level <select @bind="_level"><option value="">A + AA</option><option>A</option><option>AA</option></select></label>
-        <label>Automation <select @bind="_automation"><option value="">All</option>@foreach (var a in Enum.GetValues<WcagAutomation>()) { <option>@a</option> }</select></label>
+    <div class="wcag-matrix-control">
+        <SecondaryButton OnClick="() => _criteriaExpanded = !ShowCriteria" aria-expanded="@ShowCriteria.ToString().ToLowerInvariant()" aria-controls="@_matrixId" data-testid="wcag-toggle-criteria">
+            @(ShowCriteria ? "Hide criteria" : $"Show all {Rows.Count} criteria")
+        </SecondaryButton>
+        <span class="wcag-muted">Explore by principle or filter the assessment.</span>
     </div>
-    <div class="wcag-table"><table>
-        <caption>Criteria in selected profile</caption>
-        <thead><tr><th>Criterion</th><th>Level</th><th>Title</th><th>Scope</th><th>Automation</th><th>Assessment status</th><th>Pages / evidence</th><th>Confidence</th></tr></thead>
-        <tbody>@foreach (var row in Filtered)
+    <div id="@_matrixId" hidden="@(!ShowCriteria)">
+    @if (ShowCriteria)
+    {
+        <div class="wcag-filters" data-testid="wcag-filters">
+            <label>Status <select class="form-select" @bind="_status"><option value="">All</option>@foreach (var s in Enum.GetValues<WcagStatus>()) { <option value="@s">@Label(s)</option> }</select></label>
+            <label>Level <select class="form-select" @bind="_level"><option value="">A + AA</option><option>A</option><option>AA</option></select></label>
+            <label>Automation <select class="form-select" @bind="_automation"><option value="">All</option>@foreach (var a in Enum.GetValues<WcagAutomation>()) { <option>@a</option> }</select></label>
+            <label class="wcag-search">Search <input class="form-control" type="search" @bind="_search" @bind:event="oninput" placeholder="Criterion or title" /></label>
+        </div>
+        @if (!Filtered.Any()) { <p role="status">No criteria match these filters.</p> }
+        @foreach (var group in Filtered.GroupBy(r => r.Definition.CriterionId.Split('.')[0]))
         {
-            <tr data-testid="wcag-criterion-row">
-                <td><button type="button" @onclick="() => _selected = row.Definition.CriterionId">@row.Definition.CriterionId</button></td>
-                <td>@row.Definition.Level</td><td>@row.Definition.Title</td><td>@row.Scope</td><td>@row.Definition.AutomationLevel</td>
-                <td>@Label(row.Status)</td><td>@row.EvidenceCount / @row.Instances.Count</td>
-                <td>@(row.Instances.Any(r => r.Confidence == WcagConfidence.High) ? "High (failure evidence)" : row.EvidenceCount > 0 ? "Partial / see evidence" : "Unavailable")</td>
-            </tr>
-        }</tbody>
-    </table></div>
+            <details class="wcag-principle" open @key="group.Key">
+                <summary>@Principle(group.Key) <span class="wcag-muted">@group.Count() criteria</span></summary>
+                <div class="wcag-table" role="region" aria-label="@($"{Principle(group.Key)} criteria")" tabindex="0">
+                    <table>
+                        <caption class="visually-hidden">@Principle(group.Key) — @Assessment.TargetLabel</caption>
+                        <thead><tr><th scope="col">Criterion</th><th scope="col">Title</th><th scope="col">Level</th><th scope="col">Automation</th><th scope="col">Status</th><th scope="col">Evidence</th></tr></thead>
+                        <tbody>@foreach (var row in group)
+                        {
+                            <tr data-testid="wcag-criterion-row" data-criterion="@row.Definition.CriterionId">
+                                <th scope="row"><GhostButton OnClick="() => _selected = row.Definition.CriterionId" aria-label="@($"View {row.Definition.CriterionId} {row.Definition.Title}")">@row.Definition.CriterionId</GhostButton></th>
+                                <td>@row.Definition.Title</td><td>@row.Definition.Level</td><td>@row.Definition.AutomationLevel</td>
+                                <td><StatusChip Status="@StatusStyle(row.Status)" Label="@Label(row.Status)" /></td>
+                                <td class="wcag-evidence">
+                                    @if (row.EvidenceCount == 0) { <span class="wcag-muted">No evidence</span> }
+                                    @if (row.BrowserPages > 0) { <span>@row.BrowserPages browser pages with execution</span> }
+                                    @if (row.ApplicationChecks > 0) { <span>@row.ApplicationChecks application comparisons</span> }
+                                    @if (row.ManualReviews > 0) { <span>@row.ManualReviews manual reviews</span> }
+                                </td>
+                            </tr>
+                        }</tbody>
+                    </table>
+                </div>
+            </details>
+        }
+    }
+    </div>
     @if (Rows.FirstOrDefault(r => r.Definition.CriterionId == _selected) is { } selected)
     {
-        <section class="wcag-editor" aria-label="Criterion detail" data-testid="wcag-criterion-detail">
-            <h4>@selected.Definition.CriterionId ? @selected.Definition.Title</h4>
-            <p>@Assessment.TargetLabel ? @selected.Scope ? @selected.Definition.AutomationLevel automation</p>
-            <p>@selected.Definition.Notes</p>
-            @if (selected.Instances.Count == 0) { <p>No application-page evidence available.</p> }
+        <section class="wcag-editor" aria-label="Criterion detail" data-testid="wcag-criterion-detail" tabindex="0">
+            <h4>@selected.Definition.CriterionId · @selected.Definition.Title</h4>
+            <p>@selected.Scope · @selected.Definition.AutomationLevel automation</p>
+            <p class="wcag-muted">@selected.Definition.Notes</p>
+            @if (selected.Instances.Count == 0) { <p>No assessment slots yet. Visit an approved application page to begin.</p> }
             @foreach (var row in selected.Instances)
             {
                 <article>
-                    <h5>@row.Page ? @Label(row.Status)</h5>
+                    <h5>@row.Page <StatusChip Status="@StatusStyle(row.Status)" Label="@Label(row.Status)" /></h5>
+                    @if (row.LastTested is null && row.ManualReview is null)
+                    {
+                        <p class="wcag-muted">@(row.Definition.RequiresCrossPageEvidence ? "Application / process assessment slot" : "Page assessment slot") — no execution or manual review recorded. This is not browser evidence.</p>
+                    }
                     <p>@row.AutomatedEvidence</p>
-                    <p>Last tested: @(row.LastTested?.ToString("u") ?? "Not tested") ? @row.EvidenceSource ? @row.Findings findings</p>
+                    <p class="wcag-muted">Last execution: @(row.LastTested?.ToString("u") ?? "Not tested") · @row.Findings findings</p>
                     @foreach (var check in row.Checks)
                     {
-                        <p>@check.CheckId: @check.Outcome ? tested @check.Tested ? failed @check.Failed ? uncertain @check.Uncertain</p>
+                        <p>@check.CheckId: @check.Outcome · tested @check.Tested · failed @check.Failed · uncertain @check.Uncertain</p>
                         @foreach (var selector in check.Selectors) { <small>@selector</small> }
                     }
                     @if (row.ManualReview is { } m)
                     {
-                        <p>@(row.ManualReviewStale ? "Prior manual evidence is stale" : "Manual evidence") ? @m.Result ? @m.ReviewedBy ? @m.ReviewedAt.ToString("u")</p>
+                        <p>@(row.ManualReviewStale ? "Prior manual review is stale" : "Manual review") · @m.Result · @m.ReviewedBy · @m.ReviewedAt.ToString("u")</p>
                         <p>@m.Comment</p><p>@m.EvidenceNote</p>
                     }
-                    @if (Review.HasDelegate) { <button type="button" @onclick="() => Review.InvokeAsync(row)">Review @row.Page</button> }
+                    @if (Review.HasDelegate) { <SecondaryButton OnClick="() => Review.InvokeAsync(row)">Review @row.Page</SecondaryButton> }
                 </article>
             }
-            <button type="button" @onclick="() => _selected = null">Close detail</button>
+            <SecondaryButton OnClick="() => _selected = null">Close detail</SecondaryButton>
         </section>
     }
 </section>
 
 @code {
     [Parameter, EditorRequired] public WcagAssessment Assessment { get; set; } = new();
+    [Parameter] public RenderFragment? ProfileSelector { get; set; }
     [Parameter] public EventCallback<WcagCriterionResult> Review { get; set; }
-    private string _status = "", _level = "", _automation = "";
+    private string _status = "", _level = "", _automation = "", _search = "";
     private string? _selected;
+    private bool? _criteriaExpanded;
+    private readonly string _matrixId = $"wcag-matrix-{Guid.NewGuid():N}";
+    private bool ShowCriteria => _criteriaExpanded ?? (Rows.Count > 0 && !Rows.All(r => r.Status == WcagStatus.NotTested));
     private IReadOnlyList<WcagCriterionSummary> Rows => WcagAssessmentSummary.Criteria(Assessment);
     private int Count(WcagStatus status) => Rows.Count(r => r.Status == status);
     private IEnumerable<WcagCriterionSummary> Filtered => Rows.Where(r =>
         (_status == "" || r.Status.ToString() == _status) && (_level == "" || r.Definition.Level.ToString() == _level) &&
-        (_automation == "" || r.Definition.AutomationLevel.ToString() == _automation));
+        (_automation == "" || r.Definition.AutomationLevel.ToString() == _automation) &&
+        (_search == "" || $"{r.Definition.CriterionId} {r.Definition.Title}".Contains(_search, StringComparison.OrdinalIgnoreCase)));
+    private static string Principle(string key) => key switch { "1" => "1 Perceivable", "2" => "2 Operable", "3" => "3 Understandable", _ => "4 Robust" };
+    private static string StatusStyle(WcagStatus status) => status switch { WcagStatus.Fail => "critical", WcagStatus.ManualReviewRequired => "warning", WcagStatus.Pass => "info", _ => "not-assessed" };
     public static string Label(WcagStatus status) => status switch
     {
-        WcagStatus.Pass => "Passed evidence", WcagStatus.Fail => "Failed", WcagStatus.ManualReviewRequired => "Manual review required",
+        WcagStatus.Pass => "Evidence available", WcagStatus.Fail => "Failed", WcagStatus.ManualReviewRequired => "Require manual review",
         WcagStatus.NotApplicable => "Not applicable", _ => "Not tested",
     };
 }

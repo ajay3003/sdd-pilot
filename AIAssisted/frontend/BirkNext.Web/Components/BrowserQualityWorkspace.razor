@@ -1,0 +1,70 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IEndpointDiscoveryService Discovery
+
+<section class="bq-workspace" aria-label="Browser Quality">
+    <header class="bq-header"><h3>Browser Quality</h3><p>Accessibility and performance from observed browser evidence.</p></header>
+    <div class="tab-bar" role="tablist" aria-label="Browser Quality views">
+        <button type="button" class="tab-btn @(_tab == 0 ? "is-active" : "")" id="@(_id + "-wcag")" role="tab"
+                aria-selected="@((_tab == 0).ToString().ToLowerInvariant())" aria-controls="@(_id + "-wcag-panel")" tabindex="@(_tab == 0 ? 0 : -1)"
+                data-testid="browser-quality-wcag-tab" @onclick="() => _tab = 0" @onkeydown="TabKey" @ref="_wcagTab">WCAG</button>
+        <button type="button" class="tab-btn @(_tab == 1 ? "is-active" : "")" id="@(_id + "-performance")" role="tab"
+                aria-selected="@((_tab == 1).ToString().ToLowerInvariant())" aria-controls="@(_id + "-performance-panel")" tabindex="@(_tab == 1 ? 0 : -1)"
+                data-testid="browser-quality-performance-tab" @onclick="() => _tab = 1" @onkeydown="TabKey" @ref="_performanceTab">Performance</button>
+    </div>
+    <div role="tabpanel" id="@(_id + "-wcag-panel")" aria-labelledby="@(_id + "-wcag")" hidden="@(_tab != 0)" tabindex="0">
+        <WcagWorkspace ProfileId="@Profile.Id" Snapshot="Discovery.GetSnapshot(Profile.Id)" />
+    </div>
+    <div role="tabpanel" id="@(_id + "-performance-panel")" aria-labelledby="@(_id + "-performance")" hidden="@(_tab != 1)" tabindex="0">
+    @if (_tab == 1)
+    {
+        <div class="bq-performance" data-testid="browser-quality-performance">
+            <div class="bq-performance-header">
+                <h4>Performance</h4>
+                <StatusChip Status="@(Pages.Count == 0 ? "not-assessed" : "partial")" Label="@(Pages.Count == 0 ? "Awaiting browser evidence" : $"{Pages.Count} pages with performance evidence")" />
+            </div>
+            @if (Pages.Count == 0)
+            {
+                <EmptyState Title="No browser performance evidence has been collected yet" Description="Open an approved application page with Browser Companion connected to collect supported performance metrics." />
+            }
+            @foreach (var page in Pages)
+            {
+                var performance = PerformanceQualityRules.Evaluate(page, Profile.Performance, Profile.CoreWebVitals);
+                <Card>
+                    <h4 class="bq-page-title">@(page.Title)</h4>
+                    <p class="bq-muted">@(page.Identity) · @PerformanceFormat.PhaseLabel(performance.ObservationType)</p>
+                    <div class="metric-grid-4 bq-metrics">
+                        @foreach (var (id, label) in CoreMetrics)
+                        {
+                            var metric = performance.Metric(id);
+                            <div data-testid="bq-core-@id">
+                                <MetricCard Label="@label" Value="@(metric?.Value is not null ? metric.Display : "Not available")"
+                                            Sublabel="@(metric?.Value is not null ? PerformanceFormat.StatusLabel(metric.Status) : "No supported measurement")" />
+                            </div>
+                        }
+                    </div>
+                    <details class="bq-performance-detail">
+                        <summary>Performance details and timing</summary>
+                        <PerformanceQualityPageView Snapshot="performance" ShowTimeline="true" />
+                    </details>
+                </Card>
+            }
+        </div>
+    }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = new();
+    private readonly string _id = $"browser-quality-{Guid.NewGuid():N}";
+    private int _tab;
+    private ElementReference _wcagTab, _performanceTab;
+    private IReadOnlyList<PageAnalysis> Pages => Discovery.GetSnapshot(Profile.Id).Pages.Where(p => p.BrowserEvidence?.Performance is not null).ToList();
+    private static readonly (string Id, string Label)[] CoreMetrics = [("lcp", "LCP"), ("inp", "INP"), ("cls", "CLS"), ("ttfb", "Navigation · TTFB")];
+    private async Task TabKey(KeyboardEventArgs e)
+    {
+        if (e.Key is not ("ArrowLeft" or "ArrowRight" or "Home" or "End")) return;
+        _tab = e.Key == "Home" ? 0 : e.Key == "End" ? 1 : 1 - _tab;
+        await (_tab == 0 ? _wcagTab : _performanceTab).FocusAsync(preventScroll: true);
+    }
+}

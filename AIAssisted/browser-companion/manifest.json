@@ -3,7 +3,7 @@
   "name": "BirkNext Browser Companion",
   "version": "0.1.0",
   "description": "Collects safe page quality evidence (DOM, accessibility, performance, runtime) from approved Target Environment pages in your normal browser session and reports it to the local BirkNext backend. Reads no credentials, cookies or storage.",
-  "minimum_chrome_version": "116",
+  "minimum_chrome_version": "120",
   "permissions": [
     "storage",
     "scripting",
