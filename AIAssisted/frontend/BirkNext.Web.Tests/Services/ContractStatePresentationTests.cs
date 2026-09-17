@@ -409,4 +409,132 @@ public class ContractStatePresentationTests
 
         html.Should().Contain("could not be recorded");
     }
+
+    // ── Performance (Checkpoint 6) ───────────────────────────────────────────
+
+    private static IntegrationStatus PerfStatus(IntegrationPerformanceMetrics? performance) =>
+        new()
+        {
+            IntegrationId = "i1", Name = "Orders", Type = IntegrationType.REST, Enabled = true,
+            Performance = performance
+        };
+
+    [Fact]
+    public void NoPerformanceEvidence_StatesAbsenceNotZero()
+    {
+        var label = ContractStatePresenter.Performance(PerfStatus(null));
+
+        label.Should().Be("No runtime performance evidence available");
+        label.Should().NotContain("0 ms");
+        label.Should().NotContain("0 req/s");
+    }
+
+    [Fact]
+    public void UnavailableState_StatesAbsence() =>
+        ContractStatePresenter.Performance(PerfStatus(new IntegrationPerformanceMetrics
+            { EvidenceState = PerformanceEvidenceState.Unavailable }))
+            .Should().Be("No runtime performance evidence available");
+
+    [Fact]
+    public void AbsentMetrics_RenderNotMeasuredRatherThanZero()
+    {
+        ContractStatePresenter.Metric(null, "ms").Should().Be("Not measured");
+        ContractStatePresenter.Metric(null, "req/s").Should().Be("Not measured");
+        ContractStatePresenter.ErrorRate(PerfStatus(null)).Should().Be("Not measured");
+        ContractStatePresenter.ObservationWindow(PerfStatus(null)).Should().Be("Not measured");
+    }
+
+    [Fact]
+    public void ObservedPerformance_NamesTheDiscoverySession()
+    {
+        // Samples cover one discovery session, so the wording must not imply continuous
+        // monitoring or a fixed reporting period.
+        var label = ContractStatePresenter.Performance(PerfStatus(new IntegrationPerformanceMetrics
+            { EvidenceState = PerformanceEvidenceState.Observed, TimedSampleCount = 842 }));
+
+        label.Should().Contain("Observed during this discovery session");
+        label.Should().Contain("842 samples");
+        label.Should().NotContain("24");
+        label.Should().NotContain("monitoring");
+    }
+
+    [Fact]
+    public void InsufficientSamples_IsStatedNotHidden()
+    {
+        var label = ContractStatePresenter.Performance(PerfStatus(new IntegrationPerformanceMetrics
+            { EvidenceState = PerformanceEvidenceState.InsufficientSamples, TimedSampleCount = 3 }));
+
+        label.Should().Contain("3 samples");
+        label.Should().Contain("too few for reliable percentile interpretation");
+    }
+
+    [Fact]
+    public void MetricFormatting_IsCultureInvariant() =>
+        ContractStatePresenter.Metric(141.5, "ms").Should().Be("141.5 ms");
+
+    [Fact]
+    public void ErrorRate_ShowsCountsAndPercentage()
+    {
+        var status = PerfStatus(new IntegrationPerformanceMetrics
+        {
+            EvidenceState = PerformanceEvidenceState.Observed,
+            SuccessfulSampleCount = 839, FailedSampleCount = 3, ErrorRate = 0.0036
+        });
+
+        ContractStatePresenter.ErrorRate(status).Should().Contain("3 / 842");
+    }
+
+    [Fact]
+    public void PerformanceChange_ShowsDirectionAndDelta()
+    {
+        var label = ContractStatePresenter.PerformanceChangeLabel(new PerformanceChange
+        {
+            Metric = "p95 latency", PreviousValue = 118, CurrentValue = 141,
+            AbsoluteChange = 23, PercentageChange = 19.5,
+            ChangeState = PerformanceChangeState.Regressed
+        });
+
+        label.Should().Contain("118");
+        label.Should().Contain("141");
+        label.Should().Contain("19.5%");
+        label.Should().Contain("regressed");
+    }
+
+    [Fact]
+    public void MissingBaseline_IsNotCalledRegression()
+    {
+        var label = ContractStatePresenter.PerformanceChangeLabel(new PerformanceChange
+        {
+            Metric = "p95 latency", CurrentValue = 141,
+            ChangeState = PerformanceChangeState.NoComparableBaseline
+        });
+
+        label.Should().Contain("no comparable baseline");
+        label.Should().NotContain("regressed");
+    }
+
+    [Fact]
+    public void Export_RendersPerformanceAbsenceTruthfully()
+    {
+        var html = new ReportExportService().ExportIntegrationQualityReview(
+            ReportWith(PerfStatus(null)), "test");
+
+        html.Should().Contain("Performance");
+        html.Should().Contain("No runtime performance evidence available");
+        html.Should().NotContain("0 req/s");
+    }
+
+    [Fact]
+    public void Export_RendersObservedPerformance()
+    {
+        var html = new ReportExportService().ExportIntegrationQualityReview(
+            ReportWith(PerfStatus(new IntegrationPerformanceMetrics
+            {
+                EvidenceState = PerformanceEvidenceState.Observed,
+                TimedSampleCount = 842, P95DurationMs = 141
+            })), "test");
+
+        html.Should().Contain("141 ms");
+        html.Should().Contain("Observed during this discovery session");
+    }
 }
