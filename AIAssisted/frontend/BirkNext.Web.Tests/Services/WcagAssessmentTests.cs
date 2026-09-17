@@ -24,7 +24,7 @@ public sealed class WcagAssessmentTests
     public void RegistryIncludesAllAAndAaCriteriaForBothTargets()
     {
         Assert.Equal(50, WcagRegistry.For(new() { Version = WcagVersion.Wcag21 }).Count());
-        Assert.Equal(56, WcagRegistry.For(new()).Count()); // includes obsolete 4.1.1, visibly N/A
+        Assert.Equal(48, WcagRegistry.For(new()).Count()); // Norwegian legal default
         Assert.Equal(56, WcagRegistry.All.Select(d => d.CriterionId).Distinct().Count());
         Assert.All(WcagRegistry.For(new() { Level = WcagLevel.A }), d => Assert.Equal(WcagLevel.A, d.Level));
         Assert.Equal(5, Enum.GetValues<WcagStatus>().Length);
@@ -36,7 +36,7 @@ public sealed class WcagAssessmentTests
     public void NoAutomatedFailureDoesNotPassPartialOrManualCriteria(string id)
     {
         var s = Snapshot(new() { Checks = [new() { CheckId = "mouse-only", Outcome = "Pass", Tested = 10 }] });
-        Assert.Equal(WcagStatus.ManualReviewRequired, Result(s, id).Status);
+        Assert.Equal(WcagStatus.NotTested, Result(s, id).Status);
     }
 
     [Theory]
@@ -58,7 +58,7 @@ public sealed class WcagAssessmentTests
         var s = Snapshot(new() { VideoCount = 0, AudioCount = 0, MediaScopeComplete = true });
         Assert.Equal(WcagStatus.NotApplicable, Result(s, id).Status);
         s.Pages[0].BrowserEvidence = Evidence(a: new() { VideoCount = 0, AudioCount = 0 });
-        Assert.Equal(WcagStatus.ManualReviewRequired, Result(s, id).Status);
+        Assert.Equal(WcagStatus.NotTested, Result(s, id).Status);
     }
 
     [Fact]
@@ -75,19 +75,20 @@ public sealed class WcagAssessmentTests
     public void ParsingIsObsoleteOnlyFor22()
     {
         var s = Snapshot();
+        s.Wcag.Version = WcagVersion.Wcag22;
         Assert.Equal(WcagStatus.NotApplicable, Result(s, "4.1.1").Status);
         s.Wcag.Version = WcagVersion.Wcag21;
-        Assert.Equal(WcagStatus.ManualReviewRequired, Result(s, "4.1.1").Status);
+        Assert.Equal(WcagStatus.NotTested, Result(s, "4.1.1").Status);
     }
 
     [Theory]
     [InlineData("2.4.5")][InlineData("3.2.3")][InlineData("3.2.4")]
     public void CrossPageNeedsMultiplePagesAndNeverProvesSemantics(string id)
     {
-        var s = Snapshot(new() { Checks = [new() { CheckId = "navigation-structure", Outcome = "Pass" }], NavigationStructure = [2, 3] });
+        var s = Snapshot(new() { Checks = [new() { CheckId = "navigation-structure", Outcome = "Pass" }, new() { CheckId = "component-structure", Outcome = "Pass" }], NavigationStructure = [2, 3] });
         Assert.Equal(WcagStatus.NotTested, Result(s, id).Status);
         s.Pages.Add(new() { PageOrigin = "https://app.test", PagePath = "/b", BrowserEvidence = Evidence("/b", new()
-        { Checks = [new() { CheckId = "navigation-structure", Outcome = "Pass" }], NavigationStructure = [3, 2] }) });
+        { Checks = [new() { CheckId = "navigation-structure", Outcome = "Pass" }, new() { CheckId = "component-structure", Outcome = "Pass" }], NavigationStructure = [3, 2], ComponentStructure = [3, 2] }) });
         var r = Result(s, id);
         Assert.Equal(WcagStatus.ManualReviewRequired, r.Status);
         Assert.Equal(WcagEvidenceSource.CrossPage, r.EvidenceSource);
@@ -102,7 +103,7 @@ public sealed class WcagAssessmentTests
         var snapshot = service.GetSnapshot("dev"); var page = snapshot.Pages[0];
         await service.RecordWcagReviewAsync(js, "dev", page.Identity, new()
         {
-            CriterionId = "3.3.4", Version = WcagVersion.Wcag22, Generation = 1, Result = WcagStatus.Pass,
+            CriterionId = "3.3.4", Version = WcagVersion.Wcag21, AssessmentProfileId = WcagProfiles.NorwegianId, Generation = 1, Result = WcagStatus.Pass,
             EvidenceNote = "Checked reversible workflow", ReviewedBy = "tester",
         });
         Assert.Equal(WcagStatus.Pass, WcagAssessmentEngine.Evaluate(snapshot, page).Results.Single(r => r.Definition.CriterionId == "3.3.4").Status);
@@ -126,8 +127,8 @@ public sealed class WcagAssessmentTests
     {
         var report = new FrontendQualityReviewReport { Wcag = WcagAssessmentEngine.Evaluate(Snapshot()) };
         var html = new ReportExportService().ExportFrontendQualityReview(report, "test");
-        Assert.Contains("WCAG 2.2 A + AA", html);
-        Assert.Contains("ManualReviewRequired", html);
+        Assert.Contains("Norwegian legal requirements", html);
+        Assert.DoesNotContain("ManualReviewRequired", html);
         Assert.Contains("NotTested", html);
         Assert.Contains("No manual review recorded", html);
         Assert.Contains("does not establish WCAG conformance", html);
@@ -142,7 +143,7 @@ public sealed class WcagAssessmentTests
         var s = service.GetSnapshot("dev");
         await service.RecordWcagReviewAsync(js, "dev", null, new()
         {
-            CriterionId = "3.2.3", Version = WcagVersion.Wcag22, ScopeGeneration = WcagAssessmentEngine.ScopeGeneration(s),
+            CriterionId = "3.2.3", Version = WcagVersion.Wcag21, AssessmentProfileId = WcagProfiles.NorwegianId, ScopeGeneration = WcagAssessmentEngine.ScopeGeneration(s),
             Result = WcagStatus.Pass, EvidenceNote = "Navigation compared across both pages", ReviewedBy = "tester",
         });
         Assert.Equal(WcagStatus.Pass, Result(s, "3.2.3").Status);
@@ -155,7 +156,7 @@ public sealed class WcagAssessmentTests
     public void CurrentAutomatedFailureCannotBeOverriddenByManualApproval()
     {
         var s = Snapshot(new() { Checks = [new() { CheckId = "text-contrast", Outcome = "Fail", Failed = 1 }] });
-        s.Pages[0].WcagReviews.Add(new() { CriterionId = "1.4.3", Version = WcagVersion.Wcag22, Generation = 1, Result = WcagStatus.Pass });
+        s.Pages[0].WcagReviews.Add(new() { CriterionId = "1.4.3", Version = WcagVersion.Wcag21, AssessmentProfileId = WcagProfiles.NorwegianId, Generation = 1, Result = WcagStatus.Pass });
         Assert.Equal(WcagStatus.Fail, Result(s, "1.4.3").Status);
     }
 
@@ -165,10 +166,10 @@ public sealed class WcagAssessmentTests
         var js = new Store(); var service = new EndpointDiscoveryService();
         await service.MergeBrowserEvidenceAsync(js, "dev", [Evidence()]);
         var s = service.GetSnapshot("dev");
-        var review = new WcagManualReview { CriterionId = "3.3.4", Version = WcagVersion.Wcag22, Generation = 1,
+        var review = new WcagManualReview { CriterionId = "3.3.4", Version = WcagVersion.Wcag21, AssessmentProfileId = WcagProfiles.NorwegianId, Generation = 1,
             Result = WcagStatus.NotApplicable, EvidenceNote = "No high-impact workflow in scope", ReviewedBy = "tester" };
         await service.RecordWcagReviewAsync(js, "dev", s.Pages[0].Identity, review);
-        await service.SaveWcagSettingsAsync(js, "dev", new() { Version = WcagVersion.Wcag21 });
+        await service.SaveWcagSettingsAsync(js, "dev", new() { ProfileId = WcagProfiles.ExtendedId });
         Assert.True(Result(s, "3.3.4").ManualReviewStale);
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.RecordWcagReviewAsync(js, "dev", s.Pages[0].Identity, review));
     }
@@ -182,7 +183,7 @@ public sealed class WcagAssessmentTests
         var page = service.GetSnapshot("dev").Pages[0];
         await Assert.ThrowsAsync<InvalidOperationException>(() => service.RecordWcagReviewAsync(js, "dev", page.Identity, new()
         {
-            CriterionId = "3.3.4", Version = WcagVersion.Wcag22, Generation = 1, Result = WcagStatus.Pass,
+            CriterionId = "3.3.4", Version = WcagVersion.Wcag21, AssessmentProfileId = WcagProfiles.NorwegianId, Generation = 1, Result = WcagStatus.Pass,
             EvidenceNote = "Checked workflow", ReviewedBy = "tester",
         }));
         Assert.Empty(page.WcagReviews);

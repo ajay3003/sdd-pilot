@@ -224,16 +224,21 @@ public static class FrontendQualityLandingPresentation
             var technical = decision.AccessLabel + (decision.Reason is { Length: > 0 } ? $" — {decision.Reason}" : "");
             var publicNote = access.RequiresAuthentication && decision.AccessKind == FrontendQualityEngineAccessKind.PublicHttp
                 ? "Reviews the public frontend; signed-in pages are not covered by this capability." : null;
-            return Build(FrontendQualityCapabilityState.Enabled,
-                isBackend && readinessPending ? "Runtime readiness is being checked; the review can start meanwhile." : publicNote,
-                technical);
+            return Build(FrontendQualityCapabilityState.Enabled, EnabledSummary(isBackend, record, status, statusPending, readinessPending) ?? publicNote, technical);
         }
 
         if (record?.Layer3Readiness is { IsAvailable: true })
             return Build(FrontendQualityCapabilityState.Ready);
-        if (isBackend && record is null && status is null && !statusPending)
-            return Build(FrontendQualityCapabilityState.Enabled, "Capability status could not be checked; readiness is validated when the review starts.");
-        return Build(FrontendQualityCapabilityState.Enabled, isBackend && readinessPending ? "Runtime readiness is being checked; the review can start meanwhile." : null);
+        return Build(FrontendQualityCapabilityState.Enabled, EnabledSummary(isBackend, record, status, statusPending, readinessPending));
+    }
+
+    /// <summary>Why an active backend engine is "Enabled" rather than "Ready": status fetch failed, or readiness still being probed.</summary>
+    private static string? EnabledSummary(bool isBackend, FrontendQualityEngineStatusDto? record, FrontendQualityEngineStatusReportDto? status, bool statusPending, bool readinessPending)
+    {
+        if (!isBackend) return null;
+        if (record is null && status is null && !statusPending)
+            return "Capability status could not be checked; readiness is validated when the review starts.";
+        return readinessPending ? "Runtime readiness is being checked; the review can start meanwhile." : null;
     }
 
     // ── Quality dimensions ────────────────────────────────────────────────────────────────────────────────────────────
@@ -287,7 +292,7 @@ public static class FrontendQualityLandingPresentation
         new("Performance", ["Bundle size", "Compression", "Cache headers", "Lazy loading (static detection)"]),
         new("Accessibility", ["Automated axe-core checks (when the Accessibility capability is enabled)"], "Manual accessibility testing remains separate; zero automated violations does not establish WCAG conformance."),
         new("Blazor / WASM", ["Startup asset analysis (boot resources and assemblies)", "Service worker detection (static)"]),
-        new("Standards / QA readiness", ["Security-header standards", "Readiness indicators derived from the collected evidence"]),
+        new("Standards / QA readiness", [], "Standards compliance is derived from the security-header checks above; QA readiness indicators are derived from the collected performance evidence. No additional requests are made."),
     ];
 
     public static int CheckCount => CheckGroups.Sum(g => g.Checks.Count);

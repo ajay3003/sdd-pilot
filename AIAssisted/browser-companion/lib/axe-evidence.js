@@ -14,18 +14,22 @@
     }
     return { state: 'Completed', version: result.testEngine?.version, evidenceVersion, rules: rules.slice(0, 300) };
   }
-  function collector(axe) {
+  function collector(axe, hooks = {}) {
     let key = null, pending = null;
     return async function collect(doc, evidenceVersion) {
       if (key === evidenceVersion && pending) return pending;
       key = evidenceVersion;
+      const previous = pending;
       pending = (async () => {
+        if (previous) await previous;
         if (!axe?.run) return { state: 'Unavailable', evidenceVersion, rules: [] };
         try {
+          hooks.beforeRun?.();
           const result = await axe.run(doc, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] },
             resultTypes: ['violations', 'incomplete', 'passes', 'inapplicable'] });
           return summarize(result, evidenceVersion);
         } catch { return { state: 'Unavailable', evidenceVersion, rules: [] }; }
+        finally { hooks.afterRun?.(); }
       })();
       return pending;
     };

@@ -13,12 +13,15 @@
             {
                 <div class="fqr-check-group" data-testid="fqr-check-group" data-group="@group.Title">
                     <h3>@group.Title</h3>
-                    <ul>
-                        @foreach (var check in group.Checks)
-                        {
-                            <li>@check</li>
-                        }
-                    </ul>
+                    @if (group.Checks.Count > 0)
+                    {
+                        <ul>
+                            @foreach (var check in group.Checks)
+                            {
+                                <li>@check</li>
+                            }
+                        </ul>
+                    }
                     @if (!string.IsNullOrWhiteSpace(group.Note))
                     {
                         <p class="fqr-check-note">@group.Note</p>

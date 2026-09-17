@@ -203,13 +203,20 @@
 
   function isApprovedVisit(v) { return v && scope && C.pageIdentity.isApprovedOrigin(v.origin, scope.approvedOrigins); }
 
-  const collectAxe = C.axeEvidence?.collector(globalThis.axe);
+  let qualityRevision = 0;
+  const qualityObserver = new MutationObserver(() => { qualityRevision++; scheduleUpdate(); });
+  function observeQuality() { qualityObserver.observe(doc, { subtree: true, childList: true, attributes: true, characterData: true }); }
+  observeQuality();
+  const collectAxe = C.axeEvidence?.collector(globalThis.axe, {
+    beforeRun: () => qualityObserver.disconnect(), // axe's temporary DOM probes must not retrigger themselves
+    afterRun: observeQuality,
+  });
   async function emit(kind) {
     if (!isApprovedVisit(visit)) return;
     const observedVisit = visit;
     const page = buildSnapshot(kind);
-    // Once per stabilized visit; repeated metric snapshots reuse this execution, never imply a new axe run.
-    if (page && collectAxe) page.accessibility.axe = await collectAxe(doc, `${observedVisit.origin}${observedVisit.path}|${observedVisit.startedAt}`);
+    // Per visit and DOM revision; unchanged metric snapshots reuse execution. Existing update limits bound automatic work.
+    if (page && collectAxe) page.accessibility.axe = await collectAxe(doc, `${observedVisit.origin}${observedVisit.path}|${observedVisit.startedAt}|${qualityRevision}`);
     if (visit !== observedVisit || !isApprovedVisit(visit)) return;
     if (page) await send({ type: 'content:evidence', page });
   }

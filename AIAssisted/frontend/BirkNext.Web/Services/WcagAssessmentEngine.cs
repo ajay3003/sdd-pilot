@@ -73,7 +73,7 @@ public static class WcagAssessmentEngine
 
     private static WcagCriterionResult EvaluateCrossPage(EndpointDiscoverySnapshot snapshot, WcagCriterionDefinition d)
     {
-        var pages = snapshot.Pages.Where(p => p.BrowserEvidence?.Accessibility?.Checks.Any(c => c.CheckId == "navigation-structure") == true).ToList();
+        var pages = snapshot.Pages.Where(p => p.BrowserEvidence?.Accessibility?.Checks.Any(c => d.SupportedChecks.Contains(c.CheckId)) == true).ToList();
         var compared = pages.Count >= 2;
         var structures = pages.Select(p => d.CriterionId == "3.2.4"
             ? p.BrowserEvidence!.Accessibility!.ComponentStructure : p.BrowserEvidence!.Accessibility!.NavigationStructure);
