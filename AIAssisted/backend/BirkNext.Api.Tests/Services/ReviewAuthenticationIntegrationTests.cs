@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using BirkNext.Api.Services;
 using BirkNext.Api.Services.ApiQuality;
 using BirkNext.Api.Services.IntegrationQuality;
 using BirkNext.Api.Services.LocalHttpsProxy;
@@ -22,7 +23,7 @@ public sealed class ReviewAuthenticationIntegrationTests
         new(PublicClient(), NullLogger<ApiQualityReviewService>.Instance, gateway);
 
     private static IntegrationQualityReviewService IntegrationService(IAuthenticatedReviewGateway gateway) =>
-        new(PublicClient(), NullLogger<IntegrationQualityReviewService>.Instance, gateway);
+        new(PublicClient(), NullLogger<IntegrationQualityReviewService>.Instance, gateway, new IntegrationRelationshipPopulationService());
 
     [Fact]
     public async Task ApiReviewWithProxyContextRecordsAuthenticatedProvenanceAndNoToken()

@@ -24,6 +24,14 @@ public enum ContractSourceType
     Unknown = 7            // Undetermined
 }
 
+public enum RelationshipSource
+{
+    Configured = 0,        // Explicitly configured producer/consumer
+    DiscoveredTraffic = 1, // Inferred from runtime traffic observation
+    MessagingMetadata = 2, // From message/event metadata
+    Unknown = 3            // Relationship source not determined
+}
+
 public enum ContractMetadataReadiness
 {
     NotConfigured = 0,     // No relationship metadata provided
@@ -54,6 +62,10 @@ public sealed class IntegrationConfigDto
 
     [JsonPropertyName("logicalConsumerService")]
     public string? LogicalConsumerService { get; set; }
+
+    // Relationship source (Phase 3)
+    [JsonPropertyName("producerConsumerSource")]
+    public RelationshipSource ProducerConsumerSource { get; set; } = RelationshipSource.Unknown;
 
     [JsonPropertyName("contractName")]
     public string? ContractName { get; set; }

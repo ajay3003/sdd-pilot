@@ -9,6 +9,7 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
     private readonly HttpClient _client;
     private readonly ILogger<IntegrationQualityReviewService> _logger;
     private readonly IAuthenticatedReviewGateway _authenticatedReview;
+    private readonly IntegrationRelationshipPopulationService _relationshipPopulation;
 
     private static readonly HashSet<IntegrationType> AsyncTypes =
     [
@@ -16,11 +17,16 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         IntegrationType.Kafka, IntegrationType.RabbitMQ
     ];
 
-    public IntegrationQualityReviewService(HttpClient client, ILogger<IntegrationQualityReviewService> logger, IAuthenticatedReviewGateway authenticatedReview)
+    public IntegrationQualityReviewService(
+        HttpClient client,
+        ILogger<IntegrationQualityReviewService> logger,
+        IAuthenticatedReviewGateway authenticatedReview,
+        IntegrationRelationshipPopulationService relationshipPopulation)
     {
         _client = client;
         _logger = logger;
         _authenticatedReview = authenticatedReview;
+        _relationshipPopulation = relationshipPopulation;
     }
 
     /// <summary>
@@ -59,6 +65,9 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         var statuses        = new List<IntegrationStatus>();
         var recommendations = new List<string>();
         var limitations     = new List<string>();
+
+        // Populate producer/consumer relationships with source tracking (Phase 3)
+        _relationshipPopulation.PopulateRelationships(request.Integrations);
 
         foreach (var intg in request.Integrations)
         {

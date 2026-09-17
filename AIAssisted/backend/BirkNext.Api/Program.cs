@@ -326,6 +326,7 @@ builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
 }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 
 // Integration Quality Review
+builder.Services.AddScoped<BirkNext.Api.Services.IntegrationRelationshipPopulationService>();
 builder.Services.AddHttpClient<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualityReviewService, BirkNext.Api.Services.IntegrationQuality.IntegrationQualityReviewService>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(60);
