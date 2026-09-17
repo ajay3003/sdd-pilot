@@ -142,6 +142,9 @@ public sealed class ContractCompatibilityResult
     [JsonPropertyName("differences")]
     public List<ContractDifference> Differences { get; set; } = [];
 
+    [JsonPropertyName("compared_at")]
+    public DateTime ComparedAt { get; set; } = DateTime.UtcNow;
+
     [JsonPropertyName("analysis_readiness")]
     public ContractAnalysisReadiness AnalysisReadiness { get; set; } = ContractAnalysisReadiness.Ready;
 
@@ -159,7 +162,53 @@ public enum ContractCompatibilityStatus
     Breaking = 2,
     Unsupported = 3,
     NotReady = 4,
-    Error = 5
+    Error = 5,
+    // Comparison did not occur (one or both sides had no comparable contract content).
+    // Distinct from Compatible: absence of differences is not evidence of compatibility.
+    NotComparable = 6
+}
+
+/// <summary>
+/// Drift compares a contract against its previous baseline.
+/// This is NOT producer/consumer compatibility and must not be derived from it.
+/// </summary>
+public enum ContractDriftState
+{
+    NoChange = 0,
+    NonBreakingChange = 1,
+    BreakingChange = 2,
+    BaselineUnavailable = 3,
+    NotComparable = 4
+}
+
+/// <summary>
+/// Result of current-contract vs previous-baseline drift analysis.
+/// </summary>
+public sealed class ContractDriftResult
+{
+    [JsonPropertyName("state")]
+    public ContractDriftState State { get; set; } = ContractDriftState.BaselineUnavailable;
+
+    [JsonPropertyName("contract")]
+    public string Contract { get; set; } = "";
+
+    [JsonPropertyName("differences")]
+    public List<ContractDifference> Differences { get; set; } = [];
+
+    [JsonPropertyName("baseline_captured_at")]
+    public DateTime? BaselineCapturedAt { get; set; }
+
+    [JsonPropertyName("compared_at")]
+    public DateTime ComparedAt { get; set; } = DateTime.UtcNow;
+
+    [JsonPropertyName("current_fingerprint")]
+    public string? CurrentFingerprint { get; set; }
+
+    [JsonPropertyName("baseline_fingerprint")]
+    public string? BaselineFingerprint { get; set; }
+
+    [JsonPropertyName("message")]
+    public string Message { get; set; } = "";
 }
 
 public enum ContractAnalysisReadiness
