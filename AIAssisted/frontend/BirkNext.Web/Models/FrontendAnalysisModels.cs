@@ -81,6 +81,47 @@ public enum ContractMetadataReadiness
     Ready = 2              // Complete relationship metadata
 }
 
+/// <summary>How an integration's configuration came to exist. Mirrors the backend enum by value.</summary>
+public enum IntegrationConfigurationSource
+{
+    Unknown = 0,
+    EndpointDiscovery = 1,
+    CodeSuggested = 2,
+    Manual = 3
+}
+
+/// <summary>The transport entity an integration addresses. Mirrors the backend enum by value.</summary>
+public enum IntegrationResourceKind
+{
+    Unknown = 0,
+    RestEndpoint = 1,
+    GraphQlEndpoint = 2,
+    EventHub = 3,
+    ServiceBusQueue = 4,
+    ServiceBusTopic = 5,
+    ServiceBusSubscription = 6,
+    KafkaTopic = 7,
+    RabbitExchange = 8,
+    RabbitQueue = 9
+}
+
+/// <summary>An integration known from an external audit of the M2LB source, offered when adding one.</summary>
+public sealed class KnownIntegrationTemplate
+{
+    [JsonPropertyName("id")]                     public string Id { get; init; } = "";
+    [JsonPropertyName("environmentName")]        public string EnvironmentName { get; init; } = "";
+    [JsonPropertyName("displayName")]            public string DisplayName { get; init; } = "";
+    [JsonPropertyName("integrationType")]        public IntegrationType IntegrationType { get; init; }
+    [JsonPropertyName("resourceKind")]           public IntegrationResourceKind ResourceKind { get; init; }
+    [JsonPropertyName("resource")]               public string Resource { get; init; } = "";
+    [JsonPropertyName("endpointOrNamespace")]    public string? EndpointOrNamespace { get; init; }
+    [JsonPropertyName("suggestedProducer")]      public string? SuggestedProducer { get; init; }
+    [JsonPropertyName("suggestedConsumer")]      public string? SuggestedConsumer { get; init; }
+    [JsonPropertyName("suggestedConsumerGroup")] public string? SuggestedConsumerGroup { get; init; }
+    [JsonPropertyName("relationshipNote")]       public string? RelationshipNote { get; init; }
+    [JsonPropertyName("suggestionOrigin")]       public string SuggestionOrigin { get; init; } = "";
+}
+
 public sealed class IntegrationConfig
 {
     [JsonPropertyName("id")]            public string             Id          { get; set; } = "";
@@ -95,6 +136,11 @@ public sealed class IntegrationConfig
     [JsonPropertyName("monitoringUrl")] public string?            MonitoringUrl { get; set; }
     [JsonPropertyName("owner")]         public string?            Owner       { get; set; }
     [JsonPropertyName("enabled")]       public bool               Enabled     { get; set; } = true;
+
+    // Provenance and entity kind. Absent in legacy configuration, which reads as Unknown rather
+    // than claiming a provenance it never had.
+    [JsonPropertyName("configurationSource")] public IntegrationConfigurationSource ConfigurationSource { get; set; } = IntegrationConfigurationSource.Unknown;
+    [JsonPropertyName("resourceKind")]        public IntegrationResourceKind        ResourceKind        { get; set; } = IntegrationResourceKind.Unknown;
 
     // Contract Relationship Metadata (Phase 2)
     [JsonPropertyName("logicalProducerService")]

@@ -18,6 +18,15 @@ public class IntegrationQualityController : ControllerBase
         _logger  = logger;
     }
 
+    /// <summary>
+    /// Integration templates known for an environment. The catalogue is evidenced per environment,
+    /// so an environment without evidence returns an empty list rather than values adapted from
+    /// another environment's.
+    /// </summary>
+    [HttpGet("known-templates")]
+    public IActionResult KnownTemplates([FromQuery] string? environmentName) =>
+        Ok(KnownIntegrationTemplates.ForEnvironment(environmentName));
+
     [HttpPost("analyze")]
     public async Task<IActionResult> Analyze([FromBody] IntegrationQualityRequest request, CancellationToken ct)
     {
