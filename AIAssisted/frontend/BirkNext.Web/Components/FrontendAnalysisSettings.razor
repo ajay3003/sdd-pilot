@@ -2,6 +2,7 @@
 @using BirkNext.LocalHttpsProxy
 @implements IAsyncDisposable
 @inject IServiceProvider ServiceProvider
+@inject IServiceProvider ServiceProvider
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @inject IFrontendAnalysisSettingsService FaSettings
@@ -1240,8 +1241,60 @@
                 {
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.65rem">
                         <span class="fa-section-note" style="margin:0">Configure service integrations for this environment. Used by Integration Quality Review.</span>
-                        <SecondaryButton OnClick="AddIntegration" Class="fa-btn-sm">+ Add Integration</SecondaryButton>
+                        <SecondaryButton OnClick="BeginAddIntegration" Class="fa-btn-sm">+ Add Integration</SecondaryButton>
                     </div>
+
+                    @* Add flow: either a template evidenced for this environment, or an empty custom integration. *@
+                    @if (_addingIntegration)
+                    {
+                        <div class="fa-add-integration" data-testid="fa-add-integration-flow"
+                             style="border:1px solid var(--clr-border);border-radius:var(--radius-md);padding:.75rem;margin-bottom:.65rem">
+                            <fieldset style="border:none;padding:0;margin:0 0 .6rem 0">
+                                <legend class="fa-label" style="padding:0">Add integration</legend>
+                                <label style="display:block;margin:.2rem 0">
+                                    <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-known"
+                                           checked="@(_addMode == "known")"
+                                           @onchange="@(() => SetAddMode("known"))" />
+                                    Known M2LB integration
+                                </label>
+                                <label style="display:block;margin:.2rem 0">
+                                    <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-custom"
+                                           checked="@(_addMode == "custom")"
+                                           @onchange="@(() => SetAddMode("custom"))" />
+                                    Custom integration
+                                </label>
+                            </fieldset>
+
+                            @if (_addMode == "known")
+                            {
+                                @if (_knownTemplates.Count == 0)
+                                {
+                                    @* An environment with no evidenced templates is a normal state, not an error. *@
+                                    <p class="fa-section-note" data-testid="fa-templates-empty">
+                                        No verified integration templates are available for this environment.
+                                    </p>
+                                }
+                                else
+                                {
+                                    <label class="fa-label" for="fa-template-select">Template</label>
+                                    <select id="fa-template-select" class="form-control" data-testid="fa-template-select"
+                                            @onchange="OnTemplateSelected">
+                                        <option value="">Select a template...</option>
+                                        @foreach (var template in _knownTemplates)
+                                        {
+                                            <option value="@template.Id">@template.DisplayName</option>
+                                        }
+                                    </select>
+                                }
+                            }
+                            else
+                            {
+                                <SecondaryButton OnClick="AddCustomIntegration" Class="fa-btn-sm" data-testid="fa-add-custom-confirm">
+                                    Add custom integration
+                                </SecondaryButton>
+                            }
+                        </div>
+                    }
 
                     @if (_editProfile.Integrations.Count == 0)
                     {
@@ -1251,15 +1304,41 @@
                     }
                     else
                     {
-                        @foreach (var intg in _editProfile.Integrations)
+                        @* One collection, two views. Detected is what Endpoint Discovery proposed;
+                           Configured is everything a person entered or accepted. *@
+                        var detected = _editProfile.Integrations
+                            .Where(i => i.ConfigurationSource == IntegrationConfigurationSource.EndpointDiscovery
+                                        && IntegrationConfigPresenter.IsHttpIntegration(i.Type))
+                            .ToList();
+                        var configured = _editProfile.Integrations.Where(i => !detected.Contains(i)).ToList();
+
+                        @if (detected.Count > 0)
+                        {
+                            <h4 data-testid="fa-detected-heading" style="margin:.5rem 0 .2rem 0;font-size:.85rem">Detected integrations</h4>
+                            <p class="fa-section-note" style="margin-top:0">REST and GraphQL discovered from Endpoint Discovery.</p>
+                        }
+
+                        @foreach (var intg in detected.Concat(configured))
                         {
                             var isExpanded = _editingIntegrationId == intg.Id;
+                            var startsConfigured = configured.Count > 0 && ReferenceEquals(intg, configured[0]);
+
+                            if (startsConfigured)
+                            {
+                                <h4 data-testid="fa-configured-heading" style="margin:.75rem 0 .2rem 0;font-size:.85rem">Configured integrations</h4>
+                                <p class="fa-section-note" style="margin-top:0">Messaging and manually configured integrations.</p>
+                            }
                             <div class="fa-integration-row" style="border:1px solid var(--clr-border);border-radius:var(--radius-md);margin-bottom:.5rem">
                                 <button class="fa-integration-toggle"
                                         style="width:100%;background:var(--clr-surface);border:none;border-radius:var(--radius-md);cursor:pointer;display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;text-align:left"
                                         @onclick="() => _editingIntegrationId = isExpanded ? null : intg.Id">
                                     <span style="font-weight:700;font-size:.82rem;background:var(--clr-bg,#f1f5f9);border:1px solid var(--clr-border);border-radius:3px;padding:.1rem .4rem;min-width:4rem;text-align:center">@intg.Type</span>
                                     <span style="flex:1;font-size:.88rem;color:var(--clr-text-heading)">@(string.IsNullOrWhiteSpace(intg.Name) ? "(unnamed)" : intg.Name)</span>
+                                    <span style="font-size:.72rem;color:var(--clr-text-subtle)" data-testid="fa-integration-source">@IntegrationConfigPresenter.SourceLabel(intg.ConfigurationSource)</span>
+                                    @if (!IntegrationConfigPresenter.IsComplete(intg))
+                                    {
+                                        <span style="font-size:.72rem" data-testid="fa-integration-incomplete">@IntegrationConfigPresenter.ConfigurationState(intg)</span>
+                                    }
                                     @if (!intg.Enabled)
                                     { <span style="font-size:.74rem;color:var(--clr-text-subtle)">Disabled</span> }
                                     <span style="font-size:.7rem;color:var(--clr-text-placeholder)">@(isExpanded ? "▲" : "▼")</span>
@@ -2658,6 +2737,79 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     // ── Integration helpers ────────────────────────────────────────────────────
 
     private string? _editingIntegrationId;
+
+    // ── Add-integration flow ───────────────────────────────────────────────────
+    private bool _addingIntegration;
+    private string _addMode = "known";
+    private List<KnownIntegrationTemplate> _knownTemplates = [];
+
+    /// <summary>
+    /// Opens the add flow and loads the templates evidenced for this environment. An environment
+    /// with none simply shows an empty state; that is a normal outcome, not a failure.
+    /// </summary>
+    private async Task BeginAddIntegration()
+    {
+        _addingIntegration = true;
+        _addMode = "known";
+        await LoadKnownTemplatesAsync();
+    }
+
+    private async Task SetAddMode(string mode)
+    {
+        _addMode = mode;
+
+        if (mode == "known")
+            await LoadKnownTemplatesAsync();
+    }
+
+    private async Task LoadKnownTemplatesAsync()
+    {
+        var environmentName = _editProfile?.Name ?? "";
+
+        try
+        {
+            // Resolved optionally: the editor must stay renderable where template lookup is not
+            // wired up, and an absent catalogue is the same normal empty state as an empty one.
+            var templates = ServiceProvider.GetService(typeof(IIntegrationTemplateService)) as IIntegrationTemplateService;
+            _knownTemplates = templates is null ? [] : await templates.GetForEnvironmentAsync(environmentName);
+        }
+        catch
+        {
+            // Templates are optional assistance; failing to load them must not block adding an
+            // integration manually.
+            _knownTemplates = [];
+        }
+    }
+
+    /// <summary>
+    /// Creates an integration from a template. Only values the audit established are written, so
+    /// anything it could not establish stays blank and shows as still needed.
+    /// </summary>
+    private void OnTemplateSelected(ChangeEventArgs e)
+    {
+        var templateId = e.Value?.ToString();
+
+        if (string.IsNullOrWhiteSpace(templateId) || _editProfile is null)
+            return;
+
+        var template = _knownTemplates.FirstOrDefault(t => t.Id == templateId);
+
+        if (template is null)
+            return;
+
+        var cfg = new IntegrationConfig { Id = NewIntegrationId(), Enabled = true };
+        IntegrationConfigPresenter.ApplyTemplate(cfg, template);
+
+        _editProfile.Integrations.Add(cfg);
+        _editingIntegrationId = cfg.Id;
+        _addingIntegration = false;
+    }
+
+    private void AddCustomIntegration()
+    {
+        AddIntegration();
+        _addingIntegration = false;
+    }
 
     private void AddIntegration()
     {
