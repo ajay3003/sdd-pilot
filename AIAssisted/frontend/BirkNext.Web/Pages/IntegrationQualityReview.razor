@@ -203,6 +203,7 @@
                                 <th>Type</th>
                                 <th>Evidence</th>
                                 <th>Contract</th>
+                                <th>Drift</th>
                                 <th>Status</th>
                                 <th>Findings</th>
                             </tr>
@@ -217,6 +218,7 @@
                                     <td data-testid="iqr-overview-type">@status.Type</td>
                                     <td data-testid="iqr-overview-evidence">@GetEvidenceLabel(status)</td>
                                     <td data-testid="iqr-overview-contract">@contractState</td>
+                                    <td data-testid="iqr-overview-drift">@GetDriftState(status)</td>
                                     <td data-testid="iqr-overview-assessment-status">
                                         @if (status.HasRequiredFields)
                                         {
@@ -232,6 +234,65 @@
                             }
                         </tbody>
                     </table>
+                </div>
+
+                @* Contract detail: collapsed by default so the overview stays scannable. *@
+                <div class="iqr-contract-details" data-testid="iqr-contract-details">
+                    @foreach (var status in report.Statuses.Where(s => s.Enabled).OrderBy(s => s.Name))
+                    {
+                        <details data-testid="iqr-contract-detail" data-integration-id="@status.IntegrationId">
+                            <summary>@status.Name — contract evidence</summary>
+                            <dl class="iqr-dl">
+                                <div><dt>Producer</dt><dd data-testid="iqr-contract-producer">@(status.ProducerService ?? "Not recorded")</dd></div>
+                                <div><dt>Consumer</dt><dd data-testid="iqr-contract-consumer">@(status.ConsumerService ?? "Not recorded")</dd></div>
+                                <div><dt>Producer contract source</dt><dd>@(status.ProducerContractSource ?? "Not recorded")</dd></div>
+                                <div><dt>Consumer contract source</dt><dd>@(status.ConsumerContractSource ?? "Not recorded")</dd></div>
+                                <div><dt>Compatibility</dt><dd data-testid="iqr-contract-compatibility">@GetContractState(status)</dd></div>
+                                @{
+                                    var compatDetail = GetContractStateDetail(status);
+                                }
+                                @if (!string.IsNullOrWhiteSpace(compatDetail))
+                                {
+                                    <div><dt>Compatibility detail</dt><dd data-testid="iqr-contract-compatibility-detail">@compatDetail</dd></div>
+                                }
+                                @if (status.CompatibilityComparedAt is { } comparedAt)
+                                {
+                                    <div><dt>Compared at</dt><dd data-testid="iqr-contract-compared-at">@comparedAt.ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
+                                }
+                                <div><dt>Drift</dt><dd data-testid="iqr-contract-drift">@GetDriftState(status)</dd></div>
+                                @if (status.PreviousBaselineTimestamp is { } baselineAt)
+                                {
+                                    <div><dt>Previous baseline</dt><dd data-testid="iqr-contract-baseline-at">@baselineAt.ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
+                                }
+                            </dl>
+
+                            @if (status.CompatibilityDifferences.Count > 0)
+                            {
+                                <details data-testid="iqr-contract-compat-differences">
+                                    <summary>Compatibility differences (@status.CompatibilityDifferences.Count)</summary>
+                                    <ul>
+                                        @foreach (var difference in status.CompatibilityDifferences)
+                                        {
+                                            <li><strong>@SeverityLabel(difference.Severity):</strong> @difference.Explanation</li>
+                                        }
+                                    </ul>
+                                </details>
+                            }
+
+                            @if (status.DriftDifferences.Count > 0)
+                            {
+                                <details data-testid="iqr-contract-drift-differences">
+                                    <summary>Drift differences (@status.DriftDifferences.Count)</summary>
+                                    <ul>
+                                        @foreach (var difference in status.DriftDifferences)
+                                        {
+                                            <li><strong>@SeverityLabel(difference.Severity):</strong> @difference.Explanation</li>
+                                        }
+                                    </ul>
+                                </details>
+                            }
+                        </details>
+                    }
                 </div>
             </section>
 
@@ -593,6 +654,16 @@
         status.WorkerReachable == true ? "Worker reachable" :
         "Not verified";
 
+    // Delegates to the shared presenter so the page and the export cannot diverge.
     private string GetContractState(IntegrationStatus status) =>
-        "Not configured"; // Actual contract metadata not yet exposed by backend service
+        ContractStatePresenter.Compatibility(status);
+
+    private string GetContractStateDetail(IntegrationStatus status) =>
+        ContractStatePresenter.CompatibilityDetail(status);
+
+    private string GetDriftState(IntegrationStatus status) =>
+        ContractStatePresenter.Drift(status);
+
+    private static string SeverityLabel(ContractDifferenceSeverity severity) =>
+        ContractStatePresenter.SeverityLabel(severity);
 }

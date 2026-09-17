@@ -449,6 +449,49 @@ public sealed class ReportExportService : IReportExportService
                     Esc(string.Join(", ", s.MissingFields))
                 })));
             sb.Append("</section>\n");
+
+            // Contract evidence. Wording comes from the shared presenter, identical to the UI;
+            // export never recomputes compatibility or drift state.
+            sb.Append("<section class=\"block\">\n<h2>Contract Evidence</h2>\n");
+            sb.Append(Table(
+                ["Integration", "Producer", "Consumer", "Producer contract", "Consumer contract",
+                 "Compatibility", "Compared at", "Previous baseline", "Drift"],
+                report.Statuses.Select(s => new[]
+                {
+                    Esc(s.Name),
+                    Esc(s.ProducerService ?? "Not recorded"),
+                    Esc(s.ConsumerService ?? "Not recorded"),
+                    Esc(s.ProducerContractSource ?? "Not recorded"),
+                    Esc(s.ConsumerContractSource ?? "Not recorded"),
+                    Esc(ContractStatePresenter.Compatibility(s)),
+                    Esc(s.CompatibilityComparedAt?.ToString("yyyy-MM-dd HH:mm") ?? "Not recorded"),
+                    Esc(s.PreviousBaselineTimestamp?.ToString("yyyy-MM-dd HH:mm") ?? "Not recorded"),
+                    Esc(ContractStatePresenter.Drift(s))
+                })));
+            sb.Append("</section>\n");
+
+            var withDifferences = report.Statuses
+                .Where(s => s.CompatibilityDifferences.Count > 0 || s.DriftDifferences.Count > 0)
+                .ToList();
+
+            if (withDifferences.Count > 0)
+            {
+                sb.Append("<section class=\"block\">\n<h2>Contract Differences</h2>\n");
+                sb.Append(Table(
+                    ["Integration", "Kind", "Severity", "Detail"],
+                    withDifferences.SelectMany(s =>
+                        s.CompatibilityDifferences.Select(d => new[]
+                        {
+                            Esc(s.Name), "Compatibility",
+                            Esc(ContractStatePresenter.SeverityLabel(d.Severity)), Esc(d.Explanation)
+                        })
+                        .Concat(s.DriftDifferences.Select(d => new[]
+                        {
+                            Esc(s.Name), "Drift",
+                            Esc(ContractStatePresenter.SeverityLabel(d.Severity)), Esc(d.Explanation)
+                        })))));
+                sb.Append("</section>\n");
+            }
         }
 
         if (report.Findings.Count > 0)

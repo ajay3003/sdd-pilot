@@ -54,8 +54,65 @@ public sealed class IntegrationStatus
     [JsonPropertyName("hasRequiredFields")] public bool            HasRequiredFields { get; init; }
     [JsonPropertyName("healthReachable")]   public bool?           HealthReachable   { get; init; }
     [JsonPropertyName("workerReachable")]   public bool?           WorkerReachable   { get; init; }
+    // Contract compatibility and drift (Phase 3, Checkpoint 4). Nullable throughout so a report
+    // produced before these fields existed reads as "not captured" rather than as a
+    // compatibility claim: Compatible and NoChange are both 0.
+    [JsonPropertyName("compatibilityState")]           public ContractCompatibilityStatus? CompatibilityState { get; init; }
+    [JsonPropertyName("compatibilityComparedAt")]      public DateTime?          CompatibilityComparedAt      { get; init; }
+    [JsonPropertyName("compatibilityDifferenceCount")] public int?               CompatibilityDifferenceCount { get; init; }
+    [JsonPropertyName("compatibilityBreakingCount")]   public int?               CompatibilityBreakingCount   { get; init; }
+    [JsonPropertyName("compatibilityDifferences")]     public List<ContractDifference> CompatibilityDifferences { get; init; } = [];
+    [JsonPropertyName("compatibilityReason")]          public string?            CompatibilityReason          { get; init; }
+    [JsonPropertyName("producerService")]              public string?            ProducerService              { get; init; }
+    [JsonPropertyName("consumerService")]              public string?            ConsumerService              { get; init; }
+    [JsonPropertyName("producerContractSource")]       public string?            ProducerContractSource       { get; init; }
+    [JsonPropertyName("consumerContractSource")]       public string?            ConsumerContractSource       { get; init; }
+
+    [JsonPropertyName("driftState")]                   public ContractDriftState? DriftState                  { get; init; }
+    [JsonPropertyName("driftDifferenceCount")]         public int?               DriftDifferenceCount         { get; init; }
+    [JsonPropertyName("driftBreakingCount")]           public int?               DriftBreakingCount           { get; init; }
+    [JsonPropertyName("driftDifferences")]             public List<ContractDifference> DriftDifferences       { get; init; } = [];
+    [JsonPropertyName("previousBaselineTimestamp")]    public DateTime?          PreviousBaselineTimestamp    { get; init; }
+    [JsonPropertyName("currentContractFingerprint")]   public string?            CurrentContractFingerprint   { get; init; }
+    [JsonPropertyName("previousContractFingerprint")]  public string?            PreviousContractFingerprint  { get; init; }
+
     [JsonPropertyName("score")]             public int             Score             { get; init; }
     [JsonPropertyName("missingFields")]     public List<string>    MissingFields     { get; init; } = [];
+}
+
+// Numeric values mirror the backend contract enums exactly; enums cross the wire as numbers.
+public enum ContractCompatibilityStatus
+{
+    Compatible = 0,
+    Warning = 1,
+    Breaking = 2,
+    Unsupported = 3,
+    NotReady = 4,
+    Error = 5,
+    NotComparable = 6
+}
+
+public enum ContractDriftState
+{
+    NoChange = 0,
+    NonBreakingChange = 1,
+    BreakingChange = 2,
+    BaselineUnavailable = 3,
+    NotComparable = 4
+}
+
+public enum ContractDifferenceSeverity { Info = 0, Warning = 1, Breaking = 2 }
+
+public sealed class ContractDifference
+{
+    [JsonPropertyName("type")]           public int    Type          { get; init; }
+    [JsonPropertyName("path")]           public string Path          { get; init; } = "";
+    [JsonPropertyName("operation")]      public string? Operation    { get; init; }
+    [JsonPropertyName("property")]       public string? Property     { get; init; }
+    [JsonPropertyName("producer_value")] public string? ProducerValue { get; init; }
+    [JsonPropertyName("consumer_value")] public string? ConsumerValue { get; init; }
+    [JsonPropertyName("severity")]       public ContractDifferenceSeverity Severity { get; init; }
+    [JsonPropertyName("explanation")]    public string Explanation   { get; init; } = "";
 }
 
 public sealed class IntegrationQualityReport
