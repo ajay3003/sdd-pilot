@@ -55,7 +55,7 @@ public static class BrowserQualityRules
         if (evidence.Accessibility is { } a11y)
             foreach (var rule in a11y.Findings.Where(f => f.Count > 0))
             {
-                var criterion = rule.Wcag == "4.1.1" && (wcag?.Version ?? WcagVersion.Wcag22) == WcagVersion.Wcag22 ? null : rule.Wcag;
+                var criterion = WcagRegistry.For(wcag ?? new()).Any(d => d.CriterionId == rule.Wcag) ? rule.Wcag : null;
                 findings.Add(new BrowserQualityFinding
                 {
                     RuleId = rule.RuleId, Category = BrowserQualityCategory.Accessibility, Severity = Severity(rule.Severity), Page = identity, ObservedAt = at,

@@ -1,28 +1,29 @@
-@* Accessible progressive-disclosure block for the Frontend Quality Review: a real <button> carrying aria-expanded/aria-controls
-   and a body that stays in the DOM but is removed from rendering, focus order and the accessibility tree with the HTML
-   `hidden` attribute while collapsed. Collapsed by default. *@
+@* Accessible progressive-disclosure block shared by the review pages: a real <button> carrying aria-expanded/aria-controls and a
+   body that stays in the DOM but is removed from rendering, focus order and the accessibility tree with the HTML `hidden`
+   attribute while collapsed. Collapsed by default. Styles: components.css (.disclosure-*).
+   Usage: <ReviewDisclosure Text="View checks" CollapseText="Hide checks" TestId="checks">…</ReviewDisclosure> *@
 
-<div class="fqr-disclosure @(Expanded ? "is-open" : "is-closed") @Class" data-testid="@TestId">
+<div class="disclosure @(Expanded ? "is-open" : "is-closed") @Class" data-testid="@TestId">
     <button type="button"
-            class="fqr-disclosure-toggle"
+            class="disclosure-toggle"
             aria-expanded="@(Expanded ? "true" : "false")"
             aria-controls="@_bodyId"
             data-testid="@ToggleTestId"
             @onclick="Toggle">
-        <span class="fqr-disclosure-chevron" aria-hidden="true">@(Expanded ? "▾" : "▸")</span>
-        <span class="fqr-disclosure-text">@(Expanded && !string.IsNullOrWhiteSpace(CollapseText) ? CollapseText : Text)</span>
+        <span class="disclosure-chevron" aria-hidden="true">@(Expanded ? "▾" : "▸")</span>
+        <span class="disclosure-text">@(Expanded && !string.IsNullOrWhiteSpace(CollapseText) ? CollapseText : Text)</span>
         @if (!string.IsNullOrWhiteSpace(Hint))
         {
-            <span class="fqr-disclosure-hint">@Hint</span>
+            <span class="disclosure-hint">@Hint</span>
         }
     </button>
-    <div id="@_bodyId" class="fqr-disclosure-body" hidden="@(!Expanded)" data-testid="@BodyTestId">
+    <div id="@_bodyId" class="disclosure-body" hidden="@(!Expanded)" data-testid="@BodyTestId">
         @ChildContent
     </div>
 </div>
 
 @code {
-    private readonly string _bodyId = $"fqr-disclosure-{Guid.NewGuid():N}";
+    private readonly string _bodyId = $"disclosure-{Guid.NewGuid():N}";
 
     /// <summary>Button text while collapsed (e.g. "View checks").</summary>
     [Parameter, EditorRequired] public string Text { get; set; } = "";

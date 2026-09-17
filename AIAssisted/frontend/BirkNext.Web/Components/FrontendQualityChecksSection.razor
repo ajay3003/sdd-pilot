@@ -7,7 +7,7 @@
         <h2 id="fqr-checks-heading">Checks included (@Count)</h2>
         <p class="fqr-section-note">@Count automated or passive checks run against the frontend. Automated results never replace manual testing.</p>
     </div>
-    <FrontendQualityDisclosure Text="View checks" CollapseText="Hide checks" TestId="fqr-checks-disclosure">
+    <ReviewDisclosure Text="View checks" CollapseText="Hide checks" TestId="fqr-checks-disclosure">
         <div class="fqr-check-groups">
             @foreach (var group in Groups)
             {
@@ -29,7 +29,7 @@
                 </div>
             }
         </div>
-    </FrontendQualityDisclosure>
+    </ReviewDisclosure>
 
     @if (NotAssessed.Count > 0)
     {

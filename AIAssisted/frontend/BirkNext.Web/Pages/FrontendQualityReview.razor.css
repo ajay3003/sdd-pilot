@@ -220,33 +220,6 @@
     text-decoration: none;
 }
 
-/* ── Disclosure (progressive disclosure blocks) ── */
-::deep .fqr-disclosure-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    padding: 0.45rem 0.75rem;
-    border: 1px solid var(--clr-border-input);
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--clr-text-muted);
-    font: inherit;
-    font-size: 0.86rem;
-    font-weight: 600;
-    cursor: pointer;
-}
-
-::deep .fqr-disclosure-toggle:hover { background: var(--clr-surface); border-color: var(--clr-border-hover); }
-::deep .fqr-disclosure-toggle:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: 2px; }
-::deep .fqr-disclosure-chevron { font-size: 0.8rem; }
-::deep .fqr-disclosure-hint { color: var(--clr-text-subtle); font-weight: 500; }
-::deep .fqr-disclosure-hint::before { content: "·"; margin-right: 0.45rem; }
-::deep .fqr-disclosure-body { margin-top: 0.75rem; }
-::deep .fqr-disclosure-inline { margin-top: 0.85rem; }
-::deep .fqr-disclosure-small .fqr-disclosure-toggle { padding: 0.2rem 0.5rem; font-size: 0.78rem; border-color: transparent; }
-::deep .fqr-disclosure-small .fqr-disclosure-toggle:hover { border-color: var(--clr-border-input); }
-::deep .fqr-disclosure-small .fqr-disclosure-body { margin-top: 0.35rem; }
-
 ::deep .fqr-card-disclosure {
     background: var(--clr-surface-white);
     border: 1px solid var(--clr-border);
@@ -419,7 +392,7 @@
 }
 
 ::deep .fqr-capability .fqr-link { margin-left: 1.7rem; display: inline-block; margin-top: 0.25rem; }
-::deep .fqr-capability .fqr-disclosure-inline { margin: 0.25rem 0 0 1.5rem; }
+::deep .fqr-capability .disclosure-inline { margin: 0.25rem 0 0 1.5rem; }
 ::deep .fqr-capability-technical { margin: 0; font-size: 0.82rem; color: var(--clr-text-subtle); overflow-wrap: anywhere; }
 
 ::deep .fqr-engine-progress { margin: 0.75rem 0; }

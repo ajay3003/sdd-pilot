@@ -380,7 +380,7 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                 Title          = "Accessibility requires browser-side verification for Blazor WASM",
                 Severity       = FrontendQualitySeverity.Info,
                 Category       = FrontendQualityCategory.Accessibility,
-                Description    = "Blazor WebAssembly renders HTML dynamically in the browser. Static HTTP analysis can only assess the initial HTML shell; semantic markup, ARIA attributes, and focus management require browser-based tools (Axe, Lighthouse) for full WCAG 2.2 coverage.",
+                Description    = "Blazor WebAssembly renders HTML dynamically in the browser. Static HTTP analysis can only assess the initial HTML shell; semantic markup, ARIA attributes, and focus management require browser-based tools (Axe, Lighthouse) for browser evidence. Complete coverage of the selected WCAG profile still requires human assessment.",
                 Recommendation = "Run Lighthouse Accessibility audit and Axe browser extension against the live application. Validate: heading hierarchy, label associations, focus order, colour contrast, and keyboard navigation.",
                 SourceSystem   = "Accessibility",
             };
@@ -410,11 +410,11 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
         yield return new FrontendQualityFinding
         {
             Id             = "a11y-wcag22-manual",
-            Title          = "WCAG 2.2 compliance requires manual and automated verification",
+            Title          = "WCAG assessment requires manual and automated verification",
             Severity       = FrontendQualitySeverity.Info,
             Category       = FrontendQualityCategory.Accessibility,
-            Description    = "Automated static analysis covers only a subset of WCAG 2.2 success criteria. Manual review is required for: keyboard accessibility, focus management, screen reader compatibility, sufficient colour contrast, and timing adjustments.",
-            Recommendation = "Integrate axe-core into your test suite for automated checks. Conduct periodic manual reviews with NVDA/JAWS and keyboard-only navigation. Target WCAG 2.2 Level AA as a minimum.",
+            Description    = "Automated static analysis covers only a subset of WCAG requirements. Manual review is required for: keyboard accessibility, focus management, screen reader compatibility, sufficient colour contrast, and timing adjustments.",
+            Recommendation = "Integrate axe-core into your test suite for automated checks. Conduct periodic manual reviews with NVDA/JAWS and keyboard-only navigation. Use the selected Browser Quality assessment profile; the default is Norwegian public-sector WCAG 2.1 requirements.",
             SourceSystem   = "Accessibility",
         };
     }

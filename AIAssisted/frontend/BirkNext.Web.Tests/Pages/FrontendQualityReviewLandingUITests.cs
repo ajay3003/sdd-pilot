@@ -541,7 +541,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         var page = Render<FrontendQualityReview>();
 
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-coverage-technical-toggle]"));
-        var toggles = page.FindAll(".fqr-disclosure-toggle");
+        var toggles = page.FindAll(".disclosure-toggle");
         toggles.Should().NotBeEmpty();
         foreach (var toggle in toggles)
         {

@@ -50,9 +50,9 @@
                                 }
                                 @if (!string.IsNullOrWhiteSpace(row.TechnicalReason))
                                 {
-                                    <FrontendQualityDisclosure Text="Technical reason" CollapseText="Hide technical reason" Class="fqr-disclosure-inline fqr-disclosure-small" TestId="@($"fqr-capability-technical-{row.EngineId}")">
+                                    <ReviewDisclosure Text="Technical reason" CollapseText="Hide technical reason" Class="disclosure-inline disclosure-small" TestId="@($"fqr-capability-technical-{row.EngineId}")">
                                         <p class="fqr-capability-technical" data-testid="fqr-capability-technical">@row.TechnicalReason</p>
-                                    </FrontendQualityDisclosure>
+                                    </ReviewDisclosure>
                                 }
                             </li>
                         }
@@ -64,9 +64,9 @@
 
     @if (EngineDetails is not null)
     {
-        <FrontendQualityDisclosure Text="Engine details" CollapseText="Hide engine details" TestId="fqr-engine-details" Class="fqr-disclosure-inline">
+        <ReviewDisclosure Text="Engine details" CollapseText="Hide engine details" TestId="fqr-engine-details" Class="disclosure-inline">
             @EngineDetails
-        </FrontendQualityDisclosure>
+        </ReviewDisclosure>
     }
 </section>
 

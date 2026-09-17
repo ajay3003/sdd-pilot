@@ -16,14 +16,14 @@
     </dl>
     @if (TechnicalFields.Count > 0)
     {
-        <FrontendQualityDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="fqr-target-technical" Class="fqr-disclosure-inline">
+        <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="fqr-target-technical" Class="disclosure-inline">
             <dl class="fqr-technical-list-grid">
                 @foreach (var field in TechnicalFields)
                 {
                     <div><dt>@field.Label</dt><dd>@field.Value</dd></div>
                 }
             </dl>
-        </FrontendQualityDisclosure>
+        </ReviewDisclosure>
     }
 </section>
 

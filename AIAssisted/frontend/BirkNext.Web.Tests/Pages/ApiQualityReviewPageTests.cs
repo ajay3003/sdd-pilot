@@ -104,7 +104,9 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         page.Find("[data-testid=aqr-run-action]").TextContent.Should().Be(ApiReviewRunEligibility.NoAuthContextAction);
         page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Local HTTPS Proxy");
         page.FindAll("[data-testid=aqr-target]").Should().HaveCount(2).And.OnlyContain(t => t.GetAttribute("data-auth") == "true");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Public HTTP only");
+        page.Find("[data-testid=aqr-access-mode]").GetAttribute("data-availability").Should().Be("NotConnected");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Not connected");
+        page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked");
     }
 
     [Fact]
@@ -114,7 +116,8 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         var review = Register(context, authenticated: true, Ep("/api/children", auth: true), Ep("/api/graphql-v2", auth: true, ObservedTrafficCategory.GraphQl, GraphQlOperationType.Query, "GetChildren"));
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Authenticated HTTP via Local HTTPS Proxy");
+        page.Find("[data-testid=aqr-access-mode]").GetAttribute("data-availability").Should().Be("Available");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
 
         await page.InvokeAsync(() => RunButton(page).Click());
 
@@ -122,9 +125,9 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         review.Verify(r => r.RunAsync(It.Is<ApiReviewRunRequest>(q => q.Environment.EnvironmentId == "dev" && q.Environment.Name == "M2LB DEV" && q.Targets.Count == 2 && q.Identity.Method == AuthenticatedTestingMethod.LocalHttpsProxy && q.Policy.ReadOnly), It.IsAny<CancellationToken>()), Times.Once);
         page.Find("[data-testid=aqr-result-env]").TextContent.Should().Be("M2LB DEV");
         page.FindAll("[data-testid=aqr-service-row]").Should().HaveCount(2);
-        page.FindAll("[data-testid=aqr-service-status]").Should().OnlyContain(e => e.TextContent == "Completed");
+        page.FindAll("[data-testid=aqr-service-status]").Should().OnlyContain(e => e.TextContent == "Assessed");
         page.FindAll("[data-testid=aqr-service-findings]").Should().OnlyContain(e => e.TextContent == "0");
-        page.Find("[data-testid=aqr-result-access]").TextContent.Should().Contain("Authenticated HTTP via Local HTTPS Proxy");
+        page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("None executed", "the stub report carries no coverage counters; the label never infers execution from the access mode");
         page.Find("[data-testid=aqr-tab-findings]").Click();
         page.Find("[data-testid=aqr-no-findings]").TextContent.Should().Contain("never as passes");
     }
@@ -138,7 +141,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Contain("1 of 2");
         await page.InvokeAsync(() => RunButton(page).Click());
         page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-service-status]").Should().HaveCount(2));
-        page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).Should().BeEquivalentTo(["Completed", "Blocked"]);
+        page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).Should().BeEquivalentTo(["Assessed", "Authentication required"]);
         page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["0", "Not tested"]);
     }
 

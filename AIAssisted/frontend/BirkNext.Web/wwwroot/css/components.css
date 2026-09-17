@@ -1284,3 +1284,37 @@
 }
 
 .artifact-clear:hover { color: var(--clr-danger, #dc2626); }
+
+
+/* ======================================================
+   REVIEW DISCLOSURE
+   Progressive-disclosure block used by the review pages (ReviewDisclosure shared component):
+   a <button aria-expanded aria-controls> plus a body hidden with the HTML `hidden` attribute.
+   Usage: <ReviewDisclosure Text="View checks">…</ReviewDisclosure>
+   ====================================================== */
+
+.disclosure-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--clr-border-input);
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--clr-text-muted);
+    font: inherit;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.disclosure-toggle:hover { background: var(--clr-surface); border-color: var(--clr-border-hover); }
+.disclosure-toggle:focus-visible { outline: 2px solid var(--clr-primary-focus); outline-offset: 2px; }
+.disclosure-chevron { font-size: 0.8rem; }
+.disclosure-hint { color: var(--clr-text-subtle); font-weight: 500; }
+.disclosure-hint::before { content: "·"; margin-right: 0.45rem; }
+.disclosure-body { margin-top: 0.75rem; }
+.disclosure-inline { margin-top: 0.85rem; }
+.disclosure-small .disclosure-toggle { padding: 0.2rem 0.5rem; font-size: 0.78rem; border-color: transparent; }
+.disclosure-small .disclosure-toggle:hover { border-color: var(--clr-border-input); }
+.disclosure-small .disclosure-body { margin-top: 0.35rem; }

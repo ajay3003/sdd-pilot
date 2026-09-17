@@ -124,9 +124,9 @@
 
             @if (_context is not null && _context.ActiveTargetError is null && (_context.FeatureToggles.EnableBrowserQualityEngine || _context.FeatureToggles.EnablePerformanceQualityEngine) && _companionRuntime is not null)
             {
-                <FrontendQualityDisclosure Text="Browser Companion session" CollapseText="Hide Browser Companion session" Hint="@CompanionHint" TestId="fqr-companion" Class="fqr-card-disclosure">
+                <ReviewDisclosure Text="Browser Companion session" CollapseText="Hide Browser Companion session" Hint="@CompanionHint" TestId="fqr-companion" Class="fqr-card-disclosure">
                     <BrowserCompanionPanel Profile="_context.ActiveProfile" Runtime="_companionRuntime" ProxyRunning="@ProxyRunningForLanding" />
-                </FrontendQualityDisclosure>
+                </ReviewDisclosure>
             }
 
             @if (landing.AuthenticatedReview is { } auth)
@@ -221,7 +221,7 @@
 
         @if (report.ActiveEngines is not null || report.TargetAccess is not null)
         {
-            <FrontendQualityDisclosure Text="Technical details: engines and target access at review start" CollapseText="Hide engines and target access details" TestId="fqr-result-technical" Class="fqr-card-disclosure">
+            <ReviewDisclosure Text="Technical details: engines and target access at review start" CollapseText="Hide engines and target access details" TestId="fqr-result-technical" Class="fqr-card-disclosure">
                 @if (report.ActiveEngines is { } engines)
                 {
                     <FrontendQualityActiveEnginesPanel Snapshot="engines" />
@@ -230,7 +230,7 @@
                 {
                     <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" />
                 }
-            </FrontendQualityDisclosure>
+            </ReviewDisclosure>
         }
 
         <FrontendQualityDecisionSupport Report="report" />
