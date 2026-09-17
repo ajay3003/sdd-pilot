@@ -275,4 +275,138 @@ public class ContractStatePresentationTests
 
         html.Should().Contain("Not captured in this report version");
     }
+
+    // ── History (Checkpoint 5) ───────────────────────────────────────────────
+
+    private static IntegrationQualityReport HistoryReport(
+        bool baselineAvailable,
+        int changeCount = 0,
+        DateTimeOffset? previousAt = null,
+        SnapshotPersistenceState persistence = SnapshotPersistenceState.Saved,
+        params IntegrationHistoricalChange[] changes) =>
+        new()
+        {
+            EnvironmentName = "Dev",
+            GeneratedAt = new DateTime(2026, 9, 17, 10, 42, 0, DateTimeKind.Utc),
+            BaselineAvailable = baselineAvailable,
+            HistoricalChangeCount = changeCount,
+            PreviousSnapshotCapturedAt = previousAt,
+            SnapshotPersistenceState = persistence,
+            HistoricalChanges = changes.ToList()
+        };
+
+    [Fact]
+    public void NoBaseline_RendersTruthfully()
+    {
+        ContractStatePresenter.History(HistoryReport(baselineAvailable: false))
+            .Should().Be("No previous baseline");
+    }
+
+    [Fact]
+    public void BaselineWithChanges_RendersTimestampAndCount()
+    {
+        var label = ContractStatePresenter.History(HistoryReport(
+            baselineAvailable: true,
+            changeCount: 3,
+            previousAt: new DateTimeOffset(2026, 9, 16, 14, 32, 0, TimeSpan.Zero)));
+
+        label.Should().Contain("16 Sep 2026 14:32");
+        label.Should().Contain("3 changes");
+    }
+
+    [Fact]
+    public void BaselineWithSingleChange_UsesSingular()
+    {
+        ContractStatePresenter.History(HistoryReport(
+                baselineAvailable: true, changeCount: 1,
+                previousAt: new DateTimeOffset(2026, 9, 16, 14, 32, 0, TimeSpan.Zero)))
+            .Should().Contain("1 change since");
+    }
+
+    [Fact]
+    public void BaselineWithNoChanges_SaysSo()
+    {
+        ContractStatePresenter.History(HistoryReport(
+                baselineAvailable: true, changeCount: 0,
+                previousAt: new DateTimeOffset(2026, 9, 16, 14, 32, 0, TimeSpan.Zero)))
+            .Should().Contain("no changes since");
+    }
+
+    [Fact]
+    public void PersistenceFailure_IsStatedNotImpliedSuccessful()
+    {
+        ContractStatePresenter.HistoryPersistenceNote(
+                HistoryReport(baselineAvailable: false, persistence: SnapshotPersistenceState.Failed))
+            .Should().Contain("could not be recorded");
+    }
+
+    [Fact]
+    public void SuccessfulPersistence_AddsNoNote()
+    {
+        ContractStatePresenter.HistoryPersistenceNote(
+                HistoryReport(baselineAvailable: true, persistence: SnapshotPersistenceState.Saved))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void HistoryStateIsReadVerbatim_NotDerivedFromChangeList()
+    {
+        // BaselineAvailable is backend state: an empty change list must not be reported as
+        // "no baseline", nor a populated one as implying a baseline.
+        ContractStatePresenter.History(HistoryReport(baselineAvailable: true, changeCount: 0,
+                previousAt: new DateTimeOffset(2026, 9, 16, 14, 32, 0, TimeSpan.Zero)))
+            .Should().NotBe("No previous baseline");
+    }
+
+    [Fact]
+    public void Export_ContainsHistorySection()
+    {
+        var html = new ReportExportService().ExportIntegrationQualityReview(
+            HistoryReport(baselineAvailable: true, changeCount: 2,
+                previousAt: new DateTimeOffset(2026, 9, 16, 14, 32, 0, TimeSpan.Zero)),
+            "test");
+
+        html.Should().Contain("History");
+        html.Should().Contain("2026-09-16 14:32");
+    }
+
+    [Fact]
+    public void Export_ContainsNoBaselineTruthfully()
+    {
+        var html = new ReportExportService().ExportIntegrationQualityReview(
+            HistoryReport(baselineAvailable: false), "test");
+
+        html.Should().Contain("No previous baseline");
+    }
+
+    [Fact]
+    public void Export_ContainsHistoricalChangeDetail()
+    {
+        var html = new ReportExportService().ExportIntegrationQualityReview(
+            HistoryReport(baselineAvailable: true, changeCount: 1,
+                previousAt: new DateTimeOffset(2026, 9, 16, 14, 32, 0, TimeSpan.Zero),
+                persistence: SnapshotPersistenceState.Saved,
+                new IntegrationHistoricalChange
+                {
+                    Type = IntegrationHistoricalChangeType.ConsumerChanged,
+                    IntegrationName = "Placement Events",
+                    OldValue = "BillingService",
+                    NewValue = "InvoicingService",
+                    Description = "Consumer changed"
+                }),
+            "test");
+
+        html.Should().Contain("Consumer changed");
+        html.Should().Contain("BillingService");
+        html.Should().Contain("InvoicingService");
+    }
+
+    [Fact]
+    public void Export_StatesPersistenceFailure()
+    {
+        var html = new ReportExportService().ExportIntegrationQualityReview(
+            HistoryReport(baselineAvailable: false, persistence: SnapshotPersistenceState.Failed), "test");
+
+        html.Should().Contain("could not be recorded");
+    }
 }

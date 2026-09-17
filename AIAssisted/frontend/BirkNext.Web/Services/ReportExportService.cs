@@ -433,6 +433,36 @@ public sealed class ReportExportService : IReportExportService
         sb.Append(Kpi(report.IsReadyForDeployment ? "Ready" : "Not Ready", "Deployment"));
         sb.Append("</div>\n");
 
+            // History. Same presenter as the UI; export never recomputes history state.
+            sb.Append("<section class=\"block\">\n<h2>History</h2>\n");
+            sb.Append($"<p>{Esc(ContractStatePresenter.History(report))}</p>\n");
+
+            var persistenceNote = ContractStatePresenter.HistoryPersistenceNote(report);
+            if (!string.IsNullOrWhiteSpace(persistenceNote))
+                sb.Append($"<p>{Esc(persistenceNote)}</p>\n");
+
+            sb.Append(Table(
+                ["Previous review", "Current review", "Baseline available", "Changes since previous"],
+                [[
+                    Esc(report.PreviousSnapshotCapturedAt?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Not recorded"),
+                    Esc(report.GeneratedAt.ToString("yyyy-MM-dd HH:mm")),
+                    report.BaselineAvailable ? "Yes" : "No",
+                    report.HistoricalChangeCount.ToString()
+                ]]));
+
+            if (report.HistoricalChanges.Count > 0)
+                sb.Append(Table(
+                    ["Integration", "Change", "Previous", "Current"],
+                    report.HistoricalChanges.Select(c => new[]
+                    {
+                        Esc(c.IntegrationName),
+                        Esc(ContractStatePresenter.HistoricalChangeLabel(c.Type)),
+                        Esc(c.OldValue ?? "Not recorded"),
+                        Esc(c.NewValue ?? "Not recorded")
+                    })));
+
+            sb.Append("</section>\n");
+
         if (report.Statuses.Count > 0)
         {
             sb.Append("<section class=\"block\">\n<h2>Configured Integrations</h2>\n");

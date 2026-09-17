@@ -236,6 +236,34 @@
                     </table>
                 </div>
 
+                @* History summary: concise by default, detail collapsed. *@
+                <div class="iqr-history" data-testid="iqr-history">
+                    <span class="iqr-history-label">History</span>
+                    <span data-testid="iqr-history-summary">@ContractStatePresenter.History(report)</span>
+                    @{
+                        var persistenceNote = ContractStatePresenter.HistoryPersistenceNote(report);
+                    }
+                    @if (!string.IsNullOrWhiteSpace(persistenceNote))
+                    {
+                        <p class="iqr-history-warning" data-testid="iqr-history-persistence">@persistenceNote</p>
+                    }
+                    @if (report.HistoricalChanges.Count > 0)
+                    {
+                        <details data-testid="iqr-history-changes">
+                            <summary>Changes since previous review (@report.HistoricalChangeCount)</summary>
+                            <ul>
+                                @foreach (var change in report.HistoricalChanges)
+                                {
+                                    <li>
+                                        <strong>@ContractStatePresenter.HistoricalChangeLabel(change.Type):</strong>
+                                        @change.Description
+                                    </li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                </div>
+
                 @* Contract detail: collapsed by default so the overview stays scannable. *@
                 <div class="iqr-contract-details" data-testid="iqr-contract-details">
                     @foreach (var status in report.Statuses.Where(s => s.Enabled).OrderBy(s => s.Name))
@@ -260,6 +288,16 @@
                                     <div><dt>Compared at</dt><dd data-testid="iqr-contract-compared-at">@comparedAt.ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
                                 }
                                 <div><dt>Drift</dt><dd data-testid="iqr-contract-drift">@GetDriftState(status)</dd></div>
+                                @if (status.HistoricalChanges.Count > 0)
+                                {
+                                    <div>
+                                        <dt>Changes since previous review</dt>
+                                        <dd data-testid="iqr-contract-historical-changes">
+                                            @string.Join("; ", status.HistoricalChanges
+                                                .Select(c => ContractStatePresenter.HistoricalChangeLabel(c.Type)))
+                                        </dd>
+                                    </div>
+                                }
                                 @if (status.PreviousBaselineTimestamp is { } baselineAt)
                                 {
                                     <div><dt>Previous baseline</dt><dd data-testid="iqr-contract-baseline-at">@baselineAt.ToString("yyyy-MM-dd HH:mm") UTC</dd></div>

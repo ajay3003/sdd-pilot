@@ -76,8 +76,43 @@ public sealed class IntegrationStatus
     [JsonPropertyName("currentContractFingerprint")]   public string?            CurrentContractFingerprint   { get; init; }
     [JsonPropertyName("previousContractFingerprint")]  public string?            PreviousContractFingerprint  { get; init; }
 
+    // History (Phase 3, Checkpoint 5). The baseline key is diagnostic only and is not surfaced
+    // as primary UI content.
+    [JsonPropertyName("baselineKey")]        public string? BaselineKey { get; init; }
+    [JsonPropertyName("historicalChanges")]  public List<IntegrationHistoricalChange> HistoricalChanges { get; init; } = [];
+
     [JsonPropertyName("score")]             public int             Score             { get; init; }
     [JsonPropertyName("missingFields")]     public List<string>    MissingFields     { get; init; } = [];
+}
+
+public enum IntegrationHistoricalChangeType
+{
+    IntegrationAdded = 0,
+    IntegrationRemoved = 1,
+    ProducerChanged = 2,
+    ConsumerChanged = 3,
+    RelationshipSourceChanged = 4,
+    AuthenticationRequiredChanged = 5,
+    AuthenticatedCapabilityChanged = 6,
+    RuntimeEvidenceStateChanged = 7
+}
+
+public enum SnapshotPersistenceState
+{
+    NotAttempted = 0,
+    Saved = 1,
+    Failed = 2,
+    SkippedIncompleteReview = 3
+}
+
+public sealed class IntegrationHistoricalChange
+{
+    [JsonPropertyName("type")]            public IntegrationHistoricalChangeType Type { get; init; }
+    [JsonPropertyName("baselineKey")]     public string  BaselineKey     { get; init; } = "";
+    [JsonPropertyName("integrationName")] public string  IntegrationName { get; init; } = "";
+    [JsonPropertyName("oldValue")]        public string? OldValue        { get; init; }
+    [JsonPropertyName("newValue")]        public string? NewValue        { get; init; }
+    [JsonPropertyName("description")]     public string  Description     { get; init; } = "";
 }
 
 // Numeric values mirror the backend contract enums exactly; enums cross the wire as numbers.
@@ -129,4 +164,13 @@ public sealed class IntegrationQualityReport
     [JsonPropertyName("recommendations")]       public List<string>             Recommendations      { get; init; } = [];
     [JsonPropertyName("limitations")]           public List<string>             Limitations          { get; init; } = [];
     [JsonPropertyName("authentication")]        public IntegrationAuthenticationSummary? Authentication { get; init; }
+
+    // Snapshot history (Phase 3, Checkpoint 5).
+    [JsonPropertyName("currentSnapshotId")]          public Guid?           CurrentSnapshotId          { get; init; }
+    [JsonPropertyName("previousSnapshotId")]         public Guid?           PreviousSnapshotId         { get; init; }
+    [JsonPropertyName("previousSnapshotCapturedAt")] public DateTimeOffset? PreviousSnapshotCapturedAt { get; init; }
+    [JsonPropertyName("baselineAvailable")]          public bool            BaselineAvailable          { get; init; }
+    [JsonPropertyName("historicalChangeCount")]      public int             HistoricalChangeCount      { get; init; }
+    [JsonPropertyName("historicalChanges")]          public List<IntegrationHistoricalChange> HistoricalChanges { get; init; } = [];
+    [JsonPropertyName("snapshotPersistenceState")]   public SnapshotPersistenceState SnapshotPersistenceState { get; init; }
 }

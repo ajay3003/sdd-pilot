@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace BirkNext.Web.Models;
 
 /// <summary>
@@ -53,5 +55,50 @@ public static class ContractStatePresenter
         ContractDifferenceSeverity.Breaking => "Breaking",
         ContractDifferenceSeverity.Warning => "Non-breaking",
         _ => "Informational"
+    };
+
+    /// <summary>
+    /// One-line history summary for the review. Reads backend state verbatim; the change count
+    /// is never derived from findings.
+    /// </summary>
+    public static string History(IntegrationQualityReport report)
+    {
+        if (!report.BaselineAvailable)
+            return "No previous baseline";
+
+        // Invariant culture: report wording must not vary with the host machine locale.
+        var when = report.PreviousSnapshotCapturedAt?.UtcDateTime
+            .ToString("d MMM yyyy HH:mm", CultureInfo.InvariantCulture) ?? "unknown date";
+
+        return report.HistoricalChangeCount == 0
+            ? $"Previous review: {when} · no changes since"
+            : $"Previous review: {when} · {report.HistoricalChangeCount} change{(report.HistoricalChangeCount == 1 ? "" : "s")} since";
+    }
+
+    /// <summary>
+    /// Whether this review could be recorded for future comparison. A failure is stated plainly
+    /// rather than implied to have succeeded.
+    /// </summary>
+    public static string? HistoryPersistenceNote(IntegrationQualityReport report) =>
+        report.SnapshotPersistenceState switch
+        {
+            SnapshotPersistenceState.Failed =>
+                "This review could not be recorded, so future reviews will not be able to compare against it.",
+            SnapshotPersistenceState.SkippedIncompleteReview =>
+                "This review was not recorded as a baseline because it assessed no integrations.",
+            _ => null
+        };
+
+    public static string HistoricalChangeLabel(IntegrationHistoricalChangeType type) => type switch
+    {
+        IntegrationHistoricalChangeType.IntegrationAdded => "Integration added",
+        IntegrationHistoricalChangeType.IntegrationRemoved => "Integration removed",
+        IntegrationHistoricalChangeType.ProducerChanged => "Producer changed",
+        IntegrationHistoricalChangeType.ConsumerChanged => "Consumer changed",
+        IntegrationHistoricalChangeType.RelationshipSourceChanged => "Relationship source changed",
+        IntegrationHistoricalChangeType.AuthenticationRequiredChanged => "Authentication requirement changed",
+        IntegrationHistoricalChangeType.AuthenticatedCapabilityChanged => "Authenticated capability changed",
+        IntegrationHistoricalChangeType.RuntimeEvidenceStateChanged => "Runtime evidence changed",
+        _ => "Changed"
     };
 }
