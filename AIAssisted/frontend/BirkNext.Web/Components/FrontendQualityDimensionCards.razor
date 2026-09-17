@@ -1,0 +1,29 @@
+@using BirkNext.Web.Models
+
+@* The six quality dimensions as readable cards: name, one-line purpose, state badge (text label, never colour only),
+   optional short limitation. No implementation vocabulary here; engine names appear only inside a limitation. *@
+<section class="fqr-section" aria-labelledby="fqr-dimensions-heading" data-testid="fqr-dimensions">
+    <h2 id="fqr-dimensions-heading">What will be analysed?</h2>
+    <ul class="fqr-dimension-grid">
+        @foreach (var card in Cards)
+        {
+            <li>
+                <article class="fqr-dimension-card fqr-dimension-@card.State.ToString().ToLowerInvariant()" data-testid="fqr-dimension" data-category="@card.Category" data-state="@card.State">
+                    <div class="fqr-dimension-head">
+                        <h3>@card.Title</h3>
+                        <span class="fqr-pill fqr-pill-@FrontendQualityDimensionStates.Tone(card.State)" data-testid="fqr-dimension-state">@FrontendQualityDimensionStates.Label(card.State)</span>
+                    </div>
+                    <p class="fqr-dimension-purpose">@card.Purpose</p>
+                    @if (!string.IsNullOrWhiteSpace(card.Limitation))
+                    {
+                        <p class="fqr-dimension-limitation" data-testid="fqr-dimension-limitation">@card.Limitation</p>
+                    }
+                </article>
+            </li>
+        }
+    </ul>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityDimensionCard> Cards { get; set; } = [];
+}

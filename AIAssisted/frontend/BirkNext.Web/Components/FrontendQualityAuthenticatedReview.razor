@@ -1,0 +1,97 @@
+@using BirkNext.LocalHttpsProxy
+@using BirkNext.Web.Models
+
+@* Workflow-oriented authenticated review panel. Rendered by the page only when the target requires authentication.
+   Actions are the existing production flows (browser sign-in for Managed Edge; Target Environment page for the proxy and
+   manual methods). Raw capability rows are behind the collapsed technical disclosure. *@
+<section class="fqr-card fqr-auth" aria-labelledby="fqr-auth-heading" aria-live="polite" data-testid="fqr-authenticated-review" data-method="@Model.Method">
+    <div class="fqr-card-head">
+        <h2 id="fqr-auth-heading">Authenticated review</h2>
+        <span class="fqr-pill fqr-pill-@(Model.Connected ? "ready" : "attention")" data-testid="fqr-auth-status">Status: @Model.StatusLabel</span>
+    </div>
+    <p class="fqr-auth-intro" data-testid="@MethodTestId">@Model.Introduction</p>
+
+    @if (!string.IsNullOrWhiteSpace(ProgressText))
+    {
+        <p class="fqr-auth-progress" data-testid="fqr-auth-progress">@ProgressText</p>
+    }
+
+    <div class="fqr-auth-grid">
+        <div>
+            <h3>To review authenticated application behaviour</h3>
+            <ol class="fqr-auth-steps" data-testid="fqr-auth-steps">
+                @foreach (var step in Model.Steps)
+                {
+                    <li>@step</li>
+                }
+            </ol>
+        </div>
+        <div>
+            <h3>Current evidence</h3>
+            <dl class="fqr-evidence-list" data-testid="fqr-auth-evidence">
+                @foreach (var row in Model.Evidence)
+                {
+                    <div class="fqr-evidence-row" data-available="@row.Available.ToString().ToLowerInvariant()">
+                        <dt>@row.Label</dt>
+                        <dd><span aria-hidden="true">@(row.Available ? "✓" : "○")</span> @row.Value</dd>
+                    </div>
+                }
+            </dl>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Note))
+    {
+        <p class="fqr-auth-note" data-testid="fqr-auth-note">@Model.Note</p>
+    }
+
+    <div class="fqr-auth-actions">
+        @if (Model.Method == AuthenticatedTestingMethod.ManagedEdgeCdp)
+        {
+            @if (!Model.Connected && !Polling)
+            {
+                <button type="button" class="btn-primary" data-testid="fqr-auth-sign-in" @onclick="SignIn">Sign in for review</button>
+            }
+            @if (ShowCancel)
+            {
+                <button type="button" class="btn-secondary" data-testid="fqr-auth-cancel" @onclick="Cancel">Cancel authentication</button>
+            }
+            <a class="btn-secondary" href="@ManageHref" data-testid="fqr-auth-manage">Manage authentication</a>
+        }
+        else if (Model.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
+        {
+            <a class="btn-primary" href="@ManageHref" data-testid="fqr-auth-open-target">Open Target Environment</a>
+        }
+        else
+        {
+            <a class="btn-secondary" href="@ManageHref" data-testid="fqr-auth-open-authentication">Open Authentication</a>
+        }
+    </div>
+
+    @if (TechnicalDetails is not null)
+    {
+        <FrontendQualityDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="fqr-auth-technical" Class="fqr-disclosure-inline">
+            @TechnicalDetails
+        </FrontendQualityDisclosure>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityAuthenticatedReviewModel Model { get; set; } = new(AuthenticatedTestingMethod.ManagedEdgeCdp, "", false, "", [], []);
+    /// <summary>Live sign-in progress text from the browser session (Managed Edge method).</summary>
+    [Parameter] public string? ProgressText { get; set; }
+    [Parameter] public bool Polling { get; set; }
+    [Parameter] public bool ShowCancel { get; set; }
+    [Parameter] public EventCallback SignIn { get; set; }
+    [Parameter] public EventCallback Cancel { get; set; }
+    [Parameter] public string ManageHref { get; set; } = "/admin/system-settings?section=target-environments";
+    [Parameter] public RenderFragment? TechnicalDetails { get; set; }
+
+    /// <summary>Stable per-method hooks used by existing tests (proxy note / manual-only note).</summary>
+    private string MethodTestId => Model.Method switch
+    {
+        AuthenticatedTestingMethod.LocalHttpsProxy => "fqr-proxy-method-note",
+        AuthenticatedTestingMethod.ManualOnly => "fqr-manual-only-note",
+        _ => "fqr-cdp-method-note",
+    };
+}

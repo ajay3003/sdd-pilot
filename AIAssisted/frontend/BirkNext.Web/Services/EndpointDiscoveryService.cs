@@ -12,6 +12,8 @@ public sealed record BackendIntegration(string Name, string Protocol, string? Re
 
 public interface IEndpointDiscoveryService
 {
+    void ConfigureTarget(FrontendAnalysisProfile profile) { }
+    WcagAssessment GetAssessment(string profileId, PageAnalysis? page = null) => BrowserQualityAssessmentService.ForPage(BrowserQualityAssessmentService.Assess(GetSnapshot(profileId)), page);
     Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings);
     Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review);
     Task LoadAsync(IJSRuntime js);
@@ -38,10 +40,17 @@ public interface IEndpointDiscoveryService
 /// </summary>
 public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
 {
+    public void ConfigureTarget(FrontendAnalysisProfile profile)
+    {
+        var snapshot = GetSnapshot(profile.Id);
+        snapshot.ApplicationOrigins = BrowserCompanionScope.ApprovedOrigins(profile).ToList();
+        EndpointDiscoveryMerge.Reclassify(snapshot);
+        BrowserQualityAssessmentService.Assess(snapshot);
+    }
     public Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => MutateWcagAsync(js, profileId, s =>
     {
         if (!Enum.IsDefined(settings.Version) || !Enum.IsDefined(settings.Level)) throw new ArgumentException("Invalid WCAG target.");
-        s.Wcag = new WcagSettings { Version = settings.Version, Level = settings.Level };
+        s.Wcag = new WcagSettings { ProfileId = settings.Profile.ProfileId };
         return true;
     });
 
@@ -55,7 +64,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
             ?? throw new ArgumentException("Page does not exist.");
         if (definition.RequiresCrossPageEvidence != (page is null)) throw new ArgumentException("Incorrect review scope.");
         // Do not silently attach an editor opened on a prior generation to a newer snapshot.
-        if (review.Generation != (page?.AnalysisGeneration ?? 0) || review.Version != s.Wcag.Version ||
+        if (review.Generation != (page?.AnalysisGeneration ?? 0) || review.Version != s.Wcag.Version || review.AssessmentProfileId != s.Wcag.ProfileId ||
             review.ScopeGeneration != (page is null ? WcagAssessmentEngine.ScopeGeneration(s) : ""))
             throw new InvalidOperationException("Analysis changed. Reopen the review against the current generation.");
         var safe = review with
@@ -84,12 +93,13 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     // A recorded approval must not appear saved when storage failed. Keep existing discovery's best-effort behavior separate.
     private async Task MutateWcagAsync(IJSRuntime js, string profileId, Func<EndpointDiscoverySnapshot, bool> mutate)
     {
-        if (!_byProfile.TryGetValue(profileId, out var snapshot)) throw new InvalidOperationException("Collect page evidence before recording a review.");
+        var snapshot = GetSnapshot(profileId);
         var oldSettings = snapshot.Wcag;
         var oldAt = snapshot.UpdatedAt;
         var oldApplication = snapshot.WcagApplicationReviews.ToList();
         var oldReviews = snapshot.Pages.ToDictionary(p => p, p => p.WcagReviews.ToList());
         mutate(snapshot);
+        BrowserQualityAssessmentService.Assess(snapshot);
         snapshot.UpdatedAt = DateTimeOffset.UtcNow;
         try { await js.InvokeVoidAsync("birkNextStorage.setDiscovery", JsonSerializer.Serialize(_byProfile, JsonOptions)); }
         catch
@@ -97,6 +107,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
             snapshot.Wcag = oldSettings; snapshot.UpdatedAt = oldAt;
             snapshot.WcagApplicationReviews = oldApplication;
             foreach (var (page, reviews) in oldReviews) page.WcagReviews = reviews;
+            BrowserQualityAssessmentService.Assess(snapshot);
             throw new InvalidOperationException("WCAG review could not be persisted. Check browser storage and retry.");
         }
     }
@@ -107,13 +118,31 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
         {
             var json = await js.InvokeAsync<string?>("birkNextStorage.getDiscovery");
             if (!string.IsNullOrWhiteSpace(json))
+            {
                 _byProfile = JsonSerializer.Deserialize<Dictionary<string, EndpointDiscoverySnapshot>>(json, JsonOptions) ?? new(StringComparer.Ordinal);
+                using var document = JsonDocument.Parse(json);
+                foreach (var (id, snapshot) in _byProfile)
+                {
+                    var raw = document.RootElement.GetProperty(id);
+                    if (raw.TryGetProperty("wcag", out var old) && !old.TryGetProperty("profileId", out _))
+                    {
+                        var version = old.TryGetProperty("version", out var v) && v.GetString() == "Wcag21" ? "21" : "22";
+                        var level = old.TryGetProperty("level", out var l) && l.GetString() == "A" ? "A" : "AA";
+                        snapshot.Wcag = new WcagSettings { ProfileId = $"legacy-{version}-{level}" };
+                    }
+                    EndpointDiscoveryMerge.Reclassify(snapshot);
+                    BrowserQualityAssessmentService.Assess(snapshot);
+                }
+            }
         }
         catch { /* corrupt or unavailable storage: start empty rather than fail the page */ }
     }
 
-    public EndpointDiscoverySnapshot GetSnapshot(string profileId) =>
-        _byProfile.TryGetValue(profileId, out var snapshot) ? snapshot : new EndpointDiscoverySnapshot();
+    public EndpointDiscoverySnapshot GetSnapshot(string profileId)
+    {
+        if (!_byProfile.TryGetValue(profileId, out var snapshot)) _byProfile[profileId] = snapshot = new();
+        return snapshot;
+    }
 
     public async Task<bool> MergeObservedAsync(IJSRuntime js, string profileId, IReadOnlyList<ObservedNetworkEndpoint> observed)
     {
@@ -121,6 +150,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
         var snapshot = _byProfile.TryGetValue(profileId, out var existing) ? existing : new EndpointDiscoverySnapshot();
         var changed = EndpointDiscoveryMerge.Merge(snapshot, observed, DateTimeOffset.UtcNow);
         if (!changed) return false;
+        BrowserQualityAssessmentService.Assess(snapshot);
         _byProfile[profileId] = snapshot;
         await PersistAsync(js);
         return true;
@@ -132,6 +162,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
         var snapshot = _byProfile.TryGetValue(profileId, out var existing) ? existing : new EndpointDiscoverySnapshot();
         var changed = EndpointDiscoveryMerge.MergeBrowserEvidence(snapshot, pages, DateTimeOffset.UtcNow);
         if (!changed) return false;
+        BrowserQualityAssessmentService.Assess(snapshot);
         _byProfile[profileId] = snapshot;
         await PersistAsync(js);
         return true;
@@ -164,6 +195,7 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     {
         if (!_byProfile.TryGetValue(profileId, out var snapshot)) return;
         if (!mutate(snapshot)) return;
+        BrowserQualityAssessmentService.Assess(snapshot);
         snapshot.UpdatedAt = DateTimeOffset.UtcNow;
         await PersistAsync(js);
     }
@@ -215,14 +247,25 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
 /// <summary>Pure merge/collapse core for endpoint discovery, kept separate from JS/storage so it is directly unit-testable.</summary>
 public static class EndpointDiscoveryMerge
 {
+    public static void Reclassify(EndpointDiscoverySnapshot snapshot)
+    {
+        foreach (var page in snapshot.Pages.Where(p => !ApplicationPagePolicy.IsApplicationOrigin(p.PageOrigin, snapshot.ApplicationOrigins)).ToList())
+        {
+            foreach (var endpoint in page.Endpoints) Upsert(snapshot.Shared, endpoint with { PageOrigin = null, PagePath = null });
+            snapshot.ExcludedPageHistory.Add(page);
+            snapshot.Pages.Remove(page);
+        }
+        snapshot.SchemaVersion = 2;
+    }
+
     public static bool Merge(EndpointDiscoverySnapshot snapshot, IReadOnlyList<ObservedNetworkEndpoint> observed, DateTimeOffset now)
     {
         var changed = false;
         foreach (var endpoint in observed)
         {
-            if (endpoint.PageOrigin is null || endpoint.PagePath is null)
+            if (endpoint.PageOrigin is null || endpoint.PagePath is null || !ApplicationPagePolicy.IsApplicationOrigin(endpoint.PageOrigin, snapshot.ApplicationOrigins))
             {
-                changed |= Upsert(snapshot.Shared, endpoint);
+                changed |= Upsert(snapshot.Shared, endpoint with { PageOrigin = null, PagePath = null });
                 continue;
             }
             var identity = $"{endpoint.PageOrigin}{endpoint.PagePath}";
@@ -277,7 +320,7 @@ public static class EndpointDiscoveryMerge
         var changed = false;
         foreach (var evidence in pages)
         {
-            if (string.IsNullOrWhiteSpace(evidence.PageOrigin) || string.IsNullOrWhiteSpace(evidence.PagePath) || evidence.VisitStartedAt == default) continue;
+            if (!ApplicationPagePolicy.IsApplicationOrigin(evidence.PageOrigin, snapshot.ApplicationOrigins) || string.IsNullOrWhiteSpace(evidence.PageOrigin) || string.IsNullOrWhiteSpace(evidence.PagePath) || evidence.VisitStartedAt == default) continue;
             var identity = evidence.Identity;
             var page = snapshot.Pages.FirstOrDefault(p => p.Identity == identity);
             if (page is null)

@@ -34,6 +34,11 @@
   function isApprovedOrigin(origin, approvedOrigins) {
     if (!origin || !Array.isArray(approvedOrigins)) return false;
     const o = origin.toLowerCase();
+    try {
+      const host = new URL(o).hostname;
+      if (['mcas.ms', 'microsoftonline.com', 'microsoftonline-p.com', 'msauth.net', 'msftauth.net', 'login.live.com', 'login.windows.net']
+        .some(d => host === d || host.endsWith('.' + d))) return false;
+    } catch { return false; }
     return approvedOrigins.some(a => typeof a === 'string' && a.toLowerCase() === o);
   }
 

@@ -2,6 +2,20 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.BrowserCompanion;
 
+/// <summary>Page ownership is exact application origin membership, never redirect permission or a resource host.</summary>
+public static class ApplicationPagePolicy
+{
+    public static bool IsInfrastructureHost(string host) => new[]
+    {
+        "access.mcas.ms", "mcas.ms", "microsoftonline.com", "microsoftonline-p.com",
+        "msauth.net", "msftauth.net", "login.live.com", "login.windows.net"
+    }.Any(domain => host.Equals(domain, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
+
+    public static bool IsApplicationOrigin(string? origin, IReadOnlyList<string>? applicationOrigins = null) =>
+        Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" &&
+        !IsInfrastructureHost(uri.Host) && (applicationOrigins is null || applicationOrigins.Contains(uri.GetLeftPart(UriPartial.Authority), StringComparer.OrdinalIgnoreCase));
+}
+
 /// <summary>
 /// Contracts shared by the BirkNext backend, the Blazor frontend and (as JSON) the BirkNext Browser Companion extension.
 /// The companion runs inside the user's normal managed Edge session (no Playwright, no CDP) and reports safe page evidence
@@ -151,6 +165,7 @@ public sealed record BrowserAccessibilityRuleResult
 
 public sealed record BrowserAccessibilitySummary
 {
+    public BrowserAxeEvidence? Axe { get; init; }
     public string Engine { get; init; } = "BirkNext Accessibility Checks";
     public int RulesEvaluated { get; init; }
     public List<BrowserAccessibilityRuleResult> Findings { get; init; } = [];
@@ -162,6 +177,23 @@ public sealed record BrowserAccessibilitySummary
     public bool MediaScopeComplete { get; init; }
     public List<int> NavigationStructure { get; init; } = [];
     public List<int> ComponentStructure { get; init; } = [];
+}
+
+/// <summary>Bounded axe rule evidence only. No HTML, text, node attributes or raw axe result is transported.</summary>
+public sealed record BrowserAxeEvidence
+{
+    public string State { get; init; } = "Unavailable";
+    public string? Version { get; init; }
+    public string? EvidenceVersion { get; init; }
+    public List<BrowserAxeRule> Rules { get; init; } = [];
+}
+
+public sealed record BrowserAxeRule
+{
+    public string RuleId { get; init; } = "";
+    public string Outcome { get; init; } = "NotTested";
+    public List<string> CriterionIds { get; init; } = [];
+    public int Count { get; init; }
 }
 
 /// <summary>Only fixed ids, enum-like outcomes, counts and structural selectors cross the boundary.</summary>

@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Microsoft.JSInterop;
 using BirkNext.BrowserCompanion;
 using BirkNext.Web.Models;
 
@@ -41,14 +42,14 @@ public static class BrowserCompanionScope
         var origins = new List<string>();
         void Add(string? url)
         {
-            if (Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http")
+            if (Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && !ApplicationPagePolicy.IsInfrastructureHost(uri.Host))
             {
                 var origin = uri.IsDefaultPort ? $"{uri.Scheme}://{uri.Host}" : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
                 if (!origins.Contains(origin, StringComparer.OrdinalIgnoreCase)) origins.Add(origin);
             }
         }
         Add(profile.TargetUrl);
-        foreach (var redirect in profile.Security.AllowedRedirectUrls) Add(redirect);
+        // Redirect permission is not application-page ownership.
         return origins;
     }
 
@@ -61,7 +62,7 @@ public static class BrowserCompanionScope
 /// polling, never persisted, never a credential. Pairing and evidence are bound to one profile id; switching the active environment
 /// re-evaluates scope because status is always read for the environment being viewed.
 /// </summary>
-public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api) : IAsyncDisposable
+public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEndpointDiscoveryService? discovery = null, IJSRuntime? js = null) : IAsyncDisposable
 {
     private string? _profileId;
     private long _generation;
@@ -83,6 +84,7 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api) : I
     public async Task FollowAsync(FrontendAnalysisProfile? profile)
     {
         if (profile is null) { Stop(); return; }
+        discovery?.ConfigureTarget(profile);
         if (_profileId == profile.Id && _poll is not null) return;
         Stop();
         // Mark the environment as followed BEFORE the first await: the Changed event raised by RefreshAsync re-renders the
@@ -132,6 +134,9 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api) : I
         try
         {
             var status = await api.StatusAsync(profileId);
+            if (generation != _generation) return;
+            if (discovery is not null && js is not null && status.ProfileId == profileId)
+                await discovery.MergeBrowserEvidenceAsync(js, profileId, status.Pages);
             if (generation != _generation) return;
             Status = status;
             _backendUnavailable = false;

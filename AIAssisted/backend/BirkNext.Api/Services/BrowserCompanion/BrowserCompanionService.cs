@@ -182,7 +182,7 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
                     {
                         Checks = passive.Checks.Where(c => c.CheckId is not ("text-spacing" or "resize-text" or "keyboard-traversal" or "focus-indicator")).ToList(),
                     } };
-                if (page.PageOrigin.Length == 0 || !session.ApprovedOrigins.Contains(page.PageOrigin, StringComparer.OrdinalIgnoreCase)
+                if (!ApplicationPagePolicy.IsApplicationOrigin(page.PageOrigin) || page.PageOrigin.Length == 0 || !session.ApprovedOrigins.Contains(page.PageOrigin, StringComparer.OrdinalIgnoreCase)
                     || !string.Equals(page.ProfileId, session.ProfileId, StringComparison.Ordinal) || page.VisitStartedAt == default)
                 {
                     rejected++;
@@ -306,7 +306,7 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
 
     private static IReadOnlyList<string> NormalizeOrigins(IReadOnlyList<string>? origins) =>
         (origins ?? []).Select(o => Uri.TryCreate(o?.Trim(), UriKind.Absolute, out var u) && u.Scheme is "https" or "http" ? OriginOf(u) : null)
-            .Where(o => o is not null).Cast<string>().Distinct(StringComparer.OrdinalIgnoreCase).Take(32).ToList();
+            .Where(o => o is not null && ApplicationPagePolicy.IsApplicationOrigin(o)).Cast<string>().Distinct(StringComparer.OrdinalIgnoreCase).Take(32).ToList();
 
     public static string OriginOf(Uri uri) => uri.IsDefaultPort ? $"{uri.Scheme}://{uri.Host}" : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
 

@@ -1,0 +1,42 @@
+@using BirkNext.Web.Models
+
+@* Whole-review readiness status. Level drives icon + tone; the text label always carries the meaning (never colour alone).
+   Blocked → role=alert; other levels → role=status. *@
+<div class="fqr-readiness fqr-readiness-@Readiness.Level.ToString().ToLowerInvariant()"
+     role="@(Readiness.Level == FrontendQualityReviewReadinessLevel.Blocked ? "alert" : "status")"
+     data-testid="fqr-readiness"
+     data-readiness="@Readiness.Level">
+    <span class="fqr-readiness-icon" aria-hidden="true">@Icon</span>
+    <div class="fqr-readiness-copy">
+        <strong class="fqr-readiness-title" data-testid="fqr-readiness-title">@Readiness.Title</strong>
+        @if (!string.IsNullOrWhiteSpace(Readiness.Message))
+        {
+            <p class="fqr-readiness-message" data-testid="fqr-readiness-message">@Readiness.Message</p>
+        }
+        @if (Readiness.Details.Count > 0)
+        {
+            <ul class="fqr-readiness-details" data-testid="fqr-readiness-details">
+                @foreach (var detail in Readiness.Details)
+                {
+                    <li>@detail</li>
+                }
+            </ul>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Readiness.ActionText) && !string.IsNullOrWhiteSpace(Readiness.ActionHref))
+    {
+        <a href="@Readiness.ActionHref" class="btn-secondary fqr-readiness-action" data-testid="fqr-readiness-action">@Readiness.ActionText</a>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityReviewReadiness Readiness { get; set; } = new(FrontendQualityReviewReadinessLevel.Loading, "", "", []);
+
+    private string Icon => Readiness.Level switch
+    {
+        FrontendQualityReviewReadinessLevel.Ready => "✓",
+        FrontendQualityReviewReadinessLevel.Limited => "⚠",
+        FrontendQualityReviewReadinessLevel.Blocked => "✕",
+        _ => "…",
+    };
+}

@@ -1,0 +1,43 @@
+@using BirkNext.Web.Models
+
+@* Compact "what am I reviewing?" card: environment, URL, authentication, target status and review status. Exact technical
+   values (environment type/id, raw auth type, engine toggles…) live in the collapsed Technical details disclosure. *@
+<section class="fqr-card fqr-target" aria-labelledby="fqr-target-heading" data-testid="fqr-target-summary">
+    <div class="fqr-card-head">
+        <h2 id="fqr-target-heading">Target</h2>
+        <a href="@ChangeHref" class="fqr-link" data-testid="fqr-change-target">Change target</a>
+    </div>
+    <dl class="fqr-target-list">
+        <div><dt>Environment</dt><dd data-testid="fqr-target-environment">@Summary.Environment @if (Summary.EnvironmentType != "—") { <span class="fqr-pill fqr-pill-muted">@Summary.EnvironmentType</span> }</dd></div>
+        <div><dt>URL</dt><dd class="fqr-target-url" data-testid="fqr-target-url">@Summary.Url</dd></div>
+        <div><dt>Authentication</dt><dd data-testid="fqr-target-authentication">@Summary.Authentication</dd></div>
+        <div><dt>Target status</dt><dd data-testid="fqr-target-status"><span class="fqr-pill fqr-pill-@(Summary.TargetReady ? "ready" : "attention")">@Summary.TargetStatus</span></dd></div>
+        <div><dt>Review status</dt><dd data-testid="fqr-target-review-status"><span class="fqr-pill fqr-pill-@ReviewTone">@Readiness.Title</span></dd></div>
+    </dl>
+    @if (TechnicalFields.Count > 0)
+    {
+        <FrontendQualityDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="fqr-target-technical" Class="fqr-disclosure-inline">
+            <dl class="fqr-technical-list-grid">
+                @foreach (var field in TechnicalFields)
+                {
+                    <div><dt>@field.Label</dt><dd>@field.Value</dd></div>
+                }
+            </dl>
+        </FrontendQualityDisclosure>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityTargetSummaryModel Summary { get; set; } = new("", "", "", "", "", false);
+    [Parameter, EditorRequired] public FrontendQualityReviewReadiness Readiness { get; set; } = new(FrontendQualityReviewReadinessLevel.Loading, "", "", []);
+    [Parameter] public IReadOnlyList<FrontendQualityTechnicalField> TechnicalFields { get; set; } = [];
+    [Parameter] public string ChangeHref { get; set; } = "/admin/system-settings?section=target-environments";
+
+    private string ReviewTone => Readiness.Level switch
+    {
+        FrontendQualityReviewReadinessLevel.Ready => "ready",
+        FrontendQualityReviewReadinessLevel.Limited => "warning",
+        FrontendQualityReviewReadinessLevel.Blocked => "attention",
+        _ => "muted",
+    };
+}

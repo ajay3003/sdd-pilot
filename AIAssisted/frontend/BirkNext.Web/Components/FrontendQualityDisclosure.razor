@@ -1,0 +1,47 @@
+@* Accessible progressive-disclosure block for the Frontend Quality Review: a real <button> carrying aria-expanded/aria-controls
+   and a body that stays in the DOM but is removed from rendering, focus order and the accessibility tree with the HTML
+   `hidden` attribute while collapsed. Collapsed by default. *@
+
+<div class="fqr-disclosure @(Expanded ? "is-open" : "is-closed") @Class" data-testid="@TestId">
+    <button type="button"
+            class="fqr-disclosure-toggle"
+            aria-expanded="@(Expanded ? "true" : "false")"
+            aria-controls="@_bodyId"
+            data-testid="@ToggleTestId"
+            @onclick="Toggle">
+        <span class="fqr-disclosure-chevron" aria-hidden="true">@(Expanded ? "▾" : "▸")</span>
+        <span class="fqr-disclosure-text">@(Expanded && !string.IsNullOrWhiteSpace(CollapseText) ? CollapseText : Text)</span>
+        @if (!string.IsNullOrWhiteSpace(Hint))
+        {
+            <span class="fqr-disclosure-hint">@Hint</span>
+        }
+    </button>
+    <div id="@_bodyId" class="fqr-disclosure-body" hidden="@(!Expanded)" data-testid="@BodyTestId">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    private readonly string _bodyId = $"fqr-disclosure-{Guid.NewGuid():N}";
+
+    /// <summary>Button text while collapsed (e.g. "View checks").</summary>
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    /// <summary>Optional button text while expanded (e.g. "Hide checks"); falls back to <see cref="Text"/>.</summary>
+    [Parameter] public string? CollapseText { get; set; }
+    /// <summary>Short status shown inside the button (e.g. "Not connected"), so state is visible without expanding.</summary>
+    [Parameter] public string? Hint { get; set; }
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? TestId { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string? ToggleTestId => TestId is null ? null : $"{TestId}-toggle";
+    private string? BodyTestId => TestId is null ? null : $"{TestId}-body";
+
+    private async Task Toggle()
+    {
+        Expanded = !Expanded;
+        await ExpandedChanged.InvokeAsync(Expanded);
+    }
+}

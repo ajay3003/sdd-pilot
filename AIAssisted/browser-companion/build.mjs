@@ -24,12 +24,12 @@ for (const h of manifest.host_permissions || []) {
 if ((manifest.optional_host_permissions || []).includes('<all_urls>')) fail('optional_host_permissions must not contain <all_urls>');
 if (!manifest.background || !manifest.background.service_worker) fail('service worker missing');
 
-const files = ['background.js', 'content.js', 'main-world.js', 'popup.js', 'lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'lib/perf.js', 'lib/navigation.js'];
+const files = ['background.js', 'content.js', 'main-world.js', 'popup.js', 'lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js'];
 for (const f of files) {
   if (!existsSync(path.join(root, f))) fail(`missing ${f}`);
   execFileSync(process.execPath, ['--check', path.join(root, f)], { stdio: 'inherit' });
 }
-for (const f of files) {
+for (const f of files.filter(f => !f.startsWith('vendor/'))) {
   const src = readFileSync(path.join(root, f), 'utf8');
   // Credential-bearing browser APIs the companion must never call (comments/regexes that merely mention the words are fine).
   for (const banned of ['document.cookie', 'localStorage.', 'sessionStorage.', 'chrome.cookies', 'chrome.webRequest', 'getAllResponseHeaders', '.headers.get(', 'msal.', 'chrome.tabs.query']) {
@@ -47,7 +47,7 @@ const dist = path.join(root, 'dist');
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 const zipName = `birknext-browser-companion-${manifest.version}.zip`;
-const include = ['manifest.json', 'icon128.png', 'popup.html', ...files];
+const include = ['manifest.json', 'icon128.png', 'popup.html', 'vendor/LICENSE.txt', 'vendor/NOTICE.txt', ...files];
 // Windows ships bsdtar which writes zip archives with -a; fall back to PowerShell Compress-Archive.
 let packaged = false;
 try {

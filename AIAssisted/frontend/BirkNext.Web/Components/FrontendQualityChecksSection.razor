@@ -1,0 +1,53 @@
+@using BirkNext.Web.Models
+
+@* "Checks included (N)" collapsed by default; expanded view groups the checks. Followed by "Not assessed by this review",
+   presented as neutral information (not failures). *@
+<section class="fqr-section fqr-checks" aria-labelledby="fqr-checks-heading" data-testid="fqr-checks">
+    <div class="fqr-section-head">
+        <h2 id="fqr-checks-heading">Checks included (@Count)</h2>
+        <p class="fqr-section-note">@Count automated or passive checks run against the frontend. Automated results never replace manual testing.</p>
+    </div>
+    <FrontendQualityDisclosure Text="View checks" CollapseText="Hide checks" TestId="fqr-checks-disclosure">
+        <div class="fqr-check-groups">
+            @foreach (var group in Groups)
+            {
+                <div class="fqr-check-group" data-testid="fqr-check-group" data-group="@group.Title">
+                    <h3>@group.Title</h3>
+                    <ul>
+                        @foreach (var check in group.Checks)
+                        {
+                            <li>@check</li>
+                        }
+                    </ul>
+                    @if (!string.IsNullOrWhiteSpace(group.Note))
+                    {
+                        <p class="fqr-check-note">@group.Note</p>
+                    }
+                </div>
+            }
+        </div>
+    </FrontendQualityDisclosure>
+
+    @if (NotAssessed.Count > 0)
+    {
+        <div class="fqr-not-assessed" data-testid="fqr-not-assessed">
+            <h3 id="fqr-not-assessed-heading">Not assessed by this review</h3>
+            <ul class="fqr-not-assessed-list" aria-labelledby="fqr-not-assessed-heading">
+                @foreach (var item in NotAssessed)
+                {
+                    <li class="fqr-not-assessed-item" data-testid="fqr-not-assessed-item">
+                        <strong>@item.Title</strong>
+                        <span>@item.Description</span>
+                    </li>
+                }
+            </ul>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityCheckGroup> Groups { get; set; } = [];
+    [Parameter] public IReadOnlyList<FrontendQualityNotAssessedItem> NotAssessed { get; set; } = [];
+
+    private int Count => Groups.Sum(g => g.Checks.Count);
+}

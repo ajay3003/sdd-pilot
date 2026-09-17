@@ -1,0 +1,32 @@
+@using BirkNext.Web.Models
+
+@* Tester-facing coverage: which surfaces of the target the review can reach right now. Exact access values (method, mode,
+   proxy/CDP state, manual verification vs automated access) stay available in the collapsed technical disclosure. *@
+<section class="fqr-card fqr-coverage" aria-labelledby="fqr-coverage-heading" data-testid="fqr-coverage">
+    <div class="fqr-card-head">
+        <h2 id="fqr-coverage-heading">Coverage</h2>
+    </div>
+    <ul class="fqr-coverage-list">
+        @foreach (var row in Rows)
+        {
+            <li class="fqr-coverage-row" data-testid="fqr-coverage-row" data-coverage="@row.Label" data-state="@row.State">
+                <span class="fqr-coverage-label">@row.Label</span>
+                <span class="fqr-pill fqr-pill-@FrontendQualityCoverageStates.Tone(row.State)" data-testid="fqr-coverage-state">
+                    <span aria-hidden="true">@FrontendQualityCoverageStates.Glyph(row.State)</span> @FrontendQualityCoverageStates.Label(row.State)
+                </span>
+                <span class="fqr-coverage-detail">@row.Detail</span>
+            </li>
+        }
+    </ul>
+    @if (TechnicalDetails is not null)
+    {
+        <FrontendQualityDisclosure Text="View technical coverage details" CollapseText="Hide technical coverage details" TestId="fqr-coverage-technical" Class="fqr-disclosure-inline">
+            @TechnicalDetails
+        </FrontendQualityDisclosure>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityCoverageRow> Rows { get; set; } = [];
+    [Parameter] public RenderFragment? TechnicalDetails { get; set; }
+}

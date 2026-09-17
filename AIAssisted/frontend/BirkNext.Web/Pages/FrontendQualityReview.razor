@@ -1,4 +1,5 @@
 @page "/frontend-quality-review"
+@using BirkNext.BrowserCompanion
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Components
@@ -15,191 +16,146 @@
 
 <PageTitle>Frontend Quality Review</PageTitle>
 
-<div class="wsr-page fqr-page">
+<div class="fqr-page">
 
     <PageHeader Title="Frontend Quality Review"
-                Description="Analyse a deployed frontend for performance, security, accessibility, standards compliance, Blazor WASM-specific checks, and QA readiness in a single unified review.">
+                Description="Review a deployed frontend for performance, security, accessibility, standards compliance, Blazor/WASM quality, and QA readiness.">
         @if (_report is not null)
         {
             <button type="button" class="btn-primary" @onclick="BackToReview">Back to Frontend Quality Review</button>
             <button type="button" class="btn-secondary" @onclick="ExportHtml">Export HTML</button>
             <button type="button" class="btn-secondary" @onclick="ExportPdf">Export PDF</button>
         }
+        else
+        {
+            <div class="fqr-header-actions">
+                <div class="fqr-header-buttons">
+                    <PrimaryButton OnClick="RunReview" Disabled="@RunDisabled" data-testid="fqr-run">@RunButtonText</PrimaryButton>
+                    <a href="@TargetEnvironmentsHref" class="btn-secondary" data-testid="fqr-open-target-environment">Open Target Environment</a>
+                </div>
+                @if (_engineStatusPending)
+                {
+                    <p class="fqr-run-reason" role="status" aria-live="polite" data-testid="fqr-engine-status-pending">@EngineStatusPendingText</p>
+                }
+                else if (RunDisabled && RunDisabledReason is { } disabledReason)
+                {
+                    <p class="fqr-run-reason" role="status" data-testid="fqr-run-disabled-reason">@disabledReason</p>
+                }
+            </div>
+        }
     </PageHeader>
 
     @if (_report is null)
     {
+        var landing = BuildLanding();
+
         @if (_runNotStartedReason is { } notStarted)
         {
             <div class="wsr-banner wsr-banner-error wsr-banner-standalone fqr-run-not-started" role="alert" data-testid="fqr-run-not-started">
                 <span aria-hidden="true">⚠</span>
                 <strong>Review not started</strong> — @notStarted
-                <a href="/admin/system-settings?section=target-environments" class="wsr-banner-action">Open Target Environments</a>
+                <a href="@TargetEnvironmentsHref" class="wsr-banner-action">Open Target Environments</a>
                 <button type="button" class="btn-secondary fqr-banner-dismiss" @onclick="() => _runNotStartedReason = null" aria-label="Dismiss">Dismiss</button>
             </div>
         }
 
-        <ReviewLanding Title="Run a production-style frontend audit"
-                       Description="Review performance, security, accessibility, standards, Blazor WASM behavior, and QA readiness for the active target environment. Assessment completeness depends on available engines and target configuration."
-                       PrimaryButtonText="@RunButtonText"
-                       PrimaryRun="RunReview"
-                       PrimaryDisabled="@RunDisabled"
-                       SecondaryActionText="Open Target Environments"
-                       SecondaryActionHref="/admin/system-settings?section=target-environments"
-                       TargetFields="BuildFrontendTargetFields()"
-                       Configuration="BuildFrontendConfiguration()"
-                       AnalysisCards="FrontendAnalysisCards"
-                       Checks="FrontendChecks"
-                       NotAssessedItems="FrontendNotAssessedItems"
-                       Metadata="BuildFrontendMetadata()"
-                       EstimatedDuration="Review duration depends on target size and enabled checks." />
+        <div class="fqr-landing" data-testid="fqr-landing">
 
-        @if (_activeEngines is { } landingEngines)
-        {
-            <FrontendQualityActiveEnginesPanel Snapshot="landingEngines" />
-            @if (_context is not null && (_context.FeatureToggles.EnableBrowserQualityEngine || _context.FeatureToggles.EnablePerformanceQualityEngine) && _companionRuntime is not null)
+            <div class="fqr-landing-top">
+                <FrontendQualityTargetSummary Summary="landing.Target"
+                                              Readiness="landing.Readiness"
+                                              TechnicalFields="landing.TechnicalFields"
+                                              ChangeHref="@TargetEnvironmentsHref" />
+                <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
+            </div>
+
+            <FrontendQualityDimensionCards Cards="landing.Dimensions" />
+
+            @if (_access is { } landingAccess)
             {
-                <BrowserCompanionPanel Profile="_context.ActiveProfile" Runtime="_companionRuntime" ProxyRunning="@ProxyRunningForLanding" />
+                <FrontendQualityCoverageSummary Rows="FrontendQualityLandingPresentation.Coverage(landingAccess, _caps)">
+                    <TechnicalDetails>
+                        <FrontendQualityTargetAccessPanel Access="landingAccess" ShowActions="true" />
+                    </TechnicalDetails>
+                </FrontendQualityCoverageSummary>
             }
-        }
 
-        @if (_access is { } landingAccess)
-        {
-            <FrontendQualityTargetAccessPanel Access="landingAccess" ShowActions="true" />
-        }
+            <FrontendQualityChecksSection Groups="FrontendQualityLandingPresentation.CheckGroups"
+                                          NotAssessed="FrontendQualityLandingPresentation.NotAssessed" />
 
-        @if (_caps is { } caps)
-        {
-            <section class="fqr-auth-capabilities" aria-label="Authenticated review capabilities" data-testid="fqr-authenticated-capabilities">
-                <h2>Authenticated coverage</h2>
-                <p class="fa-section-note">Static Security and Passive Performance fetch the public frontend shell over HTTP. Authenticated DOM and browser-runtime checks need the Managed Edge (CDP) browser context; the Local HTTPS proxy provides an authenticated API context only.</p>
-                <AuthenticatedReviewStatus Capabilities="caps" ShowBrowserSurfaces="true" />
-            </section>
-        }
-
-        @if (_context?.RequiresAuthentication == true && SelectedMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp)
-        {
-            <section class="fqr-auth-session" aria-live="polite" aria-label="Authenticated review sign-in">
-                <h2>Authentication required</h2>
-                <p>@AuthenticationStatusText</p>
-                @if (_authSession?.StatusMessage is "AwaitingUserContinuation")
-                {
-                    <p>The organization has presented a monitored-session notice. Review it in the authentication window and choose whether to continue.</p>
-                }
-                @if (_authSession?.IsAuthenticated == true)
-                {
-                    <p><strong>Authenticated</strong> — Delivery context: @DeliveryContextText</p>
-                    <ul class="fqr-auth-capabilities">
-                        <li>Browser Runtime and Accessibility: run in the authenticated browser session</li>
-                        <li>Static Security and Passive Performance: run against the public frontend shell (Public HTTP)</li>
-                        <li>Lighthouse and Passive ZAP: no authenticated mode</li>
-                    </ul>
-                }
-                else if (!_authPolling)
-                {
-                    <button type="button" class="btn-primary" @onclick="StartAuthentication">Sign in for review</button>
-                }
-                @if (_authSession is not null)
-                {
-                    <button type="button" class="btn-secondary" @onclick="CancelAuthentication">Cancel authentication</button>
-                }
-            </section>
-        }
-        else if (_context?.RequiresAuthentication == true && SelectedMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy)
-        {
-            <section class="fqr-auth-session" aria-label="Authenticated access with Local HTTPS proxy" data-testid="fqr-proxy-method-note">
-                <h2>Authentication required — Local HTTPS proxy</h2>
-                <p>The authenticated context for this environment is established on the Target Environment page (start the proxy, sign in to the target in the proxy-configured browser). It provides authenticated API access only. Static Security and Passive Performance run against the public frontend shell; Browser Runtime and Accessibility cannot assess the signed-in application with this method.</p>
-                <a class="btn-secondary" href="@FrontendQualityTargetAccess.TargetEnvironmentsHref">Open Target Environment</a>
-            </section>
-        }
-        else if (_context?.RequiresAuthentication == true && SelectedMethod == BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManualOnly)
-        {
-            <section class="fqr-auth-session" aria-label="Manual verification only" data-testid="fqr-manual-only-note">
-                <h2>Authentication required — manual verification only</h2>
-                <p>This environment supports manual verification only. Automated engines that need authenticated access are unsupported here; Static Security and Passive Performance still run against the public frontend shell.</p>
-                <a class="btn-secondary" href="@FrontendQualityTargetAccess.TargetEnvironmentsHref">Open Authentication</a>
-            </section>
-        }
-
-        @if (_engineStatusPending && _report is null)
-        {
-            <p class="wsr-scan-progress" aria-live="polite" data-testid="fqr-engine-status-pending">Checking @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")…</p>
-        }
-
-        @if (_engineStatus != null && _report is null)
-        {
-            var activeBackendIds = ActiveBackendEngineIds;
-            <section class="fqr-engine-selection" aria-label="Quality engines">
-                <h2>Review Engines</h2>
-                <p class="fa-section-note">Capability and readiness are shown for the engines that are active in the saved configuration. Disabled engines are not probed.</p>
-                @if (_readinessPending)
-                {
-                    <p class="wsr-scan-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @activeBackendIds.Count active engine@(activeBackendIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
-                }
-                <div class="fqr-engine-grid">
-                    @foreach (var engine in _engineStatus.Engines.Where(e => activeBackendIds.Contains(e.EngineId)).OrderBy(e => e.EngineId))
-                    {
-                        <div class="fqr-engine-card" data-engine-id="@engine.EngineId">
-                            <div class="fqr-engine-header">
-                                <h3>@engine.DisplayName</h3>
-                                @if (!engine.Available)
+            @if (_activeEngines is { } landingEngines)
+            {
+                <FrontendQualityCapabilityList Rows="landing.Capabilities" SelectionChanged="OnCapabilitySelectionChanged">
+                    <EngineDetails>
+                        <FrontendQualityActiveEnginesPanel Snapshot="landingEngines" />
+                        @if (_readinessPending)
+                        {
+                            <p class="fqr-muted fqr-engine-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
+                        }
+                        @if (_engineStatus != null)
+                        {
+                            var activeBackendIds = ActiveBackendEngineIds;
+                            <div class="fqr-engine-grid" data-testid="fqr-engine-grid">
+                                @foreach (var engine in _engineStatus.Engines.Where(e => activeBackendIds.Contains(e.EngineId)).OrderBy(e => e.EngineId))
                                 {
-                                    <span class="fqr-badge fqr-badge-unavailable">Unavailable</span>
-                                }
-                                else
-                                {
-                                    <span class="fqr-badge fqr-badge-available">Available</span>
+                                    <div class="fqr-engine-card" data-engine-id="@engine.EngineId">
+                                        <div class="fqr-engine-header">
+                                            <h4>@engine.DisplayName</h4>
+                                            <span class="fqr-pill fqr-pill-@(engine.Available ? "ready" : "attention")">@(engine.Available ? "Available" : "Unavailable")</span>
+                                        </div>
+                                        <dl class="fqr-engine-layers">
+                                            <div><dt>Engine ID</dt><dd>@engine.EngineId</dd></div>
+                                            <div><dt>Deployment policy</dt><dd>@(engine.Layer1Allowed ? "Allowed" : "Blocked")</dd></div>
+                                            <div><dt>System Settings</dt><dd>@(engine.Layer2Enabled ? "Enabled" : "Disabled")</dd></div>
+                                            <div><dt>Runtime</dt><dd>@(engine.Layer3Readiness is null ? "Not checked" : engine.Layer3Readiness.IsAvailable ? "Ready" : "Unavailable")</dd></div>
+                                            @if (engine.Layer3Readiness is { IsAvailable: false, StatusReason: { Length: > 0 } statusReason })
+                                            {
+                                                <div><dt>Runtime reason</dt><dd>@statusReason</dd></div>
+                                            }
+                                            <div><dt>Authenticated review</dt><dd>@(engine.AuthModeSupported ? "Supported" : "Not supported")</dd></div>
+                                        </dl>
+                                    </div>
                                 }
                             </div>
+                        }
+                    </EngineDetails>
+                </FrontendQualityCapabilityList>
+            }
 
-                            <div class="fqr-engine-status">
-                                @if (engine.Layer3Readiness != null)
-                                {
-                                    <p><strong>Runtime:</strong> @(engine.Layer3Readiness.IsAvailable ? "Ready" : "Unavailable")</p>
-                                    @if (!engine.Layer3Readiness.IsAvailable && !string.IsNullOrWhiteSpace(engine.Layer3Readiness.StatusReason))
-                                    {
-                                        <p class="fqr-reason">@engine.Layer3Readiness.StatusReason</p>
-                                    }
-                                }
+            @if (_context is not null && _context.ActiveTargetError is null && (_context.FeatureToggles.EnableBrowserQualityEngine || _context.FeatureToggles.EnablePerformanceQualityEngine) && _companionRuntime is not null)
+            {
+                <FrontendQualityDisclosure Text="Browser Companion session" CollapseText="Hide Browser Companion session" Hint="@CompanionHint" TestId="fqr-companion" Class="fqr-card-disclosure">
+                    <BrowserCompanionPanel Profile="_context.ActiveProfile" Runtime="_companionRuntime" ProxyRunning="@ProxyRunningForLanding" />
+                </FrontendQualityDisclosure>
+            }
 
-                                @if (!engine.Layer1Allowed)
-                                {
-                                    <p class="fqr-reason">⊘ Blocked by deployment policy</p>
-                                }
-                                @if (!engine.Layer2Enabled)
-                                {
-                                    <p class="fqr-reason">⊘ Disabled in System Settings</p>
-                                }
-                                @if (!engine.AuthModeSupported && _context?.RequiresAuthentication == true)
-                                {
-                                    <p class="fqr-reason">⊘ Not supported for authenticated review</p>
-                                }
-                            </div>
+            @if (landing.AuthenticatedReview is { } auth)
+            {
+                <FrontendQualityAuthenticatedReview Model="auth"
+                                                    ProgressText="@AuthProgressText"
+                                                    Polling="_authPolling"
+                                                    ShowCancel="@(_authSession is not null)"
+                                                    SignIn="StartAuthentication"
+                                                    Cancel="CancelAuthentication"
+                                                    ManageHref="@TargetEnvironmentsHref">
+                    <TechnicalDetails>
+                        @if (_caps is { } caps)
+                        {
+                            <AuthenticatedReviewStatus Capabilities="caps" ShowBrowserSurfaces="true" />
+                        }
+                        else
+                        {
+                            <p class="fqr-muted">Authenticated capability status is not available for this environment.</p>
+                        }
+                    </TechnicalDetails>
+                </FrontendQualityAuthenticatedReview>
+            }
 
-                            @if (engine.Available)
-                            {
-                                var engineId = (FrontendQualityEngineIdDto)engine.EngineId;
-                                var isSelected = GetEngineSelected(engineId);
-                                <label class="fqr-engine-select">
-                                    <input type="checkbox"
-                                           checked="@isSelected"
-                                           disabled="@(!engine.Available)"
-                                           @onchange="@((ChangeEventArgs e) => HandleEngineSelectionChange(engineId, (bool)e.Value!))"
-                                           aria-label="@($"Select {engine.DisplayName} for review")" />
-                                    <span>Include in review</span>
-                                </label>
-                            }
-                        </div>
-                    }
-                </div>
-            </section>
-        }
-
-        @if (_running)
-        {
-            <p class="wsr-scan-progress" aria-live="polite">@_progressMessage</p>
-        }
+            @if (_running)
+            {
+                <p class="fqr-run-progress" role="status" aria-live="polite">@_progressMessage</p>
+            }
+        </div>
     }
 
     @if (_secError is not null)
@@ -217,10 +173,6 @@
 
     @if (_report is not null)
     {
-        @if (_report.Wcag is { } wcag)
-        {
-            <WcagCoverage Assessment="wcag" />
-        }
         var report = _report;
         var topRisks = report.Findings
             .Where(f => f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)
@@ -231,12 +183,19 @@
         var filtered = FilteredFindings(report.Findings).ToList();
         var recommendations = BuildRecommendationCards(report).ToList();
 
+        <h2 class="fqr-results-heading" data-testid="fqr-results-heading">Review results</h2>
+
+        @if (report.Wcag is { } wcag)
+        {
+            <WcagCoverage Assessment="wcag" />
+        }
+
         @if (report.PreflightStatus == PreflightStatus.AuthenticationRequired)
         {
             <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="status">
                 <span aria-hidden="true">🔐</span>
                 <strong>Authentication required</strong> — @(report.PreflightMessage ?? "The configured target requires authentication, so the protected frontend could not be assessed.")
-                <a href="/admin/system-settings?section=target-environments" class="wsr-banner-action">Configure authentication</a>
+                <a href="@TargetEnvironmentsHref" class="wsr-banner-action">Configure authentication</a>
             </div>
         }
         else if ((report.PreflightStatus is PreflightStatus.TimedOut or PreflightStatus.Unreachable or PreflightStatus.ScannerUnavailable) && !string.IsNullOrWhiteSpace(report.PreflightMessage))
@@ -247,27 +206,31 @@
             </div>
         }
 
-        @if (report.ActiveEngines is { } reportEngines)
-        {
-            <FrontendQualityActiveEnginesPanel Snapshot="reportEngines" />
-        }
-
-        @if (report.TargetAccess is { } reportAccess)
-        {
-            <FrontendQualityTargetAccessPanel Access="reportAccess" ShowActions="false" />
-        }
         @if (report.TargetEnvironment is { } target)
         {
-            <section aria-label="Review target identity" data-testid="fqr-result-target">
-                <h2>Target Environment</h2>
-                <dl>
-                    <dt>Environment name</dt><dd>@target.Name</dd>
-                    <dt>Environment ID</dt><dd>@target.EnvironmentId</dd>
-                    <dt>Target URL</dt><dd>@target.TargetUrl</dd>
-                    <dt>Environment Type</dt><dd>@target.EnvironmentType</dd>
-                    <dt>Review started</dt><dd>@target.StartedAt.ToString("u")</dd>
+            <section class="fqr-card fqr-result-target" aria-label="Review target identity" data-testid="fqr-result-target">
+                <div class="fqr-card-head"><h3>Target</h3></div>
+                <dl class="fqr-target-list">
+                    <div><dt>Environment</dt><dd>@target.Name <span class="fqr-pill fqr-pill-muted">@target.EnvironmentType</span></dd></div>
+                    <div><dt>URL</dt><dd class="fqr-target-url">@target.TargetUrl</dd></div>
+                    <div><dt>Review started</dt><dd>@target.StartedAt.ToString("u")</dd></div>
+                    <div><dt>Environment ID</dt><dd>@target.EnvironmentId</dd></div>
                 </dl>
             </section>
+        }
+
+        @if (report.ActiveEngines is not null || report.TargetAccess is not null)
+        {
+            <FrontendQualityDisclosure Text="Technical details: engines and target access at review start" CollapseText="Hide engines and target access details" TestId="fqr-result-technical" Class="fqr-card-disclosure">
+                @if (report.ActiveEngines is { } engines)
+                {
+                    <FrontendQualityActiveEnginesPanel Snapshot="engines" />
+                }
+                @if (report.TargetAccess is { } access)
+                {
+                    <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" />
+                }
+            </FrontendQualityDisclosure>
         }
 
         <FrontendQualityDecisionSupport Report="report" />
@@ -298,7 +261,11 @@
                 }
                 else
                 {
-                    <p><strong>Accessibility engine:</strong> @accessibility.ExecutionStatus — @accessibility.EngineError</p>
+                    <p><strong>Not assessed.</strong> The automated accessibility checks did not run for this review (@accessibility.ExecutionStatus).</p>
+                    @if (!string.IsNullOrWhiteSpace(accessibility.EngineError))
+                    {
+                        <details class="fqr-inline-details"><summary>Technical reason</summary><p>@accessibility.EngineError</p></details>
+                    }
                 }
                 <p>Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required. Zero automated violations does not establish WCAG conformance.</p>
             </section>
@@ -318,7 +285,11 @@
                 }
                 else
                 {
-                    <p><strong>Lighthouse engine:</strong> @lighthouse.ExecutionStatus — @lighthouse.EngineError</p>
+                    <p><strong>Not assessed.</strong> Lighthouse did not run for this review (@lighthouse.ExecutionStatus).</p>
+                    @if (!string.IsNullOrWhiteSpace(lighthouse.EngineError))
+                    {
+                        <details class="fqr-inline-details"><summary>Technical reason</summary><p>@lighthouse.EngineError</p></details>
+                    }
                 }
                 <p><strong>Measurement:</strong> Synthetic / Lab. Field data is not included; INP requires real-user field data.</p>
             </section>
@@ -354,7 +325,11 @@
                 }
                 else
                 {
-                    <p><strong>Engine Error / Not Assessed:</strong> @passive.ExecutionStatus — @passive.EngineError</p>
+                    <p data-testid="fqr-passive-security-not-assessed"><strong>Not assessed.</strong> The passive security scanner did not run for this review (@passive.ExecutionStatus). This is an environment limitation, not an application finding.</p>
+                    @if (!string.IsNullOrWhiteSpace(passive.EngineError))
+                    {
+                        <details class="fqr-inline-details"><summary>Technical reason</summary><p>@passive.EngineError</p></details>
+                    }
                 }
                 <p>Passive automated scanning cannot prove that an application is secure and does not replace authenticated or active penetration testing.</p>
             </section>
@@ -641,6 +616,17 @@
     private sealed record CategorySummary(int Total, int Critical, int High, int Medium, int Low);
     private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
 
+    /// <summary>Landing-view projection built once per render from the authoritative state held by this page.</summary>
+    private sealed record LandingView(
+        FrontendQualityTargetSummaryModel Target,
+        FrontendQualityReviewReadiness Readiness,
+        IReadOnlyList<FrontendQualityCapabilityRow> Capabilities,
+        IReadOnlyList<FrontendQualityDimensionCard> Dimensions,
+        IReadOnlyList<FrontendQualityTechnicalField> TechnicalFields,
+        FrontendQualityAuthenticatedReviewModel? AuthenticatedReview);
+
+    private const string TargetEnvironmentsHref = FrontendQualityTargetAccess.TargetEnvironmentsHref;
+
     private FrontendQualityEngineStatusReportDto? _engineStatus;
     /// <summary>Browser Companion runtime (optional service): compact status for the Browser Quality engine on the landing view.</summary>
     private BrowserCompanionRuntime? _companionRuntime;
@@ -657,42 +643,48 @@
     private IReadOnlyList<FrontendQualityEngineIdDto> ActiveBackendEngineIds =>
         _activeEngines is null ? []
         : FrontendQualityActiveEngines.BackendEngineIds.Where(pair => _activeEngines.IsActive(pair.Key)).Select(pair => pair.Value).ToList();
+    private string EngineStatusPendingText => $"Checking {ActiveBackendEngineIds.Count} active engine{(ActiveBackendEngineIds.Count == 1 ? "" : "s")}…";
     private string RunButtonText => _running ? "Analysing..."
-        : _engineStatusPending ? $"Checking {ActiveBackendEngineIds.Count} active engine{(ActiveBackendEngineIds.Count == 1 ? "" : "s")}…"
+        : _engineStatusPending ? EngineStatusPendingText
         : "Run Frontend Quality Review";
     private bool RunDisabled => _running || _context is null || _context.ActiveTargetError is not null || !_context.HasTargetUrl
         || _activeEngines is not { HasActiveEngines: true } || _engineStatusPending;
-    private static readonly ReviewLanding.AnalysisCard[] FrontendAnalysisCards =
-    [
-        new("PF", "Performance", "Passive asset analysis: measures bundle size, HTTP timing, compression, and caching heuristics."),
-        new("SC", "Security", "Passive security scan: reviews headers, exposed configuration, and attack surface indicators."),
-        new("AX", "Accessibility", "Optional axe-core checks inspect the rendered DOM. Manual accessibility testing remains required."),
-        new("ST", "Standards Compliance", "Security header compliance and standards validation."),
-        new("BW", "Blazor WASM", "Static Blazor artifact analysis and bundle optimization indicators."),
-        new("QA", "QA Readiness", "Deployment readiness signals derived from performance metrics."),
-    ];
+    /// <summary>Human-readable reason shown next to a disabled Run button. Mirrors <see cref="RunDisabled"/>; never a technical code.</summary>
+    private string? RunDisabledReason =>
+        _running ? null
+        : _context is null ? "Loading the active Target Environment…"
+        : _context.ActiveTargetError is { } error ? $"{error} Select a Target Environment and choose Set as Active."
+        : !_context.HasTargetUrl ? "The active Target Environment has no Frontend URL. Save a valid Frontend URL before running the review."
+        : _activeEngines is not { HasActiveEngines: true } ? $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}"
+        : null;
 
-    private static readonly string[] FrontendChecks =
-    [
-        "Security Headers (Assessed)",
-        "CSP (Assessed)",
-        "CORS (Assessed)",
-        "Bundle Size (Assessed)",
-        "Compression (Assessed)",
-        "Cache Headers (Assessed)",
-        "Startup Asset Analysis (Assessed)",
-        "Service Worker Detection (Static detection)",
-        "WCAG-related automated checks (axe-core when enabled; manual testing still required)",
-        "OWASP-related frontend indicators (passive checks only — no compliance claim)",
-        "Lazy Loading (Static detection only)",
-    ];
+    private BrowserCompanionState? CompanionState =>
+        _companionRuntime is null || _context is null || _context.ActiveTargetError is not null ? null : _companionRuntime.For(_context.ActiveProfile.Id).State;
 
-    private static readonly string[] FrontendNotAssessedItems =
-    [
-        "Core Web Vitals (requires production field data / RUM)",
-        "Testability",
-        "Observability",
-    ];
+    private string? CompanionHint => CompanionState switch
+    {
+        BrowserCompanionState.Connected => "Connected",
+        BrowserCompanionState.Disconnected => "Paired · not reporting",
+        BrowserCompanionState.PairingPending => "Pairing…",
+        BrowserCompanionState.Expired => "Session expired",
+        BrowserCompanionState.NotPaired => "Not connected",
+        _ => null,
+    };
+
+    private LandingView BuildLanding()
+    {
+        var capabilities = _context is null || _context.ActiveTargetError is not null || _activeEngines is null
+            ? (IReadOnlyList<FrontendQualityCapabilityRow>)[]
+            : FrontendQualityLandingPresentation.Capabilities(_context, _activeEngines, _engineStatus, _engineStatusPending, _readinessPending, _access, CompanionState);
+        var readiness = FrontendQualityLandingPresentation.Readiness(_context, _activeEngines, capabilities, _engineStatusPending);
+        var target = _context is null
+            ? new FrontendQualityTargetSummaryModel("Loading…", "—", "—", "—", "Loading", false)
+            : FrontendQualityLandingPresentation.TargetSummary(_context);
+        var technical = _context is null ? [] : FrontendQualityLandingPresentation.TechnicalTargetFields(_context);
+        var auth = _context is null || _context.ActiveTargetError is not null ? null
+            : FrontendQualityLandingPresentation.AuthenticatedReview(_context, _access, _caps, _authSession);
+        return new LandingView(target, readiness, capabilities, FrontendQualityLandingPresentation.Dimensions(capabilities), technical, auth);
+    }
 
     private FrontendAnalysisContext? _context;
     private BirkNext.LocalHttpsProxy.AuthenticatedReviewCapabilities? _caps;
@@ -701,9 +693,6 @@
     private string? _runNotStartedReason;
     private AuthenticatedBrowserSession? _authSession;
     private bool _authPolling;
-
-    private BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod SelectedMethod =>
-        _access?.Method ?? _context?.ActiveProfile.Authentication.AuthenticatedTestingMethod ?? BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
 
     private bool    _running;
     private string  _progressMessage = "";
@@ -854,6 +843,13 @@
         _ => "Validated application session"
     };
 
+    /// <summary>Live sign-in progress for the authenticated review panel; null until a sign-in flow has been started.</summary>
+    private string? AuthProgressText => _authSession is null ? null
+        : _authSession.StatusMessage == "AwaitingUserContinuation"
+            ? $"{AuthenticationStatusText} The organization has presented a monitored-session notice. Review it in the authentication window and choose whether to continue."
+        : _authSession.IsAuthenticated ? $"Authenticated — Delivery context: {DeliveryContextText}"
+        : AuthenticationStatusText;
+
     private async Task StartAuthentication()
     {
         if (_context is null || _authPolling) return;
@@ -869,6 +865,8 @@
             if (status is AuthenticatedBrowserSessionStatus.Authenticated or AuthenticatedBrowserSessionStatus.AuthenticationExpired or AuthenticatedBrowserSessionStatus.AuthenticationCancelled or AuthenticatedBrowserSessionStatus.AuthenticationFailed or AuthenticatedBrowserSessionStatus.UnexpectedOrigin or AuthenticatedBrowserSessionStatus.Disposed)
                 _authPolling = false;
         }
+        // The access context shown on the landing reflects the new browser session state.
+        await ResolveTargetAccess();
     }
 
     private async Task CancelAuthentication()
@@ -876,6 +874,7 @@
         _authPolling = false;
         await AuthenticatedSessions.ClearSessionAsync();
         _authSession = new AuthenticatedBrowserSession { StatusMessage = "AuthenticationCancelled" };
+        await ResolveTargetAccess();
     }
 
     private async Task RunReview()
@@ -1030,110 +1029,6 @@
         StartEngineStatusFetch();
     }
 
-    private IReadOnlyList<ReviewLanding.TargetField> BuildFrontendTargetFields()
-    {
-        if (_context is null)
-        {
-            return
-            [
-                new("Environment", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("Target URL", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("Authentication", "Loading...", ReviewLanding.FieldStatus.Informational),
-                new("Auth Status", "Loading...", ReviewLanding.FieldStatus.Informational),
-            ];
-        }
-
-        if (_context.ActiveTargetError is { } error)
-            return
-            [
-                new("Target Environment", error, ReviewLanding.FieldStatus.Missing),
-                new("Active", "No", ReviewLanding.FieldStatus.Missing)
-            ];
-
-        return
-        [
-            new("Environment Type", _context.ActiveProfile.EnvironmentType.ToString(), ReviewLanding.FieldStatus.Configured),
-            new("Target Environment", _context.ActiveProfile.Name, ReviewLanding.FieldStatus.Configured),
-            new("Active", _context.ActiveTargetError is null ? "Yes" : "No", ReviewLanding.FieldStatus.Informational),
-            new("Target URL", _context.HasTargetUrl ? _context.TargetUrl : "Not configured", _context.HasTargetUrl ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Missing),
-            new("Authentication", _context.AuthenticationType.ToString(), ReviewLanding.FieldStatus.Informational),
-            new("Auth Status", _context.IsAuthenticatedSessionAvailable ? "Authenticated" : _context.RequiresAuthentication ? "Session unavailable" : "Not required",
-                _context.IsAuthenticatedSessionAvailable || !_context.RequiresAuthentication ? ReviewLanding.FieldStatus.Configured : ReviewLanding.FieldStatus.Warning),
-        ];
-    }
-
-    private IReadOnlyList<ReviewLanding.MetadataItem> BuildFrontendMetadata()
-    {
-        if (_context is null) return [];
-        return
-        [
-            new("Environment", _context.ActiveProfile.EnvironmentType.ToString()),
-            new("Authentication", _context.AuthenticationType.ToString()),
-            new("Browser Runtime", _context.FeatureToggles.EnableBrowserRuntimeEngine ? "Enabled" : "Disabled"),
-            new("Accessibility", _context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
-            new("Lighthouse", _context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),
-            new("Passive Security", _context.FeatureToggles.EnablePassiveSecurityEngine ? "Enabled (ZAP passive only)" : "Disabled"),
-            new("Browser Quality", _context.FeatureToggles.EnableBrowserQualityEngine ? "Enabled (Browser Companion, native checks)" : "Disabled"),
-            new("BirkNext Performance Quality", _context.FeatureToggles.EnablePerformanceQualityEngine ? "Enabled (Browser Companion + Local HTTPS proxy evidence, native)" : "Disabled"),
-        ];
-    }
-
-    private ReviewLanding.ConfigurationState BuildFrontendConfiguration()
-    {
-        if (_context is null)
-        {
-            return new(
-                ReviewLanding.ConfigurationStatus.Warning,
-                "Loading target environment",
-                "The active frontend analysis profile is still loading.",
-                []);
-        }
-
-        if (_context.ActiveTargetError is { } activeError)
-            return new(ReviewLanding.ConfigurationStatus.Error, activeError,
-                "Select a Target Environment and choose “Set as Active”.", [],
-                "Open Target Environments", "/admin/system-settings?section=target-environments");
-
-        if (_activeEngines is { HasActiveEngines: false })
-            return new(ReviewLanding.ConfigurationStatus.Error, FrontendQualityActiveEngines.NoActiveEnginesMessage,
-                FrontendQualityActiveEngines.NoActiveEnginesAction, ["At least one enabled Frontend Quality Review engine"],
-                "Open Target Environment", "/admin/system-settings?section=target-environments");
-
-        var missing = new List<string>();
-        if (!_context.HasTargetUrl)
-            missing.Add("Frontend target URL");
-
-        missing.AddRange(_context.ValidationErrors);
-
-        if (missing.Count > 0)
-        {
-            return new(
-                ReviewLanding.ConfigurationStatus.Error,
-                "Configuration incomplete",
-                "Resolve the missing requirements before running the review.",
-                missing,
-                "Configure Target Environment",
-                "/admin/system-settings");
-        }
-
-        if (_context.HasValidationWarnings)
-        {
-            return new(
-                ReviewLanding.ConfigurationStatus.Warning,
-                "Configuration valid with warnings",
-                $"Configuration is valid but has concerns: {string.Join(" | ", _context.ValidationWarnings)} Target reachability will be verified during scan.",
-                [],
-                "Review Settings",
-                "/admin/system-settings");
-        }
-
-        return new(
-            ReviewLanding.ConfigurationStatus.Success,
-            "Configuration valid — ready to review",
-            "Frontend target is configured. Target reachability will be verified when you start the review.",
-            []);
-    }
-
     private void SetCategoryFilter(FrontendQualityCategory cat)
     {
         _catFilter = _catFilter == cat ? null : cat;
@@ -1249,17 +1144,8 @@
     private static bool CategoryEnginesNotEnabled(FrontendQualityReviewReport report, FrontendQualityCategory category)
     {
         if (report.ActiveEngines is not { } active) return false;
-        FrontendQualityEngineId[] engines = category switch
-        {
-            FrontendQualityCategory.Security => [FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassiveSecurity],
-            FrontendQualityCategory.Standards => [FrontendQualityEngineId.StaticSecurity],
-            FrontendQualityCategory.Performance => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.Lighthouse, FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineId.PerformanceQuality],
-            FrontendQualityCategory.Readiness => [FrontendQualityEngineId.PassivePerformance],
-            FrontendQualityCategory.BlazorWasm => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality, FrontendQualityEngineId.PerformanceQuality],
-            FrontendQualityCategory.Accessibility => [FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.BrowserQuality],
-            _ => [],
-        };
-        return engines.Length > 0 && engines.All(id => !active.IsActive(id));
+        var engines = FrontendQualityCategoryEngines.For(category);
+        return engines.Count > 0 && engines.All(id => !active.IsActive(id));
     }
 
     private static string RecommendationPriority(FrontendQualitySeverity severity) => severity switch
@@ -1310,10 +1196,8 @@
         score >= 65 ? "Needs Attention" :
         score >= 50 ? "At Risk" : "Critical";
 
-    private bool GetEngineSelected(FrontendQualityEngineIdDto engineId)
-    {
-        return _context?.ReviewEngineSelection.ToSelectionMap().TryGetValue(engineId, out var selected) == true && selected;
-    }
+    private void OnCapabilitySelectionChanged((FrontendQualityEngineIdDto EngineId, bool Selected) change) =>
+        HandleEngineSelectionChange(change.EngineId, change.Selected);
 
     private void HandleEngineSelectionChange(FrontendQualityEngineIdDto engineId, bool selected)
     {

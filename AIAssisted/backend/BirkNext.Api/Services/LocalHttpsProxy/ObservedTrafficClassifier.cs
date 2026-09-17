@@ -1,4 +1,5 @@
 using System.Text.Json;
+using BirkNext.BrowserCompanion;
 using BirkNext.LocalHttpsProxy;
 
 namespace BirkNext.Api.Services.LocalHttpsProxy;
@@ -350,6 +351,7 @@ internal static class NetworkTrafficClassifier
 
     private static (ObservedTrafficCategory, ObservedEndpointConfidence) Categorize(NetworkRequestMetadata m, string path, string method, string? reqCt, string? respCt)
     {
+        if (ApplicationPagePolicy.IsInfrastructureHost(m.Host)) return (ObservedTrafficCategory.Authentication, ObservedEndpointConfidence.Verified);
         if (m.IsWebSocket) return (ObservedTrafficCategory.WebSocket, ObservedEndpointConfidence.Verified);
         if (m.GraphQlOperationType != GraphQlOperationType.None)
             return (ObservedTrafficCategory.GraphQl, IsHtml(respCt) ? ObservedEndpointConfidence.Candidate : ObservedEndpointConfidence.Verified);
@@ -366,12 +368,13 @@ internal static class NetworkTrafficClassifier
     /// <summary>A GET returning an HTML document is itself a page; every other request is correlated to the page named by its Referer.</summary>
     private static (string?, string?) CorrelatePage(NetworkRequestMetadata m, ObservedTrafficCategory category, string method, string? respCt)
     {
+        if (ApplicationPagePolicy.IsInfrastructureHost(m.Host) || m.ResponseStatus is >= 300 and < 400) return (null, null);
         if (category is ObservedTrafficCategory.OtherHttp && method == "GET" && IsHtml(respCt))
         {
             var origin = m.Port is 443 or 80 ? $"https://{m.Host}" : $"https://{m.Host}:{m.Port}";
             return (origin, NormalizePath(m.Target));
         }
-        if (Uri.TryCreate(m.Referer, UriKind.Absolute, out var referer) && referer.Scheme is "https" or "http")
+        if (Uri.TryCreate(m.Referer, UriKind.Absolute, out var referer) && referer.Scheme is "https" or "http" && !ApplicationPagePolicy.IsInfrastructureHost(referer.Host))
         {
             var origin = referer.IsDefaultPort ? $"{referer.Scheme}://{referer.Host}" : $"{referer.Scheme}://{referer.Host}:{referer.Port}";
             return (origin, NormalizePath(referer.AbsolutePath));

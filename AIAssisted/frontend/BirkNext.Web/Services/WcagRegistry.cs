@@ -73,6 +73,6 @@ public static class WcagRegistry
     });
 
     public static IEnumerable<WcagCriterionDefinition> For(WcagSettings settings) => All
-        .Where(d => d.Since <= settings.Version && d.Level <= settings.Level)
+        .Where(d => settings.Profile.CriterionIds.Contains(d.CriterionId))
         .OrderBy(d => Version.Parse(d.CriterionId));
 }

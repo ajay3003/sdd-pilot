@@ -1,0 +1,87 @@
+@using BirkNext.Web.Models
+
+@* Review capabilities: Required and Optional engines with typed state labels, a plain-language summary, an optional
+   per-review "Include" opt-out (enabled backend engines only — it never enables a disabled engine), and the exact technical
+   reason collapsed by default. Deployment-policy limitations are shown as environment facts, not application defects. *@
+<section class="fqr-section fqr-capabilities" aria-labelledby="fqr-capabilities-heading" data-testid="fqr-capabilities">
+    <div class="fqr-section-head">
+        <h2 id="fqr-capabilities-heading">Review capabilities</h2>
+        <p class="fqr-section-note">Which review capabilities take part in the next run and whether they are available right now. Availability is re-validated when the review starts.</p>
+    </div>
+
+    <div class="fqr-capability-groups">
+        @foreach (var group in Groups)
+        {
+            <div class="fqr-card fqr-capability-group" data-testid="fqr-capability-group" data-policy="@group.Policy">
+                <h3>@(group.Policy == FrontendQualityEngineRequirement.Required ? "Required" : "Optional")</h3>
+                @if (group.Rows.Count == 0)
+                {
+                    <p class="fqr-muted">None configured.</p>
+                }
+                else
+                {
+                    <ul class="fqr-capability-list">
+                        @foreach (var row in group.Rows)
+                        {
+                            <li class="fqr-capability fqr-capability-@FrontendQualityCapabilityStates.Tone(row.State)" data-testid="fqr-capability" data-engine-id="@row.EngineId" data-state="@row.State">
+                                <div class="fqr-capability-main">
+                                    <span class="fqr-capability-glyph" aria-hidden="true">@(row.IsAvailable ? "✓" : "○")</span>
+                                    <span class="fqr-capability-name">@row.DisplayName</span>
+                                    <span class="fqr-pill fqr-pill-@FrontendQualityCapabilityStates.Tone(row.State)" data-testid="fqr-capability-state">@FrontendQualityCapabilityStates.Label(row.State)</span>
+                                    @if (row.SelectableEngineId is { } selectable)
+                                    {
+                                        <label class="fqr-capability-include">
+                                            <input type="checkbox"
+                                                   checked="@row.Selected"
+                                                   aria-label="@($"Include {row.DisplayName} in this review")"
+                                                   data-testid="fqr-capability-include"
+                                                   @onchange="@((ChangeEventArgs e) => SelectionChanged.InvokeAsync((selectable, (bool)e.Value!)))" />
+                                            <span>Include</span>
+                                        </label>
+                                    }
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(row.Summary))
+                                {
+                                    <p class="fqr-capability-summary" data-testid="fqr-capability-summary">@row.Summary</p>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(row.ActionText) && !string.IsNullOrWhiteSpace(row.ActionHref))
+                                {
+                                    <a class="fqr-link" href="@row.ActionHref" data-testid="fqr-capability-action">@row.ActionText</a>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(row.TechnicalReason))
+                                {
+                                    <FrontendQualityDisclosure Text="Technical reason" CollapseText="Hide technical reason" Class="fqr-disclosure-inline fqr-disclosure-small" TestId="@($"fqr-capability-technical-{row.EngineId}")">
+                                        <p class="fqr-capability-technical" data-testid="fqr-capability-technical">@row.TechnicalReason</p>
+                                    </FrontendQualityDisclosure>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    </div>
+
+    @if (EngineDetails is not null)
+    {
+        <FrontendQualityDisclosure Text="Engine details" CollapseText="Hide engine details" TestId="fqr-engine-details" Class="fqr-disclosure-inline">
+            @EngineDetails
+        </FrontendQualityDisclosure>
+    }
+</section>
+
+@code {
+    private sealed record Group(FrontendQualityEngineRequirement Policy, IReadOnlyList<FrontendQualityCapabilityRow> Rows);
+
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityCapabilityRow> Rows { get; set; } = [];
+    /// <summary>Per-review include/exclude for an enabled backend engine.</summary>
+    [Parameter] public EventCallback<(FrontendQualityEngineIdDto EngineId, bool Selected)> SelectionChanged { get; set; }
+    /// <summary>Internal engine ids, readiness data, layer status — the only place they appear on the landing view.</summary>
+    [Parameter] public RenderFragment? EngineDetails { get; set; }
+
+    private IEnumerable<Group> Groups =>
+    [
+        new(FrontendQualityEngineRequirement.Required, Rows.Where(r => r.Policy == FrontendQualityEngineRequirement.Required).ToList()),
+        new(FrontendQualityEngineRequirement.Optional, Rows.Where(r => r.Policy == FrontendQualityEngineRequirement.Optional).ToList()),
+    ];
+}

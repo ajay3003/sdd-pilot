@@ -203,9 +203,14 @@
 
   function isApprovedVisit(v) { return v && scope && C.pageIdentity.isApprovedOrigin(v.origin, scope.approvedOrigins); }
 
+  const collectAxe = C.axeEvidence?.collector(globalThis.axe);
   async function emit(kind) {
     if (!isApprovedVisit(visit)) return;
+    const observedVisit = visit;
     const page = buildSnapshot(kind);
+    // Once per stabilized visit; repeated metric snapshots reuse this execution, never imply a new axe run.
+    if (page && collectAxe) page.accessibility.axe = await collectAxe(doc, `${observedVisit.origin}${observedVisit.path}|${observedVisit.startedAt}`);
+    if (visit !== observedVisit || !isApprovedVisit(visit)) return;
     if (page) await send({ type: 'content:evidence', page });
   }
 

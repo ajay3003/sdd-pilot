@@ -24,7 +24,7 @@ public static class WcagAssessmentEngine
                 results.Add(EvaluatePage(snapshot, page, definition));
         foreach (var definition in definitions.Where(d => d.RequiresCrossPageEvidence))
             results.Add(EvaluateCrossPage(snapshot, definition));
-        return new WcagAssessment { Version = snapshot.Wcag.Version, Level = snapshot.Wcag.Level, Results = results };
+        return new WcagAssessment { SchemaVersion = 2, Profile = snapshot.Wcag.Profile, AssessedAt = DateTimeOffset.UtcNow, PagesWithEvidence = snapshot.Pages.Count(p => p.HasBrowserEvidence), Version = snapshot.Wcag.Version, Level = snapshot.Wcag.Level, Results = results };
     }
 
     private static WcagCriterionResult EvaluatePage(EndpointDiscoverySnapshot snapshot, PageAnalysis page, WcagCriterionDefinition d)
@@ -36,6 +36,11 @@ public static class WcagAssessmentEngine
         // Older companions report only failures, so their empty list cannot prove execution or absence.
         if (checks.Count == 0)
             failures = a?.Findings.Where(f => d.SupportedChecks.Contains(f.RuleId) && DeterministicFailures.Contains(f.RuleId)).Sum(f => f.Count) ?? 0;
+        var axe = a?.Axe is { State: "Completed" } ax ? ax.Rules.Where(r => r.CriterionIds.Contains(d.CriterionId)).ToList() : [];
+        failures += axe.Where(r => r.Outcome == "Fail").Sum(r => r.Count);
+        checks.AddRange(axe.Select(r => new BrowserWcagCheck { CheckId = "axe-" + r.RuleId, Outcome = r.Outcome,
+            Tested = r.Count, Failed = r.Outcome == "Fail" ? r.Count : 0, Uncertain = r.Outcome == "ManualReviewRequired" ? r.Count : 0 }));
+        var explicitReview = checks.Any(c => c.Outcome == "ManualReviewRequired" || c.Uncertain > 0);
         var obsolete = d.CriterionId == "4.1.1" && snapshot.Wcag.Version == WcagVersion.Wcag22;
         var noMedia = a is { MediaScopeComplete: true, VideoCount: 0, AudioCount: 0 } &&
             d.CriterionId is "1.2.1" or "1.2.2" or "1.2.3" or "1.2.4" or "1.2.5";
@@ -46,7 +51,8 @@ public static class WcagAssessmentEngine
             : failures > 0 ? WcagStatus.Fail
             : a is null ? WcagStatus.NotTested
             : d.RequiresInteraction && !tested ? WcagStatus.NotTested
-            : d.RequiresManualReview ? WcagStatus.ManualReviewRequired
+            : explicitReview ? WcagStatus.ManualReviewRequired
+            : d.RequiresManualReview ? WcagStatus.NotTested
             : checks.Count == d.SupportedChecks.Count && checks.All(c => c.Outcome == "Pass" && c.Uncertain == 0)
                 ? WcagStatus.Pass : WcagStatus.NotTested;
         var result = new WcagCriterionResult
@@ -62,7 +68,7 @@ public static class WcagAssessmentEngine
                 : !tested ? "Not tested by automation. Human review is required for unobserved behavior."
                 : $"No automated failure detected in tested elements. {checks.Sum(c => c.Uncertain)} observation(s) require confirmation; semantic and unobserved behavior still require review.",
         };
-        return ApplyManual(result, page.WcagReviews, snapshot.Wcag.Version, "", obsolete);
+        return ApplyManual(result, page.WcagReviews, snapshot.Wcag, "", obsolete);
     }
 
     private static WcagCriterionResult EvaluateCrossPage(EndpointDiscoverySnapshot snapshot, WcagCriterionDefinition d)
@@ -74,20 +80,20 @@ public static class WcagAssessmentEngine
         var different = compared && structures.Select(s => string.Join(",", s)).Distinct().Count() > 1;
         return ApplyManual(new WcagCriterionResult
         {
-            Definition = d, Page = "Application", Status = compared ? WcagStatus.ManualReviewRequired : WcagStatus.NotTested,
+            Definition = d, Page = "Application", Status = different ? WcagStatus.ManualReviewRequired : WcagStatus.NotTested,
             EvidenceSource = WcagEvidenceSource.CrossPage, Confidence = compared ? WcagConfidence.Low : null,
             LastTested = compared ? pages.Max(p => p.BrowserEvidence!.CapturedAt) : null,
             AutomatedEvidence = !compared ? "At least two fresh page analyses are required."
                 : $"Compared structural counts across {pages.Count} pages. {(different ? "Differences require review." : "No structural difference detected.")} Names, order, equivalent functions and complete navigation paths require human review.",
-        }, snapshot.WcagApplicationReviews, snapshot.Wcag.Version, ScopeGeneration(snapshot));
+        }, snapshot.WcagApplicationReviews, snapshot.Wcag, ScopeGeneration(snapshot));
     }
 
     private static WcagCriterionResult ApplyManual(WcagCriterionResult result, IEnumerable<WcagManualReview> reviews,
-        WcagVersion version, string scope, bool obsolete = false)
+        WcagSettings settings, string scope, bool obsolete = false)
     {
         var review = reviews.Where(r => r.CriterionId == result.Definition.CriterionId).OrderByDescending(r => r.ReviewedAt).FirstOrDefault();
         if (review is null) return result;
-        var stale = review.Generation != result.Generation || review.Version != version || review.ScopeGeneration != scope;
+        var stale = review.Generation != result.Generation || review.Version != settings.Version || (review.AssessmentProfileId is null ? !settings.ProfileId.StartsWith("legacy-") : review.AssessmentProfileId != settings.ProfileId) || review.ScopeGeneration != scope;
         // A human approval cannot hide a current deterministic failure. Obsolete criteria stay N/A.
         return result with
         {

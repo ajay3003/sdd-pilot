@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using BirkNext.BrowserCompanion;
+using BirkNext.Web.Services;
 
 namespace BirkNext.Web.Models;
 
@@ -23,13 +24,16 @@ public sealed record WcagCriterionDefinition(string CriterionId, WcagLevel Level
 
 public sealed class WcagSettings
 {
-    public WcagVersion Version { get; set; } = WcagVersion.Wcag22;
-    // AA includes A. AAA is deliberately not part of this configuration.
-    public WcagLevel Level { get; set; } = WcagLevel.AA;
+    public string ProfileId { get; set; } = WcagProfiles.NorwegianId;
+    [JsonIgnore] public WcagAssessmentProfile Profile => WcagProfiles.Resolve(ProfileId);
+    // Compatibility for old callers only. The UI and persisted settings use ProfileId exclusively.
+    [JsonIgnore] public WcagVersion Version { get => Profile.WcagVersion; set => ProfileId = $"legacy-{(value == WcagVersion.Wcag21 ? "21" : "22")}-{Level}"; }
+    [JsonIgnore] public WcagLevel Level { get => ProfileId.EndsWith("-A") ? WcagLevel.A : WcagLevel.AA; set => ProfileId = $"legacy-{(Version == WcagVersion.Wcag21 ? "21" : "22")}-{value}"; }
 }
 
 public sealed record WcagManualReview
 {
+    public string? AssessmentProfileId { get; init; }
     public string CriterionId { get; init; } = "";
     public WcagVersion Version { get; init; }
     public int Generation { get; init; }
@@ -60,9 +64,13 @@ public sealed record WcagCriterionResult
 
 public sealed record WcagAssessment
 {
+    public int SchemaVersion { get; init; }
+    public WcagAssessmentProfile? Profile { get; init; }
+    public DateTimeOffset? AssessedAt { get; init; }
+    public int PagesWithEvidence { get; init; }
     public WcagVersion Version { get; init; } = WcagVersion.Wcag22;
     public WcagLevel Level { get; init; } = WcagLevel.AA;
     public List<WcagCriterionResult> Results { get; init; } = [];
-    public string TargetLabel => $"WCAG {(Version == WcagVersion.Wcag21 ? "2.1" : "2.2")} {(Level == WcagLevel.AA ? "A + AA" : "A")}";
-    public const string Disclaimer = "WCAG automated assessment. No automated failure detected does not establish WCAG conformance. Human review and complete processes remain necessary.";
+    public string TargetLabel => Profile?.Label ?? $"Legacy WCAG assessment — Profile unknown (recorded WCAG {(Version == WcagVersion.Wcag21 ? "2.1" : "2.2")} { (Level == WcagLevel.AA ? "A + AA" : "A")})";
+    public const string Disclaimer = "No automated failure detected does not establish WCAG conformance. Human review and complete processes remain necessary.";
 }
