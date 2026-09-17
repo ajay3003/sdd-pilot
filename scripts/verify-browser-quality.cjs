@@ -44,7 +44,11 @@ fs.mkdirSync(out, { recursive: true });
       await page.goto(base + '/admin/system-settings?section=target-environments');
       // The route may mount before the query-selected settings section is applied.
       await page.getByRole('button', { name: 'Target Environments', exact: true }).click();
-      await page.getByRole('button', { name: 'Endpoint Discovery', exact: true }).click();
+      await page.getByRole('button', { name: 'Endpoint Discovery', exact: true }).click().catch(async error => {
+        fs.writeFileSync(path.join(out, 'navigation-debug.txt'), await page.locator('body').innerText());
+        await page.screenshot({ path: path.join(out, 'navigation-debug.png'), fullPage: true });
+        throw error;
+      });
       await page.locator('[data-testid=browser-quality-open]').click();
       const workspace = page.locator('.bq-workspace');
       await workspace.waitFor();
