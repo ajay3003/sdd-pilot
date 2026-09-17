@@ -24,6 +24,8 @@ public sealed class BrowserQualityEvidenceSource(BrowserCompanionRuntime compani
     public async Task<BrowserQualityReviewResult> CollectAsync(FrontendAnalysisContext context, CancellationToken cancellationToken = default)
     {
         var profileId = context.ActiveProfile.Id;
+        await discovery.LoadAsync(js);
+        discovery.ConfigureTarget(context.ActiveProfile);
         await companion.FollowAsync(context.ActiveProfile);
         await companion.RefreshAsync();
         var status = companion.For(profileId);

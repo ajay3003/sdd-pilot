@@ -4,6 +4,7 @@ using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Models;
 using BirkNext.Web.Services;
 using Microsoft.JSInterop;
+using Moq;
 
 namespace BirkNext.Web.Tests.Services;
 
@@ -108,6 +109,7 @@ public sealed class WcagArchitectureTests
         Assert.Single(reloaded.GetSnapshot("dev").Pages);
         Assert.Equal(WcagProfiles.NorwegianId, reloaded.GetSnapshot("dev").Quality.Assessment!.Profile!.ProfileId);
         js.Json = "{\"dev\":{\"wcag\":{\"version\":\"Wcag22\",\"level\":\"AA\"},\"pages\":[]}}";
+        reloaded = new EndpointDiscoveryService();
         await reloaded.LoadAsync(js);
         Assert.Equal("legacy-22-AA", reloaded.GetSnapshot("dev").Wcag.ProfileId);
         Assert.Contains("Legacy", reloaded.GetSnapshot("dev").Quality.Assessment!.TargetLabel);
@@ -143,6 +145,46 @@ public sealed class WcagArchitectureTests
         await service.SaveWcagSettingsAsync(js, "dev", new() { ProfileId = WcagProfiles.ExtendedId });
         var restored = new EndpointDiscoveryService(); await restored.LoadAsync(js);
         Assert.Equal(WcagProfiles.ExtendedId, restored.GetSnapshot("dev").Wcag.ProfileId);
+    }
+
+    [Fact]
+    public async Task RuntimePollingIngestsAutomaticallyBeforeAnyDiscoveryComponentRenders()
+    {
+        var api = new Moq.Mock<IBrowserCompanionApiService>();
+        var evidence = Evidence(outcome: "Fail");
+        api.Setup(a => a.StatusAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(new BrowserCompanionStatus
+        { ProfileId = "dev", State = BrowserCompanionState.Connected, Pages = [evidence] });
+        var service = new EndpointDiscoveryService(); var js = new Store();
+        await using var runtime = new BrowserCompanionRuntime(api.Object, service, js);
+        await runtime.FollowAsync(new FrontendAnalysisProfile { Id = "dev", TargetUrl = Origin });
+        var a = service.GetSnapshot("dev").Quality.Assessment!;
+        Assert.Equal(WcagStatus.Fail, a.Results.Single(r => r.Definition.CriterionId == "1.1.1").Status);
+        api.Setup(a => a.StatusAsync("dev", It.IsAny<CancellationToken>())).ReturnsAsync(new BrowserCompanionStatus { ProfileId = "dev" });
+        await runtime.RefreshAsync();
+        Assert.False(runtime.Status.Connected); Assert.Single(service.GetSnapshot("dev").Pages);
+        Assert.Same(a, service.GetSnapshot("dev").Quality.Assessment);
+        Assert.NotNull(js.Json);
+    }
+
+    [Theory]
+    [InlineData(WcagProfiles.NorwegianId)]
+    [InlineData(WcagProfiles.ExtendedId)]
+    public void ExportNamesActualProfileAndSeparatesManualAndAutomaticEvidence(string id)
+    {
+        var a = WcagAssessmentEngine.Evaluate(new() { Wcag = new() { ProfileId = id }, Pages = [new() { BrowserEvidence = Evidence() }] });
+        var html = new ReportExportService().ExportFrontendQualityReview(new() { Wcag = a }, "fixture");
+        Assert.Contains(id, html); Assert.Contains(a.Profile!.DisplayName, html);
+        Assert.Contains("Assessment timestamp", html); Assert.Contains("Pages with evidence", html);
+        Assert.Contains("manual decisions", html); Assert.Contains("does not establish WCAG conformance", html);
+        Assert.DoesNotContain("WCAG compliant", html); Assert.DoesNotContain("Accessibility passed", html); Assert.DoesNotContain("Fully accessible", html);
+    }
+
+    [Fact]
+    public void LegacyReportExportCannotAcquireCurrentLegalProfileIdentity()
+    {
+        var html = new ReportExportService().ExportFrontendQualityReview(new() { Wcag = new() { Version = WcagVersion.Wcag22 } }, "fixture");
+        Assert.Contains("Profile unknown", html); Assert.Contains("WCAG 2.2", html);
+        Assert.DoesNotContain("Norwegian legal requirements", html);
     }
 
     internal sealed class Store : IJSRuntime

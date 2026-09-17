@@ -8,6 +8,38 @@ namespace BirkNext.Web.Services;
 /// <summary>Owns materialization and evidence revisions. Rendering never executes accessibility rules.</summary>
 public static class BrowserQualityAssessmentService
 {
+    public static void SelectProfile(EndpointDiscoverySnapshot snapshot, WcagSettings settings)
+    {
+        snapshot.Wcag = new WcagSettings { ProfileId = WcagProfiles.Resolve(settings.ProfileId).ProfileId };
+    }
+
+    public static void RecordReview(EndpointDiscoverySnapshot snapshot, string? pageIdentity, WcagManualReview review)
+    {
+        var definition = WcagRegistry.For(snapshot.Wcag).SingleOrDefault(d => d.CriterionId == review.CriterionId)
+            ?? throw new ArgumentException("Unknown criterion for this target.");
+        if (review.Result is not (WcagStatus.Pass or WcagStatus.Fail or WcagStatus.NotApplicable))
+            throw new ArgumentException("A manual decision must be Pass, Fail or NotApplicable.");
+        var page = pageIdentity is null ? null : snapshot.Pages.SingleOrDefault(p => p.Identity == pageIdentity)
+            ?? throw new ArgumentException("Page does not exist.");
+        if (definition.RequiresCrossPageEvidence != (page is null)) throw new ArgumentException("Incorrect review scope.");
+        // Do not silently attach an editor opened on a prior generation to a newer snapshot.
+        if (review.Generation != (page?.AnalysisGeneration ?? 0) || review.Version != snapshot.Wcag.Version || review.AssessmentProfileId != snapshot.Wcag.ProfileId ||
+            review.ScopeGeneration != (page is null ? WcagAssessmentEngine.ScopeGeneration(snapshot) : ""))
+            throw new InvalidOperationException("Analysis changed. Reopen the review against the current generation.");
+        var safe = review with
+        {
+            Comment = WcagReviewText.Validate(review.Comment, 1000),
+            EvidenceNote = WcagReviewText.Validate(review.EvidenceNote, 1000),
+            ReviewedBy = WcagReviewText.Validate(review.ReviewedBy, 100),
+            ReviewedAt = DateTimeOffset.UtcNow,
+        };
+        if (string.IsNullOrWhiteSpace(safe.ReviewedBy) || string.IsNullOrWhiteSpace(safe.EvidenceNote))
+            throw new ArgumentException("Reviewer and evidence note are required.");
+        var reviews = page?.WcagReviews ?? snapshot.WcagApplicationReviews;
+        if (reviews.Count >= 1000) throw new InvalidOperationException("Manual review history limit reached.");
+        reviews.Add(safe);
+    }
+
     public static WcagAssessment Assess(EndpointDiscoverySnapshot snapshot)
     {
         var revision = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new

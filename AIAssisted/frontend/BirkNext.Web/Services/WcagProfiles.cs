@@ -5,8 +5,8 @@ namespace BirkNext.Web.Services;
 public sealed record WcagAssessmentProfile(string ProfileId, string DisplayName, string LegalJurisdiction,
     string Sector, WcagVersion WcagVersion, IReadOnlyList<string> CriterionIds, bool IsLegalBaseline, string Description)
 {
-    public string VersionLabel => WcagVersion == WcagVersion.Wcag21 ? "2.1" : "2.2";
-    public string Label => $"{DisplayName} — WCAG {VersionLabel}";
+    public string VersionLabel => ProfileId == "legacy-unknown" ? "Unknown" : WcagVersion == WcagVersion.Wcag21 ? "2.1" : "2.2";
+    public string Label => ProfileId == "legacy-unknown" ? "Legacy WCAG assessment — Profile unknown" : $"{DisplayName} — WCAG {VersionLabel}";
 }
 
 /// <summary>Membership only; all criterion metadata remains in WcagRegistry.</summary>
@@ -28,6 +28,7 @@ public static class WcagProfiles
     {
         var known = Available.SingleOrDefault(p => p.ProfileId == id);
         if (known is not null) return known;
+        if (id == "legacy-unknown") return new(id, "Legacy WCAG assessment", "Unknown", "Unknown", WcagVersion.Wcag21, [], false, "Original profile and version are unknown. Select a profile to make a new assessment.");
         if (id is "legacy-21-A" or "legacy-21-AA" or "legacy-22-A" or "legacy-22-AA")
         {
             var version = id.Contains("21") ? WcagVersion.Wcag21 : WcagVersion.Wcag22;

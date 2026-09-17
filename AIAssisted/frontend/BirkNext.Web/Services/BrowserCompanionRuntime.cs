@@ -84,6 +84,7 @@ public sealed class BrowserCompanionRuntime(IBrowserCompanionApiService api, IEn
     public async Task FollowAsync(FrontendAnalysisProfile? profile)
     {
         if (profile is null) { Stop(); return; }
+        if (discovery is not null && js is not null) await discovery.LoadAsync(js);
         discovery?.ConfigureTarget(profile);
         if (_profileId == profile.Id && _poll is not null) return;
         Stop();

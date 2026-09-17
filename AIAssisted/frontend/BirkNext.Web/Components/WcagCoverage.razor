@@ -12,6 +12,7 @@
         <div><strong>@Count(WcagStatus.NotTested)</strong><span>Not yet assessed</span></div>
         <div><strong>@Rows.Count(r => r.EvidenceCount > 0)</strong><span>Evidence available</span></div>
     </div>
+    <p class="wcag-note">Automatic checks: @Rows.Count(r => r.Instances.Any(i => i.Checks.Any(c => c.Outcome != "NotTested"))) criteria with execution evidence / @Rows.Count(r => r.Definition.AutomationLevel != WcagAutomation.Manual) available. Explicit manual review: @Assessment.Results.Count(r => r.Status == WcagStatus.ManualReviewRequired) assessment instances.</p>
     <p class="wcag-note">Require manual review counts explicit review-required results. Manual-only criteria are separate. Positive automatic evidence covers tested elements only.</p>
     @if (Assessment.PagesWithEvidence == 0 && !Assessment.Results.Any(r => r.LastTested is not null || r.ManualReview is not null))
     {

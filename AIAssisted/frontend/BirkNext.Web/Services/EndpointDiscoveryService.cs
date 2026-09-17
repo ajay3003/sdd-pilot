@@ -49,36 +49,13 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     }
     public Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings) => MutateWcagAsync(js, profileId, s =>
     {
-        if (!Enum.IsDefined(settings.Version) || !Enum.IsDefined(settings.Level)) throw new ArgumentException("Invalid WCAG target.");
-        s.Wcag = new WcagSettings { ProfileId = settings.Profile.ProfileId };
+        BrowserQualityAssessmentService.SelectProfile(s, settings);
         return true;
     });
 
     public Task RecordWcagReviewAsync(IJSRuntime js, string profileId, string? pageIdentity, WcagManualReview review) => MutateWcagAsync(js, profileId, s =>
     {
-        var definition = WcagRegistry.For(s.Wcag).SingleOrDefault(d => d.CriterionId == review.CriterionId)
-            ?? throw new ArgumentException("Unknown criterion for this target.");
-        if (review.Result is not (WcagStatus.Pass or WcagStatus.Fail or WcagStatus.NotApplicable))
-            throw new ArgumentException("A manual decision must be Pass, Fail or NotApplicable.");
-        var page = pageIdentity is null ? null : s.Pages.SingleOrDefault(p => p.Identity == pageIdentity)
-            ?? throw new ArgumentException("Page does not exist.");
-        if (definition.RequiresCrossPageEvidence != (page is null)) throw new ArgumentException("Incorrect review scope.");
-        // Do not silently attach an editor opened on a prior generation to a newer snapshot.
-        if (review.Generation != (page?.AnalysisGeneration ?? 0) || review.Version != s.Wcag.Version || review.AssessmentProfileId != s.Wcag.ProfileId ||
-            review.ScopeGeneration != (page is null ? WcagAssessmentEngine.ScopeGeneration(s) : ""))
-            throw new InvalidOperationException("Analysis changed. Reopen the review against the current generation.");
-        var safe = review with
-        {
-            Comment = WcagReviewText.Validate(review.Comment, 1000),
-            EvidenceNote = WcagReviewText.Validate(review.EvidenceNote, 1000),
-            ReviewedBy = WcagReviewText.Validate(review.ReviewedBy, 100),
-            ReviewedAt = DateTimeOffset.UtcNow,
-        };
-        if (string.IsNullOrWhiteSpace(safe.ReviewedBy) || string.IsNullOrWhiteSpace(safe.EvidenceNote))
-            throw new ArgumentException("Reviewer and evidence note are required.");
-        var reviews = page?.WcagReviews ?? s.WcagApplicationReviews;
-        if (reviews.Count >= 1000) throw new InvalidOperationException("Manual review history limit reached.");
-        reviews.Add(safe);
+        BrowserQualityAssessmentService.RecordReview(s, pageIdentity, review);
         return true;
     });
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -112,7 +89,9 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
         }
     }
 
-    public async Task LoadAsync(IJSRuntime js)
+    private Task? _loadTask;
+    public Task LoadAsync(IJSRuntime js) => _loadTask ??= LoadCoreAsync(js);
+    private async Task LoadCoreAsync(IJSRuntime js)
     {
         try
         {
@@ -126,9 +105,10 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
                     var raw = document.RootElement.GetProperty(id);
                     if (raw.TryGetProperty("wcag", out var old) && !old.TryGetProperty("profileId", out _))
                     {
-                        var version = old.TryGetProperty("version", out var v) && v.GetString() == "Wcag21" ? "21" : "22";
-                        var level = old.TryGetProperty("level", out var l) && l.GetString() == "A" ? "A" : "AA";
-                        snapshot.Wcag = new WcagSettings { ProfileId = $"legacy-{version}-{level}" };
+                        var version = old.TryGetProperty("version", out var v) ? v.GetString() : null;
+                        var level = old.TryGetProperty("level", out var l) ? l.GetString() : null;
+                        snapshot.Wcag = new WcagSettings { ProfileId = version is "Wcag21" or "Wcag22" && level is "A" or "AA"
+                            ? $"legacy-{(version == "Wcag21" ? "21" : "22")}-{level}" : "legacy-unknown" };
                     }
                     EndpointDiscoveryMerge.Reclassify(snapshot);
                     BrowserQualityAssessmentService.Assess(snapshot);
