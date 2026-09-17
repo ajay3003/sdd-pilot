@@ -135,6 +135,11 @@ public static class KnownIntegrationTemplates
         // Leselogg is written to by several services. IntegrationConfigDto models one
         // LogicalProducerService, so a composite string would misrepresent a single service
         // identity; the producer stays unknown and the relationship is described in a note.
+        // BirkNext's own SampleData/hendelsestjenesten names this queue "revisjon.leselogg".
+        // The audited M2LB source used for this catalogue identifies it as "leselogg", and sample
+        // data is not authoritative deployment evidence, so the audited value stands. The two are
+        // deliberately not reconciled automatically: the resource name is part of structural
+        // identity, so changing it would move the baseline key and detach existing history.
         templates.Add(ServiceBus(
             id: "qa-sb-leselogg",
             displayName: "Leselogg",
