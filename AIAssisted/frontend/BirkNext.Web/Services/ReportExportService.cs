@@ -500,6 +500,33 @@ public sealed class ReportExportService : IReportExportService
                 })));
             sb.Append("</section>\n");
 
+            // Performance. Same presenter as the UI; nothing is recomputed here.
+            sb.Append("<section class=\"block\">\n<h2>Performance</h2>\n");
+            sb.Append(Table(
+                ["Integration", "Evidence", "p50", "p95", "p99", "Errors", "Throughput", "Observation window"],
+                report.Statuses.Select(s => new[]
+                {
+                    Esc(s.Name),
+                    Esc(ContractStatePresenter.Performance(s)),
+                    Esc(ContractStatePresenter.Metric(s.Performance?.P50DurationMs, "ms")),
+                    Esc(ContractStatePresenter.Metric(s.Performance?.P95DurationMs, "ms")),
+                    Esc(ContractStatePresenter.Metric(s.Performance?.P99DurationMs, "ms")),
+                    Esc(ContractStatePresenter.ErrorRate(s)),
+                    Esc(ContractStatePresenter.Metric(s.Performance?.RequestsPerSecond, "req/s")),
+                    Esc(ContractStatePresenter.ObservationWindow(s))
+                })));
+
+            var performanceChanges = report.Statuses.Where(s => s.PerformanceChanges.Count > 0).ToList();
+            if (performanceChanges.Count > 0)
+                sb.Append(Table(
+                    ["Integration", "Change since previous review"],
+                    performanceChanges.SelectMany(s => s.PerformanceChanges.Select(c => new[]
+                    {
+                        Esc(s.Name), Esc(ContractStatePresenter.PerformanceChangeLabel(c))
+                    }))));
+
+            sb.Append("</section>\n");
+
             var withDifferences = report.Statuses
                 .Where(s => s.CompatibilityDifferences.Count > 0 || s.DriftDifferences.Count > 0)
                 .ToList();

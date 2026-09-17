@@ -19,6 +19,8 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
     private readonly IContractComparer _contractComparer;
     private readonly IIntegrationQualitySnapshotRepository? _snapshotRepository;
     private readonly IntegrationHistoryComparer _historyComparer = new();
+    private readonly RuntimeEvidencePopulationService _runtimeEvidence = new();
+    private readonly IntegrationPerformanceAnalyzer _performanceAnalyzer = new();
 
     private static readonly HashSet<IntegrationType> AsyncTypes =
     [
@@ -232,10 +234,21 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
             var identity = IntegrationBaselineIdentity.Describe(environmentId, intg);
             status.BaselineKey = identity.Key;
 
+            // Runtime evidence comes only from observed traffic. Health and worker probe results
+            // stay on HealthReachable/WorkerReachable and never feed latency or throughput.
+            var observedEvidence = _runtimeEvidence.MapObservations(intg, request.RuntimeObservations);
+            status.RuntimeEvidenceSummary = _runtimeEvidence.BuildEvidenceSummary(intg.Id, observedEvidence);
+            status.Performance = _performanceAnalyzer.Analyze(observedEvidence);
+
             var currentContract = await ApplyContractAnalysisAsync(
                 intg, status, intgFindings, identity.Key, baselineProvider, ct);
 
-            snapshotEntries.Add(BuildSnapshotEntry(intg, status, identity, currentContract, null));
+            var snapshotEntry = BuildSnapshotEntry(intg, status, identity, currentContract, null);
+            snapshotEntries.Add(snapshotEntry);
+
+            status.PerformanceChanges = _performanceAnalyzer
+                .Compare(status.Performance, baselineProvider.FindEntry(identity.Key)?.Performance)
+                .ToList();
 
             statuses.Add(status);
 
@@ -494,10 +507,10 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
 
             AuthenticationRequired = integration.AuthType != IntegrationAuthType.None,
             AuthenticatedCapabilityAvailable = authentication?.Capabilities.AuthenticatedRest,
-            AuthenticatedChecksExecuted = checksExecuted
+            AuthenticatedChecksExecuted = checksExecuted,
 
-            // Performance is left null; Checkpoint 6 owns it. A fabricated zero would be
-            // indistinguishable from a real measurement of zero.
+            // Summary only: the raw observation payload is not persisted.
+            Performance = IntegrationPerformanceAnalyzer.ToSummary(status.Performance)
         };
     }
 

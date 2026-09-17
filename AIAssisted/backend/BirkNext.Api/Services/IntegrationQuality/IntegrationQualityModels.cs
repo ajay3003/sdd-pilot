@@ -262,6 +262,17 @@ public sealed class IntegrationQualityRequest
     [JsonPropertyName("authenticatedTestingMethod")] public BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod AuthenticatedTestingMethod { get; set; } = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
     [JsonPropertyName("profileId")]          public string? ProfileId          { get; set; }
     [JsonPropertyName("contextFingerprint")] public string? ContextFingerprint { get; set; }
+
+    /// <summary>
+    /// Browser traffic observed during the current Endpoint Discovery session, used as the only
+    /// source of runtime performance evidence. Optional: a caller that sends none still gets a
+    /// valid review, with performance reported as unavailable rather than as zero.
+    ///
+    /// The shared observation contract carries timing, status and size only — never a header
+    /// value, body, cookie or query string.
+    /// </summary>
+    [JsonPropertyName("runtimeObservations")]
+    public List<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint>? RuntimeObservations { get; set; }
 }
 
 /// <summary>One authenticated runtime check performed for an integration through the Local HTTPS proxy context. No credential, headers or body.</summary>
@@ -367,6 +378,13 @@ public sealed class IntegrationStatus
 
     [JsonPropertyName("previousContractFingerprint")]
     public string? PreviousContractFingerprint { get; set; }
+
+    // Performance (Phase 3, Checkpoint 6). Derived only from observed traffic evidence.
+    [JsonPropertyName("performance")]
+    public IntegrationPerformanceMetrics? Performance { get; set; }
+
+    [JsonPropertyName("performanceChanges")]
+    public List<PerformanceChange> PerformanceChanges { get; set; } = [];
 
     // History (Phase 3, Checkpoint 5).
     [JsonPropertyName("baselineKey")]

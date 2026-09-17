@@ -8,6 +8,7 @@
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
+@inject IEndpointDiscoveryService Discovery
 
 <PageTitle>Integration Quality Review</PageTitle>
 
@@ -288,6 +289,29 @@
                                     <div><dt>Compared at</dt><dd data-testid="iqr-contract-compared-at">@comparedAt.ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
                                 }
                                 <div><dt>Drift</dt><dd data-testid="iqr-contract-drift">@GetDriftState(status)</dd></div>
+                                <div>
+                                    <dt>Performance</dt>
+                                    <dd data-testid="iqr-performance-state">@ContractStatePresenter.Performance(status)</dd>
+                                </div>
+                                @if (ContractStatePresenter.HasPerformanceEvidence(status))
+                                {
+                                    <div><dt>Latency p50</dt><dd data-testid="iqr-performance-p50">@ContractStatePresenter.Metric(status.Performance!.P50DurationMs, "ms")</dd></div>
+                                    <div><dt>Latency p95</dt><dd data-testid="iqr-performance-p95">@ContractStatePresenter.Metric(status.Performance.P95DurationMs, "ms")</dd></div>
+                                    <div><dt>Latency p99</dt><dd data-testid="iqr-performance-p99">@ContractStatePresenter.Metric(status.Performance.P99DurationMs, "ms")</dd></div>
+                                    <div><dt>Errors</dt><dd data-testid="iqr-performance-errors">@ContractStatePresenter.ErrorRate(status)</dd></div>
+                                    <div><dt>Throughput</dt><dd data-testid="iqr-performance-throughput">@ContractStatePresenter.Metric(status.Performance.RequestsPerSecond, "req/s")</dd></div>
+                                    <div><dt>Observation window</dt><dd data-testid="iqr-performance-window">@ContractStatePresenter.ObservationWindow(status)</dd></div>
+                                }
+                                @if (status.PerformanceChanges.Count > 0)
+                                {
+                                    <div>
+                                        <dt>Since previous review</dt>
+                                        <dd data-testid="iqr-performance-changes">
+                                            @string.Join("; ", status.PerformanceChanges
+                                                .Select(ContractStatePresenter.PerformanceChangeLabel))
+                                        </dd>
+                                    </div>
+                                }
                                 @if (status.HistoricalChanges.Count > 0)
                                 {
                                     <div>
@@ -535,7 +559,7 @@
         await JS.InvokeVoidAsync("downloadHtmlFile", $"integration-quality-review-{DateTime.UtcNow:yyyy-MM-dd}.html", html);
     }
 
-    private static IntegrationQualityRequest BuildRequest(FrontendAnalysisContext context)
+    private IntegrationQualityRequest BuildRequest(FrontendAnalysisContext context)
     {
         var identity = ReviewAuthenticationIdentity.ForContext(context);
         return new()
@@ -546,7 +570,27 @@
             AuthenticatedTestingMethod = identity.Method,
             ProfileId = identity.ProfileId,
             ContextFingerprint = identity.ContextFingerprint,
+            RuntimeObservations = CollectObservations(identity.ProfileId),
         };
+    }
+
+    /// <summary>
+    /// Traffic observed during the current Endpoint Discovery session, page-correlated plus
+    /// shared. The backend derives performance from these; nothing is computed here.
+    /// </summary>
+    private List<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint>? CollectObservations(string? profileId)
+    {
+        if (string.IsNullOrWhiteSpace(profileId))
+            return null;
+
+        var snapshot = Discovery.GetSnapshot(profileId);
+
+        var observed = snapshot.Pages
+            .SelectMany(page => page.Endpoints)
+            .Concat(snapshot.Shared)
+            .ToList();
+
+        return observed.Count > 0 ? observed : null;
     }
 
     private static IntegrationConfig CloneIntegration(IntegrationConfig source) => new()

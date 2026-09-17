@@ -101,4 +101,76 @@ public static class ContractStatePresenter
         IntegrationHistoricalChangeType.RuntimeEvidenceStateChanged => "Runtime evidence changed",
         _ => "Changed"
     };
+
+    // ── Performance (Checkpoint 6) ───────────────────────────────────────────
+
+    /// <summary>
+    /// Headline performance state. Observations cover the current Endpoint Discovery session
+    /// only, so the wording never implies continuous monitoring or a fixed reporting period.
+    /// Absence of evidence is stated, never rendered as a zero.
+    /// </summary>
+    public static string Performance(IntegrationStatus status) => status.Performance?.EvidenceState switch
+    {
+        null or PerformanceEvidenceState.Unavailable => "No runtime performance evidence available",
+        PerformanceEvidenceState.Unsupported => "Performance measurement not supported for this integration",
+        PerformanceEvidenceState.InsufficientSamples =>
+            $"Observed during this discovery session · {status.Performance!.TimedSampleCount} sample"
+            + $"{(status.Performance.TimedSampleCount == 1 ? "" : "s")}"
+            + " · too few for reliable percentile interpretation",
+        _ => $"Observed during this discovery session · {status.Performance!.TimedSampleCount} samples"
+    };
+
+    public static bool HasPerformanceEvidence(IntegrationStatus status) =>
+        status.Performance is not null
+        && status.Performance.EvidenceState != PerformanceEvidenceState.Unavailable
+        && status.Performance.EvidenceState != PerformanceEvidenceState.Unsupported;
+
+    /// <summary>Formats a metric, or states it was not measured. Never substitutes zero.</summary>
+    public static string Metric(double? value, string unit) =>
+        value is null ? "Not measured" : $"{value.Value.ToString("0.##", CultureInfo.InvariantCulture)} {unit}";
+
+    public static string ErrorRate(IntegrationStatus status)
+    {
+        var performance = status.Performance;
+
+        if (performance?.ErrorRate is null || performance.FailedSampleCount is null)
+            return "Not measured";
+
+        var total = (performance.SuccessfulSampleCount ?? 0) + performance.FailedSampleCount.Value;
+
+        return $"{performance.FailedSampleCount} / {total} ({(performance.ErrorRate.Value * 100).ToString("0.##", CultureInfo.InvariantCulture)}%)";
+    }
+
+    public static string ObservationWindow(IntegrationStatus status)
+    {
+        var performance = status.Performance;
+
+        if (performance?.FirstObservedAt is null || performance.LastObservedAt is null)
+            return "Not measured";
+
+        return $"{performance.FirstObservedAt.Value:HH:mm:ss}–{performance.LastObservedAt.Value:HH:mm:ss} UTC";
+    }
+
+    public static string PerformanceChangeLabel(PerformanceChange change)
+    {
+        var direction = change.ChangeState switch
+        {
+            PerformanceChangeState.Improved => "improved",
+            PerformanceChangeState.Regressed => "regressed",
+            PerformanceChangeState.Unchanged => "unchanged",
+            PerformanceChangeState.NoComparableBaseline => "no comparable baseline",
+            PerformanceChangeState.Unavailable => "unavailable",
+            _ => "changed"
+        };
+
+        if (change.PreviousValue is null || change.CurrentValue is null)
+            return $"{change.Metric}: {direction}";
+
+        var percentage = change.PercentageChange is null
+            ? ""
+            : $" ({(change.PercentageChange.Value >= 0 ? "+" : "")}{change.PercentageChange.Value.ToString("0.#", CultureInfo.InvariantCulture)}%)";
+
+        return $"{change.Metric}: {change.PreviousValue.Value.ToString("0.##", CultureInfo.InvariantCulture)} → "
+             + $"{change.CurrentValue.Value.ToString("0.##", CultureInfo.InvariantCulture)}{percentage} · {direction}";
+    }
 }

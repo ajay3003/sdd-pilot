@@ -1,3 +1,5 @@
+using BirkNext.LocalHttpsProxy;
+
 namespace BirkNext.Api.Services.IntegrationQuality;
 
 /// <summary>
@@ -103,6 +105,115 @@ public sealed class RuntimeEvidencePopulationService
             Protocol = IntegrationType.REST,
             StatusCodeOrOutcome = statusCode.ToString()
         };
+    }
+
+
+    /// <summary>
+    /// Maps observed browser traffic onto typed runtime evidence for one integration.
+    ///
+    /// Only traffic the proxy actually intercepted becomes evidence. Endpoints known solely from
+    /// configuration describe what exists, not what ran, so they are skipped: otherwise a
+    /// configured-but-never-called endpoint would acquire performance metrics it never earned.
+    ///
+    /// One evidence record is emitted per observed request sample rather than per endpoint, so
+    /// latency statistics are computed over real individual exchanges. Repeated calls to the same
+    /// endpoint are legitimate samples and are deliberately not collapsed.
+    /// </summary>
+    public List<RuntimeIntegrationEvidence> MapObservations(
+        IntegrationConfigDto integration,
+        IReadOnlyList<ObservedNetworkEndpoint>? observations)
+    {
+        if (observations is null || observations.Count == 0)
+            return [];
+
+        var evidence = new List<RuntimeIntegrationEvidence>();
+
+        foreach (var observation in observations)
+        {
+            // Configuration-derived entries carry no proof that anything was executed.
+            if (observation.Source != EndpointDiscoverySource.AuthenticatedProxyTraffic)
+                continue;
+
+            var evidenceType = observation.Category switch
+            {
+                ObservedTrafficCategory.GraphQl => RuntimeEvidenceType.GraphQlOperationObserved,
+                ObservedTrafficCategory.Rest => RuntimeEvidenceType.HttpRequestObserved,
+                _ => RuntimeEvidenceType.Unknown
+            };
+
+            // Static assets, telemetry, websockets and authentication traffic are not this
+            // integration's request/response behaviour.
+            if (evidenceType == RuntimeEvidenceType.Unknown)
+                continue;
+
+            if (!Correlates(integration, observation))
+                continue;
+
+            var protocol = evidenceType == RuntimeEvidenceType.GraphQlOperationObserved
+                ? IntegrationType.GraphQL
+                : IntegrationType.REST;
+
+            // Path already has query and fragment stripped by the proxy contract.
+            var operationLabel = !string.IsNullOrWhiteSpace(observation.OperationName)
+                ? observation.OperationName
+                : $"{observation.Method} {observation.Path}".Trim();
+
+            foreach (var sample in observation.Samples)
+            {
+                evidence.Add(new RuntimeIntegrationEvidence
+                {
+                    IntegrationId = integration.Id,
+                    EvidenceType = evidenceType,
+                    Source = RuntimeEvidenceSource.EndpointDiscovery,
+                    Direction = RuntimeEvidenceDirection.Outbound,
+                    Outcome = sample.Status >= 400
+                        ? RuntimeEvidenceOutcome.Error
+                        : RuntimeEvidenceOutcome.Success,
+                    ObservedAt = sample.At.UtcDateTime,
+                    DurationMs = sample.DurationMs,
+                    Protocol = protocol,
+                    OperationOrMessage = operationLabel,
+                    StatusCodeOrOutcome = sample.Status.ToString()
+                });
+            }
+        }
+
+        return evidence
+            .OrderBy(e => e.ObservedAt)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Associates an observation with an integration by transport identity: same origin, and a
+    /// path under the integration's configured path. Display name is never used, because a rename
+    /// would silently detach an integration from its own traffic.
+    /// </summary>
+    private static bool Correlates(IntegrationConfigDto integration, ObservedNetworkEndpoint observation)
+    {
+        if (string.IsNullOrWhiteSpace(integration.Endpoint))
+            return false;
+
+        if (!Uri.TryCreate(integration.Endpoint.Trim(), UriKind.Absolute, out var configured))
+            return false;
+
+        var sameOrigin =
+            string.Equals(configured.Scheme, observation.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(configured.Host, observation.Host, StringComparison.OrdinalIgnoreCase)
+            && configured.Port == observation.Port;
+
+        if (!sameOrigin)
+            return false;
+
+        var configuredPath = configured.AbsolutePath.TrimEnd('/');
+
+        // An integration configured at the origin root matches any path on that origin.
+        if (configuredPath is "" or "/")
+            return true;
+
+        var observedPath = (observation.Path ?? "").TrimEnd('/');
+
+        return observedPath.Equals(configuredPath, StringComparison.Ordinal)
+               || observedPath.StartsWith(configuredPath + "/", StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -13,6 +13,13 @@ public sealed class IntegrationQualityRequest
     [JsonPropertyName("authenticatedTestingMethod")] public BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod AuthenticatedTestingMethod { get; set; } = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.ManagedEdgeCdp;
     [JsonPropertyName("profileId")]          public string? ProfileId          { get; set; }
     [JsonPropertyName("contextFingerprint")] public string? ContextFingerprint { get; set; }
+
+    /// <summary>
+    /// Traffic observed during the current Endpoint Discovery session. Optional: omitting it
+    /// still produces a valid review, with performance reported as unavailable.
+    /// </summary>
+    [JsonPropertyName("runtimeObservations")]
+    public List<BirkNext.LocalHttpsProxy.ObservedNetworkEndpoint>? RuntimeObservations { get; set; }
 }
 
 public sealed class IntegrationAuthenticatedCheck
@@ -75,6 +82,10 @@ public sealed class IntegrationStatus
     [JsonPropertyName("previousBaselineTimestamp")]    public DateTime?          PreviousBaselineTimestamp    { get; init; }
     [JsonPropertyName("currentContractFingerprint")]   public string?            CurrentContractFingerprint   { get; init; }
     [JsonPropertyName("previousContractFingerprint")]  public string?            PreviousContractFingerprint  { get; init; }
+
+    // Performance (Phase 3, Checkpoint 6). Derived by the backend from observed traffic only.
+    [JsonPropertyName("performance")]        public IntegrationPerformanceMetrics? Performance { get; init; }
+    [JsonPropertyName("performanceChanges")] public List<PerformanceChange> PerformanceChanges { get; init; } = [];
 
     // History (Phase 3, Checkpoint 5). The baseline key is diagnostic only and is not surfaced
     // as primary UI content.
@@ -173,4 +184,54 @@ public sealed class IntegrationQualityReport
     [JsonPropertyName("historicalChangeCount")]      public int             HistoricalChangeCount      { get; init; }
     [JsonPropertyName("historicalChanges")]          public List<IntegrationHistoricalChange> HistoricalChanges { get; init; } = [];
     [JsonPropertyName("snapshotPersistenceState")]   public SnapshotPersistenceState SnapshotPersistenceState { get; init; }
+}
+
+
+public enum PerformanceEvidenceState
+{
+    Unavailable = 0,
+    InsufficientSamples = 1,
+    Observed = 2,
+    Partial = 3,
+    Unsupported = 4
+}
+
+public enum PerformanceChangeState
+{
+    NoComparableBaseline = 0,
+    Improved = 1,
+    Regressed = 2,
+    Unchanged = 3,
+    Changed = 4,
+    Unavailable = 5
+}
+
+public sealed class IntegrationPerformanceMetrics
+{
+    [JsonPropertyName("evidenceState")]     public PerformanceEvidenceState EvidenceState { get; init; }
+    [JsonPropertyName("sampleCount")]       public int     SampleCount       { get; init; }
+    [JsonPropertyName("timedSampleCount")]  public int     TimedSampleCount  { get; init; }
+    [JsonPropertyName("successfulSampleCount")] public int? SuccessfulSampleCount { get; init; }
+    [JsonPropertyName("failedSampleCount")] public int?    FailedSampleCount { get; init; }
+    [JsonPropertyName("minDurationMs")]     public double? MinDurationMs     { get; init; }
+    [JsonPropertyName("maxDurationMs")]     public double? MaxDurationMs     { get; init; }
+    [JsonPropertyName("averageDurationMs")] public double? AverageDurationMs { get; init; }
+    [JsonPropertyName("p50DurationMs")]     public double? P50DurationMs     { get; init; }
+    [JsonPropertyName("p95DurationMs")]     public double? P95DurationMs     { get; init; }
+    [JsonPropertyName("p99DurationMs")]     public double? P99DurationMs     { get; init; }
+    [JsonPropertyName("firstObservedAt")]   public DateTime? FirstObservedAt { get; init; }
+    [JsonPropertyName("lastObservedAt")]    public DateTime? LastObservedAt  { get; init; }
+    [JsonPropertyName("observationWindowSeconds")] public double? ObservationWindowSeconds { get; init; }
+    [JsonPropertyName("requestsPerSecond")] public double? RequestsPerSecond { get; init; }
+    [JsonPropertyName("errorRate")]         public double? ErrorRate         { get; init; }
+}
+
+public sealed class PerformanceChange
+{
+    [JsonPropertyName("metric")]           public string Metric { get; init; } = "";
+    [JsonPropertyName("previousValue")]    public double? PreviousValue { get; init; }
+    [JsonPropertyName("currentValue")]     public double? CurrentValue { get; init; }
+    [JsonPropertyName("absoluteChange")]   public double? AbsoluteChange { get; init; }
+    [JsonPropertyName("percentageChange")] public double? PercentageChange { get; init; }
+    [JsonPropertyName("changeState")]      public PerformanceChangeState ChangeState { get; init; }
 }
