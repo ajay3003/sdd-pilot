@@ -352,6 +352,8 @@ builder.Services.AddHttpClient<IGraphQlSourceFetcher, GraphQlSourceFetcher>(clie
 builder.Services.AddScoped<IGraphQlExtractor, GraphQlExtractor>();
 
 builder.Services.AddScoped<IContractComparer, ContractComparer>();
+// Baseline persistence arrives in Checkpoint 5; until then drift reports BaselineUnavailable.
+builder.Services.AddScoped<IContractBaselineProvider, NoBaselineProvider>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

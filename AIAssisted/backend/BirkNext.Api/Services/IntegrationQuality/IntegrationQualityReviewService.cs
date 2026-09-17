@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BirkNext.Api.Services.ContractAnalysis;
 using BirkNext.Api.Services.LocalHttpsProxy;
 using BirkNext.LocalHttpsProxy;
 
@@ -11,6 +12,13 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
     private readonly IAuthenticatedReviewGateway _authenticatedReview;
     private readonly IntegrationRelationshipPopulationService _relationshipPopulation;
 
+    // Contract analysis (Phase 3, Checkpoint 4). Optional so existing construction sites keep
+    // working; when absent, contract fields stay null and read as "not captured".
+    private readonly IContractDiscoveryService? _contractDiscovery;
+    private readonly IMessageSchemaDiscoveryService? _messageSchemaDiscovery;
+    private readonly IContractBaselineProvider? _baselineProvider;
+    private readonly IContractComparer _contractComparer;
+
     private static readonly HashSet<IntegrationType> AsyncTypes =
     [
         IntegrationType.EventHub, IntegrationType.ServiceBus,
@@ -21,12 +29,20 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
         HttpClient client,
         ILogger<IntegrationQualityReviewService> logger,
         IAuthenticatedReviewGateway authenticatedReview,
-        IntegrationRelationshipPopulationService relationshipPopulation)
+        IntegrationRelationshipPopulationService relationshipPopulation,
+        IContractDiscoveryService? contractDiscovery = null,
+        IMessageSchemaDiscoveryService? messageSchemaDiscovery = null,
+        IContractBaselineProvider? baselineProvider = null,
+        IContractComparer? contractComparer = null)
     {
         _client = client;
         _logger = logger;
         _authenticatedReview = authenticatedReview;
         _relationshipPopulation = relationshipPopulation;
+        _contractDiscovery = contractDiscovery;
+        _messageSchemaDiscovery = messageSchemaDiscovery;
+        _baselineProvider = baselineProvider;
+        _contractComparer = contractComparer ?? new ContractComparer();
     }
 
     /// <summary>
@@ -189,7 +205,7 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
                 _                                   => 0
             });
 
-            statuses.Add(new IntegrationStatus
+            var status = new IntegrationStatus
             {
                 IntegrationId    = intg.Id,
                 Name             = EffectiveName(intg),
@@ -200,7 +216,11 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
                 WorkerReachable  = workerReachable,
                 Score            = Math.Max(0, 100 - penalty),
                 MissingFields    = missingFields
-            });
+            };
+
+            await ApplyContractAnalysisAsync(intg, status, intgFindings, ct);
+
+            statuses.Add(status);
 
             findings.AddRange(intgFindings);
         }
@@ -265,6 +285,115 @@ public sealed class IntegrationQualityReviewService : IIntegrationQualityReviewS
 
     private static string EffectiveName(IntegrationConfigDto intg) =>
         string.IsNullOrWhiteSpace(intg.Name) ? $"{intg.Type} (unnamed)" : intg.Name;
+
+    /// <summary>
+    /// Phase 3, Checkpoint 4. Resolves contract compatibility (producer -> consumer) and drift
+    /// (current -> previous baseline) for one integration and records both on the status, plus
+    /// any deterministic findings. The two states are independent; neither is derived from the
+    /// other. A failure here is contained to this integration and never aborts the review.
+    /// </summary>
+    private async Task ApplyContractAnalysisAsync(
+        IntegrationConfigDto intg,
+        IntegrationStatus status,
+        List<IntegrationFinding> intgFindings,
+        CancellationToken ct)
+    {
+        status.ProducerService = intg.LogicalProducerService;
+        status.ConsumerService = intg.LogicalConsumerService;
+
+        var contractName = !string.IsNullOrWhiteSpace(intg.ContractName)
+            ? intg.ContractName!
+            : EffectiveName(intg);
+
+        // ── Compatibility ────────────────────────────────────────────────────
+        if (_contractDiscovery is not null)
+        {
+            try
+            {
+                var compatibility = await _contractDiscovery.AnalyzeAsync(intg, ct);
+
+                status.CompatibilityState = compatibility.Status;
+                status.CompatibilityComparedAt = compatibility.ComparedAt;
+                status.CompatibilityDifferenceCount = compatibility.Differences.Count;
+                status.CompatibilityBreakingCount = compatibility.Differences
+                    .Count(d => d.Severity == ContractDifferenceSeverity.Breaking);
+                status.CompatibilityDifferences = compatibility.Differences;
+                status.CompatibilityReason = compatibility.ReadyReason ?? compatibility.Message;
+                status.ProducerContractSource = compatibility.ProducerSource;
+                status.ConsumerContractSource = compatibility.ConsumerSource;
+
+                var finding = ContractFindingMapper.ForCompatibility(
+                    compatibility, intg.Id, EffectiveName(intg));
+
+                if (finding is not null)
+                    intgFindings.Add(finding);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Contract compatibility analysis failed for integration {IntegrationId}", intg.Id);
+
+                status.CompatibilityState = ContractCompatibilityStatus.Error;
+                status.CompatibilityReason = "Contract comparison could not be completed";
+            }
+        }
+
+        // ── Drift ────────────────────────────────────────────────────────────
+        // Baseline persistence is owned by Checkpoint 5. Until a provider supplies one this
+        // resolves to BaselineUnavailable rather than an assumed "no change".
+        try
+        {
+            var currentContract = await ResolveCurrentContractAsync(intg, ct);
+
+            var baseline = _baselineProvider is null
+                ? null
+                : await _baselineProvider.GetBaselineAsync(intg.Id, contractName, ct);
+
+            var drift = _contractComparer.CompareForDrift(
+                currentContract, baseline?.Contract, contractName, baseline?.CapturedAt);
+
+            status.DriftState = drift.State;
+            status.DriftDifferenceCount = drift.Differences.Count;
+            status.DriftBreakingCount = drift.Differences
+                .Count(d => d.Severity == ContractDifferenceSeverity.Breaking);
+            status.DriftDifferences = drift.Differences;
+            status.PreviousBaselineTimestamp = drift.BaselineCapturedAt;
+            status.CurrentContractFingerprint = drift.CurrentFingerprint;
+            status.PreviousContractFingerprint = drift.BaselineFingerprint;
+
+            var driftFinding = ContractFindingMapper.ForDrift(drift, intg.Id, EffectiveName(intg));
+
+            if (driftFinding is not null)
+                intgFindings.Add(driftFinding);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Contract drift analysis failed for integration {IntegrationId}", intg.Id);
+
+            status.DriftState = ContractDriftState.NotComparable;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the integration's current normalized contract where a deterministic extractor
+    /// exists. Messaging contracts come from the Checkpoint 3 extractor; REST and GraphQL
+    /// contracts are not surfaced by the discovery service as normalized contracts yet, so they
+    /// return null and drift stays unresolved for those types.
+    /// </summary>
+    private async Task<NormalizedContract?> ResolveCurrentContractAsync(
+        IntegrationConfigDto intg,
+        CancellationToken ct)
+    {
+        if (_messageSchemaDiscovery is null || !AsyncTypes.Contains(intg.Type))
+            return null;
+
+        var extraction = await _messageSchemaDiscovery.ExtractSchemaAsync(intg, ct);
+
+        return extraction.State == MessageSchemaState.Available
+            ? extraction.NormalizedContract
+            : null;
+    }
 
     private static IntegrationFinding Finding(
         string id, string integrationId, string integrationName,

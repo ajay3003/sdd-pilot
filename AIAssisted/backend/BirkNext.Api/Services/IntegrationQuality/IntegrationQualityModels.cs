@@ -312,6 +312,62 @@ public sealed class IntegrationStatus
     [JsonPropertyName("runtimeEvidenceSummary")]
     public RuntimeEvidenceSummary? RuntimeEvidenceSummary { get; set; }
 
+    // Contract compatibility (Phase 3, Checkpoint 4). Nullable throughout: a report written
+    // before these fields existed must read as "not captured", never as Compatible/NoChange.
+    // Both ContractCompatibilityStatus.Compatible and ContractDriftState.NoChange are 0, so a
+    // non-nullable field would silently turn a missing value into a compatibility claim.
+    [JsonPropertyName("compatibilityState")]
+    public BirkNext.Api.Services.ContractAnalysis.ContractCompatibilityStatus? CompatibilityState { get; set; }
+
+    [JsonPropertyName("compatibilityComparedAt")]
+    public DateTime? CompatibilityComparedAt { get; set; }
+
+    [JsonPropertyName("compatibilityDifferenceCount")]
+    public int? CompatibilityDifferenceCount { get; set; }
+
+    [JsonPropertyName("compatibilityBreakingCount")]
+    public int? CompatibilityBreakingCount { get; set; }
+
+    [JsonPropertyName("compatibilityDifferences")]
+    public List<BirkNext.Api.Services.ContractAnalysis.ContractDifference> CompatibilityDifferences { get; set; } = [];
+
+    [JsonPropertyName("compatibilityReason")]
+    public string? CompatibilityReason { get; set; }
+
+    [JsonPropertyName("producerService")]
+    public string? ProducerService { get; set; }
+
+    [JsonPropertyName("consumerService")]
+    public string? ConsumerService { get; set; }
+
+    [JsonPropertyName("producerContractSource")]
+    public string? ProducerContractSource { get; set; }
+
+    [JsonPropertyName("consumerContractSource")]
+    public string? ConsumerContractSource { get; set; }
+
+    // Contract drift (Phase 3, Checkpoint 4). Baseline persistence lands in Checkpoint 5.
+    [JsonPropertyName("driftState")]
+    public BirkNext.Api.Services.ContractAnalysis.ContractDriftState? DriftState { get; set; }
+
+    [JsonPropertyName("driftDifferenceCount")]
+    public int? DriftDifferenceCount { get; set; }
+
+    [JsonPropertyName("driftBreakingCount")]
+    public int? DriftBreakingCount { get; set; }
+
+    [JsonPropertyName("driftDifferences")]
+    public List<BirkNext.Api.Services.ContractAnalysis.ContractDifference> DriftDifferences { get; set; } = [];
+
+    [JsonPropertyName("previousBaselineTimestamp")]
+    public DateTime? PreviousBaselineTimestamp { get; set; }
+
+    [JsonPropertyName("currentContractFingerprint")]
+    public string? CurrentContractFingerprint { get; set; }
+
+    [JsonPropertyName("previousContractFingerprint")]
+    public string? PreviousContractFingerprint { get; set; }
+
     [JsonPropertyName("score")]            public int             Score            { get; init; }
     [JsonPropertyName("missingFields")]    public List<string>    MissingFields    { get; init; } = [];
     [JsonPropertyName("contractCompatibility")] public object? ContractCompatibility { get; set; }
