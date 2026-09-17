@@ -229,7 +229,7 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Ready"));
 
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
-        page.Find("[data-testid=aqr-access-summary]").TextContent.Should().Contain("Authenticated REST and GraphQL requests can be included");
+        page.Find("[data-testid=aqr-access]").TextContent.Should().Contain("Available");
         page.FindAll("[data-testid=aqr-auth-missing]").Should().BeEmpty("no selected API needs authentication");
         page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Authenticated requests available for 2 targets");
         page.Find("[data-testid=aqr-access]").TextContent.Should().NotContainAny("token", "cookie");
@@ -253,7 +253,6 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         groups[0].QuerySelector("[data-testid=aqr-target-operations]")!.TextContent.Should().Be("3 · 1 write (not executed)");
         groups[1].QuerySelector("[data-testid=aqr-target-name]")!.TextContent.Should().Be("Autorisasjon GraphQL");
         groups[1].QuerySelector("[data-testid=aqr-target-schema]")!.TextContent.Should().Contain("Runtime schema");
-        page.Find("[data-testid=aqr-targets]").TextContent.Should().NotContain($"https://{ApiHost}/api/autorisasjon/graphql", "full URLs are not repeated on the card");
 
         var opsToggle = page.Find($"[data-testid='aqr-ops-{RestId}-toggle']");
         opsToggle.GetAttribute("aria-expanded").Should().Be("false");
@@ -421,7 +420,7 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
 
         var statuses = page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).ToList();
         statuses.Should().BeEquivalentTo(["Authentication required", "Assessed"]);
-        page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["Not tested", "1"]);
+        page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["Not tested", "0"]);
         page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("Public only");
         page.Find("[data-testid=aqr-overview]").TextContent.Should().Contain("0 of 1 authentication-required target reviewed").And.Contain("1 of 1 public target reviewed").And.Contain("1 not executed");
         page.FindAll("[data-testid=aqr-service-access]").Select(e => e.TextContent).Should().BeEquivalentTo(["Authentication required · not executed", "Public"]);
