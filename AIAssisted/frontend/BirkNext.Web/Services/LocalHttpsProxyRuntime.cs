@@ -49,6 +49,18 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
     private CancellationTokenSource? _poll;
 
     public LocalHttpsProxyStatus Status { get; private set; } = new();
+
+    /// <summary>
+    /// Whether a browser has actually been routed through this proxy since it was started. BirkNext does not
+    /// and cannot read Edge proxy settings, so observed traffic is the only proof that a browser was pointed
+    /// at this port — and that fact has to outlive the proxy. The status is replaced when the proxy stops, but
+    /// the browser is still pointed at the port, which is now closed. Runtime-only, never persisted.
+    /// </summary>
+    public bool BrowserWasRouted { get; private set; }
+
+    /// <summary>Traffic reaching the proxy proves a browser was configured for it; nothing else does.</summary>
+    private static bool Routed(LocalHttpsProxyStatus status) =>
+        status.AuthenticatedRequestsObserved > 0 || status.AuthenticatedCredentialAvailable || status.ObservedNetworkEndpoints.Count > 0;
     public AuthenticatedApiExecutionResult? LastRestResult { get; private set; }
     public AuthenticatedApiExecutionResult? LastGraphQlResult { get; private set; }
     public string? LastExecutionError { get; private set; }
@@ -108,6 +120,8 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
                 return;
             }
             Status = result;
+            // A new session starts with no browser routed through it; the flag is not carried over from the last one.
+            BrowserWasRouted = Routed(result);
             if (result.SessionId is { } session)
             {
                 _owner = new(session, request.ProfileId, request.ContextFingerprint);
@@ -130,6 +144,7 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
             if (generation == _generation && operation == _operation)
             {
                 Status = result;
+                if (Routed(result)) BrowserWasRouted = true;
                 if (result.State is LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Stale) { _poll?.Cancel(); _owner = null; }
             }
         }

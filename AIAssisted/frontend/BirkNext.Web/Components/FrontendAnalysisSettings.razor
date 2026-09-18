@@ -609,8 +609,8 @@
                        Same shared primitive as Browser Discovery's guidance: one callout design, not two. *@
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
                     {
-                        <InlineCallout Title="@AuthenticatedTestingStates.ProxyGuidanceTitle(ProxyStatus)"
-                                       Text="@AuthenticatedTestingStates.ProxyGuidanceText(ProxyStatus)"
+                        <InlineCallout Title="@AuthenticatedTestingStates.ProxyGuidanceTitle(ProxyStatus, BrowserWasRoutedThroughProxy)"
+                                       Text="@AuthenticatedTestingStates.ProxyGuidanceText(ProxyStatus, BrowserWasRoutedThroughProxy)"
                                        TestId="authenticated-testing-proxy-guidance" />
                     }
 
@@ -635,7 +635,7 @@
                         @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
                         {
                             <dl class="fa-detail-list">
-                                <div class="fa-dl-row"><dt>Edge browser</dt><dd data-testid="authenticated-testing-edge-setup">@AuthenticatedTestingStates.EdgeBrowserSetup(ProxyStatus)</dd></div>
+                                <div class="fa-dl-row"><dt>Edge browser</dt><dd data-testid="authenticated-testing-edge-setup">@AuthenticatedTestingStates.EdgeBrowserSetup(ProxyStatus, BrowserWasRoutedThroughProxy)</dd></div>
                             </dl>
                         }
 
@@ -1671,6 +1671,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private ManagedEdgeStatus EdgeStatus => _edgeRuntime?.For(CurrentProfile) ?? new();
     /// <summary>Transient Local HTTPS proxy status for the current configuration. Never persisted; never contains a credential.</summary>
     private LocalHttpsProxyStatus ProxyStatus => _proxyRuntime?.For(CurrentProfile) ?? new();
+
+    /// <summary>Whether a browser has been routed through this proxy at any point in the current session.</summary>
+    private bool BrowserWasRoutedThroughProxy => _proxyRuntime?.BrowserWasRouted ?? false;
     private string VerificationModeLabel => CurrentProfile?.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge ? "Manual verification" : "Automated detection";
     private AuthenticatedTestingMethod SelectedTestingMethod => CurrentProfile?.Authentication.AuthenticatedTestingMethod ?? AuthenticatedTestingMethod.ManagedEdgeCdp;
     private AuthenticatedCapabilitySummary Coverage => AuthenticatedTestingMethodLabels.Capabilities(SelectedTestingMethod, EdgeStatus, ProxyStatus);

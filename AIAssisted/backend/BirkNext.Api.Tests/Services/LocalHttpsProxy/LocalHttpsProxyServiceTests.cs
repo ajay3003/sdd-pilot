@@ -483,6 +483,11 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         Assert.True(again.AuthenticatedCredentialAvailable);
     }
 
+    /// <summary>
+    /// The only way BirkNext ever points a browser at its proxy: a command-line flag on a SEPARATE Edge
+    /// process with its own profile. A flag is not a setting — it lives and dies with that process — so there
+    /// is no persistent proxy configuration for BirkNext to leak if the backend stops or is killed.
+    /// </summary>
     [Fact]
     public void EdgeLaunchArgumentsNeverTouchTheNormalProfileOrGlobalProxySettings()
     {
@@ -494,6 +499,23 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, @"C:\Users\tester\AppData\Local\Microsoft\Edge\User Data", Target));
         Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(0, @"C:\Users\tester\AppData\Local\BirkNext\P", Target));
         Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, @"C:\Users\tester\AppData\Local\BirkNext\P", "ftp://x"));
+    }
+
+    /// <summary>
+    /// The safety invariant stated as a test: stopping the proxy cannot leave a browser proxy setting behind,
+    /// because starting it never wrote one. Everything BirkNext does to a browser is the launch flag above,
+    /// which cannot outlive the process it was passed to.
+    /// </summary>
+    [Fact]
+    public async Task StoppingTheProxyLeavesNoBrowserConfigurationBehind()
+    {
+        await StartAsync(Scope());
+        var stopped = await _service.StopAsync(Session());
+
+        Assert.Equal(LocalHttpsProxyState.Stopped, stopped.State);
+        // Nothing in the stop path describes a browser setting, because none was ever made.
+        foreach (var claim in new[] { "proxy setting", "restored", "Windows proxy" })
+            Assert.DoesNotContain(claim, stopped.Evidence ?? "", StringComparison.OrdinalIgnoreCase);
     }
 
     // ── test infrastructure ──────────────────────────────────────────────────
