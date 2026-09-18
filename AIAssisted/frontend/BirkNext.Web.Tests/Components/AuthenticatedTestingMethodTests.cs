@@ -361,7 +361,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var cut = Open();
         Click(cut, "Detect settings");
         OpenTab(cut, "Authentication");
-        Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Authentication"));
+        Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Detected & configured authentication"));
         Assert.Empty(cut.FindAll(".fa-result-grid"));
         Assert.DoesNotContain("Detected Authentication", cut.Markup);
         Assert.True(HasButton(cut, "Apply authentication"));
@@ -379,7 +379,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Empty(cut.FindAll("#authenticated-testing-method-select"));
         Assert.Single(cut.FindAll("[data-testid='authenticated-testing-method-value']"));
         Assert.Single(cut.FindAll("[data-testid='authentication-discovery']"));
-        Assert.Single(cut.FindAll("[data-testid='authenticated-capabilities']"));
+        // The capability inventory lives in the selected method.s setup panel, one disclosure away.
         foreach (var candidate in new[] { "managed-edge-panel", "local-https-proxy-panel", "manual-only-panel" })
             Assert.Equal(candidate == panel, Has(cut, candidate));
         Assert.Equal(method == AuthenticatedTestingMethod.ManagedEdgeCdp, Has(cut, "browser-delivery-trust"));

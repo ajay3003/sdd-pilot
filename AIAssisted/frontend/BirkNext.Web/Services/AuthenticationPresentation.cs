@@ -223,3 +223,53 @@ public static class AuthenticationPresentation
     public static string ChangeList(IReadOnlyList<AuthenticationComparisonRow> comparison) =>
         string.Join(", ", comparison.Where(r => IsActionable(r.Status)).Select(r => r.Setting));
 }
+
+/// <summary>
+/// Whether BirkNext currently has authenticated TESTING access. Deliberately a different question
+/// from whether the target application requires sign-in, and a different question from whether the
+/// saved authentication configuration was manually verified. All three can disagree, correctly.
+/// </summary>
+public enum AuthenticatedTestingState
+{
+    /// <summary>An authenticated context exists and can be used now.</summary>
+    Ready,
+    /// <summary>Setup has started and the context will appear once authenticated traffic is seen.</summary>
+    WaitingForTraffic,
+    /// <summary>Some authenticated access exists, but not all of what the method can provide.</summary>
+    Partial,
+    /// <summary>No authenticated context exists.</summary>
+    NotConnected,
+    /// <summary>The saved method provides no automated authenticated access at all.</summary>
+    ManualOnly,
+}
+
+/// <summary>
+/// The ONE user-facing vocabulary for authenticated testing. The underlying model carries finer
+/// distinctions — no credential, an expired one, no observed REST call, no observed GraphQL query —
+/// and those stay in the capability details. Showing four near-synonyms for "no authenticated
+/// context" at the same prominence is what this type exists to prevent.
+/// </summary>
+public static class AuthenticatedTestingStates
+{
+    public static string Label(AuthenticatedTestingState state) => state switch
+    {
+        AuthenticatedTestingState.Ready => "Ready",
+        AuthenticatedTestingState.WaitingForTraffic => "Waiting for authenticated traffic",
+        AuthenticatedTestingState.Partial => "Partial",
+        AuthenticatedTestingState.ManualOnly => "Manual only",
+        _ => "Not connected",
+    };
+
+    public static string Tone(AuthenticatedTestingState state) => state switch
+    {
+        AuthenticatedTestingState.Ready => "ready",
+        AuthenticatedTestingState.ManualOnly or AuthenticatedTestingState.NotConnected => "muted",
+        _ => "needs-action",
+    };
+
+    /// <summary>Why this matters, in one sentence. It is about testing access, never about the target's own sign-in.</summary>
+    public const string Purpose = "Authenticated testing lets BirkNext inspect protected API traffic and authenticated application behaviour. It is separate from whether the target itself requires sign-in.";
+
+    public static string SetupAction(AuthenticatedTestingState state) =>
+        state == AuthenticatedTestingState.Ready ? "View authenticated testing setup" : "Set up authenticated testing";
+}

@@ -288,8 +288,13 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Persisted().Authentication.ExpectedAuthority.Should().BeNull();
         SaveCalls().Should().Be(savesBefore);
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty();
-        cut.FindAll(".fa-dl-row").Single(r => r.QuerySelector("dt")!.TextContent.Trim() == "Configured authentication")
-            .QuerySelector("dd")!.TextContent.Trim().Should().StartWith("None", "view mode shows persisted authentication");
+        // The persisted configured provider is listed once, in the comparison, rather than echoed as a
+        // second read-only row beside the detected one. After Cancel it must show the persisted value,
+        // not the applied draft.
+        cut.Find("[data-testid='authentication-comparison']").QuerySelectorAll("tr")
+            .Single(r => r.QuerySelector("th")?.TextContent.Trim() == "Identity provider")
+            .QuerySelectorAll("td")[1].TextContent
+            .Should().NotContain("Microsoft Entra ID", "view mode shows persisted authentication, not the cancelled draft");
 
         AssertDiscoveryCurrent(cut, editing: false);
     }
@@ -399,7 +404,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Save changes");
         cut.WaitForAssertion(() => Persisted().Authentication.ExpectedClientId.Should().Be("99999999-9999-9999-9999-999999999999"));
 
-        Click(cut, "Review manual verification");
+        Click(cut, "Open verification instructions");
 
         cut.Markup.Should().Contain("Authentication or environment settings changed since detection.");
         cut.Markup.Should().Contain("Run Detect settings again before recording manual verification.");

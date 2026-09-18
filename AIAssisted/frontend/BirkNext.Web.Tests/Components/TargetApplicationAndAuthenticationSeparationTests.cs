@@ -159,7 +159,9 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
 
         Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
         Row(cut, "authentication-provider").Should().Be("Microsoft Entra ID");
-        Row(cut, "authenticated-context").Should().Contain("Authenticated context");
+        // Authenticated testing is its own section now; the status card no longer echoes it.
+        Row(cut, "authenticated-testing-state").Should().Be("Not connected");
+        Row(cut, "authentication-sign-in-required").Should().NotBeNullOrWhiteSpace();
 
         // Exactly one place lists the identifiers, and the old duplicate list is gone.
         cut.FindAll("[data-testid='authentication-comparison']").Should().ContainSingle();
@@ -263,7 +265,7 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
 
         Row(cut, "authentication-verification-status").Should().Contain("Manual authentication verification required");
         Row(cut, "authentication-verification-method").Should().Be("Automated detection");
-        cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Review manual verification");
+        cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Open verification instructions");
     }
 
     [Fact]
@@ -273,7 +275,9 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
         OpenTab(cut, "Authentication");
 
         Row(cut, "authenticated-testing-method-value").Should().Be(AuthenticatedTestingMethodLabels.ProxyOption);
-        Row(cut, "authenticated-testing-method-context").Should().Be("Authenticated context unavailable");
+        // Stated once, by the Authenticated testing section, in its own vocabulary.
+        Row(cut, "authenticated-testing-state").Should().Be("Not connected");
+        cut.FindAll("[data-testid='authenticated-testing-method-context']").Should().BeEmpty();
         Row(cut, "proxy-security-warning").Should().Contain("never displays, logs or saves");
 
         // The DEV-only caveat is a tagged aside, not a banner competing with the status card.
