@@ -2,9 +2,15 @@
 @using BirkNext.Web.Services
 @inject IEndpointDiscoveryService Discovery
 
-<section class="bq-workspace" aria-label="Browser Quality">
-    <header class="bq-header"><h3>Browser Quality</h3><p>Accessibility and performance from observed browser evidence.</p></header>
-    <div class="tab-bar" role="tablist" aria-label="Browser Quality views">
+<section class="bq-workspace" aria-label="@Title">
+    <header class="bq-header"><h3>@Title</h3><p>Accessibility and performance from observed browser evidence.</p></header>
+    <div class="tab-bar" role="tablist" aria-label="@(Title + " views")">
+        @if (Overview is not null)
+        {
+            <button type="button" class="tab-btn @(_tab == -1 ? "is-active" : "")" id="@(_id + "-overview")" role="tab"
+                    aria-selected="@((_tab == -1).ToString().ToLowerInvariant())" aria-controls="@(_id + "-overview-panel")" tabindex="@(_tab == -1 ? 0 : -1)"
+                    data-testid="browser-discovery-overview-tab" @onclick="() => _tab = -1" @onkeydown="TabKey" @ref="_overviewTab">Overview</button>
+        }
         <button type="button" class="tab-btn @(_tab == 0 ? "is-active" : "")" id="@(_id + "-wcag")" role="tab"
                 aria-selected="@((_tab == 0).ToString().ToLowerInvariant())" aria-controls="@(_id + "-wcag-panel")" tabindex="@(_tab == 0 ? 0 : -1)"
                 data-testid="browser-quality-wcag-tab" @onclick="() => _tab = 0" @onkeydown="TabKey" @ref="_wcagTab">WCAG</button>
@@ -12,8 +18,17 @@
                 aria-selected="@((_tab == 1).ToString().ToLowerInvariant())" aria-controls="@(_id + "-performance-panel")" tabindex="@(_tab == 1 ? 0 : -1)"
                 data-testid="browser-quality-performance-tab" @onclick="() => _tab = 1" @onkeydown="TabKey" @ref="_performanceTab">Performance</button>
     </div>
+    @if (Overview is not null)
+    {
+        <div role="tabpanel" id="@(_id + "-overview-panel")" aria-labelledby="@(_id + "-overview")" hidden="@(_tab != -1)" tabindex="0">
+            @if (_tab == -1) { @Overview }
+        </div>
+    }
     <div role="tabpanel" id="@(_id + "-wcag-panel")" aria-labelledby="@(_id + "-wcag")" hidden="@(_tab != 0)" tabindex="0">
-        <WcagWorkspace ProfileId="@Profile.Id" Snapshot="Discovery.GetSnapshot(Profile.Id)" />
+        @if (_tab == 0)
+        {
+            <WcagWorkspace ProfileId="@Profile.Id" Snapshot="Discovery.GetSnapshot(Profile.Id)" />
+        }
     </div>
     <div role="tabpanel" id="@(_id + "-performance-panel")" aria-labelledby="@(_id + "-performance")" hidden="@(_tab != 1)" tabindex="0">
     @if (_tab == 1)
@@ -56,15 +71,21 @@
 
 @code {
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = new();
+    [Parameter] public RenderFragment? Overview { get; set; }
+    [Parameter] public string Title { get; set; } = "Browser Quality";
+    protected override void OnInitialized() => _tab = Overview is null ? 0 : -1;
     private readonly string _id = $"browser-quality-{Guid.NewGuid():N}";
     private int _tab;
-    private ElementReference _wcagTab, _performanceTab;
+    private ElementReference _wcagTab, _performanceTab, _overviewTab;
     private IReadOnlyList<PageAnalysis> Pages => Discovery.GetSnapshot(Profile.Id).Pages.Where(p => p.BrowserEvidence?.Performance is not null).ToList();
     private static readonly (string Id, string Label)[] CoreMetrics = [("lcp", "LCP"), ("inp", "INP"), ("cls", "CLS"), ("ttfb", "Navigation · TTFB")];
     private async Task TabKey(KeyboardEventArgs e)
     {
         if (e.Key is not ("ArrowLeft" or "ArrowRight" or "Home" or "End")) return;
-        _tab = e.Key == "Home" ? 0 : e.Key == "End" ? 1 : 1 - _tab;
-        await (_tab == 0 ? _wcagTab : _performanceTab).FocusAsync(preventScroll: true);
+        var first = Overview is null ? 0 : -1;
+        _tab = e.Key == "Home" ? first : e.Key == "End" ? 1 : _tab + (e.Key == "ArrowRight" ? 1 : -1);
+        if (_tab > 1) _tab = first;
+        if (_tab < first) _tab = 1;
+        await (_tab == -1 ? _overviewTab : _tab == 0 ? _wcagTab : _performanceTab).FocusAsync(preventScroll: true);
     }
 }

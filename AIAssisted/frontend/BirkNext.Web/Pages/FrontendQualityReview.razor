@@ -185,9 +185,11 @@
 
         <h2 class="fqr-results-heading" data-testid="fqr-results-heading">Review results</h2>
 
+        @* Frontend Quality Review owns WCAG interpretation: the assessment profile, the pass/fail coverage produced by
+           this review run, and manual review. Browser Discovery only presents the browser evidence this reads. *@
         @if (report.Wcag is { } wcag)
         {
-            <WcagCoverage Assessment="wcag" />
+            <WcagWorkspace ProfileId="@(_context?.ActiveProfile.Id ?? "")" Snapshot="@WcagSnapshot" Result="wcag" />
         }
 
         @if (report.PreflightStatus == PreflightStatus.AuthenticationRequired)
@@ -658,6 +660,14 @@
         : _activeEngines is not { HasActiveEngines: true } ? $"{FrontendQualityActiveEngines.NoActiveEnginesMessage} {FrontendQualityActiveEngines.NoActiveEnginesAction}"
         : null;
 
+    /// <summary>
+    /// The discovery snapshot the WCAG profile selection and manual reviews are written to. Read-only here: the
+    /// displayed coverage still comes from this review run's own assessment, never from a live re-assessment.
+    /// </summary>
+    private EndpointDiscoverySnapshot WcagSnapshot =>
+        _context is null ? new()
+            : (ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(_context.ActiveProfile.Id) ?? new();
+
     private BrowserCompanionState? CompanionState =>
         _companionRuntime is null || _context is null || _context.ActiveTargetError is not null ? null : _companionRuntime.For(_context.ActiveProfile.Id).State;
 
@@ -967,6 +977,13 @@
             WasmScore = qualityReport.WasmScore,
             ReadinessScore = qualityReport.ReadinessScore,
             Findings = qualityReport.Findings,
+            // Defect: this field-by-field copy silently dropped four results the view below renders, so the WCAG
+            // coverage, the BirkNext Performance Quality section, the redirect note and the engine error message
+            // could never appear after a run. They are part of the orchestrator's report and belong here.
+            Wcag = qualityReport.Wcag,
+            PerformanceQualityReport = qualityReport.PerformanceQualityReport,
+            RedirectOccurred = qualityReport.RedirectOccurred,
+            ErrorMessage = qualityReport.ErrorMessage,
             LogicalIssues = qualityReport.LogicalIssues,
             ManualReviewItems = qualityReport.ManualReviewItems,
             CategoryScores = qualityReport.CategoryScores,

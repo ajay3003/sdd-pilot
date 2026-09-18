@@ -320,10 +320,13 @@
         }
 
         @* ── Section tabs ── *@
-        <div class="fa-section-tabs" role="tablist">
+        <div class="fa-section-tabs" role="tablist" aria-label="Target Environment sections">
             @foreach (var (key, label) in Tabs)
             {
-                <button class="fa-tab @(_activeTab == key ? "fa-tab-active" : "")"
+                <button type="button" class="fa-tab @(_activeTab == key ? "fa-tab-active" : "")"
+                        id="@($"target-tab-{key}")" aria-controls="target-section-panel"
+                        tabindex="@(_activeTab == key ? 0 : -1)" @ref="_tabElements[Array.FindIndex(Tabs, t => t.Key == key)]"
+                        @onkeydown="e => SectionTabKey(e, key)"
                         role="tab"
                         aria-selected="@(_activeTab == key ? "true" : "false")"
                         @onclick="() => _activeTab = key">
@@ -333,7 +336,7 @@
         </div>
 
         @* ── Tab content ── *@
-        <div class="fa-tab-content">
+        <div class="fa-tab-content" role="tabpanel" id="target-section-panel" aria-labelledby="@($"target-tab-{_activeTab}")" tabindex="0">
 
             @* ── General ── *@
             @if (_activeTab == "general")
@@ -377,122 +380,90 @@
             @* ── Target Application ── *@
             @if (_activeTab == "target")
             {
-                @* Detection results summary with provenance *@
+                @* Detected target identity and runtime facts only. Authentication is configured, verified and
+                   used for testing on the Authentication tab; nothing here edits authentication. *@
                 @if (_detectionResult?.Success == true)
                 {
-                    <div class="fa-detection-summary fa-field-full" style="margin-top: 1.5rem; padding: 1rem; background: var(--color-surface-subtle); border-radius: 0.5rem; border-left: 3px solid var(--color-primary);">
-                        <div style="font-weight: 600; margin-bottom: 0.75rem;">Detected from target</div>
+                    <section class="fa-detected-card" data-testid="target-detected-summary" aria-labelledby="target-detected-heading">
+                        <div class="fa-card-heading">
+                            <h3 id="target-detected-heading">Detected from target</h3>
+                            <span class="fa-card-status fa-card-status-muted" data-testid="target-detection-confidence">Detection confidence: @_detectionResult.Confidence</span>
+                        </div>
 
-                        @* Detection result rows with provenance *@
-                        <div style="display: grid; grid-template-columns: 1fr 1.5fr 1fr; gap: 1rem; font-size: 0.875rem; row-gap: 0.75rem;">
-                            @* Reachability *@
-                            <div style="color: var(--color-text-subtle);">Reachability</div>
-                            <div style="font-weight: 500;">@_detectionResult.Reachability</div>
-                            <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                        <dl class="fa-detected-list">
+                            <div class="fa-detected-row"><dt>Reachability</dt><dd class="fa-detected-value">@_detectionResult.Reachability</dd><dd class="fa-source-badge">Detected</dd></div>
 
-                            @* Client Framework *@
                             @if (_detectionResult.DetectedClientFramework.HasValue)
                             {
-                                <div style="color: var(--color-text-subtle);">Framework</div>
-                                <div style="font-weight: 500;">@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                <div class="fa-detected-row"><dt>Framework</dt><dd class="fa-detected-value">@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</dd><dd class="fa-source-badge">Detected</dd></div>
                             }
 
-                            @* Authentication Required *@
                             @if (_detectionResult.AuthenticationRequired)
                             {
-                                <div style="color: var(--color-text-subtle);">Authentication required</div>
-                                <div style="font-weight: 500;">Yes</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                <div class="fa-detected-row"><dt>Authentication required</dt><dd class="fa-detected-value">Yes</dd><dd class="fa-source-badge">Detected</dd></div>
                             }
 
-                            @* Identity Provider *@
                             @if (_detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None && !string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
                             {
-                                <div style="color: var(--color-text-subtle);">Identity provider</div>
-                                <div style="font-weight: 500;">@_detectionResult.DetectedAuthenticationType</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                <div class="fa-detected-row"><dt>Identity provider</dt><dd class="fa-detected-value" data-testid="target-identity-provider">@AuthenticationPresentation.ProviderLabel(_detectionResult.DetectedAuthenticationType)</dd><dd class="fa-source-badge">Detected</dd></div>
                             }
 
-                            @* Authority *@
                             @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedAuthority))
                             {
-                                <div style="color: var(--color-text-subtle);">Authority</div>
-                                <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedAuthority</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                <div class="fa-detected-row"><dt>Authority</dt><dd class="fa-detected-value fa-detected-mono" data-testid="target-authority">@_detectionResult.DetectedAuthority</dd><dd class="fa-source-badge">Detected</dd></div>
                             }
 
-                            @* Tenant / Tenant Mode *@
                             @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedTenantId))
                             {
-                                <div style="color: var(--color-text-subtle);">Tenant</div>
-                                <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedTenantId</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                <div class="fa-detected-row"><dt>Tenant</dt><dd class="fa-detected-value fa-detected-mono" data-testid="target-tenant">@_detectionResult.DetectedTenantId</dd><dd class="fa-source-badge">Detected</dd></div>
                             }
                             else if (!string.IsNullOrWhiteSpace(_detectionResult.TenantMode))
                             {
-                                <div style="color: var(--color-text-subtle);">Tenant mode</div>
-                                <div style="font-weight: 500;">@_detectionResult.TenantMode</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                <div class="fa-detected-row"><dt>Tenant mode</dt><dd class="fa-detected-value" data-testid="target-tenant">@_detectionResult.TenantMode</dd><dd class="fa-source-badge">Detected</dd></div>
                             }
 
-                            @* Client ID *@
                             @if (!string.IsNullOrWhiteSpace(_detectionResult.DetectedClientId))
                             {
-                                <div style="color: var(--color-text-subtle);">Client/Application ID</div>
-                                <div style="font-family: monospace; font-weight: 500; word-break: break-all;">@_detectionResult.DetectedClientId</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Detected</div>
+                                <div class="fa-detected-row"><dt>Client/Application ID</dt><dd class="fa-detected-value fa-detected-mono" data-testid="target-client-id">@_detectionResult.DetectedClientId</dd><dd class="fa-source-badge">Detected</dd></div>
                             }
 
-                            @* Environment Type (Suggested) *@
                             @if (_detectionResult.SuggestedEnvironmentType.HasValue)
                             {
-                                <div style="color: var(--color-text-subtle);">Environment type</div>
-                                <div style="font-weight: 500;">
-                                    @_detectionResult.SuggestedEnvironmentType
-                                    @if (CurrentProfile is not null && CurrentProfile.EnvironmentType != _detectionResult.SuggestedEnvironmentType.Value)
-                                    {
-                                        <button type="button" class="fa-apply-suggestion" @onclick="ApplyDetectedEnvironmentType">Apply detected type</button>
-                                    }
+                                <div class="fa-detected-row">
+                                    <dt>Environment type</dt>
+                                    <dd class="fa-detected-value">
+                                        @_detectionResult.SuggestedEnvironmentType
+                                        @if (CurrentProfile is not null && CurrentProfile.EnvironmentType != _detectionResult.SuggestedEnvironmentType.Value)
+                                        {
+                                            <button type="button" class="fa-apply-suggestion" @onclick="ApplyDetectedEnvironmentType">Apply detected type</button>
+                                        }
+                                    </dd>
+                                    <dd class="fa-source-badge fa-source-badge-suggested">Suggested</dd>
                                 </div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
                             }
 
-                            @* Profile Name (Suggested) *@
                             @if (!string.IsNullOrWhiteSpace(_detectionResult.SuggestedProfileName))
                             {
-                                <div style="color: var(--color-text-subtle);">Profile name</div>
-                                <div style="font-weight: 500;">@_detectionResult.SuggestedProfileName</div>
-                                <div style="color: var(--color-text-subtle); text-align: right;">Suggested</div>
+                                <div class="fa-detected-row"><dt>Profile name</dt><dd class="fa-detected-value">@_detectionResult.SuggestedProfileName</dd><dd class="fa-source-badge fa-source-badge-suggested">Suggested</dd></div>
                             }
-                        </div>
+                        </dl>
 
-                        @* Authentication Support Status *@
-                        @if (_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
-                        {
-                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--color-border); font-size: 0.875rem;">
-                                <div style="font-weight: 600; margin-bottom: 0.5rem;">Authentication Support</div>
-                                <div style="color: var(--color-warning); font-size: 0.8125rem;">
-                                    <strong>Note:</strong> Authenticated review is <strong>not currently supported</strong> in Frontend Quality Review.
-                                    Detection only identifies the authentication configuration of your target.
-                                </div>
-                            </div>
-                        }
-
-                        @* Stale Detection Warning *@
                         @if (IsDetectionStale)
                         {
-                            <div style="margin-top: 1rem; padding: 0.75rem; background: var(--color-warning-bg, rgba(255, 193, 7, 0.1)); border-left: 3px solid var(--color-warning); border-radius: 0.25rem; font-size: 0.875rem;">
-                                <div style="color: var(--color-warning); font-weight: 600; margin-bottom: 0.25rem;">⚠️ Discoveries are stale</div>
-                                <div style="color: var(--color-text-muted); font-size: 0.8125rem;">@DiscoveryStaleDetail</div>
-                            </div>
+                            <p class="fa-detected-stale" role="status" data-testid="target-detection-stale">
+                                <strong>Discoveries are stale.</strong> @DiscoveryStaleDetail
+                            </p>
                         }
 
-                        @* Target Application shows only target identity and runtime characteristics. Endpoint/integration discovery is not shown here. *@
-                        <div style="font-size: 0.75rem; color: var(--color-text-subtle); margin-top: 0.75rem;">
-                            Target detection confidence: @_detectionResult.Confidence. Reachability, authentication and environment.
-                        </div>
-                    </div>
+                        @* Detected values are evidence, never saved configuration. Authentication lives on its own tab. *@
+                        <p class="fa-detected-footnote">
+                            Detected values describe this target. They are not saved configuration.
+                            @if (_detectionResult.AuthenticationRequired || _detectionResult.DetectedAuthenticationType != FrontendAuthenticationType.None)
+                            {
+                                <span data-testid="target-authentication-pointer">Configure, verify and test authentication on the Authentication tab.</span>
+                            }
+                        </p>
+                    </section>
                 }
 
                 @if (_isEditMode && _editProfile is not null)
@@ -538,25 +509,74 @@
             @if (_activeTab == "auth")
             {
                 <div class="fa-auth-layout">
-                <section class="fa-detection-summary fa-state-@AuthenticationDiscoveryState" data-testid="authentication-discovery">
-                    <div class="fa-card-heading"><h3>Authentication discovery</h3><span class="fa-card-status" role="status">@AuthenticationDiscoveryLabel</span></div>
-                    <dl class="fa-detail-list" data-testid="edge-auth-discovery">
-                        <div class="fa-dl-row"><dt>Provider</dt><dd>@DetectedAuthenticationLabel</dd></div>
-                        <div class="fa-dl-row"><dt>Authority</dt><dd>@(_detectionResult?.DetectedAuthority ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Tenant</dt><dd>@(_detectionResult?.DetectedTenantId ?? _detectionResult?.TenantMode ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Client ID</dt><dd>@(_detectionResult?.DetectedClientId ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Source</dt><dd>@(_detectionResult?.Success == true ? "Detect Settings" : "Not detected")</dd></div>
+
+                @* ── 1. Status: how authentication stands right now ── *@
+                <section class="fa-auth-status fa-state-@AuthenticationDiscoveryState" data-testid="authentication-discovery" aria-labelledby="authentication-status-heading">
+                    <div class="fa-card-heading">
+                        <h3 id="authentication-status-heading">Authentication</h3>
+                        <span class="fa-card-status" role="status">@AuthenticationDiscoveryLabel</span>
+                    </div>
+
+                    <p class="fa-auth-summary" data-testid="authentication-match-summary">
+                        <span class="fa-auth-marker" aria-hidden="true">@AuthenticationPresentation.StateMarker(AuthenticationMatch)</span>
+                        <span>@AuthenticationPresentation.StateSummary(AuthenticationMatch)</span>
+                    </p>
+
+                    <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Provider</dt><dd data-testid="authentication-provider">@AuthenticationPresentation.DetectedProviderLabel(_detectionResult)</dd></div>
+                        <div class="fa-dl-row"><dt>Testing context</dt><dd data-testid="authenticated-context">@AuthenticatedContextLabel</dd></div>
+                        <div class="fa-dl-row"><dt>Verification method</dt><dd data-testid="authentication-verification-method">@VerificationModeLabel</dd></div>
+                        @if (ManualVerificationRequired)
+                        {
+                            <div class="fa-dl-row"><dt>Verification</dt><dd data-testid="authentication-verification-status">@ManualVerificationLabel</dd></div>
+                        }
                     </dl>
-                    @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
-                    {
-                        <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings" style="margin-top: 0.75rem;"
-                                disabled="@(AuthenticationProposalStale || AuthenticationProposalMatches(CurrentProfile))"
-                                title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
-                            Apply authentication
-                        </button>
-                        <p>@(AuthenticationDiscoveryState == "draft" ? "Save changes to persist this configuration." : "Detected values are not saved automatically.")</p>
-                    }
+
+                    <div class="fa-auth-actions">
+                        @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
+                        {
+                            <button type="button" class="btn-secondary fa-btn-sm" @onclick='() => _activeTab = "target"'>Review manual verification</button>
+                        }
+                        @if (_detectionResult?.Success == true && HasDetectedAuthSettings(_detectionResult))
+                        {
+                            <button type="button" class="btn-secondary fa-btn-sm fa-apply-authentication" @onclick="ApplyDetectedAuthenticationSettings"
+                                    disabled="@(AuthenticationProposalStale || AuthenticationProposalMatches(CurrentProfile))"
+                                    title="Copy the detected authentication proposal into the draft. Use Save changes to persist.">
+                                Apply authentication
+                            </button>
+                        }
+                    </div>
+                    <p class="fa-auth-help" data-testid="apply-authentication-explanation">@AuthenticationPresentation.ApplyExplanation(AuthenticationMatch, AuthenticationComparison)</p>
+
+                    @* One comparison table, collapsed while everything matches and expanded automatically when a value differs.
+                       This is the only place the detected and configured identifiers are listed. *@
+                    <details class="fa-auth-details" data-testid="edge-auth-discovery" open="@AuthenticationDetailsOpen">
+                        <summary data-testid="authentication-details-toggle">View details</summary>
+                        <table class="fa-auth-comparison" data-testid="authentication-comparison">
+                            <caption>Advanced authentication details</caption>
+                            <thead>
+                                <tr><th scope="col">Setting</th><th scope="col">Detected</th><th scope="col">Configured</th><th scope="col">Status</th></tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in AuthenticationComparison)
+                                {
+                                    <tr>
+                                        <th scope="row">@row.Setting</th>
+                                        <td class="fa-auth-compare-value">@row.Detected</td>
+                                        <td class="fa-auth-compare-value">@row.Configured</td>
+                                        <td><span class="fa-compare-badge fa-compare-@AuthenticationPresentation.StatusCss(row.Status)"><span aria-hidden="true">@AuthenticationPresentation.StatusMarker(row.Status)</span> @AuthenticationPresentation.StatusLabel(row.Status)</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                        <dl class="fa-detail-list">
+                            <div class="fa-dl-row"><dt>Source</dt><dd data-testid="authentication-detection-source">@(_detectionResult?.Success == true ? "Detect Settings" : "Not detected")</dd></div>
+                        </dl>
+                        <p class="fa-auth-help">Expected authentication settings only. Never enter passwords, tokens or client secrets — BirkNext has no field for them.</p>
+                    </details>
                 </section>
+
+                @* ── 2. How authenticated testing is performed ── *@
                 <section class="fa-detection-summary fa-state-@(TestingMethodChanged ? "draft" : "saved")" data-testid="authenticated-testing-method">
                     <div class="fa-card-heading"><h3>Authenticated testing method</h3><span class="fa-card-status" role="status">@(TestingMethodChanged ? "Unsaved change" : _isEditMode ? "Editing draft" : "Saved configuration")</span></div>
                     @if (_isEditMode && _editProfile is not null)
@@ -572,15 +592,27 @@
                     {
                         <dl class="fa-detail-list">
                             <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)</dd></div>
+                            <div class="fa-dl-row"><dt>Authenticated context</dt><dd data-testid="authenticated-testing-method-context">@AuthenticatedContextLabel</dd></div>
                             <div class="fa-dl-row"><dt>Other available methods</dt><dd data-testid="authenticated-testing-method-others">@AuthenticatedTestingMethodLabels.OtherMethods(SelectedTestingMethod)</dd></div>
                         </dl>
                     }
-                    <p class="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? "fa-section-note" : "fa-auth-help")" data-testid="authenticated-testing-method-help"><span data-testid="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? "proxy-security-warning" : null)">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span></p>
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                    {
+                        <p class="fa-auth-note" data-testid="authenticated-testing-method-help">
+                            <span class="fa-auth-note-tag">DEV only</span>
+                            <span data-testid="proxy-security-warning">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span>
+                        </p>
+                    }
+                    else
+                    {
+                        <p class="fa-auth-help" data-testid="authenticated-testing-method-help">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</p>
+                    }
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile))
                     {
                         <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
                     }
                 </section>
+
                 @* The SAVED Authenticated testing method decides which runtime panel is shown. Runtime operations in either panel are
                    transient: they never enter edit mode, never show Save changes and never persist evidence. *@
                 @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
@@ -607,25 +639,15 @@
                         <AuthenticatedCapabilities Api="false" Dom="false" Rest="false" GraphQl="false" TrafficVerified="false" />
                     </section>
                 }
+
+                @* ── 3. Saved authentication configuration ── *@
                 <section class="fa-auth-configuration fa-state-@(HasUnsavedAuthenticationChanges ? "draft" : "saved")" data-testid="authentication-configuration">
                 <div class="fa-card-heading"><h3>Authentication configuration</h3><span class="fa-card-status" role="status">@(HasUnsavedAuthenticationChanges ? "Unsaved changes" : _isEditMode ? "Editing draft" : "Saved configuration")</span></div>
-                @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
-                {
-                    <p role="status">@ManualVerificationLabel <button type="button" class="btn-secondary fa-btn-sm" @onclick='() => _activeTab = "target"'>Review manual verification</button></p>
-                }
-                <details><summary>Configuration help</summary><p>Expected authentication settings only. Never enter passwords, tokens or client secrets.</p></details>
                 @if (_isEditMode && _editProfile is not null)
                 {
                     var auth = _editProfile.Authentication;
                     <div class="fa-form-grid">
                         <div class="form-field fa-field-full">
-                            <label class="fa-label" style="font-weight:600">Verification method</label>
-                            <p style="font-size:0.9rem;margin-bottom:0.75rem">
-                                <strong>@VerificationModeLabel</strong>
-                            </p>
-                        </div>
-
-                        <div class="form-field fa-field-full" style="padding-top:1rem;border-top:1px solid var(--color-border)">
                             <div class="fa-threshold-group-title" id="configured-authentication-heading">Configured Authentication</div>
                             @if (HasUnsavedAuthenticationChanges)
                             {
@@ -677,7 +699,7 @@
                            draft -> Save changes / Cancel flow and never marks public target detection stale. *@
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                     {
-                        <div class="form-field fa-field-full fa-state-@(BrowserTrustChanged ? "draft" : "saved")" style="padding-top:1rem;border-top:1px solid var(--color-border)" data-testid="browser-delivery-trust">
+                        <div class="form-field fa-field-full fa-state-@(BrowserTrustChanged ? "draft" : "saved") fa-auth-subcard" data-testid="browser-delivery-trust">
                             <span class="fa-card-status" role="status">@(BrowserTrustChanged ? "Unsaved change" : "Editing draft")</span>
                             <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
                             <p>Exact origin is always preferred.</p>
@@ -698,22 +720,14 @@
                 else
                 {
                     var auth = profile.Authentication;
+                    @* Identifiers and redirect URLs are not repeated here: they live only in the single comparison above. *@
                     <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Verification method</dt><dd>@VerificationModeLabel</dd></div>
                         <div class="fa-dl-row"><dt>Configured authentication</dt><dd>@auth.AuthenticationType @if (_detectionResult?.Success == true && _detectionResult.DetectedAuthenticationType != auth.AuthenticationType) { <small class="fa-configured-auth-draft">Differs from detected provider</small> }</dd></div>
                         <div class="fa-dl-row"><dt>Requires Authentication</dt><dd>@BoolLabel(auth.RequiresAuthentication)</dd></div>
                     </dl>
-                    <details><summary>Configured identifiers and redirect URLs</summary>
-                    <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Expected Authority</dt><dd>@(auth.ExpectedAuthority ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Expected Tenant</dt><dd>@(auth.ExpectedTenant ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(auth.ExpectedClientId ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed Redirect URLs</dt><dd>@HostList(auth.AllowedRedirectUrls)</dd></div>
-                    </dl>
-                    </details>
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                     {
-                    <div class="fa-field-full fa-state-saved" style="margin-top:1.5rem" data-testid="browser-delivery-trust">
+                    <div class="fa-field-full fa-state-saved fa-auth-subcard" data-testid="browser-delivery-trust">
                         <span class="fa-card-status">Saved configuration</span>
                         <div class="fa-threshold-group-title" id="browser-delivery-trust-heading">Browser delivery trust</div>
                         <dl class="fa-detail-list">
@@ -733,16 +747,18 @@
             @if (_activeTab == "endpoint")
             {
                 <p class="fa-section-note">
-                    Page-oriented discovery of what each application page actually communicates with. Learned from public detection, from
-                    authenticated traffic observed through the Local HTTPS proxy, and from configured backend integrations. Endpoint
-                    evidence is safe metadata only — never a credential, cookie or request body — and never auto-saved into configuration.
+                    Pages, endpoints and services observed through network traffic, alongside configured backend integrations.
                 </p>
 
-                <BrowserCompanionPanel Profile="CurrentProfile" Runtime="_companionRuntime" ProxyRunning="@(ProxyStatus.State is LocalHttpsProxyState.Listening or LocalHttpsProxyState.WaitingForAuthenticatedTraffic or LocalHttpsProxyState.AuthenticatedTrafficDetected or LocalHttpsProxyState.Ready)" />
                 <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus" CompanionStatus="@(_companionRuntime?.For(CurrentProfile?.Id) ?? new())" />
             }
 
             @* ── Performance Thresholds ── *@
+            @if (_activeTab == "browser")
+            {
+                <BrowserDiscoveryTab @key="CurrentProfile!.Id" Profile="CurrentProfile" Runtime="_companionRuntime" />
+            }
+
             @if (_activeTab == "performance")
             {
                 <p class="fa-section-note">
@@ -1762,6 +1778,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("target",      "Target Application"),
         ("auth",        "Authentication"),
         ("endpoint",    "Endpoint Discovery"),
+        ("browser",     "Browser Discovery"),
         ("performance", "Performance Thresholds"),
         ("cwv",         "Core Web Vitals"),
         ("security",    "Security Expectations"),
@@ -1771,6 +1788,17 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     ];
 
     // ── Computed ─────────────────────────────────────────────────────────────
+
+    private readonly ElementReference[] _tabElements = new ElementReference[Tabs.Length];
+    private async Task SectionTabKey(KeyboardEventArgs e, string key)
+    {
+        if (e.Key is not ("ArrowLeft" or "ArrowRight" or "Home" or "End")) return;
+        var index = Array.FindIndex(Tabs, t => t.Key == key);
+        index = e.Key == "Home" ? 0 : e.Key == "End" ? Tabs.Length - 1
+            : (index + (e.Key == "ArrowRight" ? 1 : -1) + Tabs.Length) % Tabs.Length;
+        _activeTab = Tabs[index].Key;
+        await _tabElements[index].FocusAsync(preventScroll: true);
+    }
 
     private ManagedEdgeRuntime? _edgeRuntime;
     private LocalHttpsProxyRuntime? _proxyRuntime;
@@ -1810,6 +1838,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         // selected-environment or target-configuration change (SynchronizeAsync), or on credential expiry.
         if (_edgeRuntime is not null) _edgeRuntime.Changed -= EdgeRuntimeChanged;
         if (_proxyRuntime is not null) _proxyRuntime.Changed -= EdgeRuntimeChanged;
+        if (_companionRuntime is not null) _companionRuntime.Changed -= EdgeRuntimeChanged;
         return ValueTask.CompletedTask;
     }
 
@@ -2592,19 +2621,45 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             d.DetectedRedirectUrls.All(url => a.AllowedRedirectUrls.Contains(url, StringComparer.OrdinalIgnoreCase));
     }
 
-    private string AuthenticationDiscoveryState => AuthenticationProposalStale ? "needs-action" :
-        _detectionResult?.Success != true || !HasDetectedAuthSettings(_detectionResult) ? "neutral" :
+    /// <summary>
+    /// Where the detected authentication proposal stands relative to the saved configuration. The rules are
+    /// unchanged; only the wording moved to <see cref="AuthenticationPresentation"/> so the Authentication tab
+    /// and the Target Application tab cannot drift apart.
+    /// </summary>
+    private AuthenticationMatchState AuthenticationMatch => AuthenticationProposalStale ? AuthenticationMatchState.Stale :
+        _detectionResult?.Success != true || !HasDetectedAuthSettings(_detectionResult) ? AuthenticationMatchState.NotDetected :
         AuthenticationProposalMatches(CurrentProfile) ?
-            AuthenticationProposalMatches(SelectedProfile) ? "saved" : "draft" : "detected";
+            AuthenticationProposalMatches(SelectedProfile) ? AuthenticationMatchState.MatchesSaved : AuthenticationMatchState.AppliedToDraft
+            : AuthenticationMatchState.Detected;
 
-    private string AuthenticationDiscoveryLabel => AuthenticationDiscoveryState switch
+    private string AuthenticationDiscoveryState => AuthenticationPresentation.StateCss(AuthenticationMatch);
+
+    private string AuthenticationDiscoveryLabel => AuthenticationPresentation.StateLabel(AuthenticationMatch);
+
+    /// <summary>
+    /// The single detected-versus-configured comparison shown on the Authentication tab. It reads the draft while
+    /// editing so "Configured" always names what would be saved, never a stale persisted value.
+    /// </summary>
+    private IReadOnlyList<AuthenticationComparisonRow> AuthenticationComparison =>
+        AuthenticationPresentation.Compare(_detectionResult, CurrentProfile?.Authentication);
+
+    /// <summary>Collapsed while everything matches; opened automatically as soon as a value would change.</summary>
+    private bool AuthenticationDetailsOpen => AuthenticationComparison.Any(r => AuthenticationPresentation.IsActionable(r.Status));
+
+    /// <summary>
+    /// Whether an authenticated testing context exists right now for the SAVED method. This is runtime evidence,
+    /// deliberately separate from whether authentication is configured or manually verified.
+    /// </summary>
+    private bool AuthenticatedContextAvailable => SelectedTestingMethod switch
     {
-        "needs-action" => "Detection stale — run Detect settings again",
-        "saved" => "Matches saved configuration",
-        "draft" => "Applied to draft — Save changes to persist",
-        "detected" => "Detected — proposal available",
-        _ => "Not detected"
+        AuthenticatedTestingMethod.LocalHttpsProxy => ProxyStatus.AuthenticatedCredentialAvailable,
+        AuthenticatedTestingMethod.ManagedEdgeCdp => EdgeStatus.AuthenticatedBrowserAvailable,
+        _ => false
     };
+
+    private string AuthenticatedContextLabel => AuthenticatedContextAvailable
+        ? "Authenticated context available"
+        : "Authenticated context unavailable";
 
     private string DetectedAuthenticationLabel => _detectionResult is null ||
         (!_detectionResult.AuthenticationRequired && _detectionResult.DetectedAuthenticationType == FrontendAuthenticationType.None)

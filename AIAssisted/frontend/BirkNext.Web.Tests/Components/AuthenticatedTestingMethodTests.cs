@@ -361,7 +361,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var cut = Open();
         Click(cut, "Detect settings");
         OpenTab(cut, "Authentication");
-        Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Authentication discovery"));
+        Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Authentication"));
         Assert.Empty(cut.FindAll(".fa-result-grid"));
         Assert.DoesNotContain("Detected Authentication", cut.Markup);
         Assert.True(HasButton(cut, "Apply authentication"));

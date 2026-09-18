@@ -1,0 +1,389 @@
+@using BirkNext.BrowserCompanion
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IEndpointDiscoveryService Discovery
+
+@*
+    Browser Discovery presents browser-side EVIDENCE observed by Browser Companion.
+    Frontend Quality Review interprets that evidence. Nothing here assesses, scores or judges:
+    WCAG areas group observed evidence by principle and are never a conformance result.
+*@
+<section class="bd" data-testid="browser-discovery" aria-label="Browser discovery">
+
+    <div class="bd-overview" data-testid="browser-discovery-summary">
+        <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Browser session</span><span class="bd-ov-value" data-testid="bd-session">@StateLabel</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Current page</span><span class="bd-ov-value bd-mono" data-testid="bd-current-page">@CurrentPage</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Pages with evidence</span><span class="bd-ov-value" data-testid="bd-pages-count">@Rows.Count</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Last browser evidence</span><span class="bd-ov-value bd-mono" data-testid="bd-last-evidence">@(LastEvidence is { } t ? Time(t) : "None")</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Approved origins</span><span class="bd-ov-value bd-mono" data-testid="bd-origins">@(ApprovedOrigins.Count == 0 ? "—" : string.Join(", ", ApprovedOrigins))</span></div>
+    </div>
+
+    <nav class="bd-nav" role="tablist" aria-label="Browser discovery views">
+        @foreach (var (key, label, count) in Views)
+        {
+            <button type="button" class="bd-navbtn @(_view == key ? "bd-navbtn-active" : "")"
+                    id="@($"browser-discovery-tab-{key}")" role="tab"
+                    aria-selected="@((_view == key).ToString().ToLowerInvariant())"
+                    aria-controls="@($"browser-discovery-panel-{key}")"
+                    tabindex="@(_view == key ? 0 : -1)"
+                    data-testid="@($"browser-discovery-nav-{key}")"
+                    @onclick="() => Select(key)" @onkeydown="NavKey">@label@(count is { } c ? $" ({c})" : "")</button>
+        }
+    </nav>
+
+    @* Every panel element exists so each tab's aria-controls always resolves; only the selected panel has content. *@
+
+    @* ── Overview: what browser evidence is currently available? ── *@
+    <div class="bd-panel" role="tabpanel" id="browser-discovery-panel-overview" aria-labelledby="browser-discovery-tab-overview" tabindex="0" hidden="@(_view != "overview")">
+    @if (_view == "overview")
+    {
+            <h4 class="bd-panel-title">What browser evidence was observed</h4>
+            @if (Rows.Count == 0)
+            {
+                <div class="bd-empty" data-testid="browser-discovery-empty">
+                    <p class="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
+                    <p class="bd-empty-help">@BrowserDiscoveryPresentation.NoEvidenceHelp</p>
+                </div>
+            }
+            else
+            {
+                <div class="bd-tablewrap">
+                    <table class="bd-table" data-testid="browser-discovery-overview-table">
+                        <caption class="bd-caption">Browser evidence observed per page. Evidence only — Frontend Quality Review interprets it.</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Page / Route</th>
+                                <th scope="col">WCAG areas</th>
+                                <th scope="col">DOM</th>
+                                <th scope="col">Performance evidence</th>
+                                <th scope="col">Last seen</th>
+                                <th scope="col">Source</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var row in Rows)
+                            {
+                                <tr data-testid="browser-discovery-page-row">
+                                    <th scope="row" class="bd-mono bd-route">
+                                        <button type="button" class="bd-routelink" data-testid="browser-discovery-open-page" @onclick="() => OpenPage(row.Identity)">@row.Route</button>
+                                    </th>
+                                    <td>@AreaBadges(row.WcagAreas)</td>
+                                    <td>@StateBadge(row.Dom)</td>
+                                    <td>@StateBadge(row.Performance)</td>
+                                    <td class="bd-mono">@(row.LastSeen is { } seen ? Time(seen) : "—")</td>
+                                    <td><span class="bd-source">@row.Source</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="bd-note" data-testid="browser-discovery-area-disclaimer">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
+                <div class="bd-handoff" data-testid="browser-discovery-handoff">
+                    @if (DomPages > 0)
+                    {
+                        <p data-testid="browser-discovery-dom-count">DOM evidence available for @DomPages page(s).</p>
+                    }
+                    @if (AccessibilityPages > 0)
+                    {
+                        <p>Accessibility evidence available for @AccessibilityPages page(s). <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review-accessibility">Open Frontend Quality Review</a></p>
+                    }
+                    @if (PerformancePages > 0)
+                    {
+                        <p>Performance evidence available for @PerformancePages page(s). <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review-performance">Open Frontend Quality Review</a></p>
+                    }
+                </div>
+            }
+    }
+    </div>
+
+    @* ── Pages: detailed per-page browser evidence ── *@
+    <div class="bd-panel bd-split" role="tabpanel" id="browser-discovery-panel-pages" aria-labelledby="browser-discovery-tab-pages" tabindex="0" hidden="@(_view != "pages")">
+    @if (_view == "pages")
+    {
+            <aside class="bd-pagelist" aria-label="Pages with browser evidence">
+                @if (Rows.Count == 0)
+                {
+                    <p class="bd-empty-help">@BrowserDiscoveryPresentation.NoEvidenceHelp</p>
+                }
+                @foreach (var row in Rows)
+                {
+                    <button type="button" class="bd-pagelink @(SelectedRow?.Identity == row.Identity ? "bd-pagelink-active" : "")"
+                            aria-current="@(SelectedRow?.Identity == row.Identity ? "true" : null)"
+                            data-testid="browser-discovery-page-link" @onclick="() => _selected = row.Identity">
+                        <span class="bd-pagetitle">@row.Route</span>
+                        <span class="bd-pagesub">@(row.LastSeen is { } s ? Time(s) : "—")</span>
+                    </button>
+                }
+            </aside>
+            <div class="bd-pagedetail">
+                @if (SelectedRow is { } sel && SelectedEvidence is { } evidence)
+                {
+                    <h4 class="bd-page-title bd-mono" data-testid="browser-discovery-selected-page">@sel.Route</h4>
+                    <dl class="bd-summary" data-testid="browser-discovery-page-summary">
+                        <div><dt>Last observed</dt><dd class="bd-mono">@(sel.LastSeen is { } o ? Time(o) : "—")</dd></div>
+                        <div><dt>Source</dt><dd>@sel.Source</dd></div>
+                        <div><dt>DOM</dt><dd data-testid="browser-discovery-page-dom-state">@BrowserDiscoveryPresentation.StateLabel(sel.Dom)</dd></div>
+                        <div><dt>Performance evidence</dt><dd data-testid="browser-discovery-page-performance-state">@BrowserDiscoveryPresentation.StateLabel(sel.Performance)</dd></div>
+                        <div><dt>WCAG areas</dt><dd>@AreaBadges(sel.WcagAreas)</dd></div>
+                    </dl>
+
+                    <h5 class="bd-section-title">WCAG areas</h5>
+                    <p class="bd-note">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
+                    @if (BrowserDiscoveryPresentation.AreaEvidence(evidence.Accessibility) is { Count: > 0 } areas)
+                    {
+                        <div class="bd-areas" data-testid="browser-discovery-page-areas">
+                            @foreach (var area in areas)
+                            {
+                                <section class="bd-area" data-testid="@($"browser-discovery-area-{area.Principle.ToString().ToLowerInvariant()}")">
+                                    <h6 class="bd-area-title">@BrowserDiscoveryPresentation.PrincipleLabel(area.Principle)</h6>
+                                    <ul class="bd-evidence-list">
+                                        @foreach (var item in area.Items)
+                                        {
+                                            <li><span class="bd-evidence-label">@item.Label</span><span class="bd-evidence-detail">@item.Detail</span>@if (item.CriterionId is { Length: > 0 } c) { <span class="bd-crit">@c</span> }</li>
+                                        }
+                                    </ul>
+                                </section>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="bd-empty-help" data-testid="browser-discovery-page-areas-empty">No accessibility evidence was observed for this page.</p>
+                    }
+
+                    <h5 class="bd-section-title">DOM</h5>
+                    @if (BrowserDiscoveryPresentation.DomEvidence(evidence.Dom) is { Count: > 0 } domItems)
+                    {
+                        @ItemList(domItems, "browser-discovery-page-dom")
+                    }
+                    else
+                    {
+                        <p class="bd-empty-help" data-testid="browser-discovery-page-dom-empty">No DOM evidence was observed for this page.</p>
+                    }
+
+                    <h5 class="bd-section-title">Performance evidence</h5>
+                    @if (BrowserDiscoveryPresentation.PerformanceEvidence(evidence.Performance) is { Count: > 0 } perfItems)
+                    {
+                        <p class="bd-note">Observation: @BrowserDiscoveryPresentation.ObservationLabel(evidence.Performance). Raw observations only; thresholds are applied in Frontend Quality Review.</p>
+                        @ItemList(perfItems, "browser-discovery-page-performance")
+                    }
+                    else
+                    {
+                        <p class="bd-empty-help" data-testid="browser-discovery-page-performance-empty">No performance evidence was observed for this page.</p>
+                    }
+                }
+                else
+                {
+                    <p class="bd-empty-help">Select a page to see the browser evidence observed for it.</p>
+                }
+            </div>
+    }
+    </div>
+
+    @* ── Evidence: normalized explorer grouped by evidence type ── *@
+    <div class="bd-panel" role="tabpanel" id="browser-discovery-panel-evidence" aria-labelledby="browser-discovery-tab-evidence" tabindex="0" hidden="@(_view != "evidence")">
+    @if (_view == "evidence")
+    {
+            <h4 class="bd-panel-title">Observed browser evidence by type</h4>
+            @if (Rows.Count == 0)
+            {
+                <div class="bd-empty" data-testid="browser-discovery-evidence-empty">
+                    <p class="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
+                    <p class="bd-empty-help">@BrowserDiscoveryPresentation.NoEvidenceHelp</p>
+                </div>
+            }
+            else
+            {
+                <section class="bd-evidence-group" data-testid="browser-discovery-evidence-dom" aria-labelledby="bd-evidence-dom-heading">
+                    <h5 class="bd-section-title" id="bd-evidence-dom-heading">DOM</h5>
+                    @EvidenceTable(
+                        EvidencePages.SelectMany(p => BrowserDiscoveryPresentation.DomEvidence(p.Evidence.Dom).Select(i => (p.Route, Type: i.Label, i.Detail, p.Evidence.CapturedAt))).ToList(),
+                        "Evidence type", "No DOM evidence observed yet.")
+                </section>
+
+                <section class="bd-evidence-group" data-testid="browser-discovery-evidence-accessibility" aria-labelledby="bd-evidence-a11y-heading">
+                    <h5 class="bd-section-title" id="bd-evidence-a11y-heading">Accessibility</h5>
+                    <p class="bd-note">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
+                    @if (AccessibilityRows.Count == 0)
+                    {
+                        <p class="bd-empty-help">No accessibility evidence observed yet.</p>
+                    }
+                    else
+                    {
+                        <div class="bd-tablewrap">
+                            <table class="bd-table" data-testid="browser-discovery-evidence-accessibility-table">
+                                <thead><tr><th scope="col">Page</th><th scope="col">WCAG area</th><th scope="col">Criterion</th><th scope="col">Evidence item</th><th scope="col">Observed at</th><th scope="col">Source</th></tr></thead>
+                                <tbody>
+                                    @foreach (var row in AccessibilityRows)
+                                    {
+                                        <tr>
+                                            <th scope="row" class="bd-mono">@row.Route</th>
+                                            <td><span class="bd-area-badge">@BrowserDiscoveryPresentation.PrincipleLabel(row.Principle)</span></td>
+                                            <td class="bd-mono">@(row.Item.CriterionId ?? "—")</td>
+                                            <td><span class="bd-evidence-label">@row.Item.Label</span> <span class="bd-evidence-detail">@row.Item.Detail</span></td>
+                                            <td class="bd-mono">@Time(row.CapturedAt)</td>
+                                            <td><span class="bd-source">@BrowserDiscoveryPresentation.Source</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+
+                <section class="bd-evidence-group" data-testid="browser-discovery-evidence-performance" aria-labelledby="bd-evidence-perf-heading">
+                    <h5 class="bd-section-title" id="bd-evidence-perf-heading">Performance</h5>
+                    @EvidenceTable(
+                        EvidencePages.SelectMany(p => BrowserDiscoveryPresentation.PerformanceEvidence(p.Evidence.Performance).Select(i => (p.Route, Type: i.Label, Detail: i.Detail, p.Evidence.CapturedAt))).ToList(),
+                        "Metric", "No performance evidence observed yet.")
+                </section>
+            }
+    }
+    </div>
+
+    @* Browser Companion stays in Browser Discovery: it is what produces this evidence. *@
+    <BrowserCompanionPanel Profile="Profile" Runtime="Runtime" Compact="true" />
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = new();
+    [Parameter] public BrowserCompanionRuntime? Runtime { get; set; }
+
+    private string _view = "overview";
+    private string? _selected;
+
+    private EndpointDiscoverySnapshot Snapshot => Discovery.GetSnapshot(Profile?.Id ?? "");
+    private IReadOnlyList<BrowserPageRow> Rows => BrowserDiscoveryPresentation.Rows(Snapshot);
+    private DateTimeOffset? LastEvidence => BrowserDiscoveryPresentation.LastEvidenceAt(Snapshot);
+    private int DomPages => Rows.Count(r => r.Dom == BrowserEvidenceState.Available);
+    private int AccessibilityPages => Rows.Count(r => r.WcagAreas.Count > 0);
+    private int PerformancePages => Rows.Count(r => r.Performance == BrowserEvidenceState.Available);
+
+    private BrowserCompanionStatus Status => Runtime?.For(Profile?.Id) ?? new();
+    private IReadOnlyList<string> ApprovedOrigins => Status.ApprovedOrigins.Count > 0 ? Status.ApprovedOrigins : BrowserCompanionScope.ApprovedOrigins(Profile);
+    /// <summary>Connection is about the session, never about evidence: a connected companion may still have observed nothing.</summary>
+    private string StateLabel => Status.State switch
+    {
+        BrowserCompanionState.Connected => "Connected",
+        BrowserCompanionState.Disconnected => "Paired · not reporting",
+        BrowserCompanionState.PairingPending => "Pairing…",
+        BrowserCompanionState.Expired => "Session expired",
+        _ => "Not connected"
+    };
+    private string CurrentPage => Status.CurrentPageOrigin is { Length: > 0 } o ? $"{o}{Status.CurrentPagePath}"
+        : Status.State == BrowserCompanionState.Connected ? "No approved page open" : "—";
+
+    private (string Key, string Label, int? Count)[] Views =>
+        [("overview", "Overview", null), ("pages", "Pages", Rows.Count), ("evidence", "Evidence", null)];
+
+    private BrowserPageRow? SelectedRow => Rows.FirstOrDefault(r => r.Identity == _selected) ?? Rows.FirstOrDefault();
+    private BrowserPageEvidence? SelectedEvidence =>
+        Snapshot.Pages.FirstOrDefault(p => p.Identity == SelectedRow?.Identity)?.BrowserEvidence;
+
+    private IReadOnlyList<(string Route, BrowserPageEvidence Evidence)> EvidencePages =>
+        Snapshot.Pages.Where(p => p.BrowserEvidence is not null)
+            .OrderByDescending(p => p.BrowserEvidence!.CapturedAt)
+            .Select(p => (p.PagePath.Length == 0 ? "/" : p.PagePath, p.BrowserEvidence!)).ToList();
+
+    private IReadOnlyList<(string Route, WcagPrinciple Principle, BrowserEvidenceItem Item, DateTimeOffset CapturedAt)> AccessibilityRows =>
+        EvidencePages.SelectMany(p => BrowserDiscoveryPresentation.AreaEvidence(p.Evidence.Accessibility)
+            .SelectMany(area => area.Items.Select(item => (p.Route, area.Principle, item, p.Evidence.CapturedAt)))).ToList();
+
+    // The summary row is the primary read-out for session state and evidence, so this component follows the
+    // companion runtime itself rather than depending on the card below it re-rendering.
+    private BrowserCompanionRuntime? _subscribed;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!ReferenceEquals(_subscribed, Runtime))
+        {
+            if (_subscribed is not null) _subscribed.Changed -= OnRuntimeChanged;
+            _subscribed = Runtime;
+            if (_subscribed is not null) _subscribed.Changed += OnRuntimeChanged;
+        }
+        if (Runtime is not null && Profile is not null) await Runtime.FollowAsync(Profile);
+    }
+
+    private void OnRuntimeChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() { if (_subscribed is not null) _subscribed.Changed -= OnRuntimeChanged; }
+
+    private void Select(string key) { _view = key; }
+    private void OpenPage(string identity) { _selected = identity; _view = "pages"; }
+
+    private void NavKey(KeyboardEventArgs e)
+    {
+        if (e.Key is not ("ArrowLeft" or "ArrowRight" or "Home" or "End")) return;
+        var keys = Views.Select(v => v.Key).ToList();
+        var index = keys.IndexOf(_view);
+        _view = e.Key switch
+        {
+            "Home" => keys[0],
+            "End" => keys[^1],
+            "ArrowRight" => keys[(index + 1) % keys.Count],
+            _ => keys[(index - 1 + keys.Count) % keys.Count]
+        };
+    }
+
+    private static string Time(DateTimeOffset value) => value.ToLocalTime().ToString("HH:mm:ss");
+
+    private RenderFragment AreaBadges(IReadOnlyList<WcagPrinciple> areas) => __builder =>
+    {
+        if (areas.Count == 0)
+        {
+            <span class="bd-area-badge bd-area-badge-none" data-testid="browser-discovery-areas-none">No accessibility evidence</span>
+        }
+        else
+        {
+            foreach (var area in areas)
+            {
+                <span class="bd-area-badge" data-testid="browser-discovery-area-badge">@BrowserDiscoveryPresentation.PrincipleLabel(area)</span>
+            }
+        }
+    };
+
+    private RenderFragment StateBadge(BrowserEvidenceState state) => __builder =>
+    {
+        <span class="bd-state bd-state-@BrowserDiscoveryPresentation.StateCss(state)">@BrowserDiscoveryPresentation.StateLabel(state)</span>
+    };
+
+    private RenderFragment ItemList(IReadOnlyList<BrowserEvidenceItem> items, string testId) => __builder =>
+    {
+        <dl class="bd-items" data-testid="@testId">
+            @foreach (var item in items)
+            {
+                <div><dt>@item.Label</dt><dd class="bd-mono">@item.Detail</dd></div>
+            }
+        </dl>
+    };
+
+    private RenderFragment EvidenceTable(IReadOnlyList<(string Route, string Type, string Detail, DateTimeOffset CapturedAt)> rows, string typeHeader, string empty) => __builder =>
+    {
+        if (rows.Count == 0)
+        {
+            <p class="bd-empty-help">@empty</p>
+        }
+        else
+        {
+            <div class="bd-tablewrap">
+                <table class="bd-table">
+                    <thead><tr><th scope="col">Page</th><th scope="col">@typeHeader</th><th scope="col">Observed value</th><th scope="col">Observed at</th><th scope="col">Source</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in rows)
+                        {
+                            <tr>
+                                <th scope="row" class="bd-mono">@row.Route</th>
+                                <td>@row.Type</td>
+                                <td class="bd-mono">@row.Detail</td>
+                                <td class="bd-mono">@Time(row.CapturedAt)</td>
+                                <td><span class="bd-source">@BrowserDiscoveryPresentation.Source</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    };
+}

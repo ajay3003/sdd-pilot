@@ -340,7 +340,7 @@ public sealed class PerformanceQualityEngineTests : BunitContext
     }
 
     [Fact]
-    public void EndpointDiscoveryTab_ShowsPerformanceSectionForSelectedPage_NotAssessedWithoutEvidence()
+    public void EndpointDiscoveryTab_KeepsNetworkTrafficWithoutBrowserAssessment()
     {
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         JSInterop.Mode = JSRuntimeMode.Loose;
@@ -349,10 +349,8 @@ public sealed class PerformanceQualityEngineTests : BunitContext
         var cut = Render<EndpointDiscoveryTab>(p => p.Add(x => x.Profile, profile).Add(x => x.ProxyStatus, status));
         cut.Find("[data-testid=discovery-nav-pages]").Click();
 
-        cut.Find("[data-testid=discovery-page-performance]").Should().NotBeNull();
-        cut.Find("[data-testid=pq-coverage]").TextContent.Should().Be("Partial assessment");
-        cut.Find("[data-testid=pq-cov-browser]").TextContent.Should().Contain("Not available");
-        cut.Find("[data-testid=pq-value-slowest-api]").TextContent.Should().Be("1.3 s");
-        cut.Find("[data-testid=pq-status-slowest-api]").TextContent.Should().Be("Poor");
+        cut.FindAll("[data-testid=discovery-page-performance]").Should().BeEmpty();
+        cut.FindAll("[data-testid=pq-coverage]").Should().BeEmpty();
+        cut.Find("[data-testid=discovery-page-table]").TextContent.Should().Contain("/api/children");
     }
 }

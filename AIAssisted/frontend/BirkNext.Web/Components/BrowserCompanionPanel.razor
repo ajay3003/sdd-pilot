@@ -2,26 +2,33 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @implements IDisposable
+@inject IServiceProvider Services
 
 <section class="bcp" data-testid="browser-companion-panel" aria-label="Browser Companion">
     <div class="bcp-head">
         <div>
             <h4 class="bcp-title">Browser Companion</h4>
-            <p class="bcp-sub">Safe DOM, accessibility, performance and runtime evidence from your normal managed Edge session. No Playwright, no CDP, no token handoff; only pages of this Target Environment are observed.</p>
+            <p class="bcp-sub">Browser evidence from approved application pages in your managed Edge session.</p>
         </div>
         <span class="bcp-state bcp-state-@StateClass" data-testid="browser-companion-state">@StateLabel</span>
     </div>
 
-    <dl class="bcp-grid">
-        <div><dt>Target</dt><dd data-testid="browser-companion-target">@(Profile?.Name ?? "—")</dd></div>
-        <div><dt>Current page</dt><dd class="bcp-mono" data-testid="browser-companion-current-page">@CurrentPage</dd></div>
-        <div><dt>Pages with evidence</dt><dd data-testid="browser-companion-pages">@Status.PagesWithEvidence</dd></div>
-        <div><dt>DOM quality</dt><dd data-testid="browser-companion-dom">@Availability</dd></div>
-        <div><dt>Performance</dt><dd data-testid="browser-companion-performance">@Availability</dd></div>
-        <div><dt>Accessibility</dt><dd data-testid="browser-companion-accessibility">@Availability</dd></div>
-        <div><dt>Network correlation</dt><dd data-testid="browser-companion-network">@(ProxyRunning ? "Available (Local HTTPS proxy running)" : "Unavailable (start the Local HTTPS proxy)")</dd></div>
-        <div><dt>Approved origins</dt><dd class="bcp-mono" data-testid="browser-companion-origins">@(ApprovedOrigins.Count == 0 ? "—" : string.Join(", ", ApprovedOrigins))</dd></div>
-    </dl>
+    @* Compact mode: the host surface already shows target, current page, evidence counts, origins and the last
+       evidence timestamp, so the card drops the duplicated read-outs and stays connection/action oriented. *@
+    @if (!Compact)
+    {
+        <dl class="bcp-grid">
+            <div><dt>Target</dt><dd data-testid="browser-companion-target">@(Profile?.Name ?? "—")</dd></div>
+            <div><dt>Current page</dt><dd class="bcp-mono" data-testid="browser-companion-current-page">@CurrentPage</dd></div>
+            <div><dt>Pages with evidence</dt><dd data-testid="browser-companion-pages">@Evidence.Count</dd></div>
+            <div><dt>DOM quality</dt><dd data-testid="browser-companion-dom">@(Evidence.Any(p => p.Dom is not null) ? "Available" : "Unavailable")</dd></div>
+            <div><dt>Performance</dt><dd data-testid="browser-companion-performance">@(Evidence.Any(p => p.Performance is not null) ? "Evidence available" : "Unavailable")</dd></div>
+            <div><dt>Accessibility</dt><dd data-testid="browser-companion-accessibility">@(Evidence.Any(p => p.Accessibility is not null) ? "Evidence available" : "Unavailable")</dd></div>
+            <div><dt>Approved origins</dt><dd class="bcp-mono" data-testid="browser-companion-origins">@(ApprovedOrigins.Count == 0 ? "—" : string.Join(", ", ApprovedOrigins))</dd></div>
+            <div><dt>Last browser evidence</dt><dd data-testid="browser-companion-last-evidence">@(Evidence.Select(p => (DateTimeOffset?)p.CapturedAt).Max()?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "None")</dd></div>
+        </dl>
+    }
+    <p class="bcp-note" data-testid="browser-companion-connection">@ConnectionMessage</p>
 
     @if (Status.State == BrowserCompanionState.PairingPending)
     {
@@ -48,14 +55,14 @@
         {
             @if (Status.State is BrowserCompanionState.NotPaired or BrowserCompanionState.Expired or BrowserCompanionState.PairingPending)
             {
-                <button type="button" class="btn-primary fa-btn-sm" data-testid="browser-companion-pair" disabled="@(Runtime.Busy || ApprovedOrigins.Count == 0)" @onclick="Pair">
+                <PrimaryButton Class="fa-btn-sm" data-testid="browser-companion-pair" Disabled="@(Runtime.Busy || ApprovedOrigins.Count == 0)" OnClick="Pair">
                     @(Status.State == BrowserCompanionState.PairingPending ? "New pairing code" : "Pair browser companion")
-                </button>
+                </PrimaryButton>
             }
             else
             {
-                <button type="button" class="btn-secondary fa-btn-sm" data-testid="browser-companion-unpair" disabled="@Runtime.Busy" @onclick="Unpair">Unpair</button>
-                <button type="button" class="btn-secondary fa-btn-sm" data-testid="browser-companion-repair" disabled="@Runtime.Busy" @onclick="Pair">Pair again</button>
+                <SecondaryButton Class="fa-btn-sm" data-testid="browser-companion-unpair" Disabled="@Runtime.Busy" OnClick="Unpair">Unpair</SecondaryButton>
+                <SecondaryButton Class="fa-btn-sm" data-testid="browser-companion-repair" Disabled="@Runtime.Busy" OnClick="Pair">Pair again</SecondaryButton>
             }
         }
     </div>
@@ -65,7 +72,7 @@
             <li>In Edge open <code>edge://extensions</code>, enable <em>Developer mode</em>.</li>
             <li>Choose <em>Load unpacked</em> and select <code>AIAssisted/browser-companion</code> from the BirkNext repository.</li>
             <li>Click the extension icon, enter the pairing code shown above.</li>
-            <li>Sign in to the target application as usual and navigate its pages; evidence appears per page in Endpoint Discovery.</li>
+            <li>Sign in to the target application as usual and navigate its pages; evidence appears in Browser Discovery.</li>
         </ol>
         <p>If managed Edge policy blocks unpacked extensions, the state stays "Not paired" and the extension page shows the policy message; BirkNext never falls back to token injection or CDP.</p>
     </details>
@@ -76,15 +83,25 @@
     [Parameter] public BrowserCompanionRuntime? Runtime { get; set; }
     [Parameter] public bool ProxyRunning { get; set; }
     [Parameter] public EventCallback Changed { get; set; }
+    /// <summary>
+    /// Hide the read-out grid because the host surface already shows the same target, current page, evidence counts,
+    /// approved origins and last-evidence timestamp. Connection state, messages and the pairing actions always remain.
+    /// </summary>
+    [Parameter] public bool Compact { get; set; }
 
     private BrowserCompanionStatus Status => Runtime?.For(Profile?.Id) ?? new();
     private IReadOnlyList<string> ApprovedOrigins => Status.ApprovedOrigins.Count > 0 ? Status.ApprovedOrigins : BrowserCompanionScope.ApprovedOrigins(Profile);
     private string CurrentPage => Status.CurrentPageOrigin is { Length: > 0 } o ? $"{o}{Status.CurrentPagePath}" : (Status.State == BrowserCompanionState.Connected ? "No approved page open" : "—");
-    private string Availability => Status.State switch
+    private IReadOnlyList<BrowserPageEvidence> Evidence =>
+        (Services.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(Profile?.Id ?? "").Pages
+            .Where(p => p.BrowserEvidence is not null).Select(p => p.BrowserEvidence!).ToList() ?? Status.Pages;
+    private string ConnectionMessage => Status.State switch
     {
-        BrowserCompanionState.Connected => Status.PagesWithEvidence > 0 ? "Available" : "Waiting for a page visit",
-        BrowserCompanionState.Disconnected => Status.PagesWithEvidence > 0 ? "Available (collected earlier this session)" : "Unavailable",
-        _ => "Unavailable",
+        BrowserCompanionState.Connected => "Browser Companion is connected.",
+        BrowserCompanionState.Disconnected => "Browser Companion is paired but is not currently reporting browser evidence.",
+        BrowserCompanionState.PairingPending => "Enter the pairing code in Browser Companion to finish pairing.",
+        BrowserCompanionState.Expired => "Browser Companion pairing has expired.",
+        _ => "Browser Companion is not paired."
     };
     private string StateLabel => Status.State switch
     {

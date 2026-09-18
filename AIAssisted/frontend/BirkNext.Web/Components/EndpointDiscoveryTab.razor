@@ -13,17 +13,15 @@
         <div class="ed-ov-item"><span class="ed-ov-label">Discovery session (live)</span><span class="ed-ov-value @(DiscoveryActive ? "ed-active" : "")" data-testid="discovery-active">@(DiscoveryActive ? "Active" : "Inactive")</span></div>
         <div class="ed-ov-item"><span class="ed-ov-label">Saved application analyses</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Snapshot.Pages.Count</span></div>
         <div class="ed-ov-item"><span class="ed-ov-label">Authenticated context</span><span class="ed-ov-value" data-testid="discovery-auth-context">@(ProxyStatus.AuthenticatedCredentialAvailable ? "Available" : "Not available")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Browser Companion</span><span class="ed-ov-value @(CompanionStatus.Connected ? "ed-active" : "")" data-testid="discovery-companion">@CompanionLabel</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Network correlation</span><span class="ed-ov-value" data-testid="discovery-network">@(DiscoveryActive ? "Available" : "Unavailable")</span></div>
         <div class="ed-ov-item"><span class="ed-ov-label">Last observed traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@LastTrafficLabel</span></div>
     </div>
 
-    <p class="ed-note">Live connection state is separate from saved evidence. Last browser evidence: @(Snapshot.Pages.Where(p => p.BrowserEvidence is not null).Select(p => (DateTimeOffset?)p.BrowserEvidence!.CapturedAt).Max()?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "None")</p>
     <nav class="ed-nav" role="tablist">
         <button type="button" class="ed-navbtn @(_view == "overview" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-overview" @onclick='() => _view = "overview"'>Overview</button>
         <button type="button" class="ed-navbtn @(_view == "pages" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-pages" @onclick='() => _view = "pages"'>Pages (@Snapshot.Pages.Count)</button>
         <button type="button" class="ed-navbtn @(_view == "shared" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-shared" @onclick='() => _view = "shared"'>Shared / background (@Snapshot.Shared.Count)</button>
         <button type="button" class="ed-navbtn @(_view == "integrations" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-integrations" @onclick='() => _view = "integrations"'>Backend integrations (@BackendIntegrations.Count)</button>
-        <button type="button" class="ed-navbtn" data-testid="discovery-nav-quality" @onclick='() => _view = "quality"'>Browser Quality</button>
         @if (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0)
         {
             @if (_confirmDeleteAll)
@@ -42,20 +40,14 @@
 
     @if (_view == "overview")
     {
-        <section class="ed-panel" data-testid="browser-quality-summary">
-            <h4>Browser Quality</h4>
-            <p>WCAG: @WcagAssessmentSummary.State(Discovery.GetAssessment(Profile?.Id ?? ""))</p>
-            <p>Performance: @(Snapshot.Pages.Any(p => p.BrowserEvidence?.Performance is not null) ? $"{Snapshot.Pages.Count(p => p.BrowserEvidence?.Performance is not null)} saved pages with evidence" : "Awaiting browser evidence")</p>
-            <SecondaryButton OnClick='() => _view = "quality"' data-testid="browser-quality-open">View WCAG assessment / performance</SecondaryButton>
-        </section>
         <div class="ed-panel">
+            <h4>What this application communicates with</h4>
             @if (AllEndpoints.Count == 0 && BackendIntegrations.Count == 0)
             {
                 <p class="ed-empty" data-testid="discovery-empty">No endpoint traffic has been observed yet. Start the Local HTTPS Proxy, sign in through your normal managed Edge, and use the target application.</p>
             }
             else
             {
-                <h4>What this application communicates with</h4>
                 <div class="ed-tablewrap">
                     <table class="ed-table" data-testid="discovery-overview-table">
                         <thead><tr><th>Service / Host</th><th>Type</th><th>Pages</th><th>Auth</th><th>Calls</th><th>Last seen</th><th>Source</th></tr></thead>
@@ -87,15 +79,6 @@
                         </tbody>
                     </table>
                 </div>
-            }
-        </div>
-    }
-    else if (_view == "quality")
-    {
-        <div class="ed-panel" data-testid="browser-quality-view">
-            @if (Profile is not null)
-            {
-                <BrowserQualityWorkspace @key="Profile.Id" Profile="Profile" />
             }
         </div>
     }
@@ -148,23 +131,6 @@
                     @if (sel.IsWaitingForFreshTraffic)
                     {
                         <p class="ed-note" data-testid="discovery-page-state">Waiting for fresh traffic. Use this page in the target application to collect fresh endpoint traffic.</p>
-                    }
-                    @RenderPageQuality(sel)
-                    <section class="ed-quality" data-testid="discovery-page-performance" aria-label="BirkNext Performance Quality">
-                        <h5 class="ed-section-title">Performance <span class="ed-quality-engine">BirkNext Performance Quality</span></h5>
-                        @{ var performance = PerformanceQualityRules.Evaluate(sel, Thresholds, Vitals); }
-                        @if (!performance.HasEvidence)
-                        {
-                            <p class="ed-empty" data-testid="discovery-page-performance-empty">Not assessed — no performance evidence collected for this page. Pair the Browser Companion and/or run the Local HTTPS proxy, then visit this page in your managed Edge.</p>
-                        }
-                        else
-                        {
-                            <PerformanceQualityPageView Snapshot="performance" ShowTimeline="true" />
-                        }
-                    </section>
-                    @if (Profile is not null)
-                    {
-                        <WcagWorkspace @key="sel.Identity" ProfileId="@Profile.Id" Snapshot="Snapshot" Page="sel" />
                     }
                     <h5 class="ed-section-title">Network</h5>
                     @RenderEndpointTable(VisibleEndpoints(sel.Endpoints), "discovery-page-table", "No endpoints observed for this page yet.")
@@ -221,17 +187,6 @@
     /// <summary>Optional: Browser Companion status for the same environment (evidence is merged into the same page analyses).</summary>
     [Parameter] public BrowserCompanionStatus CompanionStatus { get; set; } = new();
 
-    private string CompanionLabel => CompanionStatus.State switch
-    {
-        BrowserCompanionState.Connected => "Connected",
-        BrowserCompanionState.Disconnected => "Paired · not reporting",
-        BrowserCompanionState.PairingPending => "Pairing…",
-        _ => "Not connected",
-    };
-    private FrontendPerformanceThresholds Thresholds => Profile?.Performance ?? new();
-    private CoreWebVitalsThresholds Vitals => Profile?.CoreWebVitals ?? new();
-    private IReadOnlyList<BrowserQualityFinding> PageFindings(PageAnalysis page) => BrowserQualityRules.Evaluate(page, Thresholds, Vitals, Snapshot.Wcag);
-
     private string _view = "overview";
     private string? _selectedPage;
     private string? _confirmDeletePage;
@@ -265,143 +220,6 @@
             await Discovery.MergeBrowserEvidenceAsync(JS, Profile.Id, CompanionStatus.Pages);
     }
 
-    // ── page quality (Browser Companion evidence + proxy correlation) ────────
-
-    private RenderFragment RenderPageQuality(PageAnalysis page) => __builder =>
-    {
-        <section class="ed-quality" data-testid="discovery-page-quality" aria-label="Page quality">
-            <h5 class="ed-section-title">Page quality</h5>
-            @if (page.BrowserEvidence is not { } ev)
-            {
-                <p class="ed-empty" data-testid="discovery-page-quality-empty">No Browser Companion evidence for this page yet. Pair the Browser Companion and open this page in your managed Edge.</p>
-            }
-            else
-            {
-                var findings = PageFindings(page);
-                var perf = ev.Performance;
-                var runtime = ev.Runtime;
-                var dom = ev.Dom;
-                var a11y = ev.Accessibility;
-                var blazor = ev.Blazor;
-                <div class="ed-quality-grid">
-                    <div class="ed-quality-card" data-testid="discovery-quality-summary">
-                        <h6>Summary</h6>
-                        <dl class="ed-detail">
-                            <div><dt>Captured</dt><dd class="ed-mono">@Time(ev.CapturedAt) (@ev.SnapshotKind)</dd></div>
-                            <div><dt>Title</dt><dd>@(ev.DocumentTitle ?? "—")</dd></div>
-                            <div><dt>Findings</dt><dd>@findings.Count (@findings.Count(f => f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High) high)</dd></div>
-                            <div><dt>Source</dt><dd><span class="ed-source ed-source-browser">Browser</span> @(page.Endpoints.Count > 0 ? "+ Proxy" : "(no proxy traffic)")</dd></div>
-                        </dl>
-                    </div>
-                    <div class="ed-quality-card" data-testid="discovery-quality-accessibility">
-                        <h6>Accessibility <span class="ed-quality-engine">BirkNext Accessibility Checks</span></h6>
-                        @if (a11y is null) { <p class="ed-empty">Not collected.</p> }
-                        else if (a11y.Findings.Count == 0) { <p class="ed-ok">@a11y.RulesEvaluated rules evaluated, no findings. Manual testing still required.</p> }
-                        else
-                        {
-                            <ul class="ed-findings">
-                                @foreach (var f in a11y.Findings.OrderBy(f => BrowserQualityRules.Severity(f.Severity)))
-                                {
-                                    <li data-testid="discovery-a11y-finding"><span class="ed-sev ed-sev-@f.Severity.ToLowerInvariant()">@f.Severity</span> <strong>@f.Title</strong> ×@f.Count @(f.Wcag == "4.1.1" && Snapshot.Wcag.Version == WcagVersion.Wcag22 ? "· Markup guidance; 4.1.1 is obsolete in WCAG 2.2" : f.Wcag is { Length: > 0 } ? $"· WCAG {f.Wcag}" : "")
-                                        @if (f.Selectors.Count > 0) { <span class="ed-mono ed-selectors">@string.Join(", ", f.Selectors)</span> }
-                                    </li>
-                                }
-                            </ul>
-                        }
-                    </div>
-                    <div class="ed-quality-card" data-testid="discovery-quality-performance">
-                        <h6>Performance</h6>
-                        @if (perf is null) { <p class="ed-empty">Not collected.</p> }
-                        else
-                        {
-                            <dl class="ed-detail">
-                                <div><dt>TTFB</dt><dd>@Ms(perf.TtfbMs)</dd></div>
-                                <div><dt>DOMContentLoaded</dt><dd>@Ms(perf.DomContentLoadedMs)</dd></div>
-                                <div><dt>Load</dt><dd>@Ms(perf.LoadEventMs)</dd></div>
-                                <div><dt>FCP</dt><dd>@Ms(perf.FirstContentfulPaintMs)</dd></div>
-                                <div><dt>LCP</dt><dd>@Ms(perf.LcpMs)</dd></div>
-                                <div><dt>CLS</dt><dd>@(perf.Cls is { } c ? c.ToString("0.###") : "—")</dd></div>
-                                <div><dt>Long tasks</dt><dd>@perf.LongTaskCount (@Ms(perf.LongTaskTotalMs))</dd></div>
-                                <div><dt>Resources</dt><dd>@perf.ResourceCount · @Kb(perf.TransferredBytes) transferred</dd></div>
-                                <div><dt>JS / CSS / Img / WASM</dt><dd>@Kb(perf.JsBytes) / @Kb(perf.CssBytes) / @Kb(perf.ImageBytes) / @Kb(perf.WasmBytes)</dd></div>
-                                <div><dt>Failed / duplicate</dt><dd>@perf.FailedResourceCount / @perf.DuplicateFetchCount</dd></div>
-                            </dl>
-                            @if (perf.UnsupportedMetrics.Count > 0) { <p class="ed-note">Not supported by this browser: @string.Join(", ", perf.UnsupportedMetrics)</p> }
-                        }
-                    </div>
-                    <div class="ed-quality-card" data-testid="discovery-quality-runtime">
-                        <h6>Runtime</h6>
-                        @if (runtime is null) { <p class="ed-empty">Not collected.</p> }
-                        else if (runtime.Errors.Count == 0) { <p class="ed-ok">No window errors, unhandled rejections or resource errors observed.</p> }
-                        else
-                        {
-                            <ul class="ed-findings">
-                                @foreach (var e in runtime.Errors.Take(10))
-                                {
-                                    <li data-testid="discovery-runtime-error"><span class="ed-badge ed-badge-other">@e.Kind</span> ×@e.Count <span class="ed-mono">@e.Message</span> @(e.Source is { Length: > 0 } ? $"({e.Source})" : "")</li>
-                                }
-                            </ul>
-                        }
-                        <p class="ed-note">Console output is not intercepted; only error events are collected.</p>
-                    </div>
-                    <div class="ed-quality-card" data-testid="discovery-quality-dom">
-                        <h6>DOM</h6>
-                        @if (dom is null) { <p class="ed-empty">Not collected.</p> }
-                        else
-                        {
-                            <dl class="ed-detail">
-                                <div><dt>Nodes / depth</dt><dd>@dom.NodeCount / @dom.MaxDepth</dd></div>
-                                <div><dt>Interactive / form controls</dt><dd>@dom.InteractiveCount / @dom.FormControlCount</dd></div>
-                                <div><dt>Headings</dt><dd class="ed-mono">@string.Join(" ", dom.HeadingCounts.OrderBy(k => k.Key).Select(k => $"{k.Key}:{k.Value}"))</dd></div>
-                                <div><dt>Landmarks</dt><dd class="ed-mono">@string.Join(" ", dom.Landmarks.Where(k => k.Value > 0).Select(k => $"{k.Key}:{k.Value}"))</dd></div>
-                                <div><dt>Duplicate ids / hidden focusable</dt><dd>@dom.DuplicateIdCount / @dom.HiddenFocusableCount</dd></div>
-                                <div><dt>Iframes / dialogs</dt><dd>@dom.IframeCount / @dom.DialogCount</dd></div>
-                            </dl>
-                        }
-                    </div>
-                    <div class="ed-quality-card" data-testid="discovery-quality-blazor">
-                        <h6>Blazor WASM</h6>
-                        @if (blazor is null || !blazor.Detected) { <p class="ed-empty">No Blazor framework resources observed on this page.</p> }
-                        else
-                        {
-                            <dl class="ed-detail">
-                                <div><dt>Boot manifest</dt><dd>@(blazor.BootManifestFailed ? "Failed" : blazor.BootManifestObserved ? "Loaded" : "Not observed (cached)")</dd></div>
-                                <div><dt>Framework resources</dt><dd>@blazor.FrameworkResourceCount · @Kb(blazor.FrameworkBytes)</dd></div>
-                                <div><dt>WASM</dt><dd>@Kb(blazor.WasmBytes)</dd></div>
-                                <div><dt>Failures / repeated</dt><dd>@blazor.FrameworkFailures.Count / @blazor.RepeatedFrameworkDownloads</dd></div>
-                                <div><dt>Error UI</dt><dd>@(blazor.ErrorUiVisible ? "Displayed" : "Not displayed")</dd></div>
-                            </dl>
-                        }
-                    </div>
-                </div>
-                @if (findings.Count > 0)
-                {
-                    <div class="ed-tablewrap">
-                        <table class="ed-table" data-testid="discovery-quality-findings">
-                            <thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>Evidence</th><th>Source</th></tr></thead>
-                            <tbody>
-                                @foreach (var f in findings.OrderBy(f => f.Severity))
-                                {
-                                    <tr data-testid="discovery-quality-finding">
-                                        <td><span class="ed-sev ed-sev-@f.Severity.ToString().ToLowerInvariant()">@f.Severity</span></td>
-                                        <td>@f.Category</td>
-                                        <td><strong>@f.Title</strong><br /><span class="ed-note">@f.Explanation</span></td>
-                                        <td class="ed-mono ed-evidence">@string.Join(" · ", f.Evidence.Take(4))</td>
-                                        <td><span class="ed-source @(f.Source == BrowserQualityRules.CorrelatedSource ? "ed-source-correlated" : "ed-source-browser")">@f.Source</span></td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            }
-        </section>
-    };
-
-    private static string Ms(double? value) => value is { } v ? $"{v:0} ms" : "—";
-    private static string Kb(long bytes) => bytes >= 1024 * 1024 ? $"{bytes / 1024d / 1024d:0.0} MB" : $"{bytes / 1024d:0} KB";
-
-    // ── endpoint table ───────────────────────────────────────────────────────
 
     private RenderFragment RenderEndpointTable(IReadOnlyList<ObservedNetworkEndpoint> endpoints, string testId, string emptyMessage) => __builder =>
     {

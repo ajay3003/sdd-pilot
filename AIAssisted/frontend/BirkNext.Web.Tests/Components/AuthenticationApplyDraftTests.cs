@@ -181,7 +181,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.FindAll("#configured-authentication-type").Should().BeEmpty();
         cut.FindAll(".fa-unsaved-notice").Should().BeEmpty("nothing has been applied yet");
         cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes");
-        cut.Markup.Should().Contain("Authentication discovery");
+        cut.FindAll("[data-testid='authentication-discovery']").Should().ContainSingle("the Authentication tab leads with one status card");
 
         Click(cut, "Apply authentication");
 
@@ -193,7 +193,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         cut.Find("#configured-redirect-urls").GetAttribute("value").Should().Contain(Redirect);
 
         // Detected evidence remains visible as provenance
-        cut.Markup.Should().Contain("Authentication discovery");
+        cut.FindAll("[data-testid='authentication-discovery']").Should().ContainSingle();
         cut.Markup.Should().Contain("Apply authentication");
 
         // Dirty → top-level Save enabled, unsaved indicator visible, no second Save inside Authentication

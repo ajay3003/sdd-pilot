@@ -35,7 +35,13 @@
     [Parameter, EditorRequired] public string ProfileId { get; set; } = "";
     // One authoritative snapshot for configuration, selector, criteria, results and review generation.
     [Parameter, EditorRequired] public EndpointDiscoverySnapshot Snapshot { get; set; } = new();
-    private WcagAssessment Assessment => BrowserQualityAssessmentService.ForPage(BrowserQualityAssessmentService.Assess(Snapshot), Page);
+    /// <summary>
+    /// An already-computed assessment to display instead of re-assessing the snapshot — used by Frontend Quality Review,
+    /// which shows the assessment produced by its own review run. The profile selector and manual review still write to
+    /// the snapshot exactly as before; only what is displayed differs.
+    /// </summary>
+    [Parameter] public WcagAssessment? Result { get; set; }
+    private WcagAssessment Assessment => Result ?? BrowserQualityAssessmentService.ForPage(BrowserQualityAssessmentService.Assess(Snapshot), Page);
     [Parameter] public PageAnalysis? Page { get; set; }
     private WcagCriterionResult? _editing;
     private readonly string _profileSelectId = $"wcag-profile-{Guid.NewGuid():N}";

@@ -314,19 +314,19 @@ public sealed class BrowserCompanionQualityTests : BunitContext
 
         var cut = Render<BrowserCompanionPanel>(p => p.Add(x => x.Profile, profile).Add(x => x.Runtime, runtime).Add(x => x.ProxyRunning, false));
         cut.WaitForAssertion(() => cut.Find("[data-testid=browser-companion-state]").TextContent.Should().Be("Not connected"));
-        cut.Find("[data-testid=browser-companion-network]").TextContent.Should().Contain("Unavailable");
+        cut.FindAll("[data-testid=browser-companion-network]").Should().BeEmpty();
         cut.Find("[data-testid=browser-companion-dom]").TextContent.Should().Be("Unavailable");
 
         await cut.InvokeAsync(() => cut.Find("[data-testid=browser-companion-pair]").Click());
         cut.WaitForAssertion(() => cut.Find("[data-testid=browser-companion-code]").TextContent.Should().Be("ABCD2345"));
         cut.Find("[data-testid=browser-companion-state]").TextContent.Should().Be("Pairing…");
 
-        status = new BrowserCompanionStatus { State = BrowserCompanionState.Connected, ProfileId = "dev", EnvironmentName = "M2LB DEV", PagesWithEvidence = 3, CurrentPageOrigin = Origin, CurrentPagePath = "/children/search", ApprovedOrigins = [Origin] };
+        status = new BrowserCompanionStatus { State = BrowserCompanionState.Connected, ProfileId = "dev", EnvironmentName = "M2LB DEV", PagesWithEvidence = 3, Pages = [Evidence("/a", T0), Evidence("/b", T0), Evidence("/c", T0)], CurrentPageOrigin = Origin, CurrentPagePath = "/children/search", ApprovedOrigins = [Origin] };
         await runtime.RefreshAsync();
         cut.WaitForAssertion(() => cut.Find("[data-testid=browser-companion-state]").TextContent.Should().Be("Connected"));
         cut.Find("[data-testid=browser-companion-current-page]").TextContent.Should().Be($"{Origin}/children/search");
         cut.Find("[data-testid=browser-companion-pages]").TextContent.Should().Be("3");
-        cut.Find("[data-testid=browser-companion-accessibility]").TextContent.Should().Be("Available");
+        cut.Find("[data-testid=browser-companion-accessibility]").TextContent.Should().Be("Evidence available");
         cut.FindAll("[data-testid=browser-companion-unpair]").Should().ContainSingle();
     }
 }
