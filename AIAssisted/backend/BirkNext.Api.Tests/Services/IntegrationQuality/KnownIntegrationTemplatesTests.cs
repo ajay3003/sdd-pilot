@@ -85,20 +85,44 @@ public class KnownIntegrationTemplatesTests
     }
 
     [Fact]
-    public void OtherCdcHubs_HaveNoInferredRelationship()
+    public void OtherCdcHubs_CarryTheirAuditedConsumerButNoInferredProducer()
     {
-        // "person -> PersonBiRKAdapter" must not be generalised into "barn -> BarnBiRKAdapter":
-        // that is inference from a resource name, not evidence.
+        // The audit established a consuming service per hub. It did NOT establish a producer for
+        // any hub but person: "the data originates from BiRK CDC" is reasoning about where data
+        // comes from, not evidence of a configured producer, so the producer stays unknown.
         var others = Qa().Where(t => t.IntegrationType == IntegrationType.EventHub
                                      && t.Resource != "m2lb-cdc-qa.birk.dbo.person");
 
         Assert.All(others, t =>
         {
             Assert.Null(t.SuggestedProducer);
-            Assert.Null(t.SuggestedConsumer);
+            Assert.False(string.IsNullOrWhiteSpace(t.SuggestedConsumer));
         });
 
-        Assert.DoesNotContain(Qa(), t => t.SuggestedConsumer == "BarnBiRKAdapter");
+        // Consumers come from the audit, never generalised from the resource name. "person ->
+        // PersonBiRKAdapter" must not become "barn -> BarnBiRKAdapter"; barn's audited consumer
+        // is PersonBiRKAdapter and tiltak's is Tjeneste API, neither derivable from its name.
+        foreach (var invented in new[] { "BarnBiRKAdapter", "TiltakBiRKAdapter", "BestillingBiRKAdapter",
+                                         "TvangsprotokollBiRKAdapter", "RomningBiRKAdapter" })
+            Assert.DoesNotContain(Qa(), t => t.SuggestedConsumer == invented);
+    }
+
+    [Theory]
+    [InlineData("m2lb-cdc-qa.birk.dbo.barn", "PersonBiRKAdapter")]
+    [InlineData("m2lb-cdc-qa.birk.dbo.tiltak", "Tjeneste API")]
+    [InlineData("m2lb-cdc-qa.birk.dbo.bestilling", "Tjeneste API")]
+    [InlineData("m2lb-cdc-qa.birk.dbo.tjenesteType", "Tjeneste API")]
+    [InlineData("m2lb-cdc-qa.birk.dbo.tiltaksStatusType", "Tjeneste API")]
+    [InlineData("m2lb-cdc-qa.birk.dbo.avslutningsGrunnType", "Tjeneste API")]
+    [InlineData("m2lb-cdc-qa.birk.dbo.tvangsprotokoll", "Hendelse BiRK Adapter")]
+    [InlineData("m2lb-cdc-qa.birk.dbo.romning", "Hendelse BiRK Adapter")]
+    public void EachCdcHubNamesItsAuditedConsumingService(string resource, string consumer)
+    {
+        var template = Qa().Single(t => t.Resource == resource);
+
+        Assert.Equal(consumer, template.SuggestedConsumer);
+        Assert.Equal(KnownIntegrationTemplates.AuditedEventHubConsumerGroup, template.SuggestedConsumerGroup);
+        Assert.Null(template.EndpointOrNamespace);
     }
 
     [Fact]
