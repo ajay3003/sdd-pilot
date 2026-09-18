@@ -340,6 +340,22 @@ public static class BrowserDiscoveryStates
         NextAction(state) is BrowserDiscoveryNextAction.Pair;
 
     /// <summary>
+    /// The states that deserve a visible callout: an expected, recoverable situation where the next step is easy
+    /// to miss as a sentence. Only paired-but-silent qualifies — "not connected" already has a button, and a
+    /// reporting session needs nothing from the reader.
+    /// </summary>
+    public static bool ShowsGuidance(BrowserDiscoveryState state) =>
+        state is BrowserDiscoveryState.PairedNotReporting;
+
+    public const string GuidanceTitle = "Resume browser reporting";
+
+    /// <summary>
+    /// Names the browser, because that is the part a reader cannot infer: the page has to be reloaded in the
+    /// managed Edge session the pairing belongs to, not in whichever browser is showing BirkNext.
+    /// </summary>
+    public const string GuidanceText = "Open or refresh an approved application page in your managed Edge browser.";
+
+    /// <summary>
     /// What the reader should do next, as a value rather than a string the markup has to recognise. Each state maps
     /// to exactly one next step, which is what keeps "Paired · not reporting" from reading as a dead end.
     /// </summary>

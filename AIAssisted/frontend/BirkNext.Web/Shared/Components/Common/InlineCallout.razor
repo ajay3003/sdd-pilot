@@ -1,0 +1,36 @@
+@* Compact inline guidance: a short title, one sentence, and a decorative icon.
+
+   For a recoverable, expected situation the reader should act on — not for failures. It is deliberately NOT a
+   banner: no role=alert, no warning colour, no shadow. The title and text carry the whole meaning, so the icon
+   is decorative and colour is never required to understand it.
+
+   Usage: <InlineCallout Title="Resume browser reporting" Text="Open or refresh an approved page." TestId="x" />
+   Styles: components.css (.callout-*). *@
+
+<div class="callout callout-@Kind.ToString().ToLowerInvariant() @Class" data-testid="@TestId" data-kind="@Kind">
+    <span class="callout-icon" aria-hidden="true">@Glyph</span>
+    <div class="callout-body">
+        <p class="callout-title" data-testid="@(TestId is null ? null : $"{TestId}-title")">@Title</p>
+        <p class="callout-text" data-testid="@(TestId is null ? null : $"{TestId}-text")">@Text</p>
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// The tone of the guidance. Info is the only kind that exists today on purpose: a callout is for something
+    /// the reader can act on, and anything that needs a warning belongs in a banner with the right semantics.
+    /// </summary>
+    public enum CalloutKind { Info }
+
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public CalloutKind Kind { get; set; } = CalloutKind.Info;
+    /// <summary>Optional trailing content, such as a single action link.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? TestId { get; set; }
+
+    /// <summary>Decorative: a refresh arrow for guidance about reloading, never a warning or error mark.</summary>
+    private string Glyph => "↻";
+}

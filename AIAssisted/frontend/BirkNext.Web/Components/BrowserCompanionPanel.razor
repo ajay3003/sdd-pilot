@@ -32,7 +32,19 @@
        dropped and replaced by what to do about it. The full message stays where the card is the only status surface. *@
     @if (Compact)
     {
-        <p class="bcp-note" data-testid="browser-companion-connection">@CompactActionMessage</p>
+        @* A paired session that is silent needs a reload, and a sentence in the body text was easy to miss.
+           It sits above Details so the next step is read before the technical state. Info, not warning: the
+           state is expected and recoverable. *@
+        @if (BrowserDiscoveryStates.ShowsGuidance(BrowserDiscoveryStates.Of(Status.State, Evidence.Count > 0)))
+        {
+            <InlineCallout Title="@BrowserDiscoveryStates.GuidanceTitle"
+                           Text="@BrowserDiscoveryStates.GuidanceText"
+                           TestId="browser-companion-guidance" />
+        }
+        else
+        {
+            <p class="bcp-note" data-testid="browser-companion-connection">@CompactActionMessage</p>
+        }
         <details class="bcp-details" data-testid="browser-companion-details">
             <summary>Details</summary>
             @* No Session row: the badge beside the title already states it, and repeating it inside the same card
@@ -143,7 +155,8 @@
     private string ConnectionMessage => Status.State switch
     {
         BrowserCompanionState.Connected => "Browser Companion is connected.",
-        BrowserCompanionState.Disconnected => "Browser Companion is paired but is not currently reporting browser evidence.",
+        // The technical state only. The next step is the callout's job, so this no longer repeats it.
+        BrowserCompanionState.Disconnected => "Paired, but no approved application page is currently reporting.",
         BrowserCompanionState.PairingPending => "Enter the pairing code in Browser Companion to finish pairing.",
         BrowserCompanionState.Expired => "Browser Companion pairing has expired.",
         _ => "Browser Companion is not paired."

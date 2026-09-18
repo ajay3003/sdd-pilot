@@ -1318,3 +1318,47 @@
 .disclosure-small .disclosure-toggle { padding: 0.2rem 0.5rem; font-size: 0.78rem; border-color: transparent; }
 .disclosure-small .disclosure-toggle:hover { border-color: var(--clr-border-input); }
 .disclosure-small .disclosure-body { margin-top: 0.35rem; }
+
+/* ======================================================
+   INLINE CALLOUT
+   Compact guidance for a recoverable situation the reader should act on (InlineCallout component).
+   Neutral by design: an expected state that needs a next step is not a warning, so it borrows none of
+   the warning palette. The title and text carry the meaning; the icon is decorative.
+   ====================================================== */
+
+.callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    margin: 0.6rem 0;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--clr-info-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-info-bg-light);
+}
+
+.callout-icon {
+    flex: none;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    color: var(--clr-info);
+}
+
+.callout-body { min-width: 0; }
+
+.callout-title {
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+}
+
+.callout-text {
+    margin: 0.15rem 0 0;
+    font-size: 0.84rem;
+    line-height: 1.45;
+    color: var(--clr-text-body);
+    overflow-wrap: anywhere;
+}
+
+.callout-body > a { font-size: 0.82rem; font-weight: 600; }

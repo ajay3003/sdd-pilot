@@ -289,7 +289,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
     [Theory]
     [InlineData(BrowserCompanionState.NotPaired, "Not connected", "Pair the managed Edge browser")]
-    [InlineData(BrowserCompanionState.Disconnected, "Paired · not reporting", "resume reporting")]
+    [InlineData(BrowserCompanionState.Disconnected, "Paired · not reporting", "Open or refresh an approved application page")]
     [InlineData(BrowserCompanionState.Connected, "Connected", "Collecting browser evidence")]
     public async Task ConnectionStatesAreDistinctAndNeverImplyEvidence(BrowserCompanionState state, string label, string message)
     {
@@ -303,7 +303,9 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         var cut = Open(runtime);
 
         Text(cut, "bd-session").Should().Be(label);
-        Text(cut, "browser-companion-connection").Should().Contain(message);
+        // A paired-but-silent session states its next step in a callout; the others use the plain note.
+        Text(cut, state == BrowserCompanionState.Disconnected ? "browser-companion-guidance" : "browser-companion-connection")
+            .Should().Contain(message);
         // Approved origins moved out of the primary summary into the companion details.
         cut.FindAll("[data-testid=bd-origins]").Should().BeEmpty();
         Text(cut, "browser-companion-origins").Should().Contain(Origin);
