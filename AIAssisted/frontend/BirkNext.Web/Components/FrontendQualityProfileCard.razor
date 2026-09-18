@@ -1,0 +1,61 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@*
+    Which criteria the accessibility review is evaluated against. This is review SCOPE, not engine configuration:
+    the selected profile decides what is in scope, while engines decide what automated evidence exists for it. An
+    engine being unavailable never changes the profile, and changing the profile never enables an engine.
+*@
+<section class="fqr-card fqr-profile" aria-labelledby="fqr-profile-heading" data-testid="fqr-profile">
+    <div class="fqr-profile-head">
+        <div>
+            <h2 id="fqr-profile-heading" class="fqr-profile-heading">Accessibility profile</h2>
+            <p class="fqr-profile-name" data-testid="fqr-profile-name">@Selected.Label</p>
+            <p class="fqr-profile-scope" data-testid="fqr-profile-scope">@Selected.ScopeSummary</p>
+        </div>
+        @if (!_choosing)
+        {
+            <button type="button" class="btn-secondary fa-btn-sm" data-testid="fqr-profile-change"
+                    aria-expanded="false" @onclick="() => _choosing = true">Change</button>
+        }
+    </div>
+
+    @if (_choosing)
+    {
+        <fieldset class="fqr-profile-options" data-testid="fqr-profile-options">
+            <legend class="fqr-profile-legend">Evaluate accessibility against</legend>
+            @foreach (var profile in WcagProfiles.Available)
+            {
+                <label class="fqr-profile-option @(profile.ProfileId == Selected.ProfileId ? "fqr-profile-option-selected" : "")">
+                    <input type="radio" name="fqr-profile" value="@profile.ProfileId"
+                           checked="@(profile.ProfileId == Selected.ProfileId)"
+                           data-testid="@($"fqr-profile-option-{profile.ProfileId}")"
+                           @onchange="() => ChooseAsync(profile.ProfileId)" />
+                    <span class="fqr-profile-option-body">
+                        <span class="fqr-profile-option-name">@profile.Label</span>
+                        <span class="fqr-profile-option-scope">@profile.ScopeSummary</span>
+                        @if (profile.IsLegalBaseline)
+                        {
+                            <span class="fqr-profile-legal" data-testid="fqr-profile-legal">Legal baseline</span>
+                        }
+                    </span>
+                </label>
+            }
+        </fieldset>
+        <button type="button" class="btn-secondary fa-btn-sm" data-testid="fqr-profile-done" @onclick="() => _choosing = false">Done</button>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public WcagAssessmentProfile Selected { get; set; } = WcagProfiles.Norwegian;
+    /// <summary>Persisted by the host through the existing WCAG settings store; this card never writes directly.</summary>
+    [Parameter] public EventCallback<string> ProfileChanged { get; set; }
+
+    private bool _choosing;
+
+    private async Task ChooseAsync(string profileId)
+    {
+        if (ProfileChanged.HasDelegate) await ProfileChanged.InvokeAsync(profileId);
+        _choosing = false;
+    }
+}

@@ -975,3 +975,37 @@
     font-size: .85rem;
     color: var(--clr-text-body);
 }
+
+/* ── Accessibility profile: review scope, compact until you change it ────────── */
+
+::deep .fqr-profile { padding: .75rem 1rem; }
+::deep .fqr-profile-head {
+    display: flex; flex-wrap: wrap; align-items: flex-start;
+    justify-content: space-between; gap: .4rem 1rem;
+}
+::deep .fqr-profile-heading {
+    margin: 0; font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--clr-text-muted);
+}
+::deep .fqr-profile-name { margin: .2rem 0 0; font-weight: 600; color: var(--clr-text-heading); }
+::deep .fqr-profile-scope { margin: .1rem 0 0; font-size: .8rem; color: var(--clr-text-muted); }
+
+::deep .fqr-profile-options { border: none; margin: .6rem 0 .5rem; padding: 0; display: grid; gap: .4rem; }
+::deep .fqr-profile-legend { padding: 0; font-size: .8rem; color: var(--clr-text-muted); }
+::deep .fqr-profile-option {
+    display: flex; align-items: flex-start; gap: .5rem; cursor: pointer;
+    padding: .5rem .6rem; border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md); background: var(--clr-surface);
+}
+::deep .fqr-profile-option:hover { border-color: var(--clr-border-hover); }
+::deep .fqr-profile-option-selected { border-color: var(--clr-primary); background: var(--clr-surface-selected); }
+::deep .fqr-profile-option:focus-within { outline: 3px solid var(--clr-primary); outline-offset: 2px; }
+::deep .fqr-profile-option input { margin-top: .2rem; flex: none; }
+::deep .fqr-profile-option-body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+::deep .fqr-profile-option-name { font-weight: 600; font-size: .875rem; color: var(--clr-text-heading); }
+::deep .fqr-profile-option-scope { font-size: .78rem; color: var(--clr-text-muted); }
+::deep .fqr-profile-legal {
+    align-self: flex-start; margin-top: .15rem; padding: .0625rem .375rem; border-radius: 999px;
+    border: 1px solid var(--clr-info-bg); background: var(--clr-info-bg-light);
+    font-size: .6875rem; font-weight: 600; color: var(--clr-info);
+}

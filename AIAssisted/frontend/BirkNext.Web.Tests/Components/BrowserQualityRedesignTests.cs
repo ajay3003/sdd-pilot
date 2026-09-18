@@ -51,7 +51,7 @@ public sealed class BrowserQualityRedesignTests : BunitContext
         Assert.NotSame(beforeLoad, Discovery.GetSnapshot("dev"));
         cut.Render();
         Assert.Equal(WcagProfiles.NorwegianId, ((IHtmlSelectElement)cut.Find("[data-testid=wcag-profile]")).Value);
-        Assert.Contains("Norwegian legal baseline", cut.Find("[data-testid=wcag-assessment-title]").TextContent);
+        Assert.Contains("Norwegian public-sector requirements", cut.Find("[data-testid=wcag-assessment-title]").TextContent);
         cut.Find("[data-testid=wcag-profile]").Change(WcagProfiles.ExtendedId);
         Assert.Equal(WcagVersion.Wcag22, Discovery.GetAssessment("dev").Version);
         Assert.Contains("WCAG 2.2", cut.Find("[data-testid=wcag-assessment-title]").TextContent);

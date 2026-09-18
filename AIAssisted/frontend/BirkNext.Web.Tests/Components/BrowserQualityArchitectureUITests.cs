@@ -26,7 +26,7 @@ public sealed class BrowserQualityArchitectureUITests : BunitContext
         var cut = Render<BrowserQualityWorkspace>(p => p.Add(c => c.Profile,
             new FrontendAnalysisProfile { Id = "dev", TargetUrl = "https://m2lbdev.bufetat.no" }));
         Assert.Single(cut.FindComponents<WcagWorkspace>());
-        Assert.Contains("Norwegian legal baseline", cut.Markup);
+        Assert.Contains("Norwegian public-sector requirements", cut.Markup);
         cut.Find("[data-testid=wcag-profile]").Change(WcagProfiles.ExtendedId);
         cut.Find("[data-testid=wcag-toggle-criteria]").Click();
         Assert.Equal(55, cut.FindAll("[data-testid=wcag-criterion-row]").Count);
@@ -34,7 +34,7 @@ public sealed class BrowserQualityArchitectureUITests : BunitContext
         Assert.Empty(cut.FindComponents<WcagWorkspace>());
         Assert.Contains("No browser performance evidence", cut.Markup);
         cut.Find("[data-testid=browser-quality-wcag-tab]").Click();
-        Assert.Contains("Extended assessment", cut.Find("[data-testid=wcag-assessment-title]").TextContent);
+        Assert.Contains("WCAG 2.2 AA — Extended review", cut.Find("[data-testid=wcag-assessment-title]").TextContent);
     }
 
     [Fact]

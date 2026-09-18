@@ -185,7 +185,7 @@ public sealed class WcagArchitectureTests
     {
         var html = new ReportExportService().ExportFrontendQualityReview(new() { Wcag = new() { Version = WcagVersion.Wcag22 } }, "fixture");
         Assert.Contains("Profile unknown", html); Assert.Contains("WCAG 2.2", html);
-        Assert.DoesNotContain("Norwegian legal baseline", html);
+        Assert.DoesNotContain("Norwegian public-sector requirements", html);
     }
 
     internal sealed class Store : IJSRuntime

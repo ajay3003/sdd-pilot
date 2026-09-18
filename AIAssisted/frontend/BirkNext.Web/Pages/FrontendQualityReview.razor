@@ -69,6 +69,9 @@
                 <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
             </div>
 
+            @* Review scope, stated before the run: which criteria accessibility is judged against. *@
+            <FrontendQualityProfileCard Selected="SelectedWcagProfile" ProfileChanged="OnWcagProfileChanged" />
+
             <FrontendQualityDimensionCards Cards="landing.Dimensions" />
 
             @if (_access is { } landingAccess)
@@ -664,6 +667,20 @@
     /// The discovery snapshot the WCAG profile selection and manual reviews are written to. Read-only here: the
     /// displayed coverage still comes from this review run's own assessment, never from a live re-assessment.
     /// </summary>
+    /// <summary>
+    /// The accessibility profile this review will be evaluated against. It is review scope, persisted where it already
+    /// lived — the Target Environment's WCAG settings — so the selector here and the WCAG result later read one value.
+    /// </summary>
+    private WcagAssessmentProfile SelectedWcagProfile => WcagSnapshot.Wcag.Profile;
+
+    private async Task OnWcagProfileChanged(string profileId)
+    {
+        if (_context is null) return;
+        if (ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) is not IEndpointDiscoveryService discovery) return;
+        await discovery.SaveWcagSettingsAsync(JS, _context.ActiveProfile.Id, new WcagSettings { ProfileId = profileId });
+        StateHasChanged();
+    }
+
     private EndpointDiscoverySnapshot WcagSnapshot =>
         _context is null ? new()
             : (ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(_context.ActiveProfile.Id) ?? new();

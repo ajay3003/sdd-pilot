@@ -352,7 +352,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
             cut.FindAll("[data-testid=wcag-criterion-row]").Should().BeEmpty(view);
             cut.FindComponents<WcagCoverage>().Should().BeEmpty(view);
             cut.FindComponents<PerformanceQualityPageView>().Should().BeEmpty(view);
-            foreach (var word in new[] { "Norwegian legal baseline", "WCAG 2.1", "WCAG 2.2", "Assessment profile",
+            foreach (var word in new[] { "Norwegian public-sector requirements", "WCAG 2.1", "WCAG 2.2", "Assessment profile",
                                           "Manual-only", "Require manual review", "Failed criteria", "conformance",
                                           "Needs improvement", "Threshold" })
                 cut.Markup.Should().NotContain(word, $"{word} belongs to Frontend Quality Review ({view})");
