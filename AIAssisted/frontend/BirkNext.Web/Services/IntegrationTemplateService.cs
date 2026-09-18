@@ -4,26 +4,29 @@ using BirkNext.Web.Models;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Fetches the integration templates evidenced for an environment.
+/// Fetches the known M2LB integration templates, resolved for one environment.
 ///
-/// The catalogue lives in the backend so there is one copy of it. An environment with no
-/// evidenced templates returns an empty list, which is a normal outcome rather than an error:
-/// only environments whose values were actually established have templates.
+/// The catalogue lives in the backend so there is one copy of it; this client never holds a second
+/// one. Every template comes back whatever the environment is — the catalogue is reusable knowledge,
+/// not per-environment inventory. What varies is the binding: a template with no evidenced values
+/// for this environment arrives with its structural fields listed as missing, which is a normal
+/// state the user resolves by supplying them, not an empty catalogue.
 /// </summary>
 public interface IIntegrationTemplateService
 {
-    Task<List<KnownIntegrationTemplate>> GetForEnvironmentAsync(string? environmentName);
+    /// <param name="environmentType">
+    /// The normalised environment type ("Development", "QA", "Production") — never a profile display
+    /// name, which would not match any binding.
+    /// </param>
+    Task<List<KnownIntegrationTemplateView>> GetForEnvironmentAsync(string? environmentType);
 }
 
 public sealed class IntegrationTemplateService(HttpClient http) : IIntegrationTemplateService
 {
-    public async Task<List<KnownIntegrationTemplate>> GetForEnvironmentAsync(string? environmentName)
+    public async Task<List<KnownIntegrationTemplateView>> GetForEnvironmentAsync(string? environmentType)
     {
-        if (string.IsNullOrWhiteSpace(environmentName))
-            return [];
-
-        var templates = await http.GetFromJsonAsync<List<KnownIntegrationTemplate>>(
-            $"api/integration-quality/known-templates?environmentName={Uri.EscapeDataString(environmentName)}");
+        var templates = await http.GetFromJsonAsync<List<KnownIntegrationTemplateView>>(
+            $"api/integration-quality/known-templates?environmentType={Uri.EscapeDataString(environmentType ?? "")}");
 
         return templates ?? [];
     }

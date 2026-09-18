@@ -200,7 +200,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         var cut = OpenAddIntegration();
 
         var empty = cut.Find("[data-testid=fa-templates-empty]");
-        empty.TextContent.Should().Contain("No known M2LB templates are available for this environment.");
+        empty.TextContent.Should().Contain("The known M2LB templates could not be loaded.");
         empty.TextContent.Should().Contain("You can configure a custom integration instead.");
 
         // Neutral, not an error or a warning.

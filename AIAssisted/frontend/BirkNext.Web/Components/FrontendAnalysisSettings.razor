@@ -1325,9 +1325,9 @@
                             {
                                 @if (_knownTemplates.Count == 0)
                                 {
-                                    @* A normal state for an environment with no audited template — offer the way forward. *@
+                                    @* The catalogue is reusable knowledge, so this is only ever a load failure. *@
                                     <div class="fa-templates-empty" data-testid="fa-templates-empty">
-                                        <p class="fa-templates-empty-title">No known M2LB templates are available for this environment.</p>
+                                        <p class="fa-templates-empty-title">The known M2LB templates could not be loaded.</p>
                                         <p class="fa-templates-empty-help">You can configure a custom integration instead.</p>
                                         <SecondaryButton OnClick="@(() => SetAddMode("custom"))" Class="fa-btn-sm" data-testid="fa-templates-empty-custom">
                                             Configure custom integration
@@ -1341,32 +1341,26 @@
                                     <select id="fa-template-select" class="form-control" data-testid="fa-template-select"
                                             @onchange="OnTemplateSelected">
                                         <option value="">Select a template...</option>
-                                        @foreach (var group in _knownTemplates.GroupBy(t => t.IntegrationType).OrderBy(g => g.Key.ToString(), StringComparer.Ordinal))
+                                        @foreach (var group in _knownTemplates.GroupBy(v => v.Template.IntegrationType).OrderBy(g => g.Key.ToString(), StringComparer.Ordinal))
                                         {
                                             <optgroup label="@IntegrationConfigPresenter.TypeLabel(group.Key)" data-testid="fa-template-group">
-                                                @foreach (var template in group.OrderBy(t => t.DisplayName, StringComparer.Ordinal))
+                                                @foreach (var view in group.OrderBy(v => v.Template.DisplayName, StringComparer.Ordinal))
                                                 {
-                                                    <option value="@template.Id">@template.DisplayName</option>
+                                                    <option value="@view.Template.Id">@view.Template.DisplayName</option>
                                                 }
                                             </optgroup>
                                         }
                                     </select>
 
-                                    @* Preview before committing. Only values the audit established are listed;
-                                       a field it could not establish is omitted rather than shown as a blank fact. *@
-                                    @if (SelectedTemplate is { } preview)
+                                    @* Preview before committing, in two clearly separate halves: what the template
+                                       knows (reusable, the same in every environment) and what this environment
+                                       binds it to (specific, and unknown until someone establishes it). *@
+                                    @if (SelectedTemplate is { } templateView)
                                     {
+                                        var preview = templateView.Template;
                                         <dl class="fa-template-preview" data-testid="fa-template-preview">
+                                            <div><dt colspan="2" class="fa-template-group-label">Template</dt><dd></dd></div>
                                             <div><dt>Type</dt><dd>@IntegrationConfigPresenter.TypeLabel(preview.IntegrationType)</dd></div>
-                                            <div><dt>Resource</dt><dd class="fa-template-mono" data-testid="fa-template-resource">@preview.Resource</dd></div>
-                                            @if (!string.IsNullOrWhiteSpace(preview.EndpointOrNamespace))
-                                            {
-                                                <div><dt>Namespace</dt><dd class="fa-template-mono">@preview.EndpointOrNamespace</dd></div>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(preview.SuggestedConsumerGroup))
-                                            {
-                                                <div><dt>Consumer group</dt><dd data-testid="fa-template-consumer-group">@preview.SuggestedConsumerGroup</dd></div>
-                                            }
                                             @if (!string.IsNullOrWhiteSpace(preview.SuggestedProducer))
                                             {
                                                 <div><dt>Producer</dt><dd data-testid="fa-template-producer">@preview.SuggestedProducer</dd></div>
@@ -1377,15 +1371,71 @@
                                             }
                                             <div><dt>Source</dt><dd data-testid="fa-template-source">@IntegrationConfigPresenter.SourceLabel(IntegrationConfigurationSource.CodeSuggested)</dd></div>
                                         </dl>
+
+                                        <dl class="fa-template-preview fa-template-binding" data-testid="fa-template-binding">
+                                            <div><dt colspan="2" class="fa-template-group-label" data-testid="fa-template-binding-heading">@EnvironmentValuesLabel values</dt><dd></dd></div>
+                                            @* An unknown value is stated as unknown for THIS environment. It is never
+                                               filled in from another environment's binding. *@
+                                            <div>
+                                                <dt>Resource</dt>
+                                                <dd class="fa-template-mono" data-testid="fa-template-resource">
+                                                    @(templateView.Binding?.Resource is { Length: > 0 } boundResource
+                                                        ? boundResource
+                                                        : $"Not defined for {EnvironmentValuesLabel}")
+                                                </dd>
+                                            </div>
+                                            <div>
+                                                <dt>Namespace</dt>
+                                                <dd class="fa-template-mono" data-testid="fa-template-namespace">
+                                                    @(templateView.Binding?.EndpointOrNamespace is { Length: > 0 } boundNamespace
+                                                        ? boundNamespace
+                                                        : $"Not defined for {EnvironmentValuesLabel}")
+                                                </dd>
+                                            </div>
+                                            @* Service Bus has subscriptions, not consumer groups, so the field is absent. *@
+                                            @if (preview.IntegrationType is IntegrationType.EventHub or IntegrationType.Kafka)
+                                            {
+                                                <div>
+                                                    <dt>Consumer group</dt>
+                                                    <dd data-testid="fa-template-consumer-group">
+                                                        @(templateView.Binding?.ConsumerGroup is { Length: > 0 } boundGroup
+                                                            ? boundGroup
+                                                            : $"Not defined for {EnvironmentValuesLabel}")
+                                                    </dd>
+                                                </div>
+                                            }
+                                        </dl>
+
                                         @if (!string.IsNullOrWhiteSpace(preview.RelationshipNote))
                                         {
                                             <p class="fa-section-note" data-testid="fa-template-note">@preview.RelationshipNote</p>
                                         }
-                                        @if (ExistingForTemplate(preview) is not null)
+
+                                        @if (templateView.NeedsConfiguration)
+                                        {
+                                            @* The integration cannot carry a stable structural identity yet, so it is
+                                               not saved half-described; the missing values are asked for instead. *@
+                                            <div class="fa-template-required" data-testid="fa-template-required">
+                                                <p class="fa-template-required-title" data-testid="fa-template-required-reason">
+                                                    @string.Join(", ", templateView.MissingRequiredFields) must be configured for @EnvironmentValuesLabel before this template can be added.
+                                                </p>
+                                                @foreach (var field in templateView.MissingRequiredFields)
+                                                {
+                                                    <label class="fa-label" for="@($"fa-template-field-{field}")">@field <span aria-hidden="true">*</span></label>
+                                                    <input id="@($"fa-template-field-{field}")" class="form-control" type="text"
+                                                           data-testid="@($"fa-template-field-{field}")"
+                                                           value="@SuppliedValue(field)"
+                                                           @onchange="e => SetSuppliedValue(field, e.Value?.ToString())" />
+                                                }
+                                            </div>
+                                        }
+
+                                        @if (ExistingForTemplate(templateView) is not null)
                                         {
                                             <p class="fa-section-note" data-testid="fa-template-existing">This integration is already configured. Adding it fills in any values that are still blank and keeps everything you entered.</p>
                                         }
-                                        <SecondaryButton OnClick="AddSelectedTemplate" Class="fa-btn-sm" data-testid="fa-template-add">Add integration</SecondaryButton>
+                                        <SecondaryButton OnClick="AddSelectedTemplate" Class="fa-btn-sm" data-testid="fa-template-add"
+                                                         Disabled="@(!TemplateStructurallyComplete(templateView))">Add integration</SecondaryButton>
                                     }
                                 }
                             }
@@ -2996,9 +3046,15 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     // ── Add-integration flow ───────────────────────────────────────────────────
     private bool _addingIntegration;
     private string _addMode = "known";
-    private List<KnownIntegrationTemplate> _knownTemplates = [];
+    private List<KnownIntegrationTemplateView> _knownTemplates = [];
     /// <summary>Previewed template. Selecting only previews; acceptance is the explicit Add integration action.</summary>
     private string? _selectedTemplateId;
+    /// <summary>
+    /// Structural values the user typed for fields this environment has no binding for. Held here
+    /// rather than written back onto the template: the template is reusable knowledge and must stay
+    /// identical for every environment that reads it.
+    /// </summary>
+    private readonly Dictionary<string, string> _suppliedBindingValues = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Opens the add flow and loads the templates evidenced for this environment. An environment
@@ -3021,17 +3077,17 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private async Task LoadKnownTemplatesAsync()
     {
-        // Match on the environment TYPE, not the profile's display name. The catalogue is keyed by
-        // environment ("QA"), so matching on a name like "M2LB QA" returned nothing and made the
-        // whole catalogue unreachable. The type is a closed enum, so the lookup is deterministic.
-        var environmentName = _editProfile?.EnvironmentType.ToString() ?? "";
+        // Bindings are keyed by the environment TYPE, not the profile's display name: a name like
+        // "M2LB QA" matches nothing. The type is a closed enum, so the lookup is deterministic.
+        // The catalogue itself is returned whatever this value is — only the bindings vary.
+        var environmentType = _editProfile?.EnvironmentType.ToString() ?? "";
 
         try
         {
             // Resolved optionally: the editor must stay renderable where template lookup is not
-            // wired up, and an absent catalogue is the same normal empty state as an empty one.
+            // wired up, and a failed load leaves the manual path available.
             var templates = ServiceProvider.GetService(typeof(IIntegrationTemplateService)) as IIntegrationTemplateService;
-            _knownTemplates = templates is null ? [] : await templates.GetForEnvironmentAsync(environmentName);
+            _knownTemplates = templates is null ? [] : await templates.GetForEnvironmentAsync(environmentType);
         }
         catch
         {
@@ -3041,27 +3097,75 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         }
     }
 
+    /// <summary>The environment these structural values belong to, as the user reads it.</summary>
+    private string EnvironmentValuesLabel => _editProfile?.EnvironmentType.ToString() ?? "this environment";
+
+    private string SuppliedValue(string field) => _suppliedBindingValues.GetValueOrDefault(field, "");
+
+    private void SetSuppliedValue(string field, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) _suppliedBindingValues.Remove(field);
+        else _suppliedBindingValues[field] = value.Trim();
+    }
+
+    /// <summary>
+    /// The environment values this template would be accepted with: the binding, overlaid with
+    /// anything the user supplied for a field the binding had no value for.
+    /// </summary>
+    private IntegrationEnvironmentValues ValuesFor(KnownIntegrationTemplateView view) => new(
+        Resource: view.Binding?.Resource is { Length: > 0 } resource ? resource : SuppliedValue(KnownIntegrationFields.Resource) is { Length: > 0 } typedResource ? typedResource : null,
+        EndpointOrNamespace: view.Binding?.EndpointOrNamespace is { Length: > 0 } endpoint ? endpoint : SuppliedValue(KnownIntegrationFields.Endpoint) is { Length: > 0 } typedEndpoint ? typedEndpoint : null,
+        ConsumerGroup: view.Binding?.ConsumerGroup);
+
+    /// <summary>
+    /// Whether every structurally required field now has a value. Until it does, the template is
+    /// not accepted: a persisted integration without its structural identity would carry a baseline
+    /// key that means nothing and could never be matched again.
+    /// </summary>
+    private bool TemplateStructurallyComplete(KnownIntegrationTemplateView view)
+    {
+        var values = ValuesFor(view);
+        return view.RequiredFields.All(field => field switch
+        {
+            KnownIntegrationFields.Resource => !string.IsNullOrWhiteSpace(values.Resource),
+            KnownIntegrationFields.Endpoint => !string.IsNullOrWhiteSpace(values.EndpointOrNamespace),
+            _ => true,
+        });
+    }
+
     /// <summary>
     /// Creates an integration from a template. Only values the audit established are written, so
     /// anything it could not establish stays blank and shows as still needed.
     /// </summary>
     /// <summary>Selecting a template only previews it. Nothing is added until "Add integration".</summary>
-    private void OnTemplateSelected(ChangeEventArgs e) =>
+    private void OnTemplateSelected(ChangeEventArgs e)
+    {
         _selectedTemplateId = e.Value?.ToString() is { Length: > 0 } id ? id : null;
+        // Values typed for one template never carry over to the next.
+        _suppliedBindingValues.Clear();
+    }
 
-    private KnownIntegrationTemplate? SelectedTemplate =>
-        _selectedTemplateId is null ? null : _knownTemplates.FirstOrDefault(t => t.Id == _selectedTemplateId);
+    private KnownIntegrationTemplateView? SelectedTemplate =>
+        _selectedTemplateId is null ? null : _knownTemplates.FirstOrDefault(v => v.Template.Id == _selectedTemplateId);
 
     /// <summary>
     /// The configured integration this template would apply to, matched on structural identity
-    /// (type + resource + endpoint) exactly as the baseline key is derived — never on display name,
-    /// producer or consumer. An existing match is enriched rather than duplicated.
+    /// (type + resource + endpoint) exactly as the baseline key is derived — never on template id,
+    /// display name, producer or consumer. An existing match is enriched rather than duplicated.
+    ///
+    /// Structural identity needs structural values, so while any required one is still unknown no
+    /// match is claimed: guessing here would either merge two different integrations or split one.
     /// </summary>
-    private IntegrationConfig? ExistingForTemplate(KnownIntegrationTemplate template) =>
-        _editProfile?.Integrations.FirstOrDefault(i =>
-            i.Type == template.IntegrationType &&
-            string.Equals((i.Resource ?? "").Trim(), template.Resource.Trim(), StringComparison.OrdinalIgnoreCase) &&
-            string.Equals((i.Endpoint ?? "").Trim(), (template.EndpointOrNamespace ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+    private IntegrationConfig? ExistingForTemplate(KnownIntegrationTemplateView view)
+    {
+        if (!TemplateStructurallyComplete(view)) return null;
+
+        var values = ValuesFor(view);
+        return _editProfile?.Integrations.FirstOrDefault(i =>
+            i.Type == view.Template.IntegrationType &&
+            string.Equals((i.Resource ?? "").Trim(), (values.Resource ?? "").Trim(), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals((i.Endpoint ?? "").Trim(), (values.EndpointOrNamespace ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>
     /// Explicit acceptance. Only values the audit established are written, so anything it could not
@@ -3070,22 +3174,27 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     private void AddSelectedTemplate()
     {
-        if (SelectedTemplate is not { } template || _editProfile is null) return;
+        if (SelectedTemplate is not { } view || _editProfile is null) return;
+        // An integration whose structural identity is still unknown is not persisted at all.
+        if (!TemplateStructurallyComplete(view)) return;
 
-        if (ExistingForTemplate(template) is { } existing)
+        var values = ValuesFor(view);
+
+        if (ExistingForTemplate(view) is { } existing)
         {
-            IntegrationConfigPresenter.ApplyTemplate(existing, template, fillOnly: true);
+            IntegrationConfigPresenter.ApplyTemplate(existing, view.Template, values, fillOnly: true);
             _editingIntegrationId = existing.Id;
         }
         else
         {
             var cfg = new IntegrationConfig { Id = NewIntegrationId(), Enabled = true };
-            IntegrationConfigPresenter.ApplyTemplate(cfg, template);
+            IntegrationConfigPresenter.ApplyTemplate(cfg, view.Template, values);
             _editProfile.Integrations.Add(cfg);
             _editingIntegrationId = cfg.Id;
         }
 
         _selectedTemplateId = null;
+        _suppliedBindingValues.Clear();
         _addingIntegration = false;
     }
 

@@ -235,11 +235,10 @@ public class IntegrationConfigPresenterTests
             DisplayName = "BiRK Person CDC",
             IntegrationType = IntegrationType.EventHub,
             ResourceKind = IntegrationResourceKind.EventHub,
-            Resource = "m2lb-cdc-qa.birk.dbo.person",
             SuggestedProducer = "BiRK / Debezium",
             SuggestedConsumer = "PersonBiRKAdapter"
-            // namespace and consumer group were not established by the audit
-        });
+        }, new IntegrationEnvironmentValues("m2lb-cdc-qa.birk.dbo.person", null, null));
+        // The namespace and consumer group were not established by the audit, so the binding has none.
 
         target.Name.Should().Be("BiRK Person CDC");
         target.Resource.Should().Be("m2lb-cdc-qa.birk.dbo.person");
@@ -261,9 +260,8 @@ public class IntegrationConfigPresenterTests
         {
             DisplayName = "BiRK Person CDC",
             IntegrationType = IntegrationType.EventHub,
-            ResourceKind = IntegrationResourceKind.EventHub,
-            Resource = "m2lb-cdc-qa.birk.dbo.person"
-        });
+            ResourceKind = IntegrationResourceKind.EventHub
+        }, new IntegrationEnvironmentValues("m2lb-cdc-qa.birk.dbo.person", null, null));
 
         // Selecting it is still valid; the missing namespace is stated, not blocked.
         IntegrationConfigPresenter.MissingRequiredFields(target).Should().Contain("Namespace");
@@ -280,9 +278,8 @@ public class IntegrationConfigPresenterTests
             DisplayName = "Leselogg",
             IntegrationType = IntegrationType.ServiceBus,
             ResourceKind = IntegrationResourceKind.ServiceBusQueue,
-            Resource = "leselogg",
             SuggestedConsumer = "Revisjon"
-        });
+        }, new IntegrationEnvironmentValues("leselogg", null, null));
 
         target.Endpoint = "my-namespace.servicebus.windows.net";
         target.LogicalConsumerService = "RevisjonV2";

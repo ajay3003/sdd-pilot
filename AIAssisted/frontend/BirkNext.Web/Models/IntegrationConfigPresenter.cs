@@ -157,24 +157,35 @@ public static class IntegrationConfigPresenter
     };
 
     /// <summary>
-    /// Applies a template as a starting point. Only values the audit established are written, so
-    /// fields it could not establish stay empty and the form shows them as still needed.
+    /// Applies a template as a starting point. The template supplies the reusable knowledge —
+    /// name, type, producer, consumer — and <paramref name="values"/> supplies everything that is
+    /// specific to this environment. Nothing structural is ever taken from the template itself, so
+    /// a QA hub name cannot leak into a Development integration.
     /// </summary>
+    /// <param name="values">
+    /// The environment's binding, plus anything the user typed for fields it had no value for. A
+    /// field that is still empty here stays empty, and the form shows it as still needed.
+    /// </param>
     /// <param name="fillOnly">
     /// Applying to an integration that already exists. Only empty fields are filled and the provenance
     /// is left alone, mirroring the backend merger: a suggestion never overwrites a value a person
     /// entered, and re-applying a template never downgrades a Manual record to CodeSuggested.
     /// </param>
-    public static void ApplyTemplate(IntegrationConfig target, KnownIntegrationTemplate template, bool fillOnly = false)
+    public static void ApplyTemplate(
+        IntegrationConfig target,
+        KnownIntegrationTemplate template,
+        IntegrationEnvironmentValues values,
+        bool fillOnly = false)
     {
         if (!fillOnly)
         {
             target.Name = template.DisplayName;
             target.Type = template.IntegrationType;
             target.ResourceKind = template.ResourceKind;
-            target.Resource = template.Resource;
-            target.Endpoint = template.EndpointOrNamespace;
-            target.Consumer = template.SuggestedConsumerGroup;
+            // Structural values come from the environment, never from the reusable template.
+            target.Resource = values.Resource;
+            target.Endpoint = values.EndpointOrNamespace;
+            target.Consumer = values.ConsumerGroup;
             target.LogicalProducerService = template.SuggestedProducer;
             target.LogicalConsumerService = template.SuggestedConsumer;
             target.ConfigurationSource = IntegrationConfigurationSource.CodeSuggested;
@@ -183,12 +194,35 @@ public static class IntegrationConfigPresenter
 
         if (string.IsNullOrWhiteSpace(target.Name)) target.Name = template.DisplayName;
         if (target.ResourceKind == IntegrationResourceKind.Unknown) target.ResourceKind = template.ResourceKind;
-        if (string.IsNullOrWhiteSpace(target.Endpoint)) target.Endpoint = template.EndpointOrNamespace;
-        if (string.IsNullOrWhiteSpace(target.Consumer)) target.Consumer = template.SuggestedConsumerGroup;
+        if (string.IsNullOrWhiteSpace(target.Resource)) target.Resource = values.Resource;
+        if (string.IsNullOrWhiteSpace(target.Endpoint)) target.Endpoint = values.EndpointOrNamespace;
+        if (string.IsNullOrWhiteSpace(target.Consumer)) target.Consumer = values.ConsumerGroup;
         if (string.IsNullOrWhiteSpace(target.LogicalProducerService)) target.LogicalProducerService = template.SuggestedProducer;
         if (string.IsNullOrWhiteSpace(target.LogicalConsumerService)) target.LogicalConsumerService = template.SuggestedConsumer;
         // Provenance records the strongest authority behind the record; only an absent one is filled.
         if (target.ConfigurationSource == IntegrationConfigurationSource.Unknown)
             target.ConfigurationSource = IntegrationConfigurationSource.CodeSuggested;
     }
+}
+
+/// <summary>
+/// The environment-specific structural values a template is accepted with: whatever the environment's
+/// binding provided, overlaid with whatever the user supplied for the fields it could not.
+///
+/// This type exists so the reusable template and the environment values it is combined with stay two
+/// separate things all the way to the point of acceptance.
+/// </summary>
+public sealed record IntegrationEnvironmentValues(string? Resource, string? EndpointOrNamespace, string? ConsumerGroup)
+{
+    public static readonly IntegrationEnvironmentValues None = new(null, null, null);
+}
+
+/// <summary>
+/// The structural field names the backend reports as required for a known template. They are
+/// compared as strings across the wire, so they are named in one place on this side too.
+/// </summary>
+public static class KnownIntegrationFields
+{
+    public const string Resource = "Resource";
+    public const string Endpoint = "Endpoint";
 }

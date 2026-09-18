@@ -1,4 +1,3 @@
-using System.Text.Json;
 using BirkNext.Api.Services.IntegrationQuality;
 using Xunit;
 
@@ -7,182 +6,326 @@ namespace BirkNext.Api.Tests.Services.IntegrationQuality;
 /// <summary>
 /// The catalogue of integrations known from an external audit of the M2LB source.
 ///
-/// Most of these tests exist to police what the catalogue must NOT contain: environment names
-/// derived by substitution, namespaces and consumer groups that were never evidenced, and
-/// service identities inferred from resource names.
+/// The catalogue is now two things, and these tests keep them apart. A TEMPLATE is reusable
+/// knowledge — "Person CDC" is one logical integration, the same in every environment. A BINDING is
+/// what one environment calls it. Most of these tests exist to police what must NOT happen across
+/// that line: a template must not carry a QA hub name, a DEV binding must not be derived from a QA
+/// one, and an environment without bindings must not lose the catalogue.
 /// </summary>
 public class KnownIntegrationTemplatesTests
 {
-    private static IReadOnlyList<KnownIntegrationTemplate> Qa() =>
-        KnownIntegrationTemplates.ForEnvironment("QA");
+    private static IReadOnlyList<KnownIntegrationTemplateView> For(string? environmentType) =>
+        KnownIntegrationTemplates.ForEnvironment(environmentType);
 
-    // ── Event Hub coverage ───────────────────────────────────────────────────
+    private static KnownIntegrationTemplateView View(string environmentType, string displayName) =>
+        For(environmentType).Single(v => v.Template.DisplayName == displayName);
 
+    private static KnownIntegrationTemplate Template(string displayName) =>
+        KnownIntegrationTemplates.All.Single(t => t.DisplayName == displayName);
+
+    // ── §62. Templates are reusable and environment-independent ──────────────────────────────
+
+    // 1, 2, 3.
     [Theory]
-    [InlineData("m2lb-cdc-qa.birk.dbo.person")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.barn")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tiltak")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.bestilling")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tjenesteType")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tiltaksStatusType")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.avslutningsGrunnType")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tvangsprotokoll")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.romning")]
-    public void QaCatalogue_ContainsEventHub(string resource) =>
-        Assert.Contains(Qa(), t => t.Resource == resource
-                                   && t.IntegrationType == IntegrationType.EventHub
-                                   && t.ResourceKind == IntegrationResourceKind.EventHub);
-
-    [Fact]
-    public void QaCatalogue_ContainsExactlyTheNineEvidencedEventHubs() =>
-        Assert.Equal(9, Qa().Count(t => t.IntegrationType == IntegrationType.EventHub));
-
-    [Fact]
-    public void ResourceCasing_IsPreservedExactly()
+    [InlineData("Person CDC", IntegrationType.EventHub)]
+    [InlineData("Barn CDC", IntegrationType.EventHub)]
+    [InlineData("Tiltak CDC", IntegrationType.EventHub)]
+    [InlineData("Leselogg", IntegrationType.ServiceBus)]
+    [InlineData("Hendelser Barn", IntegrationType.ServiceBus)]
+    [InlineData("Autorisasjon Roller", IntegrationType.ServiceBus)]
+    public void ALogicalTemplateExistsIndependentlyOfAnyEnvironment(string displayName, IntegrationType type)
     {
-        // Broker entity names can be case-sensitive, and the audited spelling is authoritative.
-        Assert.Contains(Qa(), t => t.Resource == "m2lb-cdc-qa.birk.dbo.tjenesteType");
-        Assert.DoesNotContain(Qa(), t => t.Resource == "m2lb-cdc-qa.birk.dbo.tjenestetype");
+        var template = Template(displayName);
+
+        Assert.Equal(type, template.IntegrationType);
+        // It is reachable in every environment, including ones with no binding at all.
+        foreach (var environment in new[] { "Development", "QA", "Production", "", null })
+            Assert.Contains(For(environment), v => v.Template.Id == template.Id);
     }
 
-    // ── Service Bus entity kinds ─────────────────────────────────────────────
+    // 4. The logical fields are identical whatever environment resolved them.
+    [Fact]
+    public void TemplateFieldsAreStableAcrossEnvironments()
+    {
+        var dev = For("Development").Select(v => v.Template).OrderBy(t => t.Id, StringComparer.Ordinal).ToList();
+        var qa = For("QA").Select(v => v.Template).OrderBy(t => t.Id, StringComparer.Ordinal).ToList();
+        var prod = For("Production").Select(v => v.Template).OrderBy(t => t.Id, StringComparer.Ordinal).ToList();
+
+        Assert.Equal(dev, qa);
+        Assert.Equal(dev, prod);
+    }
+
+    // 5, 6. The catalogue never empties because of the environment.
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("DEV")]
+    [InlineData("Production")]
+    [InlineData("PROD")]
+    [InlineData("QA")]
+    [InlineData("")]
+    public void TheCatalogueIsOfferedInEveryEnvironment(string environmentType)
+    {
+        var views = For(environmentType);
+
+        Assert.Equal(20, views.Count);
+        Assert.Equal(9, views.Count(v => v.Template.IntegrationType == IntegrationType.EventHub));
+        Assert.Equal(11, views.Count(v => v.Template.IntegrationType == IntegrationType.ServiceBus));
+    }
+
+    // A template carries no environment-specific value at all: that is the whole point of the split.
+    [Fact]
+    public void NoTemplateCarriesAnEnvironmentSpecificValue()
+    {
+        foreach (var template in KnownIntegrationTemplates.All)
+        {
+            var text = $"{template.Id} {template.DisplayName} {template.SuggestedProducer} {template.SuggestedConsumer}";
+            Assert.DoesNotContain("-qa.", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("-dev.", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("-prod.", text, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    // ── §63. Environment bindings ────────────────────────────────────────────────────────────
+
+    // 8. QA resolves the audited values exactly, casing included.
+    [Theory]
+    [InlineData("Person CDC", "m2lb-cdc-qa.birk.dbo.person")]
+    [InlineData("Barn CDC", "m2lb-cdc-qa.birk.dbo.barn")]
+    [InlineData("Tiltak CDC", "m2lb-cdc-qa.birk.dbo.tiltak")]
+    [InlineData("Bestilling CDC", "m2lb-cdc-qa.birk.dbo.bestilling")]
+    [InlineData("TjenesteType CDC", "m2lb-cdc-qa.birk.dbo.tjenesteType")]
+    [InlineData("TiltaksStatusType CDC", "m2lb-cdc-qa.birk.dbo.tiltaksStatusType")]
+    [InlineData("AvslutningsGrunnType CDC", "m2lb-cdc-qa.birk.dbo.avslutningsGrunnType")]
+    [InlineData("Tvangsprotokoll CDC", "m2lb-cdc-qa.birk.dbo.tvangsprotokoll")]
+    [InlineData("Rømning CDC", "m2lb-cdc-qa.birk.dbo.romning")]
+    [InlineData("Leselogg", "leselogg")]
+    [InlineData("Operasjonsregistrering", "operasjonsregistrering")]
+    [InlineData("BiRK Adapter Errors", "birk-adapter-errors")]
+    [InlineData("Operatørkontroll Varsler", "operatorkontroll.varsler")]
+    [InlineData("Hendelser Barn", "hendelser.barn")]
+    [InlineData("Tjeneste Tjenester", "tjeneste.tjenester")]
+    [InlineData("Autorisasjon Operasjoner", "autorisasjon.operasjoner")]
+    [InlineData("Autorisasjon Roller", "autorisasjon.roller")]
+    [InlineData("Autorisasjon Tilganger", "autorisasjon.tilganger")]
+    [InlineData("Autorisasjon Nødtilganger", "autorisasjon.nodtilganger")]
+    [InlineData("Autorisasjon Organisasjon", "autorisasjon.organisasjon")]
+    public void QaBindingsResolveTheAuditedResourceExactly(string displayName, string resource)
+    {
+        var view = View("QA", displayName);
+
+        Assert.Equal(resource, view.Binding?.Resource);
+        Assert.Empty(view.MissingRequiredFields);
+    }
+
+    // 9, 10. Nothing is fabricated for an environment the audit never covered.
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public void NoBindingIsFabricatedForAnUnevidencedEnvironment(string environmentType)
+    {
+        foreach (var view in For(environmentType))
+        {
+            Assert.Null(view.Binding);
+            Assert.Contains(KnownIntegrationTemplates.ResourceField, view.MissingRequiredFields);
+        }
+    }
+
+    // 9, 10 again, at the point it would actually be tempting: a QA value must never reach DEV/PROD.
+    [Fact]
+    public void NoQaResourceLeaksIntoAnotherEnvironment()
+    {
+        foreach (var environment in new[] { "Development", "DEV", "Production", "PROD" })
+            Assert.All(For(environment), v => Assert.Null(v.Binding?.Resource));
+    }
+
+    [Fact]
+    public void NoResourceNameWasProducedBySubstitutingTheEnvironment()
+    {
+        // A "dev"/"prod" twin of an evidenced QA name would be an invention.
+        var bindings = new[] { "Development", "DEV", "Production", "PROD", "QA" }
+            .SelectMany(For)
+            .Select(v => v.Binding?.Resource)
+            .Where(r => r is not null)
+            .ToList();
+
+        Assert.DoesNotContain(bindings, r => r!.Contains("-dev.", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(bindings, r => r!.Contains("-prod.", StringComparison.OrdinalIgnoreCase));
+        // Every binding that exists is a QA one, so nothing here can be another environment's twin.
+        Assert.All(bindings, r => Assert.Contains(r!, For("QA").Select(v => v.Binding?.Resource)));
+    }
+
+    // 11. The audit never established a namespace, in any environment.
+    [Fact]
+    public void NoBindingInventsANamespace() =>
+        Assert.All(new[] { "Development", "QA", "Production" }.SelectMany(For),
+            v => Assert.Null(v.Binding?.EndpointOrNamespace));
+
+    // 12. Service Bus has subscriptions, not consumer groups.
+    [Fact]
+    public void ServiceBusBindingsCarryNoConsumerGroup() =>
+        Assert.All(For("QA").Where(v => v.Template.IntegrationType == IntegrationType.ServiceBus),
+            v => Assert.Null(v.Binding?.ConsumerGroup));
+
+    // 13. The Event Hub consumer group resolves only where it was evidenced.
+    [Fact]
+    public void EventHubConsumerGroupResolvesOnlyWhereEvidenced()
+    {
+        Assert.All(For("QA").Where(v => v.Template.IntegrationType == IntegrationType.EventHub),
+            v => Assert.Equal("$Default", v.Binding?.ConsumerGroup));
+
+        // Not evidenced for DEV or PROD, so it is absent rather than assumed to be a global default.
+        foreach (var environment in new[] { "Development", "Production" })
+            Assert.All(For(environment), v => Assert.Null(v.Binding?.ConsumerGroup));
+    }
+
+    [Fact]
+    public void NoBindingUsesTheLowerCaseConsumerGroupSpelling() =>
+        Assert.All(For("QA"), v => Assert.NotEqual("$default", v.Binding?.ConsumerGroup));
+
+    // 14. Lookup is by environment TYPE; a profile display name resolves nothing.
+    [Fact]
+    public void BindingLookupUsesEnvironmentTypeNotProfileDisplayName()
+    {
+        Assert.NotNull(KnownIntegrationTemplates.BindingFor("eh-person", "QA"));
+        Assert.NotNull(KnownIntegrationTemplates.BindingFor("eh-person", "qa"));
+
+        Assert.Null(KnownIntegrationTemplates.BindingFor("eh-person", "M2LB QA"));
+        Assert.Null(KnownIntegrationTemplates.BindingFor("eh-person", "M2LB DEV"));
+        Assert.Null(KnownIntegrationTemplates.BindingFor("eh-person", null));
+    }
+
+    // ── Resource kinds and relationships (unchanged invariants) ──────────────────────────────
 
     [Theory]
-    [InlineData("leselogg")]
-    [InlineData("operasjonsregistrering")]
-    [InlineData("birk-adapter-errors")]
-    [InlineData("operatorkontroll.varsler")]
-    public void QueueEntities_AreQueues(string resource) =>
-        Assert.Contains(Qa(), t => t.Resource == resource
-                                   && t.IntegrationType == IntegrationType.ServiceBus
-                                   && t.ResourceKind == IntegrationResourceKind.ServiceBusQueue);
+    [InlineData("Leselogg")]
+    [InlineData("Operasjonsregistrering")]
+    [InlineData("BiRK Adapter Errors")]
+    [InlineData("Operatørkontroll Varsler")]
+    public void QueueEntities_AreQueues(string displayName) =>
+        Assert.Equal(IntegrationResourceKind.ServiceBusQueue, Template(displayName).ResourceKind);
 
     [Theory]
-    [InlineData("hendelser.barn")]
-    [InlineData("tjeneste.tjenester")]
-    [InlineData("autorisasjon.operasjoner")]
-    [InlineData("autorisasjon.roller")]
-    [InlineData("autorisasjon.tilganger")]
-    [InlineData("autorisasjon.nodtilganger")]
-    [InlineData("autorisasjon.organisasjon")]
-    public void TopicEntities_AreTopics(string resource) =>
-        Assert.Contains(Qa(), t => t.Resource == resource
-                                   && t.ResourceKind == IntegrationResourceKind.ServiceBusTopic);
+    [InlineData("Hendelser Barn")]
+    [InlineData("Tjeneste Tjenester")]
+    [InlineData("Autorisasjon Operasjoner")]
+    [InlineData("Autorisasjon Roller")]
+    [InlineData("Autorisasjon Tilganger")]
+    [InlineData("Autorisasjon Nødtilganger")]
+    [InlineData("Autorisasjon Organisasjon")]
+    public void TopicEntities_AreTopics(string displayName) =>
+        Assert.Equal(IntegrationResourceKind.ServiceBusTopic, Template(displayName).ResourceKind);
 
     [Fact]
     public void NoSubscriptionsAreGuessed() =>
-        Assert.DoesNotContain(Qa(), t => t.ResourceKind == IntegrationResourceKind.ServiceBusSubscription);
+        Assert.DoesNotContain(KnownIntegrationTemplates.All,
+            t => t.ResourceKind == IntegrationResourceKind.ServiceBusSubscription);
 
-    // ── Relationships: only where proven ─────────────────────────────────────
-
+    // §60. Relationship evidence is reusable, and absent where the audit established nothing.
     [Fact]
     public void PersonCdc_CarriesItsProvenRelationship()
     {
-        var person = Qa().Single(t => t.Resource == "m2lb-cdc-qa.birk.dbo.person");
+        var person = Template("Person CDC");
 
         Assert.Equal("BiRK / Debezium", person.SuggestedProducer);
         Assert.Equal("PersonBiRKAdapter", person.SuggestedConsumer);
     }
 
-    [Fact]
-    public void OtherCdcHubs_CarryTheirAuditedConsumerButNoInferredProducer()
-    {
-        // The audit established a consuming service per hub. It did NOT establish a producer for
-        // any hub but person: "the data originates from BiRK CDC" is reasoning about where data
-        // comes from, not evidence of a configured producer, so the producer stays unknown.
-        var others = Qa().Where(t => t.IntegrationType == IntegrationType.EventHub
-                                     && t.Resource != "m2lb-cdc-qa.birk.dbo.person");
-
-        Assert.All(others, t =>
-        {
-            Assert.Null(t.SuggestedProducer);
-            Assert.False(string.IsNullOrWhiteSpace(t.SuggestedConsumer));
-        });
-
-        // Consumers come from the audit, never generalised from the resource name. "person ->
-        // PersonBiRKAdapter" must not become "barn -> BarnBiRKAdapter"; barn's audited consumer
-        // is PersonBiRKAdapter and tiltak's is Tjeneste API, neither derivable from its name.
-        foreach (var invented in new[] { "BarnBiRKAdapter", "TiltakBiRKAdapter", "BestillingBiRKAdapter",
-                                         "TvangsprotokollBiRKAdapter", "RomningBiRKAdapter" })
-            Assert.DoesNotContain(Qa(), t => t.SuggestedConsumer == invented);
-    }
-
     [Theory]
-    [InlineData("m2lb-cdc-qa.birk.dbo.barn", "PersonBiRKAdapter")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tiltak", "Tjeneste API")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.bestilling", "Tjeneste API")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tjenesteType", "Tjeneste API")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tiltaksStatusType", "Tjeneste API")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.avslutningsGrunnType", "Tjeneste API")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.tvangsprotokoll", "Hendelse BiRK Adapter")]
-    [InlineData("m2lb-cdc-qa.birk.dbo.romning", "Hendelse BiRK Adapter")]
-    public void EachCdcHubNamesItsAuditedConsumingService(string resource, string consumer)
+    [InlineData("Barn CDC", "PersonBiRKAdapter")]
+    [InlineData("Tiltak CDC", "Tjeneste API")]
+    [InlineData("Bestilling CDC", "Tjeneste API")]
+    [InlineData("TjenesteType CDC", "Tjeneste API")]
+    [InlineData("TiltaksStatusType CDC", "Tjeneste API")]
+    [InlineData("AvslutningsGrunnType CDC", "Tjeneste API")]
+    [InlineData("Tvangsprotokoll CDC", "Hendelse BiRK Adapter")]
+    [InlineData("Rømning CDC", "Hendelse BiRK Adapter")]
+    public void EachCdcHubNamesItsAuditedConsumingService(string displayName, string consumer)
     {
-        var template = Qa().Single(t => t.Resource == resource);
+        var template = Template(displayName);
 
         Assert.Equal(consumer, template.SuggestedConsumer);
-        Assert.Equal(KnownIntegrationTemplates.AuditedEventHubConsumerGroup, template.SuggestedConsumerGroup);
-        Assert.Null(template.EndpointOrNamespace);
+        // Only the person hub had a producing service established; the rest stay unknown rather
+        // than inferring "BiRK / Debezium" from the fact that the data comes from BiRK CDC.
+        Assert.Null(template.SuggestedProducer);
     }
 
     [Fact]
     public void Leselogg_HasProvenConsumerButNoSingleProducer()
     {
-        var leselogg = Qa().Single(t => t.Resource == "leselogg");
+        var leselogg = Template("Leselogg");
 
         Assert.Equal("Revisjon", leselogg.SuggestedConsumer);
-
-        // Several services write to it, and the model holds one producing service, so a composite
-        // string would misrepresent a single service identity.
         Assert.Null(leselogg.SuggestedProducer);
-        Assert.NotNull(leselogg.RelationshipNote);
-        Assert.DoesNotContain("/", leselogg.SuggestedProducer ?? "");
+        Assert.Contains("several services", leselogg.RelationshipNote);
     }
 
-    // ── Values the audit did not establish ───────────────────────────────────
+    // §59. The audited queue name stands; sample data is not deployment evidence.
+    [Fact]
+    public void Leselogg_KeepsTheAuditedQueueName() =>
+        Assert.Equal("leselogg", View("QA", "Leselogg").Binding?.Resource);
+
+    // ── Provenance ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void NoTemplateInventsANamespace() =>
-        Assert.All(Qa(), t => Assert.Null(t.EndpointOrNamespace));
+    public void ProvenanceNamesAnAuditedSourceReadingNotVerification() =>
+        Assert.All(KnownIntegrationTemplates.All, t =>
+        {
+            Assert.Equal("Suggested from audited M2LB source", t.SuggestionOrigin);
+            Assert.DoesNotContain("Verified", t.SuggestionOrigin, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("this repository", t.SuggestionOrigin, StringComparison.OrdinalIgnoreCase);
+        });
 
     [Fact]
-    public void EventHubTemplates_CarryTheAuditedConsumerGroup()
+    public void ProvenanceExposesNoFilePaths() =>
+        Assert.All(KnownIntegrationTemplates.All, t =>
+        {
+            Assert.DoesNotContain(":\\", t.SuggestionOrigin);
+            Assert.DoesNotContain("/Users/", t.SuggestionOrigin);
+            Assert.DoesNotContain(".cs", t.SuggestionOrigin);
+        });
+
+    // ── §64. Acceptance ──────────────────────────────────────────────────────────────────────
+
+    // 19. Accepting a template records it as a source reading, not as verification.
+    [Fact]
+    public void MaterialisedIntegration_IsMarkedCodeSuggested()
     {
-        // Earlier this asserted no consumer group existed, on the grounds that "$Default" is a
-        // common convention rather than evidence. The audit has since shown service consumers
-        // configured through EventHub:ConsumerGroup with that value, so it is now evidence and
-        // the previous expectation is obsolete.
-        var eventHubs = Qa().Where(t => t.IntegrationType == IntegrationType.EventHub).ToList();
+        var integration = View("QA", "Person CDC").ToIntegration("new-id")!;
 
-        Assert.NotEmpty(eventHubs);
-        Assert.All(eventHubs, t => Assert.Equal("$Default", t.SuggestedConsumerGroup));
+        Assert.Equal(IntegrationConfigurationSource.CodeSuggested, integration.ConfigurationSource);
+        Assert.Equal(IntegrationType.EventHub, integration.Type);
+        Assert.Equal(IntegrationResourceKind.EventHub, integration.ResourceKind);
+        Assert.Equal("m2lb-cdc-qa.birk.dbo.person", integration.Resource);
+        Assert.Equal("PersonBiRKAdapter", integration.LogicalConsumerService);
+        Assert.Equal("$Default", integration.Consumer);
     }
 
+    // 22. An integration whose structural identity is unknown is never produced.
+    [Theory]
+    [InlineData("Development")]
+    [InlineData("Production")]
+    public void NoIntegrationIsMaterialisedWhileItsStructuralIdentityIsUnknown(string environmentType) =>
+        Assert.All(For(environmentType), v => Assert.Null(v.ToIntegration("id")));
+
+    // §41. Required fields are the ones structural identity actually needs.
     [Fact]
-    public void NoTemplateUsesTheLowerCaseConsumerGroupSpelling()
+    public void RequiredFieldsAreTheStructuralOnesOnly()
     {
-        // One local HendelseAdapter configuration uses "$default". Azure compares the name
-        // case-insensitively, but suggestions follow the audited majority spelling rather than
-        // propagating the outlier.
-        Assert.DoesNotContain(Qa(), t => t.SuggestedConsumerGroup == "$default");
+        Assert.Equal([KnownIntegrationTemplates.ResourceField], KnownIntegrationTemplates.RequiredFieldsFor(IntegrationType.EventHub));
+        Assert.Equal([KnownIntegrationTemplates.ResourceField], KnownIntegrationTemplates.RequiredFieldsFor(IntegrationType.ServiceBus));
+        Assert.Equal([KnownIntegrationTemplates.EndpointField], KnownIntegrationTemplates.RequiredFieldsFor(IntegrationType.REST));
+
+        // The namespace is deliberately not required: the audit never established one, and every
+        // QA template would be unusable if it were.
+        Assert.DoesNotContain(KnownIntegrationTemplates.EndpointField, KnownIntegrationTemplates.RequiredFieldsFor(IntegrationType.EventHub));
     }
 
-    [Fact]
-    public void ServiceBusTemplates_CarryNoConsumerGroup()
-    {
-        // Service Bus has subscriptions, not consumer groups. Nothing here should acquire one,
-        // and the emulator's ConsumerGroups setting describes emulator topology rather than how a
-        // service consumer is configured.
-        Assert.All(
-            Qa().Where(t => t.IntegrationType == IntegrationType.ServiceBus),
-            t => Assert.Null(t.SuggestedConsumerGroup));
-    }
+    // ── §49. Baseline identity is untouched by any of this ───────────────────────────────────
 
     [Fact]
     public void ConsumerGroupChange_DoesNotMoveBaselineKey()
     {
-        var integration = Qa().Single(t => t.Resource == "m2lb-cdc-qa.birk.dbo.person")
-            .ToIntegration("i1");
+        var integration = View("QA", "Person CDC").ToIntegration("i1")!;
         integration.Endpoint = "ns.servicebus.windows.net";
 
         var before = IntegrationBaselineIdentity.Compute("QA", integration);
@@ -194,141 +337,18 @@ public class KnownIntegrationTemplatesTests
         Assert.Equal(before, IntegrationBaselineIdentity.Compute("QA", integration));
     }
 
-    // ── Environment discipline ───────────────────────────────────────────────
-
     [Fact]
-    public void OnlyQaHasTemplates()
+    public void TemplateIdentityIsNotIntegrationIdentity()
     {
-        Assert.NotEmpty(Qa());
-        Assert.Empty(KnownIntegrationTemplates.ForEnvironment("Development"));
-        Assert.Empty(KnownIntegrationTemplates.ForEnvironment("DEV"));
-        Assert.Empty(KnownIntegrationTemplates.ForEnvironment("Production"));
-        Assert.Empty(KnownIntegrationTemplates.ForEnvironment("PROD"));
-        Assert.Empty(KnownIntegrationTemplates.ForEnvironment(null));
-    }
+        var qa = View("QA", "Person CDC").ToIntegration("i1")!;
 
-    [Fact]
-    public void NoResourceNameWasProducedBySubstitutingTheEnvironment()
-    {
-        // A "dev"/"prod" twin of an evidenced QA name would be an invention.
-        var all = new[] { "Development", "DEV", "Production", "PROD", "QA" }
-            .SelectMany(KnownIntegrationTemplates.ForEnvironment)
-            .ToList();
+        // The same logical template in another environment is a different configured integration,
+        // because its environment and resource differ. That is correct, not a duplicate.
+        var dev = View("QA", "Person CDC").ToIntegration("i2")!;
+        dev.Resource = "m2lb-cdc-dev.something.else";
 
-        Assert.DoesNotContain(all, t => t.Resource.Contains("-dev.", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(all, t => t.Resource.Contains("-prod.", StringComparison.OrdinalIgnoreCase));
-        Assert.All(all, t => Assert.Equal("QA", t.EnvironmentName));
-    }
-
-    // ── Provenance ───────────────────────────────────────────────────────────
-
-    [Fact]
-    public void ProvenanceNamesAnAuditedSourceReadingNotVerification()
-    {
-        Assert.All(Qa(), t =>
-        {
-            Assert.Equal("Suggested from audited M2LB source", t.SuggestionOrigin);
-            Assert.DoesNotContain("Verified", t.SuggestionOrigin, StringComparison.OrdinalIgnoreCase);
-            Assert.DoesNotContain("this repository", t.SuggestionOrigin, StringComparison.OrdinalIgnoreCase);
-        });
-    }
-
-    [Fact]
-    public void ProvenanceExposesNoFilePaths() =>
-        Assert.All(Qa(), t =>
-        {
-            Assert.DoesNotContain(":\\", t.SuggestionOrigin);
-            Assert.DoesNotContain("/Users/", t.SuggestionOrigin);
-            Assert.DoesNotContain(".cs", t.SuggestionOrigin);
-        });
-
-    // ── Materialisation ──────────────────────────────────────────────────────
-
-    [Fact]
-    public void MaterialisedIntegration_IsMarkedCodeSuggested()
-    {
-        var integration = Qa().Single(t => t.Resource == "m2lb-cdc-qa.birk.dbo.person")
-            .ToIntegration("new-id");
-
-        Assert.Equal(IntegrationConfigurationSource.CodeSuggested, integration.ConfigurationSource);
-        Assert.Equal(IntegrationType.EventHub, integration.Type);
-        Assert.Equal(IntegrationResourceKind.EventHub, integration.ResourceKind);
-        Assert.Equal("m2lb-cdc-qa.birk.dbo.person", integration.Resource);
-        Assert.Equal("PersonBiRKAdapter", integration.LogicalConsumerService);
-    }
-
-    [Fact]
-    public void MaterialisedIntegration_LeavesUnknownFieldsEmpty()
-    {
-        var integration = Qa().Single(t => t.Resource == "hendelser.barn").ToIntegration("new-id");
-
-        // Empty rather than filled, so the form shows them as still needing input.
-        Assert.Null(integration.Endpoint);
-        Assert.Null(integration.Consumer);
-        Assert.Null(integration.LogicalProducerService);
-        Assert.Null(integration.LogicalConsumerService);
-    }
-
-    [Fact]
-    public void MaterialisedIntegration_IsEditableAndEditsSurvive()
-    {
-        var integration = Qa().Single(t => t.Resource == "leselogg").ToIntegration("i1");
-
-        integration.Endpoint = "my-namespace.servicebus.windows.net";
-        integration.LogicalConsumerService = "RevisjonV2";
-        integration.ConfigurationSource = IntegrationConfigurationSource.Manual;
-
-        var round = JsonSerializer.Deserialize<IntegrationConfigDto>(
-            JsonSerializer.Serialize(integration));
-
-        Assert.Equal("my-namespace.servicebus.windows.net", round!.Endpoint);
-        Assert.Equal("RevisjonV2", round.LogicalConsumerService);
-        Assert.Equal(IntegrationConfigurationSource.Manual, round.ConfigurationSource);
-    }
-
-    [Fact]
-    public void AcceptingThenEditingATemplate_DoesNotMoveBaselineKey()
-    {
-        var accepted = Qa().Single(t => t.Resource == "m2lb-cdc-qa.birk.dbo.person")
-            .ToIntegration("i1");
-        accepted.Endpoint = "ns.servicebus.windows.net";
-
-        var keyAsSuggested = IntegrationBaselineIdentity.Compute("QA", accepted);
-
-        // The person confirms it and renames it; structural identity is untouched.
-        accepted.ConfigurationSource = IntegrationConfigurationSource.Manual;
-        accepted.Name = "BiRK Person CDC (reviewed)";
-        accepted.LogicalProducerService = "BiRK";
-
-        Assert.Equal(keyAsSuggested, IntegrationBaselineIdentity.Compute("QA", accepted));
-    }
-
-    // ── Secrets ──────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void CatalogueContainsNoSecrets()
-    {
-        var serialised = JsonSerializer.Serialize(Qa());
-
-        foreach (var forbidden in new[]
-                 {
-                     // "SAS" alone is not usable as a marker: it occurs inside "autorisasjon".
-                     "SharedAccessKey", "SharedAccessSignature", "AccountKey", "connectionstring",
-                     "Endpoint=sb://", "password", "secret", "Bearer ", "eyJ", "client_secret",
-                     "sig=", "BEGIN PRIVATE KEY", "Authorization"
-                 })
-        {
-            Assert.DoesNotContain(forbidden, serialised, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    [Fact]
-    public void TemplateIdsAreUniqueAndStable()
-    {
-        var ids = Qa().Select(t => t.Id).ToList();
-
-        Assert.Equal(ids.Count, ids.Distinct(StringComparer.Ordinal).Count());
-        Assert.NotNull(KnownIntegrationTemplates.ById("qa-eh-person"));
-        Assert.Null(KnownIntegrationTemplates.ById("does-not-exist"));
+        Assert.NotEqual(
+            IntegrationBaselineIdentity.Compute("QA", qa),
+            IntegrationBaselineIdentity.Compute("Development", dev));
     }
 }

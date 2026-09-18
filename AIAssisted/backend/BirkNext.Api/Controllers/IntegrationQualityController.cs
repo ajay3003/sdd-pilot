@@ -19,13 +19,20 @@ public class IntegrationQualityController : ControllerBase
     }
 
     /// <summary>
-    /// Integration templates known for an environment. The catalogue is evidenced per environment,
-    /// so an environment without evidence returns an empty list rather than values adapted from
-    /// another environment's.
+    /// The known M2LB integration templates, resolved for one environment.
+    ///
+    /// Every template is returned whatever the environment is — a logical integration such as
+    /// "Person CDC" exists in Development, QA and Production alike. What varies is the binding:
+    /// the hub name, namespace and consumer group this environment actually uses. An environment
+    /// with no evidenced binding gets the template with its structural values reported as missing,
+    /// never with another environment's values adapted to fit.
+    ///
+    /// <paramref name="environmentType"/> is the normalised type ("Development", "QA",
+    /// "Production"), not a profile display name.
     /// </summary>
     [HttpGet("known-templates")]
-    public IActionResult KnownTemplates([FromQuery] string? environmentName) =>
-        Ok(KnownIntegrationTemplates.ForEnvironment(environmentName));
+    public IActionResult KnownTemplates([FromQuery] string? environmentType) =>
+        Ok(KnownIntegrationTemplates.ForEnvironment(environmentType));
 
     [HttpPost("analyze")]
     public async Task<IActionResult> Analyze([FromBody] IntegrationQualityRequest request, CancellationToken ct)

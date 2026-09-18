@@ -236,8 +236,8 @@ public class IntegrationDiscoveryProposalTests
         };
 
         var suggested = KnownIntegrationTemplates.ForEnvironment("QA")
-            .Single(t => t.Resource == "m2lb-cdc-qa.birk.dbo.person")
-            .ToIntegration("suggested-1");
+            .Single(t => t.Binding?.Resource == "m2lb-cdc-qa.birk.dbo.person")
+            .ToIntegration("suggested-1")!;
         suggested.Endpoint = "my-namespace";
 
         var merged = _merger.Merge("QA", [manual], [suggested]);
@@ -258,8 +258,8 @@ public class IntegrationDiscoveryProposalTests
         };
 
         var suggested = KnownIntegrationTemplates.ForEnvironment("QA")
-            .Single(t => t.Resource == "m2lb-cdc-qa.birk.dbo.person")
-            .ToIntegration("suggested-1");
+            .Single(t => t.Binding?.Resource == "m2lb-cdc-qa.birk.dbo.person")
+            .ToIntegration("suggested-1")!;
         suggested.Endpoint = "my-namespace";
 
         var merged = _merger.Merge("QA", [manual], [suggested]);

@@ -105,21 +105,47 @@ public enum IntegrationResourceKind
     RabbitQueue = 9
 }
 
-/// <summary>An integration known from an external audit of the M2LB source, offered when adding one.</summary>
+/// <summary>
+/// A reusable, logical M2LB integration known from an external audit of the source. Nothing here is
+/// environment-specific: "Person CDC" is the same integration in Development, QA and Production, and
+/// the values that differ between them live in <see cref="KnownIntegrationEnvironmentBinding"/>.
+/// </summary>
 public sealed class KnownIntegrationTemplate
 {
     [JsonPropertyName("id")]                     public string Id { get; init; } = "";
-    [JsonPropertyName("environmentName")]        public string EnvironmentName { get; init; } = "";
     [JsonPropertyName("displayName")]            public string DisplayName { get; init; } = "";
     [JsonPropertyName("integrationType")]        public IntegrationType IntegrationType { get; init; }
     [JsonPropertyName("resourceKind")]           public IntegrationResourceKind ResourceKind { get; init; }
-    [JsonPropertyName("resource")]               public string Resource { get; init; } = "";
-    [JsonPropertyName("endpointOrNamespace")]    public string? EndpointOrNamespace { get; init; }
     [JsonPropertyName("suggestedProducer")]      public string? SuggestedProducer { get; init; }
     [JsonPropertyName("suggestedConsumer")]      public string? SuggestedConsumer { get; init; }
-    [JsonPropertyName("suggestedConsumerGroup")] public string? SuggestedConsumerGroup { get; init; }
     [JsonPropertyName("relationshipNote")]       public string? RelationshipNote { get; init; }
     [JsonPropertyName("suggestionOrigin")]       public string SuggestionOrigin { get; init; } = "";
+}
+
+/// <summary>
+/// The structural values one template has in ONE environment. A null field means no authoritative
+/// value exists for that environment — never that another environment's value can stand in for it.
+/// </summary>
+public sealed class KnownIntegrationEnvironmentBinding
+{
+    [JsonPropertyName("templateId")]          public string TemplateId { get; init; } = "";
+    [JsonPropertyName("environmentType")]     public string EnvironmentType { get; init; } = "";
+    [JsonPropertyName("resource")]            public string? Resource { get; init; }
+    [JsonPropertyName("endpointOrNamespace")] public string? EndpointOrNamespace { get; init; }
+    [JsonPropertyName("consumerGroup")]       public string? ConsumerGroup { get; init; }
+}
+
+/// <summary>One template as it applies to one environment: the definition, its binding, and what is still missing.</summary>
+public sealed class KnownIntegrationTemplateView
+{
+    [JsonPropertyName("template")]              public KnownIntegrationTemplate Template { get; init; } = new();
+    [JsonPropertyName("environmentType")]       public string EnvironmentType { get; init; } = "";
+    [JsonPropertyName("binding")]               public KnownIntegrationEnvironmentBinding? Binding { get; init; }
+    [JsonPropertyName("requiredFields")]        public List<string> RequiredFields { get; init; } = [];
+    [JsonPropertyName("missingRequiredFields")] public List<string> MissingRequiredFields { get; init; } = [];
+
+    /// <summary>The environment cannot yet carry a stable structural identity for this integration.</summary>
+    public bool NeedsConfiguration => MissingRequiredFields.Count > 0;
 }
 
 public sealed class IntegrationConfig

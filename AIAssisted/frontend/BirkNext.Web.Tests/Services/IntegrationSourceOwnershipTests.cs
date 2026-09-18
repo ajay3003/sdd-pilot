@@ -48,8 +48,7 @@ public sealed class IntegrationSourceOwnershipTests
         IntegrationConfigPresenter.ApplyTemplate(target, new KnownIntegrationTemplate
         {
             Id = "t1", DisplayName = "M2LB Person events", IntegrationType = IntegrationType.EventHub,
-            EndpointOrNamespace = "sb://m2lb.servicebus.windows.net", Resource = "person-events",
-        });
+        }, new IntegrationEnvironmentValues("person-events", "sb://m2lb.servicebus.windows.net", null));
 
         target.ConfigurationSource.Should().Be(IntegrationConfigurationSource.CodeSuggested);
         IntegrationConfigPresenter.SourceLabel(target.ConfigurationSource)

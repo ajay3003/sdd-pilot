@@ -164,25 +164,27 @@ public sealed class IntegrationEditorUITests : BunitContext
 
     // ── Template application as the editor performs it ───────────────────────
 
+    /// <summary>The reusable definition: nothing here is specific to any environment.</summary>
     private static KnownIntegrationTemplate PersonTemplate() => new()
     {
-        Id = "qa-eh-person",
-        EnvironmentName = "QA",
+        Id = "eh-person",
         DisplayName = "BiRK Person CDC",
         IntegrationType = IntegrationType.EventHub,
         ResourceKind = IntegrationResourceKind.EventHub,
-        Resource = "m2lb-cdc-qa.birk.dbo.person",
         SuggestedProducer = "BiRK / Debezium",
         SuggestedConsumer = "PersonBiRKAdapter",
-        SuggestedConsumerGroup = "$Default",
         SuggestionOrigin = "Suggested from audited M2LB source"
     };
+
+    /// <summary>The QA binding: the values that are specific to that one environment.</summary>
+    private static IntegrationEnvironmentValues QaPersonValues() =>
+        new("m2lb-cdc-qa.birk.dbo.person", null, "$Default");
 
     [Fact]
     public void ApplyingThePersonTemplateFillsTheEvidencedValues()
     {
         var target = new IntegrationConfig { Id = "i1" };
-        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate());
+        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate(), QaPersonValues());
 
         target.Resource.Should().Be("m2lb-cdc-qa.birk.dbo.person");
         target.LogicalProducerService.Should().Be("BiRK / Debezium");
@@ -195,7 +197,7 @@ public sealed class IntegrationEditorUITests : BunitContext
     public void ThePersonTemplateLeavesTheNamespaceBlankAndSaysSo()
     {
         var target = new IntegrationConfig { Id = "i1" };
-        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate());
+        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate(), QaPersonValues());
 
         target.Endpoint.Should().BeNull();
         IntegrationConfigPresenter.ConfigurationState(target).Should().Contain("Namespace");
@@ -205,7 +207,7 @@ public sealed class IntegrationEditorUITests : BunitContext
     public void TemplateConsumerGroupUsesTheAuditedCasing()
     {
         var target = new IntegrationConfig { Id = "i1" };
-        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate());
+        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate(), QaPersonValues());
 
         target.Consumer.Should().Be("$Default");
         target.Consumer.Should().NotBe("$default");
@@ -215,7 +217,7 @@ public sealed class IntegrationEditorUITests : BunitContext
     public void AnAppliedTemplateReadsAsSuggestedNotVerified()
     {
         var target = new IntegrationConfig { Id = "i1" };
-        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate());
+        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate(), QaPersonValues());
 
         var label = IntegrationConfigPresenter.SourceLabel(target.ConfigurationSource);
 
@@ -227,7 +229,7 @@ public sealed class IntegrationEditorUITests : BunitContext
     public void EditingAnAppliedTemplateKeepsTheEditedValue()
     {
         var target = new IntegrationConfig { Id = "i1" };
-        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate());
+        IntegrationConfigPresenter.ApplyTemplate(target, PersonTemplate(), QaPersonValues());
 
         target.Endpoint = "chosen-namespace.servicebus.windows.net";
         target.Consumer = "my-own-group";
@@ -250,9 +252,8 @@ public sealed class IntegrationEditorUITests : BunitContext
             DisplayName = "Leselogg",
             IntegrationType = IntegrationType.ServiceBus,
             ResourceKind = IntegrationResourceKind.ServiceBusQueue,
-            Resource = "leselogg",
             SuggestedConsumer = "Revisjon"
-        });
+        }, new IntegrationEnvironmentValues("leselogg", null, null));
 
         target.Resource.Should().Be("leselogg");
         target.Resource.Should().NotBe("revisjon.leselogg");
