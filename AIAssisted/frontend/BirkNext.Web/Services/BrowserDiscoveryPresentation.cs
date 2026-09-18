@@ -319,13 +319,14 @@ public static class BrowserDiscoveryStates
     /// What is missing and what to do about it — never what the state IS, which the summary strip already says.
     /// A connected session is never told to pair again.
     /// </summary>
-    public static string EmptyHelp(BrowserDiscoveryState state) => state switch
+    public static string Explanation(BrowserDiscoveryState state) => state switch
     {
         BrowserDiscoveryState.ConnectedWithoutEvidence =>
             "Open an approved application page to start collecting browser evidence.",
-        // "No approved page is reporting" is the consequence of the badge, not a restatement of it.
+        // Pairing does not reach a page that was already open: the content script starts with a page load.
+        // So the fix is a reload, and saying so is the whole point of this state — it is not a failure.
         BrowserDiscoveryState.PairedNotReporting =>
-            "No approved page is currently reporting. Open or refresh an approved application page to resume collecting browser evidence.",
+            "Open or refresh an approved application page to start collecting browser evidence.",
         BrowserDiscoveryState.Pairing =>
             "Enter the pairing code in Browser Companion, then open an approved application page.",
         _ => "Pair the managed Edge browser and open an approved application page to start collecting browser evidence.",
@@ -336,5 +337,33 @@ public static class BrowserDiscoveryStates
     /// surface the reader is actually looking at.
     /// </summary>
     public static bool ShowsPairAction(BrowserDiscoveryState state) =>
-        state is BrowserDiscoveryState.NotConnected;
+        NextAction(state) is BrowserDiscoveryNextAction.Pair;
+
+    /// <summary>
+    /// What the reader should do next, as a value rather than a string the markup has to recognise. Each state maps
+    /// to exactly one next step, which is what keeps "Paired · not reporting" from reading as a dead end.
+    /// </summary>
+    public static BrowserDiscoveryNextAction NextAction(BrowserDiscoveryState state) => state switch
+    {
+        BrowserDiscoveryState.NotConnected => BrowserDiscoveryNextAction.Pair,
+        BrowserDiscoveryState.Pairing => BrowserDiscoveryNextAction.EnterPairingCode,
+        BrowserDiscoveryState.PairedNotReporting => BrowserDiscoveryNextAction.OpenOrRefreshApprovedPage,
+        BrowserDiscoveryState.ConnectedWithoutEvidence => BrowserDiscoveryNextAction.OpenApprovedPage,
+        _ => BrowserDiscoveryNextAction.None,
+    };
+}
+
+/// <summary>
+/// The one next step for a Browser Discovery state. A paired session is never told to pair again, and a session
+/// that is already reporting is not told to open anything.
+/// </summary>
+public enum BrowserDiscoveryNextAction
+{
+    /// <summary>Evidence is arriving; nothing is being asked of the reader.</summary>
+    None,
+    Pair,
+    EnterPairingCode,
+    /// <summary>Paired, but the page was open before pairing, so it has to be reloaded to start reporting.</summary>
+    OpenOrRefreshApprovedPage,
+    OpenApprovedPage,
 }

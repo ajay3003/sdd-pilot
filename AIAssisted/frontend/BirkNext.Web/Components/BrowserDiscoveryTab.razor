@@ -315,7 +315,7 @@
     /// </summary>
     private BrowserDiscoveryState DiscoveryState => BrowserDiscoveryStates.Of(Status.State, Rows.Count > 0);
 
-    private string EmptyEvidenceHelp => BrowserDiscoveryStates.EmptyHelp(DiscoveryState);
+    private string EmptyEvidenceHelp => BrowserDiscoveryStates.Explanation(DiscoveryState);
 
     /// <summary>
     /// The single absence message for browser evidence, with the next action attached. Absence of evidence is stated
@@ -323,9 +323,12 @@
     /// </summary>
     private RenderFragment EmptyEvidence => __builder =>
     {
-        <div class="bd-empty" data-testid="browser-discovery-empty">
-            <p class="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
-            <p class="bd-empty-help" data-testid="browser-discovery-empty-help">@EmptyEvidenceHelp</p>
+        @* The explanation is associated with the absence it explains, so the next step is announced with it
+           rather than read as a stray sentence. *@
+        <div class="bd-empty" data-testid="browser-discovery-empty"
+             role="group" aria-labelledby="bd-empty-title" aria-describedby="bd-empty-help">
+            <p class="bd-empty-title" id="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
+            <p class="bd-empty-help" id="bd-empty-help" data-testid="browser-discovery-empty-help">@EmptyEvidenceHelp</p>
             @* The ONE Pair control, and only where pairing is actually the next step. A connected session is
                never asked to pair again; the Browser Companion card below suppresses its own copy of this. *@
             @if (BrowserDiscoveryStates.ShowsPairAction(DiscoveryState) && Runtime is not null && Profile is not null)
