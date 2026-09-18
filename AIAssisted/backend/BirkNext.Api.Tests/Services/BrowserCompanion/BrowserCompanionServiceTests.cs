@@ -321,6 +321,107 @@ public sealed class BrowserCompanionServiceTests
         s.Performance!.LongestResources.Should().HaveCount(BrowserCompanionLimits.MaxResourcesPerList);
     }
 
+    // ── Session lifetime: the backend must not outlive the companion that holds the session ─────
+
+    /// <summary>
+    /// The reported contradiction: the companion popup said "Not paired" while BirkNext still said
+    /// "Paired · not reporting". The backend kept a session alive long after the last heartbeat, so it went on
+    /// describing a live pairing that the extension no longer held. The idle window is tied to the heartbeat.
+    /// </summary>
+    [Fact]
+    public void SessionIdleLifetimeIsASmallMultipleOfTheHeartbeat()
+    {
+        BrowserCompanionLimits.SessionIdleLifetime.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(5),
+            "a companion heartbeats every 30 seconds; tolerating far longer leaves BirkNext claiming a pairing nothing holds");
+        BrowserCompanionLimits.SessionIdleLifetime.Should().BeGreaterThan(BrowserCompanionLimits.ConnectedWindow,
+            "losing one heartbeat means not reporting, not session loss");
+    }
+
+    [Fact]
+    public void RegularHeartbeatsKeepTheSessionAliveIndefinitely()
+    {
+        var paired = Pair();
+
+        // Ten minutes of ordinary 30-second heartbeats — well past the idle window if it were not being renewed.
+        for (var i = 0; i < 20; i++)
+        {
+            _time.Advance(TimeSpan.FromSeconds(30));
+            _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", null, null, "0.1.0"), Extension)
+                .Accepted.Should().BeTrue();
+            _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected);
+        }
+    }
+
+    [Fact]
+    public void ATransientGapIsNotReportingButIsStillAValidSession()
+    {
+        var paired = Pair();
+        _time.Advance(BrowserCompanionLimits.ConnectedWindow + TimeSpan.FromSeconds(5));
+
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Disconnected,
+            "one missed heartbeat means the companion is not reporting, not that the pairing is gone");
+        // And it recovers without re-pairing, which is what makes the tolerance worth having.
+        _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", null, null, "0.1.0"), Extension)
+            .Accepted.Should().BeTrue();
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected);
+    }
+
+    [Fact]
+    public void AnExpiredSessionStopsBeingReportedAsPaired()
+    {
+        var paired = Pair();
+
+        _time.Advance(BrowserCompanionLimits.SessionIdleLifetime + TimeSpan.FromSeconds(1));
+
+        var status = _service.Status("dev");
+        status.State.Should().Be(BrowserCompanionState.Expired);
+        status.State.Should().NotBe(BrowserCompanionState.Disconnected,
+            "Disconnected is what BirkNext renders as \"Paired · not reporting\"; an expired session is not paired at all");
+        // The session is gone, so its own heartbeat no longer resurrects it.
+        _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", null, null, "0.1.0"), Extension)
+            .Accepted.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ARejectedHeartbeatSaysThePairingMustBeRepeated()
+    {
+        var paired = Pair();
+        _time.Advance(BrowserCompanionLimits.SessionIdleLifetime + TimeSpan.FromSeconds(1));
+        _service.Status("dev");
+
+        var result = _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", null, null, "0.1.0"), Extension);
+
+        result.Accepted.Should().BeFalse();
+        result.Message.Should().Contain("Pair again");
+    }
+
+    [Fact]
+    public void ValidatingDoesNotByItselfKeepASessionAlive()
+    {
+        var paired = Pair();
+        _time.Advance(BrowserCompanionLimits.SessionIdleLifetime - TimeSpan.FromSeconds(10));
+
+        // A popup asking "is this still valid?" is not evidence that the companion is running.
+        _service.ValidateSession(paired.SessionId!, "dev", Extension).Accepted.Should().BeTrue();
+        _time.Advance(TimeSpan.FromSeconds(11));
+
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Expired);
+    }
+
+    [Fact]
+    public void RepairingReplacesTheSessionAndTheOldOneIsRefused()
+    {
+        var first = Pair();
+        var second = Pair();
+
+        second.SessionId.Should().NotBe(first.SessionId);
+        _service.Heartbeat(new BrowserCompanionHeartbeat(first.SessionId!, "dev", null, null, "0.1.0"), Extension)
+            .Accepted.Should().BeFalse("the previous session stopped being trusted the moment pairing restarted");
+        _service.Heartbeat(new BrowserCompanionHeartbeat(second.SessionId!, "dev", null, null, "0.1.0"), Extension)
+            .Accepted.Should().BeTrue();
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected);
+    }
+
     [Theory]
     [InlineData("chrome-extension://abcdefghijklmnopabcdefghijklmnop", true)]
     [InlineData("moz-extension://3f5c2a1e-1234-4bcd-9abc-1234567890ab", true)]

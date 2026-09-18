@@ -16,7 +16,12 @@ const MAX_PAGES_PER_ENVELOPE = 20;
 
 let pendingByIdentity = new Map();
 let flushTimer = null;
-let lastStatus = { state: 'unknown', message: 'Not paired.' };
+// Until storage has been read this is genuinely unknown; it must never read as "not paired", because that is
+// a claim about a session nobody has looked for yet.
+let lastStatus = { state: 'checking', message: 'Checking pairing…' };
+
+// Safe lifecycle trace: event names only. Never a session id, pairing code or any page content.
+function trace(event) { console.debug('BirkNext companion: ' + event); }
 
 async function getSession() {
   const { session } = await chrome.storage.local.get('session');
@@ -103,8 +108,27 @@ function needsPermission(session) {
 
 async function activate(session) {
   try { await setSession(session); }
-  catch { return lastStatus; }
+  catch (e) {
+    // Connected is only ever reported once the session is durably stored. Handing back whatever happened to be
+    // in memory is what made a failure here read as "Not paired": on a freshly woken worker that in-memory
+    // value is the initial one, which describes no pairing at all.
+    if (lastStatus.state !== 'blocked')
+      lastStatus = { state: 'blocked', message: `This pairing could not be stored (${(e && e.message) || 'unknown error'}). Pair again.`, session };
+    trace('PairingStateNotPersisted');
+    return lastStatus;
+  }
+  trace('PairingStatePersisted');
   lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
+  return lastStatus;
+}
+
+// The backend has discarded this session, so the extension stops claiming it too. Only an explicit rejection
+// gets here: a backend that is merely unreachable keeps the session, because those credentials are still good.
+async function revokeSession(message) {
+  try { await setSession(null); } catch { /* registration teardown is best effort; the session is gone either way */ }
+  await chrome.storage.local.remove('pendingSession');
+  trace('SessionRevoked');
+  lastStatus = { state: 'stale', message: message || 'Session no longer valid. Pair again in BirkNext.' };
   return lastStatus;
 }
 
@@ -145,7 +169,8 @@ async function validate() {
       await ensureHeartbeatAlarm(session);
       lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
     } else if (result.status === 403 || (result.json && result.json.accepted === false)) {
-      lastStatus = { state: 'stale', message: (result.json && result.json.message) || 'Session no longer valid. Pair again in BirkNext.', session };
+      // An explicit rejection, not a network fault: the session is gone on the backend, so it goes here too.
+      return await revokeSession(result.json && result.json.message);
     } else {
       lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback.', session };
     }
@@ -196,7 +221,7 @@ async function flush() {
   try {
     const result = await post('evidence', { sessionId: session.sessionId, profileId: session.profileId, extensionVersion: EXTENSION_VERSION, pages });
     if (result.status === 403 && result.json && /session|pair/i.test(result.json.message || '')) {
-      lastStatus = { state: 'stale', message: result.json.message, session };
+      return await revokeSession(result.json.message);
     } else if (result.ok) {
       lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}. Last evidence accepted ${new Date().toLocaleTimeString()}.`, session };
     }
@@ -226,8 +251,14 @@ async function heartbeat() {
       currentPageOrigin: currentPage ? currentPage.origin : null, currentPagePath: currentPage ? currentPage.path : null,
     });
     if (result.ok && result.json && result.json.accepted && lastStatus.state !== 'connected') lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
-    if (result.status === 403) lastStatus = { state: 'stale', message: (result.json && result.json.message) || 'Session no longer valid.', session };
-  } catch { lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback.', session }; }
+    if (result.status === 403) { await revokeSession(result.json && result.json.message); return; }
+    trace(result.ok ? 'HeartbeatSucceeded' : 'HeartbeatRejected');
+    // A backend that answers otherwise is still a backend: these credentials remain good, and a transient
+    // fault must never unpair.
+  } catch {
+    trace('HeartbeatFailed');
+    lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback.', session };
+  }
 }
 
 let wcagTab = null;
@@ -284,6 +315,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function restoreReporting() {
+  trace('ServiceWorkerRehydrated');
   const session = (await getSession()) ?? ((await finalizePending()) && await getSession());
   await ensureHeartbeatAlarm(session);
   try { await updateContentScriptRegistration(session); } catch { /* Preserve the actionable blocked status. */ }

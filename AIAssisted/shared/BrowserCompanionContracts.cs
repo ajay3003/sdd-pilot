@@ -412,7 +412,14 @@ public static class BrowserCompanionLimits
     public const int MinMillisecondsBetweenEnvelopes = 200;
     public const int PairingCodeLength = 8;
     public static readonly TimeSpan PairingCodeLifetime = TimeSpan.FromMinutes(3);
-    public static readonly TimeSpan SessionIdleLifetime = TimeSpan.FromMinutes(30);
+    /// <summary>
+    /// How long a session survives without a heartbeat. The companion heartbeats every 30 seconds, so this
+    /// tolerates six consecutive misses — enough for a suspended worker or a brief network fault, and short
+    /// enough that a companion which has actually gone away stops being reported as a live pairing. A window
+    /// far longer than the heartbeat would leave BirkNext claiming "Paired · not reporting" for an environment
+    /// whose extension no longer holds the session at all.
+    /// </summary>
+    public static readonly TimeSpan SessionIdleLifetime = TimeSpan.FromMinutes(3);
     public static readonly TimeSpan SessionAbsoluteLifetime = TimeSpan.FromHours(12);
     public static readonly TimeSpan ConnectedWindow = TimeSpan.FromSeconds(45);
 }

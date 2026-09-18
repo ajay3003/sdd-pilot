@@ -9,19 +9,34 @@
 
   let pendingOrigins = [];
 
+  // The popup renders the service worker's answer and decides nothing about pairing itself. The worker reads
+  // the stored session; this file only says what that answer looks like.
+  const LABELS = {
+    connected: 'Connected',
+    'not-paired': 'Not paired',
+    stale: 'Session invalid',
+    blocked: 'Blocked by policy',
+    'needs-permission': 'Access required',
+    'backend-unavailable': 'BirkNext not reachable',
+    checking: 'Checking connection…',
+  };
+
   function render(status) {
-    const state = (status && status.state) || 'unknown';
+    const state = (status && status.state) || 'checking';
+    // Anything unrecognised is still being resolved; it is never reported as an absent pairing.
+    const checking = !(state in LABELS) || state === 'checking';
     const el = $('state');
-    el.textContent = ({ connected: 'Connected', 'not-paired': 'Not paired', stale: 'Session invalid', blocked: 'Blocked by policy',
-      'needs-permission': 'Access required', 'backend-unavailable': 'BirkNext not reachable' })[state] || state;
-    el.className = `state state-${state}`;
+    el.textContent = checking ? LABELS.checking : LABELS[state];
+    el.className = `state state-${checking ? 'checking' : state}`;
     $('message').textContent = (status && status.message) || '';
-    const paired = status && status.session && state !== 'not-paired';
+    const paired = Boolean(status && status.session) && state !== 'not-paired';
     pendingOrigins = (status && status.origins) || [];
     $('paired').hidden = !paired;
     $('grant').hidden = state !== 'needs-permission';
     $('unpair').hidden = state === 'needs-permission';
-    $('unpaired').hidden = Boolean(paired) && (state === 'connected' || state === 'needs-permission');
+    // While the worker is still reading its stored session nothing is claimed either way. Offering the pairing
+    // form during that moment is what made a perfectly good pairing look as though it had been lost.
+    $('unpaired').hidden = checking || (paired && (state === 'connected' || state === 'needs-permission'));
     if (paired) {
       $('environment').textContent = status.session.environmentName || status.session.profileId;
       $('origins').textContent = (status.session.approvedOrigins || []).join(', ');
@@ -79,5 +94,7 @@
   });
 
   chrome.storage.local.get('backend').then(({ backend }) => { $('backend').value = backend || 'http://127.0.0.1:5000'; });
+  // Resolve from the worker, never from a blank slate that reads as "Not paired".
+  render({ state: 'checking' });
   refresh();
 })();
