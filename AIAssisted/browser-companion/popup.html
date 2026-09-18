@@ -9,6 +9,7 @@
     .state { display: inline-block; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #eef1f5; }
     .state-connected { background: #e6f6ec; color: #146c2e; }
     .state-stale, .state-blocked { background: #fdecec; color: #7a1f1f; }
+    .state-needs-permission { background: #fff4e5; color: #7a4a00; }
     .state-backend-unavailable { background: #fff4e5; color: #7a4a00; }
     p { margin: 6px 0; }
     label { display: block; margin-top: 8px; font-size: 12px; color: #52606d; }
@@ -27,6 +28,7 @@
     <p><strong id="environment"></strong></p>
     <p class="muted">Approved origins:</p>
     <p id="origins" class="mono"></p>
+    <button id="grant" type="button" hidden>Allow access to the approved origins</button>
     <button id="unpair" type="button">Unpair</button>
     <button id="wcagLayout" type="button">Test text spacing and resize</button>
     <button id="wcagKeyboard" type="button">Observe keyboard for 30 seconds</button>

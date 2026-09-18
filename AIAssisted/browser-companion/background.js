@@ -74,33 +74,53 @@ async function pair(pairingCode) {
   }
   const r = result.json;
   const session = { sessionId: r.sessionId, profileId: r.profileId, environmentName: r.environmentName, environmentType: r.environmentType, approvedOrigins: r.approvedOrigins || [], expiresAt: r.expiresAt, pairedAt: new Date().toISOString() };
-  // Ask for host permission on exactly the approved origins (user gesture comes from the popup click that triggered pairing).
-  const granted = await requestOriginPermissions(session.approvedOrigins);
-  if (!granted) {
-    lastStatus = { state: 'not-paired', message: 'Permission for the approved origins was not granted; the companion cannot observe the application.' };
-    return lastStatus;
-  }
+  // The host permission for the approved origins CANNOT be requested from here. chrome.permissions.request()
+  // requires a user gesture, and an MV3 service worker never has one — the popup's click does not carry over a
+  // sendMessage. Asking here fails silently and the session is lost while BirkNext already holds a paired
+  // session, which reads as "Paired · not reporting" forever. So the session is parked and the popup asks.
+  if (await hasOriginPermissions(session.approvedOrigins)) return await activate(session);
+  await chrome.storage.local.set({ pendingSession: session });
+  lastStatus = needsPermission(session);
+  return lastStatus;
+}
+
+// Scope patterns for exactly the approved origins — never a broader host pattern.
+function originPatterns(origins) { return (origins || []).map(o => `${o}/*`); }
+
+async function hasOriginPermissions(origins) {
+  const patterns = originPatterns(origins);
+  if (patterns.length === 0) return false;
+  try { return await chrome.permissions.contains({ origins: patterns }); }
+  catch (e) { console.warn('BirkNext companion: permission check failed', e && e.message); return false; }
+}
+
+function needsPermission(session) {
+  return {
+    state: 'needs-permission', session, origins: originPatterns(session.approvedOrigins),
+    message: `BirkNext paired with ${session.environmentName}. Allow access to ${session.approvedOrigins.join(', ')} to start reporting; nothing is observed until you do.`,
+  };
+}
+
+async function activate(session) {
   try { await setSession(session); }
   catch { return lastStatus; }
   lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
   return lastStatus;
 }
 
-async function requestOriginPermissions(origins) {
-  const patterns = origins.map(o => `${o}/*`);
-  if (patterns.length === 0) return false;
-  try {
-    const has = await chrome.permissions.contains({ origins: patterns });
-    if (has) return true;
-    return await chrome.permissions.request({ origins: patterns });
-  } catch (e) {
-    console.warn('BirkNext companion: permission request failed', e && e.message);
-    return false;
-  }
+// Turn a parked session into the live one as soon as the permission exists, whether the popup reported the
+// grant or the browser did. The session id from pairing is kept, so granting later needs no new pairing code.
+async function finalizePending() {
+  const { pendingSession } = await chrome.storage.local.get('pendingSession');
+  if (!pendingSession) return null;
+  if (!await hasOriginPermissions(pendingSession.approvedOrigins)) return null;
+  await chrome.storage.local.remove('pendingSession');
+  return await activate(pendingSession);
 }
 
 async function unpair() {
   await setSession(null);
+  await chrome.storage.local.remove('pendingSession');
   pendingByIdentity = new Map();
   lastStatus = { state: 'not-paired', message: 'Unpaired.' };
   return lastStatus;
@@ -108,7 +128,16 @@ async function unpair() {
 
 async function validate() {
   const session = await getSession();
-  if (!session) { lastStatus = { state: 'not-paired', message: 'Not paired. Generate a pairing code in BirkNext.' }; return lastStatus; }
+  if (!session) {
+    // A session parked for want of the host permission is not "not paired": BirkNext holds it, and it starts
+    // reporting the moment access is granted. Saying "Not paired" here is what hid the real state.
+    const finalized = await finalizePending();
+    if (finalized) return finalized;
+    const { pendingSession } = await chrome.storage.local.get('pendingSession');
+    if (pendingSession) { lastStatus = needsPermission(pendingSession); return lastStatus; }
+    lastStatus = { state: 'not-paired', message: 'Not paired. Generate a pairing code in BirkNext.' };
+    return lastStatus;
+  }
   try {
     const result = await post('validate', { sessionId: session.sessionId, profileId: session.profileId, currentPageOrigin: null, currentPagePath: null, extensionVersion: EXTENSION_VERSION });
     if (result.ok && result.json && result.json.accepted) {
@@ -222,6 +251,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         break;
       }
       case 'popup:pair': sendResponse(await pair(message.pairingCode)); break;
+      // The popup owns the permission prompt (it has the gesture); this is where it hands back the outcome.
+      case 'popup:finalize': sendResponse(await finalizePending() ?? await validate()); break;
       case 'popup:unpair': sendResponse(await unpair()); break;
       case 'popup:setBackend': await chrome.storage.local.set({ backend: message.backend }); sendResponse({ ok: true }); break;
       case 'content:session': {
@@ -253,10 +284,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function restoreReporting() {
-  const session = await getSession();
+  const session = (await getSession()) ?? ((await finalizePending()) && await getSession());
   await ensureHeartbeatAlarm(session);
   try { await updateContentScriptRegistration(session); } catch { /* Preserve the actionable blocked status. */ }
 }
+// The grant can also arrive from edge://extensions or a later prompt; either way the parked session goes live.
+chrome.permissions.onAdded?.addListener(() => { finalizePending().catch(() => {}); });
 chrome.runtime.onInstalled.addListener(restoreReporting);
 chrome.runtime.onStartup.addListener(restoreReporting);
 // MV3 wakes a fresh worker for messages/alarms too, without firing onStartup.

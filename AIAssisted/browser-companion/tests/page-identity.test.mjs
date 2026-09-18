@@ -35,3 +35,19 @@ test('origin approval is exact and case-insensitive; no wildcard or suffix match
   assert.equal(pageIdentity.isApprovedOrigin('https://login.microsoftonline.com', approved), false);
   assert.equal(pageIdentity.isApprovedOrigin(null, approved), false);
 });
+
+// The live target, exactly as the user opens it. The approved origin comes from the Target URL with its default
+// port dropped, so every spelling of the same page has to land on that one origin — and nothing else may.
+test('the M2LB DEV target URL matches its approved origin however it is written', () => {
+  const approved = ['https://m2lbdev.bufetat.no'];
+  for (const url of [
+    'https://m2lbdev.bufetat.no/',
+    'https://m2lbdev.bufetat.no',
+    'https://m2lbdev.bufetat.no:443/',
+    'https://M2LBDEV.bufetat.no/',
+    'https://m2lbdev.bufetat.no/barn/1?child=123#tab',
+  ]) assert.equal(pageIdentity.isApprovedOrigin(pageIdentity.originOf(url), approved), true, url);
+
+  for (const url of ['http://m2lbdev.bufetat.no/', 'https://m2lbdev.bufetat.no:8443/', 'https://m2lbqa.bufetat.no/'])
+    assert.equal(pageIdentity.isApprovedOrigin(pageIdentity.originOf(url), approved), false, url);
+});
