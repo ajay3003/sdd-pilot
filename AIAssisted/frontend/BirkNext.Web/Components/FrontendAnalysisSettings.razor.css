@@ -1381,3 +1381,23 @@
 }
 .fa-templates-empty-title { margin: 0; font-weight: 600; font-size: .85rem; color: var(--clr-text-heading); }
 .fa-templates-empty-help { margin: .15rem 0 .5rem; font-size: .8rem; color: var(--clr-text-muted); }
+
+/* ── Known template preview: what the suggestion would write, before committing ── */
+
+.fa-template-preview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: .3rem 1rem;
+    margin: .6rem 0 .5rem;
+    padding: .6rem .7rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+.fa-template-preview > div { display: flex; flex-direction: column; min-width: 0; }
+.fa-template-preview dt {
+    font-size: .68rem; font-weight: 700; letter-spacing: .03em;
+    text-transform: uppercase; color: var(--clr-text-muted);
+}
+.fa-template-preview dd { margin: 0; font-size: .82rem; overflow-wrap: anywhere; }
+.fa-template-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }

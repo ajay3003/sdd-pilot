@@ -108,29 +108,30 @@ public static class KnownIntegrationTemplates
         var templates = new List<KnownIntegrationTemplate>();
 
         // ── QA Event Hubs: BiRK change data capture ──────────────────────────
-        // Only the person hub had its producing and consuming services established by the audit.
-        // The rest carry the hub name alone; naming a consumer for them by analogy with
-        // "person -> PersonBiRKAdapter" would be inference from a resource name, not evidence.
+        // Consuming services come from the audit, per hub. Only the person hub also had its
+        // producing service established; the others keep a null producer rather than one inferred
+        // from "the data originates from BiRK CDC", which would be reasoning about the data's
+        // origin rather than evidence of a configured producer.
         templates.Add(EventHub(
             id: "qa-eh-person",
-            displayName: "BiRK Person CDC",
+            displayName: "Person CDC",
             resource: "m2lb-cdc-qa.birk.dbo.person",
             producer: "BiRK / Debezium",
             consumer: "PersonBiRKAdapter"));
 
-        foreach (var (slug, display, resource) in new[]
+        foreach (var (slug, display, resource, consumer) in new[]
                  {
-                     ("barn", "BiRK Barn CDC", "m2lb-cdc-qa.birk.dbo.barn"),
-                     ("tiltak", "BiRK Tiltak CDC", "m2lb-cdc-qa.birk.dbo.tiltak"),
-                     ("bestilling", "BiRK Bestilling CDC", "m2lb-cdc-qa.birk.dbo.bestilling"),
-                     ("tjenestetype", "BiRK TjenesteType CDC", "m2lb-cdc-qa.birk.dbo.tjenesteType"),
-                     ("tiltaksstatustype", "BiRK TiltaksStatusType CDC", "m2lb-cdc-qa.birk.dbo.tiltaksStatusType"),
-                     ("avslutningsgrunntype", "BiRK AvslutningsGrunnType CDC", "m2lb-cdc-qa.birk.dbo.avslutningsGrunnType"),
-                     ("tvangsprotokoll", "BiRK Tvangsprotokoll CDC", "m2lb-cdc-qa.birk.dbo.tvangsprotokoll"),
-                     ("romning", "BiRK Rømning CDC", "m2lb-cdc-qa.birk.dbo.romning")
+                     ("barn", "Barn CDC", "m2lb-cdc-qa.birk.dbo.barn", "PersonBiRKAdapter"),
+                     ("tiltak", "Tiltak CDC", "m2lb-cdc-qa.birk.dbo.tiltak", "Tjeneste API"),
+                     ("bestilling", "Bestilling CDC", "m2lb-cdc-qa.birk.dbo.bestilling", "Tjeneste API"),
+                     ("tjenestetype", "TjenesteType CDC", "m2lb-cdc-qa.birk.dbo.tjenesteType", "Tjeneste API"),
+                     ("tiltaksstatustype", "TiltaksStatusType CDC", "m2lb-cdc-qa.birk.dbo.tiltaksStatusType", "Tjeneste API"),
+                     ("avslutningsgrunntype", "AvslutningsGrunnType CDC", "m2lb-cdc-qa.birk.dbo.avslutningsGrunnType", "Tjeneste API"),
+                     ("tvangsprotokoll", "Tvangsprotokoll CDC", "m2lb-cdc-qa.birk.dbo.tvangsprotokoll", "Hendelse BiRK Adapter"),
+                     ("romning", "Rømning CDC", "m2lb-cdc-qa.birk.dbo.romning", "Hendelse BiRK Adapter")
                  })
         {
-            templates.Add(EventHub($"qa-eh-{slug}", display, resource));
+            templates.Add(EventHub($"qa-eh-{slug}", display, resource, consumer: consumer));
         }
 
         // ── QA Service Bus queues ────────────────────────────────────────────

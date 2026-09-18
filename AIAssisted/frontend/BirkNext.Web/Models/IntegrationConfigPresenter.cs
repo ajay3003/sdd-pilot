@@ -14,6 +14,17 @@ public static class IntegrationConfigPresenter
     /// than verification: the values came from an audit of the target application's source, not
     /// from a running environment.
     /// </summary>
+    /// <summary>Transport name as a user reads it, for grouping and preview headings.</summary>
+    public static string TypeLabel(IntegrationType type) => type switch
+    {
+        IntegrationType.EventHub => "Event Hub",
+        IntegrationType.ServiceBus => "Service Bus",
+        IntegrationType.GraphQL => "GraphQL",
+        IntegrationType.RabbitMQ => "RabbitMQ",
+        IntegrationType.SOAP => "SOAP",
+        _ => type.ToString()
+    };
+
     public static string SourceLabel(IntegrationConfigurationSource source) => source switch
     {
         IntegrationConfigurationSource.EndpointDiscovery => "Discovered",
@@ -149,16 +160,35 @@ public static class IntegrationConfigPresenter
     /// Applies a template as a starting point. Only values the audit established are written, so
     /// fields it could not establish stay empty and the form shows them as still needed.
     /// </summary>
-    public static void ApplyTemplate(IntegrationConfig target, KnownIntegrationTemplate template)
+    /// <param name="fillOnly">
+    /// Applying to an integration that already exists. Only empty fields are filled and the provenance
+    /// is left alone, mirroring the backend merger: a suggestion never overwrites a value a person
+    /// entered, and re-applying a template never downgrades a Manual record to CodeSuggested.
+    /// </param>
+    public static void ApplyTemplate(IntegrationConfig target, KnownIntegrationTemplate template, bool fillOnly = false)
     {
-        target.Name = template.DisplayName;
-        target.Type = template.IntegrationType;
-        target.ResourceKind = template.ResourceKind;
-        target.Resource = template.Resource;
-        target.Endpoint = template.EndpointOrNamespace;
-        target.Consumer = template.SuggestedConsumerGroup;
-        target.LogicalProducerService = template.SuggestedProducer;
-        target.LogicalConsumerService = template.SuggestedConsumer;
-        target.ConfigurationSource = IntegrationConfigurationSource.CodeSuggested;
+        if (!fillOnly)
+        {
+            target.Name = template.DisplayName;
+            target.Type = template.IntegrationType;
+            target.ResourceKind = template.ResourceKind;
+            target.Resource = template.Resource;
+            target.Endpoint = template.EndpointOrNamespace;
+            target.Consumer = template.SuggestedConsumerGroup;
+            target.LogicalProducerService = template.SuggestedProducer;
+            target.LogicalConsumerService = template.SuggestedConsumer;
+            target.ConfigurationSource = IntegrationConfigurationSource.CodeSuggested;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(target.Name)) target.Name = template.DisplayName;
+        if (target.ResourceKind == IntegrationResourceKind.Unknown) target.ResourceKind = template.ResourceKind;
+        if (string.IsNullOrWhiteSpace(target.Endpoint)) target.Endpoint = template.EndpointOrNamespace;
+        if (string.IsNullOrWhiteSpace(target.Consumer)) target.Consumer = template.SuggestedConsumerGroup;
+        if (string.IsNullOrWhiteSpace(target.LogicalProducerService)) target.LogicalProducerService = template.SuggestedProducer;
+        if (string.IsNullOrWhiteSpace(target.LogicalConsumerService)) target.LogicalConsumerService = template.SuggestedConsumer;
+        // Provenance records the strongest authority behind the record; only an absent one is filled.
+        if (target.ConfigurationSource == IntegrationConfigurationSource.Unknown)
+            target.ConfigurationSource = IntegrationConfigurationSource.CodeSuggested;
     }
 }

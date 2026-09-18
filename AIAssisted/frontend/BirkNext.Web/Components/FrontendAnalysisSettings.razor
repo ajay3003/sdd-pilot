@@ -1335,14 +1335,56 @@
                                 else
                                 {
                                     <label class="fa-label" for="fa-template-select">Template</label>
+                                    @* Grouped by transport so a long catalogue stays scannable. *@
                                     <select id="fa-template-select" class="form-control" data-testid="fa-template-select"
                                             @onchange="OnTemplateSelected">
                                         <option value="">Select a template...</option>
-                                        @foreach (var template in _knownTemplates)
+                                        @foreach (var group in _knownTemplates.GroupBy(t => t.IntegrationType).OrderBy(g => g.Key.ToString(), StringComparer.Ordinal))
                                         {
-                                            <option value="@template.Id">@template.DisplayName</option>
+                                            <optgroup label="@IntegrationConfigPresenter.TypeLabel(group.Key)" data-testid="fa-template-group">
+                                                @foreach (var template in group.OrderBy(t => t.DisplayName, StringComparer.Ordinal))
+                                                {
+                                                    <option value="@template.Id">@template.DisplayName</option>
+                                                }
+                                            </optgroup>
                                         }
                                     </select>
+
+                                    @* Preview before committing. Only values the audit established are listed;
+                                       a field it could not establish is omitted rather than shown as a blank fact. *@
+                                    @if (SelectedTemplate is { } preview)
+                                    {
+                                        <dl class="fa-template-preview" data-testid="fa-template-preview">
+                                            <div><dt>Type</dt><dd>@IntegrationConfigPresenter.TypeLabel(preview.IntegrationType)</dd></div>
+                                            <div><dt>Resource</dt><dd class="fa-template-mono" data-testid="fa-template-resource">@preview.Resource</dd></div>
+                                            @if (!string.IsNullOrWhiteSpace(preview.EndpointOrNamespace))
+                                            {
+                                                <div><dt>Namespace</dt><dd class="fa-template-mono">@preview.EndpointOrNamespace</dd></div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(preview.SuggestedConsumerGroup))
+                                            {
+                                                <div><dt>Consumer group</dt><dd data-testid="fa-template-consumer-group">@preview.SuggestedConsumerGroup</dd></div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(preview.SuggestedProducer))
+                                            {
+                                                <div><dt>Producer</dt><dd data-testid="fa-template-producer">@preview.SuggestedProducer</dd></div>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(preview.SuggestedConsumer))
+                                            {
+                                                <div><dt>Consumer</dt><dd data-testid="fa-template-consumer">@preview.SuggestedConsumer</dd></div>
+                                            }
+                                            <div><dt>Source</dt><dd data-testid="fa-template-source">@IntegrationConfigPresenter.SourceLabel(IntegrationConfigurationSource.CodeSuggested)</dd></div>
+                                        </dl>
+                                        @if (!string.IsNullOrWhiteSpace(preview.RelationshipNote))
+                                        {
+                                            <p class="fa-section-note" data-testid="fa-template-note">@preview.RelationshipNote</p>
+                                        }
+                                        @if (ExistingForTemplate(preview) is not null)
+                                        {
+                                            <p class="fa-section-note" data-testid="fa-template-existing">This integration is already configured. Adding it fills in any values that are still blank and keeps everything you entered.</p>
+                                        }
+                                        <SecondaryButton OnClick="AddSelectedTemplate" Class="fa-btn-sm" data-testid="fa-template-add">Add integration</SecondaryButton>
+                                    }
                                 }
                             }
                             else
@@ -2953,6 +2995,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool _addingIntegration;
     private string _addMode = "known";
     private List<KnownIntegrationTemplate> _knownTemplates = [];
+    /// <summary>Previewed template. Selecting only previews; acceptance is the explicit Add integration action.</summary>
+    private string? _selectedTemplateId;
 
     /// <summary>
     /// Opens the add flow and loads the templates evidenced for this environment. An environment
@@ -2975,7 +3019,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private async Task LoadKnownTemplatesAsync()
     {
-        var environmentName = _editProfile?.Name ?? "";
+        // Match on the environment TYPE, not the profile's display name. The catalogue is keyed by
+        // environment ("QA"), so matching on a name like "M2LB QA" returned nothing and made the
+        // whole catalogue unreachable. The type is a closed enum, so the lookup is deterministic.
+        var environmentName = _editProfile?.EnvironmentType.ToString() ?? "";
 
         try
         {
@@ -2996,23 +3043,47 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// Creates an integration from a template. Only values the audit established are written, so
     /// anything it could not establish stays blank and shows as still needed.
     /// </summary>
-    private void OnTemplateSelected(ChangeEventArgs e)
+    /// <summary>Selecting a template only previews it. Nothing is added until "Add integration".</summary>
+    private void OnTemplateSelected(ChangeEventArgs e) =>
+        _selectedTemplateId = e.Value?.ToString() is { Length: > 0 } id ? id : null;
+
+    private KnownIntegrationTemplate? SelectedTemplate =>
+        _selectedTemplateId is null ? null : _knownTemplates.FirstOrDefault(t => t.Id == _selectedTemplateId);
+
+    /// <summary>
+    /// The configured integration this template would apply to, matched on structural identity
+    /// (type + resource + endpoint) exactly as the baseline key is derived — never on display name,
+    /// producer or consumer. An existing match is enriched rather than duplicated.
+    /// </summary>
+    private IntegrationConfig? ExistingForTemplate(KnownIntegrationTemplate template) =>
+        _editProfile?.Integrations.FirstOrDefault(i =>
+            i.Type == template.IntegrationType &&
+            string.Equals((i.Resource ?? "").Trim(), template.Resource.Trim(), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals((i.Endpoint ?? "").Trim(), (template.EndpointOrNamespace ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Explicit acceptance. Only values the audit established are written, so anything it could not
+    /// establish stays blank and shows as still needed. An equivalent integration is filled in rather
+    /// than duplicated, and a value a person already typed is never overwritten.
+    /// </summary>
+    private void AddSelectedTemplate()
     {
-        var templateId = e.Value?.ToString();
+        if (SelectedTemplate is not { } template || _editProfile is null) return;
 
-        if (string.IsNullOrWhiteSpace(templateId) || _editProfile is null)
-            return;
+        if (ExistingForTemplate(template) is { } existing)
+        {
+            IntegrationConfigPresenter.ApplyTemplate(existing, template, fillOnly: true);
+            _editingIntegrationId = existing.Id;
+        }
+        else
+        {
+            var cfg = new IntegrationConfig { Id = NewIntegrationId(), Enabled = true };
+            IntegrationConfigPresenter.ApplyTemplate(cfg, template);
+            _editProfile.Integrations.Add(cfg);
+            _editingIntegrationId = cfg.Id;
+        }
 
-        var template = _knownTemplates.FirstOrDefault(t => t.Id == templateId);
-
-        if (template is null)
-            return;
-
-        var cfg = new IntegrationConfig { Id = NewIntegrationId(), Enabled = true };
-        IntegrationConfigPresenter.ApplyTemplate(cfg, template);
-
-        _editProfile.Integrations.Add(cfg);
-        _editingIntegrationId = cfg.Id;
+        _selectedTemplateId = null;
         _addingIntegration = false;
     }
 
