@@ -1056,3 +1056,68 @@
     font-weight: 600;
     color: var(--clr-text-heading);
 }
+
+/* ── Post-run result: the result reads first, the diagnostics read last ────────────────────────── */
+
+::deep .fqr-result-summary { border-left: 5px solid var(--clr-border); }
+
+::deep .fqr-result-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: .5rem 1rem;
+}
+
+::deep .fqr-result-head h2 { margin: 0 0 .4rem; font-size: 1.05rem; }
+::deep .fqr-result-state { margin: 0 0 .35rem; }
+::deep .fqr-result-summary-text { margin: 0; max-width: 60ch; color: var(--clr-text-body); }
+::deep .fqr-result-rerun { flex: none; }
+::deep .fqr-result-meta { margin-top: .9rem; }
+::deep .fqr-result-profile-scope { display: block; font-size: .8rem; color: var(--clr-text-muted); }
+
+::deep .fqr-domain-results { display: grid; gap: .75rem; }
+
+::deep .fqr-domain-result {
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-lg);
+    background: var(--clr-surface-white);
+    padding: .9rem 1.1rem;
+}
+
+::deep .fqr-domain-result-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .4rem .6rem;
+}
+
+::deep .fqr-domain-result-head h2 { margin: 0; font-size: 1rem; }
+::deep .fqr-domain-result-count { font-size: .82rem; font-weight: 600; color: var(--clr-text-muted); }
+::deep .fqr-domain-result-scope { margin: .35rem 0 0; font-size: .82rem; font-weight: 600; color: var(--clr-text-heading); }
+::deep .fqr-domain-result-summary { margin: .4rem 0 0; max-width: 70ch; }
+::deep .fqr-domain-result-limitation { margin: .3rem 0 0; max-width: 70ch; font-size: .86rem; color: var(--clr-text-muted); }
+::deep .fqr-profile-drift { margin: .6rem 0 0; }
+
+::deep .fqr-domain-finding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+
+::deep .fqr-domain-finding {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: .2rem .6rem;
+    padding: .5rem .6rem;
+    border-left: 3px solid var(--clr-border);
+    border-radius: var(--radius-sm);
+    background: var(--clr-surface);
+}
+
+::deep .fqr-domain-finding-title { font-weight: 600; color: var(--clr-text-heading); }
+::deep .fqr-domain-finding-desc { grid-column: 2; font-size: .86rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+    ::deep .fqr-result-head { flex-direction: column; }
+    ::deep .fqr-result-rerun { width: 100%; }
+    /* Severity above the title rather than a narrow squeezed column. */
+    ::deep .fqr-domain-finding { grid-template-columns: 1fr; }
+    ::deep .fqr-domain-finding-desc { grid-column: 1; }
+}

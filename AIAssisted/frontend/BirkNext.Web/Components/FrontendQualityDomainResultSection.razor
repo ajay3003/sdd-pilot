@@ -1,0 +1,63 @@
+@using BirkNext.Web.Models
+
+@* One review domain's RESULT. The summary is always visible — collapsing it would hide the findings — while the detailed
+   evidence behind it opens on request. A domain with no evidence says so; it never reports zero findings, because nothing
+   established that number. *@
+<section class="fqr-section fqr-domain-result" aria-labelledby="@_headingId"
+         data-testid="fqr-domain-result" data-category="@Result.Category" data-state="@Result.State">
+    <div class="fqr-domain-result-head">
+        <h2 id="@_headingId">@Result.Title</h2>
+        <span class="fqr-pill fqr-pill-@FrontendQualityDomainResultStates.Tone(Result.State)" data-testid="fqr-domain-result-state">
+            @FrontendQualityDomainResultStates.Label(Result.State)
+        </span>
+        @* A count only ever appears when a review actually ran for this domain. *@
+        @if (Result.FindingCount is { } findings)
+        {
+            <span class="fqr-domain-result-count" data-testid="fqr-domain-result-count">@findings finding@(findings == 1 ? "" : "s")</span>
+        }
+    </div>
+
+    @if (Scope is { Length: > 0 } scope)
+    {
+        <p class="fqr-domain-result-scope" data-testid="fqr-domain-result-scope">@scope</p>
+    }
+
+    <p class="fqr-domain-result-summary" data-testid="fqr-domain-result-summary">@Result.Summary</p>
+
+    @if (Result.Limitation is { Length: > 0 } limitation)
+    {
+        <p class="fqr-domain-result-limitation" data-testid="fqr-domain-result-limitation">@limitation</p>
+    }
+
+    @Notice
+
+    @if (ChildContent is not null)
+    {
+        @if (DetailsText is { Length: > 0 } detailsText)
+        {
+            <ReviewDisclosure Text="@detailsText" CollapseText="@($"Hide {detailsText[(detailsText.IndexOf(' ') + 1)..]}")"
+                              TestId="@($"fqr-domain-details-{Result.Category}")" Class="disclosure-inline">
+                @ChildContent
+            </ReviewDisclosure>
+        }
+        else
+        {
+            @ChildContent
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityDomainResult Result { get; set; } = default!;
+    /// <summary>Short scope fact, such as the accessibility profile this result was produced under.</summary>
+    [Parameter] public string? Scope { get; set; }
+    /// <summary>Rendered above the detail, for statements about the result itself (such as a changed profile).</summary>
+    [Parameter] public RenderFragment? Notice { get; set; }
+    /// <summary>Disclosure label, e.g. "View performance details". Omit to render the detail inline.</summary>
+    [Parameter] public string? DetailsText { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string _headingId = "";
+
+    protected override void OnParametersSet() => _headingId = $"fqr-domain-{Result.Category}-heading";
+}

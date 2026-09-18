@@ -5,7 +5,7 @@
 @inject IJSRuntime JS
 
 <div class="wcag-workspace">
-    <WcagCoverage @key="Snapshot.Wcag.ProfileId" Assessment="Assessment" Review="OpenReview">
+    <WcagCoverage @key="Snapshot.Wcag.ProfileId" Assessment="Assessment" Review="OpenReview" InitiallyExpanded="InitiallyExpanded">
         <ProfileSelector>
             <div class="wcag-profile">
                 <label for="@_profileSelectId">Assessment profile</label>
@@ -41,6 +41,10 @@
     /// the snapshot exactly as before; only what is displayed differs.
     /// </summary>
     [Parameter] public WcagAssessment? Result { get; set; }
+    /// <summary>Passed through to the criteria matrix; a result surface collapses it, discovery keeps its own default.</summary>
+    [Parameter] public bool? InitiallyExpanded { get; set; }
+    /// <summary>Raised after the assessment profile is saved, so a host can react to the change it did not make itself.</summary>
+    [Parameter] public EventCallback<string> ProfileChanged { get; set; }
     private WcagAssessment Assessment => Result ?? BrowserQualityAssessmentService.ForPage(BrowserQualityAssessmentService.Assess(Snapshot), Page);
     [Parameter] public PageAnalysis? Page { get; set; }
     private WcagCriterionResult? _editing;
@@ -78,6 +82,9 @@
             await Discovery.SaveWcagSettingsAsync(JS, ProfileId, new WcagSettings { ProfileId = profileId });
             Snapshot = Discovery.GetSnapshot(ProfileId);
             _error = null;
+            // The selection applies to the NEXT run. A host showing a completed result needs to know, so it can say the
+            // result belongs to the previous profile instead of silently re-rendering it under the new one.
+            if (ProfileChanged.HasDelegate) await ProfileChanged.InvokeAsync(profileId);
         }
         catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { _error = ex.Message; }
         _editing = null;

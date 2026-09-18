@@ -1,0 +1,48 @@
+@using BirkNext.Web.Models
+
+@* What was reviewed, when, against which accessibility profile, and how the review ended — the first thing a reader of a
+   finished review needs. The state is a text label, never colour alone, and it is the RESULT of the run: pre-run readiness
+   said whether the review could start, which is a different question and is not repeated here. *@
+<section class="fqr-card fqr-result-summary" aria-labelledby="fqr-result-heading" data-testid="fqr-result-summary">
+    <div class="fqr-result-head">
+        <div>
+            <h2 id="fqr-result-heading">Review result</h2>
+            <p class="fqr-result-state" data-testid="fqr-result-state">
+                <span class="fqr-pill fqr-pill-@FrontendQualityResultStates.Tone(Result.State)">@Result.StateLabel</span>
+            </p>
+            <p class="fqr-result-summary-text" data-testid="fqr-result-summary-text">@Result.Summary</p>
+        </div>
+        <button type="button" class="btn-primary fqr-result-rerun" data-testid="fqr-run-again" @onclick="RunAgain">Run again</button>
+    </div>
+
+    <dl class="fqr-target-list fqr-result-meta" data-testid="fqr-result-meta">
+        <div>
+            <dt>Target</dt>
+            <dd data-testid="fqr-result-environment">@Result.Environment <span class="fqr-pill fqr-pill-muted">@Result.EnvironmentType</span></dd>
+        </div>
+        <div><dt>URL</dt><dd class="fqr-target-url" data-testid="fqr-result-url">@Result.Url</dd></div>
+        @* Shown only when the report carries one; no timestamp is invented for a report that has none. *@
+        @if (Result.CompletedAt is { } completed)
+        {
+            <div><dt>Completed</dt><dd data-testid="fqr-result-completed">@completed.ToString("u")</dd></div>
+        }
+        @if (Result.ProfileLabel is { Length: > 0 } profile)
+        {
+            <div>
+                <dt>Accessibility profile</dt>
+                <dd data-testid="fqr-result-profile">
+                    @profile
+                    @if (Result.CriteriaInScope is { } criteria)
+                    {
+                        <span class="fqr-result-profile-scope" data-testid="fqr-result-profile-scope">@criteria criteria in scope</span>
+                    }
+                </dd>
+            </div>
+        }
+    </dl>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityResultView Result { get; set; } = default!;
+    [Parameter] public EventCallback RunAgain { get; set; }
+}

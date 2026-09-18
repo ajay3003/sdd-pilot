@@ -215,15 +215,11 @@
             .ToList();
         var filtered = FilteredFindings(report.Findings).ToList();
         var recommendations = BuildRecommendationCards(report).ToList();
+        @* The result is projected from the report alone; the current profile selection is passed only to detect drift. *@
+        var result = FrontendQualityResultPresentation.Build(report, WcagSnapshot.Wcag.ProfileId);
 
-        <h2 class="fqr-results-heading" data-testid="fqr-results-heading">Review results</h2>
-
-        @* Frontend Quality Review owns WCAG interpretation: the assessment profile, the pass/fail coverage produced by
-           this review run, and manual review. Browser Discovery only presents the browser evidence this reads. *@
-        @if (report.Wcag is { } wcag)
-        {
-            <WcagWorkspace ProfileId="@(_context?.ActiveProfile.Id ?? "")" Snapshot="@WcagSnapshot" Result="wcag" />
-        }
+        @* ── 1. The result itself: what ran, against what, and how it ended. ────────────────────────────────── *@
+        <FrontendQualityResultSummary Result="result" RunAgain="RunReview" />
 
         @if (report.PreflightStatus == PreflightStatus.AuthenticationRequired)
         {
@@ -241,408 +237,298 @@
             </div>
         }
 
-        @if (report.TargetEnvironment is { } target)
-        {
-            <section class="fqr-card fqr-result-target" aria-label="Review target identity" data-testid="fqr-result-target">
-                <div class="fqr-card-head"><h3>Target</h3></div>
-                <dl class="fqr-target-list">
-                    <div><dt>Environment</dt><dd>@target.Name <span class="fqr-pill fqr-pill-muted">@target.EnvironmentType</span></dd></div>
-                    <div><dt>URL</dt><dd class="fqr-target-url">@target.TargetUrl</dd></div>
-                    <div><dt>Review started</dt><dd>@target.StartedAt.ToString("u")</dd></div>
-                    <div><dt>Environment ID</dt><dd>@target.EnvironmentId</dd></div>
-                </dl>
-            </section>
-        }
-
-        @if (report.ActiveEngines is not null || report.TargetAccess is not null)
-        {
-            <ReviewDisclosure Text="Technical details: engines and target access at review start" CollapseText="Hide engines and target access details" TestId="fqr-result-technical" Class="fqr-card-disclosure">
-                @if (report.ActiveEngines is { } engines)
-                {
-                    <FrontendQualityActiveEnginesPanel Snapshot="engines" />
-                }
-                @if (report.TargetAccess is { } access)
-                {
-                    <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" />
-                }
-            </ReviewDisclosure>
-        }
-
-        <FrontendQualityDecisionSupport Report="report" />
-
-        @if (ShowLegacyDecisionSupport)
-        {
-        @if (report.Completeness == AssessmentCompleteness.Partial)
-        {
-            <div class="wsr-banner wsr-banner-warn wsr-banner-standalone" role="status">
-                <span aria-hidden="true">!</span> Partial assessment: Only @string.Join(", ", report.AssessedEngines) ran successfully. Assessment completeness is limited.
-            </div>
-        }
-        else if (report.Completeness == AssessmentCompleteness.Failed)
-        {
-            <div class="wsr-banner wsr-banner-error wsr-banner-standalone" role="status">
-                <span aria-hidden="true">⚠</span> Assessment failed: All engines encountered errors. Review is not available.
-            </div>
-        }
-
-        @if (report.AccessibilityReport is { } accessibility)
-        {
-            <section class="fqr-section" aria-label="Automated accessibility checks">
-                <SectionHeader Title="Automated accessibility checks" />
-                @if (accessibility.ExecutionStatus == AccessibilityExecutionStatusDto.Assessed)
-                {
-                    <p>Automated assessment completed with axe-core @accessibility.AxeVersion on @accessibility.BrowserName @accessibility.BrowserVersion.</p>
-                    <p><strong>Automated violations:</strong> @accessibility.ViolationCount &nbsp; <strong>Needs manual review:</strong> @accessibility.IncompleteCount</p>
-                }
-                else
-                {
-                    <p><strong>Not assessed.</strong> The automated accessibility checks did not run for this review (@accessibility.ExecutionStatus).</p>
-                    @if (!string.IsNullOrWhiteSpace(accessibility.EngineError))
-                    {
-                        <details class="fqr-inline-details"><summary>Technical reason</summary><p>@accessibility.EngineError</p></details>
-                    }
-                }
-                <p>Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still required. Zero automated violations does not establish WCAG conformance.</p>
-            </section>
-        }
-
-        @if (report.LighthouseReport is { } lighthouse)
-        {
-            <section class="fqr-section" aria-label="Lighthouse lab performance">
-                <SectionHeader Title="Lighthouse Lab Performance" />
-                @if (lighthouse.ExecutionStatus == LighthouseExecutionStatusDto.Assessed)
-                {
-                    <p><strong>Lighthouse Performance Score:</strong> @lighthouse.PerformanceScore/100</p>
-                    @foreach (var metric in lighthouse.Metrics ?? [])
-                    {
-                        <span><strong>Lab @metric.Name:</strong> @(metric.ObservedValue?.ToString("0.##") ?? "Not available") @metric.Unit &nbsp; </span>
-                    }
-                }
-                else
-                {
-                    <p><strong>Not assessed.</strong> Lighthouse did not run for this review (@lighthouse.ExecutionStatus).</p>
-                    @if (!string.IsNullOrWhiteSpace(lighthouse.EngineError))
-                    {
-                        <details class="fqr-inline-details"><summary>Technical reason</summary><p>@lighthouse.EngineError</p></details>
-                    }
-                }
-                <p><strong>Measurement:</strong> Synthetic / Lab. Field data is not included; INP requires real-user field data.</p>
-            </section>
-        }
-
-        @if (report.PerformanceQualityReport is { } performanceQuality)
-        {
-            <section class="fqr-section" aria-label="BirkNext Performance Quality">
-                <SectionHeader Title="BirkNext Performance Quality" />
-                <PerformanceQualityReportSection Result="performanceQuality" Lighthouse="report.LighthouseReport" />
-            </section>
-        }
-
-        @if (report.PassiveSecurityReport is { } passive)
-        {
-            <section class="fqr-section" aria-label="Passive Security Assessment">
-                <SectionHeader Title="Passive Security Assessment" />
-                @if (passive.ExecutionStatus == PassiveSecurityExecutionStatusDto.Assessed)
-                {
-                    <p><strong>Mode:</strong> Passive only &nbsp; <strong>ZAP version:</strong> @(passive.ZapVersion ?? "Unavailable")</p>
-                    <p><strong>Scope:</strong> @passive.ScopeSummary &nbsp; <strong>Duration:</strong> @(passive.DurationMs.HasValue ? $"{passive.DurationMs.Value / 1000.0:0.##}s" : "Unavailable")</p>
-                    <p><strong>High:</strong> @passive.HighCount &nbsp; <strong>Medium:</strong> @passive.MediumCount &nbsp; <strong>Low:</strong> @passive.LowCount &nbsp; <strong>Informational:</strong> @passive.InformationalCount</p>
-                    @foreach (var finding in passive.Findings ?? [])
-                    {
-                        <article class="fqr-recommendation-card">
-                            <h3>@finding.Name</h3>
-                            <p><strong>Risk:</strong> @finding.Risk &nbsp; <strong>Confidence:</strong> @finding.Confidence &nbsp; <strong>Instances:</strong> @finding.InstancesCount</p>
-                            <p><strong>URL:</strong> @finding.Url</p>
-                            @if (!string.IsNullOrWhiteSpace(finding.Evidence)) { <p><strong>Safe evidence:</strong> @finding.Evidence</p> }
-                            <p><strong>Solution:</strong> @finding.Solution</p>
-                        </article>
-                    }
-                }
-                else
-                {
-                    <p data-testid="fqr-passive-security-not-assessed"><strong>Not assessed.</strong> The passive security scanner did not run for this review (@passive.ExecutionStatus). This is an environment limitation, not an application finding.</p>
-                    @if (!string.IsNullOrWhiteSpace(passive.EngineError))
-                    {
-                        <details class="fqr-inline-details"><summary>Technical reason</summary><p>@passive.EngineError</p></details>
-                    }
-                }
-                <p>Passive automated scanning cannot prove that an application is secure and does not replace authenticated or active penetration testing.</p>
-            </section>
-        }
-
-        <section class="fqr-summary-grid" aria-label="Frontend quality score summary">
-            @if (report.OverallScore.HasValue)
+        @* ── 2. What each domain found. Accessibility first: it carries the statutory obligation. ───────────── *@
+        <div class="fqr-domain-results" data-testid="fqr-domain-results">
+            @foreach (var domain in result.Domains)
             {
-                <MetricCard Value="@report.OverallScore.Value.ToString()" Label="Overall Score" Sublabel="@QualityLabel(report.OverallScore.Value)" Variant="@ScoreVariant(report.OverallScore.Value)" />
-            }
-            else
-            {
-                <MetricCard Value="—" Label="Overall Score" Sublabel="Partial assessment" Variant="warning" />
-            }
-
-            @foreach (var cat in report.CategoryScores)
-            {
-                @if (cat.Assessed && cat.Score.HasValue)
+                @if (domain.Category == FrontendQualityCategory.Accessibility)
                 {
-                    <MetricCard Value="@cat.Score.Value.ToString()" Label="@CategoryLabel(cat.Category)" Sublabel="@QualityLabel(cat.Score.Value)" Variant="@ScoreVariant(cat.Score.Value)" />
-                }
-                else if (CategoryEnginesNotEnabled(report, cat.Category))
-                {
-                    <MetricCard Value="—" Label="@CategoryLabel(cat.Category)" Sublabel="Not enabled" Variant="neutral" />
-                }
-                else if (cat.Assessed)
-                {
-                    <MetricCard Value="—" Label="@CategoryLabel(cat.Category)" Sublabel="@(cat.NotAssessedReason ?? "Engine not available")" Variant="warning" />
-                }
-                else
-                {
-                    <MetricCard Value="—" Label="@CategoryLabel(cat.Category)" Sublabel="Not assessed" Variant="neutral" />
-                }
-            }
-        </section>
-
-        <section class="fqr-section" aria-label="Top risks">
-            <SectionHeader Title="Top Risks" />
-            @if (topRisks.Count == 0)
-            {
-                <div class="fqr-empty-panel">No critical or high findings were detected.</div>
-            }
-            else
-            {
-                <div class="fqr-risk-grid">
-                    @foreach (var risk in topRisks)
-                    {
-                        <article class="fqr-risk-card fqr-risk-@risk.Severity.ToString().ToLowerInvariant()">
-                            <div class="fqr-risk-meta">
-                                <span class="fqr-severity fqr-severity-@risk.Severity.ToString().ToLowerInvariant()">@risk.Severity</span>
-                                <span class="fqr-risk-category">@CategoryLabel(risk.Category)</span>
-                            </div>
-                            <h3>@risk.Title</h3>
-                            <div class="fqr-risk-detail">
-                                <span>Risk</span>
-                                <p>@risk.Description</p>
-                            </div>
-                            <div class="fqr-risk-detail">
-                                <span>Recommendation</span>
-                                <p>@risk.Recommendation</p>
-                            </div>
-                        </article>
-                    }
-                </div>
-            }
-        </section>
-
-        }
-
-        <section class="fqr-section" aria-label="Category summary">
-            <SectionHeader Title="Category Summary" />
-            <div class="fqr-category-grid">
-                @foreach (var category in Enum.GetValues<FrontendQualityCategory>())
-                {
-                    var summary = GetCategorySummary(report, category);
-                    <button type="button"
-                            class="fqr-category-card @(_catFilter == category ? "is-active" : "")"
-                            @onclick="() => SetCategoryFilter(category)"
-                            aria-pressed="@(_catFilter == category)"
-                            aria-label="Filter findings by @CategoryLabel(category)">
-                        <span class="fqr-category-title">@CategoryLabel(category)</span>
-                        <strong>@summary.Total</strong>
-                        <span class="fqr-category-sub">total findings</span>
-                        <dl class="fqr-category-counts">
-                            <div><dt>Critical</dt><dd>@summary.Critical</dd></div>
-                            <div><dt>High</dt><dd>@summary.High</dd></div>
-                            <div><dt>Medium</dt><dd>@summary.Medium</dd></div>
-                            <div><dt>Low</dt><dd>@summary.Low</dd></div>
-                        </dl>
-                    </button>
-                }
-            </div>
-        </section>
-
-        <section class="fqr-section" aria-label="Detailed findings">
-            <SectionHeader Title="Detailed Findings" />
-            <div class="fqr-findings-toolbar" role="group" aria-label="Filter findings">
-                <input type="search"
-                       class="form-control fqr-search"
-                       placeholder="Search findings..."
-                       aria-label="Search findings"
-                       value="@_findingSearch"
-                       @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
-
-                <select class="form-control fqr-select" @bind="_severityFilterValue" @bind:after="ApplySeverityFilter" aria-label="Filter by severity">
-                    <option value="">All severities</option>
-                    @foreach (var sev in Enum.GetValues<FrontendQualitySeverity>())
-                    {
-                        <option value="@sev.ToString()">@sev</option>
-                    }
-                </select>
-
-                <select class="form-control fqr-select" @bind="_categoryFilterValue" @bind:after="ApplyCategoryFilter" aria-label="Filter by category">
-                    <option value="">All categories</option>
-                    @foreach (var cat in Enum.GetValues<FrontendQualityCategory>())
-                    {
-                        <option value="@cat.ToString()">@CategoryLabel(cat)</option>
-                    }
-                </select>
-
-                @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrWhiteSpace(_findingSearch))
-                {
-                    <button type="button" class="btn-secondary" @onclick="ClearFilters">Clear</button>
-                }
-            </div>
-
-            @if (filtered.Count == 0)
-            {
-                <div class="fqr-empty-panel">No findings match the current filter.</div>
-            }
-            else
-            {
-                <div class="fqr-table-wrap">
-                    <table class="fqr-findings-table">
-                        <thead>
-                            <tr>
-                                <th><button type="button" @onclick='() => SortBy("severity")'>Severity @SortGlyph("severity")</button></th>
-                                <th><button type="button" @onclick='() => SortBy("category")'>Category @SortGlyph("category")</button></th>
-                                <th><button type="button" @onclick='() => SortBy("title")'>Title @SortGlyph("title")</button></th>
-                                <th>Description</th>
-                                <th>Recommendation</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var finding in filtered)
+                    <FrontendQualityDomainResultSection Result="domain" Scope="@AccessibilityScope(result)">
+                        <Notice>
+                            @* The result keeps the profile it ran under; a later selection asks for a new run, it never relabels this one. *@
+                            @if (result.ProfileDrift is { } drift)
                             {
-                                <tr>
-                                    <td><span class="fqr-severity fqr-severity-@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span></td>
-                                    <td>@CategoryLabel(finding.Category)</td>
-                                    <td>
-                                        <strong>@finding.Title</strong>
-                                        @if (!string.IsNullOrWhiteSpace(finding.SourceSystem))
-                                        {
-                                            <span class="fqr-source">@finding.SourceSystem</span>
-                                        }
-                                    </td>
-                                    <td>@finding.Description</td>
-                                    <td>@finding.Recommendation</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
-
-        @if (recommendations.Count > 0)
-        {
-            <section class="fqr-section" aria-label="Recommendations">
-                <SectionHeader Title="Recommendations" />
-                <div class="fqr-recommendation-grid">
-                    @foreach (var rec in recommendations)
-                    {
-                        <article class="fqr-recommendation-card fqr-recommendation-@rec.Priority.ToLowerInvariant()">
-                            <div class="fqr-recommendation-priority">@rec.Priority Priority</div>
-                            <h3>@rec.Title</h3>
-                            <p>@rec.Description</p>
-                            <div class="fqr-recommendation-benefit">
-                                <span>Expected benefit</span>
-                                <p>@rec.ExpectedBenefit</p>
-                            </div>
-                        </article>
-                    }
-                </div>
-            </section>
-        }
-
-        <section class="fqr-section" aria-label="Technical details">
-            <details class="fqr-technical-details">
-                <summary>Technical Details</summary>
-                <div class="fqr-technical-grid">
-                    <InfoRow Label="Target URL (Requested)">@report.TargetUrl</InfoRow>
-                    @if (!string.IsNullOrWhiteSpace(report.FinalUrl) && report.FinalUrl != report.TargetUrl)
-                    {
-                        <InfoRow Label="Target URL (Final)">@report.FinalUrl</InfoRow>
-                        @if (report.RedirectOccurred)
-                        {
-                            <InfoRow Label="Redirect Occurred">Yes</InfoRow>
-                        }
-                    }
-                    <InfoRow Label="Generated">@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
-                    @if (report.CompletedAt.HasValue && report.DurationMs.HasValue)
-                    {
-                        <InfoRow Label="Completed">@report.CompletedAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
-                        <InfoRow Label="Duration">@(report.DurationMs.Value / 1000.0)s</InfoRow>
-                    }
-                    <InfoRow Label="Assessment Completeness">@(report.Completeness?.ToString() ?? "Unknown")</InfoRow>
-                    @if (report.AssessedEngines.Count > 0)
-                    {
-                        <InfoRow Label="Assessed Engines">@string.Join(", ", report.AssessedEngines)</InfoRow>
-                    }
-                    @if (report.SkippedEngines.Count > 0)
-                    {
-                        <InfoRow Label="Skipped Engines">@string.Join(", ", report.SkippedEngines)</InfoRow>
-                    }
-                    @if (report.FailedEngines.Count > 0)
-                    {
-                        <InfoRow Label="Failed Engines">@string.Join(", ", report.FailedEngines)</InfoRow>
-                    }
-                    <InfoRow Label="Application">@(report.IsBlazorWasm ? "Blazor WASM detected" : "Blazor WASM not detected")</InfoRow>
-                    @if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
-                    {
-                        <InfoRow Label="Error">@report.ErrorMessage</InfoRow>
-                    }
-                    @if (report.Risks.Count > 0)
-                    {
-                        <div class="fqr-technical-list">
-                            <h3>Risks</h3>
-                            <ul>
-                                @foreach (var risk in report.Risks)
-                                {
-                                    <li>@risk</li>
-                                }
-                            </ul>
-                        </div>
-                    }
-                    @if (report.Limitations.Count > 0)
-                    {
-                        <div class="fqr-technical-list">
-                            <h3>Assessment Limitations</h3>
-                            <ul>
-                                @foreach (var limitation in report.Limitations)
-                                {
-                                    <li>@limitation</li>
-                                }
-                            </ul>
-                        </div>
-                    }
-                    <div class="fqr-technical-list">
-                        <h3>Scope</h3>
-                        <p>This review combines the configured static, passive, and real-browser engines shown in the engine matrix. It does not establish:</p>
-                        <ul>
-                            <li>Active vulnerability scanning or penetration testing</li>
-                            <li>WCAG conformance or completion of manual accessibility testing</li>
-                            <li>Production field Core Web Vitals or field INP</li>
-                            <li>End-to-end user flow validation</li>
-                        </ul>
-                    </div>
-                    @if (report.Findings.Any(f => f.Evidence.Count > 0))
-                    {
-                        <div class="fqr-technical-list fqr-technical-evidence">
-                            <h3>Evidence</h3>
-                            @foreach (var finding in report.Findings.Where(f => f.Evidence.Count > 0))
-                            {
-                                <div class="fqr-evidence-group">
-                                    <strong>@finding.Title</strong>
-                                    <ul>
-                                        @foreach (var evidence in finding.Evidence)
-                                        {
-                                            <li><code>@evidence</code></li>
-                                        }
-                                    </ul>
+                                <div class="wsr-banner wsr-banner-warn fqr-profile-drift" role="status" data-testid="fqr-profile-drift">
+                                    <span aria-hidden="true">⚠</span> @drift
                                 </div>
                             }
-                        </div>
+                        </Notice>
+                        <ChildContent>
+                            @* WcagWorkspace is the detailed accessibility result surface; its criteria matrix collapses on its own. *@
+                            @if (report.Wcag is { } wcag)
+                            {
+                                @* Collapsed by default here: a finished review leads with its summary, not a 48-row matrix. *@
+                                <WcagWorkspace ProfileId="@(_context?.ActiveProfile.Id ?? "")" Snapshot="@WcagSnapshot" Result="wcag"
+                                               InitiallyExpanded="false" ProfileChanged="OnResultProfileChanged" />
+                            }
+                        </ChildContent>
+                    </FrontendQualityDomainResultSection>
+                }
+                else
+                {
+                    <FrontendQualityDomainResultSection Result="domain" DetailsText="@DomainDetailsText(domain)">
+                        @if (DomainFindings(report, domain.Category).Count == 0)
+                        {
+                            <p class="fqr-muted" data-testid="fqr-domain-no-findings">No findings were recorded for this domain in the evidence reviewed.</p>
+                        }
+                        else
+                        {
+                            <ul class="fqr-domain-finding-list" data-testid="fqr-domain-finding-list">
+                                @foreach (var finding in DomainFindings(report, domain.Category))
+                                {
+                                    <li class="fqr-domain-finding" data-testid="fqr-domain-finding" data-severity="@finding.Severity">
+                                        <span class="fqr-severity fqr-severity-@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span>
+                                        <span class="fqr-domain-finding-title">@finding.Title</span>
+                                        <span class="fqr-domain-finding-desc">@finding.Description</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </FrontendQualityDomainResultSection>
+                }
+            }
+        </div>
+
+
+        @* ── 3. Cross-domain triage: every finding in one filterable place, after the per-domain results. ───── *@
+        <section class="fqr-section fqr-all-findings" aria-labelledby="fqr-all-findings-heading" data-testid="fqr-all-findings">
+            <h2 id="fqr-all-findings-heading">All findings</h2>
+
+            <section class="fqr-section" aria-label="Category summary">
+                <SectionHeader Title="Category Summary" />
+                <div class="fqr-category-grid">
+                    @foreach (var category in Enum.GetValues<FrontendQualityCategory>())
+                    {
+                        var summary = GetCategorySummary(report, category);
+                        <button type="button"
+                                class="fqr-category-card @(_catFilter == category ? "is-active" : "")"
+                                @onclick="() => SetCategoryFilter(category)"
+                                aria-pressed="@(_catFilter == category)"
+                                aria-label="Filter findings by @CategoryLabel(category)">
+                            <span class="fqr-category-title">@CategoryLabel(category)</span>
+                            <strong>@summary.Total</strong>
+                            <span class="fqr-category-sub">total findings</span>
+                            <dl class="fqr-category-counts">
+                                <div><dt>Critical</dt><dd>@summary.Critical</dd></div>
+                                <div><dt>High</dt><dd>@summary.High</dd></div>
+                                <div><dt>Medium</dt><dd>@summary.Medium</dd></div>
+                                <div><dt>Low</dt><dd>@summary.Low</dd></div>
+                            </dl>
+                        </button>
                     }
                 </div>
-            </details>
+            </section>
+
+            <section class="fqr-section" aria-label="Detailed findings">
+                <SectionHeader Title="Detailed Findings" />
+                <div class="fqr-findings-toolbar" role="group" aria-label="Filter findings">
+                    <input type="search"
+                           class="form-control fqr-search"
+                           placeholder="Search findings..."
+                           aria-label="Search findings"
+                           value="@_findingSearch"
+                           @oninput="e => _findingSearch = e.Value?.ToString() ?? string.Empty" />
+
+                    <select class="form-control fqr-select" @bind="_severityFilterValue" @bind:after="ApplySeverityFilter" aria-label="Filter by severity">
+                        <option value="">All severities</option>
+                        @foreach (var sev in Enum.GetValues<FrontendQualitySeverity>())
+                        {
+                            <option value="@sev.ToString()">@sev</option>
+                        }
+                    </select>
+
+                    <select class="form-control fqr-select" @bind="_categoryFilterValue" @bind:after="ApplyCategoryFilter" aria-label="Filter by category">
+                        <option value="">All categories</option>
+                        @foreach (var cat in Enum.GetValues<FrontendQualityCategory>())
+                        {
+                            <option value="@cat.ToString()">@CategoryLabel(cat)</option>
+                        }
+                    </select>
+
+                    @if (_sevFilter is not null || _catFilter is not null || !string.IsNullOrWhiteSpace(_findingSearch))
+                    {
+                        <button type="button" class="btn-secondary" @onclick="ClearFilters">Clear</button>
+                    }
+                </div>
+
+                @if (filtered.Count == 0)
+                {
+                    <div class="fqr-empty-panel">No findings match the current filter.</div>
+                }
+                else
+                {
+                    <div class="fqr-table-wrap">
+                        <table class="fqr-findings-table">
+                            <thead>
+                                <tr>
+                                    <th><button type="button" @onclick='() => SortBy("severity")'>Severity @SortGlyph("severity")</button></th>
+                                    <th><button type="button" @onclick='() => SortBy("category")'>Category @SortGlyph("category")</button></th>
+                                    <th><button type="button" @onclick='() => SortBy("title")'>Title @SortGlyph("title")</button></th>
+                                    <th>Description</th>
+                                    <th>Recommendation</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var finding in filtered)
+                                {
+                                    <tr>
+                                        <td><span class="fqr-severity fqr-severity-@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span></td>
+                                        <td>@CategoryLabel(finding.Category)</td>
+                                        <td>
+                                            <strong>@finding.Title</strong>
+                                            @if (!string.IsNullOrWhiteSpace(finding.SourceSystem))
+                                            {
+                                                <span class="fqr-source">@finding.SourceSystem</span>
+                                            }
+                                        </td>
+                                        <td>@finding.Description</td>
+                                        <td>@finding.Recommendation</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+
+            @if (recommendations.Count > 0)
+            {
+                <section class="fqr-section" aria-label="Recommendations">
+                    <SectionHeader Title="Recommendations" />
+                    <div class="fqr-recommendation-grid">
+                        @foreach (var rec in recommendations)
+                        {
+                            <article class="fqr-recommendation-card fqr-recommendation-@rec.Priority.ToLowerInvariant()">
+                                <div class="fqr-recommendation-priority">@rec.Priority Priority</div>
+                                <h3>@rec.Title</h3>
+                                <p>@rec.Description</p>
+                                <div class="fqr-recommendation-benefit">
+                                    <span>Expected benefit</span>
+                                    <p>@rec.ExpectedBenefit</p>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                </section>
+            }
+        </section>
+
+        @* ── 4. Review details: how the review was executed. Supporting evidence, never the headline. ───────── *@
+        <section class="fqr-section fqr-details" aria-labelledby="fqr-result-details-heading" data-testid="fqr-result-details">
+            <div class="fqr-section-head">
+                <h2 id="fqr-result-details-heading">Review details</h2>
+                <p class="fqr-section-note">How this review was executed, and what it could reach at the time it ran.</p>
+            </div>
+
+            @if (report.ActiveEngines is not null || report.TargetAccess is not null)
+            {
+                <ReviewDisclosure Text="Technical details: engines and target access at review start" CollapseText="Hide engines and target access details" TestId="fqr-result-technical" Class="fqr-card-disclosure">
+                    @if (report.ActiveEngines is { } engines)
+                    {
+                        <FrontendQualityActiveEnginesPanel Snapshot="engines" />
+                    }
+                    @if (report.TargetAccess is { } access)
+                    {
+                        <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" />
+                    }
+                </ReviewDisclosure>
+            }
+
+            <FrontendQualityDecisionSupport Report="report" />
+
+            <section class="fqr-section" aria-label="Technical details">
+                <details class="fqr-technical-details">
+                    <summary>Technical Details</summary>
+                    <div class="fqr-technical-grid">
+                        <InfoRow Label="Target URL (Requested)">@report.TargetUrl</InfoRow>
+                        @if (!string.IsNullOrWhiteSpace(report.FinalUrl) && report.FinalUrl != report.TargetUrl)
+                        {
+                            <InfoRow Label="Target URL (Final)">@report.FinalUrl</InfoRow>
+                            @if (report.RedirectOccurred)
+                            {
+                                <InfoRow Label="Redirect Occurred">Yes</InfoRow>
+                            }
+                        }
+                        <InfoRow Label="Generated">@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
+                        @if (report.CompletedAt.HasValue && report.DurationMs.HasValue)
+                        {
+                            <InfoRow Label="Completed">@report.CompletedAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
+                            <InfoRow Label="Duration">@(report.DurationMs.Value / 1000.0)s</InfoRow>
+                        }
+                        <InfoRow Label="Assessment Completeness">@(report.Completeness?.ToString() ?? "Unknown")</InfoRow>
+                        @if (report.AssessedEngines.Count > 0)
+                        {
+                            <InfoRow Label="Assessed Engines">@string.Join(", ", report.AssessedEngines)</InfoRow>
+                        }
+                        @if (report.SkippedEngines.Count > 0)
+                        {
+                            <InfoRow Label="Skipped Engines">@string.Join(", ", report.SkippedEngines)</InfoRow>
+                        }
+                        @if (report.FailedEngines.Count > 0)
+                        {
+                            <InfoRow Label="Failed Engines">@string.Join(", ", report.FailedEngines)</InfoRow>
+                        }
+                        <InfoRow Label="Application">@(report.IsBlazorWasm ? "Blazor WASM detected" : "Blazor WASM not detected")</InfoRow>
+                        @if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
+                        {
+                            <InfoRow Label="Error">@report.ErrorMessage</InfoRow>
+                        }
+                        @if (report.Risks.Count > 0)
+                        {
+                            <div class="fqr-technical-list">
+                                <h3>Risks</h3>
+                                <ul>
+                                    @foreach (var risk in report.Risks)
+                                    {
+                                        <li>@risk</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                        @if (report.Limitations.Count > 0)
+                        {
+                            <div class="fqr-technical-list">
+                                <h3>Assessment Limitations</h3>
+                                <ul>
+                                    @foreach (var limitation in report.Limitations)
+                                    {
+                                        <li>@limitation</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                        <div class="fqr-technical-list">
+                            <h3>Scope</h3>
+                            <p>This review combines the configured static, passive, and real-browser engines shown in the engine matrix. It does not establish:</p>
+                            <ul>
+                                <li>Active vulnerability scanning or penetration testing</li>
+                                <li>WCAG conformance or completion of manual accessibility testing</li>
+                                <li>Production field Core Web Vitals or field INP</li>
+                                <li>End-to-end user flow validation</li>
+                            </ul>
+                        </div>
+                        @if (report.Findings.Any(f => f.Evidence.Count > 0))
+                        {
+                            <div class="fqr-technical-list fqr-technical-evidence">
+                                <h3>Evidence</h3>
+                                @foreach (var finding in report.Findings.Where(f => f.Evidence.Count > 0))
+                                {
+                                    <div class="fqr-evidence-group">
+                                        <strong>@finding.Title</strong>
+                                        <ul>
+                                            @foreach (var evidence in finding.Evidence)
+                                            {
+                                                <li><code>@evidence</code></li>
+                                            }
+                                        </ul>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </details>
+            </section>
+
         </section>
     }
 </div>
@@ -758,6 +644,24 @@
 
     private FrontendQualityReviewReport? _report;
     private bool ShowLegacyDecisionSupport => false;
+
+    /// <summary>The accessibility profile THIS result was produced under, with its scope — read from the report, never from settings.</summary>
+    private static string? AccessibilityScope(FrontendQualityResultView result) =>
+        result.ProfileLabel is { Length: > 0 } label
+            ? result.CriteriaInScope is { } criteria ? $"{label} · {criteria} criteria in scope" : label
+            : null;
+
+    /// <summary>
+    /// The profile chosen for the next run changed while a result is on screen. The result is never re-labelled; the page
+    /// just re-renders so it can say which profile this result belongs to and that a new run is what updates it.
+    /// </summary>
+    private void OnResultProfileChanged(string profileId) => StateHasChanged();
+
+    private static string DomainDetailsText(FrontendQualityDomainResult domain) => $"View {domain.Title.ToLowerInvariant()} findings";
+
+    /// <summary>The findings this run recorded for one domain, most severe first.</summary>
+    private static IReadOnlyList<FrontendQualityFinding> DomainFindings(FrontendQualityReviewReport report, FrontendQualityCategory category) =>
+        report.Findings.Where(f => f.Category == category).OrderBy(f => f.Severity).ThenBy(f => f.Title).ToList();
 
     private string? _findingSearch;
     private FrontendQualitySeverity? _sevFilter;

@@ -117,11 +117,17 @@
     [Parameter, EditorRequired] public WcagAssessment Assessment { get; set; } = new();
     [Parameter] public RenderFragment? ProfileSelector { get; set; }
     [Parameter] public EventCallback<WcagCriterionResult> Review { get; set; }
+    /// <summary>
+    /// Whether the full criteria matrix starts open. Null keeps the discovery default (open as soon as any criterion has
+    /// been assessed). A result surface passes false: a finished review leads with its summary, and a profile of 48–55
+    /// criteria is a table the reader asks for rather than one that greets them.
+    /// </summary>
+    [Parameter] public bool? InitiallyExpanded { get; set; }
     private string _status = "", _level = "", _automation = "", _search = "";
     private string? _selected;
     private bool? _criteriaExpanded;
     private readonly string _matrixId = $"wcag-matrix-{Guid.NewGuid():N}";
-    private bool ShowCriteria => _criteriaExpanded ?? (Rows.Count > 0 && !Rows.All(r => r.Status == WcagStatus.NotTested));
+    private bool ShowCriteria => _criteriaExpanded ?? InitiallyExpanded ?? (Rows.Count > 0 && !Rows.All(r => r.Status == WcagStatus.NotTested));
     private IReadOnlyList<WcagCriterionSummary> Rows => WcagAssessmentSummary.Criteria(Assessment);
     private int Count(WcagStatus status) => Rows.Count(r => r.Status == status);
     private IEnumerable<WcagCriterionSummary> Filtered => Rows.Where(r =>

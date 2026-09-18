@@ -470,9 +470,9 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
 
-        page.FindAll("[data-testid=fqr-results-heading]").Should().BeEmpty();
+        page.FindAll("[data-testid=fqr-result-summary]").Should().BeEmpty();
         page.FindAll("[data-testid=fqr-coverage-label]").Should().BeEmpty("engine outcome table belongs to results");
-        page.FindAll("[data-testid=fqr-result-target]").Should().BeEmpty();
+        page.FindAll("[data-testid=fqr-domain-results]").Should().BeEmpty();
         page.Markup.Should().NotContain("Review results").And.NotContain("Completed — no findings").And.NotContain("Passed").And.NotContain("Assessed");
     }
 
@@ -486,8 +486,8 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         await page.InvokeAsync(() => RunButton(page).Click());
 
         orchestrator.Verify(o => o.RunAsync(Url, It.IsAny<FrontendAnalysisContext>(), It.IsAny<FrontendQualityEngineExecutionSnapshot?>(), It.IsAny<CancellationToken>()), Times.Once);
-        page.WaitForAssertion(() => page.Find("[data-testid=fqr-results-heading]").TextContent.Should().Be("Review results"));
-        page.Find("[data-testid=fqr-result-target]").TextContent.Should().Contain("M2LB DEV").And.Contain(Url);
+        page.WaitForAssertion(() => page.Find("#fqr-result-heading").TextContent.Should().Be("Review result"));
+        page.Find("[data-testid=fqr-result-meta]").TextContent.Should().Contain("M2LB DEV").And.Contain(Url);
         page.FindAll("[data-testid=fqr-landing]").Should().BeEmpty("capability readiness is landing-only");
         // Engines/access at review start remain available behind a collapsed disclosure when the report carries them.
         page.FindAll("button").Should().Contain(b => b.TextContent.Trim() == "Back to Frontend Quality Review");
@@ -536,7 +536,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
         await page.InvokeAsync(() => RunButton(page).Click());
-        page.WaitForAssertion(() => page.Find("[data-testid=fqr-results-heading]"));
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-result-summary]"));
         await page.InvokeAsync(() => page.FindAll("button").Single(b => b.TextContent.Trim() == "Export HTML").Click());
 
         export.Verify(e => e.ExportFrontendQualityReview(It.Is<FrontendQualityReviewReport>(r => r.TargetUrl == Url), It.IsAny<string>()), Times.Once);
