@@ -270,3 +270,71 @@ public static class BrowserDiscoveryPresentation
     private static string Join(params string?[] parts) =>
         string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
 }
+
+/// <summary>
+/// What Browser Discovery should say and offer right now, derived once from the session state and whether any
+/// evidence exists. Four distinct situations, because collapsing any two of them loses something real:
+/// being connected is not the same as having evidence, and being paired is not the same as reporting.
+/// </summary>
+public enum BrowserDiscoveryState
+{
+    /// <summary>No session. Pairing is the next step.</summary>
+    NotConnected,
+    /// <summary>Pairing is under way and waiting for the code.</summary>
+    Pairing,
+    /// <summary>A session exists but nothing is reporting — an approved page needs opening or refreshing.</summary>
+    PairedNotReporting,
+    /// <summary>Connected, but nothing has been observed yet. Asking the user to pair again would be wrong.</summary>
+    ConnectedWithoutEvidence,
+    /// <summary>Evidence exists; the page shows it rather than an empty state.</summary>
+    EvidenceAvailable,
+}
+
+/// <summary>
+/// The single derivation of Browser Discovery's user-facing state. The summary strip, the empty state and the
+/// Browser Companion card all read from here, so they cannot describe one situation in three different ways.
+/// </summary>
+public static class BrowserDiscoveryStates
+{
+    public static BrowserDiscoveryState Of(BrowserCompanionState session, bool hasEvidence) => (session, hasEvidence) switch
+    {
+        (_, true) => BrowserDiscoveryState.EvidenceAvailable,
+        (BrowserCompanionState.Connected, _) => BrowserDiscoveryState.ConnectedWithoutEvidence,
+        (BrowserCompanionState.Disconnected, _) => BrowserDiscoveryState.PairedNotReporting,
+        (BrowserCompanionState.PairingPending, _) => BrowserDiscoveryState.Pairing,
+        _ => BrowserDiscoveryState.NotConnected,
+    };
+
+    /// <summary>The one primary connection vocabulary. Technical pairing state stays in Connection details.</summary>
+    public static string SessionLabel(BrowserCompanionState session) => session switch
+    {
+        BrowserCompanionState.Connected => "Connected",
+        BrowserCompanionState.Disconnected => "Paired · not reporting",
+        BrowserCompanionState.PairingPending => "Pairing…",
+        BrowserCompanionState.Expired => "Session expired",
+        _ => "Not connected",
+    };
+
+    /// <summary>
+    /// What is missing and what to do about it — never what the state IS, which the summary strip already says.
+    /// A connected session is never told to pair again.
+    /// </summary>
+    public static string EmptyHelp(BrowserDiscoveryState state) => state switch
+    {
+        BrowserDiscoveryState.ConnectedWithoutEvidence =>
+            "Open an approved application page to start collecting browser evidence.",
+        // "No approved page is reporting" is the consequence of the badge, not a restatement of it.
+        BrowserDiscoveryState.PairedNotReporting =>
+            "No approved page is currently reporting. Open or refresh an approved application page to resume collecting browser evidence.",
+        BrowserDiscoveryState.Pairing =>
+            "Enter the pairing code in Browser Companion, then open an approved application page.",
+        _ => "Pair the managed Edge browser and open an approved application page to start collecting browser evidence.",
+    };
+
+    /// <summary>
+    /// Whether the empty state owns the Pair action. Only one Pair control is ever visible, and it belongs to the
+    /// surface the reader is actually looking at.
+    /// </summary>
+    public static bool ShowsPairAction(BrowserDiscoveryState state) =>
+        state is BrowserDiscoveryState.NotConnected;
+}

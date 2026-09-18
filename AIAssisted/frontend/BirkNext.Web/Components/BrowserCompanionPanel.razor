@@ -74,9 +74,14 @@
         {
             @if (Status.State is BrowserCompanionState.NotPaired or BrowserCompanionState.Expired or BrowserCompanionState.PairingPending)
             {
-                <PrimaryButton Class="fa-btn-sm" data-testid="browser-companion-pair" Disabled="@(Runtime.Busy || ApprovedOrigins.Count == 0)" OnClick="Pair">
-                    @(Status.State == BrowserCompanionState.PairingPending ? "New pairing code" : "Pair browser companion")
-                </PrimaryButton>
+                @* Suppressed when the host already offers the one Pair action: two controls with near-identical
+                   accessible names for one problem is the duplication this card is not allowed to create. *@
+                @if (ShowPairAction)
+                {
+                    <PrimaryButton Class="fa-btn-sm" data-testid="browser-companion-pair" Disabled="@(Runtime.Busy || ApprovedOrigins.Count == 0)" OnClick="Pair">
+                        @(Status.State == BrowserCompanionState.PairingPending ? "New pairing code" : "Pair browser companion")
+                    </PrimaryButton>
+                }
             }
             else
             {
@@ -85,7 +90,8 @@
             }
         }
     </div>
-    <details class="bcp-install">
+    @* A developer aside, kept low-emphasis so it never competes with the primary Pair action. *@
+    <details class="bcp-install" data-testid="browser-companion-install">
         <summary>Install the extension (DEV)</summary>
         <ol>
             <li>In Edge open <code>edge://extensions</code>, enable <em>Developer mode</em>.</li>
@@ -107,6 +113,13 @@
     /// approved origins and last-evidence timestamp. Connection state, messages and the pairing actions always remain.
     /// </summary>
     [Parameter] public bool Compact { get; set; }
+
+    /// <summary>
+    /// Whether this card offers its own Pair control. A host that already shows one — Browser Discovery's empty
+    /// state — passes false, so exactly one Pair action is ever on screen. Unpair and Pair again are unaffected:
+    /// they act on an existing session and have no counterpart elsewhere.
+    /// </summary>
+    [Parameter] public bool ShowPairAction { get; set; } = true;
 
     private BrowserCompanionStatus Status => Runtime?.For(Profile?.Id) ?? new();
     private IReadOnlyList<string> ApprovedOrigins => Status.ApprovedOrigins.Count > 0 ? Status.ApprovedOrigins : BrowserCompanionScope.ApprovedOrigins(Profile);

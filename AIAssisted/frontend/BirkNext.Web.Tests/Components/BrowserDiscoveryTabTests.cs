@@ -276,7 +276,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
         Text(cut, "browser-discovery-empty").Should()
             .Contain("No browser evidence yet")
-            .And.Contain("Pair Browser Companion and open an approved application page");
+            .And.Contain("Pair the managed Edge browser and open an approved application page");
         cut.FindAll("[data-testid=browser-discovery-page-row]").Should().BeEmpty();
         cut.FindAll("[data-testid=browser-discovery-overview-table]").Should().BeEmpty();
         Text(cut, "bd-pages-count").Should().Be("0");
@@ -314,10 +314,13 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         Text(cut, "bd-last-evidence").Should().Be("None");
         cut.FindAll("[data-testid=browser-discovery-empty]").Should().ContainSingle();
 
-        // Pairing actions live on the companion card and follow the session state, not the evidence state.
+        // Pairing actions follow the session state, not the evidence state. When pairing is the next step the
+        // empty state owns the single Pair control; an existing session keeps Pair again on the companion card.
         cut.FindAll(state == BrowserCompanionState.NotPaired
-            ? "[data-testid=browser-companion-pair]"
+            ? "[data-testid=browser-discovery-pair]"
             : "[data-testid=browser-companion-repair]").Should().ContainSingle();
+        if (state == BrowserCompanionState.NotPaired)
+            cut.FindAll("[data-testid=browser-companion-pair]").Should().BeEmpty("one problem gets one action");
     }
 
     // ── 19. Browser Companion card ───────────────────────────────────────────

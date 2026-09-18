@@ -13,7 +13,7 @@
 
     <div class="bd-overview" data-testid="browser-discovery-summary">
         <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Browser session</span><span class="bd-ov-value" data-testid="bd-session">@StateLabel</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Browser session</span><span class="bd-ov-value" data-testid="bd-session">@BrowserDiscoveryStates.SessionLabel(Status.State)</span></div>
         <div class="bd-ov-item"><span class="bd-ov-label">Pages with evidence</span><span class="bd-ov-value" data-testid="bd-pages-count">@Rows.Count</span></div>
         <div class="bd-ov-item"><span class="bd-ov-label">Last evidence</span><span class="bd-ov-value bd-mono" data-testid="bd-last-evidence">@(LastEvidence is { } t ? Time(t) : "None")</span></div>
         <div class="bd-ov-item"><span class="bd-ov-label">Current page</span><span class="bd-ov-value bd-mono" data-testid="bd-current-page">@CurrentPage</span></div>
@@ -237,8 +237,10 @@
     }
     </div>
 
-    @* Browser Companion stays in Browser Discovery: it is what produces this evidence. *@
-    <BrowserCompanionPanel Profile="Profile" Runtime="Runtime" Compact="true" />
+    @* Browser Companion stays in Browser Discovery: it is what produces this evidence. It is secondary here —
+       the evidence is the content — and it never repeats the Pair action the empty state above already owns. *@
+    <BrowserCompanionPanel Profile="Profile" Runtime="Runtime" Compact="true"
+                           ShowPairAction="@(!BrowserDiscoveryStates.ShowsPairAction(DiscoveryState))" />
 </section>
 
 @code {
@@ -307,9 +309,13 @@
     /// <summary>A session already exists, so only the "open a page" step remains.</summary>
     private bool CompanionPaired => Status.State is not (BrowserCompanionState.NotPaired or BrowserCompanionState.Expired);
 
-    private string EmptyEvidenceHelp => CompanionPaired
-        ? BrowserDiscoveryPresentation.NoEvidencePairedHelp
-        : BrowserDiscoveryPresentation.NoEvidenceHelp;
+    /// <summary>
+    /// The one derivation of what this page is currently showing. The summary strip, the empty state and the
+    /// Browser Companion card all read from it, so one situation cannot be described three different ways.
+    /// </summary>
+    private BrowserDiscoveryState DiscoveryState => BrowserDiscoveryStates.Of(Status.State, Rows.Count > 0);
+
+    private string EmptyEvidenceHelp => BrowserDiscoveryStates.EmptyHelp(DiscoveryState);
 
     /// <summary>
     /// The single absence message for browser evidence, with the next action attached. Absence of evidence is stated
@@ -319,10 +325,12 @@
     {
         <div class="bd-empty" data-testid="browser-discovery-empty">
             <p class="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
-            <p class="bd-empty-help">@EmptyEvidenceHelp</p>
-            @if (!CompanionPaired && Runtime is not null && Profile is not null)
+            <p class="bd-empty-help" data-testid="browser-discovery-empty-help">@EmptyEvidenceHelp</p>
+            @* The ONE Pair control, and only where pairing is actually the next step. A connected session is
+               never asked to pair again; the Browser Companion card below suppresses its own copy of this. *@
+            @if (BrowserDiscoveryStates.ShowsPairAction(DiscoveryState) && Runtime is not null && Profile is not null)
             {
-                <SecondaryButton OnClick="PairCompanion" Disabled="@Runtime.Busy" Class="fa-btn-sm">Pair Browser Companion</SecondaryButton>
+                <PrimaryButton OnClick="PairCompanion" Disabled="@(Runtime.Busy || ApprovedOrigins.Count == 0)" Class="fa-btn-sm" data-testid="browser-discovery-pair">Pair Browser Companion</PrimaryButton>
             }
         </div>
     };

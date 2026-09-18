@@ -90,7 +90,7 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
 
         var empty = cut.Find("[data-testid=browser-discovery-empty]");
         empty.TextContent.Should().Contain("No browser evidence yet");
-        empty.TextContent.Should().Contain("Pair Browser Companion and open an approved application page");
+        empty.TextContent.Should().Contain("Pair the managed Edge browser and open an approved application page");
 
         // Exactly one absence sentence and one Pair action in the empty state.
         Occurrences(cut.Markup, "No browser evidence").Should().Be(1);
@@ -174,7 +174,7 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
         Text(cut, "bd-current-page").Should().Be("No approved page open", "which is a different fact from having no session");
         // Still no evidence, and the help reflects that pairing is already done.
         cut.Find("[data-testid=browser-discovery-empty]").TextContent
-            .Should().Contain("Open an approved application page in the paired browser")
+            .Should().Contain("Open an approved application page to start collecting browser evidence")
             .And.NotContain("Pair Browser Companion and");
     }
 
