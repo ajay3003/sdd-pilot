@@ -1009,3 +1009,11 @@
     border: 1px solid var(--clr-info-bg); background: var(--clr-info-bg-light);
     font-size: .6875rem; font-weight: 600; color: var(--clr-info);
 }
+
+/* Selected accessibility profile on the domain card: scope, not an engine name. */
+::deep .fqr-dimension-scope {
+    margin: .25rem 0 0;
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--clr-text-heading);
+}

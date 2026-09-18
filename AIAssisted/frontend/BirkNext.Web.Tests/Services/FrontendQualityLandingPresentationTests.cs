@@ -303,9 +303,10 @@ public sealed class FrontendQualityLandingPresentationTests
         var cards = FrontendQualityLandingPresentation.Dimensions(Capabilities(context));
 
         cards.Select(c => c.Title).Should().Equal("Performance", "Security", "Accessibility", "Standards Compliance", "Blazor / WASM", "QA Readiness");
-        cards.Single(c => c.Category == FrontendQualityCategory.Security).State.Should().Be(FrontendQualityDimensionState.Enabled);
-        cards.Single(c => c.Category == FrontendQualityCategory.Accessibility).State.Should().Be(FrontendQualityDimensionState.NotEnabled);
-        cards.Single(c => c.Category == FrontendQualityCategory.Readiness).State.Should().Be(FrontendQualityDimensionState.Available);
+        cards.Single(c => c.Category == FrontendQualityCategory.Security).State.Should().Be(FrontendQualityDimensionState.Included);
+        // Accessibility is scoped by its profile, so disabling both its engines leaves it in the review on reduced evidence.
+        cards.Single(c => c.Category == FrontendQualityCategory.Accessibility).State.Should().Be(FrontendQualityDimensionState.PartialEvidence);
+        cards.Single(c => c.Category == FrontendQualityCategory.Readiness).State.Should().Be(FrontendQualityDimensionState.Included);
         cards.Should().OnlyContain(c => c.Purpose.Length > 0);
         cards.Select(c => c.Purpose).Should().NotContain(p => p.Contains("CDP") || p.Contains("proxy") || p.Contains("Playwright"), "no implementation vocabulary on the overview");
     }
@@ -318,24 +319,28 @@ public sealed class FrontendQualityLandingPresentationTests
         var cards = FrontendQualityLandingPresentation.Dimensions(rows);
 
         var performance = cards.Single(c => c.Category == FrontendQualityCategory.Performance);
-        performance.State.Should().Be(FrontendQualityDimensionState.Enabled);
-        performance.Limitation.Should().Be("Lighthouse unavailable; remaining checks still run.");
+        performance.State.Should().Be(FrontendQualityDimensionState.Limited);
+        performance.Limitation.Should().Be("Optional browser evidence is unavailable.");
         var security = cards.Single(c => c.Category == FrontendQualityCategory.Security);
-        security.State.Should().Be(FrontendQualityDimensionState.Enabled);
-        security.Limitation.Should().Contain("Passive Security unavailable");
+        security.State.Should().Be(FrontendQualityDimensionState.Limited);
+        security.Limitation.Should().Be("Passive security evidence is unavailable.");
         var accessibility = cards.Single(c => c.Category == FrontendQualityCategory.Accessibility);
-        accessibility.State.Should().Be(FrontendQualityDimensionState.Enabled);
-        accessibility.Limitation.Should().Be(FrontendQualityLandingPresentation.AccessibilityLimitation);
+        accessibility.State.Should().Be(FrontendQualityDimensionState.Included);
+        accessibility.ManualReviewRequired.Should().BeTrue();
     }
 
     [Fact]
-    public void Dimensions_AllContributingEnginesUnavailable_MarksDimensionUnavailable()
+    public void Dimensions_EveryAccessibilityEngineUnavailable_StillLeavesTheDomainInTheReview()
     {
+        // The engines are the automated evidence, not the assessment. With none of them available the domain keeps
+        // its profile scope and its manual requirement; it must never read as an unavailable domain.
         var context = Context(t => t.EnableBrowserQualityEngine = false);
         var rows = Capabilities(context, Status(Engine(FrontendQualityEngineIdDto.Accessibility, layer1: false), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)));
         var accessibility = FrontendQualityLandingPresentation.Dimensions(rows).Single(c => c.Category == FrontendQualityCategory.Accessibility);
-        accessibility.State.Should().Be(FrontendQualityDimensionState.Unavailable);
-        accessibility.Limitation.Should().StartWith("Accessibility unavailable.").And.Contain(FrontendQualityLandingPresentation.AccessibilityLimitation);
+        accessibility.State.Should().Be(FrontendQualityDimensionState.PartialEvidence);
+        accessibility.ManualReviewRequired.Should().BeTrue();
+        accessibility.Limitation.Should().Contain("require manual assessment");
+        accessibility.Limitation.Should().NotContain("Accessibility unavailable");
     }
 
     // ── Coverage ─────────────────────────────────────────────────────────────────────────────────────────────────────

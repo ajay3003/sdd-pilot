@@ -165,9 +165,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         cards.Select(c => c.QuerySelector("h3")!.TextContent).Should().Equal("Performance", "Security", "Accessibility", "Standards Compliance", "Blazor / WASM", "QA Readiness");
         cards.Should().OnlyContain(c => c.QuerySelector(".fqr-dimension-purpose")!.TextContent.Length > 0);
         cards.Should().OnlyContain(c => c.QuerySelector("[data-testid=fqr-dimension-state]")!.TextContent.Length > 0, "state must be a text label, not colour only");
-        page.Find("[data-testid=fqr-dimension][data-category='Security'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Enabled");
-        page.Find("[data-testid=fqr-dimension][data-category='Accessibility'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Not enabled");
-        page.Find("[data-testid=fqr-dimension][data-category='Readiness'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Available");
+        // Domain scope vocabulary, not engine vocabulary: an HTTP-only target still includes every domain.
+        page.Find("[data-testid=fqr-dimension][data-category='Security'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Included");
+        page.Find("[data-testid=fqr-dimension][data-category='Accessibility'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Partial evidence");
+        page.Find("[data-testid=fqr-dimension][data-category='Readiness'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Included");
         page.Find("h2#fqr-dimensions-heading").TextContent.Should().Be("What will be analysed?");
     }
 
@@ -180,8 +181,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
         var card = page.Find("[data-testid=fqr-dimension][data-category='Accessibility']");
-        card.QuerySelector("[data-testid=fqr-dimension-state]")!.TextContent.Should().Be("Enabled");
-        card.QuerySelector("[data-testid=fqr-dimension-limitation]")!.TextContent.Should().Contain("Manual accessibility testing may still be required.");
+        card.QuerySelector("[data-testid=fqr-dimension-state]")!.TextContent.Should().Be("Included");
+        card.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Should().Be("Manual review required");
+        card.QuerySelector("[data-testid=fqr-dimension-scope]")!.TextContent.Should().Be("Norwegian public-sector requirements — WCAG 2.1");
+        card.QuerySelector("[data-testid=fqr-dimension-limitation]")!.TextContent.Should().Contain("require manual assessment");
     }
 
     // 4. Checks are collapsed by default.
@@ -379,8 +382,11 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         lighthouse.QuerySelector("[data-testid=fqr-capability-state]")!.TextContent.Should().Be("Unavailable");
         lighthouse.QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Be("The Lighthouse engine is not available in this environment.");
         lighthouse.TextContent.Should().NotContainAny("Failed", "Error", "error");
-        page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Enabled");
-        page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent.Should().Contain("Lighthouse unavailable");
+        // The domain reports the impact in evidence words; the engine name stays in Review capabilities above.
+        page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Limited");
+        page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent
+            .Should().Be("Optional browser evidence is unavailable.");
+        page.Find("[data-testid=fqr-dimensions]").TextContent.Should().NotContain("Lighthouse");
     }
 
     // 10. Passive security deployment limitation is presented correctly (technical reason collapsed).

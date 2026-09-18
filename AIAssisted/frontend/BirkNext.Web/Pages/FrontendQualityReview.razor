@@ -710,7 +710,7 @@
         var technical = _context is null ? [] : FrontendQualityLandingPresentation.TechnicalTargetFields(_context);
         var auth = _context is null || _context.ActiveTargetError is not null ? null
             : FrontendQualityLandingPresentation.AuthenticatedReview(_context, _access, _caps, _authSession);
-        return new LandingView(target, readiness, capabilities, FrontendQualityLandingPresentation.Dimensions(capabilities), technical, auth);
+        return new LandingView(target, readiness, capabilities, FrontendQualityLandingPresentation.Dimensions(capabilities, SelectedWcagProfile), technical, auth);
     }
 
     private FrontendAnalysisContext? _context;

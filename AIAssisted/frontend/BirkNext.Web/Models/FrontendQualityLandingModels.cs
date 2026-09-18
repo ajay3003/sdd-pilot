@@ -130,40 +130,55 @@ public sealed record FrontendQualityCapabilityRow(
         FrontendQualityCapabilityState.DisabledInSystemSettings);
 }
 
+/// <summary>
+/// Scope of a review DOMAIN — whether it is part of this review and how complete its evidence is. Deliberately a
+/// different vocabulary from engine state: a domain draws on several engines, so one optional engine being
+/// unavailable is a limitation in evidence, never an unavailable domain.
+/// </summary>
 public enum FrontendQualityDimensionState
 {
-    Enabled,
-    /// <summary>Derived dimension (QA Readiness): indicators are available from the evidence other capabilities collect.</summary>
-    Available,
-    NotEnabled,
-    Unavailable,
+    /// <summary>In the review, with every active evidence source available.</summary>
+    Included,
+    /// <summary>In the review, but at least one active evidence source is unavailable.</summary>
+    Limited,
+    /// <summary>In the review on a reduced basis: its baseline evidence is unavailable, but it still contributes.</summary>
+    PartialEvidence,
+    /// <summary>Nothing contributes to this domain in this review.</summary>
+    NotIncluded,
 }
 
 public static class FrontendQualityDimensionStates
 {
     public static string Label(FrontendQualityDimensionState state) => state switch
     {
-        FrontendQualityDimensionState.Enabled => "Enabled",
-        FrontendQualityDimensionState.Available => "Available",
-        FrontendQualityDimensionState.NotEnabled => "Not enabled",
-        FrontendQualityDimensionState.Unavailable => "Unavailable",
+        FrontendQualityDimensionState.Included => "Included",
+        FrontendQualityDimensionState.Limited => "Limited",
+        FrontendQualityDimensionState.PartialEvidence => "Partial evidence",
+        FrontendQualityDimensionState.NotIncluded => "Not included",
         _ => state.ToString(),
     };
 
     public static string Tone(FrontendQualityDimensionState state) => state switch
     {
-        FrontendQualityDimensionState.Enabled or FrontendQualityDimensionState.Available => "ready",
-        FrontendQualityDimensionState.NotEnabled => "muted",
+        FrontendQualityDimensionState.Included => "ready",
+        FrontendQualityDimensionState.NotIncluded => "muted",
         _ => "attention",
     };
 }
 
+/// <param name="ManualReviewRequired">
+/// The domain needs human assessment that no engine can supply. Rendered beside the scope status rather than
+/// replacing it, so "Included · Manual review required" stays one honest statement rather than two competing ones.
+/// </param>
+/// <param name="ScopeNote">Short scope fact, such as the selected accessibility profile. Never an engine name.</param>
 public sealed record FrontendQualityDimensionCard(
     FrontendQualityCategory Category,
     string Title,
     string Purpose,
     FrontendQualityDimensionState State,
-    string? Limitation);
+    string? Limitation,
+    bool ManualReviewRequired = false,
+    string? ScopeNote = null);
 
 public sealed record FrontendQualityCheckGroup(string Title, IReadOnlyList<string> Checks, string? Note = null);
 
@@ -238,6 +253,27 @@ public static class FrontendQualityCategoryEngines
         FrontendQualityCategory.Accessibility => [FrontendQualityEngineId.Accessibility, FrontendQualityEngineId.BrowserQuality],
         _ => [],
     };
+
+    /// <summary>
+    /// The engines that carry a domain's BASELINE review — what makes the domain worth including at all. Everything
+    /// else <see cref="For"/> lists is optional evidence that enriches the domain without deciding whether it runs.
+    ///
+    /// Accessibility deliberately has none: its scope comes from the selected WCAG profile and the manual assessment
+    /// it requires, so no engine decides whether accessibility is part of the review.
+    /// </summary>
+    public static IReadOnlyList<FrontendQualityEngineId> BaselineFor(FrontendQualityCategory category) => category switch
+    {
+        FrontendQualityCategory.Security => [FrontendQualityEngineId.StaticSecurity],
+        FrontendQualityCategory.Standards => [FrontendQualityEngineId.StaticSecurity],
+        FrontendQualityCategory.Performance => [FrontendQualityEngineId.PassivePerformance],
+        FrontendQualityCategory.Readiness => [FrontendQualityEngineId.PassivePerformance],
+        FrontendQualityCategory.BlazorWasm => [FrontendQualityEngineId.PassivePerformance, FrontendQualityEngineId.StaticSecurity],
+        _ => [],
+    };
+
+    /// <summary>Optional evidence sources: their absence is a limitation, never an exclusion.</summary>
+    public static IReadOnlyList<FrontendQualityEngineId> OptionalFor(FrontendQualityCategory category) =>
+        For(category).Except(BaselineFor(category)).ToList();
 
     public static string Label(FrontendQualityCategory category) => category switch
     {

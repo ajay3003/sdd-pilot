@@ -254,32 +254,88 @@ public static class FrontendQualityLandingPresentation
 
     public const string AccessibilityLimitation = "Manual accessibility testing may still be required.";
 
-    public static IReadOnlyList<FrontendQualityDimensionCard> Dimensions(IReadOnlyList<FrontendQualityCapabilityRow> capabilities)
+    /// <summary>
+    /// The one place a domain's scope is derived. The rule, per domain:
+    ///
+    /// <list type="bullet">
+    /// <item><b>Baseline</b> engines carry the domain. If one is active and available, the domain is in the review.</item>
+    /// <item><b>Optional</b> engines enrich it. Their absence downgrades Included to Limited — never to unavailable.</item>
+    /// <item>A domain with no baseline at all (Accessibility) is scoped by its profile and manual assessment, so no
+    /// engine can exclude it; when no automated evidence is available it reports Partial evidence.</item>
+    /// <item><b>Not included</b> only when nothing — engine, profile or derived evidence — contributes.</item>
+    /// </list>
+    ///
+    /// Engine names never become the domain status; they appear at most once, inside a short limitation line.
+    /// </summary>
+    public static IReadOnlyList<FrontendQualityDimensionCard> Dimensions(
+        IReadOnlyList<FrontendQualityCapabilityRow> capabilities, WcagAssessmentProfile? accessibilityProfile = null)
     {
         var byId = capabilities.ToDictionary(c => c.EngineId);
+
+        List<FrontendQualityCapabilityRow> Rows(IEnumerable<FrontendQualityEngineId> ids) =>
+            ids.Select(id => byId.GetValueOrDefault(id)).Where(c => c is not null).Select(c => c!).ToList();
+
         return Enum.GetValues<FrontendQualityCategory>().Select(category =>
         {
-            var engines = FrontendQualityCategoryEngines.For(category).Select(id => byId.GetValueOrDefault(id)).Where(c => c is not null).Select(c => c!).ToList();
-            var active = engines.Where(c => c.IsActive).ToList();
-            var unavailable = active.Where(c => !c.IsAvailable).ToList();
-            var state = active.Count == 0 ? FrontendQualityDimensionState.NotEnabled
-                : unavailable.Count == active.Count ? FrontendQualityDimensionState.Unavailable
-                : category == FrontendQualityCategory.Readiness ? FrontendQualityDimensionState.Available
-                : FrontendQualityDimensionState.Enabled;
-            var limitation = state switch
-            {
-                FrontendQualityDimensionState.NotEnabled => "No enabled capability contributes to this dimension.",
-                FrontendQualityDimensionState.Unavailable => $"{Names(unavailable)} unavailable.",
-                _ when unavailable.Count > 0 => $"{Names(unavailable)} unavailable; remaining checks still run.",
-                _ => null,
-            };
-            if (category == FrontendQualityCategory.Accessibility && state != FrontendQualityDimensionState.NotEnabled)
-                limitation = limitation is null ? AccessibilityLimitation : $"{limitation} {AccessibilityLimitation}";
-            return new FrontendQualityDimensionCard(category, FrontendQualityCategoryEngines.Label(category), Purpose(category), state, limitation);
+            var baseline = Rows(FrontendQualityCategoryEngines.BaselineFor(category));
+            var optional = Rows(FrontendQualityCategoryEngines.OptionalFor(category));
+
+            var baselineReady = baseline.Any(c => c.IsActive && c.IsAvailable);
+            var optionalMissing = optional.Where(c => c.IsActive && !c.IsAvailable).ToList();
+            var optionalReady = optional.Any(c => c.IsActive && c.IsAvailable);
+            var accessibility = category == FrontendQualityCategory.Accessibility;
+
+            var state =
+                // Accessibility is scoped by its profile, so it is in the review whatever the engines say.
+                accessibility ? (optionalReady ? (optionalMissing.Count > 0 ? FrontendQualityDimensionState.Limited
+                                                                           : FrontendQualityDimensionState.Included)
+                                               : FrontendQualityDimensionState.PartialEvidence)
+                : baselineReady ? (optionalMissing.Count > 0 ? FrontendQualityDimensionState.Limited
+                                                             : FrontendQualityDimensionState.Included)
+                // No baseline, but optional evidence still contributes: a reduced review, not an absent one.
+                : optionalReady ? FrontendQualityDimensionState.PartialEvidence
+                : baseline.Count == 0 && optional.Count == 0 ? FrontendQualityDimensionState.NotIncluded
+                : baseline.Any(c => c.IsActive) || optional.Any(c => c.IsActive)
+                    ? FrontendQualityDimensionState.PartialEvidence
+                    : FrontendQualityDimensionState.NotIncluded;
+
+            var limitation = Limitation(category, state, optionalMissing, baselineReady);
+            var scopeNote = accessibility ? (accessibilityProfile ?? WcagProfiles.Norwegian).Label : null;
+
+            return new FrontendQualityDimensionCard(
+                category, FrontendQualityCategoryEngines.Label(category), Purpose(category), state, limitation,
+                ManualReviewRequired: accessibility, ScopeNote: scopeNote);
         }).ToList();
     }
 
-    private static string Names(IEnumerable<FrontendQualityCapabilityRow> rows) => string.Join(", ", rows.Select(r => r.DisplayName));
+    /// <summary>
+    /// One short sentence about impact, in evidence words. The exact engine-level reason stays in Review capabilities;
+    /// this line says only what it means for the domain.
+    /// </summary>
+    private static string? Limitation(
+        FrontendQualityCategory category, FrontendQualityDimensionState state,
+        IReadOnlyList<FrontendQualityCapabilityRow> optionalMissing, bool baselineReady) => state switch
+    {
+        FrontendQualityDimensionState.NotIncluded => "Nothing in this review contributes to this area.",
+
+        FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Accessibility =>
+            "Automated accessibility evidence is unavailable; the profile's criteria still require manual assessment.",
+        FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Readiness =>
+            "Derived from partial review evidence.",
+        FrontendQualityDimensionState.PartialEvidence =>
+            "Baseline evidence is unavailable; the remaining checks still run.",
+
+        FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Security =>
+            "Passive security evidence is unavailable.",
+        FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Accessibility =>
+            "Some automated accessibility evidence is unavailable.",
+        FrontendQualityDimensionState.Limited =>
+            "Optional browser evidence is unavailable.",
+
+        FrontendQualityDimensionState.Included when category == FrontendQualityCategory.Accessibility =>
+            "Automated evidence is partial; some criteria require manual assessment.",
+        _ => null,
+    };
 
     public static string Purpose(FrontendQualityCategory category) => category switch
     {
