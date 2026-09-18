@@ -1284,7 +1284,7 @@
                 {
                     @* Neutral guidance, not a warning: this states where the configuration is consumed. *@
                     <div class="fa-integrations-head">
-                        <p class="fa-integrations-note" data-testid="fa-integrations-note">Service integrations configured here are used by Integration Quality Review.</p>
+                        <p class="fa-integrations-note" data-testid="fa-integrations-note">Configure service integrations used by Integration Quality Review. Observed REST and GraphQL traffic is shown in Endpoint Discovery and is not added here automatically.</p>
                         <SecondaryButton OnClick="BeginAddIntegration" Class="fa-btn-sm">+ Add Integration</SecondaryButton>
                     </div>
 
@@ -1362,30 +1362,13 @@
                     }
                     else
                     {
-                        @* One collection, two views. Detected is what Endpoint Discovery proposed;
-                           Configured is everything a person entered or accepted. *@
-                        var detected = _editProfile.Integrations
-                            .Where(i => i.ConfigurationSource == IntegrationConfigurationSource.EndpointDiscovery
-                                        && IntegrationConfigPresenter.IsHttpIntegration(i.Type))
-                            .ToList();
-                        var configured = _editProfile.Integrations.Where(i => !detected.Contains(i)).ToList();
-
-                        @if (detected.Count > 0)
-                        {
-                            <h4 data-testid="fa-detected-heading" style="margin:.5rem 0 .2rem 0;font-size:.85rem">Detected integrations</h4>
-                            <p class="fa-section-note" style="margin-top:0">REST and GraphQL discovered from Endpoint Discovery.</p>
-                        }
-
-                        @foreach (var intg in detected.Concat(configured))
+                        @* One list of configured integrations. The former Detected / Configured split partitioned this
+                           same collection by provenance, but no production path ever writes EndpointDiscovery here, so
+                           the Detected half could never populate. Observed REST/GraphQL traffic lives in Endpoint
+                           Discovery; each row below still carries its own provenance label. *@
+                        @foreach (var intg in _editProfile.Integrations)
                         {
                             var isExpanded = _editingIntegrationId == intg.Id;
-                            var startsConfigured = configured.Count > 0 && ReferenceEquals(intg, configured[0]);
-
-                            if (startsConfigured)
-                            {
-                                <h4 data-testid="fa-configured-heading" style="margin:.75rem 0 .2rem 0;font-size:.85rem">Configured integrations</h4>
-                                <p class="fa-section-note" style="margin-top:0">Messaging and manually configured integrations.</p>
-                            }
                             <div class="fa-integration-row" style="border:1px solid var(--clr-border);border-radius:var(--radius-md);margin-bottom:.5rem">
                                 <button class="fa-integration-toggle"
                                         style="width:100%;background:var(--clr-surface);border:none;border-radius:var(--radius-md);cursor:pointer;display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;text-align:left"

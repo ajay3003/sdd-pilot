@@ -240,7 +240,8 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         var cut = OpenAddIntegration();
 
         var note = cut.Find("[data-testid=fa-integrations-note]");
-        note.TextContent.Trim().Should().Be("Service integrations configured here are used by Integration Quality Review.");
+        note.TextContent.Should().Contain("Configure service integrations used by Integration Quality Review.");
+        note.TextContent.Should().Contain("not added here automatically", "the page must not imply Endpoint Discovery populates it");
         note.ClassList.Should().NotContain(c => c.Contains("warn") || c.Contains("error"));
         note.GetAttribute("style").Should().BeNullOrEmpty("styling moved out of inline attributes");
     }

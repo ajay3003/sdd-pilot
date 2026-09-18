@@ -57,15 +57,34 @@ public sealed class IntegrationEditorDomTests : BunitContext
 
     // ── Grouping ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The Detected / Configured split partitioned one collection by provenance, but no production path writes
+    /// EndpointDiscovery into a profile, so the Detected half could never populate. The tab is now one list of
+    /// configured integrations; each row still states its own provenance.
+    /// </summary>
     [Fact]
-    public void DetectedAndConfiguredGroupsRenderSeparately()
+    public void IntegrationsRenderAsOneConfiguredListWithoutADetectedPartition()
     {
         var cut = RenderIntegrationsTab();
 
-        cut.FindAll("[data-testid=fa-detected-heading]").Should().NotBeEmpty(
-            "a discovered REST integration is configured in the fixture");
-        cut.FindAll("[data-testid=fa-configured-heading]").Should().NotBeEmpty(
-            "messaging integrations are configured in the fixture");
+        cut.FindAll("[data-testid=fa-detected-heading]").Should().BeEmpty();
+        cut.FindAll("[data-testid=fa-configured-heading]").Should().BeEmpty();
+        cut.Markup.Should().NotContain("Detected integrations");
+        cut.Markup.Should().NotContain("REST and GraphQL discovered from Endpoint Discovery.");
+
+        // Every configured integration still renders, each with its provenance.
+        cut.FindAll(".fa-integration-row").Should().NotBeEmpty();
+        cut.FindAll("[data-testid=fa-integration-source]").Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void TheTabSaysItIsConfigurationAndThatDiscoveryDoesNotPopulateIt()
+    {
+        var cut = RenderIntegrationsTab();
+
+        var note = cut.Find("[data-testid=fa-integrations-note]").TextContent;
+        note.Should().Contain("Configure service integrations used by Integration Quality Review.");
+        note.Should().Contain("not added here automatically");
     }
 
     [Fact]
