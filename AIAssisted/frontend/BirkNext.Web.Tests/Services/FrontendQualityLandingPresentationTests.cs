@@ -169,7 +169,8 @@ public sealed class FrontendQualityLandingPresentationTests
         rows.Take(2).Select(r => r.EngineId).Should().Equal(FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance);
         rows.Should().HaveCount(8);
         Row(rows, FrontendQualityEngineId.BrowserRuntime).State.Should().Be(FrontendQualityCapabilityState.Disabled);
-        Row(rows, FrontendQualityEngineId.BrowserRuntime).ActionText.Should().Be("Open Target Environment");
+        Row(rows, FrontendQualityEngineId.BrowserRuntime).ActionText.Should().Be("Edit engines");
+        Row(rows, FrontendQualityEngineId.BrowserRuntime).ActionHref.Should().Be(FrontendQualityLandingPresentation.FrontendReviewEnginesHref, "a disabled engine is fixed where activation is saved");
         Row(rows, FrontendQualityEngineId.Accessibility).State.Should().Be(FrontendQualityCapabilityState.NotSelected);
         Row(rows, FrontendQualityEngineId.Accessibility).SelectableEngineId.Should().Be(FrontendQualityEngineIdDto.Accessibility, "a deselected enabled engine can be re-included");
         Row(rows, FrontendQualityEngineId.BrowserRuntime).SelectableEngineId.Should().BeNull("a disabled engine is never selectable");

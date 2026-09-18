@@ -1,4 +1,5 @@
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
 
 @* Compact summary of the engines that are ACTIVE for this review, derived from the saved Target Environment configuration
    (Enabled toggle && per-review selection). Capability and readiness are shown elsewhere; this panel only answers
@@ -37,11 +38,14 @@
         <p class="fqr-active-engines-warning" role="status" data-testid="fqr-required-disabled">
             <strong>Configuration inconsistency:</strong> required engine(s) disabled — @string.Join(", ", Snapshot.RequiredButDisabled.Select(e => e.DisplayName)).
             Required coverage cannot be completed until they are enabled or made optional.
+            <a class="fqr-link" href="@EnginesHref" data-testid="fqr-required-disabled-action">Edit engines</a>
         </p>
     }
 </section>
 
 @code {
     [Parameter, EditorRequired] public FrontendQualityActiveEngineSnapshot Snapshot { get; set; } = new();
-    [Parameter] public string ConfigurationHref { get; set; } = "/admin/system-settings?section=target-environments";
+    [Parameter] public string ConfigurationHref { get; set; } = FrontendQualityTargetAccess.TargetEnvironmentsHref;
+    /// <summary>Deep link to the saved engine configuration, offered wherever the fix is a configuration change.</summary>
+    [Parameter] public string EnginesHref { get; set; } = FrontendQualityTargetAccess.FrontendReviewEnginesHref;
 }

@@ -114,10 +114,20 @@ public sealed record FrontendQualityCapabilityRow(
     string? ActionHref = null,
     /// <summary>Set when the per-review "Include in review" opt-out applies to this engine.</summary>
     FrontendQualityEngineIdDto? SelectableEngineId = null,
-    bool Selected = false)
+    bool Selected = false,
+    /// <summary>
+    /// Saved activation from the Target Environment. Deliberately separate from <see cref="State"/>: an engine can be
+    /// Enabled and still Unavailable, and that must never read as "someone switched it off".
+    /// </summary>
+    bool Enabled = false)
 {
     public bool IsActive => FrontendQualityCapabilityStates.IsActive(State);
     public bool IsAvailable => FrontendQualityCapabilityStates.IsAvailable(State);
+    /// <summary>Show the saved "Enabled" fact alongside a state that does not already imply it.</summary>
+    public bool ShowsEnabledAlongsideState => Enabled && State is not (
+        FrontendQualityCapabilityState.Disabled or
+        FrontendQualityCapabilityState.Enabled or
+        FrontendQualityCapabilityState.DisabledInSystemSettings);
 }
 
 public enum FrontendQualityDimensionState

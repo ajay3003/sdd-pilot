@@ -934,3 +934,44 @@
         color: #111827;
     }
 }
+
+/* ── Review capabilities header: configuration lives elsewhere, so the link sits with the heading ── */
+
+::deep .fqr-section-head-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: .4rem 1rem;
+}
+
+::deep .fqr-edit-engines { flex: none; align-self: center; }
+
+::deep .fqr-engine-summary {
+    margin: .25rem 0 0;
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--clr-text-heading);
+}
+
+/* Saved activation, shown beside a live state that does not already imply it. */
+::deep .fqr-capability-enabled {
+    padding: .0625rem .375rem;
+    border: 1px solid var(--clr-border);
+    border-radius: 999px;
+    background: var(--clr-surface);
+    font-size: .6875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--clr-text-muted);
+}
+
+::deep .fqr-capability-warning {
+    margin: .5rem 0 .75rem;
+    padding: .5rem .625rem;
+    border-left: 3px solid var(--clr-warning);
+    border-radius: var(--radius-sm);
+    background: var(--clr-warning-bg-light);
+    font-size: .85rem;
+    color: var(--clr-text-body);
+}

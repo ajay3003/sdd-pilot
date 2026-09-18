@@ -67,11 +67,11 @@ public sealed class FrontendAnalysisSettingsServiceTests
     {
         var p = _sut.CreateProfile("X", FrontendEnvironmentType.Local);
 
-        p.Features.AssetDiscovery.Should().BeTrue();
-        p.Features.StartupAnalysis.Should().BeTrue();
-        p.Features.RestAnalysis.Should().BeTrue();
-        p.Features.SecurityHeaderReview.Should().BeTrue();
-        p.Features.PerformanceReadiness.Should().BeTrue();
+        p.Features.EnableSecurityEngine.Should().BeTrue();
+        p.Features.EnablePerformanceEngine.Should().BeTrue();
+        p.Features.EnableAccessibilityEngine.Should().BeTrue();
+        p.Features.EnableLighthouseEngine.Should().BeTrue();
+        p.Features.EnablePassiveSecurityEngine.Should().BeTrue();
     }
 
     [Fact]
@@ -79,9 +79,9 @@ public sealed class FrontendAnalysisSettingsServiceTests
     {
         var p = _sut.CreateProfile("X", FrontendEnvironmentType.Local);
 
-        p.Features.AuthenticatedBrowserReview.Should().BeFalse();
-        p.Features.LighthouseIntegration.Should().BeFalse();
-        p.Features.PlaywrightRuntimeInspection.Should().BeFalse();
+        p.Features.EnableBrowserRuntimeEngine.Should().BeFalse();
+        p.Features.EnableBrowserQualityEngine.Should().BeFalse();
+        p.Features.EnablePerformanceQualityEngine.Should().BeFalse();
     }
 
     // ── Duplicate profile detection ───────────────────────────────────────────
@@ -474,26 +474,26 @@ public sealed class FrontendAnalysisSettingsServiceTests
     public void RestoreDefaultFeatureToggles_ReenablesCoreFeatures()
     {
         var p = _sut.CreateProfile("P", FrontendEnvironmentType.QA);
-        p.Features.AssetDiscovery  = false;
-        p.Features.CachingReview   = false;
+        p.Features.EnableSecurityEngine  = false;
+        p.Features.EnableAccessibilityEngine = false;
 
         _sut.RestoreDefaultFeatureToggles(p.Id);
 
-        p.Features.AssetDiscovery.Should().BeTrue();
-        p.Features.CachingReview.Should().BeTrue();
+        p.Features.EnableSecurityEngine.Should().BeTrue();
+        p.Features.EnableAccessibilityEngine.Should().BeTrue();
     }
 
     [Fact]
     public void RestoreDefaultFeatureToggles_LeaveFutureFeaturesDisabled()
     {
         var p = _sut.CreateProfile("P", FrontendEnvironmentType.QA);
-        p.Features.LighthouseIntegration      = true;
-        p.Features.PlaywrightRuntimeInspection = true;
+        p.Features.EnableBrowserQualityEngine  = true;
+        p.Features.EnablePerformanceQualityEngine = true;
 
         _sut.RestoreDefaultFeatureToggles(p.Id);
 
-        p.Features.LighthouseIntegration.Should().BeFalse();
-        p.Features.PlaywrightRuntimeInspection.Should().BeFalse();
+        p.Features.EnableBrowserQualityEngine.Should().BeFalse();
+        p.Features.EnablePerformanceQualityEngine.Should().BeFalse();
     }
 
     // ── Reset Profile ─────────────────────────────────────────────────────────
@@ -527,13 +527,13 @@ public sealed class FrontendAnalysisSettingsServiceTests
     public void ResetProfile_ResetsFeatureToggles()
     {
         var p = _sut.CreateProfile("P", FrontendEnvironmentType.QA);
-        p.Features.AssetDiscovery    = false;
-        p.Features.LighthouseIntegration = true;
+        p.Features.EnableSecurityEngine = false;
+        p.Features.EnableBrowserQualityEngine = true;
 
         _sut.ResetProfile(p.Id);
 
-        p.Features.AssetDiscovery.Should().BeTrue();
-        p.Features.LighthouseIntegration.Should().BeFalse();
+        p.Features.EnableSecurityEngine.Should().BeTrue();
+        p.Features.EnableBrowserQualityEngine.Should().BeFalse();
     }
 
     [Fact]
@@ -673,8 +673,8 @@ public sealed class FrontendAnalysisSettingsServiceTests
 
         var diag = _sut.GetDiagnostics();
 
-        diag.EnabledFeatures.Should().Contain("Asset Discovery");
-        diag.EnabledFeatures.Should().Contain("Security Header Review");
+        diag.EnabledFeatures.Should().Contain("Static Security");
+        diag.EnabledFeatures.Should().Contain("Lighthouse");
     }
 
     [Fact]
@@ -685,8 +685,8 @@ public sealed class FrontendAnalysisSettingsServiceTests
 
         var diag = _sut.GetDiagnostics();
 
-        diag.DisabledFeatures.Should().Contain("Lighthouse Integration");
-        diag.DisabledFeatures.Should().Contain("Playwright Runtime Inspection");
+        diag.DisabledFeatures.Should().Contain("Browser Quality");
+        diag.DisabledFeatures.Should().Contain("Browser Runtime");
     }
 
     [Fact]

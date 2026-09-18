@@ -376,6 +376,17 @@ public sealed class FrontendSecuritySettings
     ];
 }
 
+/// <summary>
+/// Per-Target-Environment activation of the FRONTEND QUALITY REVIEW engines. Nothing here affects API Quality Review
+/// (which derives its policy from Performance Thresholds + Environment Type and its targets from Endpoint Discovery)
+/// or Integration Quality Review (which is driven by the per-integration <c>Enabled</c> flag under Integrations).
+///
+/// Thirteen legacy capability flags (assetDiscovery, startupAnalysis, restAnalysis, graphQlAnalysis, cachingReview,
+/// compressionReview, blazorArchitectureReview, securityHeaderReview, configurationExposureReview, performanceReadiness,
+/// authenticatedBrowserReview, lighthouseIntegration, playwrightRuntimeInspection) were removed: they had no consumer at
+/// all, and the last three named capabilities that already ship under other names (Lighthouse, Browser Runtime and the
+/// authenticated browser session). Their stale JSON keys in saved profiles are ignored on deserialization.
+/// </summary>
 public sealed class FrontendAnalysisFeatureToggles
 {
     // Default engine activation for a new (or legacy, toggle-less) Target Environment: every quality engine is enabled except
@@ -391,20 +402,6 @@ public sealed class FrontendAnalysisFeatureToggles
     [JsonPropertyName("enableBrowserQualityEngine")]  public bool EnableBrowserQualityEngine  { get; set; } = false;
     /// <summary>BirkNext Performance Quality: native page/runtime/resource/API/Blazor performance engine over Browser Companion + Local HTTPS proxy evidence. Independent of Lighthouse; opt-in per Target Environment. Release policy Optional.</summary>
     [JsonPropertyName("enablePerformanceQualityEngine")] public bool EnablePerformanceQualityEngine { get; set; } = false;
-
-    [JsonPropertyName("assetDiscovery")]              public bool AssetDiscovery              { get; set; } = true;
-    [JsonPropertyName("startupAnalysis")]             public bool StartupAnalysis             { get; set; } = true;
-    [JsonPropertyName("restAnalysis")]                public bool RestAnalysis                { get; set; } = true;
-    [JsonPropertyName("graphQlAnalysis")]             public bool GraphQlAnalysis             { get; set; } = true;
-    [JsonPropertyName("cachingReview")]               public bool CachingReview               { get; set; } = true;
-    [JsonPropertyName("compressionReview")]           public bool CompressionReview           { get; set; } = true;
-    [JsonPropertyName("blazorArchitectureReview")]    public bool BlazorArchitectureReview    { get; set; } = true;
-    [JsonPropertyName("securityHeaderReview")]        public bool SecurityHeaderReview        { get; set; } = true;
-    [JsonPropertyName("configurationExposureReview")] public bool ConfigurationExposureReview { get; set; } = true;
-    [JsonPropertyName("performanceReadiness")]        public bool PerformanceReadiness        { get; set; } = true;
-    [JsonPropertyName("authenticatedBrowserReview")]  public bool AuthenticatedBrowserReview  { get; set; } = false;
-    [JsonPropertyName("lighthouseIntegration")]       public bool LighthouseIntegration       { get; set; } = false;
-    [JsonPropertyName("playwrightRuntimeInspection")] public bool PlaywrightRuntimeInspection { get; set; } = false;
 }
 
 /// <summary>Explicit coverage policy; enabled state and tool availability never alter these values.</summary>

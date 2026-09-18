@@ -1,13 +1,30 @@
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
 
 @* Review capabilities: Required and Optional engines with typed state labels, a plain-language summary, an optional
    per-review "Include" opt-out (enabled backend engines only — it never enables a disabled engine), and the exact technical
    reason collapsed by default. Deployment-policy limitations are shown as environment facts, not application defects. *@
 <section class="fqr-section fqr-capabilities" aria-labelledby="fqr-capabilities-heading" data-testid="fqr-capabilities">
     <div class="fqr-section-head">
-        <h2 id="fqr-capabilities-heading">Review capabilities</h2>
+        <div class="fqr-section-head-row">
+            <h2 id="fqr-capabilities-heading">Review capabilities</h2>
+            @* Configuration lives in Target Environment; this page only reports it. *@
+            <a class="btn-secondary fqr-edit-engines" href="@FrontendQualityLandingPresentation.FrontendReviewEnginesHref" data-testid="fqr-edit-engines">Edit engines</a>
+        </div>
+        <p class="fqr-engine-summary" data-testid="fqr-engine-summary">@FrontendQualityLandingPresentation.EngineSummary(Rows)</p>
         <p class="fqr-section-note">Which review capabilities take part in the next run and whether they are available right now. Availability is re-validated when the review starts.</p>
+        <p class="fqr-section-note" data-testid="fqr-engine-configuration-note">@FrontendQualityLandingPresentation.EnginesConfigurationNote</p>
     </div>
+
+    @* A Required engine switched off is a configuration inconsistency, not an execution failure — and the fix is one click away. *@
+    @if (Rows.Any(r => r.Policy == FrontendQualityEngineRequirement.Required && !r.Enabled))
+    {
+        <p class="fqr-capability-warning" role="status" data-testid="fqr-capabilities-required-disabled">
+            <strong>Required engine disabled — review coverage cannot complete.</strong>
+            @string.Join(", ", Rows.Where(r => r.Policy == FrontendQualityEngineRequirement.Required && !r.Enabled).Select(r => r.DisplayName)).
+            <a class="fqr-link" href="@FrontendQualityLandingPresentation.FrontendReviewEnginesHref" data-testid="fqr-required-disabled-edit">Edit engines</a>
+        </p>
+    }
 
     <div class="fqr-capability-groups">
         @foreach (var group in Groups)
@@ -28,6 +45,11 @@
                                     <span class="fqr-capability-glyph" aria-hidden="true">@(row.IsAvailable ? "✓" : "○")</span>
                                     <span class="fqr-capability-name">@row.DisplayName</span>
                                     <span class="fqr-pill fqr-pill-@FrontendQualityCapabilityStates.Tone(row.State)" data-testid="fqr-capability-state">@FrontendQualityCapabilityStates.Label(row.State)</span>
+                                    @* Saved activation shown next to the live state, so "Unavailable" never reads as "switched off". *@
+                                    @if (row.ShowsEnabledAlongsideState)
+                                    {
+                                        <span class="fqr-capability-enabled" data-testid="fqr-capability-enabled">Enabled</span>
+                                    }
                                     @if (row.SelectableEngineId is { } selectable)
                                     {
                                         <label class="fqr-capability-include">

@@ -427,20 +427,11 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         var enabled  = new List<string>();
         var disabled = new List<string>();
 
+        // The Frontend Quality Review engines are the only feature activation a Target Environment carries. The
+        // thirteen legacy flags this used to classify had no consumer and were removed.
         void Classify(bool on, string name) { if (on) enabled.Add(name); else disabled.Add(name); }
-        Classify(f.AssetDiscovery,              "Asset Discovery");
-        Classify(f.StartupAnalysis,             "Startup Analysis");
-        Classify(f.RestAnalysis,                "REST Analysis");
-        Classify(f.GraphQlAnalysis,             "GraphQL Analysis");
-        Classify(f.CachingReview,               "Caching Review");
-        Classify(f.CompressionReview,           "Compression Review");
-        Classify(f.BlazorArchitectureReview,    "Blazor Architecture Review");
-        Classify(f.SecurityHeaderReview,        "Security Header Review");
-        Classify(f.ConfigurationExposureReview, "Configuration Exposure Review");
-        Classify(f.PerformanceReadiness,        "Performance Readiness");
-        Classify(f.AuthenticatedBrowserReview,  "Authenticated Browser Review");
-        Classify(f.LighthouseIntegration,       "Lighthouse Integration");
-        Classify(f.PlaywrightRuntimeInspection, "Playwright Runtime Inspection");
+        foreach (var id in Enum.GetValues<FrontendQualityEngineId>())
+            Classify(FrontendQualityActiveEngines.IsEnabled(id, f), FrontendQualityActiveEngines.DisplayName(id));
 
         return new FrontendAnalysisDiagnostics
         {

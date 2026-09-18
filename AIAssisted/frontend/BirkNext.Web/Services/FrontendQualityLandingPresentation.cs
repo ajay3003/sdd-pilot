@@ -14,6 +14,15 @@ namespace BirkNext.Web.Services;
 public static class FrontendQualityLandingPresentation
 {
     public const string TargetEnvironmentsHref = FrontendQualityTargetAccess.TargetEnvironmentsHref;
+    /// <summary>Where engine activation and Required/Optional policy are saved. This page links there; it never edits them.</summary>
+    public const string FrontendReviewEnginesHref = FrontendQualityTargetAccess.FrontendReviewEnginesHref;
+
+    public const string EnginesConfigurationNote =
+        "Engine activation is configured per Target Environment. Availability is evaluated here, when the review runs.";
+
+    /// <summary>"N configured · M available right now" — configuration and capability counted separately, never merged.</summary>
+    public static string EngineSummary(IReadOnlyList<FrontendQualityCapabilityRow> rows) =>
+        $"{rows.Count(r => r.Enabled)} of {rows.Count} engines enabled · {rows.Count(r => r.IsAvailable)} available right now";
     public const string SystemSettingsHref = "/admin/system-settings";
 
     public const string ReadyTitle = "Ready to review";
@@ -157,10 +166,10 @@ public static class FrontendQualityLandingPresentation
         FrontendQualityEngineIdDto? selectable = isBackend && engine.Enabled && (record is null || record.Available) ? dto : null;
 
         FrontendQualityCapabilityRow Build(FrontendQualityCapabilityState state, string? summary = null, string? technical = null, string? actionText = null, string? actionHref = null) =>
-            new(engine.EngineId, engine.DisplayName, engine.Policy, state, summary, technical, actionText, actionHref, selectable, engine.Selected);
+            new(engine.EngineId, engine.DisplayName, engine.Policy, state, summary, technical, actionText, actionHref, selectable, engine.Selected, engine.Enabled);
 
         if (!engine.Enabled)
-            return Build(FrontendQualityCapabilityState.Disabled, "Disabled in the Target Environment configuration.", null, "Open Target Environment", TargetEnvironmentsHref);
+            return Build(FrontendQualityCapabilityState.Disabled, "Disabled in the Target Environment configuration.", null, "Edit engines", FrontendReviewEnginesHref);
         if (!engine.Selected)
             return Build(FrontendQualityCapabilityState.NotSelected, "Enabled, but not included in this review.");
 

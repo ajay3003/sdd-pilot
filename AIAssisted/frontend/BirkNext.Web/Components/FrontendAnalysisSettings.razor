@@ -1110,61 +1110,81 @@
                 }
             }
 
-            @* ── Feature Toggles ── *@
+            @* ── Frontend Review Engines ── *@
             @if (_activeTab == "features")
             {
-                var feats = _isEditMode && _editProfile is not null ? _editProfile.Features : profile.Features;
-                <div class="fa-features-grid">
-                    <div class="fa-features-group">
-                        <div class="fa-features-group-title">Discovery</div>
-                        <FeatureRow Label="Asset Discovery"  Enabled="@feats.AssetDiscovery"  IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.AssetDiscovery = v)" />
-                        <FeatureRow Label="Startup Analysis" Enabled="@feats.StartupAnalysis" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.StartupAnalysis = v)" />
+                var engineDraft = _isEditMode && _editProfile is not null ? _editProfile : profile;
+                var engineRows = FrontendReviewEnginePresentation.Rows(engineDraft.Features, engineDraft.EngineRequirements);
+                <section class="fa-engines" data-testid="frontend-review-engines" aria-labelledby="frontend-review-engines-heading">
+                    <div class="fa-card-heading">
+                        <h3 id="frontend-review-engines-heading">Frontend Quality Review engines</h3>
+                        <span class="fa-card-status fa-card-status-muted">Saved per Target Environment</span>
                     </div>
-                    <div class="fa-features-group">
-                        <div class="fa-features-group-title">Performance</div>
-                        <FeatureRow Label="REST Analysis"         Enabled="@feats.RestAnalysis"         IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.RestAnalysis = v)" />
-                        <FeatureRow Label="GraphQL Analysis"      Enabled="@feats.GraphQlAnalysis"      IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.GraphQlAnalysis = v)" />
-                        <FeatureRow Label="Caching Review"        Enabled="@feats.CachingReview"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.CachingReview = v)" />
-                        <FeatureRow Label="Compression Review"    Enabled="@feats.CompressionReview"    IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.CompressionReview = v)" />
-                        <FeatureRow Label="Performance Readiness" Enabled="@feats.PerformanceReadiness" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.PerformanceReadiness = v)" />
+
+                    @* The scope of this tab is exactly one review page; the other two read none of these. *@
+                    <p class="fa-engines-scope" data-testid="engines-scope-note">@FrontendReviewEnginePresentation.ScopeNote</p>
+
+                    @if (engineRows.Any(r => r.RequiredButDisabled))
+                    {
+                        <p class="fa-engines-warning" role="status" data-testid="engines-required-disabled">
+                            <strong>Configuration inconsistency:</strong> @FrontendReviewEnginePresentation.RequiredButDisabledWarning(engineRows)
+                        </p>
+                    }
+
+                    <div class="fa-engines-tablewrap">
+                        <table class="fa-engines-table" data-testid="frontend-review-engines-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Engine</th>
+                                    <th scope="col">Enabled</th>
+                                    <th scope="col">Policy</th>
+                                    <th scope="col">Requires</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var row in engineRows)
+                                {
+                                    <tr data-testid="engine-row" data-engine-id="@row.EngineId">
+                                        <th scope="row">
+                                            <span class="fa-engine-name">@row.DisplayName</span>
+                                            <span class="fa-engine-clarification">@row.Clarification</span>
+                                        </th>
+                                        <td>
+                                            @if (_isEditMode && _editProfile is not null)
+                                            {
+                                                <label class="fa-check-row">
+                                                    <input type="checkbox" checked="@row.Enabled"
+                                                           aria-label="@($"Enable {row.DisplayName}")"
+                                                           data-testid="engine-enabled-input"
+                                                           @onchange="@((ChangeEventArgs e) => FrontendReviewEnginePresentation.SetEnabled(_editProfile.Features, row.EngineId, (bool)e.Value!))" />
+                                                    <span class="fa-engine-state" data-testid="engine-enabled">@(row.Enabled ? "Enabled" : "Disabled")</span>
+                                                </label>
+                                            }
+                                            else
+                                            {
+                                                <span class="fa-engine-state" data-testid="engine-enabled">@(row.Enabled ? "Enabled" : "Disabled")</span>
+                                            }
+                                        </td>
+                                        <td><span class="fa-engine-policy fa-engine-policy-@row.Policy.ToString().ToLowerInvariant()" data-testid="engine-policy">@row.Policy</span></td>
+                                        <td><span class="fa-engine-requires" data-testid="engine-requires">@row.Requires</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="fa-features-group">
-                        <div class="fa-features-group-title">Security</div>
-                        <FeatureRow Label="Security Header Review"        Enabled="@feats.SecurityHeaderReview"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.SecurityHeaderReview = v)" />
-                        <FeatureRow Label="Configuration Exposure Review" Enabled="@feats.ConfigurationExposureReview" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.ConfigurationExposureReview = v)" />
-                    </div>
-                    <div class="fa-features-group">
-                        <div class="fa-features-group-title">Blazor Runtime</div>
-                        <FeatureRow Label="Blazor Architecture Review" Enabled="@feats.BlazorArchitectureReview" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.BlazorArchitectureReview = v)" />
-                    </div>
-                    @{ var enginePolicy = (_isEditMode && _editProfile is not null ? _editProfile : profile).EngineRequirements; }
-                    <div class="fa-features-group" data-testid="fa-review-engines">
-                        <div class="fa-features-group-title">Frontend Quality Review engines</div>
-                        <p class="fa-features-note">Saved per Target Environment. Only enabled engines are preflighted, executed and counted in review coverage; Required/Optional is the release policy of each engine.</p>
-                        <FeatureRow Label="@($"Static Security ({enginePolicy.StaticSecurity})")"        Enabled="@feats.EnableSecurityEngine"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableSecurityEngine = v)" />
-                        <FeatureRow Label="@($"Passive Performance ({enginePolicy.PassivePerformance})")" Enabled="@feats.EnablePerformanceEngine"     IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePerformanceEngine = v)" />
-                        <FeatureRow Label="@($"Browser Runtime ({enginePolicy.BrowserRuntime})")"        Enabled="@feats.EnableBrowserRuntimeEngine"  IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableBrowserRuntimeEngine = v)" />
-                        <FeatureRow Label="@($"Accessibility ({enginePolicy.Accessibility})")"           Enabled="@feats.EnableAccessibilityEngine"   IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableAccessibilityEngine = v)" />
-                        <FeatureRow Label="@($"Lighthouse ({enginePolicy.Lighthouse})")"                 Enabled="@feats.EnableLighthouseEngine"      IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableLighthouseEngine = v)" />
-                        <FeatureRow Label="@($"Passive Security ({enginePolicy.PassiveSecurity})")"      Enabled="@feats.EnablePassiveSecurityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePassiveSecurityEngine = v)" />
-                        <FeatureRow Label="@($"Browser Quality ({enginePolicy.BrowserQuality})")"      Enabled="@feats.EnableBrowserQualityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnableBrowserQualityEngine = v)" />
-                        <FeatureRow Label="@($"BirkNext Performance Quality ({enginePolicy.PerformanceQuality})")" Enabled="@feats.EnablePerformanceQualityEngine" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.EnablePerformanceQualityEngine = v)" />
-                    </div>
-                    <div class="fa-features-group fa-features-group-future">
-                        <div class="fa-features-group-title">Browser <span class="fa-future-badge">Not yet implemented</span></div>
-                        <FeatureRow Label="Authenticated Browser Review"  Enabled="@feats.AuthenticatedBrowserReview"  IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.AuthenticatedBrowserReview = v)" />
-                        <FeatureRow Label="Lighthouse Integration"        Enabled="@feats.LighthouseIntegration"        IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.LighthouseIntegration = v)" />
-                        <FeatureRow Label="Playwright Runtime Inspection" Enabled="@feats.PlaywrightRuntimeInspection" IsLocked="false" IsEditMode="@_isEditMode" OnToggle="@(v => feats.PlaywrightRuntimeInspection = v)" />
-                    </div>
-                </div>
-                @if (!_isEditMode)
-                {
-                    <div class="fa-reset-row">
-                        <SecondaryButton OnClick="RestoreFeatureTogglesAsync" Class="fa-btn-sm">Restore Default Feature Toggles</SecondaryButton>
-                        <SecondaryButton OnClick="EnableCoreOnlyAsync" Class="fa-btn-sm">Enable Core Features</SecondaryButton>
-                        <SecondaryButton OnClick="DisableFutureFeaturesAsync" Class="fa-btn-sm">Disable Future Features</SecondaryButton>
-                    </div>
-                }
+
+                    @* Enabled is configuration; whether the engine can actually run is reported on the review page. *@
+                    <p class="fa-engines-note" data-testid="engines-capability-note">@FrontendReviewEnginePresentation.EnabledVersusAvailableNote</p>
+                    <p class="fa-engines-note" data-testid="engines-policy-note">@FrontendReviewEnginePresentation.RequiredPolicyNote</p>
+                    <p class="fa-engines-note"><a class="fa-engines-link" href="/frontend-quality-review" data-testid="engines-open-review">Open Frontend Quality Review to see live capability status</a></p>
+
+                    @if (!_isEditMode)
+                    {
+                        <div class="fa-reset-row">
+                            <SecondaryButton OnClick="RestoreFeatureTogglesAsync" Class="fa-btn-sm">Restore default engine configuration</SecondaryButton>
+                        </div>
+                    }
+                </section>
             }
 
             @* ── Validation ── *@
@@ -1729,7 +1749,14 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string?                  _selectedProfileId;
     private bool                     _isEditMode;
     private FrontendAnalysisProfile? _editProfile;
+    /// <summary>
+    /// Tab to open initially, supplied by the host from the "tab=" query key (e.g. Frontend Quality Review's
+    /// "Edit engines" deep link). Ignored when it does not name a known tab; user tab clicks always win afterwards.
+    /// </summary>
+    [Parameter] public string? InitialTab { get; set; }
+
     private string                   _activeTab = "general";
+    private string?                  _appliedInitialTab;
 
     private string? _saveSuccess;
     private string? _saveError;
@@ -1782,7 +1809,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         ("performance", "Performance Thresholds"),
         ("cwv",         "Core Web Vitals"),
         ("security",    "Security Expectations"),
-        ("features",    "Feature Toggles"),
+        ("features",    "Frontend Review Engines"),
         ("validation",    "Validation"),
         ("integrations",  "Integrations"),
     ];
@@ -1872,6 +1899,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         // Restore the persisted public detection snapshot so a restart shows "Previously detected" (revalidated to Current/Stale)
         // instead of forcing a fresh Detect. No credential is restored — only safe discovery evidence.
         RestoreDetectionSnapshot();
+    }
+
+    /// <summary>Applies a deep-linked tab once per distinct value, so navigating here again re-selects it.</summary>
+    protected override void OnParametersSet()
+    {
+        if (InitialTab is { Length: > 0 } requested && _appliedInitialTab != requested)
+        {
+            _appliedInitialTab = requested;
+            if (Tabs.Any(t => t.Key == requested)) _activeTab = requested;
+        }
     }
 
     // ── Profile selection ────────────────────────────────────────────────────
@@ -2780,23 +2817,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         await FaSettings.SaveAsync(JS);
     }
 
-    private async Task EnableCoreOnlyAsync()
-    {
-        if (SelectedProfile is null) return;
-        var f = SelectedProfile.Features;
-        f.AssetDiscovery = f.StartupAnalysis = f.RestAnalysis = f.GraphQlAnalysis =
-        f.CachingReview = f.CompressionReview = f.BlazorArchitectureReview =
-        f.SecurityHeaderReview = f.ConfigurationExposureReview = f.PerformanceReadiness = true;
-        await FaSettings.SaveAsync(JS);
-    }
-
-    private async Task DisableFutureFeaturesAsync()
-    {
-        if (SelectedProfile is null) return;
-        var f = SelectedProfile.Features;
-        f.AuthenticatedBrowserReview = f.LighthouseIntegration = f.PlaywrightRuntimeInspection = false;
-        await FaSettings.SaveAsync(JS);
-    }
+    // "Enable Core Features" and "Disable Future Features" were removed with the thirteen legacy flags: both mutated
+    // only those flags, so neither changed any behaviour. Restoring the default engine configuration remains.
 
     // ── Threshold presets (edit mode) ────────────────────────────────────────
 

@@ -793,7 +793,7 @@ else if (_settings is not null)
                     <p class="settings-card-note">
                         Configure the environments used for reviews. The active environment is used when a review runs. Select an environment below to inspect or edit it.
                     </p>
-                    <FrontendAnalysisSettings />
+                    <FrontendAnalysisSettings InitialTab="@_initialTab" />
                 </div>
             }
 
@@ -1418,6 +1418,8 @@ else if (_settings is not null)
     // â”€â”€ Section navigation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     private string _activeSection = "general";
+    /// <summary>Inner tab requested by the "tab=" query key, handed to the hosted settings component.</summary>
+    private string? _initialTab;
     private string _navSearch     = "";
     private IDisposable? _locationChangedSubscription;
     private string _lastParsedUrl = "";
@@ -1980,10 +1982,13 @@ else if (_settings is not null)
                     {
                         var value = part.Substring("section=".Length);
                         if (!string.IsNullOrWhiteSpace(value))
-                        {
                             _activeSection = Uri.UnescapeDataString(value);
-                            return;
-                        }
+                    }
+                    // Optional inner tab of the hosted section, e.g. "…&tab=features" for Frontend Review Engines.
+                    else if (part.StartsWith("tab="))
+                    {
+                        var value = part.Substring("tab=".Length);
+                        _initialTab = string.IsNullOrWhiteSpace(value) ? null : Uri.UnescapeDataString(value);
                     }
                 }
             }

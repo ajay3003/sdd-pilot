@@ -142,7 +142,7 @@ public sealed class FrontendAnalysisContextFactoryTests
         var profile = new FrontendAnalysisProfile
         {
             Id = "p1", Name = "P", EnvironmentType = FrontendEnvironmentType.QA,
-            Features = new FrontendAnalysisFeatureToggles { AssetDiscovery = false },
+            Features = new FrontendAnalysisFeatureToggles { EnableSecurityEngine = false },
             Performance = new(), CoreWebVitals = new(), Security = new()
         };
 
@@ -152,7 +152,7 @@ public sealed class FrontendAnalysisContextFactoryTests
 
         var ctx = await factory.GetActiveContextAsync();
 
-        ctx.FeatureToggles.AssetDiscovery.Should().BeFalse();
+        ctx.FeatureToggles.EnableSecurityEngine.Should().BeFalse();
     }
 
     // ── Missing active profile: fallback ─────────────────────────────────────
@@ -601,8 +601,8 @@ public sealed class FrontendAnalysisContextFactoryTests
             Id = "p1", Name = "P", EnvironmentType = FrontendEnvironmentType.QA,
             Features = new FrontendAnalysisFeatureToggles
             {
-                SecurityHeaderReview = false,
-                ConfigurationExposureReview = false
+                EnableSecurityEngine = false,
+                EnablePassiveSecurityEngine = false
             },
             Performance = new(), CoreWebVitals = new(), Security = new()
         };
@@ -613,8 +613,8 @@ public sealed class FrontendAnalysisContextFactoryTests
 
         var ctx = await factory.GetActiveContextAsync();
 
-        ctx.FeatureToggles.SecurityHeaderReview.Should().BeFalse();
-        ctx.FeatureToggles.ConfigurationExposureReview.Should().BeFalse();
+        ctx.FeatureToggles.EnableSecurityEngine.Should().BeFalse();
+        ctx.FeatureToggles.EnablePassiveSecurityEngine.Should().BeFalse();
     }
 
     [Fact]
@@ -625,8 +625,8 @@ public sealed class FrontendAnalysisContextFactoryTests
             Id = "p1", Name = "P", EnvironmentType = FrontendEnvironmentType.QA,
             Features = new FrontendAnalysisFeatureToggles
             {
-                StartupAnalysis = false,
-                CachingReview   = false
+                EnablePerformanceEngine = false,
+                EnableLighthouseEngine  = false
             },
             Performance = new(), CoreWebVitals = new(), Security = new()
         };
@@ -637,7 +637,7 @@ public sealed class FrontendAnalysisContextFactoryTests
 
         var ctx = await factory.GetActiveContextAsync();
 
-        ctx.FeatureToggles.StartupAnalysis.Should().BeFalse();
-        ctx.FeatureToggles.CachingReview.Should().BeFalse();
+        ctx.FeatureToggles.EnablePerformanceEngine.Should().BeFalse();
+        ctx.FeatureToggles.EnableLighthouseEngine.Should().BeFalse();
     }
 }

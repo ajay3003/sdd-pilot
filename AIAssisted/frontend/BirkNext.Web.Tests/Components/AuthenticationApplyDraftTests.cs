@@ -139,7 +139,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         var original = System.Text.Json.JsonSerializer.Serialize(Persisted());
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        foreach (var tab in new[] { "Target Application", "Authentication", "Feature Toggles", "Core Web Vitals", "Performance Thresholds", "Security Expectations", "Integrations" })
+        foreach (var tab in new[] { "Target Application", "Authentication", "Frontend Review Engines", "Core Web Vitals", "Performance Thresholds", "Security Expectations", "Integrations" })
         {
             OpenTab(cut, tab);
             // Settings form stays read-only; the managed Edge runtime panel has no editable control either (no runtime trust opt-in).
@@ -502,7 +502,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         OpenTab(cut, "Performance Thresholds");
         cut.Find("input.fa-threshold-input").Change("42");
 
-        OpenTab(cut, "Feature Toggles");
+        OpenTab(cut, "Frontend Review Engines");
         var toggle = cut.FindAll("input[type=checkbox]").First();
         toggle.Change(!toggle.HasAttribute("checked"));
 
@@ -557,7 +557,7 @@ public sealed class TargetDiscoveryFingerprintTests
         var fingerprint = TargetDiscoveryFingerprint.For(profile);
         profile.Notes = "n";
         profile.Performance.MaxRestPayloadBytes += 1;
-        profile.Features.RestAnalysis = !profile.Features.RestAnalysis;
+        profile.Features.EnableLighthouseEngine = !profile.Features.EnableLighthouseEngine;
         profile.RequestTimeoutSeconds++;
         profile.Security.AllowedRestHosts = ["api.example.com"];
         fingerprint.StaleReasonFor(profile).Should().Be(TargetDiscoveryStaleReason.None);

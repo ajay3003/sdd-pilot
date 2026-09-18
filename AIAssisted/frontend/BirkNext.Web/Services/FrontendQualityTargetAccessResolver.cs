@@ -53,6 +53,13 @@ public static class FrontendQualityTargetAccess
 {
     public const string TargetEnvironmentsHref = "/admin/system-settings?section=target-environments";
 
+    /// <summary>
+    /// Deep link to Target Environment → Frontend Review Engines, where engine activation and Required/Optional policy
+    /// are saved. Uses the existing System Settings query convention (<c>?section=</c>) with one extra key, so no second
+    /// routing mechanism is introduced. Frontend Quality Review links here instead of editing engine configuration itself.
+    /// </summary>
+    public const string FrontendReviewEnginesHref = TargetEnvironmentsHref + "&tab=features";
+
     public const string ProxyDomUnavailable = "Authenticated DOM unavailable with Local HTTPS Proxy. The proxy provides an authenticated API context only; browser DOM/runtime checks of the signed-in application need the Managed Edge (CDP) browser context.";
     public const string ManualOnlyReason = "Current authentication method supports manual verification only. No automated authenticated engine access exists for this environment.";
     public const string EnterpriseBlockedReason = "Managed Edge (CDP) attach to the target tab is blocked by enterprise browser protection. BirkNext does not bypass browser protection.";
