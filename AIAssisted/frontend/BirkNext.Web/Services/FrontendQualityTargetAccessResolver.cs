@@ -60,6 +60,13 @@ public static class FrontendQualityTargetAccess
     /// </summary>
     public const string FrontendReviewEnginesHref = TargetEnvironmentsHref + "&tab=features";
 
+    /// <summary>
+    /// Deep link to System Settings → Frontend Engine Capabilities: what this installation can run (deployment policy,
+    /// deployment setting, runtime readiness, effective availability). The section key stays "frontend-quality-engines"
+    /// because it is part of existing URLs and the backend route; only the user-facing label changed.
+    /// </summary>
+    public const string FrontendEngineCapabilitiesHref = "/admin/system-settings?section=frontend-quality-engines";
+
     public const string ProxyDomUnavailable = "Authenticated DOM unavailable with Local HTTPS Proxy. The proxy provides an authenticated API context only; browser DOM/runtime checks of the signed-in application need the Managed Edge (CDP) browser context.";
     public const string ManualOnlyReason = "Current authentication method supports manual verification only. No automated authenticated engine access exists for this environment.";
     public const string EnterpriseBlockedReason = "Managed Edge (CDP) attach to the target tab is blocked by enterprise browser protection. BirkNext does not bypass browser protection.";

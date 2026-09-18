@@ -1176,7 +1176,12 @@
                     @* Enabled is configuration; whether the engine can actually run is reported on the review page. *@
                     <p class="fa-engines-note" data-testid="engines-capability-note">@FrontendReviewEnginePresentation.EnabledVersusAvailableNote</p>
                     <p class="fa-engines-note" data-testid="engines-policy-note">@FrontendReviewEnginePresentation.RequiredPolicyNote</p>
-                    <p class="fa-engines-note"><a class="fa-engines-link" href="/frontend-quality-review" data-testid="engines-open-review">Open Frontend Quality Review to see live capability status</a></p>
+                    @* Two-way relationship: this tab is what the profile wants; the other two say what can run and what ran. *@
+                    <p class="fa-engines-note">
+                        <a class="fa-engines-link" href="/frontend-quality-review" data-testid="engines-open-review">Open Frontend Quality Review to see live capability status</a>
+                        <span class="fa-engines-sep"> · </span>
+                        <a class="fa-engines-link" href="@FrontendQualityTargetAccess.FrontendEngineCapabilitiesHref" data-testid="engines-open-capabilities">View system capability details</a>
+                    </p>
 
                     @if (!_isEditMode)
                     {

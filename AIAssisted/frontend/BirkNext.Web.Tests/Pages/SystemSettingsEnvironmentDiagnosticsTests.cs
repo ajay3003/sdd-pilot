@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BirkNext.Web.Tests.Pages;
 
-public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
+public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
 {
     private readonly AdminApiHandler _handler = new();
 
@@ -191,7 +191,7 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     [InlineData("Feature Visibility", true)]
     [InlineData("Platform", false)]
     [InlineData("Target Environments", false)]
-    [InlineData("Frontend Quality Engines", true)]
+    [InlineData("Frontend Engine Capabilities", true)]
     [InlineData("AI", false)]
     [InlineData("Environment Diagnostics", false)]
     [InlineData("System Diagnostics", false)]
@@ -211,7 +211,7 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
 
     [Theory]
     [InlineData("Feature Visibility", 0)]
-    [InlineData("Frontend Quality Engines", 4)]
+    [InlineData("Frontend Engine Capabilities", 4)]
     public void ParentEdit_StaysOnPaneAndActivatesExpectedControls(string pane, int fqeToggleCount)
     {
         var cut = Render<SystemSettings>();
@@ -294,8 +294,8 @@ public class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     private IRenderedComponent<SystemSettings> EnterFqeEditMode()
     {
         var cut = Render<SystemSettings>();
-        cut.WaitForAssertion(() => FindButton(cut, "Frontend Quality Engines").Should().NotBeNull());
-        FindButton(cut, "Frontend Quality Engines")!.Click();
+        cut.WaitForAssertion(() => FindButton(cut, "Frontend Engine Capabilities").Should().NotBeNull());
+        FindButton(cut, "Frontend Engine Capabilities")!.Click();
         FindButton(cut, "Edit Settings")!.Click();
         cut.FindAll(".frontend-quality-engine-settings input[type=checkbox]").Should().HaveCount(4);
         return cut;

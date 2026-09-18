@@ -27,13 +27,15 @@
                         <div class="dev-diag-section-title">@engine.DisplayLabel</div>
                         <table class="settings-table">
                             <tbody>
-                                <tr>
+                                <tr data-testid="fqe-installation-policy">
                                     <td>Installation policy</td>
                                     <td><span class="settings-badge @(status.Layer1Allowed ? "settings-badge-local" : "settings-badge-shared")">@(status.Layer1Allowed ? "Allowed" : "Not allowed")</span></td>
                                 </tr>
+                                @* Installation-wide activation (SaveSettingsRequest.FrontendQualityEngines), NOT the
+                                   per-Target-Environment "Enabled" state under Frontend Review Engines. *@
                                 <tr>
-                                    <td>System setting</td>
-                                    <td>
+                                    <td>Deployment setting</td>
+                                    <td data-testid="fqe-deployment-setting">
                                         <FeatureRow Label=""
                                                     Enabled="@(IsEditMode ? (EditedPreferences?.TryGetValue(engine.PreferenceKey, out var pref) == true ? pref : status.Layer2Enabled) : status.Layer2Enabled)"
                                                     IsEditMode="@IsEditMode"
@@ -41,7 +43,7 @@
                                                     OnToggle="@((bool value) => HandleToggle(engine.PreferenceKey, value))" />
                                     </td>
                                 </tr>
-                                <tr>
+                                <tr data-testid="fqe-runtime-readiness">
                                     <td>Runtime readiness</td>
                                     <td>
                                         <span class="settings-badge @(status.Layer3Readiness?.IsAvailable == true ? "settings-badge-local" : "settings-badge-shared")">@(status.Layer3Readiness?.IsAvailable == true ? "Ready" : "Unavailable")</span>
@@ -51,11 +53,11 @@
                                         }
                                     </td>
                                 </tr>
-                                <tr>
+                                <tr data-testid="fqe-authenticated-review">
                                     <td>Authenticated review</td>
                                     <td><span class="settings-badge @(authStatus?.AuthModeSupported == true ? "settings-badge-local" : "settings-badge-shared")">@(authStatus?.AuthModeSupported == true ? "Supported" : "Not supported")</span></td>
                                 </tr>
-                                <tr>
+                                <tr data-testid="fqe-effective-availability">
                                     <td>Effective availability</td>
                                     <td><span class="settings-badge @(status.Available ? "settings-badge-local" : "settings-badge-shared")">@(status.Available ? "Available" : "Unavailable")</span></td>
                                 </tr>

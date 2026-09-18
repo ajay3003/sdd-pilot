@@ -1133,3 +1133,34 @@
     padding-top: 1rem;
     border-top: 1px solid var(--clr-border-subtle);
 }
+
+/* ── Frontend Engine Capabilities: the layer legend that separates installation, deployment,
+      profile activation and runtime readiness. Administrative and compact, not a dashboard. ── */
+
+.settings-layers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+    gap: .3rem 1.25rem;
+    margin: .5rem 0 .75rem;
+    padding: .625rem .75rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+
+.settings-layers > div { display: flex; flex-direction: column; min-width: 0; }
+
+.settings-layers dt {
+    font-size: .68rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--clr-text-muted);
+}
+
+.settings-layers dd {
+    margin: 0;
+    font-size: .8rem;
+    color: var(--clr-text-body);
+    overflow-wrap: anywhere;
+}

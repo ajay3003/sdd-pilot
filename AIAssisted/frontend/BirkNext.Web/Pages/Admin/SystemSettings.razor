@@ -143,7 +143,7 @@ else if (_settings is not null)
             <div class="ss-nav-group">
                 <div class="ss-nav-group-label">Analysis</div>
                 @NavItem("target-environments", "Target Environments")
-                @NavItem("frontend-quality-engines", "Frontend Quality Engines")
+                @NavItem("frontend-quality-engines", "Frontend Engine Capabilities")
                 @NavItem("ai",                 "AI")
             </div>
             <div class="ss-nav-group">
@@ -647,10 +647,23 @@ else if (_settings is not null)
             @* â•â• Platform â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
             @if (_activeSection == "frontend-quality-engines")
             {
+                @* Admin/diagnostic surface: what this INSTALLATION can run. Per-Target-Environment activation is a
+                   different concern and is configured under Frontend Review Engines, never here. *@
                 <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Frontend Quality Engines</div>
+                    <div class="settings-card-title">Frontend Engine Capabilities</div>
+                    <p class="settings-card-note" data-testid="fec-intro">
+                        Shows what this BirkNext installation can run. Installation policy and runtime readiness determine whether an engine
+                        is actually available. Per-Target-Environment engine activation is configured separately under Frontend Review Engines.
+                    </p>
+                    <dl class="settings-layers" data-testid="fec-layers">
+                        <div><dt>Installation policy</dt><dd>Whether this deployment permits the engine at all.</dd></div>
+                        <div><dt>Deployment setting</dt><dd>Whether the engine is switched on for this installation. Editable here.</dd></div>
+                        <div><dt>Profile activation</dt><dd>Whether a Target Environment has enabled the engine. Configured under Frontend Review Engines.</dd></div>
+                        <div><dt>Runtime readiness</dt><dd>Whether the engine's dependencies are available right now.</dd></div>
+                        <div><dt>Effective availability</dt><dd>The combination of the layers above.</dd></div>
+                    </dl>
                     <p class="settings-card-note">
-                        Manage which frontend quality engines are available for reviews. Layer 1 (Installation) shows deployment policy. Layer 2 (Enabled) is editable. Layer 3 (Runtime) shows runtime readiness. Effective availability combines all layers.
+                        <a href="@BirkNext.Web.Services.FrontendQualityTargetAccess.FrontendReviewEnginesHref" data-testid="fec-open-review-engines">Edit Target Environment engines</a>
                     </p>
 
                     @if (_editableSettings?.FrontendQualityEngines is not null)
@@ -667,7 +680,7 @@ else if (_settings is not null)
                     }
                     else
                     {
-                        <p class="settings-card-note">Frontend Quality Engines configuration not available.</p>
+                        <p class="settings-card-note">Frontend engine capability information is not available.</p>
                     }
                 </div>
             }
@@ -1396,7 +1409,7 @@ else if (_settings is not null)
     private ConfigurationHealthReport? _configHealthReport;
     private bool _configHealthLoaded;
 
-    // Frontend Quality Engines
+    // Frontend Engine Capabilities (installation-level capability + deployment setting)
     private FrontendQualityEngineStatusReportDto? _fqeStatusReport;
     private FrontendQualityEngineStatusReportDto? _fqeAuthStatusReport;
     private bool _fqeStatusLoading;

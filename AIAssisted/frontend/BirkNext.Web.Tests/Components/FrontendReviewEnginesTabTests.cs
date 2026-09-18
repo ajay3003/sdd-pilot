@@ -218,6 +218,22 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
         persisted.EnableBrowserQualityEngine.Should().BeFalse("opt-in engines return to opt-in");
     }
 
+    // ── 11. Two-way relationship with the system capability surface ─────────
+
+    [Fact]
+    public void EnginesTabLinksToBothTheReviewAndTheSystemCapabilityDetails()
+    {
+        var cut = Open();
+
+        var review = cut.Find("[data-testid=engines-open-review]");
+        review.GetAttribute("href").Should().Be("/frontend-quality-review");
+
+        var capabilities = cut.Find("[data-testid=engines-open-capabilities]");
+        capabilities.TagName.Should().Be("A");
+        capabilities.TextContent.Trim().Should().Be("View system capability details");
+        capabilities.GetAttribute("href").Should().Be("/admin/system-settings?section=frontend-quality-engines");
+    }
+
     // ── Editing writes to the draft, not straight to storage ─────────────────
 
     [Fact]
