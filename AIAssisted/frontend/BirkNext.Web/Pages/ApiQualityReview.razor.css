@@ -125,8 +125,6 @@
 
 /* ── Setup layout ── */
 .aqr-setup { display: grid; gap: 1.25rem; }
-.aqr-setup-top { display: grid; grid-template-columns: minmax(0, 3fr) minmax(20rem, 2fr); gap: 1rem; align-items: start; }
-.aqr-setup-bottom { display: grid; grid-template-columns: minmax(0, 1fr) minmax(22rem, 1fr); gap: 1rem; align-items: start; }
 
 /* Access card */
 .aqr-access-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; }
@@ -292,7 +290,7 @@
 
 /* ── Responsive ── */
 @media (max-width: 1100px) {
-    .aqr-setup-top, .aqr-setup-bottom { grid-template-columns: 1fr; }
+    .aqr-decide-cards { grid-template-columns: 1fr; }
     .aqr-kpi-findings { grid-column: span 1; }
 }
 
@@ -304,4 +302,81 @@
 
 @media print {
     .aqr-tabs, .aqr-run-row, .disclosure-toggle { display: none !important; }
+}
+
+/* ── Decision area: target · scope · access · readiness, then the run action ──────────────────────
+   Four equal neutral cards, not dashboard tiles. minmax(0, 1fr) lets a long URL wrap in its column. */
+.aqr-decide { display: grid; gap: 0.85rem; }
+
+.aqr-decide-cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.85rem;
+    align-items: stretch;
+}
+
+.aqr-decide-cards > * { min-width: 0; }
+
+.aqr-run-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; }
+
+.aqr-scope-headline { margin: 0; font-weight: 700; color: var(--clr-text-heading); }
+
+/* ── What will be reviewed ───────────────────────────────────────────────────────────────────── */
+.aqr-domain-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.aqr-domain { height: 100%; }
+.aqr-domain-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.3rem 0.6rem; }
+.aqr-domain-head h3 { margin: 0; font-size: 0.98rem; }
+.aqr-domain-purpose { margin: 0.4rem 0 0; font-size: 0.88rem; color: var(--clr-text-body); }
+.aqr-domain-limitation { margin: 0.35rem 0 0; font-size: 0.84rem; color: var(--clr-text-muted); }
+
+/* ── Review details: one collapsed row per concept, before and after a run ───────────────────── */
+.aqr-details { display: grid; gap: 0.5rem; }
+
+::deep .aqr-detail-disclosure {
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface-white);
+    padding: 0.15rem 0.75rem;
+}
+
+/* The row IS the card, so the toggle fills it and its hint wraps rather than clipping. */
+::deep .aqr-detail-disclosure > .disclosure-toggle {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+    text-align: left;
+    padding: 0.6rem 0.25rem;
+    border-color: transparent;
+    background: transparent;
+}
+
+::deep .aqr-detail-disclosure > .disclosure-toggle .disclosure-text { color: var(--clr-text-heading); }
+::deep .aqr-detail-disclosure > .disclosure-body { margin: 0 0.25rem 0.75rem; }
+
+/* ── Post-run result ─────────────────────────────────────────────────────────────────────────── */
+.aqr-result-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.5rem 1rem; }
+.aqr-result-head h2 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+.aqr-result-state { margin: 0 0 0.35rem; }
+.aqr-result-summary-text { margin: 0; max-width: 62ch; }
+.aqr-result-meta { margin-top: 0.9rem; }
+.aqr-key-findings-card { margin-top: 0.85rem; }
+.aqr-key-findings-card .aqr-sev-strip { margin: 0.25rem 0 0.75rem; }
+
+@media (max-width: 1100px) {
+    .aqr-decide-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .aqr-domain-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+    .aqr-domain-grid { grid-template-columns: 1fr; }
+    .aqr-result-head { flex-direction: column; }
+    .aqr-run-row { align-items: stretch; }
 }

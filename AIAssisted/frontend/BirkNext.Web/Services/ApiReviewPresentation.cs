@@ -324,4 +324,127 @@ public static class ApiReviewPresentation
 
     public static string ServiceNameOf(ApiReviewReport report, string targetId) =>
         report.Targets.FirstOrDefault(t => t.Target.TargetId == targetId) is { } t ? DisplayName(t.Target) : "";
+
+    // ── Review scope ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Counted from the selected targets themselves, so the summary cannot drift from the list it summarises.</summary>
+    public static ApiReviewScopeSummary Scope(IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected)
+    {
+        var chosen = targets.Where(t => selected.Contains(t.TargetId)).ToList();
+        return new ApiReviewScopeSummary(
+            Selected: chosen.Count,
+            Rest: chosen.Count(t => t.ApiType == ApiReviewTargetType.Rest),
+            GraphQl: chosen.Count(t => t.ApiType == ApiReviewTargetType.GraphQl),
+            AuthRequired: chosen.Count(t => t.AuthRequired),
+            Operations: chosen.Sum(t => TargetCard(t).OperationCount));
+    }
+
+    // ── What will be reviewed ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The review domains, in review-scope words. Two rules this exists to keep:
+    ///
+    /// <list type="bullet">
+    /// <item>A missing contract limits the CONTRACTS domain. REST is still reviewed structurally against live responses,
+    /// so "No contract configured" never removes REST from the review.</item>
+    /// <item>Refused introspection limits GraphQL's contract evidence. Observed operations are still reviewed, so it never
+    /// removes GraphQL from the review either.</item>
+    /// </list>
+    ///
+    /// Access state ("Unavailable", "Not connected") is never a domain state; it appears at most as a limitation.
+    /// </summary>
+    public static IReadOnlyList<ApiReviewDomainCard> Domains(
+        ApiReviewScopeSummary scope,
+        ApiReviewContractPanelModel contracts,
+        ApiReviewAccessAvailability availability)
+    {
+        var nothingSelected = scope.Selected == 0;
+        var authLimited = scope.AuthRequired > 0 && availability != ApiReviewAccessAvailability.Available;
+        var authLimitation = authLimited
+            ? $"{scope.AuthRequired} selected target{(scope.AuthRequired == 1 ? "" : "s")} require authenticated access, which is unavailable; those endpoints are reported as authentication required."
+            : null;
+
+        ApiReviewDomainState Scoped(bool present, bool limited) =>
+            nothingSelected || !present ? ApiReviewDomainState.NotIncluded
+            : limited ? ApiReviewDomainState.Limited
+            : ApiReviewDomainState.Included;
+
+        var restContract = contracts.Rows.FirstOrDefault(r => r.Label == "REST")?.State;
+        var gqlContract = contracts.Rows.FirstOrDefault(r => r.Label == "GraphQL")?.State;
+        var contractLimits = new[]
+        {
+            restContract == ApiReviewContractState.NotConfigured ? "No REST contract is configured, so REST is reviewed against live responses rather than a published contract." : null,
+            gqlContract == ApiReviewContractState.IntrospectionUnavailable ? "GraphQL introspection is unavailable, so schema comparison is limited to observed operations." : null,
+        }.Where(l => l is not null).ToList();
+
+        return
+        [
+            new("security", "Security", "Passive, read-only security review of responses, headers and exposure.",
+                Scoped(true, authLimited), authLimitation),
+
+            new("contracts", "Contracts", "Published contracts and schemas, compared against previous baselines.",
+                nothingSelected ? ApiReviewDomainState.NotIncluded
+                    : contractLimits.Count > 0 ? ApiReviewDomainState.Limited
+                    : ApiReviewDomainState.Included,
+                contractLimits.Count > 0 ? string.Join(" ", contractLimits) : null),
+
+            new("errors", "Error handling", "How the API answers safe, read-only requests it cannot satisfy.",
+                Scoped(true, false),
+                nothingSelected ? null : "Robustness is judged from safe requests only; no write or destructive request is ever sent."),
+
+            new("performance", "Performance", "Response timing observed by the review's own read-only requests.",
+                Scoped(true, false),
+                nothingSelected ? null : "Timing is measured from the backend gateway, not from an end user."),
+
+            new("rest", "REST", "Routes, status handling and structure of the selected REST APIs.",
+                Scoped(scope.Rest > 0, restContract == ApiReviewContractState.NotConfigured),
+                scope.Rest > 0 && restContract == ApiReviewContractState.NotConfigured
+                    ? "Reviewed structurally; no published contract is available to compare against."
+                    : null),
+
+            new("graphql", "GraphQL", "Operations, schema evidence and error behaviour of the selected GraphQL APIs.",
+                Scoped(scope.GraphQl > 0, gqlContract == ApiReviewContractState.IntrospectionUnavailable),
+                scope.GraphQl > 0 && gqlContract == ApiReviewContractState.IntrospectionUnavailable
+                    ? "Observed operations are reviewed; the schema itself could not be retrieved."
+                    : null),
+        ];
+    }
+
+    // ── Result ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// How the completed review ended, derived only from what the report records. Execution outranks quality: a review
+    /// where nothing could be reached says so rather than reporting an encouraging absence of findings.
+    /// </summary>
+    public static ApiReviewResultView Result(ApiReviewReport report)
+    {
+        var summary = Summary(report);
+        var statuses = report.Targets.Select(ApiReviewStatusLabels.Of).ToList();
+        var assessed = statuses.Count(s => s is ApiReviewTargetPresentationStatus.Assessed or ApiReviewTargetPresentationStatus.PartiallyAssessed);
+        var blocked = statuses.Count - assessed;
+
+        var state =
+            report.Targets.Count == 0 || assessed == 0 ? ApiReviewResultState.FailedToRun
+            : blocked > 0 ? ApiReviewResultState.PartialCoverage
+            : statuses.Any(s => s == ApiReviewTargetPresentationStatus.PartiallyAssessed) ? ApiReviewResultState.CompletedWithLimitations
+            : report.ManualReviewItems.Count > 0 ? ApiReviewResultState.CompletedWithManualReview
+            : ApiReviewResultState.Completed;
+
+        var findings = report.Findings.Count;
+        var services = $"{assessed} of {report.Targets.Count} selected service{(report.Targets.Count == 1 ? "" : "s")}";
+        var text = state switch
+        {
+            ApiReviewResultState.FailedToRun =>
+                "No selected API target could be reviewed, so nothing can be concluded about them.",
+            ApiReviewResultState.PartialCoverage =>
+                $"{findings} finding{(findings == 1 ? "" : "s")} across {services}. {blocked} could not be reached and {(blocked == 1 ? "is" : "are")} reported as such, never as a pass.",
+            ApiReviewResultState.CompletedWithLimitations =>
+                $"{findings} finding{(findings == 1 ? "" : "s")} across {services}; some were reviewed under reduced access.",
+            ApiReviewResultState.CompletedWithManualReview =>
+                $"{findings} finding{(findings == 1 ? "" : "s")} across {services}. Parts of this API can only be reviewed by a person.",
+            _ => $"{findings} finding{(findings == 1 ? "" : "s")} across {services}.",
+        };
+
+        return new ApiReviewResultView(state, text, findings, report.ManualReviewItems.Count, assessed, blocked, summary);
+    }
 }

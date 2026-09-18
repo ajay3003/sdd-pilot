@@ -1,0 +1,80 @@
+@using BirkNext.ApiReview
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* The API targets that make up the review scope, grouped by protocol, each selectable. Collapsed by its host: this is the
+   detail behind the scope summary, not something the user must read before deciding to run. *@
+<div class="aqr-targets" data-testid="aqr-targets">
+    @if (Targets.Count == 0)
+    {
+        <p class="aqr-empty" data-testid="aqr-no-targets">@ApiReviewRunEligibility.NoTargetsReason Run the Local HTTPS proxy and use the application (Endpoint Discovery), or configure a REST base URL, GraphQL endpoint or OpenAPI URL on the Target Environment.</p>
+    }
+    else
+    {
+        @foreach (var type in new[] { ApiReviewTargetType.Rest, ApiReviewTargetType.GraphQl })
+        {
+            var cards = ApiReviewPresentation.TargetCards(Targets, type);
+            if (cards.Count == 0) continue;
+            <div class="aqr-target-group" data-testid="aqr-target-group" data-type="@type">
+                <h4 class="aqr-group-title" id="@($"aqr-group-{type}")">@(type == ApiReviewTargetType.Rest ? "REST APIs" : "GraphQL APIs") (@cards.Count)</h4>
+                <ul class="aqr-target-list" aria-labelledby="@($"aqr-group-{type}")">
+                    @foreach (var card in cards)
+                    {
+                        var t = card.Target;
+                        var checkboxId = $"aqr-target-{t.TargetId}";
+                        <li class="aqr-target @(Selected.Contains(t.TargetId) ? "aqr-target-selected" : "")" data-testid="aqr-target" data-target-id="@t.TargetId" data-type="@type" data-auth="@t.AuthRequired.ToString().ToLowerInvariant()">
+                            <div class="aqr-target-main">
+                                <input type="checkbox" id="@checkboxId" checked="@Selected.Contains(t.TargetId)"
+                                       @onchange="e => Toggle.InvokeAsync((t.TargetId, (bool)e.Value!))"
+                                       data-testid="aqr-target-checkbox" aria-label="@($"Include {card.DisplayName} in the review")" />
+                                <div class="aqr-target-text">
+                                    <label for="@checkboxId" class="aqr-target-name" data-testid="aqr-target-name">@card.DisplayName</label>
+                                    <span class="aqr-mono aqr-target-path" title="@t.Url" data-testid="aqr-target-path">@card.PathLabel</span>
+                                </div>
+                            </div>
+                            <ul class="aqr-target-meta" aria-label="Target details">
+                                <li><span class="aqr-meta-label">Source</span> <span class="aqr-pill aqr-pill-muted">@card.SourceLabel</span></li>
+                                <li><span class="aqr-meta-label">Access</span> <span class="aqr-pill @(t.AuthRequired ? "aqr-pill-attention" : "aqr-pill-ready")" data-testid="aqr-target-access">@card.AccessLabel</span></li>
+                                <li><span class="aqr-meta-label">Operations</span> <span class="aqr-pill aqr-pill-muted" data-testid="aqr-target-operations">@card.OperationCount@(card.WriteCount > 0 ? $" · {card.WriteCount} write (not executed)" : "")</span></li>
+                                @if (card.HasContract) { <li><span class="aqr-meta-label">Contract</span> <span class="aqr-pill aqr-pill-ready">OpenAPI</span></li> }
+                                @if (card.SchemaLabel is not null) { <li><span class="aqr-meta-label">Schema</span> <span class="aqr-pill aqr-pill-muted" data-testid="aqr-target-schema">@card.SchemaLabel</span></li> }
+                                @if (card.ConfidenceLabel != "Verified") { <li><span class="aqr-meta-label">Confidence</span> <span class="aqr-pill aqr-pill-attention">@card.ConfidenceLabel</span></li> }
+                            </ul>
+                            @if (card.Operations.Count > 0)
+                            {
+                                <ReviewDisclosure Text="View operations" CollapseText="Hide operations" Hint="@($"{card.OperationCount}")" TestId="@($"aqr-ops-{t.TargetId}")" Class="disclosure-inline disclosure-small">
+                                    <p class="aqr-muted aqr-target-fullurl"><span class="aqr-meta-label">Endpoint</span> <span class="aqr-mono">@t.Url</span></p>
+                                    <div class="aqr-tablewrap">
+                                        <table class="aqr-table aqr-ops-table" data-testid="aqr-ops-table">
+                                            <thead><tr><th scope="col">@(type == ApiReviewTargetType.Rest ? "Method" : "Type")</th><th scope="col">@(type == ApiReviewTargetType.Rest ? "Route" : "Operation")</th><th scope="col">Access</th><th scope="col">Source</th><th scope="col">Automated review</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var o in card.Operations.Take(50))
+                                                {
+                                                    <tr data-testid="aqr-op-row">
+                                                        <td>@o.Primary</td>
+                                                        <td class="aqr-mono">@o.Secondary</td>
+                                                        <td>@o.Access</td>
+                                                        <td>@o.Source</td>
+                                                        <td>@(o.IsSafe ? "Read-only request" : "Not executed · manual review")</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    @if (card.Operations.Count > 50) { <p class="aqr-muted">Showing the first 50 of @card.Operations.Count operations.</p> }
+                                </ReviewDisclosure>
+                            }
+                        </li>
+                    }
+                </ul>
+            </div>
+        }
+    }
+    <p class="aqr-targets-source"><a class="aqr-link" href="@ApiReviewPresentation.TargetEnvironmentsHref" data-testid="aqr-targets-source-link">Endpoint Discovery / configuration</a></p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ApiReviewTarget> Targets { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyCollection<string> Selected { get; set; } = [];
+    [Parameter] public EventCallback<(string TargetId, bool Include)> Toggle { get; set; }
+}

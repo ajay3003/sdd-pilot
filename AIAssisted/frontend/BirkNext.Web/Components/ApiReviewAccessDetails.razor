@@ -1,0 +1,28 @@
+@using BirkNext.Web.Models
+
+@* The exact authenticated-access state and the steps that would make it available. Collapsed by its host: the primary
+   surface states availability in one line, and only someone acting on it needs the procedure. *@
+<div class="aqr-access-details" data-testid="aqr-access-details-body">
+    @if (Access.Steps.Count > 0)
+    {
+        <div class="aqr-access-steps @(Access.AuthenticationNeeded ? "aqr-access-steps-needed" : "")" data-testid="@(Access.AuthenticationNeeded ? "aqr-auth-missing" : "aqr-auth-steps")">
+            <p class="aqr-access-steps-title">To include authenticated API requests:</p>
+            <ol>
+                @foreach (var step in Access.Steps)
+                {
+                    <li>@step</li>
+                }
+            </ol>
+        </div>
+    }
+    <dl class="aqr-dl aqr-dl-technical">
+        @foreach (var field in Access.Technical)
+        {
+            <div><dt>@field.Label</dt><dd>@field.Value</dd></div>
+        }
+    </dl>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ApiReviewAccessPanelModel Access { get; set; } = default!;
+}

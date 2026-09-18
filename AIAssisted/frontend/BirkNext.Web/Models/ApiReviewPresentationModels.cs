@@ -259,3 +259,112 @@ public sealed record ApiReviewSummaryModel(
     IReadOnlyList<ApiReviewCoverageRowModel> Coverage,
     IReadOnlyList<ApiReviewSeverityCount> Severities,
     int TargetsBlocked);
+
+/// <summary>
+/// What the next run will cover, counted from the SELECTED targets. Configuration counts only — nothing here says
+/// anything about what a review found, because none has run yet.
+/// </summary>
+public sealed record ApiReviewScopeSummary(int Selected, int Rest, int GraphQl, int AuthRequired, int Operations)
+{
+    public string Headline => Selected == 0
+        ? "No API targets selected"
+        : $"{Selected} API target{(Selected == 1 ? "" : "s")} selected";
+
+    /// <summary>"3 REST · 1 GraphQL" — only the protocols actually present.</summary>
+    public string Protocols => string.Join(" · ", new[]
+    {
+        Rest > 0 ? $"{Rest} REST" : null,
+        GraphQl > 0 ? $"{GraphQl} GraphQL" : null,
+    }.Where(p => p is not null));
+
+    /// <summary>Stated only when it is true; an all-public scope says nothing about authentication.</summary>
+    public string? AuthNote => AuthRequired == 0
+        ? null
+        : $"{AuthRequired} require{(AuthRequired == 1 ? "s" : "")} authentication";
+}
+
+/// <summary>
+/// Scope state of one API review DOMAIN. Deliberately the same vocabulary the Frontend Quality Review uses for its
+/// domains, and deliberately NOT access or configuration vocabulary: "Unavailable", "Not connected" and "Not configured"
+/// describe an access path or a setting, never whether a domain is part of the review.
+/// </summary>
+public enum ApiReviewDomainState { Included, Limited, PartialEvidence, NotIncluded }
+
+public static class ApiReviewDomainStates
+{
+    public static string Label(ApiReviewDomainState state) => state switch
+    {
+        ApiReviewDomainState.Included => "Included",
+        ApiReviewDomainState.Limited => "Limited",
+        ApiReviewDomainState.PartialEvidence => "Partial evidence",
+        _ => "Not included",
+    };
+
+    public static string Tone(ApiReviewDomainState state) => state switch
+    {
+        ApiReviewDomainState.Included => "ready",
+        ApiReviewDomainState.NotIncluded => "muted",
+        _ => "attention",
+    };
+}
+
+public sealed record ApiReviewDomainCard(
+    string Key,
+    string Title,
+    string Purpose,
+    ApiReviewDomainState State,
+    string? Limitation);
+
+/// <summary>
+/// How a completed API review ended. No "Passed", "Secure" or "Compliant": the report carries no such claim, and a
+/// read-only review that found nothing has not established that an API is sound.
+/// </summary>
+public enum ApiReviewResultState
+{
+    /// <summary>Nothing executed: every selected target was blocked or errored.</summary>
+    FailedToRun,
+    /// <summary>Some targets executed and some did not, so coverage is incomplete.</summary>
+    PartialCoverage,
+    /// <summary>Everything executed, and the review leaves obligations only a person can discharge.</summary>
+    CompletedWithManualReview,
+    /// <summary>Everything selected executed, but under reduced access or evidence.</summary>
+    CompletedWithLimitations,
+    Completed,
+}
+
+public static class ApiReviewResultStates
+{
+    public static string Label(ApiReviewResultState state) => state switch
+    {
+        ApiReviewResultState.FailedToRun => "No target could be reviewed",
+        ApiReviewResultState.PartialCoverage => "Partial coverage",
+        ApiReviewResultState.CompletedWithManualReview => "Completed — manual review required",
+        ApiReviewResultState.CompletedWithLimitations => "Completed with limitations",
+        _ => "Completed",
+    };
+
+    public static string Tone(ApiReviewResultState state) => state switch
+    {
+        ApiReviewResultState.Completed => "ready",
+        ApiReviewResultState.FailedToRun => "attention",
+        _ => "warning",
+    };
+
+    /// <summary>The review produced judgeable output. False means this is an execution report, not a quality one.</summary>
+    public static bool IsCompleted(ApiReviewResultState state) => state is not ApiReviewResultState.FailedToRun;
+}
+
+/// <param name="ManualReviewCount">
+/// Review obligations, counted separately from findings and never added to them: they are work outstanding, not defects found.
+/// </param>
+public sealed record ApiReviewResultView(
+    ApiReviewResultState State,
+    string Summary,
+    int FindingCount,
+    int ManualReviewCount,
+    int TargetsAssessed,
+    int TargetsBlocked,
+    ApiReviewSummaryModel Metadata)
+{
+    public string StateLabel => ApiReviewResultStates.Label(State);
+}
