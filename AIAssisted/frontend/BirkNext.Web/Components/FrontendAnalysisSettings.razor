@@ -796,11 +796,15 @@
             @* ── Endpoint Discovery ── *@
             @if (_activeTab == "endpoint")
             {
-                <p class="fa-section-note">
-                    Pages, endpoints and services observed through network traffic, alongside configured backend integrations.
+                @* Neutral information, not a warning: this describes what the tab shows, and nothing is wrong. *@
+                <p class="fa-info-note" data-testid="discovery-introduction">
+                    @EndpointDiscoveryPresentation.Introduction
+                    @EndpointDiscoveryPresentation.IntroductionDetail
                 </p>
 
-                <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus" CompanionStatus="@(_companionRuntime?.For(CurrentProfile?.Id) ?? new())" />
+                <EndpointDiscoveryTab Profile="CurrentProfile" ProxyStatus="ProxyStatus"
+                                      CompanionStatus="@(_companionRuntime?.For(CurrentProfile?.Id) ?? new())"
+                                      OnOpenAuthentication='() => _activeTab = "auth"' />
             }
 
             @* ── Performance Thresholds ── *@

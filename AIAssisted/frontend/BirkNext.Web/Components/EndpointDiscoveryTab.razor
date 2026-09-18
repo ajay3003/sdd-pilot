@@ -8,41 +8,41 @@
 
 <section class="ed" data-testid="endpoint-discovery" aria-label="Endpoint discovery">
 
+    @* Primary state first: is capture running, can it attribute traffic, and what has actually been seen.
+       "Pages observed" is the count of page analyses — they exist because traffic was observed, so naming
+       them "saved analyses" described the storage rather than the evidence. *@
     <div class="ed-overview" data-testid="discovery-overview">
         <div class="ed-ov-item"><span class="ed-ov-label">Target</span><span class="ed-ov-value" data-testid="discovery-target">@(Profile?.Name ?? "—")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Discovery session (live)</span><span class="ed-ov-value @(DiscoveryActive ? "ed-active" : "")" data-testid="discovery-active">@(DiscoveryActive ? "Active" : "Inactive")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Saved application analyses</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Snapshot.Pages.Count</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Authenticated context</span><span class="ed-ov-value" data-testid="discovery-auth-context">@(ProxyStatus.AuthenticatedCredentialAvailable ? "Available" : "Not available")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Network correlation</span><span class="ed-ov-value" data-testid="discovery-network">@(DiscoveryActive ? "Available" : "Unavailable")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Last observed traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@LastTrafficLabel</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Discovery session</span><span class="ed-ov-value @(DiscoveryActive ? "ed-active" : "")" data-testid="discovery-active">@EndpointDiscoveryPresentation.SessionLabel(ProxyStatus)</span></div>
+        <div class="ed-ov-item" title="@EndpointDiscoveryPresentation.CorrelationHint"><span class="ed-ov-label">Network correlation</span><span class="ed-ov-value" data-testid="discovery-network">@EndpointDiscoveryPresentation.CorrelationLabel(ProxyStatus)</span></div>
+        <div class="ed-ov-item">
+            <span class="ed-ov-label">Authenticated context</span>
+            <span class="ed-ov-value" data-testid="discovery-auth-context">@EndpointDiscoveryPresentation.AuthenticatedContextLabel(ProxyStatus)</span>
+            @* Reported here, owned by Authentication; this page never explains the setup. *@
+            @if (!ProxyStatus.AuthenticatedCredentialAvailable && OnOpenAuthentication.HasDelegate)
+            {
+                <button type="button" class="ed-link" data-testid="discovery-open-authentication" @onclick="() => OnOpenAuthentication.InvokeAsync()">Open Authentication</button>
+            }
+        </div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Pages observed</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Snapshot.Pages.Count</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Backend communication observed</span><span class="ed-ov-value" data-testid="discovery-hosts-count">@EndpointDiscoveryPresentation.ObservedHostCount(AllEndpoints)</span></div>
+        <div class="ed-ov-item ed-ov-secondary"><span class="ed-ov-label">Last observed traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@LastTrafficLabel</span></div>
     </div>
 
     <nav class="ed-nav" role="tablist">
         <button type="button" class="ed-navbtn @(_view == "overview" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-overview" @onclick='() => _view = "overview"'>Overview</button>
         <button type="button" class="ed-navbtn @(_view == "pages" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-pages" @onclick='() => _view = "pages"'>Pages (@Snapshot.Pages.Count)</button>
         <button type="button" class="ed-navbtn @(_view == "shared" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-shared" @onclick='() => _view = "shared"'>Shared / background (@Snapshot.Shared.Count)</button>
-        <button type="button" class="ed-navbtn @(_view == "integrations" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-integrations" @onclick='() => _view = "integrations"'>Backend integrations (@BackendIntegrations.Count)</button>
-        @if (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0)
-        {
-            @if (_confirmDeleteAll)
-            {
-                <span class="ed-confirm">Delete all browser discovery? Configured integrations are kept.
-                    <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-all-confirm" @onclick="DeleteAll">Delete all</button>
-                    <button type="button" class="btn-secondary fa-btn-sm" @onclick="() => _confirmDeleteAll = false">Cancel</button>
-                </span>
-            }
-            else
-            {
-                <button type="button" class="ed-danger-link" data-testid="discovery-delete-all" @onclick="() => _confirmDeleteAll = true">Delete all analyses</button>
-            }
-        }
+        @* Named for what it holds: configured values the proxy cannot observe, never observed traffic. *@
+        <button type="button" class="ed-navbtn @(_view == "integrations" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-integrations" @onclick='() => _view = "integrations"'>Configured backend integrations (@BackendIntegrations.Count)</button>
     </nav>
 
     @if (_view == "overview")
     {
         <div class="ed-panel">
             <h4>What this application communicates with</h4>
-            @if (AllEndpoints.Count == 0 && BackendIntegrations.Count == 0)
+            @* Observed traffic only. Configured integrations are not observations and are listed separately. *@
+            @if (AllEndpoints.Count == 0)
             {
                 <p class="ed-empty" data-testid="discovery-empty">No endpoint traffic has been observed yet. Start the Local HTTPS Proxy, sign in through your normal managed Edge, and use the target application.</p>
             }
@@ -58,27 +58,20 @@
                                     <td class="ed-mono">@svc.Host</td>
                                     <td>@CategoryBadge(svc.Category)</td>
                                     <td>@svc.PageCount</td>
-                                    <td>@(svc.AuthObserved ? "Bearer" : "—")</td>
+                                    @* Observed auth mechanism on the request. Not a statement about the application's sign-in policy. *@
+                                    <td>@EndpointDiscoveryPresentation.ObservedAuthLabel(svc.AuthObserved)</td>
                                     <td>@svc.Calls</td>
                                     <td class="ed-mono">@Time(svc.LastSeen)</td>
                                     <td><span class="ed-source">Proxy</span></td>
                                 </tr>
                             }
-                            @foreach (var integration in BackendIntegrations)
-                            {
-                                <tr class="ed-backend-row">
-                                    <td class="ed-mono">@integration.Name</td>
-                                    <td><span class="ed-badge ed-badge-backend">@integration.Protocol</span></td>
-                                    <td>Backend</td>
-                                    <td>n/a</td>
-                                    <td>n/a</td>
-                                    <td>—</td>
-                                    <td><span class="ed-source ed-source-config">@integration.Source</span></td>
-                                </tr>
-                            }
                         </tbody>
                     </table>
                 </div>
+                @if (BackendIntegrations.Count > 0)
+                {
+                    <p class="ed-note" data-testid="discovery-configured-pointer">@EndpointDiscoveryPresentation.ConfiguredBackendPointer</p>
+                }
             }
         </div>
     }
@@ -152,10 +145,14 @@
     else
     {
         <div class="ed-panel">
-            <p class="ed-note">Backend integrations the browser proxy cannot observe. Discovered from configuration, not from traffic.</p>
+            <p class="ed-note" data-testid="discovery-backend-note">@EndpointDiscoveryPresentation.ConfiguredBackendIntroduction</p>
+            <p class="ed-note">
+                <a class="ed-link" href="@EndpointDiscoveryPresentation.IntegrationsHref" data-testid="discovery-open-integrations">Open configured integrations</a>
+            </p>
             @if (BackendIntegrations.Count == 0)
             {
-                <p class="ed-empty" data-testid="discovery-backend-empty">No backend integrations have been discovered from configuration.</p>
+                @* Configured, not observed: the honest empty state is about configuration. *@
+                <p class="ed-empty" data-testid="discovery-backend-empty">@EndpointDiscoveryPresentation.ConfiguredBackendEmpty</p>
             }
             else
             {
@@ -179,6 +176,28 @@
             }
         </div>
     }
+
+    @*
+        Secondary management, below the evidence and away from the view navigation. Deleting every saved
+        analysis is not a way to move around the page, so it does not sit beside the things that are.
+    *@
+    @if (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0)
+    {
+        <div class="ed-manage" data-testid="discovery-manage">
+            <span class="ed-manage-label">Saved analyses: @Snapshot.Pages.Count</span>
+            @if (_confirmDeleteAll)
+            {
+                <span class="ed-confirm" role="alert">Delete all saved analyses for this Target Environment? Configured integrations are kept.
+                    <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-all-confirm" @onclick="DeleteAll">Delete all</button>
+                    <button type="button" class="btn-secondary fa-btn-sm" @onclick="() => _confirmDeleteAll = false">Cancel</button>
+                </span>
+            }
+            else
+            {
+                <button type="button" class="ed-danger-link" data-testid="discovery-delete-all" @onclick="() => _confirmDeleteAll = true">Delete all analyses</button>
+            }
+        </div>
+    }
 </section>
 
 @code {
@@ -186,6 +205,8 @@
     [Parameter] public LocalHttpsProxyStatus ProxyStatus { get; set; } = new();
     /// <summary>Optional: Browser Companion status for the same environment (evidence is merged into the same page analyses).</summary>
     [Parameter] public BrowserCompanionStatus CompanionStatus { get; set; } = new();
+    /// <summary>Raised when the reader needs the Authentication tab. This page reports auth evidence; it never owns the setup.</summary>
+    [Parameter] public EventCallback OnOpenAuthentication { get; set; }
 
     private string _view = "overview";
     private string? _selectedPage;

@@ -1421,3 +1421,15 @@
 .fa-result-message { margin: .4rem 0 .6rem; }
 .fa-result-grid { gap: .5rem .75rem; }
 .fa-result-actions { margin-top: .6rem; }
+
+/* Neutral explanatory strip. Distinct from .fa-section-note, which carries a warning tone that is wrong
+   for prose that merely describes what a tab shows. */
+.fa-info-note {
+    font-size: 0.825rem;
+    color: var(--clr-text-muted);
+    margin-bottom: 1rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--clr-surface);
+    border-left: 3px solid var(--clr-border);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}

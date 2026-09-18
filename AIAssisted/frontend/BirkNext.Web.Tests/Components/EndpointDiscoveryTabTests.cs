@@ -108,13 +108,17 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         var cut = Render(profile, Traffic(
             Ep(ObservedTrafficCategory.GraphQl, "/gql", "POST", pagePath: "/a", op: GraphQlOperationType.Query),
             Ep(ObservedTrafficCategory.GraphQl, "/gql", "POST", pagePath: "/b", op: GraphQlOperationType.Query)));
-        // Overview is default view.
+        // Overview is default view, and it holds OBSERVED traffic only: a configured integration nothing has
+        // been seen talking to is not an observation and must not appear beside ones that are.
         var table = Row(cut, "discovery-overview-table");
         Assert.Contains("api-dev.bufetat.no", table);
-        Assert.Contains("M2LB Events", table);      // backend integration listed, marked as configuration
-        Assert.Contains("AMQP", table);
-        // Backend integrations view.
+        Assert.DoesNotContain("M2LB Events", table);
+        Assert.DoesNotContain("AMQP", table);
+        // It is still reachable, in the view that says what it actually is.
+        Assert.Contains("Configured backend integrations", Row(cut, "discovery-nav-integrations"));
         cut.Find("[data-testid='discovery-nav-integrations']").Click();
+        Assert.Contains("M2LB Events", Row(cut, "discovery-backend-integrations"));
+        Assert.Contains("AMQP", Row(cut, "discovery-backend-integrations"));
         Assert.Contains("Configuration discovery", Row(cut, "discovery-backend-integrations"));
         Assert.Contains("No", Row(cut, "discovery-backend-integrations"));   // runtime observed = No
     }
