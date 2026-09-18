@@ -1,0 +1,19 @@
+@using BirkNext.Web.Models
+
+@* Areas deliberately outside this review's scope. Neutral information, never a failure or a missing implementation:
+   no attention/warning tone is used here. Named by the disclosure that hosts it. *@
+<div class="fqr-not-assessed" data-testid="fqr-not-assessed">
+    <ul class="fqr-not-assessed-list">
+        @foreach (var item in Items)
+        {
+            <li class="fqr-not-assessed-item" data-testid="fqr-not-assessed-item">
+                <strong>@item.Title</strong>
+                <span>@item.Description</span>
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityNotAssessedItem> Items { get; set; } = [];
+}

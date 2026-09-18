@@ -63,7 +63,8 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
 
         var head = cut.Find(".fqr-section-head");
         head.QuerySelector("[data-testid=fqr-edit-engines]").Should().NotBeNull("the action belongs with the summary, not at the page bottom");
-        head.QuerySelector("h2")!.TextContent.Trim().Should().Be("Review capabilities");
+        // The block is named once, by the disclosure that hosts it, so it carries no heading of its own.
+        head.QuerySelector("h2").Should().BeNull();
 
         // Configuration and capability are counted separately.
         var summary = cut.Find("[data-testid=fqr-engine-summary]").TextContent;

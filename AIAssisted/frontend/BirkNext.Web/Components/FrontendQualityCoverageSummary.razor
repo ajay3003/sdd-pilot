@@ -1,11 +1,9 @@
 @using BirkNext.Web.Models
 
-@* Tester-facing coverage: which surfaces of the target the review can reach right now. Exact access values (method, mode,
-   proxy/CDP state, manual verification vs automated access) stay available in the collapsed technical disclosure. *@
-<section class="fqr-card fqr-coverage" aria-labelledby="fqr-coverage-heading" data-testid="fqr-coverage">
-    <div class="fqr-card-head">
-        <h2 id="fqr-coverage-heading">Coverage</h2>
-    </div>
+@* Tester-facing coverage: which surfaces of the target the review can reach right now. The block's name is carried by the
+   disclosure that hosts it, so it is not repeated here. Exact access values (method, mode, proxy/CDP state, manual
+   verification vs automated access) stay available in the nested technical disclosure. *@
+<div class="fqr-coverage" data-testid="fqr-coverage">
     <ul class="fqr-coverage-list">
         @foreach (var row in Rows)
         {
@@ -24,7 +22,7 @@
             @TechnicalDetails
         </ReviewDisclosure>
     }
-</section>
+</div>
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityCoverageRow> Rows { get; set; } = [];

@@ -4,16 +4,15 @@
 @* Review capabilities: Required and Optional engines with typed state labels, a plain-language summary, an optional
    per-review "Include" opt-out (enabled backend engines only — it never enables a disabled engine), and the exact technical
    reason collapsed by default. Deployment-policy limitations are shown as environment facts, not application defects. *@
-<section class="fqr-section fqr-capabilities" aria-labelledby="fqr-capabilities-heading" data-testid="fqr-capabilities">
+@* The name of this block is carried by the disclosure that hosts it ("Review capabilities"), so it is not repeated here. *@
+<div class="fqr-capabilities" data-testid="fqr-capabilities">
     <div class="fqr-section-head">
         <div class="fqr-section-head-row">
-            <h2 id="fqr-capabilities-heading">Review capabilities</h2>
+            <p class="fqr-engine-summary" data-testid="fqr-engine-summary">@FrontendQualityLandingPresentation.EngineSummary(Rows)</p>
             @* Configuration lives in Target Environment; this page only reports it. *@
             <a class="btn-secondary fqr-edit-engines" href="@FrontendQualityLandingPresentation.FrontendReviewEnginesHref" data-testid="fqr-edit-engines">Edit engines</a>
         </div>
-        <p class="fqr-engine-summary" data-testid="fqr-engine-summary">@FrontendQualityLandingPresentation.EngineSummary(Rows)</p>
-        <p class="fqr-section-note">Which review capabilities take part in the next run and whether they are available right now. Availability is re-validated when the review starts.</p>
-        <p class="fqr-section-note" data-testid="fqr-engine-configuration-note">@FrontendQualityLandingPresentation.EnginesConfigurationNote</p>
+        <p class="fqr-section-note" data-testid="fqr-engine-configuration-note">@FrontendQualityLandingPresentation.EnginesConfigurationNote Availability is re-validated when the review starts.</p>
     </div>
 
     @* A Required engine switched off is a configuration inconsistency, not an execution failure — and the fix is one click away. *@
@@ -90,7 +89,7 @@
             @EngineDetails
         </ReviewDisclosure>
     }
-</section>
+</div>
 
 @code {
     private sealed record Group(FrontendQualityEngineRequirement Policy, IReadOnlyList<FrontendQualityCapabilityRow> Rows);

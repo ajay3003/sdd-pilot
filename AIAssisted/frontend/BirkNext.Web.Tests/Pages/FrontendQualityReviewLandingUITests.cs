@@ -107,7 +107,9 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=fqr-target-url]").TextContent.Should().Be(Url);
         page.Find("[data-testid=fqr-target-authentication]").TextContent.Should().Be("Not required");
         page.Find("[data-testid=fqr-target-status]").TextContent.Should().Be("Ready");
-        page.Find("[data-testid=fqr-target-review-status]").TextContent.Should().Be("Ready to review");
+        // Whole-review readiness is stated once, by the readiness panel — the Target card no longer repeats it.
+        page.FindAll("[data-testid=fqr-target-review-status]").Should().BeEmpty();
+        page.FindAll("[data-testid=fqr-readiness]").Should().ContainSingle();
         RunButton(page).HasAttribute("disabled").Should().BeFalse();
         RunButton(page).TextContent.Trim().Should().Be("Run Frontend Quality Review");
         page.FindAll("[data-testid=fqr-run-disabled-reason]").Should().BeEmpty();
@@ -134,7 +136,9 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=fqr-target-status]").TextContent.Should().Be("Frontend URL missing");
         RunButton(page).HasAttribute("disabled").Should().BeTrue();
         page.Find("[data-testid=fqr-run-disabled-reason]").TextContent.Should().Contain("no Frontend URL");
-        page.Find("[data-testid=fqr-target-review-status] .fqr-pill").ClassList.Should().NotContain("fqr-pill-ready", "a blocked review must not look green");
+        // A blocked review keeps its reasons visible — they are why the user cannot proceed.
+        page.FindAll("[data-testid=fqr-readiness-limitations]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-readiness]").ClassList.Should().Contain("fqr-readiness-blocked", "a blocked review must not look green");
     }
 
     [Fact]
@@ -169,7 +173,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=fqr-dimension][data-category='Security'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Included");
         page.Find("[data-testid=fqr-dimension][data-category='Accessibility'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Partial evidence");
         page.Find("[data-testid=fqr-dimension][data-category='Readiness'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Included");
-        page.Find("h2#fqr-dimensions-heading").TextContent.Should().Be("What will be analysed?");
+        page.Find("h2#fqr-dimensions-heading").TextContent.Should().Be("What will be reviewed");
     }
 
     [Fact]
@@ -195,10 +199,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
 
-        page.Find("h2#fqr-checks-heading").TextContent.Should().Be($"Checks included ({FrontendQualityLandingPresentation.CheckCount})");
         var toggle = page.Find("[data-testid=fqr-checks-disclosure-toggle]");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
-        toggle.TextContent.Should().Contain("View checks");
+        toggle.TextContent.Should().Contain("Checks")
+            .And.Contain($"{FrontendQualityLandingPresentation.CheckCount} automated or passive checks included");
         page.Find("[data-testid=fqr-checks-disclosure-body]").HasAttribute("hidden").Should().BeTrue();
     }
 
@@ -509,16 +513,17 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
     // 14. Open Target Environment still works.
     [Fact]
-    public void OpenTargetEnvironment_LinkInHeader()
+    public void TargetEnvironmentIsReachedThroughOneAction_NotTwoLeadingToTheSamePlace()
     {
         Register(HttpOnlyContext());
 
         var page = Render<FrontendQualityReview>();
 
-        var link = page.Find("[data-testid=fqr-open-target-environment]");
-        link.TextContent.Should().Be("Open Target Environment");
-        link.GetAttribute("href").Should().Be(FrontendQualityTargetAccess.TargetEnvironmentsHref);
+        // "Change target" on the Target card is the single primary way there; the duplicate header button is gone.
         page.Find("[data-testid=fqr-change-target]").GetAttribute("href").Should().Be(FrontendQualityTargetAccess.TargetEnvironmentsHref);
+        page.FindAll("[data-testid=fqr-open-target-environment]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-decide]").QuerySelectorAll($"a[href='{FrontendQualityTargetAccess.TargetEnvironmentsHref}']")
+            .Should().ContainSingle("the decision area offers one way to the Target Environment, not two");
     }
 
     // 15. Existing report/export paths are unaffected.
@@ -560,8 +565,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
             toggle.TextContent.Trim().Should().NotBeEmpty("every disclosure button needs an accessible name");
         }
         page.FindAll("h1").Should().ContainSingle();
-        page.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Target", "What will be analysed?", "Coverage", "Review capabilities"])
-            .And.Contain(h => h.StartsWith("Checks included"));
+        page.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Target", "Accessibility profile", "What will be reviewed", "Review details"]);
         page.FindAll("button").Should().OnlyContain(b => b.TextContent.Trim().Length > 0 || b.HasAttribute("aria-label"));
         page.FindAll(".fqr-pill").Should().OnlyContain(p => p.TextContent.Trim().Length > 0, "badges carry text labels");
         page.FindAll("table").Should().BeEmpty("the landing view has no tabular data");

@@ -286,3 +286,40 @@ public static class FrontendQualityCategoryEngines
         _ => category.ToString(),
     };
 }
+
+/// <summary>
+/// Compact counts for the collapsed "Review capabilities" row. Configuration (<paramref name="EnabledCount"/>) and
+/// capability (<paramref name="AvailableNowCount"/>) are counted separately and never merged: an engine can be enabled
+/// and still unavailable, and an unavailable engine must never read as "someone switched it off".
+/// </summary>
+/// <param name="RequiredButDisabledCount">Required by policy but switched off — a configuration inconsistency, not a run failure.</param>
+/// <param name="NeedsPairingCount">Active, but waiting on a one-time setup or a session (Browser Companion pairing, review sign-in).</param>
+public sealed record FrontendQualityCapabilitySummary(
+    int TotalCount,
+    int EnabledCount,
+    int AvailableNowCount,
+    int RequiredButDisabledCount,
+    int NeedsPairingCount)
+{
+    /// <summary>The full line shown with the expanded list: what is configured, then what can actually run right now.</summary>
+    public string Headline => $"{EnabledCount} of {TotalCount} engines enabled · {AvailableNowCount} available right now";
+
+    /// <summary>
+    /// The short fact for the collapsed row — how much capability the next run actually has. A Required engine switched
+    /// off is surfaced here too, because it is a configuration inconsistency the user would otherwise have to expand to find.
+    /// </summary>
+    public string Collapsed => RequiredButDisabledCount > 0
+        ? $"{AvailableNowCount} available now · {RequiredButDisabledCount} required engine{(RequiredButDisabledCount == 1 ? "" : "s")} disabled"
+        : $"{AvailableNowCount} available now";
+}
+
+/// <summary>
+/// Compact counts for the collapsed "Coverage" row. Descriptive counts only — the coverage model carries no measured
+/// proportion, so no percentage is invented from it.
+/// </summary>
+public sealed record FrontendQualityCoverageSummaryModel(int TotalCount, int AvailableCount, int NotAvailableCount)
+{
+    public string Headline => NotAvailableCount == 0
+        ? $"{AvailableCount} of {TotalCount} areas available"
+        : $"{AvailableCount} of {TotalCount} areas available · {NotAvailableCount} not available";
+}

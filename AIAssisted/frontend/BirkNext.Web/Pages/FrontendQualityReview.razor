@@ -26,23 +26,7 @@
             <button type="button" class="btn-secondary" @onclick="ExportHtml">Export HTML</button>
             <button type="button" class="btn-secondary" @onclick="ExportPdf">Export PDF</button>
         }
-        else
-        {
-            <div class="fqr-header-actions">
-                <div class="fqr-header-buttons">
-                    <PrimaryButton OnClick="RunReview" Disabled="@RunDisabled" data-testid="fqr-run">@RunButtonText</PrimaryButton>
-                    <a href="@TargetEnvironmentsHref" class="btn-secondary" data-testid="fqr-open-target-environment">Open Target Environment</a>
-                </div>
-                @if (_engineStatusPending)
-                {
-                    <p class="fqr-run-reason" role="status" aria-live="polite" data-testid="fqr-engine-status-pending">@EngineStatusPendingText</p>
-                }
-                else if (RunDisabled && RunDisabledReason is { } disabledReason)
-                {
-                    <p class="fqr-run-reason" role="status" data-testid="fqr-run-disabled-reason">@disabledReason</p>
-                }
-            </div>
-        }
+        @* Before a run the primary action sits in the decision area below, directly under target, profile and readiness. *@
     </PageHeader>
 
     @if (_report is null)
@@ -61,76 +45,34 @@
 
         <div class="fqr-landing" data-testid="fqr-landing">
 
-            <div class="fqr-landing-top">
-                <FrontendQualityTargetSummary Summary="landing.Target"
-                                              Readiness="landing.Readiness"
-                                              TechnicalFields="landing.TechnicalFields"
-                                              ChangeHref="@TargetEnvironmentsHref" />
-                <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
-            </div>
+            @*
+                1. Decide. Everything needed to answer "should I run this review, and against what?" — the target, the
+                criteria it is judged against, whether it can run, and the run action itself. Nothing diagnostic here.
+            *@
+            <section class="fqr-decide" aria-label="Review setup" data-testid="fqr-decide">
+                <div class="fqr-decide-cards">
+                    <FrontendQualityTargetSummary Summary="landing.Target"
+                                                  TechnicalFields="landing.TechnicalFields"
+                                                  ChangeHref="@TargetEnvironmentsHref" />
+                    @* Review scope, stated before the run: which criteria accessibility is judged against. *@
+                    <FrontendQualityProfileCard Selected="SelectedWcagProfile" ProfileChanged="OnWcagProfileChanged" />
+                    <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
+                </div>
+                <div class="fqr-run-bar" data-testid="fqr-run-bar">
+                    <PrimaryButton OnClick="RunReview" Disabled="@RunDisabled" data-testid="fqr-run">@RunButtonText</PrimaryButton>
+                    @if (_engineStatusPending)
+                    {
+                        <p class="fqr-run-reason" role="status" aria-live="polite" data-testid="fqr-engine-status-pending">@EngineStatusPendingText</p>
+                    }
+                    else if (RunDisabled && RunDisabledReason is { } disabledReason)
+                    {
+                        <p class="fqr-run-reason" role="status" data-testid="fqr-run-disabled-reason">@disabledReason</p>
+                    }
+                </div>
+            </section>
 
-            @* Review scope, stated before the run: which criteria accessibility is judged against. *@
-            <FrontendQualityProfileCard Selected="SelectedWcagProfile" ProfileChanged="OnWcagProfileChanged" />
-
+            @* 2. Scope: the six review domains. Always visible — this is the main explanation of what the review covers. *@
             <FrontendQualityDimensionCards Cards="landing.Dimensions" />
-
-            @if (_access is { } landingAccess)
-            {
-                <FrontendQualityCoverageSummary Rows="FrontendQualityLandingPresentation.Coverage(landingAccess, _caps)">
-                    <TechnicalDetails>
-                        <FrontendQualityTargetAccessPanel Access="landingAccess" ShowActions="true" />
-                    </TechnicalDetails>
-                </FrontendQualityCoverageSummary>
-            }
-
-            <FrontendQualityChecksSection Groups="FrontendQualityLandingPresentation.CheckGroups"
-                                          NotAssessed="FrontendQualityLandingPresentation.NotAssessed" />
-
-            @if (_activeEngines is { } landingEngines)
-            {
-                <FrontendQualityCapabilityList Rows="landing.Capabilities" SelectionChanged="OnCapabilitySelectionChanged">
-                    <EngineDetails>
-                        <FrontendQualityActiveEnginesPanel Snapshot="landingEngines" />
-                        @if (_readinessPending)
-                        {
-                            <p class="fqr-muted fqr-engine-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
-                        }
-                        @if (_engineStatus != null)
-                        {
-                            var activeBackendIds = ActiveBackendEngineIds;
-                            <div class="fqr-engine-grid" data-testid="fqr-engine-grid">
-                                @foreach (var engine in _engineStatus.Engines.Where(e => activeBackendIds.Contains(e.EngineId)).OrderBy(e => e.EngineId))
-                                {
-                                    <div class="fqr-engine-card" data-engine-id="@engine.EngineId">
-                                        <div class="fqr-engine-header">
-                                            <h4>@engine.DisplayName</h4>
-                                            <span class="fqr-pill fqr-pill-@(engine.Available ? "ready" : "attention")">@(engine.Available ? "Available" : "Unavailable")</span>
-                                        </div>
-                                        <dl class="fqr-engine-layers">
-                                            <div><dt>Engine ID</dt><dd>@engine.EngineId</dd></div>
-                                            <div><dt>Deployment policy</dt><dd>@(engine.Layer1Allowed ? "Allowed" : "Blocked")</dd></div>
-                                            <div><dt>System Settings</dt><dd>@(engine.Layer2Enabled ? "Enabled" : "Disabled")</dd></div>
-                                            <div><dt>Runtime</dt><dd>@(engine.Layer3Readiness is null ? "Not checked" : engine.Layer3Readiness.IsAvailable ? "Ready" : "Unavailable")</dd></div>
-                                            @if (engine.Layer3Readiness is { IsAvailable: false, StatusReason: { Length: > 0 } statusReason })
-                                            {
-                                                <div><dt>Runtime reason</dt><dd>@statusReason</dd></div>
-                                            }
-                                            <div><dt>Authenticated review</dt><dd>@(engine.AuthModeSupported ? "Supported" : "Not supported")</dd></div>
-                                        </dl>
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </EngineDetails>
-                </FrontendQualityCapabilityList>
-            }
-
-            @if (_context is not null && _context.ActiveTargetError is null && (_context.FeatureToggles.EnableBrowserQualityEngine || _context.FeatureToggles.EnablePerformanceQualityEngine) && _companionRuntime is not null)
-            {
-                <ReviewDisclosure Text="Browser Companion session" CollapseText="Hide Browser Companion session" Hint="@CompanionHint" TestId="fqr-companion" Class="fqr-card-disclosure">
-                    <BrowserCompanionPanel Profile="_context.ActiveProfile" Runtime="_companionRuntime" ProxyRunning="@ProxyRunningForLanding" />
-                </ReviewDisclosure>
-            }
 
             @if (landing.AuthenticatedReview is { } auth)
             {
@@ -153,6 +95,94 @@
                     </TechnicalDetails>
                 </FrontendQualityAuthenticatedReview>
             }
+
+            @*
+                3. Review details. Everything technical, collapsed by default: each row states one fact, and expanding it
+                reveals the existing detail unchanged. Nothing here changes the scope stated above.
+            *@
+            <section class="fqr-section fqr-details" aria-labelledby="fqr-details-heading" data-testid="fqr-details">
+                <div class="fqr-section-head">
+                    <h2 id="fqr-details-heading">Review details</h2>
+                    <p class="fqr-section-note">How this review is set up and what it can reach right now.</p>
+                </div>
+
+                @if (_access is { } landingAccess)
+                {
+                    var coverageRows = FrontendQualityLandingPresentation.Coverage(landingAccess, _caps);
+                    <ReviewDisclosure Text="Coverage" CollapseText="Hide coverage"
+                                      Hint="@FrontendQualityLandingPresentation.CoverageSummary(coverageRows).Headline"
+                                      TestId="fqr-coverage-disclosure" Class="fqr-detail-disclosure">
+                        <FrontendQualityCoverageSummary Rows="coverageRows">
+                            <TechnicalDetails>
+                                <FrontendQualityTargetAccessPanel Access="landingAccess" ShowActions="true" />
+                            </TechnicalDetails>
+                        </FrontendQualityCoverageSummary>
+                    </ReviewDisclosure>
+                }
+
+                <ReviewDisclosure Text="Checks" CollapseText="Hide checks"
+                                  Hint="@FrontendQualityLandingPresentation.CheckSummary"
+                                  TestId="fqr-checks-disclosure" Class="fqr-detail-disclosure">
+                    <FrontendQualityChecksSection Groups="FrontendQualityLandingPresentation.CheckGroups" />
+                </ReviewDisclosure>
+
+                @if (_activeEngines is { } landingEngines)
+                {
+                    <ReviewDisclosure Text="Review capabilities" CollapseText="Hide review capabilities"
+                                      Hint="@FrontendQualityLandingPresentation.CapabilitySummary(landing.Capabilities).Collapsed"
+                                      TestId="fqr-capabilities-disclosure" Class="fqr-detail-disclosure">
+                    <FrontendQualityCapabilityList Rows="landing.Capabilities" SelectionChanged="OnCapabilitySelectionChanged">
+                        <EngineDetails>
+                            <FrontendQualityActiveEnginesPanel Snapshot="landingEngines" />
+                            @if (_readinessPending)
+                            {
+                                <p class="fqr-muted fqr-engine-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
+                            }
+                            @if (_engineStatus != null)
+                            {
+                                var activeBackendIds = ActiveBackendEngineIds;
+                                <div class="fqr-engine-grid" data-testid="fqr-engine-grid">
+                                    @foreach (var engine in _engineStatus.Engines.Where(e => activeBackendIds.Contains(e.EngineId)).OrderBy(e => e.EngineId))
+                                    {
+                                        <div class="fqr-engine-card" data-engine-id="@engine.EngineId">
+                                            <div class="fqr-engine-header">
+                                                <h4>@engine.DisplayName</h4>
+                                                <span class="fqr-pill fqr-pill-@(engine.Available ? "ready" : "attention")">@(engine.Available ? "Available" : "Unavailable")</span>
+                                            </div>
+                                            <dl class="fqr-engine-layers">
+                                                <div><dt>Engine ID</dt><dd>@engine.EngineId</dd></div>
+                                                <div><dt>Deployment policy</dt><dd>@(engine.Layer1Allowed ? "Allowed" : "Blocked")</dd></div>
+                                                <div><dt>System Settings</dt><dd>@(engine.Layer2Enabled ? "Enabled" : "Disabled")</dd></div>
+                                                <div><dt>Runtime</dt><dd>@(engine.Layer3Readiness is null ? "Not checked" : engine.Layer3Readiness.IsAvailable ? "Ready" : "Unavailable")</dd></div>
+                                                @if (engine.Layer3Readiness is { IsAvailable: false, StatusReason: { Length: > 0 } statusReason })
+                                                {
+                                                    <div><dt>Runtime reason</dt><dd>@statusReason</dd></div>
+                                                }
+                                                <div><dt>Authenticated review</dt><dd>@(engine.AuthModeSupported ? "Supported" : "Not supported")</dd></div>
+                                            </dl>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </EngineDetails>
+                    </FrontendQualityCapabilityList>
+                    </ReviewDisclosure>
+                }
+
+                <ReviewDisclosure Text="Not assessed" CollapseText="Hide not assessed"
+                                  Hint="@FrontendQualityLandingPresentation.NotAssessedSummary"
+                                  TestId="fqr-not-assessed-disclosure" Class="fqr-detail-disclosure">
+                    <FrontendQualityNotAssessedList Items="FrontendQualityLandingPresentation.NotAssessed" />
+                </ReviewDisclosure>
+
+                @* Browser evidence is supporting detail: the readiness and domain lines already say what its absence costs. *@
+                @if (_context is not null && _context.ActiveTargetError is null && (_context.FeatureToggles.EnableBrowserQualityEngine || _context.FeatureToggles.EnablePerformanceQualityEngine) && _companionRuntime is not null)
+                {
+                    <ReviewDisclosure Text="Browser evidence" CollapseText="Hide browser evidence" Hint="@CompanionHint" TestId="fqr-companion" Class="fqr-detail-disclosure">
+                        <BrowserCompanionPanel Profile="_context.ActiveProfile" Runtime="_companionRuntime" ProxyRunning="@ProxyRunningForLanding" />
+                    </ReviewDisclosure>
+                }
+            </section>
 
             @if (_running)
             {

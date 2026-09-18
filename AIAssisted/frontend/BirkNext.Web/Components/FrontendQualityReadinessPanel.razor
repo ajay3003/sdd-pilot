@@ -1,19 +1,29 @@
 @using BirkNext.Web.Models
 
-@* Whole-review readiness status. Level drives icon + tone; the text label always carries the meaning (never colour alone).
-   Blocked → role=alert; other levels → role=status. *@
+@* The ONE whole-review readiness statement on this page: state → one explanation → one action. Level drives icon + tone;
+   the text label always carries the meaning (never colour alone). Blocked → role=alert; other levels → role=status.
+
+   Per-capability detail is progressive disclosure: while the review can still run (Limited), the individual limitations sit
+   behind "View limitations" so the primary area stays a decision surface. While it is Blocked they stay visible, because
+   they are the reason the user cannot proceed. *@
 <div class="fqr-readiness fqr-readiness-@Readiness.Level.ToString().ToLowerInvariant()"
-     role="@(Readiness.Level == FrontendQualityReviewReadinessLevel.Blocked ? "alert" : "status")"
+     role="@(Blocked ? "alert" : "status")"
      data-testid="fqr-readiness"
      data-readiness="@Readiness.Level">
-    <span class="fqr-readiness-icon" aria-hidden="true">@Icon</span>
-    <div class="fqr-readiness-copy">
-        <strong class="fqr-readiness-title" data-testid="fqr-readiness-title">@Readiness.Title</strong>
-        @if (!string.IsNullOrWhiteSpace(Readiness.Message))
-        {
-            <p class="fqr-readiness-message" data-testid="fqr-readiness-message">@Readiness.Message</p>
-        }
-        @if (Readiness.Details.Count > 0)
+    <div class="fqr-readiness-head">
+        <span class="fqr-readiness-icon" aria-hidden="true">@Icon</span>
+        <div class="fqr-readiness-copy">
+            <strong class="fqr-readiness-title" data-testid="fqr-readiness-title">@Readiness.Title</strong>
+            @if (!string.IsNullOrWhiteSpace(Readiness.Message))
+            {
+                <p class="fqr-readiness-message" data-testid="fqr-readiness-message">@Readiness.Message</p>
+            }
+        </div>
+    </div>
+
+    @if (Readiness.Details.Count > 0)
+    {
+        @if (Blocked)
         {
             <ul class="fqr-readiness-details" data-testid="fqr-readiness-details">
                 @foreach (var detail in Readiness.Details)
@@ -22,8 +32,25 @@
                 }
             </ul>
         }
-    </div>
-    @if (!string.IsNullOrWhiteSpace(Readiness.ActionText) && !string.IsNullOrWhiteSpace(Readiness.ActionHref))
+        else
+        {
+            <ReviewDisclosure Text="View limitations" CollapseText="Hide limitations" TestId="fqr-readiness-limitations" Class="disclosure-inline disclosure-small">
+                <ul class="fqr-readiness-details" data-testid="fqr-readiness-details">
+                    @foreach (var detail in Readiness.Details)
+                    {
+                        <li>@detail</li>
+                    }
+                </ul>
+                @if (!string.IsNullOrWhiteSpace(Readiness.ActionText) && !string.IsNullOrWhiteSpace(Readiness.ActionHref))
+                {
+                    <a href="@Readiness.ActionHref" class="fqr-link" data-testid="fqr-readiness-limitation-action">@Readiness.ActionText</a>
+                }
+            </ReviewDisclosure>
+        }
+    }
+
+    @* The action stays in the primary area only while there is no limitations disclosure to carry it. *@
+    @if (!string.IsNullOrWhiteSpace(Readiness.ActionText) && !string.IsNullOrWhiteSpace(Readiness.ActionHref) && (Blocked || Readiness.Details.Count == 0))
     {
         <a href="@Readiness.ActionHref" class="btn-secondary fqr-readiness-action" data-testid="fqr-readiness-action">@Readiness.ActionText</a>
     }
@@ -31,6 +58,8 @@
 
 @code {
     [Parameter, EditorRequired] public FrontendQualityReviewReadiness Readiness { get; set; } = new(FrontendQualityReviewReadinessLevel.Loading, "", "", []);
+
+    private bool Blocked => Readiness.Level == FrontendQualityReviewReadinessLevel.Blocked;
 
     private string Icon => Readiness.Level switch
     {

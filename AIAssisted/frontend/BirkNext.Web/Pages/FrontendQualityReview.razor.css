@@ -6,25 +6,9 @@
     color: var(--clr-text-body);
 }
 
-/* ── Header actions (Run + Open Target Environment, disabled reason underneath) ── */
-.fqr-header-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.4rem;
-}
-
-.fqr-header-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    justify-content: flex-end;
-}
-
 .fqr-run-reason {
     margin: 0;
-    max-width: 34rem;
-    text-align: right;
+    max-width: 44rem;
     font-size: 0.85rem;
     color: var(--clr-text-muted);
 }
@@ -41,11 +25,28 @@
     gap: 1.25rem;
 }
 
-.fqr-landing-top {
+/* ── Decision area: target · accessibility profile · readiness, then the run action ──
+   Three equal, neutral cards — not dashboard tiles. minmax(0, 1fr) lets a long URL wrap
+   inside its column instead of widening the row. */
+.fqr-decide {
     display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr);
-    gap: 1rem;
-    align-items: start;
+    gap: 0.85rem;
+}
+
+.fqr-decide-cards {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+    align-items: stretch;
+}
+
+.fqr-decide-cards > * { min-width: 0; }
+
+.fqr-run-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
 }
 
 ::deep .fqr-card {
@@ -158,18 +159,18 @@
     overflow-wrap: anywhere;
 }
 
-::deep .fqr-target-url { font-family: ui-monospace, Consolas, monospace; font-size: 0.86rem; font-weight: 500 !important; }
+/* A long URL wraps inside its card instead of widening the decision row. */
+::deep .fqr-target-url { font-family: ui-monospace, Consolas, monospace; font-size: 0.86rem; font-weight: 500 !important; overflow-wrap: anywhere; }
 
 ::deep .fqr-technical-list-grid > div { font-size: 0.85rem; }
 ::deep .fqr-technical-list-grid dd { font-weight: 500; }
 
 /* ── Readiness panel ── */
 ::deep .fqr-readiness {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 0.75rem 0.85rem;
-    align-items: start;
-    padding: 1rem 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.85rem 1rem;
     border: 1px solid var(--clr-border);
     border-left-width: 5px;
     border-radius: var(--radius-lg);
@@ -181,6 +182,13 @@
 ::deep .fqr-readiness-blocked { border-left-color: var(--clr-danger); background: var(--clr-danger-bg); }
 ::deep .fqr-readiness-checking,
 ::deep .fqr-readiness-loading { border-left-color: var(--clr-info); background: var(--clr-info-bg-light); }
+
+::deep .fqr-readiness-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.6rem;
+    align-items: start;
+}
 
 ::deep .fqr-readiness-icon {
     font-size: 1.35rem;
@@ -215,10 +223,37 @@
 }
 
 ::deep .fqr-readiness-action {
-    grid-column: 2;
     justify-self: start;
+    align-self: start;
     text-decoration: none;
 }
+
+/* ── Review details: one collapsed row per concept, restrained and uniform ── */
+.fqr-details {
+    display: grid;
+    gap: 0.5rem;
+}
+
+::deep .fqr-detail-disclosure {
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface-white);
+    padding: 0.15rem 0.75rem;
+}
+
+/* The row IS the card, so the toggle fills it and its hint wraps under the name instead of clipping. */
+::deep .fqr-detail-disclosure > .disclosure-toggle {
+    display: flex;
+    width: 100%;
+    flex-wrap: wrap;
+    text-align: left;
+    padding: 0.6rem 0.25rem;
+    border-color: transparent;
+    background: transparent;
+}
+
+::deep .fqr-detail-disclosure > .disclosure-toggle .disclosure-text { color: var(--clr-text-heading); }
+::deep .fqr-detail-disclosure > .disclosure-body { margin: 0 0.25rem 0.75rem; }
 
 ::deep .fqr-card-disclosure {
     background: var(--clr-surface-white);
@@ -397,12 +432,15 @@
 
 ::deep .fqr-engine-progress { margin: 0.75rem 0; }
 
+/* min() keeps the engine cards inside a narrow viewport instead of forcing page-wide horizontal scrolling. */
 ::deep .fqr-engine-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
     gap: 0.75rem;
     margin-top: 0.75rem;
 }
+
+::deep .fqr-engine-layers dd { overflow-wrap: anywhere; }
 
 ::deep .fqr-engine-card {
     border: 1px solid var(--clr-border);
@@ -888,8 +926,9 @@
 
 /* ── Responsive ── */
 @media (max-width: 1100px) {
-    .fqr-landing-top {
-        grid-template-columns: 1fr;
+    /* Target keeps the wider column; profile and readiness share the second. */
+    .fqr-decide-cards {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     ::deep .fqr-dimension-grid {
@@ -904,9 +943,9 @@
 }
 
 @media (max-width: 760px) {
-    .fqr-header-actions { align-items: stretch; }
-    .fqr-header-buttons { justify-content: stretch; }
-    .fqr-run-reason { text-align: left; max-width: none; }
+    .fqr-decide-cards { grid-template-columns: 1fr; }
+    .fqr-run-bar { align-items: stretch; }
+    .fqr-run-reason { max-width: none; }
 
     ::deep .fqr-coverage-row { grid-template-columns: 1fr; gap: 0.25rem; }
     ::deep .fqr-target-list > div,

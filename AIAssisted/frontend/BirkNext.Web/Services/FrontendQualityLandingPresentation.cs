@@ -22,7 +22,33 @@ public static class FrontendQualityLandingPresentation
 
     /// <summary>"N configured · M available right now" — configuration and capability counted separately, never merged.</summary>
     public static string EngineSummary(IReadOnlyList<FrontendQualityCapabilityRow> rows) =>
-        $"{rows.Count(r => r.Enabled)} of {rows.Count} engines enabled · {rows.Count(r => r.IsAvailable)} available right now";
+        CapabilitySummary(rows).Headline;
+
+    /// <summary>
+    /// The counts behind the collapsed capability row, all read from the capability rows themselves — nothing here is
+    /// a literal, and "enabled" is never equated with "available".
+    /// </summary>
+    public static FrontendQualityCapabilitySummary CapabilitySummary(IReadOnlyList<FrontendQualityCapabilityRow> rows) => new(
+        TotalCount: rows.Count,
+        EnabledCount: rows.Count(r => r.Enabled),
+        AvailableNowCount: rows.Count(r => r.IsAvailable),
+        RequiredButDisabledCount: rows.Count(r => r.Policy == FrontendQualityEngineRequirement.Required && !r.Enabled),
+        NeedsPairingCount: rows.Count(r => r.IsActive && r.State is
+            FrontendQualityCapabilityState.NotConfigured or
+            FrontendQualityCapabilityState.RequiresBrowserSession or
+            FrontendQualityCapabilityState.RequiresAuthenticatedContext));
+
+    /// <summary>Counts behind the collapsed coverage row; derived from the same rows the expanded list renders.</summary>
+    public static FrontendQualityCoverageSummaryModel CoverageSummary(IReadOnlyList<FrontendQualityCoverageRow> rows) => new(
+        TotalCount: rows.Count,
+        AvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.Available),
+        NotAvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotAvailable));
+
+    /// <summary>"11 automated or passive checks included" — never a result claim, because nothing has run yet.</summary>
+    public static string CheckSummary => $"{CheckCount} automated or passive checks included";
+
+    /// <summary>Neutral scope information: these areas are out of scope, which is not a failure or a missing feature.</summary>
+    public static string NotAssessedSummary => $"{NotAssessed.Count} area{(NotAssessed.Count == 1 ? "" : "s")} not assessed by this review";
     public const string SystemSettingsHref = "/admin/system-settings";
 
     public const string ReadyTitle = "Ready to review";
@@ -123,7 +149,11 @@ public static class FrontendQualityLandingPresentation
                     ? $"{unavailable.Count} capabilities are unavailable, including required {string.Join(", ", requiredUnavailable)}."
                     : $"{unavailable.Count} optional capabilities are unavailable.",
             };
-            return new(FrontendQualityReviewReadinessLevel.Limited, LimitedTitle, message, details, "Open Target Environment", TargetEnvironmentsHref);
+            // The action follows the cause: capability limitations are fixed where engines are configured; a configuration
+            // warning with nothing unavailable belongs to the Target Environment itself.
+            return unavailable.Count > 0
+                ? new(FrontendQualityReviewReadinessLevel.Limited, LimitedTitle, message, details, "Edit engines", FrontendReviewEnginesHref)
+                : new(FrontendQualityReviewReadinessLevel.Limited, LimitedTitle, message, details, "Open Target Environment", TargetEnvironmentsHref);
         }
 
         return new(FrontendQualityReviewReadinessLevel.Ready, ReadyTitle, ReadyMessage, []);
@@ -252,7 +282,6 @@ public static class FrontendQualityLandingPresentation
 
     // ── Quality dimensions ────────────────────────────────────────────────────────────────────────────────────────────
 
-    public const string AccessibilityLimitation = "Manual accessibility testing may still be required.";
 
     /// <summary>
     /// The one place a domain's scope is derived. The rule, per domain:
