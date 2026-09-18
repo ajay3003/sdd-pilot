@@ -269,7 +269,8 @@ public sealed class IntegrationReviewScopeDomTests : BunitContext
     public void RecordedRelationshipsAreShownAsRecorded()
     {
         var cut = RenderScope(EventHub());
-        var scope = cut.Find("[data-testid=iqr-scope]").TextContent;
+        // The inventory is supporting detail now; the summary card above it only counts.
+        var scope = cut.Find("[data-testid=iqr-scope-disclosure-body]").TextContent;
 
         // These were established by the audit, so they may appear.
         scope.Should().Contain("m2lb-cdc-qa.birk.dbo.person");
