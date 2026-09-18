@@ -98,7 +98,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
     private static void AssertDiscoveryCurrent(IRenderedComponent<Component> cut, bool editing = true)
     {
         OpenTab(cut, "Target Application");
-        DetectionLabel(cut).Should().Be("Manual authentication verification required");
+        DetectionLabel(cut).Should().Be("Needs verification", "the summary badge is compact; the Detection result card states the full requirement");
         cut.Markup.Should().Contain("Detection result");
         cut.Find(".fa-result-message").TextContent.Should().NotContain("changed");
         cut.Markup.Should().Contain("Reachable");
@@ -209,7 +209,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         SaveCalls().Should().Be(savesBeforeApply);
         _settings.Settings.ActiveProfileId.Should().Be("local");
         cut.Markup.Should().Contain("Manual authentication verification required");
-        cut.Markup.Should().NotContain("Manual authentication verification passed");
+        cut.Markup.Should().NotContain("Manual verification passed");
         ButtonDisabled(cut, "Set as Active").Should().BeTrue();
         cut.Find("#detection-readiness-reason").TextContent.Should().Contain("Unsaved changes");
 
@@ -347,7 +347,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Click(cut, "Open verification instructions");
         Click(cut, "Mark verification passed");
         cut.WaitForAssertion(() => Persisted().ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed));
-        cut.Markup.Should().Contain("Manual authentication verification passed");
+        cut.Markup.Should().Contain("Manual verification passed");
         ButtonDisabled(cut, "Set as Active").Should().BeFalse();
 
         OpenTab(cut, "Authentication");
@@ -383,7 +383,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         ButtonDisabled(cut, "Mark verification passed").Should().BeFalse("applied proposal is consistent with the detection evidence");
         Click(cut, "Mark verification passed");
         cut.WaitForAssertion(() => Persisted().ManualVerification!.Result.Should().Be(ManualAuthenticationVerificationStatus.Passed));
-        cut.Markup.Should().Contain("Manual authentication verification passed");
+        cut.Markup.Should().Contain("Manual verification passed");
         ButtonDisabled(cut, "Set as Active").Should().BeFalse("detection current + saved + manual verification passed");
         _settings.Settings.ActiveProfileId.Should().Be("local", "activation is still an explicit action");
         _api.Verify(x => x.DetectFromUrlAsync(Url, default), Times.Once, "no re-detect was required");
@@ -442,7 +442,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         var cut = Open();
         Click(cut, "Detect settings");
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Detected from target"));
-        var manualPanel = () => cut.Find("section[aria-label='Manual authentication verification']").TextContent;
+        var manualPanel = () => cut.Find("section.fa-verification").TextContent;
         var resultGrid = () => cut.Find(".fa-result-grid").TextContent;
 
         // Before Apply: persisted None, honest explanation

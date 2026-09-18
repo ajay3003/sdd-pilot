@@ -1318,3 +1318,66 @@
     .fa-engines-table tbody tr { display: block; padding: .4rem 0; border-bottom: 1px solid var(--clr-border-subtle); }
     .fa-engines-table tbody td, .fa-engines-table tbody th { display: block; border: 0; padding: .15rem .7rem; }
 }
+
+/* ── Verification card: status first, then the action ────────────────────────── */
+
+.fa-verification-heading { margin: 0 0 .5rem; font-size: 1rem; }
+.fa-verification-status { display: grid; gap: .15rem; margin: 0 0 .5rem; }
+.fa-verification-status div { display: flex; flex-direction: column; }
+.fa-verification-status dt {
+    font-size: .72rem; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--clr-text-muted);
+}
+.fa-verification-status dd { margin: 0; font-weight: 600; color: var(--clr-text-heading); }
+
+/* ── Integrations: neutral guidance and a deliberate Known / Custom choice ───── */
+
+.fa-integrations-head {
+    display: flex; flex-wrap: wrap; justify-content: space-between;
+    align-items: center; gap: .5rem 1rem; margin-bottom: .65rem;
+}
+.fa-integrations-note { margin: 0; font-size: .85rem; color: var(--clr-text-muted); }
+
+.fa-add-integration {
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    padding: .75rem;
+    margin-bottom: .65rem;
+    background: var(--clr-surface-white);
+}
+
+.fa-add-mode { border: none; padding: 0; margin: 0 0 .6rem; }
+.fa-add-mode > legend { padding: 0; }
+
+.fa-add-mode-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: .5rem;
+    margin-top: .35rem;
+}
+
+.fa-add-mode-card {
+    display: flex; align-items: flex-start; gap: .5rem;
+    padding: .6rem .7rem; cursor: pointer;
+    border: 1px solid var(--clr-border); border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+.fa-add-mode-card:hover { border-color: var(--clr-border-hover); }
+.fa-add-mode-card-selected { border-color: var(--clr-primary); background: var(--clr-surface-selected); }
+.fa-add-mode-card:focus-within { outline: 3px solid var(--clr-primary); outline-offset: 2px; }
+.fa-add-mode-card input { margin-top: .2rem; flex: none; }
+
+.fa-add-mode-body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.fa-add-mode-title { font-weight: 600; font-size: .875rem; color: var(--clr-text-heading); }
+.fa-add-mode-help { font-size: .78rem; color: var(--clr-text-muted); }
+.fa-add-mode-types { font-size: .72rem; color: var(--clr-text-subtle); overflow-wrap: anywhere; }
+
+/* Neutral, actionable — never warning-styled: no audited template is a normal state. */
+.fa-templates-empty {
+    padding: .625rem .75rem;
+    border: 1px dashed var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+.fa-templates-empty-title { margin: 0; font-weight: 600; font-size: .85rem; color: var(--clr-text-heading); }
+.fa-templates-empty-help { margin: .15rem 0 .5rem; font-size: .8rem; color: var(--clr-text-muted); }

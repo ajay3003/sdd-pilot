@@ -17,6 +17,15 @@ public static partial class DetectionPresentation
         _ => "Not determined"
     };
 
+    /// <summary>Readable confidence wording; "VeryHigh" is an enum spelling, not something to show a tester.</summary>
+    public static string ConfidenceLabel(DetectionConfidence confidence) => confidence switch
+    {
+        DetectionConfidence.VeryHigh => "Very High",
+        DetectionConfidence.High => "High",
+        DetectionConfidence.Medium => "Medium",
+        _ => "Low"
+    };
+
     public static string? ProfileName(string? hostname)
     {
         var label = hostname?.Split('.', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();

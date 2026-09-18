@@ -131,7 +131,7 @@
             </div>
             <div class="fa-detection-state" role="status">
                 <span class="fa-summary-label">Detection</span>
-                <strong class="fa-detection-value fa-detection-@DetectionStateCss">@DetectionStateLabel</strong>
+                <strong class="fa-detection-value fa-detection-@DetectionStateCss">@DetectionStateBadge</strong>
             </div>
             <div class="fa-primary-actions" aria-busy="@_isDetecting.ToString().ToLowerInvariant()">
                 @if (!_browserDetectionInProgress)
@@ -199,7 +199,7 @@
                             <span class="fa-card-status" role="status" data-testid="detection-restored">@RestoredDetectionLabel</span>
                         }
                     </div>
-                    <span class="fa-result-confidence">Target detection confidence: @_detectionResult.Confidence</span>
+                    <span class="fa-result-confidence">Target detection confidence: @DetectionPresentation.ConfidenceLabel(_detectionResult.Confidence)</span>
                 </div>
                 <p class="fa-result-message">@DetectionStateMessage</p>
                 <dl class="fa-result-grid">
@@ -207,10 +207,8 @@
                     <div><dt>Framework</dt><dd>@DetectionPresentation.FrameworkLabel(_detectionResult.DetectedClientFramework)</dd></div>
                     <div><dt>Environment</dt><dd>@(_detectionResult.SuggestedEnvironmentType?.ToString() ?? "Not detected") <small>Proposed</small></dd></div>
                     <div><dt>Detected authentication</dt><dd>@DetectedAuthenticationLabel</dd></div>
-                    @if (ManualVerificationRequired && _activeTab != "auth")
-                    {
-                        <div><dt>Manual authentication verification</dt><dd>@ManualVerificationLabel</dd></div>
-                    }
+                    @* The card heading above already states the verification requirement; repeating it as a value row
+                       said the same sentence twice in one card. The Verification card below owns the next action. *@
                     <div><dt>Profile name</dt><dd>@(_detectionResult.SuggestedProfileName ?? "Not proposed") <small>Proposed</small></dd></div>
                     @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
                     {
@@ -244,9 +242,13 @@
 
         @if (ManualVerificationRequired && _activeTab != "auth")
         {
-            <section class="fa-result" aria-label="Manual authentication verification">
+            @* Focused on the next action: the state is stated once above, so this card leads with Status + button. *@
+            <section class="fa-result fa-verification" aria-labelledby="manual-verification-heading">
+                <h3 id="manual-verification-heading" class="fa-verification-heading">Verification</h3>
                 <div role="status">
-                    <strong>@ManualVerificationLabel</strong>
+                    <dl class="fa-verification-status">
+                        <div><dt>Status</dt><dd data-testid="manual-verification-status">@ManualVerificationStatusLabel</dd></div>
+                    </dl>
                     <details><summary>Verification details</summary>
                     <p>Your organization requires sign-in using a managed Microsoft Edge work profile. BirkNext cannot verify this sign-in automatically.</p>
                     @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
@@ -387,7 +389,7 @@
                     <section class="fa-detected-card" data-testid="target-detected-summary" aria-labelledby="target-detected-heading">
                         <div class="fa-card-heading">
                             <h3 id="target-detected-heading">Detected from target</h3>
-                            <span class="fa-card-status fa-card-status-muted" data-testid="target-detection-confidence">Detection confidence: @_detectionResult.Confidence</span>
+                            <span class="fa-card-status fa-card-status-muted" data-testid="target-detection-confidence">Detection confidence: @DetectionPresentation.ConfidenceLabel(_detectionResult.Confidence)</span>
                         </div>
 
                         <dl class="fa-detected-list">
@@ -1280,40 +1282,55 @@
             {
                 @if (_isEditMode && _editProfile is not null)
                 {
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.65rem">
-                        <span class="fa-section-note" style="margin:0">Configure service integrations for this environment. Used by Integration Quality Review.</span>
+                    @* Neutral guidance, not a warning: this states where the configuration is consumed. *@
+                    <div class="fa-integrations-head">
+                        <p class="fa-integrations-note" data-testid="fa-integrations-note">Service integrations configured here are used by Integration Quality Review.</p>
                         <SecondaryButton OnClick="BeginAddIntegration" Class="fa-btn-sm">+ Add Integration</SecondaryButton>
                     </div>
 
                     @* Add flow: either a template evidenced for this environment, or an empty custom integration. *@
                     @if (_addingIntegration)
                     {
-                        <div class="fa-add-integration" data-testid="fa-add-integration-flow"
-                             style="border:1px solid var(--clr-border);border-radius:var(--radius-md);padding:.75rem;margin-bottom:.65rem">
-                            <fieldset style="border:none;padding:0;margin:0 0 .6rem 0">
-                                <legend class="fa-label" style="padding:0">Add integration</legend>
-                                <label style="display:block;margin:.2rem 0">
-                                    <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-known"
-                                           checked="@(_addMode == "known")"
-                                           @onchange="@(() => SetAddMode("known"))" />
-                                    Known M2LB integration
-                                </label>
-                                <label style="display:block;margin:.2rem 0">
-                                    <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-custom"
-                                           checked="@(_addMode == "custom")"
-                                           @onchange="@(() => SetAddMode("custom"))" />
-                                    Custom integration
-                                </label>
+                        <div class="fa-add-integration" data-testid="fa-add-integration-flow">
+                            @* Selectable cards over real radio inputs: the choice matters, and native radios keep
+                               arrow-key selection, grouping and the exposed checked state for free. *@
+                            <fieldset class="fa-add-mode">
+                                <legend class="fa-label">Add integration</legend>
+                                <div class="fa-add-mode-options">
+                                    <label class="fa-add-mode-card @(_addMode == "known" ? "fa-add-mode-card-selected" : "")">
+                                        <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-known"
+                                               checked="@(_addMode == "known")"
+                                               @onchange="@(() => SetAddMode("known"))" />
+                                        <span class="fa-add-mode-body">
+                                            <span class="fa-add-mode-title">Known M2LB integration</span>
+                                            <span class="fa-add-mode-help">Use a predefined integration template when one is available for this environment.</span>
+                                        </span>
+                                    </label>
+                                    <label class="fa-add-mode-card @(_addMode == "custom" ? "fa-add-mode-card-selected" : "")">
+                                        <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-custom"
+                                               checked="@(_addMode == "custom")"
+                                               @onchange="@(() => SetAddMode("custom"))" />
+                                        <span class="fa-add-mode-body">
+                                            <span class="fa-add-mode-title">Custom integration</span>
+                                            <span class="fa-add-mode-help">Configure an integration manually.</span>
+                                            <span class="fa-add-mode-types">Supports: REST, GraphQL, Event Hub, Service Bus, Kafka, RabbitMQ</span>
+                                        </span>
+                                    </label>
+                                </div>
                             </fieldset>
 
                             @if (_addMode == "known")
                             {
                                 @if (_knownTemplates.Count == 0)
                                 {
-                                    @* An environment with no evidenced templates is a normal state, not an error. *@
-                                    <p class="fa-section-note" data-testid="fa-templates-empty">
-                                        No verified integration templates are available for this environment.
-                                    </p>
+                                    @* A normal state for an environment with no audited template — offer the way forward. *@
+                                    <div class="fa-templates-empty" data-testid="fa-templates-empty">
+                                        <p class="fa-templates-empty-title">No known M2LB templates are available for this environment.</p>
+                                        <p class="fa-templates-empty-help">You can configure a custom integration instead.</p>
+                                        <SecondaryButton OnClick="@(() => SetAddMode("custom"))" Class="fa-btn-sm" data-testid="fa-templates-empty-custom">
+                                            Configure custom integration
+                                        </SecondaryButton>
+                                    </div>
                                 }
                                 else
                                 {
@@ -2514,6 +2531,15 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private bool HasCurrentSuccessfulDetection =>
         CurrentDetectionState == DetectionState.Complete;
 
+    /// <summary>
+    /// Compact wording for the summary badge beside the Frontend URL. Every other detection state is already short;
+    /// only manual verification had a full sentence there, which the Detection result card states once on its own.
+    /// </summary>
+    private string DetectionStateBadge =>
+        CurrentDetectionState == DetectionState.ManualAuthenticationVerificationRequired && !DetectionReady
+            ? "Needs verification"
+            : DetectionStateLabel;
+
     private string DetectionStateLabel =>
         CurrentDetectionState switch
         {
@@ -2568,6 +2594,22 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         (_detectionResult is null && CurrentProfile?.ManualVerification is not null);
     private ManualAuthenticationVerificationStatus ManualStatus => CurrentProfile?.ManualVerification?.StatusFor(CurrentProfile)
         ?? (_manualInstructionsOpen ? ManualAuthenticationVerificationStatus.Pending : ManualAuthenticationVerificationStatus.Required);
+    /// <summary>
+    /// Short status for surfaces that sit beside the Detection result card, which already states the long phrase once.
+    /// The stale variants keep their full wording because the sentence carries the instruction, not just the state.
+    /// </summary>
+    private string ManualVerificationStatusLabel =>
+        !_manualResultRecordedThisSession && CurrentProfile?.ManualVerification is { } previous && ManualStatus != ManualAuthenticationVerificationStatus.Stale
+            ? $"Previous manual verification: {previous.Result}"
+            : ManualStatus switch
+            {
+                ManualAuthenticationVerificationStatus.Passed => "Manual verification passed",
+                ManualAuthenticationVerificationStatus.Failed => "Manual verification failed",
+                ManualAuthenticationVerificationStatus.Pending => "Manual verification pending",
+                ManualAuthenticationVerificationStatus.Stale => ManualVerificationLabel,
+                _ => "Manual verification required",
+            };
+
     private string ManualVerificationLabel => !_manualResultRecordedThisSession && CurrentProfile?.ManualVerification is { } previous && ManualStatus != ManualAuthenticationVerificationStatus.Stale
         ? $"Previous manual authentication verification: {previous.Result}"
         : ManualStatus switch

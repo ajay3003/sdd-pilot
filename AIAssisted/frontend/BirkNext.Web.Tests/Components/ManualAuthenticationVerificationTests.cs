@@ -59,7 +59,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Assert.DoesNotContain("Continue detection in browser", cut.Markup);
         Assert.False(ActivationDisabled(cut));
         Click(cut, "Open verification instructions");
-        Assert.Contains("Manual authentication verification pending", cut.Markup);
+        Assert.Contains("Manual verification pending", cut.Markup);
         Assert.Contains("MCAS / Defender for Cloud Apps", cut.Markup);
         Assert.Null(_settings.Settings.Profiles.Single(x => x.Id == "dev").ManualVerification);
         Assert.False(ActivationDisabled(cut));
@@ -85,14 +85,14 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Assert.DoesNotContain("BrowserResourceFailure", cut.Markup);
         if (!passed)
         {
-            Assert.Contains("Manual authentication verification failed", cut.Markup);
+            Assert.Contains("Manual verification failed", cut.Markup);
             Click(cut, "Retry manual verification");
             Assert.Contains("Mark verification passed", cut.Markup);
         }
         cut.Dispose();
         var reloaded = Open();
-        Assert.Contains("Previous manual authentication verification", reloaded.Markup);
-        Assert.DoesNotContain("Manual authentication verification failed", reloaded.Markup);
+        Assert.Contains("Previous manual verification", reloaded.Markup);
+        Assert.DoesNotContain("Manual verification failed", reloaded.Markup);
         Assert.False(ActivationDisabled(reloaded));
     }
 
@@ -153,7 +153,7 @@ public sealed class ManualAuthenticationVerificationTests : BunitContext
         Click(cut, "Detect settings");
         Click(cut, "Open verification instructions");
         Click(cut, "Mark verification passed");
-        Assert.Contains("Manual authentication verification passed", cut.Markup);
+        Assert.Contains("Manual verification passed", cut.Markup);
         Assert.False(ActivationDisabled(cut));
     }
 

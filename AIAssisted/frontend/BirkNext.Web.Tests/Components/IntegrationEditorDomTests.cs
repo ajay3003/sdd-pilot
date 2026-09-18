@@ -251,7 +251,8 @@ public sealed class IntegrationEditorDomTests : BunitContext
         // normal state and must not render as a failure.
         var emptyState = cut.Find("[data-testid=fa-templates-empty]").TextContent;
 
-        emptyState.Should().Contain("No verified integration templates are available");
+        emptyState.Should().Contain("No known M2LB templates are available for this environment.");
+        emptyState.Should().Contain("You can configure a custom integration instead.");
         cut.Markup.Should().NotContain("Failed to load");
     }
 
