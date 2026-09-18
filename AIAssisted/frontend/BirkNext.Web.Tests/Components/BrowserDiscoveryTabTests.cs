@@ -275,8 +275,8 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         var cut = Open();
 
         Text(cut, "browser-discovery-empty").Should()
-            .Contain("No browser evidence collected yet")
-            .And.Contain("Open an approved application page in the paired browser");
+            .Contain("No browser evidence yet")
+            .And.Contain("Pair Browser Companion and open an approved application page");
         cut.FindAll("[data-testid=browser-discovery-page-row]").Should().BeEmpty();
         cut.FindAll("[data-testid=browser-discovery-overview-table]").Should().BeEmpty();
         Text(cut, "bd-pages-count").Should().Be("0");
@@ -288,9 +288,9 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     // ── 20. Connection states ────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(BrowserCompanionState.NotPaired, "Not connected", "not paired")]
-    [InlineData(BrowserCompanionState.Disconnected, "Paired · not reporting", "not currently reporting")]
-    [InlineData(BrowserCompanionState.Connected, "Connected", "is connected")]
+    [InlineData(BrowserCompanionState.NotPaired, "Not connected", "Pair the managed Edge browser")]
+    [InlineData(BrowserCompanionState.Disconnected, "Paired · not reporting", "resume reporting")]
+    [InlineData(BrowserCompanionState.Connected, "Connected", "Collecting browser evidence")]
     public async Task ConnectionStatesAreDistinctAndNeverImplyEvidence(BrowserCompanionState state, string label, string message)
     {
         var api = new Mock<IBrowserCompanionApiService>();
@@ -304,7 +304,9 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
         Text(cut, "bd-session").Should().Be(label);
         Text(cut, "browser-companion-connection").Should().Contain(message);
-        Text(cut, "bd-origins").Should().Contain(Origin);
+        // Approved origins moved out of the primary summary into the companion details.
+        cut.FindAll("[data-testid=bd-origins]").Should().BeEmpty();
+        Text(cut, "browser-companion-origins").Should().Contain(Origin);
         Text(cut, "bd-current-page").Should().Be(Origin + "/dashboard");
 
         // Connected is a session state, never evidence.
@@ -328,7 +330,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
         cut.FindComponents<BrowserCompanionPanel>().Should().ContainSingle();
         // The duplicated read-outs live in the Browser Discovery summary row only.
-        foreach (var duplicated in new[] { "target", "current-page", "pages", "origins", "last-evidence", "dom", "accessibility", "performance" })
+        foreach (var duplicated in new[] { "target", "pages", "dom", "accessibility", "performance" })
             cut.FindAll($"[data-testid=browser-companion-{duplicated}]").Should().BeEmpty(duplicated);
         // Connection state and message remain on the card.
         cut.FindAll("[data-testid=browser-companion-state]").Should().ContainSingle();

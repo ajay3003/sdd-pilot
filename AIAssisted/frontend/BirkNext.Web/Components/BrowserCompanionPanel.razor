@@ -28,7 +28,26 @@
             <div><dt>Last browser evidence</dt><dd data-testid="browser-companion-last-evidence">@(Evidence.Select(p => (DateTimeOffset?)p.CapturedAt).Max()?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "None")</dd></div>
         </dl>
     }
-    <p class="bcp-note" data-testid="browser-companion-connection">@ConnectionMessage</p>
+    @* Compact mode: the state badge above already names the session state, so the sentence form of the same state is
+       dropped and replaced by what to do about it. The full message stays where the card is the only status surface. *@
+    @if (Compact)
+    {
+        <p class="bcp-note" data-testid="browser-companion-connection">@CompactActionMessage</p>
+        <details class="bcp-details" data-testid="browser-companion-details">
+            <summary>Details</summary>
+            @* No Session row: the badge beside the title already states it, and repeating it inside the same card
+               is the duplication this pass removes. *@
+            <dl class="bcp-grid">
+                <div><dt>Approved origins</dt><dd class="bcp-mono" data-testid="browser-companion-origins">@(ApprovedOrigins.Count == 0 ? "None" : string.Join(", ", ApprovedOrigins))</dd></div>
+                <div><dt>Current page</dt><dd class="bcp-mono" data-testid="browser-companion-current-page">@CurrentPage</dd></div>
+                <div><dt>Last evidence</dt><dd data-testid="browser-companion-last-evidence">@(Evidence.Select(p => (DateTimeOffset?)p.CapturedAt).Max()?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "None")</dd></div>
+            </dl>
+        </details>
+    }
+    else
+    {
+        <p class="bcp-note" data-testid="browser-companion-connection">@ConnectionMessage</p>
+    }
 
     @if (Status.State == BrowserCompanionState.PairingPending)
     {
@@ -95,6 +114,19 @@
     private IReadOnlyList<BrowserPageEvidence> Evidence =>
         (Services.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(Profile?.Id ?? "").Pages
             .Where(p => p.BrowserEvidence is not null).Select(p => p.BrowserEvidence!).ToList() ?? Status.Pages;
+    /// <summary>
+    /// Compact mode says what to DO, because the badge beside the title already says what the state IS. It never
+    /// restates "Browser Companion is not paired" next to a badge that already reads "Not connected".
+    /// </summary>
+    private string CompactActionMessage => Status.State switch
+    {
+        BrowserCompanionState.Connected => "Collecting browser evidence from approved application pages in your managed Edge session.",
+        BrowserCompanionState.Disconnected => "Open the application in your managed Edge to resume reporting.",
+        BrowserCompanionState.PairingPending => "Enter the pairing code in Browser Companion to finish pairing.",
+        BrowserCompanionState.Expired => "Pair again to resume collecting browser evidence.",
+        _ => "Pair the managed Edge browser to collect evidence from approved application pages.",
+    };
+
     private string ConnectionMessage => Status.State switch
     {
         BrowserCompanionState.Connected => "Browser Companion is connected.",

@@ -14,10 +14,10 @@
     <div class="bd-overview" data-testid="browser-discovery-summary">
         <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
         <div class="bd-ov-item"><span class="bd-ov-label">Browser session</span><span class="bd-ov-value" data-testid="bd-session">@StateLabel</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Current page</span><span class="bd-ov-value bd-mono" data-testid="bd-current-page">@CurrentPage</span></div>
         <div class="bd-ov-item"><span class="bd-ov-label">Pages with evidence</span><span class="bd-ov-value" data-testid="bd-pages-count">@Rows.Count</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Last browser evidence</span><span class="bd-ov-value bd-mono" data-testid="bd-last-evidence">@(LastEvidence is { } t ? Time(t) : "None")</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Approved origins</span><span class="bd-ov-value bd-mono" data-testid="bd-origins">@(ApprovedOrigins.Count == 0 ? "—" : string.Join(", ", ApprovedOrigins))</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Last evidence</span><span class="bd-ov-value bd-mono" data-testid="bd-last-evidence">@(LastEvidence is { } t ? Time(t) : "None")</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Current page</span><span class="bd-ov-value bd-mono" data-testid="bd-current-page">@CurrentPage</span></div>
+        @* Approved origins is a security fact, not a review metric; it lives in the Browser Companion details. *@
     </div>
 
     <nav class="bd-nav" role="tablist" aria-label="Browser discovery views">
@@ -39,13 +39,10 @@
     <div class="bd-panel" role="tabpanel" id="browser-discovery-panel-overview" aria-labelledby="browser-discovery-tab-overview" tabindex="0" hidden="@(_view != "overview")">
     @if (_view == "overview")
     {
-            <h4 class="bd-panel-title">What browser evidence was observed</h4>
+            <h4 class="bd-panel-title">Observed browser evidence</h4>
             @if (Rows.Count == 0)
             {
-                <div class="bd-empty" data-testid="browser-discovery-empty">
-                    <p class="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
-                    <p class="bd-empty-help">@BrowserDiscoveryPresentation.NoEvidenceHelp</p>
-                </div>
+                @EmptyEvidence
             }
             else
             {
@@ -105,7 +102,7 @@
             <aside class="bd-pagelist" aria-label="Pages with browser evidence">
                 @if (Rows.Count == 0)
                 {
-                    <p class="bd-empty-help">@BrowserDiscoveryPresentation.NoEvidenceHelp</p>
+                    <p class="bd-empty-help">@EmptyEvidenceHelp</p>
                 }
                 @foreach (var row in Rows)
                 {
@@ -189,10 +186,7 @@
             <h4 class="bd-panel-title">Observed browser evidence by type</h4>
             @if (Rows.Count == 0)
             {
-                <div class="bd-empty" data-testid="browser-discovery-evidence-empty">
-                    <p class="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
-                    <p class="bd-empty-help">@BrowserDiscoveryPresentation.NoEvidenceHelp</p>
-                </div>
+                @EmptyEvidence
             }
             else
             {
@@ -309,6 +303,35 @@
     private void OnRuntimeChanged() => _ = InvokeAsync(StateHasChanged);
 
     public void Dispose() { if (_subscribed is not null) _subscribed.Changed -= OnRuntimeChanged; }
+
+    /// <summary>A session already exists, so only the "open a page" step remains.</summary>
+    private bool CompanionPaired => Status.State is not (BrowserCompanionState.NotPaired or BrowserCompanionState.Expired);
+
+    private string EmptyEvidenceHelp => CompanionPaired
+        ? BrowserDiscoveryPresentation.NoEvidencePairedHelp
+        : BrowserDiscoveryPresentation.NoEvidenceHelp;
+
+    /// <summary>
+    /// The single absence message for browser evidence, with the next action attached. Absence of evidence is stated
+    /// once here; the session state is the summary strip's job and is not repeated in these words.
+    /// </summary>
+    private RenderFragment EmptyEvidence => __builder =>
+    {
+        <div class="bd-empty" data-testid="browser-discovery-empty">
+            <p class="bd-empty-title">@BrowserDiscoveryPresentation.NoEvidenceTitle</p>
+            <p class="bd-empty-help">@EmptyEvidenceHelp</p>
+            @if (!CompanionPaired && Runtime is not null && Profile is not null)
+            {
+                <SecondaryButton OnClick="PairCompanion" Disabled="@Runtime.Busy" Class="fa-btn-sm">Pair Browser Companion</SecondaryButton>
+            }
+        </div>
+    };
+
+    /// <summary>Starts pairing through the runtime that owns it. No protocol logic is duplicated here.</summary>
+    private async Task PairCompanion()
+    {
+        if (Runtime is not null && Profile is not null) await Runtime.StartPairingAsync(Profile);
+    }
 
     private void Select(string key) { _view = key; }
     private void OpenPage(string identity) { _selected = identity; _view = "pages"; }

@@ -123,7 +123,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
 
         var card = cut.Find("section.fa-verification");
         card.QuerySelector("#manual-verification-heading")!.TextContent.Trim().Should().Be("Verification");
-        card.TextContent.Should().Contain("Status").And.Contain("Manual verification required");
+        card.QuerySelector("[data-testid=manual-verification-status]")!.TextContent.Trim().Should().Be("Manual verification required");
 
         cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Open verification instructions");
         card.TextContent.Should().Contain("If you changed environment settings, save them before recording verification.");

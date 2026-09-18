@@ -44,8 +44,19 @@ public static class BrowserDiscoveryPresentation
     /// <summary>Browser evidence only ever comes from the Browser Companion extension; proxy traffic is Endpoint Discovery's.</summary>
     public const string Source = "Browser Companion";
 
-    public const string NoEvidenceTitle = "No browser evidence collected yet";
-    public const string NoEvidenceHelp = "Open an approved application page in the paired browser to collect browser evidence.";
+    /// <summary>
+    /// The one absence message for browser evidence. The session state is stated once in the summary strip and once on
+    /// the Browser Companion card; this says what is missing and what to do, without restating either.
+    /// </summary>
+    public const string NoEvidenceTitle = "No browser evidence yet";
+
+    /// <summary>Next action when nothing is paired yet: both steps in one sentence.</summary>
+    public const string NoEvidenceHelp =
+        "Pair Browser Companion and open an approved application page to start collecting browser evidence.";
+
+    /// <summary>Next action when a session already exists — pairing is done, so only the page step remains.</summary>
+    public const string NoEvidencePairedHelp =
+        "Open an approved application page in the paired browser to start collecting browser evidence.";
 
     /// <summary>Stated wherever WCAG areas appear, so the grouping can never read as an assessment.</summary>
     public const string AreaDisclaimer =

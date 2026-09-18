@@ -1401,3 +1401,23 @@
 }
 .fa-template-preview dd { margin: 0; font-size: .82rem; overflow-wrap: anywhere; }
 .fa-template-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }
+
+/* ── Verification: status as a badge beside the heading, action first ────────── */
+
+.fa-verification { padding: .75rem 1rem; }
+.fa-verification-head {
+    display: flex; flex-wrap: wrap; align-items: baseline;
+    justify-content: space-between; gap: .3rem .75rem; margin-bottom: .4rem;
+}
+.fa-verification-heading { margin: 0; font-size: 1rem; }
+.fa-verification-badge {
+    padding: .0625rem .45rem; border-radius: 999px;
+    border: 1px solid var(--clr-warning-border); background: var(--clr-warning-bg-light);
+    font-size: .7rem; font-weight: 600; white-space: nowrap; color: var(--clr-warning);
+}
+
+/* Tighter detection block: the facts grid carries the content, not the padding. */
+.fa-result { padding: .75rem 1rem; margin: .75rem 1rem; }
+.fa-result-message { margin: .4rem 0 .6rem; }
+.fa-result-grid { gap: .5rem .75rem; }
+.fa-result-actions { margin-top: .6rem; }

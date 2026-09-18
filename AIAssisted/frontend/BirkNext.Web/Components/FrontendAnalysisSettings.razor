@@ -244,11 +244,13 @@
         {
             @* Focused on the next action: the state is stated once above, so this card leads with Status + button. *@
             <section class="fa-result fa-verification" aria-labelledby="manual-verification-heading">
-                <h3 id="manual-verification-heading" class="fa-verification-heading">Verification</h3>
-                <div role="status">
-                    <dl class="fa-verification-status">
-                        <div><dt>Status</dt><dd data-testid="manual-verification-status">@ManualVerificationStatusLabel</dd></div>
-                    </dl>
+                @* The Detection result card above states the requirement; here it is a compact badge beside the
+                   heading so the card can lead with the action instead of repeating the sentence. *@
+                <div class="fa-verification-head">
+                    <h3 id="manual-verification-heading" class="fa-verification-heading">Verification</h3>
+                    <span class="fa-verification-badge" role="status" data-testid="manual-verification-status">@ManualVerificationStatusLabel</span>
+                </div>
+                <div>
                     <details><summary>Verification details</summary>
                     <p>Your organization requires sign-in using a managed Microsoft Edge work profile. BirkNext cannot verify this sign-in automatically.</p>
                     @if (HasUnsavedAuthenticationChanges && _editProfile is not null)
