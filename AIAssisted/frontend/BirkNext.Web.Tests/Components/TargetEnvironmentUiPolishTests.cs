@@ -20,13 +20,11 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
 
     private readonly FrontendAnalysisSettingsService _settings = new();
     private readonly Mock<ITargetEnvironmentDetectionApiService> _api = new();
-    private readonly Mock<IIntegrationTemplateService> _templates = new();
 
     public TargetEnvironmentUiPolishTests()
     {
         Services.AddSingleton<IFrontendAnalysisSettingsService>(_settings);
         Services.AddSingleton(_api.Object);
-        Services.AddSingleton(_templates.Object);
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         JSInterop.Mode = JSRuntimeMode.Loose;
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult($$"""
@@ -34,7 +32,6 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
           {"id":"dev","name":"M2LB DEV","environmentType":"Development","targetUrl":"{{Url}}"}
         ]}
         """);
-        _templates.Setup(t => t.GetForEnvironmentAsync(It.IsAny<string?>())).ReturnsAsync([]);
         _api.Setup(x => x.DetectFromUrlAsync(Url, default)).ReturnsAsync(() => new TargetEnvironmentDetectionResult
         {
             OriginalUrl = Url, Success = true, Reachability = TargetReachability.Reachable,
@@ -154,82 +151,6 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Integrations").Click();
         cut.FindAll("button").Single(b => b.TextContent.Trim() == "+ Add Integration").Click();
         return cut;
-    }
-
-    // ── 9–11. Both options render as one accessible single choice ───────────
-
-    [Fact]
-    public void KnownAndCustomRenderAsOneAccessibleRadioGroup()
-    {
-        var cut = OpenAddIntegration();
-
-        var known = cut.Find("[data-testid=fa-add-mode-known]");
-        var custom = cut.Find("[data-testid=fa-add-mode-custom]");
-
-        // Real radio semantics: same group name, native keyboard behaviour, exposed selection.
-        foreach (var input in new[] { known, custom })
-        {
-            input.GetAttribute("type").Should().Be("radio");
-            input.GetAttribute("name").Should().Be("fa-add-mode");
-        }
-        known.HasAttribute("checked").Should().BeTrue("Known is the default choice");
-        custom.HasAttribute("checked").Should().BeFalse();
-
-        // Each option explains itself.
-        var cards = cut.FindAll(".fa-add-mode-card").Select(c => c.TextContent).ToList();
-        cards.Should().ContainSingle(c => c.Contains("Known M2LB integration") && c.Contains("predefined integration template"));
-        cards.Should().ContainSingle(c => c.Contains("Custom integration") && c.Contains("Configure an integration manually"));
-        cut.Find(".fa-add-mode legend").TextContent.Trim().Should().Be("Add integration");
-    }
-
-    [Fact]
-    public void CustomOptionListsTheSupportedIntegrationTypes()
-    {
-        var cut = OpenAddIntegration();
-
-        var types = cut.Find(".fa-add-mode-types").TextContent;
-        foreach (var type in new[] { "REST", "GraphQL", "Event Hub", "Service Bus", "Kafka", "RabbitMQ" })
-            types.Should().Contain(type);
-    }
-
-    // ── 12–13, 15, 18. Empty template state is neutral and actionable ───────
-
-    [Fact]
-    public void NoKnownTemplateStateIsNeutralActionableAndFabricatesNothing()
-    {
-        var cut = OpenAddIntegration();
-
-        var empty = cut.Find("[data-testid=fa-templates-empty]");
-        empty.TextContent.Should().Contain("The known M2LB templates could not be loaded.");
-        empty.TextContent.Should().Contain("You can configure a custom integration instead.");
-
-        // Neutral, not an error or a warning.
-        empty.ClassList.Should().NotContain(c => c.Contains("warn") || c.Contains("error") || c.Contains("danger"));
-        empty.TextContent.Should().NotContainAny("Error", "Failed", "Warning", "Invalid");
-        // Provenance stays truthful: nothing is called verified or discovered when no template exists.
-        empty.TextContent.Should().NotContainAny("verified", "Verified", "Discovered");
-
-        // No template is invented for an environment that has none.
-        cut.FindAll("[data-testid=fa-template-select]").Should().BeEmpty();
-        cut.FindAll("[data-testid=fa-templates-empty-custom]").Should().ContainSingle();
-    }
-
-    // ── 14, 16. The action switches the flow and the custom form still works ─
-
-    [Fact]
-    public void ConfigureCustomIntegrationSwitchesTheFlowAndKeepsTheCustomForm()
-    {
-        var cut = OpenAddIntegration();
-
-        cut.Find("[data-testid=fa-templates-empty-custom]").Click();
-
-        cut.Find("[data-testid=fa-add-mode-custom]").HasAttribute("checked").Should().BeTrue();
-        cut.Find("[data-testid=fa-add-mode-known]").HasAttribute("checked").Should().BeFalse();
-        cut.FindAll("[data-testid=fa-templates-empty]").Should().BeEmpty();
-
-        // The existing custom confirm action is untouched and still adds an integration.
-        cut.Find("[data-testid=fa-add-custom-confirm]").Click();
-        cut.FindAll("[data-testid=fa-integration-row], .fa-integration-row").Should().NotBeEmpty();
     }
 
     // ── 17. Informational strip stays, as neutral guidance ──────────────────

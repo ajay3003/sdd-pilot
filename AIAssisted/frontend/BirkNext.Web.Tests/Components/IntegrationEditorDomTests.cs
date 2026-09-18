@@ -247,33 +247,34 @@ public sealed class IntegrationEditorDomTests : BunitContext
 
         cut.Find("[data-testid=fa-missing-fields]").GetAttribute("role").Should().Be("status");
     }
-
     [Fact]
-    public void AddIntegrationModeChoiceIsAGroupedRadioSet()
+    public void AddIntegrationOpensOneEditableFormWithNoModeOrTemplateChoice()
     {
         var cut = RenderIntegrationsTab();
         cut.FindAll("button").First(b => b.TextContent.Contains("Add Integration")).Click();
 
-        cut.FindAll("[data-testid=fa-add-integration-flow] fieldset").Should().NotBeEmpty();
-        cut.FindAll("[data-testid=fa-add-integration-flow] legend").Should().NotBeEmpty();
-        cut.FindAll("[data-testid=fa-add-mode-known]").Should().NotBeEmpty();
-        cut.FindAll("[data-testid=fa-add-mode-custom]").Should().NotBeEmpty();
+        // One form, opened directly: the fields are there to edit, with no choice in front of them.
+        cut.FindAll("[data-testid=fa-add-integration]").Should().ContainSingle();
+        cut.FindAll("[data-testid=fa-new-field-endpoint]").Should().ContainSingle();
+        cut.FindAll("[data-testid=fa-add-integration-confirm]").Should().ContainSingle();
+
+        foreach (var gone in new[] { "fa-add-integration-flow", "fa-add-mode-known", "fa-add-mode-custom",
+                                     "fa-template-select", "fa-templates-empty", "fa-template-preview",
+                                     "fa-templates-empty-custom", "fa-add-custom-confirm" })
+            cut.FindAll($"[data-testid={gone}]").Should().BeEmpty(gone);
     }
 
     [Fact]
-    public void WithoutATemplateServiceTheKnownFlowShowsTheEmptyStateNotAnError()
+    public void AddingAnIntegrationNeverDependsOnATemplateService()
     {
+        // No template service is registered here, and none is needed: adding an integration is a local
+        // draft operation. The load-failure state the user used to meet is gone with the dependency.
         var cut = RenderIntegrationsTab();
         cut.FindAll("button").First(b => b.TextContent.Contains("Add Integration")).Click();
 
-        // No template service is registered here, so the catalogue resolves empty. That is a
-        // normal state and must not render as a failure.
-        var emptyState = cut.Find("[data-testid=fa-templates-empty]").TextContent;
-
-        // The catalogue is reusable knowledge, so an empty list can now only mean it failed to load.
-        emptyState.Should().Contain("The known M2LB templates could not be loaded.");
-        emptyState.Should().Contain("You can configure a custom integration instead.");
-        cut.Markup.Should().NotContain("Failed to load");
+        cut.Markup.Should().NotContain("The known M2LB templates could not be loaded.");
+        cut.Markup.Should().NotContainAny("Known M2LB integration", "Custom integration", "Failed to load");
+        cut.Find("[data-testid=fa-add-integration]").TextContent.Should().Contain("Add integration");
     }
 
     // ── Security ─────────────────────────────────────────────────────────────

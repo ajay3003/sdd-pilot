@@ -1,0 +1,233 @@
+@using BirkNext.Web.Models
+
+@* One integration form, used both for adding a new integration and for editing a configured one, so the two can
+   never drift apart. Field labels, placeholders and visibility all come from IntegrationConfigPresenter: the
+   editor shows exactly the fields the chosen transport has, and nothing it does not. *@
+
+<div class="fa-form-grid @Class">
+    <div class="form-field">
+        <label class="fa-label" for="@Id("name")">Display name <span class="wsr-required">*</span></label>
+        <input id="@Id("name")" type="text" class="form-control" data-testid="@TestId("name")"
+               placeholder="e.g. Order Events" @bind="Integration.Name" @bind:after="Notify" />
+    </div>
+    <div class="form-field">
+        <label class="fa-label" for="@Id("type")">Integration type</label>
+        <select id="@Id("type")" class="form-control" data-testid="@TestId("type")" @bind="Integration.Type" @bind:after="Notify">
+            @foreach (var t in Enum.GetValues<IntegrationType>())
+            { <option value="@t">@IntegrationConfigPresenter.TypeLabel(t)</option> }
+        </select>
+    </div>
+
+    @* ── Connection: what gives this integration its structural identity ── *@
+    <div class="form-field fa-field-full">
+        <label class="fa-label" for="@Id("endpoint")">@EndpointLabel</label>
+        <input id="@Id("endpoint")" type="text" class="form-control" data-testid="@TestId("field-endpoint")"
+               placeholder="@EndpointPlaceholder" @bind="Integration.Endpoint" @bind:after="Notify" />
+    </div>
+
+    @if (IntegrationConfigPresenter.ShowsResourceKind(Integration))
+    {
+        <div class="form-field">
+            <label class="fa-label" for="@Id("kind")">Resource kind</label>
+            <select id="@Id("kind")" class="form-control" data-testid="@TestId("field-resourcekind")" @bind="Integration.ResourceKind" @bind:after="Notify">
+                <option value="@IntegrationResourceKind.Unknown">Select...</option>
+                @foreach (var kind in IntegrationConfigPresenter.ResourceKindChoices(Integration.Type))
+                {
+                    <option value="@kind">@IntegrationConfigPresenter.ResourceKindLabel(kind)</option>
+                }
+            </select>
+        </div>
+    }
+
+    @if (Integration.Type is not (IntegrationType.REST or IntegrationType.GraphQL))
+    {
+        <div class="form-field">
+            <label class="fa-label" for="@Id("resource")">@ResourceLabel</label>
+            <input id="@Id("resource")" type="text" class="form-control" data-testid="@TestId("field-resource")"
+                   placeholder="@ResourcePlaceholder" @bind="Integration.Resource" @bind:after="Notify" />
+        </div>
+    }
+
+    @* Consumer group belongs to Event Hub and Kafka; Service Bus has subscriptions instead, and only on a
+       subscription entity. Nothing renders a field the transport does not have. *@
+    @if (IntegrationConfigPresenter.ShowsConsumerGroup(Integration))
+    {
+        <div class="form-field">
+            <label class="fa-label" for="@Id("consumergroup")">Consumer group</label>
+            <input id="@Id("consumergroup")" type="text" class="form-control" data-testid="@TestId("field-consumergroup")"
+                   placeholder="e.g. $Default" @bind="Integration.Consumer" @bind:after="Notify" />
+        </div>
+    }
+    else if (IntegrationConfigPresenter.ShowsSubscriptionName(Integration))
+    {
+        <div class="form-field">
+            <label class="fa-label" for="@Id("subscription")">Subscription name</label>
+            <input id="@Id("subscription")" type="text" class="form-control" data-testid="@TestId("field-subscription")"
+                   placeholder="e.g. my-subscription" @bind="Integration.Consumer" @bind:after="Notify" />
+        </div>
+    }
+
+    @* ── Relationship: who produces and who consumes. Never inferred from anything typed above. ── *@
+    <div class="form-field">
+        <label class="fa-label" for="@Id("producer")">Producer <span class="form-optional">(optional)</span></label>
+        <input id="@Id("producer")" type="text" class="form-control" data-testid="@TestId("field-producer")"
+               placeholder="Unknown if not known" @bind="Integration.LogicalProducerService" @bind:after="Notify" />
+    </div>
+    <div class="form-field">
+        <label class="fa-label" for="@Id("consumer")">Consumer <span class="form-optional">(optional)</span></label>
+        <input id="@Id("consumer")" type="text" class="form-control" data-testid="@TestId("field-consumer")"
+               placeholder="Unknown if not known" @bind="Integration.LogicalConsumerService" @bind:after="Notify" />
+    </div>
+
+    @if (IntegrationConfigPresenter.MissingRequiredFields(Integration) is { Count: > 0 } missing)
+    {
+        <p class="form-field fa-field-full" data-testid="@TestId("missing-fields")" id="@Id("missing")" role="status">
+            Configuration incomplete. Missing: @string.Join(", ", missing).
+        </p>
+    }
+
+    <div class="form-field">
+        <label class="fa-label" for="@Id("auth")">Authentication Type</label>
+        <select id="@Id("auth")" class="form-control" @bind="Integration.AuthType">
+            @foreach (var t in Enum.GetValues<IntegrationAuthType>())
+            { <option value="@t">@t</option> }
+        </select>
+    </div>
+    <div class="form-field">
+        <label class="fa-label" for="@Id("owner")">Owner <span class="form-optional">(team or contact)</span></label>
+        <input id="@Id("owner")" type="text" class="form-control" placeholder="e.g. platform-team" @bind="Integration.Owner" />
+    </div>
+    <div class="form-field fa-field-full">
+        <label class="fa-label" for="@Id("health")">Health URL <span class="form-optional">(optional)</span></label>
+        <input id="@Id("health")" type="url" class="form-control" placeholder="https://..." @bind="Integration.HealthUrl" />
+    </div>
+    <div class="form-field fa-field-full">
+        <label class="fa-label" for="@Id("worker")">Worker URL <span class="form-optional">(optional)</span></label>
+        <input id="@Id("worker")" type="url" class="form-control" placeholder="https://..." @bind="Integration.WorkerUrl" />
+    </div>
+    <div class="form-field fa-field-full">
+        <label class="fa-label" for="@Id("monitoring")">Monitoring URL <span class="form-optional">(runbook / dashboard)</span></label>
+        <input id="@Id("monitoring")" type="url" class="form-control" placeholder="https://..." @bind="Integration.MonitoringUrl" />
+    </div>
+    <div class="form-field">
+        <label class="fa-label">
+            <input type="checkbox" @bind="Integration.Enabled" style="margin-right:.4rem" />
+            Enabled
+        </label>
+    </div>
+
+    <details class="fa-advanced" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--clr-border)">
+        <summary style="cursor:pointer;font-weight:600;font-size:.85rem">
+            Contract Relationship
+            <span style="font-size:.75rem;margin-left:.5rem;color:var(--clr-text-muted)">@ReadinessLabel</span>
+        </summary>
+        <div style="margin-top:.65rem;padding:.65rem 0">
+            <div class="form-field">
+                <label class="fa-label" for="@Id("contract-name")">Contract Name <span class="form-optional">(optional)</span></label>
+                <input id="@Id("contract-name")" type="text" class="form-control" placeholder="e.g. ChildUpdated"
+                       @bind="Integration.ContractName" @bind:after="Notify" style="margin-bottom:.1rem" />
+                <div style="font-size:.75rem;color:var(--clr-text-muted)">Name of the contract/event/message exchanged</div>
+            </div>
+            <div class="form-field">
+                <label class="fa-label" for="@Id("contract-source")">Contract Source Type <span class="form-optional">(optional)</span></label>
+                <select id="@Id("contract-source")" class="form-control" @bind="Integration.ContractSourceType"
+                        @bind:after="Notify" style="margin-bottom:.1rem">
+                    @foreach (var t in Enum.GetValues<ContractSourceType>())
+                    { <option value="@t">@t</option> }
+                </select>
+                <div style="font-size:.75rem;color:var(--clr-text-muted)">Where the contract definition comes from</div>
+            </div>
+            <div class="form-field fa-field-full">
+                <label class="fa-label" for="@Id("contract-location")">Source Location <span class="form-optional">(optional)</span></label>
+                <input id="@Id("contract-location")" type="text" class="form-control"
+                       placeholder="e.g. URL, file path, or artifact reference"
+                       @bind="Integration.ContractSourceLocation" @bind:after="Notify" style="margin-bottom:.1rem" />
+                <div style="font-size:.75rem;color:var(--clr-text-muted)">@SourceLocationHint</div>
+            </div>
+        </div>
+    </details>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IntegrationConfig Integration { get; set; } = new();
+
+    /// <summary>Distinguishes this form's element ids and test ids from any other on the page.</summary>
+    [Parameter, EditorRequired] public string Scope { get; set; } = "";
+
+    /// <summary>Test-id prefix. Configured rows keep the original "fa-"; the add form uses its own.</summary>
+    [Parameter] public string TestIdPrefix { get; set; } = "fa-";
+
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Raised after any field changes, so a host can re-evaluate what the form now describes.</summary>
+    [Parameter] public EventCallback Changed { get; set; }
+
+    /// <summary>Keeps contract readiness current and lets the host react to the edit.</summary>
+    private Task Notify()
+    {
+        Integration.ComputeReadiness();
+        return Changed.InvokeAsync();
+    }
+
+    private string Id(string field) => $"fa-{field}-{Scope}";
+    private string TestId(string field) => $"{TestIdPrefix}{field}";
+
+    private string EndpointLabel => Integration.Type switch
+    {
+        IntegrationType.EventHub or IntegrationType.ServiceBus => "Namespace",
+        IntegrationType.Kafka or IntegrationType.RabbitMQ => "Broker",
+        _ => "Endpoint",
+    };
+
+    private string EndpointPlaceholder => Integration.Type switch
+    {
+        IntegrationType.EventHub => "e.g. my-namespace.servicebus.windows.net",
+        IntegrationType.ServiceBus => "e.g. my-namespace.servicebus.windows.net",
+        IntegrationType.Kafka => "e.g. broker:9092",
+        IntegrationType.RabbitMQ => "e.g. amqp://broker:5672",
+        _ => "https://api.example.com",
+    };
+
+    private string ResourceLabel => Integration.Type switch
+    {
+        IntegrationType.EventHub => "Event Hub name",
+        IntegrationType.ServiceBus => "Entity name",
+        IntegrationType.Kafka => "Topic",
+        IntegrationType.RabbitMQ => "Exchange or queue",
+        _ => "Resource",
+    };
+
+    private string ResourcePlaceholder => Integration.Type switch
+    {
+        IntegrationType.EventHub => "e.g. birk.dbo.person",
+        IntegrationType.ServiceBus => "e.g. leselogg",
+        IntegrationType.Kafka => "e.g. orders",
+        IntegrationType.RabbitMQ => "e.g. orders.exchange",
+        _ => "",
+    };
+
+    private string ReadinessLabel
+    {
+        get
+        {
+            Integration.ComputeReadiness();
+            return Integration.ContractMetadataReadiness switch
+            {
+                ContractMetadataReadiness.Ready => "✓ Ready",
+                ContractMetadataReadiness.Partial => "◐ Partial",
+                _ => "○ Not configured",
+            };
+        }
+    }
+
+    private string SourceLocationHint => Integration.ContractSourceType switch
+    {
+        ContractSourceType.OpenApi => "Swagger/OpenAPI URL (e.g., https://api.example.com/swagger/v1/swagger.json)",
+        ContractSourceType.GraphQlSchema => "GraphQL endpoint URL (e.g., https://api.example.com/graphql)",
+        ContractSourceType.Assembly => "Assembly reference (e.g., BirkNext.Contracts.v1.0)",
+        ContractSourceType.SchemaFile => "Schema file path (e.g., schemas/contract.json)",
+        ContractSourceType.Endpoint => "Contract endpoint URL",
+        ContractSourceType.Manual => "Manual entry (free text)",
+        _ => "Reference to contract definition",
+    };
+}

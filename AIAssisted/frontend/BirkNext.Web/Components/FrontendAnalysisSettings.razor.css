@@ -41,9 +41,9 @@
 .fa-result-grid dd { margin: .2rem 0 0; overflow-wrap: anywhere; font-weight: 600; }
 .fa-result-grid small { display: block; margin-top: .1rem; font-weight: 500; color: var(--clr-text-muted); }
 .fa-result-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
-.fa-advanced { padding: .25rem 0; }
-.fa-advanced summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: .5rem; font-weight: 700; color: var(--clr-text-heading); }
-.fa-advanced summary span { font-size: .78rem; font-weight: 400; color: var(--clr-text-muted); }
+.fa-advanced, ::deep .fa-advanced { padding: .25rem 0; }
+.fa-advanced summary, ::deep .fa-advanced summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: .5rem; font-weight: 700; color: var(--clr-text-heading); }
+.fa-advanced summary span, ::deep .fa-advanced summary span { font-size: .78rem; font-weight: 400; color: var(--clr-text-muted); }
 .fa-advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; padding-top: .75rem; }
 .fa-form-row-compact { display: flex; gap: 1rem; align-items: end; grid-column: 1 / -1; flex-wrap: wrap; }
 .fa-form-row-compact .form-control { max-width: 7rem; }
@@ -252,13 +252,13 @@
 
 /* ── Form grid ───────────────────────────────────────────────────────────────── */
 
-.fa-form-grid {
+.fa-form-grid, ::deep .fa-form-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
 }
 
-.fa-field-full {
+.fa-field-full, ::deep .fa-field-full {
     grid-column: 1 / -1;
 }
 
@@ -268,7 +268,7 @@
     gap: 0.5rem;
 }
 
-.fa-label {
+.fa-label, ::deep .fa-label {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--clr-text-body);
@@ -289,7 +289,7 @@
     cursor: pointer;
 }
 
-.wsr-required {
+.wsr-required, ::deep .wsr-required {
     color: var(--clr-danger);
     font-weight: 600;
 }
@@ -1346,61 +1346,8 @@
     background: var(--clr-surface-white);
 }
 
-.fa-add-mode { border: none; padding: 0; margin: 0 0 .6rem; }
-.fa-add-mode > legend { padding: 0; }
+.fa-add-integration-actions { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: .6rem; }
 
-.fa-add-mode-options {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-    gap: .5rem;
-    margin-top: .35rem;
-}
-
-.fa-add-mode-card {
-    display: flex; align-items: flex-start; gap: .5rem;
-    padding: .6rem .7rem; cursor: pointer;
-    border: 1px solid var(--clr-border); border-radius: var(--radius-md);
-    background: var(--clr-surface);
-}
-.fa-add-mode-card:hover { border-color: var(--clr-border-hover); }
-.fa-add-mode-card-selected { border-color: var(--clr-primary); background: var(--clr-surface-selected); }
-.fa-add-mode-card:focus-within { outline: 3px solid var(--clr-primary); outline-offset: 2px; }
-.fa-add-mode-card input { margin-top: .2rem; flex: none; }
-
-.fa-add-mode-body { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
-.fa-add-mode-title { font-weight: 600; font-size: .875rem; color: var(--clr-text-heading); }
-.fa-add-mode-help { font-size: .78rem; color: var(--clr-text-muted); }
-.fa-add-mode-types { font-size: .72rem; color: var(--clr-text-subtle); overflow-wrap: anywhere; }
-
-/* Neutral, actionable — never warning-styled: no audited template is a normal state. */
-.fa-templates-empty {
-    padding: .625rem .75rem;
-    border: 1px dashed var(--clr-border);
-    border-radius: var(--radius-md);
-    background: var(--clr-surface);
-}
-.fa-templates-empty-title { margin: 0; font-weight: 600; font-size: .85rem; color: var(--clr-text-heading); }
-.fa-templates-empty-help { margin: .15rem 0 .5rem; font-size: .8rem; color: var(--clr-text-muted); }
-
-/* ── Known template preview: what the suggestion would write, before committing ── */
-
-.fa-template-preview {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
-    gap: .3rem 1rem;
-    margin: .6rem 0 .5rem;
-    padding: .6rem .7rem;
-    border: 1px solid var(--clr-border);
-    border-radius: var(--radius-md);
-    background: var(--clr-surface);
-}
-.fa-template-preview > div { display: flex; flex-direction: column; min-width: 0; }
-.fa-template-preview dt {
-    font-size: .68rem; font-weight: 700; letter-spacing: .03em;
-    text-transform: uppercase; color: var(--clr-text-muted);
-}
-.fa-template-preview dd { margin: 0; font-size: .82rem; overflow-wrap: anywhere; }
-.fa-template-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .78rem; }
 
 /* ── Verification: status as a badge beside the heading, action first ────────── */
 
@@ -1433,3 +1380,7 @@
     border-left: 3px solid var(--clr-border);
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
+
+/* The integration form lives in its own component, so its elements carry that component's scope and not
+   this one's. ::deep re-applies the shared field layout to it from here, keeping one definition per rule. */
+::deep .fa-integration-form { padding: .65rem .75rem; border-top: 1px solid var(--clr-border); }

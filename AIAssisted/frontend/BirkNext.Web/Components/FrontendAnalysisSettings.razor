@@ -1363,162 +1363,27 @@
                         <SecondaryButton OnClick="BeginAddIntegration" Class="fa-btn-sm">+ Add Integration</SecondaryButton>
                     </div>
 
-                    @* Add flow: either a template evidenced for this environment, or an empty custom integration. *@
-                    @if (_addingIntegration)
+                    @* One editable form, opened directly. No template catalogue, no mode choice and no intermediate
+                       step: the fields carry safe generic defaults and are edited here. *@
+                    @if (_newIntegration is { } draft)
                     {
-                        <div class="fa-add-integration" data-testid="fa-add-integration-flow">
-                            @* Selectable cards over real radio inputs: the choice matters, and native radios keep
-                               arrow-key selection, grouping and the exposed checked state for free. *@
-                            <fieldset class="fa-add-mode">
-                                <legend class="fa-label">Add integration</legend>
-                                <div class="fa-add-mode-options">
-                                    <label class="fa-add-mode-card @(_addMode == "known" ? "fa-add-mode-card-selected" : "")">
-                                        <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-known"
-                                               checked="@(_addMode == "known")"
-                                               @onchange="@(() => SetAddMode("known"))" />
-                                        <span class="fa-add-mode-body">
-                                            <span class="fa-add-mode-title">Known M2LB integration</span>
-                                            <span class="fa-add-mode-help">Use a predefined integration template when one is available for this environment.</span>
-                                        </span>
-                                    </label>
-                                    <label class="fa-add-mode-card @(_addMode == "custom" ? "fa-add-mode-card-selected" : "")">
-                                        <input type="radio" name="fa-add-mode" data-testid="fa-add-mode-custom"
-                                               checked="@(_addMode == "custom")"
-                                               @onchange="@(() => SetAddMode("custom"))" />
-                                        <span class="fa-add-mode-body">
-                                            <span class="fa-add-mode-title">Custom integration</span>
-                                            <span class="fa-add-mode-help">Configure an integration manually.</span>
-                                            <span class="fa-add-mode-types">Supports: REST, GraphQL, Event Hub, Service Bus, Kafka, RabbitMQ</span>
-                                        </span>
-                                    </label>
+                        <section class="fa-add-integration" data-testid="fa-add-integration" aria-labelledby="fa-add-integration-heading">
+                            <h4 class="fa-label" id="fa-add-integration-heading">Add integration</h4>
+                            <IntegrationForm Integration="draft" Scope="new" TestIdPrefix="fa-new-" Changed="StateHasChanged" />
+                            <dl class="fa-detail-list">
+                                <div class="fa-dl-row">
+                                    <dt>Source</dt>
+                                    <dd data-testid="fa-new-source">@IntegrationConfigPresenter.SourceLabel(draft.ConfigurationSource)</dd>
                                 </div>
-                            </fieldset>
-
-                            @if (_addMode == "known")
-                            {
-                                @if (_knownTemplates.Count == 0)
-                                {
-                                    @* The catalogue is reusable knowledge, so this is only ever a load failure. *@
-                                    <div class="fa-templates-empty" data-testid="fa-templates-empty">
-                                        <p class="fa-templates-empty-title">The known M2LB templates could not be loaded.</p>
-                                        <p class="fa-templates-empty-help">You can configure a custom integration instead.</p>
-                                        <SecondaryButton OnClick="@(() => SetAddMode("custom"))" Class="fa-btn-sm" data-testid="fa-templates-empty-custom">
-                                            Configure custom integration
-                                        </SecondaryButton>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <label class="fa-label" for="fa-template-select">Template</label>
-                                    @* Grouped by transport so a long catalogue stays scannable. *@
-                                    <select id="fa-template-select" class="form-control" data-testid="fa-template-select"
-                                            @onchange="OnTemplateSelected">
-                                        <option value="">Select a template...</option>
-                                        @foreach (var group in _knownTemplates.GroupBy(v => v.Template.IntegrationType).OrderBy(g => g.Key.ToString(), StringComparer.Ordinal))
-                                        {
-                                            <optgroup label="@IntegrationConfigPresenter.TypeLabel(group.Key)" data-testid="fa-template-group">
-                                                @foreach (var view in group.OrderBy(v => v.Template.DisplayName, StringComparer.Ordinal))
-                                                {
-                                                    <option value="@view.Template.Id">@view.Template.DisplayName</option>
-                                                }
-                                            </optgroup>
-                                        }
-                                    </select>
-
-                                    @* Preview before committing, in two clearly separate halves: what the template
-                                       knows (reusable, the same in every environment) and what this environment
-                                       binds it to (specific, and unknown until someone establishes it). *@
-                                    @if (SelectedTemplate is { } templateView)
-                                    {
-                                        var preview = templateView.Template;
-                                        <dl class="fa-template-preview" data-testid="fa-template-preview">
-                                            <div><dt colspan="2" class="fa-template-group-label">Template</dt><dd></dd></div>
-                                            <div><dt>Type</dt><dd>@IntegrationConfigPresenter.TypeLabel(preview.IntegrationType)</dd></div>
-                                            @if (!string.IsNullOrWhiteSpace(preview.SuggestedProducer))
-                                            {
-                                                <div><dt>Producer</dt><dd data-testid="fa-template-producer">@preview.SuggestedProducer</dd></div>
-                                            }
-                                            @if (!string.IsNullOrWhiteSpace(preview.SuggestedConsumer))
-                                            {
-                                                <div><dt>Consumer</dt><dd data-testid="fa-template-consumer">@preview.SuggestedConsumer</dd></div>
-                                            }
-                                            <div><dt>Source</dt><dd data-testid="fa-template-source">@IntegrationConfigPresenter.SourceLabel(IntegrationConfigurationSource.CodeSuggested)</dd></div>
-                                        </dl>
-
-                                        <dl class="fa-template-preview fa-template-binding" data-testid="fa-template-binding">
-                                            <div><dt colspan="2" class="fa-template-group-label" data-testid="fa-template-binding-heading">@EnvironmentValuesLabel values</dt><dd></dd></div>
-                                            @* An unknown value is stated as unknown for THIS environment. It is never
-                                               filled in from another environment's binding. *@
-                                            <div>
-                                                <dt>Resource</dt>
-                                                <dd class="fa-template-mono" data-testid="fa-template-resource">
-                                                    @(templateView.Binding?.Resource is { Length: > 0 } boundResource
-                                                        ? boundResource
-                                                        : $"Not defined for {EnvironmentValuesLabel}")
-                                                </dd>
-                                            </div>
-                                            <div>
-                                                <dt>Namespace</dt>
-                                                <dd class="fa-template-mono" data-testid="fa-template-namespace">
-                                                    @(templateView.Binding?.EndpointOrNamespace is { Length: > 0 } boundNamespace
-                                                        ? boundNamespace
-                                                        : $"Not defined for {EnvironmentValuesLabel}")
-                                                </dd>
-                                            </div>
-                                            @* Service Bus has subscriptions, not consumer groups, so the field is absent. *@
-                                            @if (preview.IntegrationType is IntegrationType.EventHub or IntegrationType.Kafka)
-                                            {
-                                                <div>
-                                                    <dt>Consumer group</dt>
-                                                    <dd data-testid="fa-template-consumer-group">
-                                                        @(templateView.Binding?.ConsumerGroup is { Length: > 0 } boundGroup
-                                                            ? boundGroup
-                                                            : $"Not defined for {EnvironmentValuesLabel}")
-                                                    </dd>
-                                                </div>
-                                            }
-                                        </dl>
-
-                                        @if (!string.IsNullOrWhiteSpace(preview.RelationshipNote))
-                                        {
-                                            <p class="fa-section-note" data-testid="fa-template-note">@preview.RelationshipNote</p>
-                                        }
-
-                                        @if (templateView.NeedsConfiguration)
-                                        {
-                                            @* The integration cannot carry a stable structural identity yet, so it is
-                                               not saved half-described; the missing values are asked for instead. *@
-                                            <div class="fa-template-required" data-testid="fa-template-required">
-                                                <p class="fa-template-required-title" data-testid="fa-template-required-reason">
-                                                    @string.Join(", ", templateView.MissingRequiredFields) must be configured for @EnvironmentValuesLabel before this template can be added.
-                                                </p>
-                                                @foreach (var field in templateView.MissingRequiredFields)
-                                                {
-                                                    <label class="fa-label" for="@($"fa-template-field-{field}")">@field <span aria-hidden="true">*</span></label>
-                                                    <input id="@($"fa-template-field-{field}")" class="form-control" type="text"
-                                                           data-testid="@($"fa-template-field-{field}")"
-                                                           value="@SuppliedValue(field)"
-                                                           @onchange="e => SetSuppliedValue(field, e.Value?.ToString())" />
-                                                }
-                                            </div>
-                                        }
-
-                                        @if (ExistingForTemplate(templateView) is not null)
-                                        {
-                                            <p class="fa-section-note" data-testid="fa-template-existing">This integration is already configured. Adding it fills in any values that are still blank and keeps everything you entered.</p>
-                                        }
-                                        <SecondaryButton OnClick="AddSelectedTemplate" Class="fa-btn-sm" data-testid="fa-template-add"
-                                                         Disabled="@(!TemplateStructurallyComplete(templateView))">Add integration</SecondaryButton>
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                <SecondaryButton OnClick="AddCustomIntegration" Class="fa-btn-sm" data-testid="fa-add-custom-confirm">
-                                    Add custom integration
-                                </SecondaryButton>
-                            }
-                        </div>
+                            </dl>
+                            <div class="fa-add-integration-actions">
+                                @* Structural identity is what the baseline key is derived from, so an integration
+                                   still missing any of it is not added at all. *@
+                                <SecondaryButton OnClick="ConfirmAddIntegration" Class="fa-btn-sm" data-testid="fa-add-integration-confirm"
+                                                 Disabled="@(!IntegrationConfigPresenter.IsComplete(draft))">Add integration</SecondaryButton>
+                                <SecondaryButton OnClick="CancelAddIntegration" Class="fa-btn-sm" data-testid="fa-add-integration-cancel">Cancel</SecondaryButton>
+                            </div>
+                        </section>
                     }
 
                     @if (_editProfile.Integrations.Count == 0)
@@ -1558,211 +1423,10 @@
 
                                 @if (isExpanded)
                                 {
-                                    <div class="fa-form-grid" style="padding:.65rem .75rem;border-top:1px solid var(--clr-border)">
-                                        <div class="form-field">
-                                            <label class="fa-label">Name <span class="wsr-required">*</span></label>
-                                            <input type="text" class="form-control" placeholder="e.g. Order Events" @bind="intg.Name" />
-                                        </div>
-                                        <div class="form-field">
-                                            <label class="fa-label">Type</label>
-                                            <select class="form-control" @bind="intg.Type">
-                                                @foreach (var t in Enum.GetValues<IntegrationType>())
-                                                { <option value="@t">@t</option> }
-                                            </select>
-                                        </div>
-                                        @* Transport-aware fields. Labels and visibility follow
-                                           IntegrationConfigPresenter so the editor cannot drift from
-                                           the rules the review and readiness checks use. *@
-                                        <div class="form-field fa-field-full">
-                                            <label class="fa-label" for="@($"fa-endpoint-{intg.Id}")">@EndpointLabel(intg.Type)</label>
-                                            <input id="@($"fa-endpoint-{intg.Id}")" type="text" class="form-control"
-                                                   data-testid="fa-field-endpoint"
-                                                   placeholder="@EndpointPlaceholder(intg.Type)" @bind="intg.Endpoint" />
-                                        </div>
-
-                                        @if (IntegrationConfigPresenter.ShowsResourceKind(intg))
-                                        {
-                                            <div class="form-field">
-                                                <label class="fa-label" for="@($"fa-kind-{intg.Id}")">Resource kind</label>
-                                                <select id="@($"fa-kind-{intg.Id}")" class="form-control"
-                                                        data-testid="fa-field-resourcekind" @bind="intg.ResourceKind">
-                                                    <option value="@IntegrationResourceKind.Unknown">Select...</option>
-                                                    @foreach (var kind in IntegrationConfigPresenter.ResourceKindChoices(intg.Type))
-                                                    {
-                                                        <option value="@kind">@IntegrationConfigPresenter.ResourceKindLabel(kind)</option>
-                                                    }
-                                                </select>
-                                            </div>
-                                        }
-
-                                        @if (intg.Type != IntegrationType.REST && intg.Type != IntegrationType.GraphQL)
-                                        {
-                                            <div class="form-field">
-                                                <label class="fa-label" for="@($"fa-resource-{intg.Id}")">@ResourceLabel(intg.Type)</label>
-                                                <input id="@($"fa-resource-{intg.Id}")" type="text" class="form-control"
-                                                       data-testid="fa-field-resource"
-                                                       placeholder="@ResourcePlaceholder(intg.Type)" @bind="intg.Resource" />
-                                            </div>
-                                        }
-
-                                        @if (IntegrationConfigPresenter.ShowsConsumerGroup(intg))
-                                        {
-                                            <div class="form-field">
-                                                <label class="fa-label" for="@($"fa-consumergroup-{intg.Id}")">Consumer group</label>
-                                                <input id="@($"fa-consumergroup-{intg.Id}")" type="text" class="form-control"
-                                                       data-testid="fa-field-consumergroup"
-                                                       placeholder="e.g. $Default" @bind="intg.Consumer" />
-                                            </div>
-                                        }
-                                        else if (IntegrationConfigPresenter.ShowsSubscriptionName(intg))
-                                        {
-                                            <div class="form-field">
-                                                <label class="fa-label" for="@($"fa-subscription-{intg.Id}")">Subscription name</label>
-                                                <input id="@($"fa-subscription-{intg.Id}")" type="text" class="form-control"
-                                                       data-testid="fa-field-subscription"
-                                                       placeholder="e.g. my-subscription" @bind="intg.Consumer" />
-                                            </div>
-                                        }
-
-                                        <div class="form-field">
-                                            <label class="fa-label" for="@($"fa-producer-{intg.Id}")">Producer <span class="form-optional">(optional)</span></label>
-                                            <input id="@($"fa-producer-{intg.Id}")" type="text" class="form-control"
-                                                   data-testid="fa-field-producer"
-                                                   placeholder="Unknown if not known" @bind="intg.LogicalProducerService" />
-                                        </div>
-                                        <div class="form-field">
-                                            <label class="fa-label" for="@($"fa-consumer-{intg.Id}")">Consumer <span class="form-optional">(optional)</span></label>
-                                            <input id="@($"fa-consumer-{intg.Id}")" type="text" class="form-control"
-                                                   data-testid="fa-field-consumer"
-                                                   placeholder="Unknown if not known" @bind="intg.LogicalConsumerService" />
-                                        </div>
-
-                                        @{
-                                            var missingFields = IntegrationConfigPresenter.MissingRequiredFields(intg);
-                                        }
-                                        @if (missingFields.Count > 0)
-                                        {
-                                            <p class="form-field fa-field-full" data-testid="fa-missing-fields"
-                                               id="@($"fa-missing-{intg.Id}")" role="status">
-                                                Configuration incomplete. Missing: @string.Join(", ", missingFields).
-                                            </p>
-                                        }
-                                        <div class="form-field">
-                                            <label class="fa-label">Authentication Type</label>
-                                            <select class="form-control" @bind="intg.AuthType">
-                                                @foreach (var t in Enum.GetValues<IntegrationAuthType>())
-                                                { <option value="@t">@t</option> }
-                                            </select>
-                                        </div>
-                                        <div class="form-field">
-                                            <label class="fa-label">Owner <span class="form-optional">(team or contact)</span></label>
-                                            <input type="text" class="form-control" placeholder="e.g. platform-team" @bind="intg.Owner" />
-                                        </div>
-                                        <div class="form-field fa-field-full">
-                                            <label class="fa-label">Health URL <span class="form-optional">(optional)</span></label>
-                                            <input type="url" class="form-control" placeholder="https://..." @bind="intg.HealthUrl" />
-                                        </div>
-                                        <div class="form-field fa-field-full">
-                                            <label class="fa-label">Worker URL <span class="form-optional">(optional)</span></label>
-                                            <input type="url" class="form-control" placeholder="https://..." @bind="intg.WorkerUrl" />
-                                        </div>
-                                        <div class="form-field fa-field-full">
-                                            <label class="fa-label">Monitoring URL <span class="form-optional">(runbook / dashboard)</span></label>
-                                            <input type="url" class="form-control" placeholder="https://..." @bind="intg.MonitoringUrl" />
-                                        </div>
-                                        <div class="form-field">
-                                            <label class="fa-label">
-                                                <input type="checkbox" @bind="intg.Enabled" style="margin-right:.4rem" />
-                                                Enabled
-                                            </label>
-                                        </div>
-
-                                        @* Contract Relationship Section (Phase 2) *@
-                                        <details class="fa-advanced" style="margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--clr-border)">
-                                            <summary style="cursor:pointer;font-weight:600;font-size:.85rem">
-                                                Contract Relationship
-                                                <span style="font-size:.75rem;margin-left:.5rem;color:var(--clr-text-muted)">
-                                                    @{
-                                                        intg.ComputeReadiness();
-                                                        var readinessLabel = intg.ContractMetadataReadiness switch
-                                                        {
-                                                            ContractMetadataReadiness.Ready => "✓ Ready",
-                                                            ContractMetadataReadiness.Partial => "◐ Partial",
-                                                            _ => "○ Not configured"
-                                                        };
-                                                        <text>@readinessLabel</text>
-                                                    }
-                                                </span>
-                                            </summary>
-                                            <div style="margin-top:.65rem;padding:.65rem 0">
-                                                <div class="form-field">
-                                                    <label class="fa-label">Producer Service <span class="form-optional">(optional)</span></label>
-                                                    <input type="text" class="form-control"
-                                                           placeholder="e.g. Hendelse Adapter"
-                                                           @bind="intg.LogicalProducerService"
-                                                           @bind:after="() => intg.ComputeReadiness()"
-                                                           style="margin-bottom:.1rem" />
-                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Logical service name that produces to this integration</div>
-                                                </div>
-
-                                                <div class="form-field">
-                                                    <label class="fa-label">Consumer Service <span class="form-optional">(optional)</span></label>
-                                                    <input type="text" class="form-control"
-                                                           placeholder="e.g. Hendelse"
-                                                           @bind="intg.LogicalConsumerService"
-                                                           @bind:after="() => intg.ComputeReadiness()"
-                                                           style="margin-bottom:.1rem" />
-                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Logical service name that consumes from this integration</div>
-                                                </div>
-
-                                                <div class="form-field">
-                                                    <label class="fa-label">Contract Name <span class="form-optional">(optional)</span></label>
-                                                    <input type="text" class="form-control"
-                                                           placeholder="e.g. ChildUpdated"
-                                                           @bind="intg.ContractName"
-                                                           @bind:after="() => intg.ComputeReadiness()"
-                                                           style="margin-bottom:.1rem" />
-                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Name of the contract/event/message exchanged</div>
-                                                </div>
-
-                                                <div class="form-field">
-                                                    <label class="fa-label">Contract Source Type <span class="form-optional">(optional)</span></label>
-                                                    <select class="form-control"
-                                                            @bind="intg.ContractSourceType"
-                                                            @bind:after="() => intg.ComputeReadiness()"
-                                                            style="margin-bottom:.1rem">
-                                                        @foreach (var t in Enum.GetValues<ContractSourceType>())
-                                                        { <option value="@t">@t</option> }
-                                                    </select>
-                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">Where the contract definition comes from</div>
-                                                </div>
-
-                                                <div class="form-field fa-field-full">
-                                                    <label class="fa-label">Source Location <span class="form-optional">(optional)</span></label>
-                                                    <input type="text" class="form-control"
-                                                           placeholder="e.g. URL, file path, or artifact reference"
-                                                           @bind="intg.ContractSourceLocation"
-                                                           @bind:after="() => intg.ComputeReadiness()"
-                                                           style="margin-bottom:.1rem" />
-                                                    <div style="font-size:.75rem;color:var(--clr-text-muted)">
-                                                        @{
-                                                            var hint = intg.ContractSourceType switch
-                                                            {
-                                                                ContractSourceType.OpenApi => "Swagger/OpenAPI URL (e.g., https://api.example.com/swagger/v1/swagger.json)",
-                                                                ContractSourceType.GraphQlSchema => "GraphQL endpoint URL (e.g., https://api.example.com/graphql)",
-                                                                ContractSourceType.Assembly => "Assembly reference (e.g., BirkNext.Contracts.v1.0)",
-                                                                ContractSourceType.SchemaFile => "Schema file path (e.g., schemas/contract.json)",
-                                                                ContractSourceType.Endpoint => "Contract endpoint URL",
-                                                                ContractSourceType.Manual => "Manual entry (free text)",
-                                                                _ => "Reference to contract definition"
-                                                            };
-                                                            <text>@hint</text>
-                                                        }
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </details>
-                                    </div>
+                                    @* The same form as Add integration: one component, so the add and edit paths
+                                       cannot diverge in fields, labels or transport behaviour. *@
+                                    <IntegrationForm Integration="intg" Scope="@intg.Id"
+                                                     Class="fa-integration-form" />
                                 }
                             </div>
                         }
@@ -3120,212 +2784,67 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private string? _editingIntegrationId;
 
-    // ── Transport-specific field wording ───────────────────────────────────────
-    // Only wording lives here. Which fields appear is decided by IntegrationConfigPresenter.
-
-    private static string EndpointLabel(IntegrationType type) => type switch
-    {
-        IntegrationType.REST or IntegrationType.GraphQL => "Endpoint",
-        IntegrationType.EventHub or IntegrationType.ServiceBus => "Namespace",
-        IntegrationType.Kafka or IntegrationType.RabbitMQ => "Broker",
-        _ => "Endpoint / Namespace"
-    };
-
-    private static string EndpointPlaceholder(IntegrationType type) => type switch
-    {
-        IntegrationType.REST or IntegrationType.GraphQL => "https://api.example.com/...",
-        IntegrationType.EventHub => "e.g. myns.servicebus.windows.net",
-        IntegrationType.ServiceBus => "e.g. myns.servicebus.windows.net",
-        IntegrationType.Kafka => "e.g. broker:9092",
-        IntegrationType.RabbitMQ => "e.g. amqp://host",
-        _ => ""
-    };
-
-    private static string ResourceLabel(IntegrationType type) => type switch
-    {
-        IntegrationType.EventHub => "Event Hub",
-        IntegrationType.ServiceBus => "Entity name",
-        IntegrationType.Kafka => "Topic",
-        IntegrationType.RabbitMQ => "Exchange or queue",
-        _ => "Resource"
-    };
-
-    private static string ResourcePlaceholder(IntegrationType type) => type switch
-    {
-        IntegrationType.EventHub => "e.g. m2lb-cdc-qa.birk.dbo.person",
-        IntegrationType.ServiceBus => "e.g. leselogg",
-        IntegrationType.Kafka => "e.g. orders",
-        IntegrationType.RabbitMQ => "e.g. orders-queue",
-        _ => ""
-    };
-
     // ── Add-integration flow ───────────────────────────────────────────────────
-    private bool _addingIntegration;
-    private string _addMode = "known";
-    private List<KnownIntegrationTemplateView> _knownTemplates = [];
-    /// <summary>Previewed template. Selecting only previews; acceptance is the explicit Add integration action.</summary>
-    private string? _selectedTemplateId;
-    /// <summary>
-    /// Structural values the user typed for fields this environment has no binding for. Held here
-    /// rather than written back onto the template: the template is reusable knowledge and must stay
-    /// identical for every environment that reads it.
-    /// </summary>
-    private readonly Dictionary<string, string> _suppliedBindingValues = new(StringComparer.Ordinal);
+    //
+    // "+ Add Integration" opens one editable form. There is no template catalogue, no mode choice and no
+    // backend call: adding an integration is a local draft operation that cannot fail because a service is
+    // unavailable.
+
+    /// <summary>The integration being filled in. Not in the draft until "Add integration" accepts it.</summary>
+    private IntegrationConfig? _newIntegration;
 
     /// <summary>
-    /// Opens the add flow and loads the templates evidenced for this environment. An environment
-    /// with none simply shows an empty state; that is a normal outcome, not a failure.
-    /// </summary>
-    private async Task BeginAddIntegration()
-    {
-        _addingIntegration = true;
-        _addMode = "known";
-        await LoadKnownTemplatesAsync();
-    }
-
-    private async Task SetAddMode(string mode)
-    {
-        _addMode = mode;
-
-        if (mode == "known")
-            await LoadKnownTemplatesAsync();
-    }
-
-    private async Task LoadKnownTemplatesAsync()
-    {
-        // Bindings are keyed by the environment TYPE, not the profile's display name: a name like
-        // "M2LB QA" matches nothing. The type is a closed enum, so the lookup is deterministic.
-        // The catalogue itself is returned whatever this value is — only the bindings vary.
-        var environmentType = _editProfile?.EnvironmentType.ToString() ?? "";
-
-        try
-        {
-            // Resolved optionally: the editor must stay renderable where template lookup is not
-            // wired up, and a failed load leaves the manual path available.
-            var templates = ServiceProvider.GetService(typeof(IIntegrationTemplateService)) as IIntegrationTemplateService;
-            _knownTemplates = templates is null ? [] : await templates.GetForEnvironmentAsync(environmentType);
-        }
-        catch
-        {
-            // Templates are optional assistance; failing to load them must not block adding an
-            // integration manually.
-            _knownTemplates = [];
-        }
-    }
-
-    /// <summary>The environment these structural values belong to, as the user reads it.</summary>
-    private string EnvironmentValuesLabel => _editProfile?.EnvironmentType.ToString() ?? "this environment";
-
-    private string SuppliedValue(string field) => _suppliedBindingValues.GetValueOrDefault(field, "");
-
-    private void SetSuppliedValue(string field, string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) _suppliedBindingValues.Remove(field);
-        else _suppliedBindingValues[field] = value.Trim();
-    }
-
-    /// <summary>
-    /// The environment values this template would be accepted with: the binding, overlaid with
-    /// anything the user supplied for a field the binding had no value for.
-    /// </summary>
-    private IntegrationEnvironmentValues ValuesFor(KnownIntegrationTemplateView view) => new(
-        Resource: view.Binding?.Resource is { Length: > 0 } resource ? resource : SuppliedValue(KnownIntegrationFields.Resource) is { Length: > 0 } typedResource ? typedResource : null,
-        EndpointOrNamespace: view.Binding?.EndpointOrNamespace is { Length: > 0 } endpoint ? endpoint : SuppliedValue(KnownIntegrationFields.Endpoint) is { Length: > 0 } typedEndpoint ? typedEndpoint : null,
-        ConsumerGroup: view.Binding?.ConsumerGroup);
-
-    /// <summary>
-    /// Whether every structurally required field now has a value. Until it does, the template is
-    /// not accepted: a persisted integration without its structural identity would carry a baseline
-    /// key that means nothing and could never be matched again.
-    /// </summary>
-    private bool TemplateStructurallyComplete(KnownIntegrationTemplateView view)
-    {
-        var values = ValuesFor(view);
-        return view.RequiredFields.All(field => field switch
-        {
-            KnownIntegrationFields.Resource => !string.IsNullOrWhiteSpace(values.Resource),
-            KnownIntegrationFields.Endpoint => !string.IsNullOrWhiteSpace(values.EndpointOrNamespace),
-            _ => true,
-        });
-    }
-
-    /// <summary>
-    /// Creates an integration from a template. Only values the audit established are written, so
-    /// anything it could not establish stays blank and shows as still needed.
-    /// </summary>
-    /// <summary>Selecting a template only previews it. Nothing is added until "Add integration".</summary>
-    private void OnTemplateSelected(ChangeEventArgs e)
-    {
-        _selectedTemplateId = e.Value?.ToString() is { Length: > 0 } id ? id : null;
-        // Values typed for one template never carry over to the next.
-        _suppliedBindingValues.Clear();
-    }
-
-    private KnownIntegrationTemplateView? SelectedTemplate =>
-        _selectedTemplateId is null ? null : _knownTemplates.FirstOrDefault(v => v.Template.Id == _selectedTemplateId);
-
-    /// <summary>
-    /// The configured integration this template would apply to, matched on structural identity
-    /// (type + resource + endpoint) exactly as the baseline key is derived — never on template id,
-    /// display name, producer or consumer. An existing match is enriched rather than duplicated.
+    /// Generic M2LB defaults, and only generic ones. Event Hub is the transport most M2LB integrations use and
+    /// $Default is its consumer group everywhere the audit looked, so both are useful starting points.
     ///
-    /// Structural identity needs structural values, so while any required one is still unknown no
-    /// match is claimed: guessing here would either merge two different integrations or split one.
+    /// Nothing environment-specific is prefilled. This form carries no indication of WHICH logical integration
+    /// is being created — Person, Barn, Tiltak, Leselogg — so a namespace, a resource such as
+    /// m2lb-cdc-qa.birk.dbo.person, or a producer/consumer relationship would be a guess. Guessing one here
+    /// would be wrong for every other integration, and wrong in every environment but the one it came from.
+    /// Unknown stays blank.
     /// </summary>
-    private IntegrationConfig? ExistingForTemplate(KnownIntegrationTemplateView view)
+    private static IntegrationConfig NewDefaultIntegration() => new()
     {
-        if (!TemplateStructurallyComplete(view)) return null;
+        Id = NewIntegrationId(),
+        Enabled = true,
+        Type = IntegrationType.EventHub,
+        Consumer = "$Default",
+        // The two values above come from the audited M2LB source; everything else the user supplies.
+        ConfigurationSource = IntegrationConfigurationSource.CodeSuggested,
+    };
 
-        var values = ValuesFor(view);
-        return _editProfile?.Integrations.FirstOrDefault(i =>
-            i.Type == view.Template.IntegrationType &&
-            string.Equals((i.Resource ?? "").Trim(), (values.Resource ?? "").Trim(), StringComparison.OrdinalIgnoreCase) &&
-            string.Equals((i.Endpoint ?? "").Trim(), (values.EndpointOrNamespace ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
-    }
+    private void BeginAddIntegration() => _newIntegration = NewDefaultIntegration();
+
+    private void CancelAddIntegration() => _newIntegration = null;
 
     /// <summary>
-    /// Explicit acceptance. Only values the audit established are written, so anything it could not
-    /// establish stays blank and shows as still needed. An equivalent integration is filled in rather
-    /// than duplicated, and a value a person already typed is never overwritten.
+    /// Explicit acceptance. An integration whose structural identity is incomplete is never added: its baseline
+    /// key would mean nothing and could never be matched again.
+    ///
+    /// Deduplication is structural — type, endpoint and resource, exactly what the baseline key is derived from —
+    /// and never display name, producer or consumer. An equivalent integration is opened for editing instead of
+    /// being duplicated.
     /// </summary>
-    private void AddSelectedTemplate()
+    private void ConfirmAddIntegration()
     {
-        if (SelectedTemplate is not { } view || _editProfile is null) return;
-        // An integration whose structural identity is still unknown is not persisted at all.
-        if (!TemplateStructurallyComplete(view)) return;
+        if (_newIntegration is not { } draft || _editProfile is null) return;
+        if (!IntegrationConfigPresenter.IsComplete(draft)) return;
 
-        var values = ValuesFor(view);
-
-        if (ExistingForTemplate(view) is { } existing)
-        {
-            IntegrationConfigPresenter.ApplyTemplate(existing, view.Template, values, fillOnly: true);
-            _editingIntegrationId = existing.Id;
-        }
+        if (StructurallyEquivalent(draft) is { } existing) _editingIntegrationId = existing.Id;
         else
         {
-            var cfg = new IntegrationConfig { Id = NewIntegrationId(), Enabled = true };
-            IntegrationConfigPresenter.ApplyTemplate(cfg, view.Template, values);
-            _editProfile.Integrations.Add(cfg);
-            _editingIntegrationId = cfg.Id;
+            _editProfile.Integrations.Add(draft);
+            _editingIntegrationId = draft.Id;
         }
-
-        _selectedTemplateId = null;
-        _suppliedBindingValues.Clear();
-        _addingIntegration = false;
+        _newIntegration = null;
     }
 
-    private void AddCustomIntegration()
-    {
-        AddIntegration();
-        _addingIntegration = false;
-    }
-
-    private void AddIntegration()
-    {
-        var cfg = new IntegrationConfig { Id = NewIntegrationId(), Enabled = true };
-        _editProfile!.Integrations.Add(cfg);
-        _editingIntegrationId = cfg.Id;
-    }
+    /// <summary>The configured integration that already carries this structural identity, if any.</summary>
+    private IntegrationConfig? StructurallyEquivalent(IntegrationConfig candidate) =>
+        _editProfile?.Integrations.FirstOrDefault(i =>
+            i.Type == candidate.Type &&
+            string.Equals((i.Endpoint ?? "").Trim(), (candidate.Endpoint ?? "").Trim(), StringComparison.OrdinalIgnoreCase) &&
+            string.Equals((i.Resource ?? "").Trim(), (candidate.Resource ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
 
     private void RemoveIntegration(string id) =>
         _editProfile!.Integrations.RemoveAll(i => i.Id == id);
