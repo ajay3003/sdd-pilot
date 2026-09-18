@@ -71,11 +71,14 @@ public sealed partial class AuthenticationApplyDraftTests
         ButtonDisabled(cut, "Cancel").Should().BeFalse();
         Card(cut, "authentication-configuration", "saved", "Editing draft");
         cut.Find("#authenticated-testing-method-select").Change("ManualOnly");
-        Card(cut, "authenticated-testing-method", "draft", "Unsaved change");
+        // The method is part of the saved authentication configuration, so the configuration card — the one
+        // card that owns saved-versus-draft — carries the unsaved state. It is no longer echoed on a second card.
+        Card(cut, "authentication-configuration", "draft", "Unsaved changes");
+        cut.FindAll("[data-testid='authenticated-testing-method']").Should().BeEmpty();
         Card(cut, "manual-only-panel", "needs-action", "Required");
         SaveCalls().Should().Be(0);
         Click(cut, "Cancel");
-        Card(cut, "authenticated-testing-method", "saved", "Saved configuration");
+        Card(cut, "authentication-configuration", "saved", "Saved configuration");
         Click(cut, "Edit Environment");
         Click(cut, "Cancel");
         cut.FindAll(".fa-page-unsaved").Should().BeEmpty();

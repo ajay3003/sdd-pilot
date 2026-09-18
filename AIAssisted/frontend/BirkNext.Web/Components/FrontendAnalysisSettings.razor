@@ -605,7 +605,14 @@
                     <dl class="fa-detail-list">
                         <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)</dd></div>
                     </dl>
-                    <p class="fa-auth-help" data-testid="authenticated-testing-purpose">@AuthenticatedTestingStates.Purpose</p>
+                    @* Browser routing is the step nothing else tells the user about, so it is the one callout here.
+                       Same shared primitive as Browser Discovery's guidance: one callout design, not two. *@
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                    {
+                        <InlineCallout Title="@AuthenticatedTestingStates.ProxyGuidanceTitle(ProxyStatus)"
+                                       Text="@AuthenticatedTestingStates.ProxyGuidanceText(ProxyStatus)"
+                                       TestId="authenticated-testing-proxy-guidance" />
+                    }
 
                     @* Compact access summary; the finer REST/GraphQL/DOM distinctions live in the details. *@
                     <dl class="fa-detail-list" data-testid="authenticated-testing-access">
@@ -614,81 +621,97 @@
                         <div class="fa-dl-row"><dt>Authenticated browser DOM</dt><dd data-testid="testing-access-dom">@(AuthenticatedDomAvailable ? "Available" : "Not available")</dd></div>
                     </dl>
 
-                    @* The per-surface REST/GraphQL/DOM inventory is owned by the method's own setup panel below,
-                       which already renders it; repeating it here would be the same list twice. *@
-                    <p class="fa-section-note" data-testid="authenticated-testing-discovery-link">Per-surface capability detail is in the authenticated testing setup below. Detailed REST, GraphQL and WebSocket endpoint analysis lives in the Endpoint Discovery tab.</p>
-                </section>
+                    @*
+                        One disclosure for everything about how this method is set up and configured: the runtime
+                        workflow, the other methods, the DEV-only credential note and the Endpoint Discovery handoff.
+                        They were four surfaces describing one subject.
+                    *@
+                    <ReviewDisclosure Text="View setup details" CollapseText="Hide setup details"
+                                      Hint="@AuthenticatedTestingStates.Label(TestingState)"
+                                      TestId="authenticated-testing-setup" Class="disclosure-inline">
 
-                @* Method configuration and the runtime setup workflow, below the three answers above. *@
-                <section class="fa-detection-summary fa-state-@(TestingMethodChanged ? "draft" : "saved")" data-testid="authenticated-testing-method">
-                    <div class="fa-card-heading"><h3>Authenticated testing method</h3><span class="fa-card-status" role="status">@(TestingMethodChanged ? "Unsaved change" : _isEditMode ? "Editing draft" : "Saved configuration")</span></div>
-                    @if (_isEditMode && _editProfile is not null)
-                    {
-                        <label class="fa-label" for="authenticated-testing-method-select">Method</label>
-                        <select id="authenticated-testing-method-select" class="form-control" @bind="_editProfile.Authentication.AuthenticatedTestingMethod">
-                            <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.EditOption(AuthenticatedTestingMethod.LocalHttpsProxy)</option>
-                            <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
-                            <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
-                        </select>
-                    }
-                    else
-                    {
-                        @* The authenticated context state is stated once, above, by Authenticated testing. *@
-                        <dl class="fa-detail-list">
-                            <div class="fa-dl-row"><dt>Other available methods</dt><dd data-testid="authenticated-testing-method-others">@AuthenticatedTestingMethodLabels.OtherMethods(SelectedTestingMethod)</dd></div>
-                        </dl>
-                    }
-                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
-                    {
-                        <p class="fa-auth-note" data-testid="authenticated-testing-method-help">
-                            <span class="fa-auth-note-tag">DEV only</span>
-                            <span data-testid="proxy-security-warning">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span>
-                        </p>
-                    }
-                    else
-                    {
-                        <p class="fa-auth-help" data-testid="authenticated-testing-method-help">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</p>
-                    }
-                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile))
-                    {
-                        <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
-                    }
-                </section>
+                        <p class="fa-auth-help" data-testid="authenticated-testing-purpose">@AuthenticatedTestingStates.Purpose</p>
 
-                @* The SAVED Authenticated testing method decides which runtime panel is shown. Runtime operations in either panel are
-                   transient: they never enter edit mode, never show Save changes and never persist evidence. *@
-                @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
-                {
-                    @* The setup workflow is a procedure, not a status: it opens when someone is doing it. *@
-                    <ReviewDisclosure Text="@AuthenticatedTestingStates.SetupAction(TestingState)" CollapseText="Hide authenticated testing setup"
-                                      Hint="@AuthenticatedTestingStates.Label(TestingState)" TestId="authenticated-testing-setup" Class="disclosure-inline">
-                        <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" />
-                    </ReviewDisclosure>
-                }
-                else if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
-                {
-                    <ReviewDisclosure Text="@AuthenticatedTestingStates.SetupAction(TestingState)" CollapseText="Hide authenticated testing setup"
-                                      Hint="@AuthenticatedTestingStates.Label(TestingState)" TestId="authenticated-testing-setup" Class="disclosure-inline">
-                        <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" OnViewDiscovery='() => _activeTab = "endpoint"' />
-                    </ReviewDisclosure>
-                }
-                else
-                {
-                    <section class="fa-detection-summary fa-state-@(ManualStatus == ManualAuthenticationVerificationStatus.Passed ? "ready" : ManualStatus == ManualAuthenticationVerificationStatus.Failed ? "blocked" : "needs-action")" data-testid="manual-only-panel" aria-label="Manual verification only">
-                        <h3>Manual verification</h3>
-                        <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Status</dt><dd>@ManualStatus</dd></div></dl>
-                        <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
-                        @if (_manualInstructionsOpen)
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
                         {
-                            <p>Open @CurrentTargetUrl in your managed Edge work profile, sign in manually, and confirm access to the target application.</p>
-                            <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
-                            <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
+                            <dl class="fa-detail-list">
+                                <div class="fa-dl-row"><dt>Edge browser</dt><dd data-testid="authenticated-testing-edge-setup">@AuthenticatedTestingStates.EdgeBrowserSetup(ProxyStatus)</dd></div>
+                            </dl>
                         }
-                        <p>Manual verification confirms user access only. It does not enable authenticated REST, GraphQL or browser automation.</p>
-                        @* This method has no runtime panel, so it is the only place its capability inventory appears. *@
-                        <AuthenticatedCapabilities Api="false" Dom="false" Rest="false" GraphQl="false" TrafficVerified="false" />
-                    </section>
+
+                        @* The saved method and the alternatives to it, edited here and nowhere else. *@
+                        @if (_isEditMode && _editProfile is not null)
+                        {
+                            <label class="fa-label" for="authenticated-testing-method-select">Method</label>
+                            <select id="authenticated-testing-method-select" class="form-control" @bind="_editProfile.Authentication.AuthenticatedTestingMethod">
+                                <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.EditOption(AuthenticatedTestingMethod.LocalHttpsProxy)</option>
+                                <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
+                                <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
+                            </select>
+                        }
+                        else
+                        {
+                            <dl class="fa-detail-list">
+                                <div class="fa-dl-row"><dt>Other available methods</dt><dd data-testid="authenticated-testing-method-others">@AuthenticatedTestingMethodLabels.OtherMethods(SelectedTestingMethod)</dd></div>
+                            </dl>
+                        }
+
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile))
+                        {
+                            <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
+                        }
+
+                        @* The SAVED method decides which runtime panel appears. Runtime operations are transient:
+                           they never enter edit mode, never show Save changes and never persist evidence. *@
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                        {
+                            <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" />
+                        }
+                        else if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                        {
+                            <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" OnViewDiscovery='() => _activeTab = "endpoint"' />
+                        }
+
+                        @* Detailed traffic belongs to Endpoint Discovery; this is the handoff, not a copy of it. *@
+                        <p class="fa-auth-help" data-testid="authenticated-testing-discovery-link">
+                            @AuthenticatedTestingStates.EndpointHandoff
+                            <button type="button" class="fa-linkbtn" data-testid="authenticated-testing-open-discovery" @onclick='() => _activeTab = "endpoint"'>Open Endpoint Discovery</button>
+                        </p>
+
+                        @* A quiet aside, kept intact: the credential wording is a security guarantee, not copy. *@
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                        {
+                            <p class="fa-auth-note" data-testid="authenticated-testing-method-help">
+                                <span class="fa-auth-note-tag">DEV only</span>
+                                <span data-testid="proxy-security-warning">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span>
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="fa-auth-help" data-testid="authenticated-testing-method-help">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</p>
+                        }
+                    </ReviewDisclosure>
+                </section>
+
+                @* Manual verification only has no runtime panel of its own, so it keeps its own surface. *@
+                @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManualOnly)
+                {
+                <section class="fa-detection-summary fa-state-@(ManualStatus == ManualAuthenticationVerificationStatus.Passed ? "ready" : ManualStatus == ManualAuthenticationVerificationStatus.Failed ? "blocked" : "needs-action")" data-testid="manual-only-panel" aria-label="Manual verification only">
+                    <h3>Manual verification</h3>
+                    <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Status</dt><dd>@ManualStatus</dd></div></dl>
+                    <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
+                    @if (_manualInstructionsOpen)
+                    {
+                        <p>Open @CurrentTargetUrl in your managed Edge work profile, sign in manually, and confirm access to the target application.</p>
+                        <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
+                        <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
+                    }
+                    <p>Manual verification confirms user access only. It does not enable authenticated REST, GraphQL or browser automation.</p>
+                    @* This method has no runtime panel, so it is the only place its capability inventory appears. *@
+                    <AuthenticatedCapabilities Api="false" Dom="false" Rest="false" GraphQl="false" TrafficVerified="false" />
+                </section>
                 }
+
 
                 @* ── 3. Saved authentication configuration ── *@
                 <section class="fa-auth-configuration fa-state-@(HasUnsavedAuthenticationChanges ? "draft" : "saved")" data-testid="authentication-configuration">

@@ -384,8 +384,10 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
             Assert.Equal(candidate == panel, Has(cut, candidate));
         Assert.Equal(method == AuthenticatedTestingMethod.ManagedEdgeCdp, Has(cut, "browser-delivery-trust"));
         Assert.Equal(method == AuthenticatedTestingMethod.LocalHttpsProxy, Has(cut, "proxy-security-warning"));
-        Assert.True(cut.Markup.IndexOf("data-testid=\"authentication-discovery\"") < cut.Markup.IndexOf("data-testid=\"authenticated-testing-method\""));
-        Assert.True(cut.Markup.IndexOf("data-testid=\"authenticated-testing-method\"") < cut.Markup.IndexOf($"data-testid=\"{panel}\""));
+        // Method is a row of the one Authenticated testing card now, not a card of its own.
+        Assert.Empty(cut.FindAll("[data-testid='authenticated-testing-method']"));
+        Assert.True(cut.Markup.IndexOf("data-testid=\"authentication-discovery\"") < cut.Markup.IndexOf("data-testid=\"authenticated-testing\""));
+        Assert.True(cut.Markup.IndexOf("data-testid=\"authenticated-testing\"") < cut.Markup.IndexOf($"data-testid=\"{panel}\""));
         Assert.DoesNotContain("TargetTabNotInspectable", cut.Markup);
         Click(cut, "Edit Environment");
         Assert.Single(cut.FindAll("#authenticated-testing-method-select"));

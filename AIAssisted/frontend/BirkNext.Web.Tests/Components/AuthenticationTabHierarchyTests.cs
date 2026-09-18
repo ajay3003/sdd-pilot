@@ -122,10 +122,10 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     {
         var cut = Detect(MatchingAuthentication);
 
-        cut.FindAll("[data-testid='authentication-discovery'], [data-testid='authentication-verification'], [data-testid='authenticated-testing'], [data-testid='authenticated-testing-method'], [data-testid='authentication-configuration']")
+        cut.FindAll("[data-testid='authentication-discovery'], [data-testid='authentication-verification'], [data-testid='authenticated-testing'], [data-testid='authentication-configuration']")
             .Select(e => e.GetAttribute("data-testid"))
             .Should().Equal("authentication-discovery", "authentication-verification", "authenticated-testing",
-                            "authenticated-testing-method", "authentication-configuration");
+                            "authentication-configuration");
 
         cut.Find("#authentication-status-heading").TextContent.Should().Be("Detected & configured authentication");
         cut.Find("#authentication-verification-heading").TextContent.Should().Be("Verification");
@@ -140,7 +140,10 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
 
         var toggle = Testid(cut, "authenticated-testing-setup-toggle");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
-        toggle.TextContent.Should().Contain("Set up authenticated testing");
+        // One constant action; the state it opens onto rides along as the hint.
+        toggle.TextContent.Should().Contain("View setup details");
+        toggle.QuerySelector(".disclosure-hint")!.TextContent.Trim()
+            .Should().Be(AuthenticatedTestingStates.Label(AuthenticatedTestingState.NotConnected));
         Testid(cut, "authenticated-testing-setup-body").HasAttribute("hidden").Should().BeTrue();
 
         // The proxy's own diagnostics and the capability inventory are inside it, not above it.
@@ -373,7 +376,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
 
         Row(cut, "proxy-security-warning").Should().Contain("never displays, logs or saves");
         // Secondary: it is a tagged note inside the method card, not a banner above the three answers.
-        Testid(cut, "proxy-security-warning").Closest("[data-testid='authenticated-testing-method']").Should().NotBeNull();
+        Testid(cut, "proxy-security-warning").Closest("[data-testid='authenticated-testing-setup-body']").Should().NotBeNull();
     }
 
     [Fact]

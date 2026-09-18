@@ -1,3 +1,4 @@
+using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
@@ -270,6 +271,40 @@ public static class AuthenticatedTestingStates
     /// <summary>Why this matters, in one sentence. It is about testing access, never about the target's own sign-in.</summary>
     public const string Purpose = "Authenticated testing lets BirkNext inspect protected API traffic and authenticated application behaviour. It is separate from whether the target itself requires sign-in.";
 
-    public static string SetupAction(AuthenticatedTestingState state) =>
-        state == AuthenticatedTestingState.Ready ? "View authenticated testing setup" : "Set up authenticated testing";
+
+    // ── Edge proxy guidance ───────────────────────────────────────────────────
+    //
+    // BirkNext never reads or writes Edge's proxy settings, so the browser's configuration cannot be queried.
+    // What CAN be established is the opposite direction: if a request has reached the local proxy, Edge was
+    // routed through it. That is evidence, not inference from the server being up — a listening proxy server
+    // says nothing at all about whether any browser points at it.
+
+    /// <summary>
+    /// True only when traffic has actually arrived at the proxy, which proves the browser was configured to use
+    /// it. Absence proves nothing, so the negative case stays an instruction rather than a claim.
+    /// </summary>
+    public static bool BrowserRoutedThroughProxy(LocalHttpsProxyStatus proxy) =>
+        proxy.AuthenticatedRequestsObserved > 0
+        || proxy.AuthenticatedCredentialAvailable
+        || proxy.ObservedNetworkEndpoints.Count > 0;
+
+    public static string ProxyGuidanceTitle(LocalHttpsProxyStatus proxy) =>
+        BrowserRoutedThroughProxy(proxy) ? "Edge proxy configured" : "Enable proxy in Edge settings";
+
+    public static string ProxyGuidanceText(LocalHttpsProxyStatus proxy) =>
+        BrowserRoutedThroughProxy(proxy)
+            ? "Authenticated API traffic can be collected through the BirkNext proxy."
+            : "Use the BirkNext local HTTPS proxy in managed Edge to collect authenticated API traffic.";
+
+    /// <summary>
+    /// The browser-side setup line inside the details. Deliberately manual: nothing in BirkNext changes Edge's
+    /// settings, so promising automatic configuration or restoration would be untrue.
+    /// </summary>
+    public static string EdgeBrowserSetup(LocalHttpsProxyStatus proxy) =>
+        BrowserRoutedThroughProxy(proxy)
+            ? "Traffic has been observed through the proxy, so managed Edge is routed through it."
+            : "Configure managed Edge to use the BirkNext local HTTPS proxy endpoint shown below.";
+
+    public const string EndpointHandoff =
+        "Detailed REST, GraphQL and WebSocket observations are available in Endpoint Discovery.";
 }

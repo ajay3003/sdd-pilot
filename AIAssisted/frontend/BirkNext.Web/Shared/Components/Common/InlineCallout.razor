@@ -31,6 +31,7 @@
     [Parameter] public string? Class { get; set; }
     [Parameter] public string? TestId { get; set; }
 
-    /// <summary>Decorative: a refresh arrow for guidance about reloading, never a warning or error mark.</summary>
-    private string Glyph => "↻";
+    /// <summary>Decorative marker. Defaults to the info mark; a caller may pass one that fits its own action.
+    /// Never a warning or error mark: the callout is informational.</summary>
+    [Parameter] public string Glyph { get; set; } = "ⓘ";
 }
