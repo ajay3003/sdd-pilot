@@ -118,12 +118,19 @@ public sealed class FrontendQualityResultPresentationTests
     }
 
     [Fact]
-    public void NoTrustworthyRequiredAssessmentIsAFailedRun()
+    /// <summary>
+    /// Every required engine being unavailable is incomplete required coverage, not a failed run. This asserted
+    /// FailedToRun, which is what made the page say "there is no result to report" over a review that had produced
+    /// findings from the optional engines that did complete.
+    /// </summary>
+    public void NoTrustworthyRequiredAssessmentIsIncompleteCoverage_NotAFailedRun()
     {
         var outcomes = DefaultOutcomes().Select(o => o with { ExecutionState = FrontendQualityEngineExecutionState.Unavailable });
 
-        FrontendQualityResultPresentation.Build(Report(outcomes)).State
-            .Should().Be(FrontendQualityResultState.FailedToRun);
+        var view = FrontendQualityResultPresentation.Build(Report(outcomes));
+
+        view.State.Should().Be(FrontendQualityResultState.Incomplete);
+        view.Summary.Should().NotContain("no result to report");
     }
 
     // ── §26, §29. A domain's result is never an engine's availability ─────────────────────────────────────────────

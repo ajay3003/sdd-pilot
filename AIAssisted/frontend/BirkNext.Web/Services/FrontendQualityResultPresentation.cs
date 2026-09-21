@@ -69,8 +69,13 @@ public static class FrontendQualityResultPresentation
         if (report.PreflightStatus is PreflightStatus.AuthenticationRequired or PreflightStatus.Unreachable or PreflightStatus.TimedOut)
             return FrontendQualityResultState.Blocked;
 
+        // Every required engine being blocked is incomplete required COVERAGE, not a failed run. Returning FailedToRun
+        // here made the page announce "there is no result to report" over a review that had produced accessibility,
+        // performance, standards and Blazor findings from the optional engines that did complete. Execution failure is
+        // ErrorMessage; how much of the required scope was covered is a separate fact, and so is whether the result can
+        // support a release.
         if (report.Coverage?.RequiredCoverageState == FrontendQualityRequiredCoverageState.NoTrustworthyRequiredAssessment)
-            return FrontendQualityResultState.FailedToRun;
+            return FrontendQualityResultState.Incomplete;
 
         if (report.Coverage?.RequiredCoverageState == FrontendQualityRequiredCoverageState.SomeRequiredNotAssessed)
             return FrontendQualityResultState.Incomplete;
@@ -100,8 +105,12 @@ public static class FrontendQualityResultPresentation
                 report.ErrorMessage ?? "No required evidence source produced a trustworthy assessment, so there is no result to report.",
             FrontendQualityResultState.Blocked =>
                 report.PreflightMessage ?? "The target could not be reviewed, so no evidence was collected.",
+            // Says what is missing AND what survived, so partial evidence is never presented as nothing.
             FrontendQualityResultState.Incomplete =>
-                $"{reviewed} of {domains.Count} review domains produced evidence; required coverage is incomplete.",
+                $"{report.Coverage?.RequiredAssessed ?? 0} of {report.Coverage?.RequiredTotal ?? 0} required engines completed. "
+                + (findings > 0
+                    ? $"Available evidence produced {findings} finding{(findings == 1 ? "" : "s")} across {reviewed} of {domains.Count} review domains."
+                    : "No other evidence source produced findings."),
             FrontendQualityResultState.CompletedWithManualReview =>
                 $"{findings} finding{(findings == 1 ? "" : "s")} across {reviewed} of {domains.Count} review domains. Parts of this review can only be completed by a person.",
             FrontendQualityResultState.CompletedWithLimitations =>

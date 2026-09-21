@@ -734,9 +734,15 @@ public sealed class ReportExportService : IReportExportService
         sb.Append("</section>\n");
 
         sb.Append("<section class=\"block\">\n<h2>Source-specific scores</h2><div class=\"kpi-row\">");
-        sb.Append(Kpi(report.OverallScore?.ToString() ?? "Not Assessed", "Legacy static review score"));
-        sb.Append(Kpi(report.SecurityScore?.ToString() ?? "Not Assessed", "Static security score"));
-        sb.Append(Kpi(report.PerformanceScore?.ToString() ?? "Not Assessed", "Passive performance score"));
+        // Same rule as the page: a score belongs to an engine that looked at the target. A value left on the report
+        // from an earlier computation must not be exported next to that engine reporting it did not assess.
+        bool Assessed(FrontendQualityEngineId id) => report.EngineOutcomes
+            .Any(o => o.EngineId == id && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
+        string EngineScore(int? value, params FrontendQualityEngineId[] sources) =>
+            sources.All(Assessed) ? value?.ToString() ?? "Not Assessed" : "Not Assessed";
+        sb.Append(Kpi(EngineScore(report.OverallScore, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance), "Legacy static review score"));
+        sb.Append(Kpi(EngineScore(report.SecurityScore, FrontendQualityEngineId.StaticSecurity), "Static security score"));
+        sb.Append(Kpi(EngineScore(report.PerformanceScore, FrontendQualityEngineId.PassivePerformance), "Passive performance score"));
         sb.Append(Kpi(report.LighthouseReport?.PerformanceScore?.ToString() ?? "Not Assessed", "Lighthouse lab performance score"));
         sb.Append("</div><p>The legacy static review score does not represent all enabled engines.</p></section>\n");
 
