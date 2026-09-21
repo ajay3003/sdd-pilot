@@ -74,11 +74,16 @@
     // one click into two.
     if (command.commandId && finishedCommands.has(command.commandId)) { respond(finishedCommands.get(command.commandId)); return; }
     if (probeBusy) { finish({ status: 'Blocked', sanitizedError: 'A step is already running on this page.' }); return; }
-    if (!isApprovedVisit(visit)) { finish({ status: 'Blocked', sanitizedError: 'No approved active page.' }); return; }
     (async () => {
       probeBusy = true;
       try {
         scope = await send({ type: 'content:session' });
+        const timeoutMs = Math.min(Math.max(Number(command.timeoutMs) || 5000, 500), 60000);
+        // A step often arrives during a route change, and the navigation tracker has no current visit for the moment
+        // between leaving one route and starting the next. Refusing then would report "no approved page" for a page the
+        // user is looking at, so wait for the visit the same way everything else here waits for the application.
+        if (!isApprovedVisit(visit)) await C.automation.waitFor(() => isApprovedVisit(visit), { timeoutMs, intervalMs: 100 });
+        if (!isApprovedVisit(visit)) { finish({ status: 'Blocked', sanitizedError: 'No approved active page.' }); return; }
         // The same non-production gate the worker applied, re-checked in the page: the worker's answer is not the only
         // thing standing between a step and a production page.
         if (!isApprovedVisit(visit) || !C.wcagInteraction.allowed(scope?.environmentType, true)) {
@@ -91,7 +96,6 @@
         if (!C.automation.ACTIONS.includes(command.action)) {
           finish({ status: 'Blocked', sanitizedError: `Action not allowed: ${C.sanitize.text(String(command.action))}` }); return;
         }
-        const timeoutMs = Math.min(Math.max(Number(command.timeoutMs) || 5000, 500), 60000);
         // Wait for the application to render rather than sleeping: an SPA settles when it settles, and a fixed delay is
         // either a flake or wasted time. A mutating action runs once; only observations are retried.
         let outcome = { status: 'failed', error: 'Step did not run.' };
