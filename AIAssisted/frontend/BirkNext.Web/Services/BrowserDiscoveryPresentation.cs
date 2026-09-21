@@ -99,6 +99,61 @@ public sealed record BrowserAccessibilityOverview(
 }
 
 
+/// <summary>One page's DOM evidence as a single comparison row. Counts only — never a rating of those counts.</summary>
+public sealed record BrowserDomComparisonRow(
+    string Identity, string Route, DateTimeOffset ObservedAt,
+    int Nodes, int Depth, int Interactive, int FormControls, int Images, int Iframes, int Dialogs, int HiddenFocusable,
+    IReadOnlyList<BrowserEvidenceItem> Detail);
+
+/// <summary>
+/// One page's performance evidence as a single comparison row. Every metric is nullable on purpose: a metric the
+/// browser never reported is absent, and rendering it as 0 would claim a measurement that was never taken.
+/// </summary>
+public sealed record BrowserPerformanceComparisonRow(
+    string Identity, string Route, DateTimeOffset ObservedAt, string Observation,
+    double? Cls, double? StabilizationMs, int? Resources, long? TransferredBytes,
+    IReadOnlyList<BrowserEvidenceItem> Detail);
+
+/// <summary>One accessibility observation, on one page, listed under one WCAG principle.</summary>
+public sealed record BrowserAccessibilityComparisonRow(
+    string Identity, string Route, DateTimeOffset ObservedAt, WcagPrinciple Principle, BrowserObservation Observation)
+{
+    public string? CriterionId => Observation.CriterionId;
+    public bool NeedsAttention => Observation.State != BrowserObservationState.Observed;
+}
+
+/// <summary>
+/// The cross-page evidence inventory behind Browser Discovery's Evidence tab: what evidence exists across the pages
+/// the companion observed, so they can be compared without opening each one.
+///
+/// Aggregation rule, and it differs from the per-page summary on purpose:
+/// <list type="bullet">
+/// <item>Evidence observed on two pages is two observations. <see cref="Observations"/>, <see cref="Flagged"/> and
+/// <see cref="Uncertain"/> sum each page's own distinct counts, because "how much evidence do we have across pages"
+/// is a question about pages, not about rule ids.</item>
+/// <item>Within one page an observation is still counted once, even when it relates to several criteria — the same
+/// key-based dedupe the per-page summary uses.</item>
+/// <item><see cref="Accessibility"/> rows are per principle, so one observation related to two principles is two
+/// rows. That is the grouping the table exists to show, and it is why the row count exceeds
+/// <see cref="Observations"/>.</item>
+/// </list>
+/// Nothing here is a score, a rate or a verdict.
+/// </summary>
+public sealed record BrowserEvidenceInventory(
+    IReadOnlyList<BrowserDomComparisonRow> Dom,
+    IReadOnlyList<BrowserAccessibilityComparisonRow> Accessibility,
+    IReadOnlyList<BrowserPerformanceComparisonRow> Performance,
+    int AccessibilityPages, int Observations, int Flagged, int Uncertain)
+{
+    public static readonly BrowserEvidenceInventory Empty = new([], [], [], 0, 0, 0, 0);
+
+    /// <summary>The principles the observed evidence relates to, across all pages. Grouping, never coverage.</summary>
+    public IReadOnlyList<WcagPrinciple> Areas =>
+        Accessibility.Select(r => r.Principle).Distinct().OrderBy(p => p).ToList();
+
+    public bool Any => Dom.Count > 0 || Accessibility.Count > 0 || Performance.Count > 0;
+}
+
 /// <summary>One page/route row of the Browser Discovery overview table.</summary>
 public sealed record BrowserPageRow(
     string Identity,
@@ -317,6 +372,70 @@ public static class BrowserDiscoveryPresentation
         WcagRegistry.All.Where(d => d.SupportedChecks.Contains(checkId, StringComparer.OrdinalIgnoreCase))
             .Select(d => d.CriterionId);
 
+    // ── Cross-page evidence inventory (Evidence tab) ─────────────────────────
+
+    /// <summary>
+    /// The one derivation of the cross-page inventory, built from the same per-page evidence the Pages tab reads.
+    /// A page contributes a DOM row only when it carries DOM evidence, and a performance row only when the browser
+    /// actually reported something — an empty summary is not a row of zeros.
+    /// </summary>
+    public static BrowserEvidenceInventory Inventory(EndpointDiscoverySnapshot? snapshot)
+    {
+        var pages = (snapshot?.Pages ?? [])
+            .Where(p => p.BrowserEvidence is not null)
+            .Select(p => (Identity: p.Identity, Route: p.PagePath.Length == 0 ? "/" : p.PagePath, Evidence: p.BrowserEvidence!))
+            .OrderByDescending(p => p.Evidence.CapturedAt)
+            .ThenBy(p => p.Identity, StringComparer.Ordinal)
+            .ToList();
+        if (pages.Count == 0) return BrowserEvidenceInventory.Empty;
+
+        var dom = pages.Where(p => p.Evidence.Dom is not null).Select(p =>
+        {
+            var d = p.Evidence.Dom!;
+            return new BrowserDomComparisonRow(p.Identity, p.Route, p.Evidence.CapturedAt,
+                d.NodeCount, d.MaxDepth, d.InteractiveCount, d.FormControlCount, d.ImageCount, d.IframeCount,
+                d.DialogCount, d.HiddenFocusableCount, DomStructure(d));
+        }).ToList();
+
+        var performance = pages.Where(p => HasPerformanceEvidence(p.Evidence.Performance)).Select(p =>
+        {
+            var perf = p.Evidence.Performance!;
+            // Compared columns come out of the summary; whatever else the browser reported stays available as detail.
+            var compared = new[] { "Cumulative layout shift", "Page stabilization", "Resources fetched", "Transferred" };
+            return new BrowserPerformanceComparisonRow(p.Identity, p.Route, p.Evidence.CapturedAt, ObservationLabel(perf),
+                perf.Cls, perf.StabilizationMs,
+                perf.ResourceCount > 0 ? perf.ResourceCount : null,
+                perf.TransferredBytes > 0 ? perf.TransferredBytes : null,
+                PerformanceEvidence(perf).Where(i => !compared.Contains(i.Label)).ToList());
+        }).ToList();
+
+        var accessibility = new List<BrowserAccessibilityComparisonRow>();
+        var accessiblePages = 0; var observations = 0; var flagged = 0; var uncertain = 0;
+        foreach (var page in pages)
+        {
+            var overview = Accessibility(page.Evidence.Accessibility);
+            if (!overview.Any) continue;
+            accessiblePages++;
+            observations += overview.Evaluated;
+            flagged += overview.Flagged;
+            uncertain += overview.Uncertain;
+            foreach (var principle in overview.Principles)
+                foreach (var observation in principle.Observations)
+                    accessibility.Add(new BrowserAccessibilityComparisonRow(
+                        page.Identity, page.Route, page.Evidence.CapturedAt, principle.Principle, observation));
+        }
+
+        return new BrowserEvidenceInventory(dom,
+            // Attention first, then the biggest observations, then a stable page/rule order.
+            accessibility.OrderByDescending(r => r.Observation.State).ThenByDescending(r => r.Observation.Elements)
+                .ThenBy(r => r.Route, StringComparer.Ordinal).ThenBy(r => r.Observation.Label, StringComparer.OrdinalIgnoreCase).ToList(),
+            performance, accessiblePages, observations, flagged, uncertain);
+    }
+
+    /// <summary>Landmarks and headings: structure worth seeing per page, but not worth a column each.</summary>
+    private static IReadOnlyList<BrowserEvidenceItem> DomStructure(BrowserDomSummary dom) =>
+        DomEvidence(dom).Where(i => i.Label is "Landmarks" or "Headings" or "Duplicate ids" or "Positive tabindex").ToList();
+
     // ── DOM evidence ─────────────────────────────────────────────────────────
 
     /// <summary>Structural DOM counts already sanitized by the companion. Never raw DOM, text, attributes or values.</summary>
@@ -407,6 +526,9 @@ public static class BrowserDiscoveryPresentation
         { Length: > 0 } other => other,
         _ => "Not recorded"
     };
+
+    /// <summary>Human-readable transfer size. A size, never a budget.</summary>
+    public static string ByteLabel(long value) => Bytes(value);
 
     private static string Bytes(long value) => value switch
     {

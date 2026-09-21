@@ -256,60 +256,235 @@
     }
     </div>
 
-    @* ── Evidence: normalized explorer grouped by evidence type ── *@
+    @* ── Evidence: cross-page inventory. Pages investigates one page; this compares them. ── *@
     <div class="bd-panel" role="tabpanel" id="browser-discovery-panel-evidence" aria-labelledby="browser-discovery-tab-evidence" tabindex="0" hidden="@(_view != "evidence")">
     @if (_view == "evidence")
     {
-            <h4 class="bd-panel-title">Observed browser evidence by type</h4>
-            @if (Rows.Count == 0)
+            <h4 class="bd-panel-title">Observed browser evidence across pages</h4>
+            @if (!Inventory.Any)
             {
                 @EmptyEvidence
             }
             else
             {
-                <section class="bd-evidence-group" data-testid="browser-discovery-evidence-dom" aria-labelledby="bd-evidence-dom-heading">
-                    <h5 class="bd-section-title" id="bd-evidence-dom-heading">DOM</h5>
-                    @EvidenceTable(
-                        EvidencePages.SelectMany(p => BrowserDiscoveryPresentation.DomEvidence(p.Evidence.Dom).Select(i => (p.Route, Type: i.Label, i.Detail, p.Evidence.CapturedAt))).ToList(),
-                        "Evidence type", "No DOM evidence observed yet.")
-                </section>
+                @* What exists, before any of it is listed. The source is stated once here instead of in every row:
+                   browser evidence only ever comes from the companion. *@
+                <dl class="bd-summary bd-inventory" data-testid="browser-discovery-inventory">
+                    <div><dt>DOM</dt><dd data-testid="bd-inv-dom">@Pluralize(Inventory.Dom.Count, "page")</dd></div>
+                    <div><dt>Accessibility</dt><dd data-testid="bd-inv-accessibility">@Pluralize(Inventory.AccessibilityPages, "page")</dd></div>
+                    <div><dt>Performance</dt><dd data-testid="bd-inv-performance">@Pluralize(Inventory.Performance.Count, "page")</dd></div>
+                    <div><dt>Source</dt><dd data-testid="bd-inv-source">@BrowserDiscoveryPresentation.Source</dd></div>
+                </dl>
 
-                <section class="bd-evidence-group" data-testid="browser-discovery-evidence-accessibility" aria-labelledby="bd-evidence-a11y-heading">
-                    <h5 class="bd-section-title" id="bd-evidence-a11y-heading">Accessibility</h5>
-                    <p class="bd-note">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
-                    @if (AccessibilityRows.Count == 0)
+                <p class="bd-note bd-pagehandoff" data-testid="browser-discovery-evidence-handoff">
+                    Browser Discovery records raw evidence. Frontend Quality Review interprets it.
+                    <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review-evidence">Open Frontend Quality Review</a>
+                </p>
+
+                @* One evidence type at a time: three full tables at once is what made this a diagnostic dump. *@
+                <nav class="bd-nav bd-subnav" role="tablist" aria-label="Evidence types">
+                    @foreach (var (key, label, count) in EvidenceTypes)
                     {
-                        <p class="bd-empty-help">No accessibility evidence observed yet.</p>
+                        <button type="button" class="bd-navbtn @(_evidence == key ? "bd-navbtn-active" : "")"
+                                id="@($"bd-evidence-tab-{key}")" role="tab"
+                                aria-selected="@((_evidence == key).ToString().ToLowerInvariant())"
+                                aria-controls="@($"bd-evidence-panel-{key}")"
+                                tabindex="@(_evidence == key ? 0 : -1)"
+                                data-testid="@($"browser-discovery-evidence-nav-{key}")"
+                                @onclick="() => _evidence = key">@label (@count)</button>
                     }
-                    else
-                    {
-                        <div class="bd-tablewrap">
-                            <table class="bd-table" data-testid="browser-discovery-evidence-accessibility-table">
-                                <thead><tr><th scope="col">Page</th><th scope="col">WCAG area</th><th scope="col">Criterion</th><th scope="col">Evidence item</th><th scope="col">Observed at</th><th scope="col">Source</th></tr></thead>
-                                <tbody>
-                                    @foreach (var row in AccessibilityRows)
-                                    {
+                </nav>
+
+                @* ── DOM: one row per page ── *@
+                <div role="tabpanel" id="bd-evidence-panel-dom" aria-labelledby="bd-evidence-tab-dom" tabindex="0" hidden="@(_evidence != "dom")">
+                @if (_evidence == "dom")
+                {
+                        @if (Inventory.Dom.Count == 0)
+                        {
+                            <p class="bd-empty-help" data-testid="browser-discovery-evidence-dom-empty">No DOM evidence observed.</p>
+                        }
+                        else
+                        {
+                            <div class="bd-tablewrap">
+                                <table class="bd-table" data-testid="browser-discovery-evidence-dom-table">
+                                    <caption class="bd-caption">Structural counts per page. Observations only — no count here is good or bad.</caption>
+                                    <thead>
                                         <tr>
-                                            <th scope="row" class="bd-mono">@row.Route</th>
-                                            <td><span class="bd-area-badge">@BrowserDiscoveryPresentation.PrincipleLabel(row.Principle)</span></td>
-                                            <td class="bd-mono">@(row.Item.CriterionId ?? "—")</td>
-                                            <td><span class="bd-evidence-label">@row.Item.Label</span> <span class="bd-evidence-detail">@row.Item.Detail</span></td>
-                                            <td class="bd-mono">@Time(row.CapturedAt)</td>
-                                            <td><span class="bd-source">@BrowserDiscoveryPresentation.Source</span></td>
+                                            <th scope="col">Page</th><th scope="col">Nodes</th><th scope="col">Depth</th>
+                                            <th scope="col">Interactive</th><th scope="col">Forms</th><th scope="col">Images</th>
+                                            <th scope="col">iFrames</th><th scope="col">Dialogs</th><th scope="col">Hidden focusable</th>
+                                            <th scope="col">Observed at</th>
                                         </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </section>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in Inventory.Dom)
+                                        {
+                                            <tr data-testid="browser-discovery-evidence-dom-row">
+                                                <th scope="row" class="bd-mono bd-route">@PageLink(row.Identity, row.Route)</th>
+                                                <td class="bd-mono">@row.Nodes</td>
+                                                <td class="bd-mono">@row.Depth</td>
+                                                <td class="bd-mono">@row.Interactive</td>
+                                                <td class="bd-mono">@row.FormControls</td>
+                                                <td class="bd-mono">@row.Images</td>
+                                                <td class="bd-mono">@row.Iframes</td>
+                                                <td class="bd-mono">@row.Dialogs</td>
+                                                <td class="bd-mono">@row.HiddenFocusable</td>
+                                                <td class="bd-mono">@Time(row.ObservedAt)</td>
+                                            </tr>
+                                            @if (row.Detail.Count > 0)
+                                            {
+                                                <tr class="bd-detailrow">
+                                                    <td colspan="10">
+                                                        <ReviewDisclosure TestId="@($"browser-discovery-evidence-dom-detail-{Slug(row.Identity)}")"
+                                                                          Text="Landmarks and headings" CollapseText="Hide landmarks and headings"
+                                                                          Class="disclosure-inline disclosure-small">
+                                                            @ItemList(row.Detail, $"browser-discovery-evidence-dom-structure-{Slug(row.Identity)}")
+                                                        </ReviewDisclosure>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                }
+                </div>
 
-                <section class="bd-evidence-group" data-testid="browser-discovery-evidence-performance" aria-labelledby="bd-evidence-perf-heading">
-                    <h5 class="bd-section-title" id="bd-evidence-perf-heading">Performance</h5>
-                    @EvidenceTable(
-                        EvidencePages.SelectMany(p => BrowserDiscoveryPresentation.PerformanceEvidence(p.Evidence.Performance).Select(i => (p.Route, Type: i.Label, Detail: i.Detail, p.Evidence.CapturedAt))).ToList(),
-                        "Metric", "No performance evidence observed yet.")
-                </section>
+                @* ── Accessibility: summary, then what needs attention, then the catalogue on request ── *@
+                <div role="tabpanel" id="bd-evidence-panel-accessibility" aria-labelledby="bd-evidence-tab-accessibility" tabindex="0" hidden="@(_evidence != "accessibility")">
+                @if (_evidence == "accessibility")
+                {
+                        @if (Inventory.Accessibility.Count == 0)
+                        {
+                            <p class="bd-empty-help" data-testid="browser-discovery-evidence-accessibility-empty">No accessibility browser evidence observed.</p>
+                        }
+                        else
+                        {
+                            <p class="bd-counts" data-testid="browser-discovery-evidence-a11y-counts">
+                                <span>@Pluralize(Inventory.AccessibilityPages, "page") observed</span>
+                                <span>@Inventory.Observations observation(s)</span>
+                                @if (Inventory.Flagged > 0) { <span class="bd-count-flagged">@Inventory.Flagged flagged</span> }
+                                @if (Inventory.Uncertain > 0) { <span class="bd-count-uncertain">@Inventory.Uncertain uncertain</span> }
+                            </p>
+                            <p class="bd-areas-line" data-testid="browser-discovery-evidence-a11y-areas">
+                                @foreach (var area in Inventory.Areas)
+                                {
+                                    <span class="bd-area-badge">@BrowserDiscoveryPresentation.PrincipleLabel(area)</span>
+                                }
+                            </p>
+                            <p class="bd-note">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
+
+                            <div class="bd-filters" data-testid="browser-discovery-evidence-filters">
+                                <label class="bd-filter">
+                                    <span>Page</span>
+                                    <select @bind="_filterPage" data-testid="browser-discovery-filter-page">
+                                        <option value="">All pages</option>
+                                        @* Not named 'page': Razor reads a leading @page as the routing directive. *@
+                                        @foreach (var observed in Inventory.Accessibility.Select(r => (r.Identity, r.Route)).Distinct().OrderBy(p => p.Route, StringComparer.Ordinal))
+                                        {
+                                            <option value="@observed.Identity">@observed.Route</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label class="bd-filter">
+                                    <span>WCAG area</span>
+                                    <select @bind="_filterArea" data-testid="browser-discovery-filter-area">
+                                        <option value="">All areas</option>
+                                        @foreach (var area in Inventory.Areas)
+                                        {
+                                            <option value="@area">@BrowserDiscoveryPresentation.PrincipleLabel(area)</option>
+                                        }
+                                    </select>
+                                </label>
+                                <label class="bd-filter">
+                                    <span>Evidence</span>
+                                    @* Needs attention by default: the inventory is for finding what to look at, not for reading a catalogue. *@
+                                    <select @bind="_filterState" data-testid="browser-discovery-filter-state">
+                                        <option value="attention">Needs attention</option>
+                                        <option value="all">All observations</option>
+                                        <option value="flagged">Flagged</option>
+                                        <option value="uncertain">Uncertain</option>
+                                        <option value="evaluated">Evaluated</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            @if (FilteredAccessibility.Count == 0)
+                            {
+                                <p class="bd-empty-help" data-testid="browser-discovery-evidence-a11y-none">
+                                    @(_filterState == "attention"
+                                        ? "No flagged or uncertain observations in the current browser evidence."
+                                        : "No observations match the current filters.")
+                                </p>
+                            }
+                            else
+                            {
+                                @AccessibilityTable(FilteredAccessibility, "browser-discovery-evidence-accessibility-table", "browser-discovery-evidence-a11y-row")
+                            }
+
+                            @* The complete catalogue, including the rules that ran and matched nothing. Never deleted, just not first. *@
+                            <ReviewDisclosure TestId="browser-discovery-evidence-all-rules" Text="Show all evaluated rules"
+                                              CollapseText="Hide all evaluated rules" Hint="@($"{ScopedAccessibility.Count}")"
+                                              Class="disclosure-inline disclosure-small">
+                                @AccessibilityTable(ScopedAccessibility, "browser-discovery-evidence-all-rules-table", "browser-discovery-evidence-all-rules-row")
+                            </ReviewDisclosure>
+                        }
+                }
+                </div>
+
+                @* ── Performance: one row per page, raw observations ── *@
+                <div role="tabpanel" id="bd-evidence-panel-performance" aria-labelledby="bd-evidence-tab-performance" tabindex="0" hidden="@(_evidence != "performance")">
+                @if (_evidence == "performance")
+                {
+                        @if (Inventory.Performance.Count == 0)
+                        {
+                            <p class="bd-empty-help" data-testid="browser-discovery-evidence-performance-empty">No browser performance evidence observed.</p>
+                        }
+                        else
+                        {
+                            <p class="bd-note">Raw observations only; thresholds are applied in Frontend Quality Review.</p>
+                            <div class="bd-tablewrap">
+                                <table class="bd-table" data-testid="browser-discovery-evidence-performance-table">
+                                    <caption class="bd-caption">Field measurements per page. A metric the browser did not report is shown as not observed, never as zero.</caption>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Page</th><th scope="col">Observation</th><th scope="col">CLS</th>
+                                            <th scope="col">Page stabilization</th><th scope="col">Resources fetched</th>
+                                            <th scope="col">Transferred</th><th scope="col">Observed at</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in Inventory.Performance)
+                                        {
+                                            <tr data-testid="browser-discovery-evidence-performance-row">
+                                                <th scope="row" class="bd-mono bd-route">@PageLink(row.Identity, row.Route)</th>
+                                                <td>@row.Observation</td>
+                                                <td class="bd-mono">@Measured(row.Cls?.ToString("0.###"))</td>
+                                                <td class="bd-mono">@Measured(row.StabilizationMs is { } ms ? $"{ms:0} ms" : null)</td>
+                                                <td class="bd-mono">@Measured(row.Resources?.ToString())</td>
+                                                <td class="bd-mono">@Measured(row.TransferredBytes is { } b ? BrowserDiscoveryPresentation.ByteLabel(b) : null)</td>
+                                                <td class="bd-mono">@Time(row.ObservedAt)</td>
+                                            </tr>
+                                            @if (row.Detail.Count > 0)
+                                            {
+                                                <tr class="bd-detailrow">
+                                                    <td colspan="7">
+                                                        <ReviewDisclosure TestId="@($"browser-discovery-evidence-performance-detail-{Slug(row.Identity)}")"
+                                                                          Text="Other observed metrics" CollapseText="Hide other observed metrics"
+                                                                          Hint="@($"{row.Detail.Count}")" Class="disclosure-inline disclosure-small">
+                                                            @ItemList(row.Detail, $"browser-discovery-evidence-performance-detail-items-{Slug(row.Identity)}")
+                                                        </ReviewDisclosure>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                }
+                </div>
             }
     }
     </div>
@@ -359,15 +534,6 @@
     private BrowserPageRow? SelectedRow => Rows.FirstOrDefault(r => r.Identity == _selected) ?? Rows.FirstOrDefault();
     private BrowserPageEvidence? SelectedEvidence =>
         Snapshot.Pages.FirstOrDefault(p => p.Identity == SelectedRow?.Identity)?.BrowserEvidence;
-
-    private IReadOnlyList<(string Route, BrowserPageEvidence Evidence)> EvidencePages =>
-        Snapshot.Pages.Where(p => p.BrowserEvidence is not null)
-            .OrderByDescending(p => p.BrowserEvidence!.CapturedAt)
-            .Select(p => (p.PagePath.Length == 0 ? "/" : p.PagePath, p.BrowserEvidence!)).ToList();
-
-    private IReadOnlyList<(string Route, WcagPrinciple Principle, BrowserEvidenceItem Item, DateTimeOffset CapturedAt)> AccessibilityRows =>
-        EvidencePages.SelectMany(p => BrowserDiscoveryPresentation.AreaEvidence(p.Evidence.Accessibility)
-            .SelectMany(area => area.Items.Select(item => (p.Route, area.Principle, item, p.Evidence.CapturedAt)))).ToList();
 
     // The summary row is the primary read-out for session state and evidence, so this component follows the
     // companion runtime itself rather than depending on the card below it re-rendering.
@@ -461,6 +627,95 @@
         </ul>
     };
 
+    // ── Evidence tab: cross-page inventory ───────────────────────────────────
+
+    /// <summary>Which evidence type the Evidence tab is comparing. One at a time; three tables at once is a dump.</summary>
+    private string _evidence = "dom";
+
+    /// <summary>Accessibility filters. "Needs attention" is the default because the inventory exists to find what to look at.</summary>
+    private string _filterPage = "";
+    private string _filterArea = "";
+    private string _filterState = "attention";
+
+    private BrowserEvidenceInventory Inventory => BrowserDiscoveryPresentation.Inventory(Snapshot);
+
+    private (string Key, string Label, int Count)[] EvidenceTypes =>
+    [
+        ("dom", "DOM", Inventory.Dom.Count),
+        ("accessibility", "Accessibility", Inventory.AccessibilityPages),
+        ("performance", "Performance", Inventory.Performance.Count),
+    ];
+
+    /// <summary>Everything the page and area filters admit, whatever its state — the scope the full catalogue covers.</summary>
+    private IReadOnlyList<BrowserAccessibilityComparisonRow> ScopedAccessibility =>
+        Inventory.Accessibility
+            .Where(r => _filterPage.Length == 0 || r.Identity == _filterPage)
+            .Where(r => _filterArea.Length == 0 || r.Principle.ToString() == _filterArea)
+            .ToList();
+
+    private IReadOnlyList<BrowserAccessibilityComparisonRow> FilteredAccessibility =>
+        ScopedAccessibility.Where(r => _filterState switch
+        {
+            "flagged" => r.Observation.State == BrowserObservationState.Flagged,
+            "uncertain" => r.Observation.State == BrowserObservationState.Uncertain,
+            "evaluated" => r.Observation.State == BrowserObservationState.Observed,
+            "all" => true,
+            _ => r.NeedsAttention,
+        }).ToList();
+
+    private static string Pluralize(int count, string noun) => $"{count} {noun}{(count == 1 ? "" : "s")}";
+
+    /// <summary>A test id safe fragment of a page identity.</summary>
+    private static string Slug(string identity) =>
+        new(identity.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
+
+    /// <summary>A value the browser never reported says so. Rendering it as 0 would claim a measurement nobody took.</summary>
+    private RenderFragment Measured(string? value) => __builder =>
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            <span class="bd-unmeasured" data-testid="bd-not-observed">Not observed</span>
+        }
+        else
+        {
+            @value
+        }
+    };
+
+    /// <summary>The page cell doubles as the way into that page's own evidence, which is what Pages is for.</summary>
+    private RenderFragment PageLink(string identity, string route) => __builder =>
+    {
+        <button type="button" class="bd-routelink" data-testid="browser-discovery-evidence-open-page"
+                @onclick="() => OpenPage(identity)">@route</button>
+    };
+
+    private RenderFragment AccessibilityTable(IReadOnlyList<BrowserAccessibilityComparisonRow> rows, string tableTestId, string rowTestId) => __builder =>
+    {
+        <div class="bd-tablewrap">
+            <table class="bd-table" data-testid="@tableTestId">
+                <thead>
+                    <tr>
+                        <th scope="col">Page</th><th scope="col">WCAG area</th><th scope="col">Criterion</th>
+                        <th scope="col">Evidence item</th><th scope="col">Observation</th><th scope="col">Observed at</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rows)
+                    {
+                        <tr data-testid="@rowTestId">
+                            <th scope="row" class="bd-mono bd-route">@PageLink(row.Identity, row.Route)</th>
+                            <td><span class="bd-area-badge">@BrowserDiscoveryPresentation.PrincipleLabel(row.Principle)</span></td>
+                            <td class="bd-mono">@(row.CriterionId ?? "—")</td>
+                            <td><span class="bd-evidence-label">@row.Observation.Label</span></td>
+                            <td><span class="bd-obs-state bd-obs-@row.Observation.State.ToString().ToLowerInvariant()">@row.Observation.StateDetail</span></td>
+                            <td class="bd-mono">@Time(row.ObservedAt)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    };
+
     private void Select(string key) { _view = key; }
     private void OpenPage(string identity) { _selected = identity; _view = "pages"; }
 
@@ -510,31 +765,4 @@
         </dl>
     };
 
-    private RenderFragment EvidenceTable(IReadOnlyList<(string Route, string Type, string Detail, DateTimeOffset CapturedAt)> rows, string typeHeader, string empty) => __builder =>
-    {
-        if (rows.Count == 0)
-        {
-            <p class="bd-empty-help">@empty</p>
-        }
-        else
-        {
-            <div class="bd-tablewrap">
-                <table class="bd-table">
-                    <thead><tr><th scope="col">Page</th><th scope="col">@typeHeader</th><th scope="col">Observed value</th><th scope="col">Observed at</th><th scope="col">Source</th></tr></thead>
-                    <tbody>
-                        @foreach (var row in rows)
-                        {
-                            <tr>
-                                <th scope="row" class="bd-mono">@row.Route</th>
-                                <td>@row.Type</td>
-                                <td class="bd-mono">@row.Detail</td>
-                                <td class="bd-mono">@Time(row.CapturedAt)</td>
-                                <td><span class="bd-source">@BrowserDiscoveryPresentation.Source</span></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    };
 }

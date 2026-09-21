@@ -116,7 +116,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
         Nav(cut, "evidence");
         cut.Find("[data-testid=browser-discovery-nav-evidence]").GetAttribute("aria-selected").Should().Be("true");
-        cut.FindAll("[data-testid=browser-discovery-evidence-dom]").Should().ContainSingle();
+        cut.FindAll("[data-testid=browser-discovery-inventory]").Should().ContainSingle();
     }
 
     // ── 28. Overview table ───────────────────────────────────────────────────
@@ -232,39 +232,59 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     // ── 30. Evidence explorer ────────────────────────────────────────────────
 
     [Fact]
-    public void EvidenceExplorerGroupsByTypeAndKeepsSourceAndTimestamp()
+    public void EvidenceInventoryStatesEachTypeOnceAndComparesOneTypeAtATime()
     {
         SeedFullPage();
         var cut = Open();
         Nav(cut, "evidence");
 
-        foreach (var group in new[] { "dom", "accessibility", "performance" })
-            cut.FindAll($"[data-testid=browser-discovery-evidence-{group}]").Should().ContainSingle(group);
+        // The summary says what exists across pages, and states the source once instead of in every row.
+        Text(cut, "bd-inv-dom").Should().Be("1 page");
+        Text(cut, "bd-inv-accessibility").Should().Be("1 page");
+        Text(cut, "bd-inv-performance").Should().Be("1 page");
+        Text(cut, "bd-inv-source").Should().Be("Browser Companion");
 
+        // DOM is the default comparison and is the only table rendered.
+        cut.FindAll("[data-testid=browser-discovery-evidence-dom-table]").Should().ContainSingle();
+        cut.FindAll("[data-testid=browser-discovery-evidence-accessibility-table]").Should().BeEmpty();
+        cut.FindAll("[data-testid=browser-discovery-evidence-performance-table]").Should().BeEmpty();
+        cut.Find("[data-testid=browser-discovery-evidence-dom-row]").TextContent.Should().Contain("812");
+
+        cut.Find("[data-testid=browser-discovery-evidence-nav-accessibility]").Click();
         var accessibility = cut.Find("[data-testid=browser-discovery-evidence-accessibility-table]");
         accessibility.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page", "WCAG area", "Criterion", "Evidence item", "Observed at", "Source");
-        accessibility.TextContent.Should().Contain("Perceivable").And.Contain("1.1.1").And.Contain("Browser Companion");
+            .Should().Equal("Page", "WCAG area", "Criterion", "Evidence item", "Observation", "Observed at");
+        accessibility.TextContent.Should().Contain("Perceivable").And.Contain("1.1.1");
+        cut.FindAll("[data-testid=browser-discovery-evidence-dom-table]").Should().BeEmpty();
 
-        var performance = cut.Find("[data-testid=browser-discovery-evidence-performance]").TextContent;
-        performance.Should().Contain("Largest contentful paint").And.Contain("1234 ms").And.Contain("Browser Companion");
-        cut.Find("[data-testid=browser-discovery-evidence-dom]").TextContent.Should().Contain("Nodes").And.Contain("812");
+        cut.Find("[data-testid=browser-discovery-evidence-nav-performance]").Click();
+        cut.Find("[data-testid=browser-discovery-evidence-performance-row]").TextContent.Should().Contain("Initial load");
 
         // Observation timestamps are rendered where the evidence carries them.
         cut.Markup.Should().MatchRegex(@"\d{2}:\d{2}:\d{2}");
     }
 
     [Fact]
-    public void EvidenceExplorerReportsUnavailableRatherThanFabricatingRows()
+    public void EvidenceInventoryReportsUnobservedTypesRatherThanFabricatingRows()
     {
         SeedBarePage();
         var cut = Open();
         Nav(cut, "evidence");
 
-        cut.Find("[data-testid=browser-discovery-evidence-performance]").TextContent
-            .Should().Contain("No performance evidence observed yet").And.NotContain("0 ms");
-        cut.Find("[data-testid=browser-discovery-evidence-accessibility]").TextContent
-            .Should().Contain("No accessibility evidence observed yet");
+        // The page carries DOM evidence only, so the other two types are absent rather than zero-filled.
+        Text(cut, "bd-inv-performance").Should().Be("0 pages");
+        Text(cut, "bd-inv-accessibility").Should().Be("0 pages");
+
+        cut.Find("[data-testid=browser-discovery-evidence-nav-performance]").Click();
+        Text(cut, "browser-discovery-evidence-performance-empty")
+            .Should().Be("No browser performance evidence observed.");
+        cut.Markup.Should().NotContain("0 ms");
+
+        cut.Find("[data-testid=browser-discovery-evidence-nav-accessibility]").Click();
+        Text(cut, "browser-discovery-evidence-accessibility-empty")
+            .Should().Be("No accessibility browser evidence observed.");
+        // Absence of evidence is never absence of issues.
+        cut.Markup.Should().NotContain("No accessibility issues");
     }
 
     // ── 21. Empty state ──────────────────────────────────────────────────────

@@ -131,3 +131,24 @@
 .bd-obs-uncertain { color: var(--clr-text-subtle, #64748b); }
 .bd-obs-observed { color: var(--clr-text-muted, #6b7280); font-weight: 400; }
 .bd-obs-detail { color: var(--clr-text-muted, #6b7280); font-size: 0.72rem; overflow-wrap: anywhere; }
+
+/* ── Evidence: cross-page inventory ─────────────────────────────────────────
+   One evidence type at a time, one row per page. Numbers here are observations, so nothing is coloured by value. */
+
+.bd-inventory { margin-bottom: 0.25rem; }
+.bd-subnav { border-bottom: none; padding-bottom: 0.25rem; margin: 0.5rem 0 0.25rem; }
+.bd-areas-line { margin: 0.3rem 0; }
+
+.bd-filters { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; margin: 0.5rem 0 0.6rem; }
+.bd-filter { display: flex; flex-direction: column; gap: 0.15rem; min-width: 10rem; }
+.bd-filter > span { font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--clr-text-muted, #6b7280); }
+.bd-filter select {
+    font: inherit; font-size: 0.82rem; padding: 0.25rem 0.4rem;
+    border: 1px solid var(--clr-border); border-radius: 6px; background: var(--clr-surface-white, #fff); color: var(--clr-text-body);
+}
+
+/* The per-page disclosure row sits under its data row and carries no borders of its own. */
+.bd-detailrow > td { padding: 0.15rem 0.7rem 0.4rem; border-bottom: 1px solid var(--clr-border-subtle); background: var(--clr-surface); }
+
+/* Absent is absent. Muted and worded, never a zero that reads as a measurement. */
+.bd-unmeasured { color: var(--clr-text-muted, #6b7280); font-size: 0.72rem; font-style: italic; white-space: nowrap; }
