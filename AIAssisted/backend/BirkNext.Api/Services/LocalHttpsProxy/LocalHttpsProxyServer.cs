@@ -117,6 +117,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
 
     public IPEndPoint? Endpoint { get; private set; }
     public bool Faulted { get; private set; }
+    public bool Listening => !_cts.IsCancellationRequested && _acceptLoop is { IsCompleted: false };
     public int ActiveConnections => _connections;
 
     public static bool IsLoopbackPortFree(int port)
@@ -151,7 +152,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
         {
             while (!ct.IsCancellationRequested)
             {
-                var client = await listener.AcceptTcpClientAsync(ct);
+                var client = await listener.AcceptTcpClientAsync(ct).ConfigureAwait(false);
                 _ = HandleConnectionAsync(client, ct);
             }
         }
@@ -469,7 +470,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
     {
         _cts.Cancel();
         try { _listener?.Stop(); } catch (SocketException) { }
-        if (_acceptLoop is { } loop) { try { await loop; } catch (Exception ex) when (IsExpected(ex)) { } }
+        if (_acceptLoop is { } loop) { try { await loop.ConfigureAwait(false); } catch (Exception ex) when (IsExpected(ex)) { } }
         _cts.Dispose();
     }
 

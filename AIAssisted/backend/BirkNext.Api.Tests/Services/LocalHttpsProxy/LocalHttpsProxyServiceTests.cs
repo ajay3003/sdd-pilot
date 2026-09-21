@@ -32,7 +32,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     private readonly EphemeralCertificateStore _certificateStore = new();
     private readonly CapturingLogger<LocalHttpsProxyService> _log = new();
     private readonly Mock<IEdgeInstallationLocator> _edge = new();
-    private readonly Mock<IManagedEdgeLauncher> _launcher = new();
+    private readonly Mock<IProxyEdgeLauncher> _ownedLauncher = new();
     private ProxyCertificateAuthority _authority = null!;
     private TransientAuthenticatedApiContextStore _store = null!;
     private FakeUpstream _upstream = null!;
@@ -75,7 +75,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
 
     private LocalHttpsProxyService Create(AuthenticatedReviewOptions runtime) => new(
         Options.Create(new LocalHttpsProxyOptions { Port = 0, CredentialLifetimeMinutes = 30 }), Options.Create(runtime), _authority, _store,
-        new TestConnector(_upstream), _edge.Object, _launcher.Object, _log, () => _now);
+        new TestConnector(_upstream), _edge.Object, _ownedLauncher.Object, _log, () => _now);
 
     private static LocalHttpsProxyScopeRequest Scope(string profile = "dev", string fingerprint = null!, string environment = "Development", string target = Target, string? tenant = null) =>
         new(profile, fingerprint ?? Fp, environment, target, [ApiHost], tenant);
@@ -420,10 +420,15 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task EnvironmentSwitchWipesTheCredentialOfThePreviousEnvironment()
+    public async Task AnotherEnvironmentRequiresExplicitStop()
     {
         await StartWithCredentialAsync();
         var qa = await _service.StartAsync(Scope(profile: "qa", environment: "QA"));
+        Assert.Equal(_sessionId, qa.SessionId);
+        Assert.NotNull(qa.FailureReason);
+        Assert.True(_store.IsAuthenticatedApiContextAvailable("dev", Fp));
+        await _service.StopAsync(Session());
+        qa = await _service.StartAsync(Scope(profile: "qa", environment: "QA"));
         Assert.NotNull(qa.SessionId);
         Assert.False(_store.IsAuthenticatedApiContextAvailable("dev", Fp));
         Assert.False(qa.AuthenticatedCredentialAvailable);
@@ -435,6 +440,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     {
         await StartWithCredentialAsync();
         // Same profile, changed target-relevant configuration => new context fingerprint => old credential must not survive.
+        await _service.StopAsync(Session());
         var replaced = await _service.StartAsync(Scope(fingerprint: Fp2, target: "https://app2.example.test/"));
         Assert.NotNull(replaced.SessionId);
         Assert.False(_store.IsAuthenticatedApiContextAvailable("dev", Fp));
@@ -474,6 +480,147 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task RefreshDuringStartupSeesCanonicalStartingAndCancellationDoesNotAbandonRuntime()
+    {
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var authority = new Mock<IProxyCertificateAuthority>();
+        authority.Setup(a => a.Status()).Returns(new ProxyCertificateStatus());
+        authority.Setup(a => a.EnsureAuthority()).Returns(() =>
+        {
+            entered.Set();
+            Assert.True(release.Wait(TimeSpan.FromSeconds(10)));
+            return _authority.EnsureAuthority();
+        });
+        using var service = new LocalHttpsProxyService(Options.Create(new LocalHttpsProxyOptions { Port = 0 }),
+            Options.Create(new AuthenticatedReviewOptions { Enabled = true, Runtime = "LocalWorkstation" }),
+            authority.Object, _store, new TestConnector(_upstream), _edge.Object, _ownedLauncher.Object);
+        using var request = new CancellationTokenSource();
+        var start = Task.Run(() => service.StartAsync(Scope(), request.Token));
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(10)));
+            var starting = await service.GetRuntimeAsync();
+            Assert.Equal(LocalHttpsProxyRuntimePhase.Starting, starting.RuntimeStatus);
+            request.Cancel();
+            var second = service.StartAsync(Scope());
+            release.Set();
+            var running = await start;
+            Assert.Equal(starting.RuntimeId, running.RuntimeId);
+            Assert.Equal(running.RuntimeId, (await second).RuntimeId);
+            Assert.True((await service.GetRuntimeAsync()).ProxyListening);
+        }
+        finally { release.Set(); }
+    }
+
+    [Fact]
+    public async Task RefreshDuringStopSeesStoppingThenStoppedWithoutResurrection()
+    {
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var process = new Mock<IProxyEdgeProcess>();
+        process.SetupGet(p => p.Running).Returns(true);
+        process.Setup(p => p.StopAsync()).Returns(release.Task);
+        _edge.Setup(e => e.Locate()).Returns(new EdgeInstallation("msedge.exe", null));
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(process.Object);
+        await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        var stop = _service.StopAsync(Session());
+        try
+        {
+            Assert.Equal(LocalHttpsProxyRuntimePhase.Stopping, (await _service.GetRuntimeAsync()).RuntimeStatus);
+            release.SetResult();
+            await stop;
+            Assert.Equal(LocalHttpsProxyRuntimePhase.Stopped, (await _service.GetRuntimeAsync()).RuntimeStatus);
+            Assert.False((await _service.GetRuntimeAsync()).ProxyListening);
+        }
+        finally { release.TrySetResult(); }
+    }
+
+    [Fact]
+    public async Task UnexpectedListenerExitIsFailedAndDoesNotKeepAuthenticationAvailable()
+    {
+        await StartAsync(Scope());
+        // Simulate an OS-level listener failure without calling the runtime's stop command.
+        var session = typeof(LocalHttpsProxyService).GetField("_session", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(_service)!;
+        var server = (LocalHttpsProxyServer)session.GetType().GetProperty("Server")!.GetValue(session)!;
+        var listener = (TcpListener)typeof(LocalHttpsProxyServer).GetField("_listener", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(server)!;
+        listener.Stop();
+        await WaitForAsync(() => !server.Listening);
+        var failed = await _service.GetRuntimeAsync();
+        Assert.Equal(LocalHttpsProxyRuntimePhase.Failed, failed.RuntimeStatus);
+        Assert.Equal(LocalHttpsProxyState.Failed, failed.State);
+        Assert.False(failed.ProxyListening);
+        Assert.False(failed.AuthenticatedCredentialAvailable);
+    }
+
+    [Fact]
+    public async Task RequestCancellationAndConcurrentStartsKeepOneListener()
+    {
+        using var request = new CancellationTokenSource();
+        var initial = await _service.StartAsync(Scope(), request.Token);
+        request.Cancel();
+        var results = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => Task.Run(() => _service.StartAsync(Scope()))));
+        Assert.All(results, s => { Assert.Equal(initial.RuntimeId, s.RuntimeId); Assert.Equal(initial.Port, s.Port); });
+        var queried = await _service.GetRuntimeAsync();
+        Assert.True(queried.ProxyListening);
+        Assert.Equal(initial.RuntimeId, queried.RuntimeId);
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, initial.Port);
+    }
+
+    [Fact]
+    public async Task StopIsIdempotentReleasesPortAndRestartCreatesNewIdentity()
+    {
+        var port = await StartAsync(Scope());
+        var id = _sessionId;
+        var stopped = await _service.StopAsync(Session());
+        Assert.Equal(stopped, await _service.StopAsync(Session()));
+        Assert.True(LocalHttpsProxyServer.IsLoopbackPortFree(port));
+        Assert.Equal(LocalHttpsProxyRuntimePhase.Stopped, (await _service.GetRuntimeAsync()).RuntimeStatus);
+        var restarted = await _service.StartAsync(Scope());
+        Assert.NotEqual(id, restarted.RuntimeId);
+        Assert.True(restarted.ProxyListening);
+    }
+
+    [Fact]
+    public async Task HostShutdownStopsListenerAndFreshBackendStartsStopped()
+    {
+        var port = await StartAsync(Scope());
+        await _service.StopAsync(CancellationToken.None);
+        Assert.True(LocalHttpsProxyServer.IsLoopbackPortFree(port));
+        Assert.Equal("backend shutdown", (await _service.GetRuntimeAsync()).StopReason);
+        using var fresh = Create(new AuthenticatedReviewOptions { Enabled = true, Runtime = "LocalWorkstation" });
+        Assert.Equal(LocalHttpsProxyRuntimePhase.Stopped, (await fresh.GetRuntimeAsync()).RuntimeStatus);
+        Assert.Null((await fresh.GetRuntimeAsync()).RuntimeId);
+    }
+
+    [Fact]
+    public async Task DedicatedBrowserIsReusedAndOnlyOwnedHandleIsStopped()
+    {
+        _edge.Setup(e => e.Locate()).Returns(new EdgeInstallation("msedge.exe", null));
+        var process = new Mock<IProxyEdgeProcess>();
+        process.SetupGet(p => p.Id).Returns(12345);
+        process.SetupGet(p => p.Running).Returns(true);
+        process.Setup(p => p.StopAsync()).Returns(Task.CompletedTask);
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(process.Object);
+        await StartAsync(Scope());
+        var request = new LocalHttpsProxyEdgeLaunchRequest(_sessionId, "dev", Fp);
+        var opened = await _service.LaunchEdgeAsync(request);
+        await _service.LaunchEdgeAsync(request);
+        await _service.StartAsync(Scope());
+        var restored = await _service.GetRuntimeAsync();
+        Assert.Equal(opened.EdgeProcessId, restored.EdgeProcessId);
+        Assert.Equal(opened.RuntimeId, restored.RuntimeId);
+        _ownedLauncher.Verify(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()), Times.Once);
+        process.Verify(p => p.StopAsync(), Times.Never);
+        process.SetupGet(p => p.Running).Returns(false);
+        Assert.False((await _service.GetRuntimeAsync()).EdgeRunning);
+        Assert.True((await _service.GetRuntimeAsync()).ProxyListening);
+        await _service.StopAsync(Session());
+        process.Verify(p => p.StopAsync(), Times.Once);
+    }
+
+    [Fact]
     public async Task RepeatedStartForTheSameEnvironmentReusesTheSession()
     {
         var port = await StartWithCredentialAsync();
@@ -481,6 +628,120 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         Assert.Equal(_sessionId, again.SessionId);
         Assert.Equal(port, again.Port);
         Assert.True(again.AuthenticatedCredentialAvailable);
+    }
+
+    // ── Is the dedicated browser provably using THIS proxy? ──────────────────
+    //
+    // A running msedge.exe proves nothing on its own. What BirkNext can honestly claim is its own launch record: a
+    // process it started, still owned by this runtime, recorded as carrying this runtime's port. Everything below pins
+    // one way that claim could otherwise be overstated.
+
+    private Mock<IProxyEdgeProcess> OwnedBrowser(int pid = 4242)
+    {
+        _edge.Setup(e => e.Locate()).Returns(new EdgeInstallation("msedge.exe", null));
+        var process = new Mock<IProxyEdgeProcess>();
+        process.SetupGet(p => p.Id).Returns(pid);
+        process.SetupGet(p => p.Running).Returns(true);
+        process.Setup(p => p.StopAsync()).Returns(Task.CompletedTask);
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(process.Object);
+        return process;
+    }
+
+    [Fact]
+    public async Task ABrowserThisRuntimeLaunchedOnItsOwnPortIsConfirmed()
+    {
+        var process = OwnedBrowser();
+        var port = await StartAsync(Scope());
+        IReadOnlyList<string>? launchedWith = null;
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
+            .Callback<string, IReadOnlyList<string>>((_, a) => launchedWith = a).Returns(process.Object);
+
+        var status = await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+
+        Assert.Equal(DedicatedBrowserVerification.Confirmed, status.EdgeVerification);
+        Assert.Equal(port, status.ExpectedProxyPort);
+        Assert.Equal(port, status.EdgeProxyPort);
+        Assert.True(status.ProxyArgumentConfigured);
+        Assert.Equal(process.Object.Id, status.EdgeProcessId);
+        // The recorded port is the one that actually went on the command line, not one inferred afterwards.
+        Assert.Contains($"--proxy-server=127.0.0.1:{port}", launchedWith!);
+    }
+
+    [Fact]
+    public async Task WithNoBrowserLaunchedNothingIsClaimedAboutOne()
+    {
+        await StartAsync(Scope());
+        var status = await _service.GetRuntimeAsync();
+        Assert.Equal(DedicatedBrowserVerification.NotRunning, status.EdgeVerification);
+        Assert.False(status.EdgeRunning);
+        Assert.Null(status.EdgeProxyPort);
+        Assert.False(status.ProxyArgumentConfigured);
+    }
+
+    [Fact]
+    public async Task ABrowserThatHasExitedIsNoLongerUsingTheProxy()
+    {
+        var process = OwnedBrowser();
+        await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        process.SetupGet(p => p.Running).Returns(false);
+
+        var status = await _service.GetRuntimeAsync();
+        Assert.Equal(DedicatedBrowserVerification.NotRunning, status.EdgeVerification);
+    }
+
+    [Fact]
+    public async Task ABrowserFromAnEarlierRuntimeIsNotInheritedByANewOne()
+    {
+        var process = OwnedBrowser();
+        await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        await _service.StopAsync(Session());
+
+        // A new runtime on a new port. The previous browser belonged to the session that just ended, so the new one
+        // reports no browser at all rather than adopting a process it cannot vouch for.
+        await StartAsync(Scope());
+        var status = await _service.GetRuntimeAsync();
+        Assert.Equal(DedicatedBrowserVerification.NotRunning, status.EdgeVerification);
+        Assert.Null(status.EdgeProxyPort);
+        process.Verify(p => p.StopAsync(), Times.Once);
+    }
+
+    [Fact]
+    public async Task RestartingTheBrowserClosesOnlyTheOwnedProcessAndUsesTheCurrentPort()
+    {
+        var first = OwnedBrowser(1111);
+        var port = await StartAsync(Scope());
+        var request = new LocalHttpsProxyEdgeLaunchRequest(_sessionId, "dev", Fp);
+        await _service.LaunchEdgeAsync(request);
+
+        var second = new Mock<IProxyEdgeProcess>();
+        second.SetupGet(p => p.Id).Returns(2222);
+        second.SetupGet(p => p.Running).Returns(true);
+        IReadOnlyList<string>? relaunchedWith = null;
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
+            .Callback<string, IReadOnlyList<string>>((_, a) => relaunchedWith = a).Returns(second.Object);
+
+        var status = await _service.RestartEdgeAsync(request);
+
+        // Exactly one process was closed: the handle this runtime owned. BirkNext never searches for msedge.exe.
+        first.Verify(p => p.StopAsync(), Times.Once);
+        Assert.Equal(2222, status.EdgeProcessId);
+        Assert.Equal(DedicatedBrowserVerification.Confirmed, status.EdgeVerification);
+        Assert.Contains($"--proxy-server=127.0.0.1:{port}", relaunchedWith!);
+        Assert.DoesNotContain(relaunchedWith!, a => a.Contains("Microsoft\\Edge\\User Data", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ABrowserThatCouldNotBeStartedIsNeverReportedAsUsingTheProxy()
+    {
+        _edge.Setup(e => e.Locate()).Returns(new EdgeInstallation("msedge.exe", null));
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns((IProxyEdgeProcess?)null);
+        await StartAsync(Scope());
+
+        var status = await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        Assert.NotEqual(DedicatedBrowserVerification.Confirmed, status.EdgeVerification);
+        Assert.False(status.ProxyArgumentConfigured);
     }
 
     /// <summary>

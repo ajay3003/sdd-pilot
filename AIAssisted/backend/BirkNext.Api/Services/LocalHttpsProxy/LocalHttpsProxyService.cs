@@ -8,6 +8,7 @@ namespace BirkNext.Api.Services.LocalHttpsProxy;
 
 public interface ILocalHttpsProxyService
 {
+    Task<LocalHttpsProxyStatus> GetRuntimeAsync();
     /// <summary>Transient compatibility check: deployment mode, environment gate, port, certificate trust, approved hosts. Nothing is persisted.</summary>
     Task<LocalHttpsProxyStatus> CheckCompatibilityAsync(LocalHttpsProxyScopeRequest scope, CancellationToken cancellationToken = default);
     Task<LocalHttpsProxyStatus> StartAsync(LocalHttpsProxyScopeRequest scope, CancellationToken cancellationToken = default);
@@ -17,6 +18,11 @@ public interface ILocalHttpsProxyService
     Task<ProxyCertificateStatus> RemoveCertificateAsync(LocalHttpsProxyCertificateRequest request);
     /// <summary>Starts a separate Edge instance configured to use the running proxy. Never changes the Windows or default-profile proxy settings.</summary>
     Task<LocalHttpsProxyStatus> LaunchEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Closes the dedicated browser this runtime launched — only that one — and starts it again on the current proxy
+    /// port. For a browser left over from an earlier runtime, which is running but pointed at a port that is gone.
+    /// </summary>
+    Task<LocalHttpsProxyStatus> RestartEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Lets the execution service resolve the approved host scope of a live session. Throws <see cref="System.Collections.Generic.KeyNotFoundException"/> for a stale or foreign session.</summary>
@@ -41,15 +47,29 @@ public interface ILocalHttpsProxyStatusQuery
 /// both are known); wipes the credential on stop, replacement, expiry, session lifetime and shutdown.
 /// </summary>
 public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> options, IOptions<AuthenticatedReviewOptions> runtime, IProxyCertificateAuthority authority,
-    TransientAuthenticatedApiContextStore store, IUpstreamConnector upstream, IEdgeInstallationLocator edgeLocator, IManagedEdgeLauncher edgeLauncher,
+    TransientAuthenticatedApiContextStore store, IUpstreamConnector upstream, IEdgeInstallationLocator edgeLocator, IProxyEdgeLauncher edgeLauncher,
     ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
 {
     public const string PortsOccupiedReason = "The configured loopback proxy ports are all occupied. BirkNext never stops the occupying process; free a port or configure LocalHttpsProxy:Port.";
-    public const string EdgeMissingReason = "Microsoft Edge was not found in the standard installation locations. Configure the proxy manually in Windows proxy settings instead.";
+    public const string EdgeMissingReason = "Microsoft Edge was not found in the standard installation locations. Install Edge to open the dedicated proxy browser.";
 
     private readonly Func<DateTimeOffset> _clock = clock ?? (() => DateTimeOffset.UtcNow);
     private readonly SemaphoreSlim _gate = new(1);
     private Session? _session;
+    private volatile LocalHttpsProxyStatus _last = new() { State = LocalHttpsProxyState.Stopped };
+    private volatile bool _shuttingDown;
+
+    public async Task<LocalHttpsProxyStatus> GetRuntimeAsync()
+    {
+        if (!await _gate.WaitAsync(0)) return _last;
+        try
+        {
+            var status = _session is { } session ? Describe(session.Scope, session) : _last;
+            logger?.LogDebug("ProxyStateQueried {RuntimeId} {ProfileId} {Port}", status.RuntimeId, status.ProfileId, status.Port);
+            return status;
+        }
+        finally { _gate.Release(); }
+    }
 
     public async Task<LocalHttpsProxyStatus> CheckCompatibilityAsync(LocalHttpsProxyScopeRequest scope, CancellationToken cancellationToken = default)
     {
@@ -68,34 +88,41 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            if (_shuttingDown) throw new InvalidOperationException("Backend is shutting down.");
+            logger?.LogInformation("ProxyStartRequested {ProfileId}", scope.ProfileId);
             if (_session is { } existing)
             {
-                if (Owns(existing, scope)) return Describe(scope, existing);
-                // A different environment (or changed target configuration) replaces the session: the old credential is wiped first.
-                await StopSessionAsync(existing, "replaced by another environment");
+                if (Owns(existing, scope))
+                {
+                    logger?.LogInformation("ProxyAlreadyRunning {RuntimeId} {ProfileId} {Port}", existing.Id, scope.ProfileId, existing.Port);
+                    return Describe(scope, existing);
+                }
+                return Describe(existing.Scope, existing) with { FailureReason = "A proxy is already running for another environment configuration. Stop that proxy explicitly before starting this one." };
             }
             var status = Describe(scope, null);
             if (!status.CanStart) return status with { State = LocalHttpsProxyState.Failed, FailureReason = status.FailureReason ?? PortsOccupiedReason };
             var hosts = ApprovedHostSet.Create(scope.TargetUrl, scope.ApprovedHosts);
+            var session = new Session(scope, hosts, store, options.Value, _clock, logger);
+            _last = status with { RuntimeId = session.Id, ProfileId = scope.ProfileId, ContextFingerprint = scope.ContextFingerprint, RuntimeStatus = LocalHttpsProxyRuntimePhase.Starting, State = LocalHttpsProxyState.Starting, CanStart = false };
             try { authority.EnsureAuthority(); }
             catch (Exception ex) when (ex is CryptographicException or System.Security.SecurityException or PlatformNotSupportedException)
             {
-                logger?.LogWarning("Inspection root generation failed with {ExceptionType}.", ex.GetType().Name);
-                return status with { State = LocalHttpsProxyState.Failed, CanStart = false, FailureReason = "The BirkNext DEV inspection certificate could not be generated on this workstation." };
+                logger?.LogWarning("ProxyFailed {RuntimeId} {ProfileId} {Port} certificate generation {ExceptionType}", session.Id, scope.ProfileId, 0, ex.GetType().Name);
+                return _last = _last with { RuntimeStatus = LocalHttpsProxyRuntimePhase.Failed, State = LocalHttpsProxyState.Failed, CanStart = true, FailureReason = "The BirkNext DEV inspection certificate could not be generated on this workstation." };
             }
 
-            var session = new Session(scope, hosts, store, options.Value, _clock, logger);
             var server = new LocalHttpsProxyServer(hosts, authority, upstream, session, logger);
             var port = TryStart(server);
             if (port is null)
             {
                 await server.DisposeAsync();
-                return status with { State = LocalHttpsProxyState.Failed, CanStart = false, PortAvailable = false, FailureReason = PortsOccupiedReason };
+                logger?.LogWarning("ProxyFailed {RuntimeId} {ProfileId} {Port} ports occupied", session.Id, scope.ProfileId, 0);
+                return _last = _last with { RuntimeStatus = LocalHttpsProxyRuntimePhase.Failed, State = LocalHttpsProxyState.Failed, CanStart = true, PortAvailable = false, FailureReason = PortsOccupiedReason };
             }
             session.Attach(server, port.Value);
             _session = session;
-            logger?.LogInformation("Local HTTPS proxy listening on 127.0.0.1:{Port} for {HostCount} approved host(s) of a {EnvironmentType} environment.", port, hosts.Authorities.Count, scope.EnvironmentType);
-            return Describe(scope, session);
+            logger?.LogInformation("ProxyStarted {RuntimeId} {ProfileId} {Port}", session.Id, scope.ProfileId, port);
+            return _last = Describe(scope, session);
         }
         finally { _gate.Release(); }
     }
@@ -121,9 +148,10 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         await _gate.WaitAsync();
         try
         {
+            if (_session is null && _last.RuntimeId == request.SessionId && _last.ProfileId == request.ProfileId && _last.ContextFingerprint == request.ContextFingerprint) return _last;
             var session = Get(request);
             await StopSessionAsync(session, "stopped by the user");
-            return Describe(session.Scope, null) with { State = LocalHttpsProxyState.Stopped, Evidence = "Proxy stopped. The in-memory authenticated API context was wiped immediately." };
+            return _last;
         }
         finally { _gate.Release(); }
     }
@@ -150,6 +178,25 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         finally { _gate.Release(); }
     }
 
+    public async Task<LocalHttpsProxyStatus> RestartEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request, CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var session = Get(new(request.SessionId, request.ProfileId, request.ContextFingerprint));
+            // Only the handle this runtime owns is closed. BirkNext never goes looking for msedge.exe processes, so a
+            // browser window the user opened themselves is not something this can reach.
+            if (session.Edge is { } owned)
+            {
+                try { await owned.StopAsync().ConfigureAwait(false); }
+                catch (Exception) { /* a browser that will not close is reported by the relaunch, not by throwing here */ }
+                finally { owned.Dispose(); session.Edge = null; session.EdgeProxyPort = null; session.EdgeProxyArgument = null; }
+            }
+        }
+        finally { _gate.Release(); }
+        return await LaunchEdgeAsync(request, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<LocalHttpsProxyStatus> LaunchEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request, CancellationToken cancellationToken = default)
     {
         await _gate.WaitAsync(cancellationToken);
@@ -157,6 +204,8 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         {
             var session = Get(new(request.SessionId, request.ProfileId, request.ContextFingerprint));
             var status = Describe(session.Scope, session);
+            if (session.Edge is { Running: true }) return status;
+            if (!status.ProxyListening) return status with { FailureReason = "The proxy listener is not running." };
             EdgeInstallation? edge;
             try { edge = edgeLocator.Locate(); } catch (Exception) { edge = null; }
             if (edge is null) return status with { FailureReason = EdgeMissingReason };
@@ -171,14 +220,38 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             {
                 return status with { FailureReason = "The dedicated BirkNext Edge profile directory is not usable. The normal Edge profile is never reused." };
             }
-            bool started;
-            try { started = edgeLauncher.Launch(edge.ExecutablePath, arguments); }
-            catch (Exception) { started = false; }
-            return started
-                ? status with { Evidence = $"A separate Microsoft Edge instance was started with --proxy-server=127.0.0.1:{session.Port} and a dedicated BirkNext profile. Sign in manually there. If organization policy forces proxy settings, configure the proxy manually in Windows instead." }
+            try
+            {
+                session.Edge?.Dispose();
+                session.Edge = edgeLauncher.Launch(edge.ExecutablePath, arguments);
+                session.EdgeProfileDirectory = profileDirectory;
+                // Recorded at launch, from the arguments actually passed — the evidence the UI later reports.
+                session.EdgeProxyPort = session.Edge is null ? null : session.Port;
+                session.EdgeProxyArgument = session.Edge is null ? null : arguments[0];
+                session.EdgeExitLogged = false;
+            }
+            catch (Exception) { session.Edge = null; session.EdgeProxyPort = null; session.EdgeProxyArgument = null; }
+            if (session.Edge is { } launched) logger?.LogInformation("ProxyEdgeStarted {RuntimeId} {ProfileId} {Port} {EdgeProcessId}", session.Id, session.Scope.ProfileId, session.Port, launched.Id);
+            return session.Edge is not null
+                ? Describe(session.Scope, session) with { Evidence = $"Dedicated Microsoft Edge started with --proxy-server=127.0.0.1:{session.Port}. Sign in manually there." }
                 : status with { FailureReason = "Microsoft Edge did not start. No existing browser or proxy setting was changed." };
         }
         finally { _gate.Release(); }
+    }
+
+    /// <summary>
+    /// What BirkNext can prove about the dedicated browser, and nothing more.
+    ///
+    /// The strongest evidence available is its own launch record: a process handle it owns, belonging to this runtime,
+    /// recorded as started with this runtime's port. A browser it did not start is invisible here, which is correct —
+    /// the alternative would be inspecting the user's Edge settings, which BirkNext does not do.
+    /// </summary>
+    private static DedicatedBrowserVerification VerifyEdge(Session session)
+    {
+        if (session.Edge is not { Running: true }) return DedicatedBrowserVerification.NotRunning;
+        if (session.EdgeProxyPort is not { } launchedWith || session.EdgeProxyArgument is null)
+            return DedicatedBrowserVerification.NotConfirmed;
+        return launchedWith == session.Port ? DedicatedBrowserVerification.Confirmed : DedicatedBrowserVerification.Mismatch;
     }
 
     public static string DefaultEdgeProfileDirectory() => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext", "LocalHttpsProxyEdgeProfile");
@@ -287,7 +360,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         var expired = !available && session.CredentialExpiresAt is { } expiresAt && expiresAt <= now;
         var trusted = status.Certificate.State == ProxyCertificateTrustState.Trusted;
         var state = session.Stopped ? LocalHttpsProxyState.Stopped
-            : session.Server?.Faulted == true ? LocalHttpsProxyState.Failed
+            : session.Server?.Listening != true ? LocalHttpsProxyState.Failed
             : available ? LocalHttpsProxyState.Ready
             : expired ? LocalHttpsProxyState.WaitingForAuthenticatedTraffic
             : session.BearerObserved > 0 ? LocalHttpsProxyState.AuthenticatedTrafficDetected
@@ -307,13 +380,27 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             LocalHttpsProxyState.Stopped => "Proxy stopped. The in-memory authenticated API context was wiped.",
             _ => $"Listening on 127.0.0.1:{session.Port}. Configure Edge to use this proxy, sign in manually, then open the target application."
         };
+        if (state == LocalHttpsProxyState.Failed && !session.FailureLogged)
+        {
+            session.FailureLogged = true;
+            store.Invalidate(session.Scope.ProfileId);
+            logger?.LogWarning("ProxyFailed {RuntimeId} {ProfileId} {Port} listener exited", session.Id, session.Scope.ProfileId, session.Port);
+        }
         return status with
         {
+            RuntimeId = session.Id, ProfileId = session.Scope.ProfileId, ContextFingerprint = session.Scope.ContextFingerprint,
+            RuntimeStatus = session.Stopped ? LocalHttpsProxyRuntimePhase.Stopped : session.Server?.Listening == true ? LocalHttpsProxyRuntimePhase.Running : LocalHttpsProxyRuntimePhase.Failed,
+            ProxyListening = session.Server?.Listening == true, StartedAt = session.CreatedAt, LastHealthCheckAt = now,
+            EdgeProcessId = session.Edge?.Id, EdgeRunning = session.Edge?.Running == true,
+            EdgeStartedAt = session.Edge?.StartedAt, EdgeProfileDirectory = session.EdgeProfileDirectory,
+            ExpectedProxyPort = session.Port, EdgeProxyPort = session.EdgeProxyPort,
+            ProxyArgumentConfigured = session.EdgeProxyArgument is not null,
+            EdgeVerification = VerifyEdge(session),
             SessionId = session.Id, State = state, Port = session.Port, CanStart = false,
             InterceptedRequests = session.Intercepted, PassThroughConnections = session.PassThrough, TlsHandshakeFailures = session.TlsFailures,
             AuthenticatedRequestsObserved = session.BearerObserved, LastInterceptedHost = session.LastHost,
             ObservedEndpoints = session.ObservedEndpoints, ObservedNetworkEndpoints = session.ObservedNetworkEndpoints,
-            AuthenticatedCredentialAvailable = available, CredentialExpired = expired,
+            AuthenticatedCredentialAvailable = available && state != LocalHttpsProxyState.Failed, CredentialExpired = expired,
             CredentialObservedHost = descriptor?.ObservedHost, CredentialObservedAt = descriptor?.ObservedAt, CredentialExpiresAt = descriptor?.ExpiresAt, CredentialFormat = descriptor?.Format,
             Evidence = evidence, FailureReason = state == LocalHttpsProxyState.Failed ? "Proxy listener faulted." : status.FailureReason
         };
@@ -321,11 +408,19 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
 
     private async Task StopSessionAsync(Session session, string reason)
     {
+        logger?.LogInformation("ProxyStopRequested {RuntimeId} {ProfileId} {Port} {Reason}", session.Id, session.Scope.ProfileId, session.Port, reason);
+        _last = Describe(session.Scope, session) with { RuntimeStatus = LocalHttpsProxyRuntimePhase.Stopping, StopReason = reason };
         session.Stopped = true;
-        if (session.Server is { } server) await server.DisposeAsync();
+        if (session.Server is { } server) await server.DisposeAsync().ConfigureAwait(false);
+        if (session.Edge is { } edge)
+        {
+            try { await edge.StopAsync().ConfigureAwait(false); }
+            finally { edge.Dispose(); session.Edge = null; }
+        }
         store.Invalidate(session.Scope.ProfileId);
         if (ReferenceEquals(_session, session)) _session = null;
-        logger?.LogInformation("Local HTTPS proxy session ended ({Reason}); the in-memory credential was wiped.", reason);
+        _last = Describe(session.Scope, null) with { RuntimeId = session.Id, ProfileId = session.Scope.ProfileId, ContextFingerprint = session.Scope.ContextFingerprint, State = LocalHttpsProxyState.Stopped, RuntimeStatus = LocalHttpsProxyRuntimePhase.Stopped, StopReason = reason, Evidence = "Proxy stopped. The in-memory authenticated API context was wiped." };
+        logger?.LogInformation("ProxyStopped {RuntimeId} {ProfileId} {Port} {Reason}", session.Id, session.Scope.ProfileId, session.Port, reason);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -336,6 +431,11 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
                 store.PurgeExpired();
+                if (_session is { Edge: { Running: false }, EdgeExitLogged: false } exited)
+                {
+                    exited.EdgeExitLogged = true;
+                    logger?.LogInformation("ProxyEdgeExited {RuntimeId} {ProfileId} {Port}", exited.Id, exited.Scope.ProfileId, exited.Port);
+                }
                 if (_session is { } session && _clock() - session.CreatedAt > options.Value.SessionLifetime)
                 {
                     await _gate.WaitAsync(stoppingToken);
@@ -349,14 +449,19 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
 
     public override void Dispose()
     {
-        if (_session is { } session)
-        {
-            session.Stopped = true;
-            session.Server?.DisposeAsync().AsTask().GetAwaiter().GetResult();
-            _session = null;
-        }
+        _shuttingDown = true;
+        if (_session is { } session) StopSessionAsync(session, "backend disposed").GetAwaiter().GetResult();
         store.InvalidateAll();
         base.Dispose();
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _shuttingDown = true;
+        await base.StopAsync(cancellationToken);
+        await _gate.WaitAsync(cancellationToken);
+        try { if (_session is { } session) await StopSessionAsync(session, "backend shutdown"); }
+        finally { _gate.Release(); }
     }
 
     /// <summary>Per-session counters and the traffic observer that decides whether an observed credential is promoted. Holds no credential itself.</summary>
@@ -376,6 +481,14 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         public int Port { get; private set; }
         public DateTimeOffset CreatedAt { get; } = clock();
         public volatile bool Stopped;
+        public IProxyEdgeProcess? Edge;
+        /// <summary>The proxy port this browser was launched with. Compared against the live port, never assumed equal to it.</summary>
+        public int? EdgeProxyPort;
+        /// <summary>The exact --proxy-server argument handed to the browser, for the technical details disclosure.</summary>
+        public string? EdgeProxyArgument;
+        public string? EdgeProfileDirectory;
+        public bool EdgeExitLogged;
+        public bool FailureLogged;
         public int Intercepted => _intercepted;
         public int PassThrough => _passThrough;
         public int TlsFailures => _tlsFailures;

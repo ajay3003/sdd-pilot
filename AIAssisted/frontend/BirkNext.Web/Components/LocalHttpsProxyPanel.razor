@@ -11,7 +11,17 @@
     <dl class="fa-detail-list" data-testid="proxy-status">
         <div class="fa-dl-row"><dt>Proxy status</dt><dd data-testid="proxy-state">@ProxyStatusLabel</dd></div>
         <div class="fa-dl-row"><dt>Endpoint</dt><dd data-testid="proxy-endpoint">@Status.Endpoint</dd></div>
+        <div class="fa-dl-row"><dt>Runtime</dt><dd data-testid="proxy-runtime-id">@(Status.RuntimeId ?? "None")</dd></div>
+        <div class="fa-dl-row"><dt>Browser</dt><dd data-testid="proxy-browser-state">@(Status.EdgeRunning ? "Running" : "Closed")</dd></div>
+        @if (Status.StartedAt is { } started)
+        {
+            <div class="fa-dl-row"><dt>Started</dt><dd>@started.ToLocalTime().ToString("HH:mm:ss")</dd></div>
+        }
     </dl>
+    @if (ForeignRuntime)
+    {
+        <p role="status">Proxy running for @Status.ProfileId (@Status.TargetOrigin). Stop it explicitly before starting another environment configuration.</p>
+    }
     @if (Status.State == LocalHttpsProxyState.Stale)
     {
         <p role="status" data-testid="proxy-stale">Environment settings changed. The proxy session and its in-memory authentication context were cleared. Run Check proxy compatibility again.</p>
@@ -21,7 +31,7 @@
         <div class="fa-dl-row"><dt>Local integration</dt><dd data-testid="proxy-local-integration">@(Checked ? (Status.LocalIntegrationAvailable ? "Available" : "Local proxy integration unavailable in this deployment mode") : "Not checked")</dd></div>
         <div class="fa-dl-row"><dt>Environment</dt><dd data-testid="proxy-environment">@EnvironmentLabel</dd></div>
         <div class="fa-dl-row"><dt>Port</dt><dd data-testid="proxy-port">@(Checked ? (Status.PortAvailable ? "Available" : "Occupied — free the port or configure another local port (BirkNext never frees a port)") : "Not checked")</dd></div>
-        <div class="fa-dl-row"><dt>Target</dt><dd data-testid="proxy-target">@(Profile?.Name ?? "—") @(Status.TargetOrigin is { } origin ? $"({origin})" : "")</dd></div>
+        <div class="fa-dl-row"><dt>Target</dt><dd data-testid="proxy-target">@(ForeignRuntime ? Status.ProfileId : Profile?.Name ?? "—") @(Status.TargetOrigin is { } origin ? $"({origin})" : "")</dd></div>
         <div class="fa-dl-row"><dt>Approved hosts</dt><dd data-testid="proxy-approved-hosts">@(Status.ApprovedHosts.Count == 0 ? (Checked ? "None" : "Not checked") : string.Join(", ", Status.ApprovedHosts))</dd></div>
     </dl>
     <p role="status" data-testid="proxy-evidence">@Status.Evidence</p>
@@ -37,8 +47,8 @@
 
     <div class="fa-field-full" style="display:flex;gap:0.5rem;flex-wrap:wrap;margin:0.5rem 0">
         <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || Profile is null)" @onclick="Check">Check proxy compatibility</button>
-        <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || Profile is null || !EnvironmentAllowed || (Checked && !Status.CanStart && !Active))" @onclick="Start">Start authenticated proxy</button>
-        <button type="button" class="btn-secondary" disabled="@(Runtime is null || !Active)" @onclick="Stop">Stop proxy</button>
+        <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || Profile is null || ForeignRuntime || !EnvironmentAllowed || (Checked && !Status.CanStart && !Active))" @onclick="Start">Start authenticated proxy</button>
+        <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Runtime.SessionActive)" @onclick="Stop">Stop proxy</button>
     </div>
 
     </div>
@@ -79,7 +89,8 @@
     </div>
     <div class="fa-auth-step fa-state-@BrowserStepState" data-testid="proxy-browser-step">
     <h4>Step 3 — Browser</h4>
-    <p>Configure your normal managed Microsoft Edge to use the BirkNext local proxy, then sign in normally.</p>
+    <p>Open the dedicated proxy Microsoft Edge browser, then sign in normally.</p>
+    <button type="button" class="btn-secondary" disabled="@(Runtime is null || Runtime.Busy || !Active || Status.EdgeRunning)" @onclick="OpenBrowser">Open browser</button>
     <dl class="fa-detail-list">
         <div class="fa-dl-row"><dt>Proxy</dt><dd data-testid="proxy-browser-endpoint">@ProxyEndpointDisplay</dd></div>
         <div class="fa-dl-row"><dt>Browser authentication</dt><dd data-testid="proxy-browser-auth">Manual</dd></div>
@@ -89,13 +100,7 @@
         <p role="status" data-testid="proxy-browser-prerequisite">@blocker</p>
     }
     <p class="fa-section-note" data-testid="proxy-browser-note">BirkNext does not change your default Windows or Edge proxy settings automatically.</p>
-    <details data-testid="proxy-setup-instructions"><summary>Show proxy setup instructions</summary>
-    <p class="fa-section-note">
-        Windows Settings → Network &amp; Internet → Proxy → Manual proxy setup → Address <code>127.0.0.1</code>, Port <code>@PortDisplay</code>.
-        Then open your normal managed Microsoft Edge, go to the target application, and sign in manually — complete MFA, PIN, passkey and Conditional Access as usual.
-        Turn the proxy setting off again after testing. If organization policy forces proxy settings, only the manual route applies.
-    </p>
-    </details>
+    <p class="fa-section-note">The dedicated browser uses --proxy-server and the BirkNext LocalHttpsProxyEdgeProfile. Your normal Edge profile and Windows proxy settings are unchanged.</p>
 
     </div>
     <div class="fa-auth-step">
@@ -130,7 +135,8 @@
     private bool _confirmInstall;
     private bool _confirmRemove;
 
-    private LocalHttpsProxyStatus Status => Runtime?.For(Profile) ?? new();
+    private LocalHttpsProxyStatus Status => Runtime?.Status ?? new();
+    private bool ForeignRuntime => Status.SessionId is not null && Profile is not null && Status.ContextFingerprint is { } fingerprint && fingerprint != LocalHttpsProxyScope.Fingerprint(Profile);
     private bool Checked => Status.State != LocalHttpsProxyState.NotStarted || Status.ApprovedHosts.Count > 0 || Status.FailureReason is not null;
     private bool Active => Status.SessionId is not null && Status.State is not (LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Stale or LocalHttpsProxyState.Failed);
     private bool EnvironmentAllowed => LocalHttpsProxyScope.EnvironmentAllowed(Profile);
@@ -147,7 +153,7 @@
 
     // Primary Step-1 status line in plain words. Stopped/Stale are transient session states (their integration/port flags are not a fresh
     // compatibility signal), so they use the base wording; environment/deployment/port blockers only override an actively evaluated state.
-    private string ProxyStatusLabel =>
+    private string ProxyStatusLabel => Status.RuntimeStatus is LocalHttpsProxyRuntimePhase.Running or LocalHttpsProxyRuntimePhase.Starting or LocalHttpsProxyRuntimePhase.Stopping ? Status.RuntimeStatus.ToString() :
         Status.State is LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Stale ? AuthenticatedTestingMethodLabels.ProxyState(Status.State)
         : !EnvironmentAllowed ? "Blocked by environment policy (non-production only)"
         : Checked && !Status.LocalIntegrationAvailable ? "Unavailable in this deployment mode"
@@ -165,6 +171,7 @@
     private Task Check() => Runtime is not null && Profile is not null ? Runtime.CheckCompatibilityAsync(Profile) : Task.CompletedTask;
     private Task Start() => Runtime is not null && Profile is not null && EnvironmentAllowed ? Runtime.StartAsync(Profile) : Task.CompletedTask;
     private Task Stop() => Runtime?.StopAsync() ?? Task.CompletedTask;
+    private Task OpenBrowser() => Runtime?.OpenBrowserAsync() ?? Task.CompletedTask;
     private async Task InstallCertificate() { _confirmInstall = false; if (Runtime is not null) await Runtime.InstallCertificateAsync(); }
     private async Task RemoveCertificate() { _confirmRemove = false; if (Runtime is not null) await Runtime.RemoveCertificateAsync(); }
 }

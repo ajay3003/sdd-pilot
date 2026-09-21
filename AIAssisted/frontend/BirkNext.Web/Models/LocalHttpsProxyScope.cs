@@ -14,8 +14,8 @@ public static class LocalHttpsProxyScope
 {
     /// <summary>
     /// Digest of everything the proxy credential is bound to: profile identity, target URL, environment type, authentication
-    /// configuration (including the testing method) and every REST/GraphQL target. Any change stales the runtime session, which wipes
-    /// the in-memory credential on the backend.
+    /// configuration (including the testing method) and every REST/GraphQL target. A different configuration cannot consume the
+    /// existing credential. Selecting or editing a profile does not stop the backend runtime.
     /// </summary>
     public static string Fingerprint(FrontendAnalysisProfile profile)
     {

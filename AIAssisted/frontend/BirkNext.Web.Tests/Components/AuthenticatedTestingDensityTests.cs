@@ -170,13 +170,13 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
     {
         // A listening server with nothing routed through it: the only honest output is an instruction.
         AuthenticatedTestingStates.BrowserRoutedThroughProxy(Listening).Should().BeFalse();
-        AuthenticatedTestingStates.ProxyGuidanceTitle(Listening).Should().Be("Enable proxy in Edge settings");
+        AuthenticatedTestingStates.ProxyGuidanceTitle(Listening).Should().Be("Open the dedicated proxy browser");
         AuthenticatedTestingStates.ProxyGuidanceText(Listening)
-            .Should().Be("Use the BirkNext local HTTPS proxy in managed Edge to collect authenticated API traffic.");
+            .Should().Be("Open the dedicated proxy Edge browser to collect authenticated API traffic.");
 
         var cut = Open();
-        Row(cut, "authenticated-testing-proxy-guidance-title").Should().Be("Enable proxy in Edge settings");
-        PrimaryText(cut).Should().NotContainAny("Edge proxy active", "Proxy enabled automatically", "Edge proxy configured");
+        Row(cut, "authenticated-testing-proxy-guidance-title").Should().Be("Open the dedicated proxy browser");
+        PrimaryText(cut).Should().NotContainAny("Edge proxy active", "Proxy enabled automatically", "Proxy traffic observed");
     }
 
     [Fact]
@@ -196,11 +196,11 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
         var cut = Open();
         StartProxy(cut);
 
-        cut.WaitForAssertion(() => Row(cut, "authenticated-testing-proxy-guidance-title").Should().Be("Edge proxy configured"));
+        cut.WaitForAssertion(() => Row(cut, "authenticated-testing-proxy-guidance-title").Should().Be("Proxy traffic observed"));
         Row(cut, "authenticated-testing-proxy-guidance-text")
             .Should().Be("Authenticated API traffic can be collected through the BirkNext proxy.");
         Row(cut, "authenticated-testing-edge-setup")
-            .Should().Be("Traffic has been observed through the proxy, so managed Edge is routed through it.");
+            .Should().Be("Traffic has been observed through the proxy.");
         // And the access summary moves with it, because a credential was actually captured.
         Row(cut, "testing-access-api").Should().Be("Available");
     }
@@ -248,7 +248,7 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
 
         Row(cut, "authenticated-testing-purpose").Should().Be(AuthenticatedTestingStates.Purpose);
         Row(cut, "authenticated-testing-edge-setup")
-            .Should().Be("Configure managed Edge to use the BirkNext local HTTPS proxy endpoint shown below.");
+            .Should().Be("Open the dedicated proxy browser below; normal Edge and Windows proxy settings stay unchanged.");
         Row(cut, "authenticated-testing-discovery-link").Should().Contain(AuthenticatedTestingStates.EndpointHandoff);
         Has(cut, "authenticated-testing-open-discovery").Should().BeTrue();
     }

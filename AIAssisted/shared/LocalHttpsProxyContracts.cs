@@ -314,8 +314,55 @@ public static class ObservedNetworkPerformanceLimits
 }
 
 /// <summary>Runtime evidence only. Never contains a credential; never persisted with environment profiles.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum LocalHttpsProxyRuntimePhase { Stopped, Starting, Running, Stopping, Failed }
+
+/// <summary>
+/// Whether the dedicated browser is provably using the current proxy runtime.
+///
+/// A running msedge.exe proves nothing on its own: it may be a browser this runtime never launched, or one left over
+/// from a previous runtime whose port no longer exists. Only a process BirkNext started itself, still owned by the
+/// current runtime, and recorded at launch as carrying that runtime's proxy port earns <see cref="Confirmed"/>.
+///
+/// Nothing here reads the user's Edge settings or the Windows proxy. The evidence is BirkNext's own launch record,
+/// which is the only thing it can honestly claim to know.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DedicatedBrowserVerification
+{
+    /// <summary>No dedicated browser is running for this runtime.</summary>
+    NotRunning,
+    /// <summary>Launched by this runtime, still alive, carrying this runtime's proxy port.</summary>
+    Confirmed,
+    /// <summary>A browser is running but BirkNext did not record which proxy it was given. Never reported as active.</summary>
+    NotConfirmed,
+    /// <summary>Running with a different proxy port than this runtime listens on — left over from an earlier run.</summary>
+    Mismatch,
+    /// <summary>There is no runtime to compare against yet.</summary>
+    Unknown,
+}
+
 public sealed record LocalHttpsProxyStatus
 {
+    public string? RuntimeId { get; init; }
+    public string? ProfileId { get; init; }
+    public string? ContextFingerprint { get; init; }
+    public LocalHttpsProxyRuntimePhase RuntimeStatus { get; init; }
+    public DateTimeOffset? StartedAt { get; init; }
+    public bool ProxyListening { get; init; }
+    public int? EdgeProcessId { get; init; }
+    public bool EdgeRunning { get; init; }
+    public DateTimeOffset? EdgeStartedAt { get; init; }
+    public string? EdgeProfileDirectory { get; init; }
+    /// <summary>The port the current proxy runtime is listening on — what a dedicated browser must be pointed at.</summary>
+    public int? ExpectedProxyPort { get; init; }
+    /// <summary>The port the running dedicated Edge was actually launched with, recorded at launch. Null when nothing was launched.</summary>
+    public int? EdgeProxyPort { get; init; }
+    /// <summary>BirkNext recorded a <c>--proxy-server</c> argument for this browser. Absent means we cannot claim anything about it.</summary>
+    public bool ProxyArgumentConfigured { get; init; }
+    public DedicatedBrowserVerification EdgeVerification { get; init; }
+    public string? StopReason { get; init; }
+    public DateTimeOffset? LastHealthCheckAt { get; init; }
     public string? SessionId { get; init; }
     public LocalHttpsProxyState State { get; init; } = LocalHttpsProxyState.NotStarted;
     public int Port { get; init; }

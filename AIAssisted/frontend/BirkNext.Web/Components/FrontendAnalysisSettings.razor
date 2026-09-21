@@ -514,6 +514,13 @@
             {
                 <div class="fa-auth-layout" data-testid="fa-auth-panel">
 
+                <AuthenticationReadinessPanel Summary="AuthReadiness"
+                                              KnownEndpoints="KnownEndpointCount"
+                                              Busy="@(_proxyRuntime?.Busy == true)"
+                                              OnAction="RunAuthPrerequisiteActionAsync"
+                                              OnVerify="@(() => _showManualVerification = true)"
+                                              OnOpenDiscovery='@(() => _activeTab = "endpoint")' />
+
                 @*
                     1. Detected & configured authentication — what the target uses, and whether the saved
                     configuration agrees. "Sign-in required" describes the TARGET APPLICATION; whether BirkNext
@@ -1665,6 +1672,39 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private ManagedEdgeRuntime? _edgeRuntime;
     private LocalHttpsProxyRuntime? _proxyRuntime;
+    private bool _showManualVerification;
+
+    /// <summary>The one readiness derivation, fed the state this page already holds. Nothing is recomputed here.</summary>
+    private AuthenticationReadinessSummary AuthReadiness => AuthenticationReadinessPresentation.Summarize(
+        CurrentProfile?.Authentication.RequiresAuthentication == true,
+        SelectedTestingMethod,
+        _proxyRuntime is null ? null : ProxyStatus,
+        _proxyRuntime is null ? null : ProxyStatus.Certificate,
+        _proxyRuntime?.Loaded == true);
+
+    /// <summary>Endpoint Discovery already holds these, so an incomplete proxy setup is never reported as nothing to see.</summary>
+    private int KnownEndpointCount => ProxyStatus.ObservedEndpoints.Count;
+
+    /// <summary>
+    /// One action per prerequisite, each routed to the operation that already owns it. This page starts and stops
+    /// nothing on its own: every one of these is a button the user pressed.
+    /// </summary>
+    private async Task RunAuthPrerequisiteActionAsync(string? actionId)
+    {
+        if (_proxyRuntime is not { } runtime || CurrentProfile is not { } profile) return;
+        switch (actionId)
+        {
+            case "certificate-install": await runtime.InstallCertificateAsync(); break;
+            case "certificate-recheck":
+            case "proxy-recheck": await runtime.RefreshAsync(); break;
+            case "proxy-start": await runtime.StartAsync(profile); break;
+            case "proxy-stop": await runtime.StopAsync(); break;
+            case "edge-open": await runtime.OpenBrowserAsync(); break;
+            // Closes only the browser this runtime launched, then opens it again on the current port.
+            case "edge-restart": await runtime.RestartBrowserAsync(); break;
+        }
+    }
+
     private BrowserCompanionRuntime? _companionRuntime;
     private IEndpointDiscoveryService? _discovery;
     private bool _disposed;
@@ -1744,7 +1784,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         // the selected Target Environment, NOT this component. Navigating to another BirkNext page unmounts this component but must not stop
         // the proxy or disconnect CDP — the authenticated session keeps listening so it can back API testing across the application. Only
         // unsubscribe from change notifications here. Real invalidation still happens on an explicit Stop proxy / Disconnect click, on a
-        // selected-environment or target-configuration change (SynchronizeAsync), or on credential expiry.
+        // explicit backend runtime shutdown. Proxy SynchronizeAsync only reads state; profile selection never stops it.
         if (_edgeRuntime is not null) _edgeRuntime.Changed -= EdgeRuntimeChanged;
         if (_proxyRuntime is not null) _proxyRuntime.Changed -= EdgeRuntimeChanged;
         if (_companionRuntime is not null) _companionRuntime.Changed -= EdgeRuntimeChanged;
@@ -1778,6 +1818,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
         _selectedProfileId = FaSettings.Settings.ActiveProfileId
             ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+        if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
         // Restore the persisted public detection snapshot so a restart shows "Previously detected" (revalidated to Current/Stale)
         // instead of forcing a fresh Detect. No credential is restored — only safe discovery evidence.
         RestoreDetectionSnapshot();

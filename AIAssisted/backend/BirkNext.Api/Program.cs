@@ -229,6 +229,7 @@ builder.Services.AddSingleton<TransientAuthenticatedApiContextStore>();
 builder.Services.AddSingleton<ITransientAuthenticatedApiContextStore>(sp => sp.GetRequiredService<TransientAuthenticatedApiContextStore>());
 builder.Services.AddSingleton<IUpstreamConnector>(sp => new DirectUpstreamConnector(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalHttpsProxyOptions>>().Value.UpstreamProxy));
 builder.Services.AddSingleton<LocalHttpsProxyService>();
+builder.Services.AddSingleton<IProxyEdgeLauncher, ProxyEdgeLauncher>();
 builder.Services.AddSingleton<ILocalHttpsProxyService>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<ILocalHttpsProxySessionAccess>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<ILocalHttpsProxyStatusQuery>(sp => sp.GetRequiredService<LocalHttpsProxyService>());

@@ -13,6 +13,9 @@ namespace BirkNext.Api.Controllers;
 [ServiceFilter(typeof(ManagedEdgeLocalCallerFilter))]
 public sealed class LocalHttpsProxyController(ILocalHttpsProxyService proxy, IAuthenticatedApiExecutionService execution) : ControllerBase
 {
+    [HttpGet("runtime")]
+    public Task<IActionResult> Runtime() => Run(async () => Ok(await proxy.GetRuntimeAsync()));
+
     [HttpPost("compatibility")]
     public Task<IActionResult> Compatibility(LocalHttpsProxyScopeRequest request, CancellationToken ct) => Run(async () => Ok(await proxy.CheckCompatibilityAsync(request, ct)));
 
@@ -35,6 +38,10 @@ public sealed class LocalHttpsProxyController(ILocalHttpsProxyService proxy, IAu
     /// <summary>Starts a separate Edge instance with --proxy-server for the running session. Never changes global proxy settings.</summary>
     [HttpPost("launch-edge")]
     public Task<IActionResult> LaunchEdge(LocalHttpsProxyEdgeLaunchRequest request, CancellationToken ct) => Run(async () => Ok(await proxy.LaunchEdgeAsync(request, ct)));
+
+    /// <summary>Closes only the dedicated browser this runtime launched, then starts it again on the current proxy port.</summary>
+    [HttpPost("edge/restart")]
+    public Task<IActionResult> RestartEdge(LocalHttpsProxyEdgeLaunchRequest request, CancellationToken ct) => Run(async () => Ok(await proxy.RestartEdgeAsync(request, ct)));
 
     [HttpPost("execute/rest")]
     public Task<IActionResult> ExecuteRest(AuthenticatedRestRequest request, CancellationToken ct) => Run(async () => Ok(await execution.ExecuteRestAsync(request, ct)));

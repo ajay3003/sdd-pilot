@@ -12,7 +12,7 @@ public sealed class LocalHttpsProxyRuntimeTests
     private readonly FrontendAnalysisProfile _profile = new() { Id = "dev", TargetUrl = "https://m2lbdev.bufetat.no/", EnvironmentType = FrontendEnvironmentType.Development, RestBaseUrl = "https://api-dev.bufetat.no/" };
     private readonly LocalHttpsProxyStatus _ready = new()
     {
-        SessionId = "runtime-only", State = LocalHttpsProxyState.Ready, Port = 8888, LocalIntegrationAvailable = true, EnvironmentAllowed = true, PortAvailable = true,
+        RuntimeId = "runtime-only", SessionId = "runtime-only", State = LocalHttpsProxyState.Ready, RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, Port = 8888, LocalIntegrationAvailable = true, EnvironmentAllowed = true, PortAvailable = true,
         AuthenticatedCredentialAvailable = true, CredentialObservedHost = "api-dev.bufetat.no", CredentialFormat = "JWT"
     };
 
@@ -21,8 +21,31 @@ public sealed class LocalHttpsProxyRuntimeTests
         _profile.Authentication.AuthenticatedTestingMethod = AuthenticatedTestingMethod.LocalHttpsProxy;
         _api.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(_ready);
         _api.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(_ready);
+        _api.Setup(a => a.GetRuntimeAsync()).ReturnsAsync(_ready);
         _api.Setup(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(new LocalHttpsProxyStatus { State = LocalHttpsProxyState.Stopped });
         _api.Setup(a => a.ExecuteRestAsync(It.IsAny<AuthenticatedRestRequest>())).ReturnsAsync(new AuthenticatedApiExecutionResult { StatusCode = 200, ContentType = "application/json", Outcome = "HTTP 200 application/json; 42 bytes; response body not captured." });
+    }
+
+    [Fact]
+    public async Task FrontendDisposalMustNotSendStop()
+    {
+        var runtime = new LocalHttpsProxyRuntime(_api.Object);
+        await runtime.StartAsync(_profile);
+        await runtime.DisposeAsync();
+        _api.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecreatedFrontendRecoversSameSessionWithoutStartOrStop()
+    {
+        _api.Setup(a => a.CheckCompatibilityAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(_ready);
+        await using var runtime = new LocalHttpsProxyRuntime(_api.Object);
+        await runtime.SynchronizeAsync(_profile);
+        Assert.Equal(_ready.SessionId, runtime.Status.SessionId);
+        Assert.Equal(_ready.Port, runtime.Status.Port);
+        Assert.True(runtime.SessionActive);
+        _api.Verify(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>()), Times.Never);
+        _api.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
     }
 
     [Fact]
@@ -50,7 +73,7 @@ public sealed class LocalHttpsProxyRuntimeTests
     [InlineData("auth")]
     [InlineData("method")]
     [InlineData("environment")]
-    public async Task RelevantConfigurationChangeImmediatelyStalesAndStops(string change)
+    public async Task RelevantConfigurationChangeHidesCredentialButDoesNotStop(string change)
     {
         await using var runtime = new LocalHttpsProxyRuntime(_api.Object);
         await runtime.StartAsync(_profile);
@@ -70,8 +93,8 @@ public sealed class LocalHttpsProxyRuntimeTests
         Assert.False(stale.AuthenticatedCredentialAvailable);
         Assert.False(stale.RestAvailable);
         await runtime.SynchronizeAsync(_profile);
-        _api.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Once);
-        Assert.False(runtime.SessionActive);
+        _api.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
+        Assert.True(runtime.SessionActive);
     }
 
     [Fact]
@@ -79,9 +102,9 @@ public sealed class LocalHttpsProxyRuntimeTests
     {
         await using var runtime = new LocalHttpsProxyRuntime(_api.Object);
         await runtime.StartAsync(_profile);
-        _api.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ThrowsAsync(new HttpRequestException("secret-in-message"));
+        _api.Setup(a => a.GetRuntimeAsync()).ThrowsAsync(new HttpRequestException("secret-in-message"));
         await runtime.RefreshAsync();
-        Assert.Equal(LocalHttpsProxyState.Stale, runtime.Status.State);
+        Assert.NotNull(runtime.Status.FailureReason);
         Assert.False(runtime.Status.AuthenticatedCredentialAvailable);
         Assert.DoesNotContain("secret-in-message", runtime.Status.Evidence);
     }
@@ -99,6 +122,76 @@ public sealed class LocalHttpsProxyRuntimeTests
         Assert.DoesNotContain("eyJ", JsonSerializer.Serialize(runtime.LastRestResult));
         await runtime.StopAsync();
         Assert.Null(runtime.LastRestResult);
+    }
+
+    [Fact]
+    public async Task TwoClientsObserveOneRuntimeAndStopFromEitherIsVisible()
+    {
+        await using var first = new LocalHttpsProxyRuntime(_api.Object);
+        await using var second = new LocalHttpsProxyRuntime(_api.Object);
+        await first.StartAsync(_profile);
+        await second.SynchronizeAsync(_profile);
+        Assert.Equal(first.Status.RuntimeId, second.Status.RuntimeId);
+        Assert.Equal(first.Status.Port, second.Status.Port);
+        await second.StartAsync(_profile);
+        _api.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
+        await second.StopAsync();
+        _api.Setup(a => a.GetRuntimeAsync()).ReturnsAsync(new LocalHttpsProxyStatus { State = LocalHttpsProxyState.Stopped });
+        await first.RefreshAsync();
+        Assert.False(first.SessionActive);
+        Assert.Equal(LocalHttpsProxyState.Stopped, first.Status.State);
+    }
+
+    [Fact]
+    public async Task DisposalDuringStartDoesNotSendAbandonedSessionStop()
+    {
+        var pending = new TaskCompletionSource<LocalHttpsProxyStatus>();
+        _api.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).Returns(pending.Task);
+        var first = new LocalHttpsProxyRuntime(_api.Object);
+        var start = first.StartAsync(_profile);
+        await first.DisposeAsync();
+        pending.SetResult(_ready);
+        await start;
+        await using var recreated = new LocalHttpsProxyRuntime(_api.Object);
+        await recreated.SynchronizeAsync(_profile);
+        Assert.Equal(_ready.RuntimeId, recreated.Status.RuntimeId);
+        _api.Verify(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>()), Times.Once);
+        _api.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DisposalDuringStopDoesNotRestartOrRepeatStop()
+    {
+        var pending = new TaskCompletionSource<LocalHttpsProxyStatus>();
+        var first = new LocalHttpsProxyRuntime(_api.Object);
+        await first.StartAsync(_profile);
+        _api.Setup(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>())).Returns(pending.Task);
+        var stop = first.StopAsync();
+        Assert.Equal(LocalHttpsProxyRuntimePhase.Stopping, first.Status.RuntimeStatus);
+        await first.DisposeAsync();
+        var stopped = new LocalHttpsProxyStatus { State = LocalHttpsProxyState.Stopped };
+        pending.SetResult(stopped);
+        await stop;
+        _api.Setup(a => a.GetRuntimeAsync()).ReturnsAsync(stopped);
+        _api.Setup(a => a.CheckCompatibilityAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(stopped);
+        await using var recreated = new LocalHttpsProxyRuntime(_api.Object);
+        await recreated.SynchronizeAsync(_profile);
+        Assert.Equal(LocalHttpsProxyState.Stopped, recreated.Status.State);
+        _api.Verify(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>()), Times.Once);
+        _api.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DoubleClickDuringStartSendsOneCommand()
+    {
+        var pending = new TaskCompletionSource<LocalHttpsProxyStatus>();
+        _api.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).Returns(pending.Task);
+        await using var runtime = new LocalHttpsProxyRuntime(_api.Object);
+        var first = runtime.StartAsync(_profile);
+        await runtime.StartAsync(_profile);
+        pending.SetResult(_ready);
+        await first;
+        _api.Verify(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>()), Times.Once);
     }
 
     [Fact]

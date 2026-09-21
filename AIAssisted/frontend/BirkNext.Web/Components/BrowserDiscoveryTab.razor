@@ -11,15 +11,42 @@
 *@
 <section class="bd" data-testid="browser-discovery" aria-label="Browser discovery">
 
+    @* One notice for the companion situation, or none. A connected companion with no page open is not a warning. *@
+    @if (BrowserCompanionSituations.Alert(Situation) is { } alert)
+    {
+        <div class="bd-alert bd-alert-@alert.Tone" role="status" data-testid="bd-companion-alert">
+            <span class="bd-alert-icon bd-icon-@alert.Icon" aria-hidden="true"></span>
+            <div class="bd-alert-body">
+                <h3 class="bd-alert-title" data-testid="bd-companion-alert-title">@alert.Title</h3>
+                <p class="bd-alert-text">@alert.Body</p>
+                @if (BrowserCompanionSituations.HistoryReassurance(Rows.Count) is { Length: > 0 } kept)
+                {
+                    @* Live evidence is gone; captured evidence is not. Saying so stops the warning reading as data loss. *@
+                    <p class="bd-alert-note" data-testid="bd-companion-alert-history">@kept</p>
+                }
+            </div>
+            @if (alert.ActionLabel is { Length: > 0 } action && OnPair.HasDelegate)
+            {
+                <button type="button" class="btn-secondary" data-testid="bd-companion-alert-action" @onclick="OnPair">@action</button>
+            }
+        </div>
+    }
+
     @* Two questions, never one row: what is live in the browser right now, and what we captured before. *@
     <div class="bd-overview bd-overview-live" data-testid="browser-discovery-live" aria-label="Live browser session">
         <span class="bd-ov-group">Live session</span>
         <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Pairing</span><span class="bd-ov-value" data-testid="bd-pairing">@BrowserCompanionSituations.PairingLabel(Situation)</span></div>
+        <div class="bd-ov-item"><span class="bd-ov-label">Connection</span><span class="bd-ov-value" data-testid="bd-connection">@BrowserCompanionSituations.ConnectionLabel(Situation)</span></div>
         @foreach (var fact in BrowserDiscoveryLive.Facts(Status))
         {
             <div class="bd-ov-item"><span class="bd-ov-label">@fact.Label</span><span class="bd-ov-value bd-mono @(fact.Muted ? "bd-ov-muted" : "")" data-testid="@fact.TestId">@fact.Value</span></div>
         }
     </div>
+    @if (BrowserCompanionSituations.LivePageNote(Situation) is { } note)
+    {
+        <p class="bd-live-note" data-testid="bd-live-note">@note</p>
+    }
 
     <div class="bd-overview bd-overview-evidence" data-testid="browser-discovery-summary" aria-label="Captured evidence">
         <span class="bd-ov-group">Historical evidence</span>
@@ -530,6 +557,11 @@
 </section>
 
 @code {
+    /// <summary>Raised when the reader asks to pair. The host owns pairing; this surface never invents the action.</summary>
+    [Parameter] public EventCallback OnPair { get; set; }
+
+    private BrowserCompanionSituation Situation => BrowserCompanionSituations.Of(Status);
+
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = new();
     [Parameter] public BrowserCompanionRuntime? Runtime { get; set; }
 

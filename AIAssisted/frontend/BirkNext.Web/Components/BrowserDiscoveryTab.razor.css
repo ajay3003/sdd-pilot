@@ -171,3 +171,39 @@
 
 /* A page row says what it is: open now, open with nothing captured yet, or only a record of a past visit. */
 .bd-pageliveness { display: block; font-size: .72rem; color: var(--text-secondary, #666); }
+
+/* One notice, one explanation, one action. Sized to be noticed without becoming a banner that dominates the page. */
+.bd-alert {
+  display: flex; gap: .75rem; align-items: flex-start;
+  padding: .85rem 1rem; border-radius: 8px;
+  border: 1px solid var(--border-color, #e3e3e3);
+  border-left-width: 4px;
+  background: var(--surface-subtle, #fafafa);
+}
+.bd-alert-needs-action { border-left-color: #c08a00; }
+.bd-alert-icon { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; margin-top: .1rem; opacity: .8; }
+.bd-alert-body { flex: 1 1 auto; display: flex; flex-direction: column; gap: .2rem; }
+.bd-alert-title { margin: 0; font-size: .95rem; font-weight: 600; }
+.bd-alert-text { margin: 0; font-size: .85rem; color: var(--text-secondary, #555); }
+/* Captured evidence survives a lost pairing; saying so keeps the warning from reading as data loss. */
+.bd-alert-note { margin: .15rem 0 0; font-size: .8rem; color: var(--text-secondary, #666); font-style: italic; }
+.bd-live-note { margin: -.25rem 0 0; font-size: .82rem; color: var(--text-secondary, #666); }
+
+/* Icons carry no meaning on their own — every one of these sits beside its own text. */
+.bd-icon-link-off, .bd-icon-signal-off {
+  background: currentColor;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-size: contain; mask-size: contain;
+}
+.bd-icon-link-off {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 4.9 6M8 12h3M2 2l20 20'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M9 17H7A5 5 0 0 1 7 7h2M15 7h2a5 5 0 0 1 4.9 6M8 12h3M2 2l20 20'/%3E%3C/svg%3E");
+}
+.bd-icon-signal-off {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 19v-4M10 19v-7M15 19v-3M20 19V8M2 2l20 20'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 19v-4M10 19v-7M15 19v-3M20 19V8M2 2l20 20'/%3E%3C/svg%3E");
+}
+
+@media (max-width: 640px) {
+  .bd-alert { flex-direction: column; }
+}

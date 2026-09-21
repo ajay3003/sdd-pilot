@@ -185,4 +185,71 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         // "Pages with evidence" belongs to the historical group only.
         cut.Find("[data-testid=browser-discovery-live]").TextContent.Should().NotContain("Pages with evidence");
     }
+// ── Pairing situations: four distinct facts, four distinct notices ────────
+
+    [Fact]
+    public async Task NotPairedShowsOneProminentWarningAndKeepsTheHistoryVisible()
+    {
+        SeedEvidence();
+        var cut = await OpenAsync(Status(BrowserCompanionState.NotPaired));
+
+        Text(cut, "bd-companion-alert-title").Should().Be("Browser Companion not paired");
+        Text(cut, "bd-pairing").Should().Be("Not paired");
+        // The warning must not read as data loss: captured evidence is untouched by a missing pairing.
+        Text(cut, "bd-companion-alert-history").Should().Contain("still available");
+        Text(cut, "bd-pages-count").Should().Be("1");
+    }
+
+    [Fact]
+    public async Task PairedButOfflineIsNeverCalledNotPaired()
+    {
+        var cut = await OpenAsync(Status(BrowserCompanionState.Disconnected));
+
+        var title = Text(cut, "bd-companion-alert-title");
+        title.Should().Be("Browser Companion paired but not connected");
+        title.Should().NotBe("Browser Companion not paired", "telling someone to pair when they have is how a status surface loses trust");
+        Text(cut, "bd-pairing").Should().Be("Paired");
+        Text(cut, "bd-connection").Should().Be("Not connected");
+    }
+
+    [Fact]
+    public async Task ConnectedWithNoPageIsInformativeAndNotAPairingWarning()
+    {
+        var cut = await OpenAsync(Status());
+
+        cut.FindAll("[data-testid=bd-companion-alert]").Should().BeEmpty("nothing is wrong and nothing needs fixing");
+        Text(cut, "bd-pairing").Should().Be("Paired");
+        Text(cut, "bd-connection").Should().Be("Connected");
+        Text(cut, "bd-live-pages").Should().Be("0");
+        Text(cut, "bd-live-note").Should().Contain("No approved application page is currently reporting");
+    }
+
+    [Fact]
+    public async Task AConnectedCompanionWithAPageNeedsNoNoticeAtAll()
+    {
+        var cut = await OpenAsync(Status(livePages: ("/saker", "abc")));
+        cut.FindAll("[data-testid=bd-companion-alert]").Should().BeEmpty();
+        cut.FindAll("[data-testid=bd-live-note]").Should().BeEmpty();
+        Text(cut, "bd-live-pages").Should().Be("1");
+    }
+
+    [Fact]
+    public async Task TheWarningCarriesTextNotJustAnIcon()
+    {
+        var cut = await OpenAsync(Status(BrowserCompanionState.NotPaired));
+        var alert = cut.Find("[data-testid=bd-companion-alert]");
+        alert.GetAttribute("role").Should().Be("status");
+        alert.TextContent.Trim().Should().NotBeEmpty("an icon can never be the only carrier of meaning");
+        alert.QuerySelector(".bd-alert-icon")!.GetAttribute("aria-hidden").Should().Be("true");
+    }
+
+    [Fact]
+    public async Task OldEvidenceNeverMakesPairingLookCurrent()
+    {
+        SeedEvidence();
+        var cut = await OpenAsync(Status(BrowserCompanionState.NotPaired));
+        Text(cut, "bd-pairing").Should().Be("Not paired");
+        Text(cut, "bd-current-page").Should().Be("None");
+        Text(cut, "bd-live-dom").Should().Be("Not available");
+    }
 }

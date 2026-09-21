@@ -6,6 +6,10 @@ namespace BirkNext.Web.Services;
 
 public interface ILocalHttpsProxyApiService
 {
+    Task<LocalHttpsProxyStatus> GetRuntimeAsync();
+    Task<LocalHttpsProxyStatus> LaunchEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request);
+    /// <summary>Closes only the browser this runtime launched, then opens it again on the current proxy port.</summary>
+    Task<LocalHttpsProxyStatus> RestartEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request);
     Task<LocalHttpsProxyStatus> CheckCompatibilityAsync(LocalHttpsProxyScopeRequest request);
     Task<LocalHttpsProxyStatus> StartAsync(LocalHttpsProxyScopeRequest request);
     Task<LocalHttpsProxyStatus> StatusAsync(LocalHttpsProxySessionRequest request);
@@ -18,6 +22,9 @@ public interface ILocalHttpsProxyApiService
 
 public sealed class LocalHttpsProxyApiService(HttpClient http) : ILocalHttpsProxyApiService
 {
+    public async Task<LocalHttpsProxyStatus> GetRuntimeAsync() => (await http.GetFromJsonAsync<LocalHttpsProxyStatus>("api/local-https-proxy/runtime"))!;
+    public Task<LocalHttpsProxyStatus> LaunchEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request) => PostAsync<LocalHttpsProxyStatus>("api/local-https-proxy/launch-edge", request);
+    public Task<LocalHttpsProxyStatus> RestartEdgeAsync(LocalHttpsProxyEdgeLaunchRequest request) => PostAsync<LocalHttpsProxyStatus>("api/local-https-proxy/edge/restart", request);
     private async Task<T> PostAsync<T>(string path, object body)
     {
         using var response = await http.PostAsJsonAsync(path, body);
@@ -47,6 +54,9 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
     private long _generation;
     private long _operation;
     private CancellationTokenSource? _poll;
+    private Task? _pollTask;
+    private string? _selectedIdentity;
+    private bool _disposed;
 
     public LocalHttpsProxyStatus Status { get; private set; } = new();
 
@@ -65,6 +75,11 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
     public AuthenticatedApiExecutionResult? LastGraphQlResult { get; private set; }
     public string? LastExecutionError { get; private set; }
     public bool Busy { get; private set; }
+    /// <summary>
+    /// The backend has answered at least once for the selected environment. Until then the page says "Checking…"
+    /// rather than rendering a default status as though it were a measurement.
+    /// </summary>
+    public bool Loaded { get; private set; }
     public event Action? Changed;
 
     /// <summary>Status is only valid for the environment configuration it was produced for; any relevant change reads as Stale.</summary>
@@ -74,37 +89,44 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
     /// <summary>Status for a precomputed proxy context fingerprint (e.g. <see cref="FrontendAnalysisContext.ReviewIdentity"/>); Stale when it does not match the running session.</summary>
     public LocalHttpsProxyStatus ForFingerprint(string? fingerprint) => _identity is null ||
         (fingerprint is not null && _identity == fingerprint)
-        ? Status : new() { State = LocalHttpsProxyState.Stale, Evidence = "Environment settings changed. The proxy session and its in-memory credential are no longer valid; start the proxy again after saving." };
+        ? Status : new() { State = LocalHttpsProxyState.Stale, Evidence = "This proxy belongs to another environment configuration. Its runtime is unchanged; stop it explicitly before starting another." };
 
     public bool SessionActive => _owner is not null;
 
+    /// <summary>Marks the first backend answer for this environment. Called by every path that sets Status from the backend.</summary>
+    private void MarkLoaded() => Loaded = true;
+
     public async Task SynchronizeAsync(FrontendAnalysisProfile? profile)
     {
-        if (_identity is not null && (profile is null || _identity != LocalHttpsProxyScope.Fingerprint(profile)))
-            await StopAsync(LocalHttpsProxyState.Stale);
+        if (_disposed || profile is null || Busy) return;
+        var identity = LocalHttpsProxyScope.Fingerprint(profile);
+        if (_selectedIdentity == identity) return;
+        _selectedIdentity = identity;
+        await CheckCompatibilityAsync(profile);
     }
 
     public async Task CheckCompatibilityAsync(FrontendAnalysisProfile profile)
     {
-        if (Busy) return;
+        if (Busy || _disposed) return;
         var generation = _generation;
         var identity = LocalHttpsProxyScope.Fingerprint(profile);
         Busy = true;
         Changed?.Invoke();
         try
         {
-            var result = await api.CheckCompatibilityAsync(LocalHttpsProxyScope.Request(profile));
-            if (generation != _generation) return;
-            _identity = identity;
-            Status = _owner is not null ? Status with { Certificate = result.Certificate, PortAvailable = result.PortAvailable, ApprovedHosts = result.ApprovedHosts } : result;
+            var current = await api.GetRuntimeAsync();
+            var result = current is { RuntimeId: not null } ? current : await api.CheckCompatibilityAsync(LocalHttpsProxyScope.Request(profile));
+            if (generation != _generation || _disposed) return;
+            Apply(result, profile.Id, identity);
+            EnsurePolling();
         }
-        catch { if (generation == _generation) { _identity = identity; Status = new() { State = LocalHttpsProxyState.NotStarted, FailureReason = "The compatibility check did not complete. Check that the local BirkNext backend is running, then retry." }; } }
+        catch { if (generation == _generation) { MarkLoaded(); Status = Status with { AuthenticatedCredentialAvailable = false, FailureReason = "Proxy status unavailable. Check that the local BirkNext backend is running, then retry." }; EnsurePolling(); } }
         finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
     }
 
     public async Task StartAsync(FrontendAnalysisProfile profile)
     {
-        await StopAsync();
+        if (Busy || _disposed) return;
         var generation = ++_generation;
         _identity = LocalHttpsProxyScope.Fingerprint(profile);
         var request = LocalHttpsProxyScope.Request(profile);
@@ -114,20 +136,11 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         try
         {
             var result = await api.StartAsync(request);
-            if (generation != _generation)
-            {
-                if (result.SessionId is { } abandoned) { try { await api.StopAsync(new(abandoned, request.ProfileId, request.ContextFingerprint)); } catch { } }
-                return;
-            }
-            Status = result;
+            if (generation != _generation || _disposed) return;
+            Apply(result, request.ProfileId, request.ContextFingerprint);
             // A new session starts with no browser routed through it; the flag is not carried over from the last one.
             BrowserWasRouted = Routed(result);
-            if (result.SessionId is { } session)
-            {
-                _owner = new(session, request.ProfileId, request.ContextFingerprint);
-                _poll = new();
-                _ = PollAsync(_poll.Token);
-            }
+            EnsurePolling();
         }
         catch { if (generation == _generation) Status = new() { State = LocalHttpsProxyState.Failed, FailureReason = "The local HTTPS proxy could not be started. Check that the local BirkNext backend is running in the local workstation mode." }; }
         finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
@@ -135,20 +148,23 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
 
     public async Task RefreshAsync()
     {
-        if (_owner is not { } owner || Busy) return;
+        if (_disposed || Busy) return;
         var generation = _generation;
         var operation = ++_operation;
         try
         {
-            var result = await api.StatusAsync(owner);
+            var result = await api.GetRuntimeAsync();
+            if (result is { RuntimeId: null, SessionId: null })
+                result = result with { LocalIntegrationAvailable = Status.LocalIntegrationAvailable, EnvironmentAllowed = Status.EnvironmentAllowed,
+                    PortAvailable = Status.PortAvailable, Certificate = Status.Certificate, ApprovedHosts = Status.ApprovedHosts,
+                    CanStart = Status.LocalIntegrationAvailable && Status.EnvironmentAllowed && Status.PortAvailable };
             if (generation == _generation && operation == _operation)
             {
-                Status = result;
+                Apply(result, _owner?.ProfileId, _identity);
                 if (Routed(result)) BrowserWasRouted = true;
-                if (result.State is LocalHttpsProxyState.Stopped or LocalHttpsProxyState.Stale) { _poll?.Cancel(); _owner = null; }
             }
         }
-        catch { if (generation == _generation && operation == _operation) { Status = new() { State = LocalHttpsProxyState.Stale, Evidence = "Proxy session lost. Start the proxy again." }; _poll?.Cancel(); _owner = null; } }
+        catch { if (generation == _generation && operation == _operation) Status = Status with { AuthenticatedCredentialAvailable = false, FailureReason = "Proxy status unavailable. Reconnecting to the backend; no stop was requested." }; }
         if (generation == _generation) Changed?.Invoke();
     }
 
@@ -158,21 +174,61 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         catch (OperationCanceledException) { }
     }
 
+    private void Apply(LocalHttpsProxyStatus result, string? profileId, string? fingerprint)
+    {
+        MarkLoaded();
+        ArgumentNullException.ThrowIfNull(result);
+        Status = result;
+        _identity = result.ContextFingerprint ?? fingerprint;
+        _owner = result.SessionId is { } id ? new(id, result.ProfileId ?? profileId!, _identity!) : null;
+        BrowserWasRouted |= Routed(result);
+    }
+
+    private void EnsurePolling()
+    {
+        if (_poll is not null || _disposed) return;
+        _poll = new();
+        _pollTask = PollAsync(_poll.Token);
+    }
+
+    /// <summary>
+    /// Closes the dedicated browser this runtime launched and opens it again on the current proxy port. For a browser
+    /// left over from an earlier runtime: it is running, and pointed at a port that no longer exists.
+    /// </summary>
+    public Task RestartBrowserAsync() => OpenBrowserAsync(restart: true);
+
+    public async Task OpenBrowserAsync(bool restart = false)
+    {
+        if (_owner is not { } owner || Busy || _disposed) return;
+        Busy = true;
+        var generation = _generation;
+        try
+        {
+            var request = new LocalHttpsProxyEdgeLaunchRequest(owner.SessionId, owner.ProfileId, owner.ContextFingerprint);
+            var result = restart ? await api.RestartEdgeAsync(request) : await api.LaunchEdgeAsync(request);
+            if (generation == _generation) Apply(result, owner.ProfileId, owner.ContextFingerprint);
+        }
+        catch { if (generation == _generation) Status = Status with { FailureReason = "The dedicated proxy browser could not be opened." }; }
+        finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
+    }
+
     public async Task StopAsync(LocalHttpsProxyState state = LocalHttpsProxyState.Stopped)
     {
-        ++_generation;
-        _poll?.Cancel(); _poll?.Dispose(); _poll = null;
+        if (Busy || _disposed) return;
+        var generation = ++_generation;
         var owner = _owner;
-        _owner = null; _identity = null; Busy = false;
+        if (owner is null) return;
+        Busy = true;
         LastRestResult = null; LastGraphQlResult = null; LastExecutionError = null;
-        Status = new()
-        {
-            State = state,
-            Evidence = state == LocalHttpsProxyState.Stale ? "Environment settings changed. The proxy session and its in-memory credential were invalidated."
-                : owner is null ? "Proxy not started." : "Proxy stopped. The in-memory authenticated API context was wiped."
-        };
+        Status = Status with { RuntimeStatus = LocalHttpsProxyRuntimePhase.Stopping };
         Changed?.Invoke();
-        if (owner is not null) { try { await api.StopAsync(owner); } catch { } }
+        try
+        {
+            var result = await api.StopAsync(owner);
+            if (generation == _generation) Apply(result, owner.ProfileId, owner.ContextFingerprint);
+        }
+        catch { if (generation == _generation) Status = Status with { FailureReason = "Stop could not be confirmed. Refresh status and retry." }; }
+        finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
     }
 
     public Task InstallCertificateAsync() => CertificateAsync(api.InstallCertificateAsync);
@@ -211,5 +267,14 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
     }
 
-    public async ValueTask DisposeAsync() => await StopAsync();
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        ++_generation;
+        _poll?.Cancel();
+        if (_pollTask is not null) await _pollTask;
+        _poll?.Dispose();
+        Changed = null;
+        // This is a frontend observer. Only explicit user commands may stop the backend runtime.
+    }
 }

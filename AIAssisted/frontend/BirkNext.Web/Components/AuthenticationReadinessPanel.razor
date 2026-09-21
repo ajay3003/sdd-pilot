@@ -1,0 +1,120 @@
+@using BirkNext.LocalHttpsProxy
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@*
+    Authentication readiness: the verdict, the three prerequisites behind it, and the hand-off to Endpoint Discovery.
+
+    One state, one explanation, one action. Everything a prerequisite needs to say is said on its own card and nowhere
+    else, so a stopped proxy is not announced four times on the way down the page.
+*@
+<section class="ar" data-testid="auth-readiness" aria-label="Authentication readiness">
+
+    <div class="ar-hero ar-tone-@Summary.Tone" data-testid="auth-readiness-hero">
+        <div class="ar-hero-head">
+            <h3 class="ar-hero-title">Authentication testing</h3>
+            <span class="ar-chip ar-chip-@Summary.Tone" data-testid="auth-readiness-state">@Summary.Label</span>
+        </div>
+        <p class="ar-hero-detail" data-testid="auth-readiness-detail">@Summary.Detail</p>
+
+        @if (Summary.Prerequisites.Count > 0)
+        {
+            @* The compact roll-up. Each line is a marker and a short label; the reasoning lives on the cards. *@
+            <ul class="ar-rollup" data-testid="auth-readiness-rollup">
+                @foreach (var item in Summary.Prerequisites)
+                {
+                    <li class="ar-rollup-item ar-tone-@item.Tone" data-testid="auth-rollup-@item.Id">
+                        <span aria-hidden="true">@(item.State == AuthPrerequisiteState.Ok ? "✓" : item.State == AuthPrerequisiteState.NotRequired ? "·" : "!")</span>
+                        <span>@item.Title — @item.StatusLabel</span>
+                    </li>
+                }
+            </ul>
+        }
+
+        <div class="ar-hero-actions">
+            <button type="button" class="btn-primary" data-testid="auth-verify"
+                    disabled="@(!Summary.CanVerify)" @onclick="OnVerify">Verify authentication</button>
+            @* A disabled action always says what is missing; a greyed-out button on its own makes the user guess. *@
+            @if (AuthenticationReadinessPresentation.VerificationBlockedReason(Summary) is { Length: > 0 } blocked)
+            {
+                <p class="ar-blocked" data-testid="auth-verify-blocked">@blocked</p>
+            }
+        </div>
+    </div>
+
+    @if (Summary.Prerequisites.Count > 0)
+    {
+        <div class="ar-cards">
+            @foreach (var item in Summary.Prerequisites)
+            {
+                <article class="ar-card ar-tone-@item.Tone" data-testid="auth-card-@item.Id">
+                    <div class="ar-card-head">
+                        <span class="ar-icon ar-icon-@item.Icon" aria-hidden="true"></span>
+                        <div>
+                            <h4 class="ar-card-title">@item.Title</h4>
+                            <span class="ar-chip ar-chip-@item.Tone" data-testid="auth-status-@item.Id">@item.StatusLabel</span>
+                        </div>
+                    </div>
+
+                    @if (item.Explanation is { Length: > 0 })
+                    {
+                        <p class="ar-card-text">@item.Explanation</p>
+                    }
+
+                    @if (item.Facts is { Count: > 0 } facts)
+                    {
+                        @* Runtime facts only while there is a runtime; empty rows for a stopped proxy are noise. *@
+                        <dl class="ar-facts">
+                            @foreach (var (label, value) in facts)
+                            {
+                                <div><dt>@label</dt><dd>@value</dd></div>
+                            }
+                        </dl>
+                    }
+
+                    @if (item.ActionLabel is { Length: > 0 } action)
+                    {
+                        <button type="button" class="btn-secondary" data-testid="auth-action-@item.Id"
+                                disabled="@Busy" @onclick="() => OnAction.InvokeAsync(item.ActionId)">@action</button>
+                    }
+                </article>
+            }
+        </div>
+    }
+
+    @* Endpoint Discovery is never disabled from here: it holds observed traffic from more than one source, so an
+       incomplete proxy setup limits what arrives next rather than making the surface useless. *@
+    <article class="ar-cta" data-testid="auth-discovery-cta">
+        <span class="ar-icon ar-icon-radar" aria-hidden="true"></span>
+        <div class="ar-cta-body">
+            <h4 class="ar-card-title">@EndpointDiscoveryCta.Title</h4>
+            <p class="ar-card-text">@EndpointDiscoveryCta.Description</p>
+            <p class="ar-cta-status">
+                <span class="ar-chip ar-chip-@DiscoveryTone" data-testid="auth-discovery-status">@DiscoveryStatus</span>
+                @if (DiscoveryNote is { Length: > 0 })
+                {
+                    <span class="ar-cta-note" data-testid="auth-discovery-note">@DiscoveryNote</span>
+                }
+            </p>
+        </div>
+        <button type="button" class="btn-secondary" data-testid="auth-open-discovery" @onclick="OnOpenDiscovery">
+            Open Endpoint Discovery →
+        </button>
+    </article>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public AuthenticationReadinessSummary Summary { get; set; } = new(AuthenticationReadiness.Checking, "Checking…", "", []);
+    /// <summary>How many endpoints Endpoint Discovery already holds, so an incomplete setup is not reported as nothing to see.</summary>
+    [Parameter] public int KnownEndpoints { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    /// <summary>Receives the prerequisite's ActionId. The host owns every one of these operations.</summary>
+    [Parameter] public EventCallback<string?> OnAction { get; set; }
+    [Parameter] public EventCallback OnVerify { get; set; }
+    [Parameter] public EventCallback OnOpenDiscovery { get; set; }
+
+    private (string Status, string Tone, string? Note) Discovery => EndpointDiscoveryCta.Status(Summary, KnownEndpoints);
+    private string DiscoveryStatus => Discovery.Status;
+    private string DiscoveryTone => Discovery.Tone;
+    private string? DiscoveryNote => Discovery.Note;
+}

@@ -767,3 +767,79 @@ public static class BrowserDiscoveryLive
         return live?.LivePages.Where(p => !known.Contains(p.Identity)).ToList() ?? [];
     }
 }
+
+/// <summary>
+/// The Browser Companion's pairing and connection situation, as five distinct facts rather than one.
+///
+/// These are routinely collapsed into "not working", and each one has a different cause and a different fix: a pairing
+/// that was never made, a pairing whose extension is offline, a connected extension with no application page, and a
+/// page that is open and reporting. Telling someone to pair when they already have is how a status surface loses trust.
+/// </summary>
+public enum BrowserCompanionSituation
+{
+    NotPaired,
+    PairedNotConnected,
+    ConnectedWithoutLivePage,
+    LivePageAvailable,
+}
+
+/// <summary>A prominent, actionable notice. Null means the state needs nothing from the reader.</summary>
+public sealed record BrowserCompanionAlert(string Icon, string Title, string Body, string? ActionLabel, string Tone);
+
+public static class BrowserCompanionSituations
+{
+    public static BrowserCompanionSituation Of(BrowserCompanionStatus? status) => status?.State switch
+    {
+        null or BrowserCompanionState.NotPaired or BrowserCompanionState.Expired => BrowserCompanionSituation.NotPaired,
+        // Pairing exists and is simply not reporting. Saying "not paired" here sends the user to redo work that is done.
+        BrowserCompanionState.Disconnected or BrowserCompanionState.PairingPending => BrowserCompanionSituation.PairedNotConnected,
+        _ => status.EffectiveLive.LivePages.Count > 0
+            ? BrowserCompanionSituation.LivePageAvailable
+            : BrowserCompanionSituation.ConnectedWithoutLivePage,
+    };
+
+    public static string PairingLabel(BrowserCompanionSituation situation) =>
+        situation == BrowserCompanionSituation.NotPaired ? "Not paired" : "Paired";
+
+    public static string ConnectionLabel(BrowserCompanionSituation situation) => situation switch
+    {
+        BrowserCompanionSituation.NotPaired => "—",
+        BrowserCompanionSituation.PairedNotConnected => "Not connected",
+        _ => "Connected",
+    };
+
+    /// <summary>
+    /// The one notice for this state, or null. A connected companion with no page open is not a warning: nothing is
+    /// wrong and nothing needs fixing, so it is stated in the live facts and nowhere else.
+    /// </summary>
+    public static BrowserCompanionAlert? Alert(BrowserCompanionSituation situation) => situation switch
+    {
+        BrowserCompanionSituation.NotPaired => new(
+            "link-off", "Browser Companion not paired",
+            "Pair the Browser Companion extension with this Target Environment before live browser evidence can be collected.",
+            "Pair Browser Companion", "needs-action"),
+
+        BrowserCompanionSituation.PairedNotConnected => new(
+            "signal-off", "Browser Companion paired but not connected",
+            "The pairing exists, but the extension is not currently reporting. Open or refresh an approved application page in the paired browser.",
+            "Recheck", "needs-action"),
+
+        _ => null,
+    };
+
+    /// <summary>
+    /// What a reader should know when no page is open. Informative, not a warning — and never phrased as a pairing problem.
+    /// </summary>
+    public static string? LivePageNote(BrowserCompanionSituation situation) =>
+        situation == BrowserCompanionSituation.ConnectedWithoutLivePage
+            ? "No approved application page is currently reporting."
+            : null;
+
+    /// <summary>
+    /// Stated alongside a pairing warning so nobody concludes their captured evidence is gone. Live and historical are
+    /// separate, and a missing pairing takes away only the live half.
+    /// </summary>
+    public static string HistoryReassurance(int pagesWithEvidence) => pagesWithEvidence == 0
+        ? ""
+        : $"Historical evidence from previous sessions is still available ({pagesWithEvidence} page{(pagesWithEvidence == 1 ? "" : "s")}).";
+}

@@ -298,36 +298,33 @@ public static class AuthenticatedTestingStates
         LocalHttpsProxyState.AuthenticatedTrafficDetected or LocalHttpsProxyState.Ready;
 
     /// <summary>
-    /// The one state that needs saying out loud: a browser was routed through this proxy, and the proxy has
-    /// since stopped. Edge is still pointed at a port that no longer answers, and BirkNext cannot put that
-    /// right — it never set the browser's proxy settings and so has nothing to restore. Saying so is the whole
-    /// remedy; claiming a restore that did not happen would be worse than saying nothing.
+    /// Historical traffic does not prove that the listener or its dedicated browser is still alive.
+    /// No system or normal-profile proxy configuration is written or restored.
     /// </summary>
     public static bool ProxyStoppedWhileRouted(LocalHttpsProxyStatus proxy, bool browserWasRouted) =>
         browserWasRouted && !ProxyServerRunning(proxy);
 
     public static string ProxyGuidanceTitle(LocalHttpsProxyStatus proxy, bool browserWasRouted = false) =>
-        ProxyStoppedWhileRouted(proxy, browserWasRouted) ? "Managed Edge still points at the stopped proxy"
-        : BrowserRoutedThroughProxy(proxy) ? "Edge proxy configured"
-        : "Enable proxy in Edge settings";
+        ProxyStoppedWhileRouted(proxy, browserWasRouted) ? "Proxy is no longer running"
+        : BrowserRoutedThroughProxy(proxy) ? "Proxy traffic observed"
+        : "Open the dedicated proxy browser";
 
     public static string ProxyGuidanceText(LocalHttpsProxyStatus proxy, bool browserWasRouted = false) =>
         ProxyStoppedWhileRouted(proxy, browserWasRouted)
-            ? "The BirkNext proxy has stopped, so requests through it now fail. Restore your previous Edge proxy settings; BirkNext never changed them and cannot change them back."
+            ? "The proxy is no longer listening. Start it again to continue testing. Normal Edge and Windows proxy settings are unchanged."
         : BrowserRoutedThroughProxy(proxy)
             ? "Authenticated API traffic can be collected through the BirkNext proxy."
-            : "Use the BirkNext local HTTPS proxy in managed Edge to collect authenticated API traffic.";
+            : "Open the dedicated proxy Edge browser to collect authenticated API traffic.";
 
     /// <summary>
-    /// The browser-side setup line inside the details. Deliberately manual: nothing in BirkNext changes Edge's
-    /// settings, so promising automatic configuration or restoration would be untrue.
+    /// The dedicated browser uses process arguments, leaving normal Edge and Windows settings unchanged.
     /// </summary>
     public static string EdgeBrowserSetup(LocalHttpsProxyStatus proxy, bool browserWasRouted = false) =>
         ProxyStoppedWhileRouted(proxy, browserWasRouted)
-            ? "Managed Edge was routed through this proxy and the proxy has stopped. Its Edge proxy setting is yours to restore."
+            ? "The proxy has stopped. Start it again and open the dedicated browser to continue testing."
         : BrowserRoutedThroughProxy(proxy)
-            ? "Traffic has been observed through the proxy, so managed Edge is routed through it."
-            : "Configure managed Edge to use the BirkNext local HTTPS proxy endpoint shown below.";
+            ? "Traffic has been observed through the proxy."
+            : "Open the dedicated proxy browser below; normal Edge and Windows proxy settings stay unchanged.";
 
     public const string EndpointHandoff =
         "Detailed REST, GraphQL and WebSocket observations are available in Endpoint Discovery.";

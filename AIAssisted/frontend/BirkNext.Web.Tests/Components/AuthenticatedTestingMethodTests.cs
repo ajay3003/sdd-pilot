@@ -26,6 +26,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     private readonly Mock<ILocalHttpsProxyApiService> _proxyApi = new();
     private readonly ManagedEdgeRuntime _edgeRuntime;
     private readonly LocalHttpsProxyRuntime _proxyRuntime;
+    private LocalHttpsProxyStatus _backendState = new();
 
     private static readonly LocalHttpsProxyStatus Listening = new()
     {
@@ -70,7 +71,8 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         _edgeApi.Setup(a => a.ConnectAsync(It.IsAny<ManagedEdgeConnectRequest>())).ReturnsAsync(new ManagedEdgeStatus { State = ManagedEdgeState.TargetTabNotInspectable, TargetOrigin = Origin, DiscoveredTargetTabs = 1, TrustDecision = ManagedEdgeTrustDecision.TargetNotInspectable });
         _edgeApi.Setup(a => a.DisconnectAsync(It.IsAny<ManagedEdgeSessionRequest>())).Returns(Task.CompletedTask);
         _proxyApi.Setup(a => a.CheckCompatibilityAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(Listening with { SessionId = null, State = LocalHttpsProxyState.NotStarted, Port = 0, CanStart = true });
-        _proxyApi.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(Ready);
+        _proxyApi.Setup(a => a.GetRuntimeAsync()).ReturnsAsync(() => _backendState);
+        _proxyApi.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync((LocalHttpsProxyScopeRequest r) => _backendState = Ready with { RuntimeId = Ready.SessionId, ProfileId = r.ProfileId, ContextFingerprint = r.ContextFingerprint });
         _proxyApi.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(Ready);
         _proxyApi.Setup(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(Listening with { SessionId = null, State = LocalHttpsProxyState.Stopped });
     }
@@ -410,7 +412,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     }
 
     [Fact]
-    public async Task SwitchingFromReadyProxyClearsCapabilitiesAndCancelRestoresMethodWithoutCredentials()
+    public async Task SwitchingFromReadyProxyHidesCapabilitiesWithoutStoppingRuntime()
     {
         var cut = Open(authenticationJson: """{"authenticatedTestingMethod":"LocalHttpsProxy"}""");
         OpenTab(cut, "Authentication");
@@ -420,7 +422,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         SelectMethod(cut, AuthenticatedTestingMethod.ManualOnly);
         // Switching away stops the proxy asynchronously; once it settles every authenticated capability is cleared — nothing reads "Available"
         // or "Verified" (the cleared wording is "Unavailable" on the manual grid or "Not observed" on the just-cleared proxy grid; both mean not authenticated).
-        cut.WaitForAssertion(() => _proxyApi.Verify(x => x.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.AtLeastOnce));
+        _proxyApi.Verify(x => x.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
         cut.WaitForState(() => Has(cut, "manual-only-panel"));
         Assert.False(Has(cut, "proxy-credential"));
         AssertNoAuthenticatedCapabilityClaimed(cut);
@@ -534,7 +536,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     }
 
     [Fact]
-    public async Task EditingTheEnvironmentStalesTheProxySessionAndSavingRequiresARestart()
+    public async Task EditingTheEnvironmentPreservesAndLabelsTheOriginalRuntime()
     {
         var cut = Open(authenticationJson: """{ "authenticationType": "MicrosoftEntraId", "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
@@ -544,15 +546,15 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         OpenTab(cut, "Target Application");
         cut.Find("input[type=url][placeholder='https://myapp.example.com']").Change("https://other.bufetat.no/");
         OpenTab(cut, "Authentication");
-        cut.WaitForAssertion(() => Assert.Contains("Stale", Row(cut, "proxy-state")));
-        Assert.Equal("Waiting for authenticated traffic", Row(cut, "proxy-credential"));
-        cut.WaitForAssertion(() => _proxyApi.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.AtLeastOnce));
+        cut.WaitForAssertion(() => Assert.Contains("Proxy running for dev", cut.Markup));
+        Assert.Equal("Ready", Row(cut, "proxy-state"));
+        _proxyApi.Verify(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>()), Times.Never);
     }
 
     // ── proxy Step 3 — Browser uses normal managed Edge only (no integrated launch) ──
 
     [Fact]
-    public void ProxyBrowserStepUsesNormalManagedEdgeAndHasNoIntegratedLaunch()
+    public void ProxyBrowserStepUsesDedicatedEdgeWithoutGlobalProxyInstructions()
     {
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
@@ -560,12 +562,13 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.True(Has(cut, "proxy-browser-step"));
         // No integrated/separate browser launch in proxy mode.
         Assert.False(HasButton(cut, "Start Edge with proxy"));
-        Assert.DoesNotContain("--proxy-server", cut.Markup);
+        Assert.Contains("--proxy-server", cut.Markup);
         Assert.DoesNotContain("--remote-debugging", cut.Markup);
         // Normal managed Edge / manual instructions.
         Assert.Equal("Manual", Row(cut, "proxy-browser-auth"));
-        Assert.Contains("normal managed Microsoft Edge", cut.Markup);
-        Assert.True(Has(cut, "proxy-setup-instructions"));
+        Assert.Contains("dedicated proxy Microsoft Edge", cut.Markup);
+        Assert.True(HasButton(cut, "Open browser"));
+        Assert.False(Has(cut, "proxy-setup-instructions"));
         Assert.Contains("does not change your default Windows or Edge proxy settings", Row(cut, "proxy-browser-note"));
         Assert.Contains("127.0.0.1", Row(cut, "proxy-browser-endpoint"));
         // Before the proxy is started the browser step is not actionable.

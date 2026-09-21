@@ -62,11 +62,11 @@ public sealed class ProxyOwnershipSafetyTests
         var title = AuthenticatedTestingStates.ProxyGuidanceTitle(Stopped, browserWasRouted: true);
         var text = AuthenticatedTestingStates.ProxyGuidanceText(Stopped, browserWasRouted: true);
 
-        title.Should().Be("Managed Edge still points at the stopped proxy");
-        text.Should().Contain("Restore your previous Edge proxy settings");
+        title.Should().Be("Proxy is no longer running");
+        text.Should().Contain("settings are unchanged");
         // Never a claim that cleanup happened, because none did and none could.
         text.Should().NotContainAny("restored", "Restored", "automatically", "reverted");
-        text.Should().Contain("never changed them and cannot change them back");
+        text.Should().NotContain("Restore your previous");
     }
 
     [Theory]
@@ -75,7 +75,7 @@ public sealed class ProxyOwnershipSafetyTests
     [InlineData(LocalHttpsProxyState.Failed)]
     public void EveryWayTheProxyCanGoAwayProducesTheSameWarning(LocalHttpsProxyState state) =>
         AuthenticatedTestingStates.ProxyGuidanceTitle(Listening with { State = state }, browserWasRouted: true)
-            .Should().Be("Managed Edge still points at the stopped proxy");
+            .Should().Be("Proxy is no longer running");
 
     [Fact]
     public void AProxyThatNoBrowserEverUsedIsNotWarnedAbout()
@@ -83,14 +83,14 @@ public sealed class ProxyOwnershipSafetyTests
         // Nothing was ever pointed at it, so stopping it leaves nothing pointing anywhere.
         AuthenticatedTestingStates.ProxyStoppedWhileRouted(Stopped, browserWasRouted: false).Should().BeFalse();
         AuthenticatedTestingStates.ProxyGuidanceTitle(Stopped, browserWasRouted: false)
-            .Should().Be("Enable proxy in Edge settings");
+            .Should().Be("Open the dedicated proxy browser");
     }
 
     [Fact]
     public void AWorkingProxyKeepsItsOwnGuidance()
     {
-        AuthenticatedTestingStates.ProxyGuidanceTitle(Routed, browserWasRouted: true).Should().Be("Edge proxy configured");
-        AuthenticatedTestingStates.ProxyGuidanceTitle(Listening, browserWasRouted: false).Should().Be("Enable proxy in Edge settings");
+        AuthenticatedTestingStates.ProxyGuidanceTitle(Routed, browserWasRouted: true).Should().Be("Proxy traffic observed");
+        AuthenticatedTestingStates.ProxyGuidanceTitle(Listening, browserWasRouted: false).Should().Be("Open the dedicated proxy browser");
     }
 
     [Fact]
@@ -116,7 +116,7 @@ public sealed class ProxyOwnershipSafetyTests
     {
         var api = new Mock<ILocalHttpsProxyApiService>();
         api.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(Listening);
-        api.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(Routed);
+        api.Setup(a => a.GetRuntimeAsync()).ReturnsAsync(Routed);
         api.Setup(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(Stopped);
         await using var runtime = new LocalHttpsProxyRuntime(api.Object);
         var profile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev", TargetUrl = "https://app.example.test" };
@@ -140,7 +140,7 @@ public sealed class ProxyOwnershipSafetyTests
     {
         var api = new Mock<ILocalHttpsProxyApiService>();
         api.Setup(a => a.StartAsync(It.IsAny<LocalHttpsProxyScopeRequest>())).ReturnsAsync(Listening);
-        api.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(Routed);
+        api.Setup(a => a.GetRuntimeAsync()).ReturnsAsync(Routed);
         api.Setup(a => a.StopAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(Stopped);
         await using var runtime = new LocalHttpsProxyRuntime(api.Object);
         var profile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev", TargetUrl = "https://app.example.test" };
