@@ -95,3 +95,39 @@
 .bd-crit { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.68rem; color: var(--clr-text-subtle, #64748b); }
 
 .bd-evidence-group { margin-bottom: 1rem; }
+
+/* ── Selected page: compact evidence browser ─────────────────────────────────
+   The rule catalogue lives behind disclosures, so the default view of a page stays short enough to read. */
+
+.bd-availability { margin-bottom: 0.5rem; }
+.bd-pagehandoff { margin: 0.5rem 0 0.25rem; }
+
+/* Counts, never scores: plain text with weight, no meter and no colour that reads as pass/fail. */
+.bd-counts { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin: 0.3rem 0; font-size: 0.8rem; color: var(--clr-text-body); }
+.bd-counts > span { white-space: nowrap; }
+.bd-count-flagged { font-weight: 600; color: var(--clr-warning-text, #92400e); }
+.bd-count-uncertain { font-weight: 600; color: var(--clr-text-subtle, #64748b); }
+
+.bd-attention {
+    border: 1px solid var(--clr-border); border-left: 3px solid var(--clr-warning-border, #f59e0b);
+    border-radius: 8px; padding: 0.55rem 0.7rem; margin: 0.5rem 0 0.75rem; background: var(--clr-surface);
+}
+
+/* One disclosure per principle, stacked at every width: four open columns is what made this page unreadable. */
+.bd-principles { display: flex; flex-direction: column; gap: 0.3rem; }
+.bd-principle { border: 1px solid var(--clr-border); border-radius: 8px; padding: 0.2rem 0.5rem; background: var(--clr-surface-white, #fff); }
+
+.bd-automated { margin-top: 0.75rem; }
+
+.bd-obslist { list-style: none; margin: 0.3rem 0 0; padding: 0; display: flex; flex-direction: column; }
+.bd-obslist li {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.25rem 0.6rem;
+    padding: 0.28rem 0; border-top: 1px solid var(--clr-border-subtle); font-size: 0.8rem;
+}
+.bd-obslist li:first-child { border-top: none; }
+.bd-obs-id, .bd-obs-label { font-weight: 600; color: var(--clr-text-heading); }
+.bd-obs-state { font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+.bd-obs-flagged { color: var(--clr-warning-text, #92400e); }
+.bd-obs-uncertain { color: var(--clr-text-subtle, #64748b); }
+.bd-obs-observed { color: var(--clr-text-muted, #6b7280); font-weight: 400; }
+.bd-obs-detail { color: var(--clr-text-muted, #6b7280); font-size: 0.72rem; overflow-wrap: anywhere; }

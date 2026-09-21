@@ -21,6 +21,84 @@ public sealed record BrowserEvidenceItem(string Label, string Detail, string? Cr
 /// <summary>Observed accessibility evidence grouped under one WCAG principle. Grouping only — never a result.</summary>
 public sealed record BrowserWcagAreaEvidence(WcagPrinciple Principle, IReadOnlyList<BrowserEvidenceItem> Items);
 
+/// <summary>
+/// How an observation came out, as the collector reported it — never a WCAG verdict. "Flagged" means the collector
+/// marked something for a human to look at; "uncertain" means it could not decide. Neither is a failed success
+/// criterion, and neither is an assessment: Frontend Quality Review is where evidence becomes a result.
+/// Ordered so the interesting states sort first.
+/// </summary>
+public enum BrowserObservationState { Observed, Uncertain, Flagged }
+
+/// <summary>
+/// One accessibility check, rule or finding the collector produced for a page.
+/// </summary>
+/// <param name="Key">Dedupe identity. One observation relates to every criterion it maps to and is therefore listed
+/// under several principles; page-level totals count it once, through this key.</param>
+/// <param name="Id">The collector's own check/rule id, for the compact attention rows.</param>
+/// <param name="Label">Display name including the engine that produced it.</param>
+/// <param name="CriterionId">The criterion this listing sits under. Observing a rule associated with a criterion is
+/// not the same as assessing that criterion.</param>
+/// <param name="Elements">How many elements the observation examined. Zero means the rule ran and matched nothing.</param>
+public sealed record BrowserObservation(
+    string Key, string Id, string Label, string Detail, string? CriterionId,
+    BrowserObservationState State, int Elements, int FlaggedCount, int UncertainCount, bool Automated)
+{
+    /// <summary>The compact right-hand text of an observation row. Counts only; never a verdict word.</summary>
+    public string StateDetail => State switch
+    {
+        BrowserObservationState.Flagged => FlaggedCount > 0 ? $"{FlaggedCount} flagged" : "flagged",
+        BrowserObservationState.Uncertain => UncertainCount > 0 ? $"{UncertainCount} uncertain" : "uncertain",
+        _ => Elements > 0 ? $"{Elements} observed" : "evaluated",
+    };
+}
+
+/// <summary>Observed evidence grouped under one WCAG principle. Grouping only — never a result for that principle.</summary>
+public sealed record BrowserPrincipleEvidence(WcagPrinciple Principle, IReadOnlyList<BrowserObservation> Observations)
+{
+    public int Flagged => Observations.Count(o => o.State == BrowserObservationState.Flagged);
+    public int Uncertain => Observations.Count(o => o.State == BrowserObservationState.Uncertain);
+
+    /// <summary>What is worth reading when this principle is expanded: anything flagged, uncertain, or that examined elements.</summary>
+    public IReadOnlyList<BrowserObservation> Primary =>
+        Observations.Where(o => o.State != BrowserObservationState.Observed || o.Elements > 0).ToList();
+
+    /// <summary>Rules that ran and matched nothing. Still evidence, still kept — just not the first thing to read.</summary>
+    public IReadOnlyList<BrowserObservation> OtherEvaluated =>
+        Observations.Where(o => o.State == BrowserObservationState.Observed && o.Elements == 0).ToList();
+}
+
+/// <summary>
+/// The page-level accessibility evidence summary Browser Discovery leads with, so the rule catalogue can stay behind
+/// progressive disclosure.
+///
+/// Count semantics, because the two levels deliberately differ:
+/// <list type="bullet">
+/// <item>Per principle, an observation is counted in every principle it relates to — that is what "evidence related to
+/// this principle" means, and an observation mapped to three criteria genuinely is evidence about three principles.
+/// Principle counts therefore do not sum to the page total.</item>
+/// <item>Page totals (<see cref="Evaluated"/>, <see cref="Flagged"/>, <see cref="Uncertain"/>) and
+/// <see cref="Attention"/> count each underlying observation once, by <see cref="BrowserObservation.Key"/>.</item>
+/// <item>Scope is evidence that maps to at least one WCAG criterion; a rule the collector could not relate to a
+/// criterion has no principle to sit under and is not counted here.</item>
+/// </list>
+/// Nothing in this model is a score, rate or grade, and no count is a conformance statement.
+/// </summary>
+public sealed record BrowserAccessibilityOverview(
+    IReadOnlyList<BrowserPrincipleEvidence> Principles,
+    IReadOnlyList<BrowserObservation> Attention,
+    int Evaluated, int Flagged, int Uncertain,
+    IReadOnlyList<BrowserObservation> AutomatedRules)
+{
+    public static readonly BrowserAccessibilityOverview Empty = new([], [], 0, 0, 0, []);
+
+    /// <summary>Evidence exists when at least one check, rule or finding ran — including when none of them flagged anything.</summary>
+    public bool Any => Evaluated > 0;
+    public int PrincipleCount => Principles.Count;
+    public int AutomatedFlagged => AutomatedRules.Count(o => o.State == BrowserObservationState.Flagged);
+    public int AutomatedUncertain => AutomatedRules.Count(o => o.State == BrowserObservationState.Uncertain);
+}
+
+
 /// <summary>One page/route row of the Browser Discovery overview table.</summary>
 public sealed record BrowserPageRow(
     string Identity,
@@ -128,55 +206,103 @@ public static class BrowserDiscoveryPresentation
         AreaEvidence(accessibility).Select(a => a.Principle).ToList();
 
     /// <summary>
-    /// The observed accessibility evidence, grouped under the WCAG principle each item relates to. Only evidence that
-    /// was actually produced is included: checks and axe rules that never ran contribute nothing, because "not tested"
-    /// is not evidence and must never become a pass.
+    /// The one derivation of a page's accessibility evidence. <see cref="AreaEvidence"/> is a projection of it, so the
+    /// summary the Pages tab leads with and the per-principle listing can never disagree about what was observed.
+    /// Checks and axe rules that never ran contribute nothing, because "not tested" is not evidence and must never
+    /// become a pass.
     /// </summary>
-    public static IReadOnlyList<BrowserWcagAreaEvidence> AreaEvidence(BrowserAccessibilitySummary? accessibility)
+    public static BrowserAccessibilityOverview Accessibility(BrowserAccessibilitySummary? accessibility)
     {
-        if (accessibility is null) return [];
-        var byPrinciple = new Dictionary<WcagPrinciple, List<BrowserEvidenceItem>>();
+        if (accessibility is null) return BrowserAccessibilityOverview.Empty;
+        var byPrinciple = new Dictionary<WcagPrinciple, List<BrowserObservation>>();
+        var distinct = new Dictionary<string, BrowserObservation>(StringComparer.Ordinal);
 
-        void Add(string? criterionId, BrowserEvidenceItem item)
+        void Add(string? criterionId, BrowserObservation observation)
         {
             if (PrincipleOf(criterionId) is not { } principle) return;
             if (!byPrinciple.TryGetValue(principle, out var items)) byPrinciple[principle] = items = [];
-            items.Add(item with { CriterionId = criterionId });
+            items.Add(observation with { CriterionId = criterionId });
+            distinct.TryAdd(observation.Key, observation);
         }
 
-        // Rule results the collector produced for this page (rule id, title, how many nodes, sanitized selectors).
+        // Rule results the collector produced for this page. A finding means the collector matched something, so it is
+        // flagged for review — which is not the same as a failed success criterion.
         foreach (var finding in accessibility.Findings)
-            foreach (var criterion in Criteria(finding.Wcag))
-                Add(criterion, new BrowserEvidenceItem(
-                    finding.Title.Length > 0 ? finding.Title : finding.RuleId,
-                    Join($"{accessibility.Engine} · {finding.RuleId}",
-                         finding.Count > 0 ? $"{finding.Count} element(s) observed" : null,
-                         finding.Selectors.Count > 0 ? $"selectors: {string.Join(", ", finding.Selectors.Take(3))}" : null)));
+        {
+            var observation = new BrowserObservation(
+                $"finding:{finding.RuleId}", finding.RuleId,
+                finding.Title.Length > 0 ? finding.Title : finding.RuleId,
+                Join($"{accessibility.Engine} · {finding.RuleId}",
+                     finding.Count > 0 ? $"{finding.Count} element(s) observed" : null,
+                     finding.Selectors.Count > 0 ? $"selectors: {string.Join(", ", finding.Selectors.Take(3))}" : null),
+                null, BrowserObservationState.Flagged, finding.Count, finding.Count, 0, false);
+            foreach (var criterion in Criteria(finding.Wcag)) Add(criterion, observation);
+        }
 
         // Explicit BirkNext checks. A check that did not run produced no evidence.
         foreach (var check in accessibility.Checks.Where(Executed))
-            foreach (var criterion in CriteriaForCheck(check.CheckId))
-                Add(criterion, new BrowserEvidenceItem(
-                    $"Check · {check.CheckId}",
-                    Join($"{check.Tested} element(s) examined",
-                         check.Failed > 0 ? $"{check.Failed} flagged" : null,
-                         check.Uncertain > 0 ? $"{check.Uncertain} uncertain" : null)));
+        {
+            var observation = new BrowserObservation(
+                $"check:{check.CheckId}", check.CheckId, $"Check · {check.CheckId}",
+                Join($"{check.Tested} element(s) examined",
+                     check.Failed > 0 ? $"{check.Failed} flagged" : null,
+                     check.Uncertain > 0 ? $"{check.Uncertain} uncertain" : null),
+                null,
+                check.Failed > 0 ? BrowserObservationState.Flagged
+                    : check.Uncertain > 0 ? BrowserObservationState.Uncertain : BrowserObservationState.Observed,
+                check.Tested, check.Failed, check.Uncertain, false);
+            foreach (var criterion in CriteriaForCheck(check.CheckId)) Add(criterion, observation);
+        }
 
-        // axe rule evidence: which rules were evaluated and how many nodes they saw. Outcomes stay out of Discovery.
+        // axe rule evidence: which rules were evaluated and how many nodes they saw. axe's own vocabulary
+        // ("violations", "incomplete") is normalized to the observation vocabulary; Browser Discovery does not
+        // publish outcomes as results.
         foreach (var rule in accessibility.Axe?.Rules ?? [])
         {
             if (string.Equals(rule.Outcome, "NotTested", StringComparison.OrdinalIgnoreCase)) continue;
-            foreach (var criterion in rule.CriterionIds)
-                Add(criterion, new BrowserEvidenceItem(
-                    $"axe · {rule.RuleId}",
-                    rule.Count > 0 ? $"{rule.Count} node(s) observed" : "evaluated"));
+            var state = rule.Outcome switch
+            {
+                "Fail" => BrowserObservationState.Flagged,
+                "ManualReviewRequired" => BrowserObservationState.Uncertain,
+                _ => BrowserObservationState.Observed,
+            };
+            var observation = new BrowserObservation(
+                $"axe:{rule.RuleId}", rule.RuleId, $"axe · {rule.RuleId}",
+                rule.Count > 0 ? $"{rule.Count} node(s) observed" : "evaluated",
+                null, state, rule.Count,
+                state == BrowserObservationState.Flagged ? rule.Count : 0,
+                state == BrowserObservationState.Uncertain ? rule.Count : 0, true);
+            foreach (var criterion in rule.CriterionIds) Add(criterion, observation);
         }
 
-        return byPrinciple
-            .OrderBy(kv => kv.Key)
-            .Select(kv => new BrowserWcagAreaEvidence(kv.Key, kv.Value))
-            .ToList();
+        var all = distinct.Values.ToList();
+        return new BrowserAccessibilityOverview(
+            byPrinciple.OrderBy(kv => kv.Key).Select(kv => new BrowserPrincipleEvidence(kv.Key, Ordered(kv.Value))).ToList(),
+            Ordered(all.Where(o => o.State != BrowserObservationState.Observed)),
+            all.Count,
+            all.Count(o => o.State == BrowserObservationState.Flagged),
+            all.Count(o => o.State == BrowserObservationState.Uncertain),
+            Ordered(all.Where(o => o.Automated)));
     }
+
+    /// <summary>Flagged first, then uncertain, then observations that examined elements, then rules that matched nothing.</summary>
+    private static IReadOnlyList<BrowserObservation> Ordered(IEnumerable<BrowserObservation> observations) =>
+        observations.OrderByDescending(o => o.State).ThenByDescending(o => o.Elements)
+            .ThenBy(o => o.Label, StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>Whether a page carries accessibility evidence at all. Zero flagged observations is evidence, not absence.</summary>
+    public static BrowserEvidenceState AccessibilityState(BrowserAccessibilitySummary? accessibility) =>
+        Accessibility(accessibility).Any ? BrowserEvidenceState.Available : BrowserEvidenceState.Unavailable;
+
+    /// <summary>
+    /// The observed accessibility evidence, grouped under the WCAG principle each item relates to — a projection of
+    /// <see cref="Accessibility"/>, so the Evidence tab and the Pages tab read from one derivation.
+    /// </summary>
+    public static IReadOnlyList<BrowserWcagAreaEvidence> AreaEvidence(BrowserAccessibilitySummary? accessibility) =>
+        Accessibility(accessibility).Principles
+            .Select(p => new BrowserWcagAreaEvidence(p.Principle,
+                p.Observations.Select(o => new BrowserEvidenceItem(o.Label, o.Detail, o.CriterionId)).ToList()))
+            .ToList();
 
     private static bool Executed(BrowserWcagCheck check) =>
         !string.Equals(check.Outcome, "NotTested", StringComparison.OrdinalIgnoreCase) ||
@@ -211,6 +337,28 @@ public static class BrowserDiscoveryPresentation
             items.Add(new("Landmarks", string.Join(", ", dom.Landmarks.OrderBy(l => l.Key, StringComparer.Ordinal).Select(l => $"{l.Key} ×{l.Value}"))));
         if (dom.HeadingCounts.Count > 0)
             items.Add(new("Headings", string.Join(", ", dom.HeadingCounts.OrderBy(h => h.Key, StringComparer.Ordinal).Select(h => $"{h.Key} ×{h.Value}"))));
+        items.AddRange(DomDetail(dom));
+        return items;
+    }
+
+    /// <summary>
+    /// The compact DOM block: structure counts, landmarks and headings. Everything <see cref="DomEvidence"/> also
+    /// reports lives in <see cref="DomDetail"/> behind a disclosure, so no observation is dropped by being compact.
+    /// </summary>
+    public static IReadOnlyList<BrowserEvidenceItem> DomPrimary(BrowserDomSummary? dom)
+    {
+        var detail = DomDetail(dom).Select(d => d.Label).ToHashSet(StringComparer.Ordinal);
+        return DomEvidence(dom).Where(i => !detail.Contains(i.Label)).ToList();
+    }
+
+    /// <summary>
+    /// Structural signals the collector only reports when it saw them. They are held behind disclosure because they
+    /// are absent on most pages, and the disclosure carries their count so their presence is never hidden.
+    /// </summary>
+    public static IReadOnlyList<BrowserEvidenceItem> DomDetail(BrowserDomSummary? dom)
+    {
+        if (dom is null) return [];
+        var items = new List<BrowserEvidenceItem>();
         if (dom.DuplicateIdCount > 0) items.Add(new("Duplicate ids", dom.DuplicateIdCount.ToString()));
         if (dom.HiddenFocusableCount > 0) items.Add(new("Hidden focusable elements", dom.HiddenFocusableCount.ToString()));
         if (dom.PositiveTabIndexCount > 0) items.Add(new("Positive tabindex", dom.PositiveTabIndexCount.ToString()));

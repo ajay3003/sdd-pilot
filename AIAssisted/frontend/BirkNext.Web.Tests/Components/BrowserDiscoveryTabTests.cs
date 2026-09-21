@@ -424,8 +424,10 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         handoff.Should().Contain("Accessibility evidence available for 1 page(s)");
         handoff.Should().Contain("Performance evidence available for 1 page(s)");
         Text(cut, "browser-discovery-dom-count").Should().Contain("2 page(s)");
-        cut.Find("[data-testid=browser-discovery-open-review-accessibility]").GetAttribute("href")
+        // One destination, stated once: the same link repeated per evidence type read as three different places to go.
+        cut.Find("[data-testid=browser-discovery-open-review]").GetAttribute("href")
             .Should().Be("/frontend-quality-review");
+        cut.FindAll("a[href='/frontend-quality-review']").Should().ContainSingle();
     }
 
     // ── 17. Endpoint Discovery keeps its own taxonomy ────────────────────────

@@ -77,6 +77,8 @@
                     </table>
                 </div>
                 <p class="bd-note" data-testid="browser-discovery-area-disclaimer">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
+                @* What exists, then ONE way to go interpret it. The same link repeated per evidence type read as three
+                   different destinations. *@
                 <div class="bd-handoff" data-testid="browser-discovery-handoff">
                     @if (DomPages > 0)
                     {
@@ -84,12 +86,14 @@
                     }
                     @if (AccessibilityPages > 0)
                     {
-                        <p>Accessibility evidence available for @AccessibilityPages page(s). <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review-accessibility">Open Frontend Quality Review</a></p>
+                        <p data-testid="browser-discovery-accessibility-count">Accessibility evidence available for @AccessibilityPages page(s).</p>
                     }
                     @if (PerformancePages > 0)
                     {
-                        <p>Performance evidence available for @PerformancePages page(s). <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review-performance">Open Frontend Quality Review</a></p>
+                        <p data-testid="browser-discovery-performance-count">Performance evidence available for @PerformancePages page(s).</p>
                     }
+                    <p>Browser Discovery records raw evidence. Frontend Quality Review interprets it.
+                        <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review">Open Frontend Quality Review</a></p>
                 </div>
             }
     }
@@ -114,52 +118,125 @@
                     </button>
                 }
             </aside>
-            <div class="bd-pagedetail">
+            @* Keyed on the selected page so its disclosures start collapsed rather than inheriting the previous page's. *@
+            <div class="bd-pagedetail" @key="SelectedRow?.Identity">
                 @if (SelectedRow is { } sel && SelectedEvidence is { } evidence)
                 {
+                    @* Result-first: which page, when it was observed, what evidence exists — before any rule detail. *@
                     <h4 class="bd-page-title bd-mono" data-testid="browser-discovery-selected-page">@sel.Route</h4>
                     <dl class="bd-summary" data-testid="browser-discovery-page-summary">
-                        <div><dt>Last observed</dt><dd class="bd-mono">@(sel.LastSeen is { } o ? Time(o) : "—")</dd></div>
-                        <div><dt>Source</dt><dd>@sel.Source</dd></div>
-                        <div><dt>DOM</dt><dd data-testid="browser-discovery-page-dom-state">@BrowserDiscoveryPresentation.StateLabel(sel.Dom)</dd></div>
-                        <div><dt>Performance evidence</dt><dd data-testid="browser-discovery-page-performance-state">@BrowserDiscoveryPresentation.StateLabel(sel.Performance)</dd></div>
-                        <div><dt>WCAG areas</dt><dd>@AreaBadges(sel.WcagAreas)</dd></div>
+                        <div><dt>Last observed</dt><dd class="bd-mono" data-testid="browser-discovery-page-observed">@(sel.LastSeen is { } o ? Time(o) : "—")</dd></div>
+                        <div><dt>Source</dt><dd data-testid="browser-discovery-page-source">@sel.Source</dd></div>
                     </dl>
 
-                    <h5 class="bd-section-title">WCAG areas</h5>
-                    <p class="bd-note">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
-                    @if (BrowserDiscoveryPresentation.AreaEvidence(evidence.Accessibility) is { Count: > 0 } areas)
+                    @* Availability, never a verdict: "Not observed" rather than a zero that reads as a measurement. *@
+                    <dl class="bd-summary bd-availability" data-testid="browser-discovery-page-evidence">
+                        <div><dt>DOM</dt><dd data-testid="browser-discovery-page-dom-state">@StateBadge(sel.Dom)</dd></div>
+                        <div><dt>Accessibility</dt><dd data-testid="browser-discovery-page-accessibility-state">@StateBadge(Selected11yState)</dd></div>
+                        <div><dt>Performance</dt><dd data-testid="browser-discovery-page-performance-state">@StateBadge(sel.Performance)</dd></div>
+                    </dl>
+
+                    @* The one handoff. Repeating it per evidence type is how the same link ended up on the page three times. *@
+                    <p class="bd-note bd-pagehandoff" data-testid="browser-discovery-page-handoff">
+                        Browser Discovery records raw evidence. Frontend Quality Review interprets it.
+                        <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review-page">Open Frontend Quality Review</a>
+                    </p>
+
+                    @* ── Accessibility evidence: summary, then what needs attention, then detail on request ── *@
+                    <h5 class="bd-section-title">Accessibility evidence</h5>
+                    @if (Selected11y is { Any: true } a11y)
                     {
-                        <div class="bd-areas" data-testid="browser-discovery-page-areas">
-                            @foreach (var area in areas)
+                        <p class="bd-counts" data-testid="browser-discovery-a11y-counts">
+                            <span>@a11y.PrincipleCount WCAG area(s)</span>
+                            <span>@a11y.Evaluated check(s) evaluated</span>
+                            @if (a11y.Flagged > 0) { <span class="bd-count-flagged">@a11y.Flagged flagged</span> }
+                            @if (a11y.Uncertain > 0) { <span class="bd-count-uncertain">@a11y.Uncertain uncertain</span> }
+                        </p>
+                        <p class="bd-note">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
+
+                        @if (a11y.Attention.Count > 0)
+                        {
+                            <section class="bd-attention" data-testid="browser-discovery-a11y-attention" aria-labelledby="bd-attention-heading">
+                                <h6 class="bd-area-title" id="bd-attention-heading">Observed items requiring attention</h6>
+                                <ul class="bd-obslist">
+                                    @foreach (var observation in a11y.Attention.Take(AttentionPreview))
+                                    {
+                                        <li data-testid="browser-discovery-a11y-attention-item">
+                                            <span class="bd-obs-id bd-mono">@observation.Id</span>
+                                            <span class="bd-obs-state bd-obs-@observation.State.ToString().ToLowerInvariant()">@observation.StateDetail</span>
+                                        </li>
+                                    }
+                                </ul>
+                                @if (a11y.Attention.Count > AttentionPreview)
+                                {
+                                    <p class="bd-note" data-testid="browser-discovery-a11y-attention-more">@(a11y.Attention.Count - AttentionPreview) more in the principle detail below.</p>
+                                }
+                            </section>
+                        }
+
+                        @* Collapsed principle rows. Counts are visible without expanding; only the reader opens one. *@
+                        <div class="bd-principles" data-testid="browser-discovery-a11y-principles">
+                            @foreach (var principle in a11y.Principles)
                             {
-                                <section class="bd-area" data-testid="@($"browser-discovery-area-{area.Principle.ToString().ToLowerInvariant()}")">
-                                    <h6 class="bd-area-title">@BrowserDiscoveryPresentation.PrincipleLabel(area.Principle)</h6>
-                                    <ul class="bd-evidence-list">
-                                        @foreach (var item in area.Items)
+                                var key = principle.Principle.ToString().ToLowerInvariant();
+                                <section class="bd-principle" data-testid="@($"browser-discovery-area-{key}")">
+                                    <ReviewDisclosure TestId="@($"browser-discovery-principle-{key}")"
+                                                      Text="@BrowserDiscoveryPresentation.PrincipleLabel(principle.Principle)"
+                                                      Hint="@PrincipleHint(principle)" Class="disclosure-inline">
+                                        @ObservationRows(principle.Primary, $"browser-discovery-principle-{key}-item")
+                                        @if (principle.OtherEvaluated.Count > 0)
                                         {
-                                            <li><span class="bd-evidence-label">@item.Label</span><span class="bd-evidence-detail">@item.Detail</span>@if (item.CriterionId is { Length: > 0 } c) { <span class="bd-crit">@c</span> }</li>
+                                            <ReviewDisclosure TestId="@($"browser-discovery-principle-{key}-evaluated")"
+                                                              Text="Other evaluated rules" CollapseText="Hide other evaluated rules"
+                                                              Hint="@($"{principle.OtherEvaluated.Count}")" Class="disclosure-inline disclosure-small">
+                                                @ObservationRows(principle.OtherEvaluated, $"browser-discovery-principle-{key}-evaluated-item")
+                                            </ReviewDisclosure>
                                         }
-                                    </ul>
+                                    </ReviewDisclosure>
                                 </section>
                             }
                         </div>
+
+                        @if (a11y.AutomatedRules.Count > 0)
+                        {
+                            <section class="bd-automated" data-testid="browser-discovery-a11y-automated">
+                                <h6 class="bd-area-title">Automated accessibility evidence</h6>
+                                <p class="bd-counts" data-testid="browser-discovery-a11y-automated-counts">
+                                    <span>@a11y.AutomatedRules.Count rule(s) evaluated</span>
+                                    @if (a11y.AutomatedFlagged > 0) { <span class="bd-count-flagged">@a11y.AutomatedFlagged flagged</span> }
+                                    @if (a11y.AutomatedUncertain > 0) { <span class="bd-count-uncertain">@a11y.AutomatedUncertain uncertain</span> }
+                                </p>
+                                <ReviewDisclosure TestId="browser-discovery-a11y-rules" Text="View evaluated rules"
+                                                  CollapseText="Hide evaluated rules" Class="disclosure-inline disclosure-small">
+                                    @ObservationRows(a11y.AutomatedRules, "browser-discovery-a11y-rule")
+                                </ReviewDisclosure>
+                            </section>
+                        }
                     }
                     else
                     {
                         <p class="bd-empty-help" data-testid="browser-discovery-page-areas-empty">No accessibility evidence was observed for this page.</p>
                     }
 
-                    <h5 class="bd-section-title">DOM</h5>
-                    @if (BrowserDiscoveryPresentation.DomEvidence(evidence.Dom) is { Count: > 0 } domItems)
+                    @* ── DOM evidence ── *@
+                    <h5 class="bd-section-title">DOM evidence</h5>
+                    @if (BrowserDiscoveryPresentation.DomPrimary(evidence.Dom) is { Count: > 0 } domItems)
                     {
                         @ItemList(domItems, "browser-discovery-page-dom")
+                        @if (BrowserDiscoveryPresentation.DomDetail(evidence.Dom) is { Count: > 0 } domDetail)
+                        {
+                            <ReviewDisclosure TestId="browser-discovery-page-dom-detail" Text="View DOM details"
+                                              CollapseText="Hide DOM details" Hint="@($"{domDetail.Count}")" Class="disclosure-inline disclosure-small">
+                                @ItemList(domDetail, "browser-discovery-page-dom-extra")
+                            </ReviewDisclosure>
+                        }
                     }
                     else
                     {
                         <p class="bd-empty-help" data-testid="browser-discovery-page-dom-empty">No DOM evidence was observed for this page.</p>
                     }
 
+                    @* ── Performance evidence: unchanged raw observations, no thresholds ── *@
                     <h5 class="bd-section-title">Performance evidence</h5>
                     @if (BrowserDiscoveryPresentation.PerformanceEvidence(evidence.Performance) is { Count: > 0 } perfItems)
                     {
@@ -237,10 +314,15 @@
     }
     </div>
 
-    @* Browser Companion stays in Browser Discovery: it is what produces this evidence. It is secondary here —
-       the evidence is the content — and it never repeats the Pair action the empty state above already owns. *@
-    <BrowserCompanionPanel Profile="Profile" Runtime="Runtime" Compact="true"
-                           ShowPairAction="@(!BrowserDiscoveryStates.ShowsPairAction(DiscoveryState))" />
+    @* Browser Companion stays in Browser Discovery: it is what produces this evidence. It belongs to Overview, which
+       owns the session — pairing, approved origins and what to do when nothing is reporting. Repeating the card under
+       every page's evidence made session management compete with the evidence the reader came for; the summary strip
+       above states the session on every tab, so nothing is hidden by leaving it out here. *@
+    @if (_view == "overview")
+    {
+        <BrowserCompanionPanel Profile="Profile" Runtime="Runtime" Compact="true"
+                               ShowPairAction="@(!BrowserDiscoveryStates.ShowsPairAction(DiscoveryState))" />
+    }
 </section>
 
 @code {
@@ -344,6 +426,40 @@
     {
         if (Runtime is not null && Profile is not null) await Runtime.StartPairingAsync(Profile);
     }
+
+    /// <summary>Enough of the attention list to act on, without rebuilding the list the summary exists to replace.</summary>
+    private const int AttentionPreview = 5;
+
+    private BrowserAccessibilityOverview Selected11y => BrowserDiscoveryPresentation.Accessibility(SelectedEvidence?.Accessibility);
+
+    /// <summary>Availability, not a result: an assessment that ran and flagged nothing is still evidence.</summary>
+    private BrowserEvidenceState Selected11yState => BrowserDiscoveryPresentation.AccessibilityState(SelectedEvidence?.Accessibility);
+
+    /// <summary>What a collapsed principle says about itself, so the reader can decide whether to open it.</summary>
+    private static string PrincipleHint(BrowserPrincipleEvidence principle) => string.Join(" · ", new[]
+    {
+        $"{principle.Observations.Count} observed",
+        principle.Flagged > 0 ? $"{principle.Flagged} flagged" : null,
+        principle.Uncertain > 0 ? $"{principle.Uncertain} uncertain" : null,
+    }.Where(part => part is not null));
+
+    private RenderFragment ObservationRows(IReadOnlyList<BrowserObservation> observations, string testId) => __builder =>
+    {
+        <ul class="bd-obslist">
+            @foreach (var observation in observations)
+            {
+                <li data-testid="@testId">
+                    <span class="bd-obs-label">@observation.Label</span>
+                    <span class="bd-obs-state bd-obs-@observation.State.ToString().ToLowerInvariant()">@observation.StateDetail</span>
+                    <span class="bd-obs-detail">@observation.Detail</span>
+                    @if (observation.CriterionId is { Length: > 0 } criterion)
+                    {
+                        <span class="bd-crit">WCAG @criterion</span>
+                    }
+                </li>
+            }
+        </ul>
+    };
 
     private void Select(string key) { _view = key; }
     private void OpenPage(string identity) { _selected = identity; _view = "pages"; }
