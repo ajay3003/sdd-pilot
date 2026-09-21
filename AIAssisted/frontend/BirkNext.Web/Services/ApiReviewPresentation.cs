@@ -19,23 +19,40 @@ public static class ApiReviewPresentation
     public const string SecurityScopeNote = "Passive, read-only security review. An empty list means no configured issue was detected on the assessed targets; it does not establish that the API is secure.";
     public const string PerformanceScopeNote = "API response timing observed by the review's own requests (backend gateway to the API). Not end-user or production performance.";
 
-    /// <summary>Concise manual-review areas shown on the landing view; the report's own items are shown verbatim after a run.</summary>
-    public static readonly IReadOnlyList<string> ManualReviewAreas =
+    /// <summary>
+    /// The one source of what a person still has to review. The summary said three areas and the limitations said five,
+    /// from two hand-maintained lists that overlapped without saying so — the same obligations counted two different ways.
+    ///
+    /// There are three areas; the five statements were the detail underneath them. Nothing was added or dropped in the
+    /// regrouping: a GraphQL mutation is a write operation, and JSON value semantics are part of whether the returned
+    /// data is correct. Every surface counts <see cref="ManualReviewAreas"/> and lists <see cref="LimitationSummary"/>,
+    /// both derived from here, so the two numbers cannot disagree again.
+    ///
+    /// These are review obligations, never findings: they are not counted in findings or severity totals.
+    /// </summary>
+    public static readonly IReadOnlyList<ApiReviewManualObligation> ManualReviewObligations =
     [
-        "Write operations and side effects",
-        "Authorization between roles and tenants",
-        "Business correctness of returned data",
+        new("Write operations and side effects",
+        [
+            "Write behaviour and side effects",
+            "GraphQL mutation behaviour (never executed)",
+        ]),
+        new("Authorization between roles and tenants",
+        [
+            "Role-based authorization correctness",
+        ]),
+        new("Business correctness of returned data",
+        [
+            "Business correctness of returned data",
+            "JSON value semantics beyond the recorded structure",
+        ]),
     ];
 
-    /// <summary>Concise limitation summary; the exact report limitations remain available in the technical disclosure.</summary>
-    public static readonly IReadOnlyList<string> LimitationSummary =
-    [
-        "Write behaviour and side effects",
-        "Role-based authorization correctness",
-        "Business correctness of returned data",
-        "JSON value semantics beyond the recorded structure",
-        "GraphQL mutation behaviour (never executed)",
-    ];
+    /// <summary>The areas a person still has to review — this is what "N manual review areas" counts, everywhere.</summary>
+    public static IReadOnlyList<string> ManualReviewAreas => ManualReviewObligations.Select(o => o.Area).ToList();
+
+    /// <summary>The detail under those areas. More statements than areas, by construction, never a second count.</summary>
+    public static IReadOnlyList<string> LimitationSummary => ManualReviewObligations.SelectMany(o => o.Details).ToList();
 
     // ── Access ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -224,7 +241,9 @@ public static class ApiReviewPresentation
             target.Operations.Count,
             writes,
             target.ContractSource is not null,
-            target.ApiType == ApiReviewTargetType.GraphQl ? "Runtime schema (introspected at run)" : null,
+            // Pre-run this is a plan, not a retrieval. "Runtime schema available" claimed a schema nobody had fetched yet;
+            // whether introspection actually succeeded is reported after the run, by the contract rows.
+            target.ApiType == ApiReviewTargetType.GraphQl ? "Will be requested during review" : null,
             target.Operations.Select(o => new ApiReviewOperationRowModel(
                 o.OperationType != GraphQlOperationType.None ? o.OperationType.ToString() : o.Method,
                 o.OperationType != GraphQlOperationType.None ? o.OperationName ?? "(anonymous)" : o.Path,
@@ -463,11 +482,13 @@ public static class ApiReviewPresentation
         var assessed = statuses.Count(s => s is ApiReviewTargetPresentationStatus.Assessed or ApiReviewTargetPresentationStatus.PartiallyAssessed);
         var blocked = statuses.Count - assessed;
 
+        // Execution state describes execution only. Whether a person still has work to do is a separate fact, carried
+        // beside it — folding it in here said "Completed — manual review required", which reads as though the automated
+        // review had not finished. It always finishes; some things are simply not automatable.
         var state =
             report.Targets.Count == 0 || assessed == 0 ? ApiReviewResultState.FailedToRun
             : blocked > 0 ? ApiReviewResultState.PartialCoverage
             : statuses.Any(s => s == ApiReviewTargetPresentationStatus.PartiallyAssessed) ? ApiReviewResultState.CompletedWithLimitations
-            : report.ManualReviewItems.Count > 0 ? ApiReviewResultState.CompletedWithManualReview
             : ApiReviewResultState.Completed;
 
         var findings = report.Findings.Count;
@@ -480,8 +501,6 @@ public static class ApiReviewPresentation
                 $"{findings} finding{(findings == 1 ? "" : "s")} across {services}. {blocked} could not be reached and {(blocked == 1 ? "is" : "are")} reported as such, never as a pass.",
             ApiReviewResultState.CompletedWithLimitations =>
                 $"{findings} finding{(findings == 1 ? "" : "s")} across {services}; some were reviewed under reduced access.",
-            ApiReviewResultState.CompletedWithManualReview =>
-                $"{findings} finding{(findings == 1 ? "" : "s")} across {services}. Parts of this API can only be reviewed by a person.",
             _ => $"{findings} finding{(findings == 1 ? "" : "s")} across {services}.",
         };
 

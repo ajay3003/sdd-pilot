@@ -230,7 +230,15 @@
                 <div class="aqr-result-head">
                     <div>
                         <h2 id="aqr-result-heading">Review result</h2>
-                        <p class="aqr-result-state" data-testid="aqr-result-state"><span class="aqr-pill aqr-pill-@ApiReviewResultStates.Tone(result.State)">@result.StateLabel</span></p>
+                        @* Execution and manual review are separate facts. One badge saying "Completed — manual review
+                           required" read as though the automated review had not finished; it always finishes. *@
+                        <p class="aqr-result-state" data-testid="aqr-result-state">
+                            <span class="aqr-pill aqr-pill-@ApiReviewResultStates.Tone(result.State)">@result.StateLabel</span>
+                            @if (result.ManualReviewCount > 0)
+                            {
+                                <span class="aqr-pill aqr-pill-attention" data-testid="aqr-result-manual">Manual review required · @result.ManualReviewCount @(result.ManualReviewCount == 1 ? "area" : "areas")</span>
+                            }
+                        </p>
                         <p class="aqr-result-summary-text" data-testid="aqr-result-summary-text">@result.Summary</p>
                     </div>
                     <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" data-testid="aqr-run">
@@ -447,9 +455,19 @@
                     </dl>
                 </ReviewDisclosure>
 
-                <ReviewDisclosure Text="Review limitations" CollapseText="Hide review limitations" Hint="@($"{ApiReviewPresentation.LimitationSummary.Count} areas not automatically assessed")" TestId="aqr-limitations" Class="aqr-detail-disclosure">
-                    <p class="aqr-muted">This review is intentionally read-only. Not automatically assessed:</p>
-                    <ul class="aqr-list">@foreach (var l in ApiReviewPresentation.LimitationSummary) { <li>@l</li> }</ul>
+                @* The same obligations the result card counts, with their detail — not a second, longer list that made
+                   the page say three areas here and five there. *@
+                <ReviewDisclosure Text="Review limitations" CollapseText="Hide review limitations" Hint="@($"{ApiReviewPresentation.ManualReviewAreas.Count} manual review areas")" TestId="aqr-limitations" Class="aqr-detail-disclosure">
+                    <p class="aqr-muted">This review is intentionally read-only. These areas are not automatically assessed, and are review obligations rather than findings:</p>
+                    <ul class="aqr-list" data-testid="aqr-limitation-areas">
+                        @foreach (var obligation in ApiReviewPresentation.ManualReviewObligations)
+                        {
+                            <li data-testid="aqr-limitation-area">
+                                <strong>@obligation.Area</strong>
+                                <ul class="aqr-list aqr-muted">@foreach (var detail in obligation.Details) { <li data-testid="aqr-limitation-detail">@detail</li> }</ul>
+                            </li>
+                        }
+                    </ul>
                     <ReviewDisclosure Text="View technical limitations" CollapseText="Hide technical limitations" TestId="aqr-limitations-technical" Class="disclosure-inline disclosure-small">
                         <ul class="aqr-list aqr-muted" data-testid="aqr-limitations-list">@foreach (var l in report.Limitations) { <li>@l</li> }</ul>
                     </ReviewDisclosure>

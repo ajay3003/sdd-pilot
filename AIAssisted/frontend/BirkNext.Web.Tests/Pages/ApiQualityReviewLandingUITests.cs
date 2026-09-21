@@ -276,7 +276,8 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         groups[0].QuerySelector("[data-testid=aqr-target-path]")!.GetAttribute("title").Should().Be($"https://{ApiHost}/api/autorisasjon");
         groups[0].QuerySelector("[data-testid=aqr-target-operations]")!.TextContent.Should().Be("3 · 1 write (not executed)");
         groups[1].QuerySelector("[data-testid=aqr-target-name]")!.TextContent.Should().Be("Autorisasjon GraphQL");
-        groups[1].QuerySelector("[data-testid=aqr-target-schema]")!.TextContent.Should().Contain("Runtime schema");
+        // Pre-run this is a plan. The schema has not been fetched yet, so the card does not say it is available.
+        groups[1].QuerySelector("[data-testid=aqr-target-schema]")!.TextContent.Should().Be("Will be requested during review");
 
         var opsToggle = page.Find($"[data-testid='aqr-ops-{RestId}-toggle']");
         opsToggle.GetAttribute("aria-expanded").Should().Be("false");
@@ -416,7 +417,8 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.FindAll("[data-testid=aqr-services-table] thead th").Select(h => h.TextContent).Should().Equal("Service", "Type", "Access", "Review status", "Contract", "Findings");
         var rows = page.FindAll("[data-testid=aqr-service-row]");
         rows.Should().HaveCount(2);
-        rows[0].QuerySelector("[data-testid=aqr-service-status]")!.TextContent.Should().Be("Assessed");
+        // "Reviewed": the service took part in the review. Whether every domain was covered is the contract column's job.
+        rows[0].QuerySelector("[data-testid=aqr-service-status]")!.TextContent.Should().Be("Reviewed");
         rows[0].QuerySelector("[data-testid=aqr-service-access]")!.TextContent.Should().Be("Authenticated");
         rows[0].QuerySelector("[data-testid=aqr-service-contract]")!.TextContent.Should().Be("No contract");
         rows[1].QuerySelector("[data-testid=aqr-service-contract]")!.TextContent.Should().Be("Runtime schema");
@@ -451,7 +453,7 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         var page = await RenderAndRun();
 
         var statuses = page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).ToList();
-        statuses.Should().BeEquivalentTo(["Authentication required", "Assessed"]);
+        statuses.Should().BeEquivalentTo(["Authentication required", "Reviewed"]);
         // The blocked target is not tested; the public REST target carries the stub's two findings.
         page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["Not tested", "2"]);
         page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("Public only");

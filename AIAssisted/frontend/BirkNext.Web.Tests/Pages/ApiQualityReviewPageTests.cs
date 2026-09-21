@@ -125,7 +125,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         review.Verify(r => r.RunAsync(It.Is<ApiReviewRunRequest>(q => q.Environment.EnvironmentId == "dev" && q.Environment.Name == "M2LB DEV" && q.Targets.Count == 2 && q.Identity.Method == AuthenticatedTestingMethod.LocalHttpsProxy && q.Policy.ReadOnly), It.IsAny<CancellationToken>()), Times.Once);
         page.Find("[data-testid=aqr-result-env]").TextContent.Should().Be("M2LB DEV");
         page.FindAll("[data-testid=aqr-service-row]").Should().HaveCount(2);
-        page.FindAll("[data-testid=aqr-service-status]").Should().OnlyContain(e => e.TextContent == "Assessed");
+        page.FindAll("[data-testid=aqr-service-status]").Should().OnlyContain(e => e.TextContent == "Reviewed");
         page.FindAll("[data-testid=aqr-service-findings]").Should().OnlyContain(e => e.TextContent == "0");
         page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("None executed", "the stub report carries no coverage counters; the label never infers execution from the access mode");
         page.Find("[data-testid=aqr-tab-findings]").Click();
@@ -141,7 +141,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Contain("1 of 2");
         await page.InvokeAsync(() => RunButton(page).Click());
         page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-service-status]").Should().HaveCount(2));
-        page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).Should().BeEquivalentTo(["Assessed", "Authentication required"]);
+        page.FindAll("[data-testid=aqr-service-status]").Select(e => e.TextContent).Should().BeEquivalentTo(["Reviewed", "Authentication required"]);
         page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["0", "Not tested"]);
     }
 

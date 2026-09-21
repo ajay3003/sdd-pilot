@@ -186,9 +186,11 @@ public static class ApiReviewStatusLabels
 
     public static string Label(ApiReviewTargetPresentationStatus status) => status switch
     {
-        ApiReviewTargetPresentationStatus.Assessed => "Assessed",
-        ApiReviewTargetPresentationStatus.PartiallyAssessed => "Partially assessed",
-        ApiReviewTargetPresentationStatus.NotAssessed => "Not assessed",
+        // "Reviewed" says the service took part in the review. "Assessed" claimed every domain was covered, which was
+        // untrue for a service whose schema could not be retrieved — the contract column carries that limitation.
+        ApiReviewTargetPresentationStatus.Assessed => "Reviewed",
+        ApiReviewTargetPresentationStatus.PartiallyAssessed => "Reviewed with limitations",
+        ApiReviewTargetPresentationStatus.NotAssessed => "Not reviewed",
         ApiReviewTargetPresentationStatus.AuthenticationRequired => "Authentication required",
         ApiReviewTargetPresentationStatus.ManualVerificationOnly => "Manual verification only",
         ApiReviewTargetPresentationStatus.Unavailable => "Unavailable",
@@ -325,12 +327,16 @@ public enum ApiReviewResultState
     FailedToRun,
     /// <summary>Some targets executed and some did not, so coverage is incomplete.</summary>
     PartialCoverage,
-    /// <summary>Everything executed, and the review leaves obligations only a person can discharge.</summary>
-    CompletedWithManualReview,
     /// <summary>Everything selected executed, but under reduced access or evidence.</summary>
     CompletedWithLimitations,
     Completed,
 }
+
+/// <summary>
+/// One area a person still has to review, with the statements that make it up. Areas are what gets counted; details are
+/// what gets listed. Never a finding, and never part of a severity total.
+/// </summary>
+public sealed record ApiReviewManualObligation(string Area, IReadOnlyList<string> Details);
 
 public static class ApiReviewResultStates
 {
@@ -338,7 +344,6 @@ public static class ApiReviewResultStates
     {
         ApiReviewResultState.FailedToRun => "No target could be reviewed",
         ApiReviewResultState.PartialCoverage => "Partial coverage",
-        ApiReviewResultState.CompletedWithManualReview => "Completed — manual review required",
         ApiReviewResultState.CompletedWithLimitations => "Completed with limitations",
         _ => "Completed",
     };

@@ -462,7 +462,9 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
     {
         var page = await Result(authenticated: false);
 
-        page.Find("[data-testid=aqr-result-state]").TextContent.Trim().Should().Be("Partial coverage");
+        // Execution state and manual-review obligation are separate badges: the execution state alone must still be exact.
+        page.Find("[data-testid=aqr-result-state]").QuerySelectorAll("span")[0].TextContent.Trim().Should().Be("Partial coverage");
+        page.Find("[data-testid=aqr-result-manual]").TextContent.Should().Contain("Manual review required");
         page.Find("[data-testid=aqr-result-summary-text]").TextContent
             .Should().Contain("could not be reached").And.Contain("never as a pass");
         // 42. Blocked targets are reported as blocked, never as zero issues.

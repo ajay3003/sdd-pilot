@@ -1,5 +1,6 @@
 using System.Text;
 using BirkNext.ApiReview;
+using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
@@ -36,7 +37,9 @@ public static class ApiReviewExport
         sb.Append("<section class=\"block\"><h2>API services</h2>");
         sb.Append(table(["Service", "Type", "Endpoint", "Source", "Access", "Status", "Contract", "Findings"], report.Targets.Select(t => new[]
         {
-            esc(t.Target.ServiceName), esc(t.Target.ApiType.ToString()), esc(t.Target.Url), esc(t.Target.Source.ToString()), esc(t.AccessMode.ToString()), esc(t.Status.ToString()),
+            // The same derivation the page renders, so the export cannot say "Assessed" while the UI says "Reviewed".
+            esc(t.Target.ServiceName), esc(t.Target.ApiType.ToString()), esc(t.Target.Url), esc(t.Target.Source.ToString()), esc(t.AccessMode.ToString()),
+            esc(ApiReviewStatusLabels.Label(ApiReviewStatusLabels.Of(t))),
             esc(t.Contract is null ? "—" : $"{t.Contract.Kind}: {t.Contract.Status} {(t.Contract.Version is null ? "" : t.Contract.Version)} {(t.Contract.Hash is null ? "" : "hash " + t.Contract.Hash)}"),
             esc(t.FindingCount is null ? "Not tested" : t.FindingCount.Value.ToString()),
         })));
