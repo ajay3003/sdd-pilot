@@ -140,6 +140,7 @@ public class FeatureVisibilityInfo
     public bool FrontendQualityReview { get; set; } = true;
     public bool ApiQualityReview { get; set; } = true;
     public bool IntegrationQualityReview { get; set; } = true;
+    public bool CriticalE2ERegression { get; set; } = true;
     public bool BlazorWasmSecurityReview { get; set; } = true;
     public bool BlazorWasmPerformanceReview { get; set; } = true;
     public bool TaskExplorer { get; set; } = true;

@@ -21,19 +21,7 @@ public static class CriticalE2ECoverage
     /// Is this flow runnable at all? A definition problem is reported here rather than discovered at run time, because
     /// "we never ran it" and "it could never have run" are different things to tell someone before a release.
     /// </summary>
-    public static string? ConfigurationProblem(CriticalE2EFlowDefinition flow)
-    {
-        if (string.IsNullOrWhiteSpace(flow.Module)) return "No module is assigned.";
-        if (flow.Steps.Count == 0) return "The flow has no steps.";
-        if (!flow.HasFinalAssertion) return "The flow has no final business assertion.";
-        if (string.IsNullOrWhiteSpace(flow.ProfileId)) return "No Target Environment is selected.";
-        if (flow.Mode == CriticalE2EExecutionMode.CompanionBrowser && flow.Steps.Any(s => s.IsIntegrationStep))
-            return "A companion browser flow cannot contain integration steps.";
-        if (flow.Mode == CriticalE2EExecutionMode.AutomatedIntegration && flow.Steps.Any(s => s.IsBrowserStep))
-            return "An automated integration flow cannot contain browser steps.";
-        if (flow.Steps.Any(s => !s.IsBrowserStep && !s.IsIntegrationStep)) return "A step has no action.";
-        return null;
-    }
+    public static string? ConfigurationProblem(CriticalE2EFlowDefinition flow) => flow.ConfigurationProblem();
 
     public static CriticalE2EFlowSummary Summarize(CriticalE2EFlowDefinition flow, IReadOnlyList<CriticalE2ERunResult> history, string? buildId)
     {

@@ -1,0 +1,273 @@
+@page "/critical-e2e-regression"
+@using BirkNext.CriticalE2E
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
+@inject ICriticalE2EApiService Api
+@inject IFrontendAnalysisContextFactory ContextFactory
+@implements IDisposable
+
+<PageTitle>Critical E2E Regression</PageTitle>
+
+<div class="e2e-page">
+    <PageHeader Title="Critical E2E Regression"
+                Description="At least one critical user flow per module, executed end to end against the build you are shipping." />
+
+    @if (_error is { } error)
+    {
+        <p class="e2e-error" data-testid="e2e-error">@error</p>
+    }
+    else if (_overview is not { } overview)
+    {
+        <p class="e2e-loading" data-testid="e2e-loading">Loading…</p>
+    }
+    else
+    {
+        var headline = CriticalE2EPresentation.Headline(overview.Release);
+
+        @* ── The verdict, the two things it is made of, and the way to change it. ── *@
+        <section class="e2e-summary" data-testid="e2e-summary" aria-label="Release status">
+            <div class="e2e-verdict e2e-tone-@headline.Tone.ToString().ToLowerInvariant()" data-testid="e2e-verdict">
+                <span class="e2e-verdict-label">@headline.Label</span>
+                <span class="e2e-verdict-detail">@headline.Detail</span>
+            </div>
+
+            <dl class="e2e-facts">
+                <div><dt>Environment</dt><dd data-testid="e2e-environment">@overview.EnvironmentName</dd></div>
+                <div><dt>Build</dt><dd data-testid="e2e-build">@(string.IsNullOrWhiteSpace(_buildId) ? "Not set" : _buildId)</dd></div>
+                @* Definition coverage is its own sentence: having a test is not the same as the test passing. *@
+                <div><dt>Coverage</dt><dd data-testid="e2e-coverage">@CriticalE2EPresentation.Coverage(overview.Release)</dd></div>
+            </dl>
+        </section>
+
+        <section class="e2e-modes" data-testid="e2e-modes" aria-label="Execution modes">
+            @foreach (var action in CriticalE2EPresentation.Actions(overview))
+            {
+                var summary = CriticalE2EPresentation.Mode(overview, action.Mode);
+                <article class="e2e-mode" data-testid="e2e-mode-@Slug(action.Mode)">
+                    <h3>@summary.Label</h3>
+                    <p class="e2e-mode-counts" data-testid="e2e-counts-@Slug(action.Mode)">@summary.Counts</p>
+                    <p class="e2e-engine e2e-engine-@summary.Engine.State.ToString().ToLowerInvariant()" data-testid="e2e-engine-@Slug(action.Mode)">
+                        @summary.Engine.Message
+                    </p>
+                    @* A disabled button always says why, and what to do about it where there is something to do. *@
+                    @if (!action.Enabled && action.Action is { Length: > 0 } todo)
+                    {
+                        <p class="e2e-engine-action" data-testid="e2e-action-@Slug(action.Mode)">@todo</p>
+                    }
+                    <button type="button" class="btn-primary" data-testid="e2e-run-@Slug(action.Mode)"
+                            disabled="@(!action.Enabled || _running is not null)" @onclick="() => RunAsync(action.Mode)">
+                        @(_running == action.Mode.ToString() ? "Running…" : action.Label)
+                    </button>
+                    @if (_running == action.Mode.ToString())
+                    {
+                        <button type="button" class="btn-secondary" data-testid="e2e-cancel" @onclick="Cancel">Stop</button>
+                    }
+                </article>
+            }
+        </section>
+
+        <section class="e2e-flows" data-testid="e2e-flows" aria-label="Critical flows">
+            <table class="e2e-table">
+                <thead>
+                    <tr><th>Module</th><th>Critical flow</th><th>Mode</th><th>Required</th><th>Last result</th><th></th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in CriticalE2EPresentation.Rows(overview))
+                    {
+                        <tr data-testid="e2e-flow-@row.FlowId">
+                            <td>@row.Module</td>
+                            <td>@row.Name</td>
+                            <td>@row.ModeLabel</td>
+                            <td>@(row.RequiredForRelease ? "Yes" : "No")</td>
+                            <td class="e2e-tone-@row.Tone.ToString().ToLowerInvariant()" data-testid="e2e-status-@row.FlowId">
+                                @row.StatusLabel
+                                @if (row.Detail is { Length: > 0 } detail)
+                                {
+                                    <span class="e2e-row-detail">@detail</span>
+                                }
+                            </td>
+                            <td>
+                                <button type="button" class="btn-link" data-testid="e2e-run-flow-@row.FlowId"
+                                        disabled="@(!row.Runnable || _running is not null)" @onclick="() => RunFlowAsync(row.FlowId)">Run</button>
+                                <button type="button" class="btn-link" data-testid="e2e-edit-@row.FlowId" @onclick="() => Edit(row.FlowId)">Edit</button>
+                            </td>
+                        </tr>
+                    }
+                    @if (overview.Flows.Count == 0)
+                    {
+                        <tr><td colspan="6" data-testid="e2e-no-flows">No critical flows are configured for this environment yet.</td></tr>
+                    }
+                </tbody>
+            </table>
+            <button type="button" class="btn-secondary" data-testid="e2e-add-flow" @onclick="AddFlow">Add critical flow</button>
+        </section>
+
+        @* ── Everything below is one disclosure away: useful when something is wrong, noise otherwise. ── *@
+        <ReviewDisclosure Text="View module coverage" CollapseText="Hide module coverage" TestId="e2e-modules" Class="disclosure-inline">
+            <ul class="e2e-module-list">
+                @foreach (var module in overview.Modules)
+                {
+                    <li data-testid="e2e-module-@module.Module">
+                        <strong>@module.Module</strong>
+                        @(module.Covered ? "covered" : "no required critical flow")
+                        @if (module.Flows.Count > 0)
+                        {
+                            <span class="e2e-module-flows">@string.Join(", ", module.Flows.Select(f => f.Name))</span>
+                        }
+                    </li>
+                }
+            </ul>
+        </ReviewDisclosure>
+
+        @if (CriticalE2EPresentation.PipelineNote(overview) is { Length: > 0 } note)
+        {
+            <p class="e2e-note" data-testid="e2e-pipeline-note">@note</p>
+        }
+
+        @if (overview.History.Count > 0)
+        {
+            <ReviewDisclosure Text="View run history" CollapseText="Hide run history" TestId="e2e-history" Class="disclosure-inline">
+                <ul class="e2e-history">
+                    @foreach (var run in overview.History)
+                    {
+                        <li data-testid="e2e-run-@run.RunId">
+                            @CriticalE2EPresentation.Line(run)
+                            @if (run.FailureReason is { Length: > 0 } reason)
+                            {
+                                <span class="e2e-run-reason">@reason</span>
+                            }
+                            @if (run.AutomationBoundary is { Length: > 0 } boundary)
+                            {
+                                @* A green flow that silently skips half the chain is worse than no flow. *@
+                                <span class="e2e-run-boundary">Automation boundary: @boundary</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            </ReviewDisclosure>
+        }
+
+        <ReviewDisclosure Text="Set build details" CollapseText="Hide build details" TestId="e2e-build-details" Class="disclosure-inline disclosure-small">
+            <div class="e2e-build-form">
+                <label>Build id <input data-testid="e2e-build-input" @bind="_buildId" @bind:event="oninput" /></label>
+                <label>Release id <input data-testid="e2e-release-input" @bind="_releaseId" @bind:event="oninput" /></label>
+                <label>Commit <input data-testid="e2e-commit-input" @bind="_commitSha" @bind:event="oninput" /></label>
+                <button type="button" class="btn-secondary" data-testid="e2e-apply-build" @onclick="RefreshAsync">Apply</button>
+            </div>
+        </ReviewDisclosure>
+
+        @if (_editing is { } editing)
+        {
+            <CriticalE2EFlowEditor Flow="editing" EnvironmentId="@_environmentId" ProfileId="@_profileId"
+                                   OnSave="SaveFlowAsync" OnCancel="() => { _editing = null; }" />
+        }
+    }
+</div>
+
+@code {
+    private CriticalE2EOverview? _overview;
+    private CriticalE2EFlowDefinition? _editing;
+    private string? _error;
+    private string? _running;
+    private CancellationTokenSource? _run;
+    private string _profileId = "";
+    private string _environmentId = "";
+    private string _environmentName = "";
+    private string? _environmentType;
+    private string _buildId = "";
+    private string _releaseId = "";
+    private string _commitSha = "";
+
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    private CriticalE2EOverviewRequest Request() => new()
+    {
+        ProfileId = _profileId, EnvironmentId = _environmentId, EnvironmentName = _environmentName,
+        EnvironmentType = _environmentType, BuildId = Trim(_buildId), ReleaseId = Trim(_releaseId), CommitSha = Trim(_commitSha),
+        Modules = _overview?.Modules.Select(m => m.Module).ToList() ?? [],
+    };
+
+    private static string? Trim(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private async Task RefreshAsync()
+    {
+        try
+        {
+            var context = await ContextFactory.GetActiveContextAsync();
+            _profileId = context.ActiveProfile.Id;
+            _environmentId = context.ActiveProfile.Id;
+            _environmentName = context.ActiveProfile.Name;
+            _environmentType = context.ActiveProfile.EnvironmentType.ToString();
+            var request = Request() with
+            {
+                AuthenticationMethod = ReviewAuthenticationIdentity.ForContext(context).Method.ToString(),
+                ContextFingerprint = ReviewAuthenticationIdentity.ForContext(context).ContextFingerprint,
+            };
+            _overview = await Api.OverviewAsync(request);
+            _definitions = await Api.FlowsAsync(_environmentId);
+            _error = null;
+        }
+        catch
+        {
+            _error = "Critical E2E is unavailable: the local BirkNext backend is not reachable.";
+        }
+    }
+
+    private Task RunAsync(CriticalE2EExecutionMode mode) => StartAsync(mode.ToString(), new CriticalE2ERunFlowRequest { Context = Request(), Mode = mode });
+
+    private Task RunFlowAsync(string flowId) => StartAsync(flowId, new CriticalE2ERunFlowRequest { Context = Request(), FlowId = flowId });
+
+    private async Task StartAsync(string token, CriticalE2ERunFlowRequest request)
+    {
+        if (_running is not null) return;
+        _running = token;
+        _run = new CancellationTokenSource();
+        try
+        {
+            var batch = await Api.RunAsync(request, _run.Token);
+            _overview = batch.Overview;
+        }
+        catch (OperationCanceledException) { await RefreshAsync(); }
+        catch { _error = "The run could not be completed."; }
+        finally
+        {
+            _running = null;
+            _run?.Dispose();
+            _run = null;
+        }
+    }
+
+    private void Cancel() => _run?.Cancel();
+
+    private void AddFlow() => _editing = new CriticalE2EFlowDefinition
+    {
+        ProfileId = _profileId, EnvironmentId = _environmentId, Mode = CriticalE2EExecutionMode.CompanionBrowser,
+        AuthenticationRequirement = CriticalE2EAuthenticationRequirement.ManualBrowserLogin,
+        TestDataPolicy = $"Synthetic data only, prefixed {CriticalE2ECorrelation.TestDataPrefix}",
+    };
+
+    // The overview carries summaries, which are for reading. Editing needs the definition itself.
+    private void Edit(string flowId) => _editing = _definitions.FirstOrDefault(f => f.Id == flowId);
+    private List<CriticalE2EFlowDefinition> _definitions = [];
+
+    private async Task SaveFlowAsync(CriticalE2EFlowDefinition flow)
+    {
+        try
+        {
+            await Api.SaveFlowAsync(flow);
+            _editing = null;
+            await RefreshAsync();
+        }
+        catch { _error = "The flow could not be saved."; }
+    }
+
+    private static string Slug(CriticalE2EExecutionMode mode) =>
+        mode == CriticalE2EExecutionMode.CompanionBrowser ? "browser" : "integration";
+
+    public void Dispose()
+    {
+        _run?.Cancel();
+        _run?.Dispose();
+    }
+}

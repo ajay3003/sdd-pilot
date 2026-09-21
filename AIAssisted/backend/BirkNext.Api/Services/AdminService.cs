@@ -37,6 +37,7 @@ public class AdminService
         ("FrontendQualityReview",      "Frontend Quality Review"),
         ("ApiQualityReview",           "API Quality Review"),
         ("IntegrationQualityReview",   "Integration Quality Review"),
+        ("CriticalE2ERegression",      "Critical E2E Regression"),
         ("BlazorWasmSecurityReview",   "WASM Security Review"),
         ("BlazorWasmPerformanceReview","WASM Performance Review"),
         ("ImplementationReview",       "Implementation Review"),

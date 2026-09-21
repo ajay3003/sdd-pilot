@@ -311,6 +311,30 @@ public sealed record CriticalE2EFlowDefinition
     public int Version { get; init; } = 1;
 
     public bool HasFinalAssertion => Steps.Any(s => s.IsFinalAssertion);
+
+    /// <summary>
+    /// Why this flow cannot run, or null when it can. Lives on the definition rather than in either the backend or the
+    /// editor, because the two answering differently is how a flow gets saved that can never pass.
+    /// </summary>
+    public string? ConfigurationProblem()
+    {
+        if (string.IsNullOrWhiteSpace(Module)) return "No module is assigned.";
+        if (string.IsNullOrWhiteSpace(Name)) return "The flow has no name.";
+        if (Steps.Count == 0) return "The flow has no steps.";
+        // Without this, a flow can only ever report that its clicks executed — which is not a statement about M2LB.
+        if (!HasFinalAssertion) return "The flow has no final business assertion.";
+        if (string.IsNullOrWhiteSpace(ProfileId)) return "No Target Environment is selected.";
+        if (Mode == CriticalE2EExecutionMode.CompanionBrowser && Steps.Any(s => s.IsIntegrationStep))
+            return "A companion browser flow cannot contain integration steps.";
+        if (Mode == CriticalE2EExecutionMode.AutomatedIntegration && Steps.Any(s => s.IsBrowserStep))
+            return "An automated integration flow cannot contain browser steps.";
+        if (Steps.Any(s => !s.IsBrowserStep && !s.IsIntegrationStep)) return "A step has no action.";
+        if (Steps.Any(s => s.IsBrowserStep && s.BrowserAction != CompanionActionKind.Navigate
+                && s.BrowserAction != CompanionActionKind.AssertRoute && s.BrowserAction != CompanionActionKind.WaitForRoute
+                && string.IsNullOrWhiteSpace(s.Selector?.Value) && string.IsNullOrWhiteSpace(s.Selector?.Role)))
+            return "A browser step has no element to act on.";
+        return null;
+    }
 }
 
 // ── Results ────────────────────────────────────────────────────────────────────

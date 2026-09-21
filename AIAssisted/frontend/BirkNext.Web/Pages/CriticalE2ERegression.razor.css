@@ -1,0 +1,40 @@
+/* Critical E2E Regression — the verdict first, the counts that make it up second, everything diagnostic behind a disclosure. */
+.e2e-page { display: flex; flex-direction: column; gap: 1.25rem; }
+
+.e2e-summary { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+.e2e-verdict { display: flex; flex-direction: column; gap: .15rem; padding: .75rem 1rem; border-radius: 6px; border-left: 4px solid currentColor; min-width: 16rem; }
+.e2e-verdict-label { font-size: 1.35rem; font-weight: 600; line-height: 1.1; }
+.e2e-verdict-detail { font-size: .85rem; color: var(--text-secondary, #555); }
+
+.e2e-facts { display: flex; flex-wrap: wrap; gap: 1.5rem; margin: 0; }
+.e2e-facts div { display: flex; flex-direction: column; gap: .15rem; }
+.e2e-facts dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary, #666); }
+.e2e-facts dd { margin: 0; font-size: .9rem; }
+
+.e2e-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1rem; }
+.e2e-mode { display: flex; flex-direction: column; gap: .4rem; padding: 1rem; border: 1px solid var(--border-color, #ddd); border-radius: 6px; }
+.e2e-mode h3 { margin: 0; font-size: 1rem; }
+.e2e-mode-counts { margin: 0; font-size: 1.05rem; font-weight: 500; }
+.e2e-engine { margin: 0; font-size: .85rem; color: var(--text-secondary, #555); }
+.e2e-engine-requiresbrowsersession, .e2e-engine-notconfigured { color: #8a6d00; }
+.e2e-engine-unavailable { color: #777; }
+.e2e-engine-action { margin: 0; font-size: .85rem; }
+
+.e2e-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.e2e-table th { text-align: left; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary, #666); padding: .4rem .5rem; }
+.e2e-table td { padding: .45rem .5rem; border-top: 1px solid var(--border-color, #eee); vertical-align: top; }
+.e2e-row-detail { display: block; font-size: .8rem; color: var(--text-secondary, #666); }
+
+/* Tone carries the verdict; the words carry the meaning, so neither depends on the other. */
+.e2e-tone-good { color: #1a7f37; }
+.e2e-tone-warning { color: #8a6d00; }
+.e2e-tone-bad { color: #b42318; }
+.e2e-tone-neutral { color: var(--text-secondary, #555); }
+
+.e2e-module-list, .e2e-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; font-size: .85rem; }
+.e2e-module-flows, .e2e-run-reason, .e2e-run-boundary { display: block; color: var(--text-secondary, #666); font-size: .8rem; }
+.e2e-note { margin: 0; font-size: .85rem; color: var(--text-secondary, #555); }
+.e2e-error { color: #b42318; }
+
+.e2e-build-form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; }
+.e2e-build-form label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; }

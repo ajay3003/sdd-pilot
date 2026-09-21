@@ -1,0 +1,12 @@
+/* A form, not a canvas: every choice is typed, and the reason a flow cannot run is stated before it is saved. */
+.e2e-editor { display: flex; flex-direction: column; gap: .75rem; padding: 1rem; border: 1px solid var(--border-color, #ddd); border-radius: 6px; }
+.e2e-editor h3 { margin: 0; font-size: 1rem; }
+.e2e-editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
+.e2e-editor-grid label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; }
+.e2e-editor-check { flex-direction: row !important; align-items: center; gap: .4rem !important; }
+.e2e-editor-wide { grid-column: 1 / -1; }
+.e2e-step-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.e2e-step-table th { text-align: left; font-size: .72rem; text-transform: uppercase; color: var(--text-secondary, #666); padding: .3rem .4rem; }
+.e2e-step-table td { padding: .3rem .4rem; border-top: 1px solid var(--border-color, #eee); }
+.e2e-editor-problem { margin: 0; font-size: .85rem; color: #8a6d00; }
+.e2e-editor-actions { display: flex; gap: .5rem; }

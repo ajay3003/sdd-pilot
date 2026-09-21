@@ -148,6 +148,13 @@ builder.Services.AddHttpClient<IBrowserCompanionApiService, BrowserCompanionApiS
     client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddScoped<BrowserCompanionRuntime>();
+// A Critical E2E run waits for a browser, and the browser waits for a person, so this client is not on the usual
+// short review timeout.
+builder.Services.AddHttpClient<ICriticalE2EApiService, CriticalE2EApiService>(client =>
+{
+    client.BaseAddress = new Uri(backendUrl);
+    client.Timeout = TimeSpan.FromMinutes(10);
+});
 builder.Services.AddScoped<IBrowserQualityEvidenceSource, BrowserQualityEvidenceSource>();
 builder.Services.AddScoped<IPerformanceQualityEvidenceSource, PerformanceQualityEvidenceSource>();
 builder.Services.AddHttpClient<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>(client =>

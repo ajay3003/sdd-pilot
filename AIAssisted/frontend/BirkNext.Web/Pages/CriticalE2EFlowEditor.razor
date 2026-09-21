@@ -1,0 +1,152 @@
+@using BirkNext.CriticalE2E
+@using BirkNext.Web.Models
+
+@*
+    A form, not a canvas. A critical flow is a short ordered list of named actions, and the fastest way to make one
+    unreviewable is to let it become a diagram or an expression language. Everything here is a typed choice.
+*@
+<section class="e2e-editor" data-testid="e2e-editor" aria-label="Critical flow">
+    <h3>@(string.IsNullOrWhiteSpace(_draft.Id) ? "New critical flow" : "Edit critical flow")</h3>
+
+    <div class="e2e-editor-grid">
+        <label>Module <input data-testid="e2e-editor-module" @bind="_draft.Module" /></label>
+        <label>Name <input data-testid="e2e-editor-name" @bind="_draft.Name" /></label>
+        <label>Mode
+            <select data-testid="e2e-editor-mode" value="@_draft.Mode" @onchange="ModeChanged">
+                @foreach (var mode in Enum.GetValues<CriticalE2EExecutionMode>())
+                {
+                    <option value="@mode">@BirkNext.Web.Services.CriticalE2EPresentation.ModeLabel(mode)</option>
+                }
+            </select>
+        </label>
+        <label class="e2e-editor-check">
+            <input type="checkbox" data-testid="e2e-editor-required" @bind="_draft.RequiredForRelease" /> Required for release
+        </label>
+        <label class="e2e-editor-check">
+            <input type="checkbox" data-testid="e2e-editor-enabled" @bind="_draft.Enabled" /> Enabled
+        </label>
+        <label class="e2e-editor-wide">Automation boundary
+            @* Where automation starts and stops, in the author's own words. It is shown with every result. *@
+            <input data-testid="e2e-editor-boundary" @bind="_draft.AutomationBoundary"
+                   placeholder="e.g. Event Hub → M2LB; BiRK → Debezium is not automated" />
+        </label>
+        <label class="e2e-editor-wide">Test data policy
+            <input data-testid="e2e-editor-testdata" @bind="_draft.TestDataPolicy" />
+        </label>
+    </div>
+
+    <table class="e2e-step-table">
+        <thead>
+            <tr><th>#</th><th>Action</th><th>Selector</th><th>Value</th><th>Expected</th><th>Final assertion</th><th></th></tr>
+        </thead>
+        <tbody>
+            @for (var index = 0; index < _draft.Steps.Count; index++)
+            {
+                var i = index;
+                var step = _draft.Steps[i];
+                <tr data-testid="e2e-step-@i">
+                    <td>@(i + 1)</td>
+                    <td>
+                        @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser)
+                        {
+                            <select data-testid="e2e-step-action-@i" value="@step.BrowserAction"
+                                    @onchange="e => Replace(i, step with { BrowserAction = Enum.Parse<CompanionActionKind>(e.Value!.ToString()!) })">
+                                @foreach (var action in Enum.GetValues<CompanionActionKind>())
+                                {
+                                    <option value="@action">@action</option>
+                                }
+                            </select>
+                        }
+                        else
+                        {
+                            <select data-testid="e2e-step-action-@i" value="@step.IntegrationAction"
+                                    @onchange="e => Replace(i, step with { IntegrationAction = Enum.Parse<CriticalE2EIntegrationKind>(e.Value!.ToString()!) })">
+                                @foreach (var action in Enum.GetValues<CriticalE2EIntegrationKind>())
+                                {
+                                    <option value="@action">@action</option>
+                                }
+                            </select>
+                        }
+                    </td>
+                    <td>
+                        @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser)
+                        {
+                            <select data-testid="e2e-step-selector-kind-@i" value="@(step.Selector?.Kind ?? CompanionSelectorKind.TestId)"
+                                    @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Kind = Enum.Parse<CompanionSelectorKind>(e.Value!.ToString()!) } })">
+                                @foreach (var kind in Enum.GetValues<CompanionSelectorKind>())
+                                {
+                                    <option value="@kind">@kind</option>
+                                }
+                            </select>
+                            <input data-testid="e2e-step-selector-@i" value="@(step.Selector?.Value ?? "")"
+                                   @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Value = e.Value?.ToString() ?? string.Empty } })" />
+                        }
+                        else
+                        {
+                            <input data-testid="e2e-step-target-@i" value="@(step.PathOrOperation ?? "")" placeholder="path or operation"
+                                   @onchange="e => Replace(i, step with { PathOrOperation = e.Value?.ToString() })" />
+                        }
+                    </td>
+                    <td>
+                        <input data-testid="e2e-step-value-@i" value="@(step.Value ?? "")"
+                               @onchange="e => Replace(i, step with { Value = e.Value?.ToString() })" />
+                    </td>
+                    <td>
+                        <input data-testid="e2e-step-expected-@i" value="@(step.Expected ?? "")"
+                               @onchange="e => Replace(i, step with { Expected = e.Value?.ToString() })" />
+                    </td>
+                    <td>
+                        <input type="checkbox" data-testid="e2e-step-final-@i" checked="@step.IsFinalAssertion"
+                               @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" />
+                    </td>
+                    <td><button type="button" class="btn-link" data-testid="e2e-step-remove-@i" @onclick="() => _draft.Steps.RemoveAt(i)">Remove</button></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    <button type="button" class="btn-secondary" data-testid="e2e-step-add" @onclick="AddStep">Add step</button>
+
+    @* Say it before the run does. A flow with no final assertion can never pass, and finding that out at run time wastes
+       a signed-in browser session. *@
+    @if (Problem is { Length: > 0 } problem)
+    {
+        <p class="e2e-editor-problem" data-testid="e2e-editor-problem">@problem</p>
+    }
+
+    <div class="e2e-editor-actions">
+        <button type="button" class="btn-primary" data-testid="e2e-editor-save" disabled="@(Problem is not null)" @onclick="Save">Save</button>
+        <button type="button" class="btn-secondary" data-testid="e2e-editor-cancel" @onclick="OnCancel">Cancel</button>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public CriticalE2EFlowDefinition Flow { get; set; } = new();
+    [Parameter] public string EnvironmentId { get; set; } = "";
+    [Parameter] public string ProfileId { get; set; } = "";
+    [Parameter] public EventCallback<CriticalE2EFlowDefinition> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private CriticalE2EFlowDraft _draft = new();
+
+    protected override void OnParametersSet() => _draft = CriticalE2EFlowDraft.From(Flow);
+
+    /// <summary>The same rule the backend applies, so the editor refuses what a run would refuse.</summary>
+    private string? Problem => _draft.Problem(ProfileId, EnvironmentId);
+
+    private void ModeChanged(ChangeEventArgs e)
+    {
+        var mode = Enum.Parse<CriticalE2EExecutionMode>(e.Value!.ToString()!);
+        // Steps do not survive a mode change: a browser step and an integration step share no fields, and silently
+        // keeping half-populated rows is how a flow ends up unrunnable for reasons nobody can see.
+        _draft.Mode = mode;
+        _draft.Steps = [];
+    }
+
+    private void Replace(int index, CriticalE2EStepDefinition step) => _draft.Steps[index] = step;
+
+    private void AddStep() => _draft.Steps.Add(_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser
+        ? new CriticalE2EStepDefinition { BrowserAction = CompanionActionKind.Click, Selector = new CompanionSelector() }
+        : new CriticalE2EStepDefinition { IntegrationAction = CriticalE2EIntegrationKind.Http, Method = "GET", Expect = new CriticalE2EExpectation() });
+
+    private Task Save() => OnSave.InvokeAsync(_draft.ToDefinition(ProfileId, EnvironmentId));
+}
