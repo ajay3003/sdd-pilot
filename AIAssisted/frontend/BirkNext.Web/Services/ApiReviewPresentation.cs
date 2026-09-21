@@ -137,8 +137,26 @@ public static class ApiReviewPresentation
 
     // ── Readiness ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>Readiness mirrors <see cref="ApiReviewRunEligibility"/>: Blocked iff Run is disabled; Limited when it runs without authenticated coverage it needs.</summary>
-    public static ApiReviewReadinessModel Readiness(ApiReviewRunEligibility eligibility, FrontendAnalysisContext? context, IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected, AuthenticatedReviewCapabilities? capabilities)
+    /// <summary>
+    /// Readiness mirrors <see cref="ApiReviewRunEligibility"/>: Blocked iff Run is disabled, otherwise Ready or
+    /// "Review can run with limitations".
+    ///
+    /// What counts as a material limitation: something that removes a check the selected scope would otherwise run.
+    /// <list type="bullet">
+    /// <item>A selected target needs authentication and no authenticated context is available — those operations cannot
+    /// be exercised.</item>
+    /// <item>A selected REST target has no published contract — live responses are still reviewed structurally, but
+    /// contract validation against documented operations cannot run.</item>
+    /// <item>GraphQL introspection was unavailable in the latest review — schema-dependent checks cannot run.</item>
+    /// </list>
+    /// What does not flip the level, and is listed rather than counted: no previous baseline. A first review has nothing
+    /// to compare against, so drift comparison is not reduced, it is not yet applicable — saying a review is limited
+    /// because it is the first one would make every environment start out limited forever. Missing optional evidence is
+    /// a limitation only when it actually removes a check from the selected scope.
+    ///
+    /// None of this is a result: a limitation describes what the review can execute, never what it will find.
+    /// </summary>
+    public static ApiReviewReadinessModel Readiness(ApiReviewRunEligibility eligibility, FrontendAnalysisContext? context, IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected, AuthenticatedReviewCapabilities? capabilities, ApiReviewContractPanelModel? contracts = null)
     {
         var chosen = targets.Where(t => selected.Contains(t.TargetId)).ToList();
         if (context is null) return new(ApiReviewReadinessLevel.Loading, "Loading target environment", eligibility.Reason, chosen.Count, [], null, null);
@@ -160,9 +178,31 @@ public static class ApiReviewPresentation
         else
             items.Add(new($"Authenticated API context unavailable — {authTargets} {(authTargets == 1 ? "target" : "targets")} will be reported as authentication required", ApiReviewReadinessItemState.Warning));
 
-        var limited = authTargets > 0 && !authenticated;
-        return limited
-            ? new(ApiReviewReadinessLevel.Limited, "Ready with limitations", $"{eligibility.Reason} The review can run now using public, read-only access; authenticated checks will be limited.", chosen.Count, items, "Manage authenticated session", TargetEnvironmentsHref)
+        // Contract evidence the selected scope would have used, but does not have.
+        var restContract = contracts?.Rows.FirstOrDefault(r => r.Label == "REST")?.State;
+        var gqlContract = contracts?.Rows.FirstOrDefault(r => r.Label == "GraphQL")?.State;
+        var limitations = new List<string>();
+        if (authTargets > 0 && !authenticated)
+            limitations.Add($"Authenticated requests cannot be sent to {authTargets} selected {(authTargets == 1 ? "target" : "targets")}");
+        if (restContract == ApiReviewContractState.NotConfigured)
+        {
+            limitations.Add("No published REST contract to validate responses against");
+            items.Add(new("REST contract validation unavailable — responses are reviewed structurally", ApiReviewReadinessItemState.Warning));
+        }
+        if (gqlContract == ApiReviewContractState.IntrospectionUnavailable)
+        {
+            limitations.Add("GraphQL introspection unavailable, so schema-dependent checks cannot run");
+            items.Add(new("GraphQL schema unavailable — observed operations are marked for manual review", ApiReviewReadinessItemState.Warning));
+        }
+        // Listed, never counted: see the rule above.
+        if (contracts is { BaselineCount: 0 } && chosen.Count > 0)
+            items.Add(new("No previous baseline — this review records the first one, so there is nothing to compare yet", ApiReviewReadinessItemState.Missing));
+
+        return limitations.Count > 0
+            ? new(ApiReviewReadinessLevel.Limited, "Review can run with limitations",
+                $"{eligibility.Reason} {string.Join(". ", limitations)}.".Trim(), chosen.Count, items,
+                authTargets > 0 && !authenticated ? "Manage authenticated session" : null,
+                authTargets > 0 && !authenticated ? TargetEnvironmentsHref : null)
             : new(ApiReviewReadinessLevel.Ready, "Ready to review", eligibility.Reason, chosen.Count, items, null, null);
     }
 

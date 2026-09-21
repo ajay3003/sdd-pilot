@@ -193,4 +193,61 @@ public sealed class PageOrientedDiscoveryTests
         Assert.Equal(3, e.ErrorCount);
         Assert.Equal(2, e.AuthRejectedCount);
     }
+
+    // ── A served JSON document is not an API ─────────────────────────────────
+    // The live defect: /appsettings.json returns application/json, so the JSON rule made it a Verified REST endpoint and
+    // API Quality Review offered a configuration file as a REST API target called "Appsettings.json API".
+
+    [Theory]
+    [InlineData("/appsettings.json")]
+    [InlineData("/appsettings.Dev.json")]
+    [InlineData("/appsettings.Production.json")]
+    [InlineData("/manifest.json")]
+    [InlineData("/site.webmanifest")]
+    [InlineData("/_framework/blazor.boot.json")]
+    [InlineData("/i18n/nb-NO.json")]
+    public void ServedJsonDocumentsAreNotRestApis(string path)
+    {
+        var endpoint = NetworkTrafficClassifier.Classify(Meta("GET", path, respCt: "application/json"), Now);
+
+        Assert.NotEqual(ObservedTrafficCategory.Rest, endpoint.Category);
+        // Still observed, and still application traffic in Endpoint Discovery: configuration exposure is reviewed there.
+        Assert.Equal(ObservedTrafficCategory.OtherHttp, endpoint.Category);
+        Assert.Equal(path, endpoint.Path);
+    }
+
+    /// <summary>A JSON response is evidence of a media type, never of an API. The route is what decides.</summary>
+    [Fact]
+    public void JsonContentTypeAloneDoesNotMakeARestApi()
+    {
+        Assert.Equal(ObservedTrafficCategory.OtherHttp,
+            NetworkTrafficClassifier.Classify(Meta("GET", "/config.json", respCt: "application/json"), Now).Category);
+        Assert.Equal(ObservedTrafficCategory.Rest,
+            NetworkTrafficClassifier.Classify(Meta("GET", "/api/autorisasjon", respCt: "application/json"), Now).Category);
+    }
+
+    /// <summary>A real API route that happens to end in .json is still an API route.</summary>
+    [Theory]
+    [InlineData("/api/users.json")]
+    [InlineData("/v1/roles.json")]
+    public void AnApiRouteEndingInJsonStaysRest(string path) =>
+        Assert.Equal(ObservedTrafficCategory.Rest,
+            NetworkTrafficClassifier.Classify(Meta("GET", path, respCt: "application/json"), Now).Category);
+
+    /// <summary>A POST to a .json path is not a served document; only safe reads are.</summary>
+    [Fact]
+    public void AWriteToAJsonPathIsNotTreatedAsADocument() =>
+        Assert.Equal(ObservedTrafficCategory.Rest,
+            NetworkTrafficClassifier.Classify(Meta("POST", "/submit.json", reqCt: "application/json", respCt: "application/json"), Now).Category);
+
+    /// <summary>The M2LB targets that must survive the fix, including GraphQL precedence over everything else.</summary>
+    [Fact]
+    public void TheRealM2lbApiTargetsAreStillClassifiedAsApis()
+    {
+        Assert.Equal(ObservedTrafficCategory.Rest,
+            NetworkTrafficClassifier.Classify(Meta("GET", "/api/autorisasjon", respCt: "application/json"), Now).Category);
+
+        var graphQl = Meta("POST", "/api/autorisasjon/graphql", reqCt: "application/json", gql: GraphQlOperationType.Query, gqlName: "GetRoles");
+        Assert.Equal(ObservedTrafficCategory.GraphQl, NetworkTrafficClassifier.Classify(graphQl, Now).Category);
+    }
 }

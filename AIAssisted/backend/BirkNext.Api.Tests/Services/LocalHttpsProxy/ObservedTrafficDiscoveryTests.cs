@@ -246,4 +246,18 @@ public sealed class ObservedTrafficDiscoveryTests
         foreach (var secret in new[] { "Token", "Cookie", "Authorization", "Body", "Secret", "Password", "Credential" })
             Assert.DoesNotContain(properties, p => p.Contains(secret, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// The authenticated-traffic classifier answers a different question with the same rule: a configuration document
+    /// must never become the environment's "verified authenticated REST endpoint".
+    /// </summary>
+    [Fact]
+    public void AConfigurationDocumentIsNotAVerifiedAuthenticatedRestEndpoint()
+    {
+        var document = ObservedTrafficClassifier.Classify(Meta("GET", "/appsettings.json"), Now);
+        Assert.Equal(ObservedEndpointConfidence.Rejected, document.Confidence);
+
+        var api = ObservedTrafficClassifier.Classify(Meta("GET", "/api/autorisasjon"), Now);
+        Assert.Equal(ObservedEndpointConfidence.Verified, api.Confidence);
+    }
 }

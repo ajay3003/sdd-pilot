@@ -156,12 +156,16 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-env-name]").TextContent.Should().Be("M2LB DEV");
         page.Find("[data-testid=aqr-environment]").TextContent.Should().Contain("Dev");
         page.Find("[data-testid=aqr-env-url]").TextContent.Should().Be(Origin + "/");
+        // The Target card states the environment's own sign-in policy. It is labelled as such, because "Authentication"
+        // next to an API access card reporting authenticated access available read as a contradiction.
         page.Find("[data-testid=aqr-env-auth]").TextContent.Should().Be("Microsoft Entra ID");
+        page.Find("[data-testid=aqr-environment]").TextContent.Should().Contain("Frontend sign-in");
         // API access owns the access state and Readiness owns the review state; the Target card repeats neither.
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
         page.Find("[data-testid=aqr-environment]").TextContent.Should().NotContain("Authenticated available");
         page.FindAll("[data-testid=aqr-status-pill]").Should().BeEmpty();
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready to review");
+        // Discovered REST traffic carries no published contract, so the review runs without contract validation.
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review can run with limitations");
         page.Find("h1").TextContent.Should().Be("API Quality Review");
         page.Find(".page-lead").TextContent.Should().StartWith("Review discovered REST and GraphQL APIs");
         var toggle = page.Find("[data-testid=aqr-target-details-toggle]");
@@ -172,12 +176,20 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
     }
 
     // 2. Public-only access state renders correctly (no API requires authentication).
+    /// <summary>
+    /// A missing authenticated context is not a limitation when nothing selected needs authentication. The review is
+    /// still limited here — by the absent REST contract — and the point is that the limitation is not about access.
+    /// </summary>
     [Fact]
-    public void PublicOnlyTargets_WithoutAuthContext_IsReadyNotLimited()
+    public void PublicOnlyTargets_WithoutAuthContext_AreNotLimitedByAuthentication()
     {
         Register(Context(requiresAuth: false), authenticated: false, [Ep("/api/public/status", auth: false)]);
         var page = Render<ApiQualityReview>();
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Ready"));
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review can run with limitations");
+        page.Find("[data-testid=aqr-readiness]").TextContent
+            .Should().Contain("No published REST contract")
+            .And.NotContain("Authenticated requests cannot be sent", "nothing selected needs authentication");
 
         page.FindAll("[data-testid=aqr-scope-auth]").Should().BeEmpty("no selected API needs authentication, so the scope says nothing about it");
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Not connected");
@@ -222,7 +234,7 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
         page.Find("[data-testid=aqr-readiness]").GetAttribute("role").Should().Be("status");
-        page.Find("[data-testid=aqr-readiness]").QuerySelector("h2")!.TextContent.Should().Contain("Ready with limitations");
+        page.Find("[data-testid=aqr-readiness]").QuerySelector("h2")!.TextContent.Should().Contain("Review can run with limitations");
         page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Authenticated API context unavailable").And.Contain("1 target will be reported as authentication required");
         Run(page).HasAttribute("disabled").Should().BeFalse();
         page.FindAll("[data-testid=aqr-run-row] p, [data-testid=aqr-run-row] .aqr-warn").Should().BeEmpty("no sentence wall next to the Run button");
@@ -234,7 +246,8 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
     {
         Register(Context(), authenticated: true, AutorisasjonEndpoints());
         var page = Render<ApiQualityReview>();
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Ready"));
+        // Limited, not Ready: these targets come from discovered traffic and have no published REST contract.
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
         page.Find("[data-testid=aqr-access]").TextContent.Should().Contain("Available");
@@ -334,7 +347,8 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
     {
         Register(Context(), authenticated: true, AutorisasjonEndpoints());
         var page = Render<ApiQualityReview>();
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Ready"));
+        // Limited, not Ready: these targets come from discovered traffic and have no published REST contract.
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
         page.Find("[data-testid=aqr-readiness-items]").TextContent.Should().Contain("Read-only review available");
         page.FindAll("[data-testid=aqr-results]").Should().BeEmpty();

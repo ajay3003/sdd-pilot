@@ -149,7 +149,8 @@ internal static class ObservedTrafficClassifier
 
         // REST classification.
         var confidence =
-            IsStaticAsset(path) || IsHtml(metadata.ResponseContentType) ? ObservedEndpointConfidence.Rejected
+            IsStaticAsset(path) || IsHtml(metadata.ResponseContentType)
+            || IsJsonDocument(path, method, metadata.ResponseContentType) ? ObservedEndpointConfidence.Rejected
             : SafeReadMethods.Contains(method) && IsJson(metadata.ResponseContentType) ? ObservedEndpointConfidence.Verified
             : ObservedEndpointConfidence.Candidate;
 
@@ -180,6 +181,34 @@ internal static class ObservedTrafficClassifier
         var extension = path[dot..].ToLowerInvariant();
         return StaticAssetExtensions.Contains(extension);
     }
+
+    /// <summary>A path that names an API service route rather than a served file.</summary>
+    internal static bool IsApiLikePath(string path)
+    {
+        var lower = path.ToLowerInvariant();
+        return lower.Contains("/api/") || lower.StartsWith("/api/") || lower.Contains("/v1/") || lower.Contains("/v2/") || lower.Contains("/odata");
+    }
+
+    /// <summary>
+    /// A JSON <em>document</em> that a web server serves as a file: appsettings.json, a web manifest, a localization bundle,
+    /// blazor.boot.json. Returning JSON does not make a resource an API, and classifying these as REST is what put
+    /// configuration files in API Quality Review's target list and had it review a settings file as a service.
+    ///
+    /// The rule is resource shape, not a filename list: a document file extension (or a manifest media type), a safe read,
+    /// and no API route. A genuine API route that happens to end in ".json" — <c>/api/users.json</c> — stays REST because
+    /// <see cref="IsApiLikePath"/> admits it. Nothing is discarded: these remain observed endpoints, and Endpoint Discovery
+    /// still shows them as application traffic, which is where configuration exposure belongs.
+    /// </summary>
+    internal static bool IsJsonDocument(string path, string method, string? responseContentType)
+    {
+        if (!SafeReadMethods.Contains(method) || IsApiLikePath(path)) return false;
+        var dot = path.LastIndexOf('.');
+        var extension = dot < 0 ? "" : path[dot..].ToLowerInvariant();
+        return JsonDocumentExtensions.Contains(extension) || Simplify(responseContentType) == "application/manifest+json";
+    }
+
+    /// <summary>File extensions whose content is a served document even when its media type is JSON.</summary>
+    private static readonly string[] JsonDocumentExtensions = [".json", ".webmanifest"];
 
     private static bool IsHtml(string? contentType) => Simplify(contentType) is "text/html" or "application/xhtml+xml";
 
@@ -359,9 +388,13 @@ internal static class NetworkTrafficClassifier
         if (ContainsAny(path, TelemetryMarkers)) return (ObservedTrafficCategory.Telemetry, ObservedEndpointConfidence.Candidate);
         if (ContainsAny(path, AuthMarkers)) return (ObservedTrafficCategory.Authentication, ObservedEndpointConfidence.Candidate);
         if (IsHtml(respCt)) return (ObservedTrafficCategory.OtherHttp, ObservedEndpointConfidence.Candidate);   // SPA document, never REST
+        // A served JSON document is configuration or static content, not an API service. It stays visible as application
+        // traffic in Endpoint Discovery — configuration exposure is reviewed there — but it is never an API review target.
+        if (ObservedTrafficClassifier.IsJsonDocument(path, method, respCt))
+            return (ObservedTrafficCategory.OtherHttp, ObservedEndpointConfidence.Verified);
         if (IsJson(respCt))
             return (ObservedTrafficCategory.Rest, method is "GET" or "HEAD" or "OPTIONS" ? ObservedEndpointConfidence.Verified : ObservedEndpointConfidence.Candidate);
-        if (IsJson(reqCt) || IsApiLikePath(path)) return (ObservedTrafficCategory.Rest, ObservedEndpointConfidence.Candidate);
+        if (IsJson(reqCt) || ObservedTrafficClassifier.IsApiLikePath(path)) return (ObservedTrafficCategory.Rest, ObservedEndpointConfidence.Candidate);
         return (ObservedTrafficCategory.OtherHttp, ObservedEndpointConfidence.Candidate);
     }
 
@@ -386,12 +419,6 @@ internal static class NetworkTrafficClassifier
     {
         var lower = path.ToLowerInvariant();
         return markers.Any(lower.Contains);
-    }
-
-    private static bool IsApiLikePath(string path)
-    {
-        var lower = path.ToLowerInvariant();
-        return lower.Contains("/api/") || lower.StartsWith("/api/") || lower.Contains("/v1/") || lower.Contains("/v2/") || lower.Contains("/odata");
     }
 
     private static string NormalizePath(string target)

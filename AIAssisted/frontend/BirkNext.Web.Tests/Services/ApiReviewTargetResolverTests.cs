@@ -251,4 +251,53 @@ public sealed class ApiReviewTargetResolverTests
         request.Environment.Name.Should().Be("DEV"); request.Environment.TargetUrl.Should().Be(Origin + "/");
         JsonSerializer.Serialize(request).Should().NotContainAny("Bearer", "Authorization", "Cookie");
     }
+
+    // ── The M2LB DEV scope, after configuration documents stopped being REST APIs ──
+    // What the classifier produced before the fix: /appsettings.json and /appsettings.Dev.json arrived as Verified REST
+    // endpoints, so the resolver made each one its own REST service and API Quality Review offered to review a settings
+    // file. The classifier now categorises them OtherHttp; this pins what the resolver therefore sees.
+
+    [Fact]
+    public void ConfigurationDocumentsDoNotBecomeApiTargets()
+    {
+        var discovery = Discovery(
+            Ep(ObservedTrafficCategory.OtherHttp, "/appsettings.json", host: "m2lbdev.bufetat.no", auth: false),
+            Ep(ObservedTrafficCategory.OtherHttp, "/appsettings.Dev.json", host: "m2lbdev.bufetat.no", auth: false),
+            Ep(ObservedTrafficCategory.Rest, "/api/autorisasjon", host: "m2lbdev.bufetat.no"),
+            Ep(ObservedTrafficCategory.GraphQl, "/api/autorisasjon/graphql", "POST", count: 6, op: GraphQlOperationType.Query, opName: "GetRoles", host: "m2lbdev.bufetat.no"));
+
+        var targets = ApiReviewTargetResolver.Resolve(Context(), discovery);
+
+        targets.Should().HaveCount(2, "one REST service and one GraphQL endpoint; a settings file is neither");
+        targets.Count(t => t.ApiType == ApiReviewTargetType.Rest).Should().Be(1);
+        targets.Count(t => t.ApiType == ApiReviewTargetType.GraphQl).Should().Be(1);
+        targets.Should().NotContain(t => t.BasePath.Contains("appsettings", StringComparison.OrdinalIgnoreCase));
+        targets.Should().NotContain(t => t.ServiceName.Contains("Appsettings", StringComparison.OrdinalIgnoreCase));
+        targets.SelectMany(t => t.Operations).Should().NotContain(o => o.Path.Contains("appsettings", StringComparison.OrdinalIgnoreCase));
+
+        // The API targets that must survive.
+        targets.Should().Contain(t => t.ApiType == ApiReviewTargetType.Rest && t.BasePath == "/api/autorisasjon");
+        targets.Should().Contain(t => t.ApiType == ApiReviewTargetType.GraphQl && t.BasePath == "/api/autorisasjon/graphql");
+        // Both API targets were observed with authentication, which is the "2 require authentication" the summary reports
+        // — a count that was right by accident before, when two of the four targets were configuration files.
+        targets.Count(t => t.AuthRequired).Should().Be(2);
+    }
+
+    /// <summary>
+    /// The resolver already excludes non-API categories; this states that a configuration document is one of them, so a
+    /// future change that re-admits OtherHttp cannot quietly put settings files back into the review.
+    /// </summary>
+    [Fact]
+    public void NonApiCategoriesIncludingServedDocumentsAreNeverApiTargets()
+    {
+        var discovery = Discovery(
+            Ep(ObservedTrafficCategory.OtherHttp, "/appsettings.json", auth: false),
+            Ep(ObservedTrafficCategory.OtherHttp, "/operasjonskatalog", auth: false),
+            Ep(ObservedTrafficCategory.StaticAsset, "/_framework/dotnet.wasm", auth: false),
+            Ep(ObservedTrafficCategory.Telemetry, "/v2/track", "POST", auth: false),
+            Ep(ObservedTrafficCategory.Authentication, "/oauth2/token", "POST", host: "login.microsoftonline.com", auth: false),
+            Ep(ObservedTrafficCategory.WebSocket, "/hub", "WS", auth: false));
+
+        ApiReviewTargetResolver.Resolve(Context(), discovery).Should().BeEmpty();
+    }
 }

@@ -182,7 +182,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing();
 
         var target = page.Find("[data-testid=aqr-environment]");
-        VisibleText(target).Should().NotContainAny("Ready with limitations", "Ready to review", "Authenticated unavailable", "Authenticated available");
+        VisibleText(target).Should().NotContainAny("Review can run with limitations", "Ready to review", "Authenticated unavailable", "Authenticated available");
         page.FindAll("[data-testid=aqr-status-pill]").Should().BeEmpty();
         page.FindAll("[data-testid=aqr-readiness]").Should().ContainSingle();
     }
@@ -290,7 +290,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing(authenticated: false);
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
 
-        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Ready with limitations");
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review can run with limitations");
         Collapsed(page, "aqr-readiness-limitations").Should().BeTrue();
         page.Find("[data-testid=aqr-run]").HasAttribute("disabled").Should().BeFalse();
 

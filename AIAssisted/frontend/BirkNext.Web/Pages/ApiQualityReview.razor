@@ -29,8 +29,8 @@
 
     @{
         var access = ApiReviewPresentation.AccessPanel(_context, _capabilities, _targets, _selected);
-        var readiness = ApiReviewPresentation.Readiness(Eligibility, _context, _targets, _selected, _capabilities);
         var contracts = ApiReviewPresentation.Contracts(_targets, _selected, _history, _report ?? _history?.LastReport);
+        var readiness = ApiReviewPresentation.Readiness(Eligibility, _context, _targets, _selected, _capabilities, contracts);
         var scope = ApiReviewPresentation.Scope(_targets, _selected);
         var domains = ApiReviewPresentation.Domains(scope, contracts, access.Availability);
     }
@@ -65,7 +65,7 @@
                         <dl class="aqr-dl">
                             <div><dt>Environment</dt><dd><strong data-testid="aqr-env-name">@summary.Environment</strong> <span class="aqr-pill aqr-pill-muted">@summary.EnvironmentType</span></dd></div>
                             <div><dt>Frontend</dt><dd class="aqr-mono" data-testid="aqr-env-url">@summary.FrontendUrl</dd></div>
-                            <div><dt>Authentication</dt><dd data-testid="aqr-env-auth">@summary.Authentication</dd></div>
+                            <div><dt>Frontend sign-in</dt><dd data-testid="aqr-env-auth">@summary.Authentication</dd></div>
                         </dl>
                         <ReviewDisclosure Text="View target details" CollapseText="Hide target details" TestId="aqr-target-details" Class="disclosure-inline">
                             <dl class="aqr-dl aqr-dl-technical">
