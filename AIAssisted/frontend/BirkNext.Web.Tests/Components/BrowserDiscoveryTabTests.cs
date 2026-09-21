@@ -290,7 +290,8 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     [Theory]
     [InlineData(BrowserCompanionState.NotPaired, "Not connected", "Pair the managed Edge browser")]
     [InlineData(BrowserCompanionState.Disconnected, "Paired · not reporting", "Open or refresh an approved application page")]
-    [InlineData(BrowserCompanionState.Connected, "Connected", "Collecting browser evidence")]
+    // Connected with an approved page open and nothing observed: waiting, never collecting.
+    [InlineData(BrowserCompanionState.Connected, "Connected", "Waiting for browser evidence")]
     public async Task ConnectionStatesAreDistinctAndNeverImplyEvidence(BrowserCompanionState state, string label, string message)
     {
         var api = new Mock<IBrowserCompanionApiService>();
@@ -311,9 +312,10 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         Text(cut, "browser-companion-origins").Should().Contain(Origin);
         Text(cut, "bd-current-page").Should().Be(Origin + "/dashboard");
 
-        // Connected is a session state, never evidence.
+        // Connected is a session state, never evidence — and nothing says evidence is being collected before any arrived.
         Text(cut, "bd-pages-count").Should().Be("0");
         Text(cut, "bd-last-evidence").Should().Be("None");
+        cut.Markup.Should().NotContain("Collecting browser evidence");
         cut.FindAll("[data-testid=browser-discovery-empty]").Should().ContainSingle();
 
         // Pairing actions follow the session state, not the evidence state. When pairing is the next step the

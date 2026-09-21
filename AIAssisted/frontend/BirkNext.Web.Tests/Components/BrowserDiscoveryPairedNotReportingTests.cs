@@ -114,7 +114,9 @@ public sealed class BrowserDiscoveryPairedNotReportingTests : BunitContext
         var cut = await OpenAsync(BrowserCompanionState.Connected, currentPath: "/dashboard");
 
         Text(cut, "bd-session").Should().Be("Connected");
-        Text(cut, "browser-discovery-empty-help").Should().Be("Open an approved application page to start collecting browser evidence.");
+        // The approved page is open and reported, so the remaining gap is the evidence, not the page.
+        Text(cut, "browser-discovery-empty-help")
+            .Should().Be("Connected to an approved application page. No browser evidence has been received for it yet.");
         PrimaryText(cut).Should().NotContain("Open or refresh");
     }
 

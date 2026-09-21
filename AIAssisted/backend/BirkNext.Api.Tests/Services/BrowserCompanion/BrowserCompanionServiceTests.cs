@@ -164,6 +164,63 @@ public sealed class BrowserCompanionServiceTests
         status.Pages.Single().Identity.Should().Be("https://m2lbdev.bufetat.no/children/search");
     }
 
+    /// <summary>
+    /// BirkNext issues environment ids as <c>Guid.NewGuid().ToString("N")</c>: 32 alphanumeric characters with no separator.
+    /// The evidence sanitizer's credential redaction treats any 32+ alphanumeric run as a token, so running the environment id
+    /// through it turned the identity the page states into "[REDACTED]" and every page failed the environment comparison —
+    /// while heartbeats, which never sanitize the id, kept reporting Connected and the current page.
+    /// </summary>
+    [Fact]
+    public void Evidence_EnvironmentIdIsAGuidWithoutSeparators_Accepted()
+    {
+        var profile = Guid.NewGuid().ToString("N");
+        profile.Should().HaveLength(32).And.MatchRegex("^[a-f0-9]{32}$");
+        var paired = Pair(profile);
+        var visit = _time.GetUtcNow();
+
+        var result = _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = profile, ExtensionVersion = "0.1.0",
+            Pages = [Page(profile, "https://m2lbdev.bufetat.no", "/admin/operations", visit)] }, Extension);
+
+        result.Accepted.Should().BeTrue(result.Message);
+        result.AcceptedPages.Should().Be(1);
+        result.RejectedPages.Should().Be(0);
+        var status = _service.Status(profile);
+        status.PagesWithEvidence.Should().Be(1);
+        status.RejectedMessages.Should().Be(0);
+        status.Pages.Single().Identity.Should().Be("https://m2lbdev.bufetat.no/admin/operations");
+        status.Pages.Single().ProfileId.Should().Be(profile, "stored evidence carries the environment it belongs to, never a redaction marker");
+    }
+
+    /// <summary>
+    /// A page that was assessed and produced nothing is still a page that was assessed. "No violation found" is evidence
+    /// that the checks ran; treating it as "no evidence" would erase the only record that anything was examined — and it
+    /// would still not be a conformance claim, which stays Frontend Quality Review's to make.
+    /// </summary>
+    [Fact]
+    public void Evidence_AssessmentRanAndFoundNothing_IsStillStored()
+    {
+        var paired = Pair();
+        var visit = _time.GetUtcNow();
+        var assessedWithNoFindings = new BrowserPageEvidence
+        {
+            ProfileId = "dev", PageOrigin = "https://m2lbdev.bufetat.no", PagePath = "/admin/operations",
+            VisitStartedAt = visit, CapturedAt = visit, SnapshotSequence = 1,
+            Dom = new BrowserDomSummary { NodeCount = 900 },
+            Accessibility = new BrowserAccessibilitySummary { RulesEvaluated = 24, Findings = [], Checks = [] },
+            Performance = new BrowserPerformanceSummary { ObservationType = "initial-load", LcpMs = 1800 },
+            Runtime = new BrowserRuntimeSummary { ErrorCount = 0, RejectionCount = 0, Errors = [] },
+        };
+
+        var result = _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev", Pages = [assessedWithNoFindings] }, Extension);
+
+        result.AcceptedPages.Should().Be(1, "an executed assessment with nothing to report is evidence, not absence");
+        var stored = _service.Status("dev").Pages.Single();
+        _service.Status("dev").PagesWithEvidence.Should().Be(1);
+        stored.Accessibility!.RulesEvaluated.Should().Be(24);
+        stored.Accessibility.Findings.Should().BeEmpty();
+        stored.CapturedAt.Should().Be(visit, "the evidence timestamp is recorded even when nothing was found");
+    }
+
     [Fact]
     public void Evidence_WrongEnvironment_Rejected()
     {

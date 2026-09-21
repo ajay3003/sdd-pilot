@@ -224,6 +224,13 @@ async function flush() {
       return await revokeSession(result.json.message);
     } else if (result.ok) {
       lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}. Last evidence accepted ${new Date().toLocaleTimeString()}.`, session };
+      trace('EvidenceAccepted');
+    } else {
+      // A backend that answers "no" is not an unreachable backend and not a lost session, so the pairing stands and the
+      // heartbeat keeps running. But swallowing this is what made a broken pipeline look like a healthy one: BirkNext said
+      // Connected with the current page, and nothing anywhere said the evidence had been refused.
+      lastStatus = { state: 'connected', session, message: `Paired with ${session.environmentName}, but BirkNext refused the last browser evidence (${(result.json && result.json.message) || `HTTP ${result.status}`}).` };
+      trace('EvidenceRejected');
     }
   } catch {
     lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable; evidence will be retried on the next page snapshot.', session };

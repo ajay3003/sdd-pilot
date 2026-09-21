@@ -284,8 +284,15 @@ public enum BrowserDiscoveryState
     Pairing,
     /// <summary>A session exists but nothing is reporting — an approved page needs opening or refreshing.</summary>
     PairedNotReporting,
-    /// <summary>Connected, but nothing has been observed yet. Asking the user to pair again would be wrong.</summary>
+    /// <summary>Connected, but no approved page is open and nothing has been observed yet. Asking the user to pair again would be wrong.</summary>
     ConnectedWithoutEvidence,
+    /// <summary>
+    /// Connected AND an approved application page is open right now, but no evidence has arrived for it. Knowing which
+    /// page is open is not evidence of anything on it, so this cannot be folded into either neighbouring state: telling
+    /// the reader to open a page BirkNext already reports as open is wrong, and calling it "collecting" is a claim
+    /// nothing has yet backed.
+    /// </summary>
+    ConnectedOnApprovedPageWithoutEvidence,
     /// <summary>Evidence exists; the page shows it rather than an empty state.</summary>
     EvidenceAvailable,
 }
@@ -296,14 +303,28 @@ public enum BrowserDiscoveryState
 /// </summary>
 public static class BrowserDiscoveryStates
 {
-    public static BrowserDiscoveryState Of(BrowserCompanionState session, bool hasEvidence) => (session, hasEvidence) switch
+    /// <param name="onApprovedPage">
+    /// An approved application page is open in the paired browser right now (the companion reports a current page).
+    /// This is liveness, never evidence: it says where the browser is, not that anything was observed there.
+    /// </param>
+    public static BrowserDiscoveryState Of(BrowserCompanionState session, bool hasEvidence, bool onApprovedPage = false) => (session, hasEvidence) switch
     {
         (_, true) => BrowserDiscoveryState.EvidenceAvailable,
+        (BrowserCompanionState.Connected, _) when onApprovedPage => BrowserDiscoveryState.ConnectedOnApprovedPageWithoutEvidence,
         (BrowserCompanionState.Connected, _) => BrowserDiscoveryState.ConnectedWithoutEvidence,
         (BrowserCompanionState.Disconnected, _) => BrowserDiscoveryState.PairedNotReporting,
         (BrowserCompanionState.PairingPending, _) => BrowserDiscoveryState.Pairing,
         _ => BrowserDiscoveryState.NotConnected,
     };
+
+    /// <summary>
+    /// Is the paired browser currently on an approved application page? The backend clears the current page whenever the
+    /// reporting tab is not an approved one, so a current origin is already an approved origin; the membership check is
+    /// kept so this reads as the security fact it is rather than as a trusted leftover.
+    /// </summary>
+    public static bool OnApprovedPage(BrowserCompanionStatus? status) =>
+        status is { CurrentPageOrigin: { Length: > 0 } origin } &&
+        status.ApprovedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The one primary connection vocabulary. Technical pairing state stays in Connection details.</summary>
     public static string SessionLabel(BrowserCompanionState session) => session switch
@@ -323,6 +344,10 @@ public static class BrowserDiscoveryStates
     {
         BrowserDiscoveryState.ConnectedWithoutEvidence =>
             "Open an approved application page to start collecting browser evidence.",
+        // BirkNext already knows this page is open, so telling the reader to open it reads as though nothing were
+        // happening at all. What is actually missing is the evidence, and that is what this says.
+        BrowserDiscoveryState.ConnectedOnApprovedPageWithoutEvidence =>
+            "Connected to an approved application page. No browser evidence has been received for it yet.",
         // Pairing does not reach a page that was already open: the content script starts with a page load.
         // So the fix is a reload, and saying so is the whole point of this state — it is not a failure.
         BrowserDiscoveryState.PairedNotReporting =>
@@ -365,6 +390,8 @@ public static class BrowserDiscoveryStates
         BrowserDiscoveryState.Pairing => BrowserDiscoveryNextAction.EnterPairingCode,
         BrowserDiscoveryState.PairedNotReporting => BrowserDiscoveryNextAction.OpenOrRefreshApprovedPage,
         BrowserDiscoveryState.ConnectedWithoutEvidence => BrowserDiscoveryNextAction.OpenApprovedPage,
+        // Nothing for the reader to do: the approved page is already open and the next report is the companion's move.
+        BrowserDiscoveryState.ConnectedOnApprovedPageWithoutEvidence => BrowserDiscoveryNextAction.None,
         _ => BrowserDiscoveryNextAction.None,
     };
 }

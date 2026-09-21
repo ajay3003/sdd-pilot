@@ -313,7 +313,8 @@
     /// The one derivation of what this page is currently showing. The summary strip, the empty state and the
     /// Browser Companion card all read from it, so one situation cannot be described three different ways.
     /// </summary>
-    private BrowserDiscoveryState DiscoveryState => BrowserDiscoveryStates.Of(Status.State, Rows.Count > 0);
+    private BrowserDiscoveryState DiscoveryState =>
+        BrowserDiscoveryStates.Of(Status.State, Rows.Count > 0, BrowserDiscoveryStates.OnApprovedPage(Status));
 
     private string EmptyEvidenceHelp => BrowserDiscoveryStates.Explanation(DiscoveryState);
 

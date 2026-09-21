@@ -16,6 +16,16 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
     private static readonly Regex UnsafeSelectorToken = new(@"\[[^\]]*\]|=|\""|'|@|:contains|\d{6,}", RegexOptions.Compiled);
     private static readonly Regex LongOpaque = new(@"\b[A-Za-z0-9_-]{48,}\b", RegexOptions.Compiled);
 
+    /// <summary>
+    /// An identifier BirkNext itself issued (the Target Environment id), reduced to identifier characters and length-capped.
+    /// It is deliberately NOT put through <see cref="Text"/>: that is the credential redaction for free text observed on a page,
+    /// and it rewrites anything token-shaped — including a 32-character <c>Guid.NewGuid().ToString("N")</c> environment id, which
+    /// is exactly the form BirkNext issues. Redacting an identity the backend is about to compare against its own session turns
+    /// every page into a foreign one. Nothing from the page reaches this field: it is echoed back from pairing.
+    /// </summary>
+    public static string Identifier(string? value, int max = 64) =>
+        string.IsNullOrWhiteSpace(value) ? "" : new string(value.Where(c => char.IsLetterOrDigit(c) || c is '.' or '-' or '_').Take(max).ToArray());
+
     public string Text(string? value, int max = BrowserCompanionLimits.MaxStringLength)
     {
         if (string.IsNullOrEmpty(value)) return "";
@@ -55,7 +65,7 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
         var path = NormalizePath(evidence.PagePath);
         return new BrowserPageEvidence
         {
-            ProfileId = Text(evidence.ProfileId, 64),
+            ProfileId = Identifier(evidence.ProfileId),
             PageOrigin = origin,
             PagePath = path,
             VisitStartedAt = evidence.VisitStartedAt,

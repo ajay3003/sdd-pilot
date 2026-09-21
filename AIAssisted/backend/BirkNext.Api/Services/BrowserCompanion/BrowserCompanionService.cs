@@ -157,7 +157,12 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
         lock (_gate)
         {
             var session = Resolve(envelope.SessionId, envelope.ProfileId, extensionOrigin, out var reason);
-            if (session is null) return new BrowserCompanionAcceptResult { Accepted = false, Message = reason };
+            if (session is null)
+            {
+                // Safe outcome trace only: why an envelope was refused, never a page, selector or any evidence value.
+                logger.LogWarning("Browser Companion evidence rejected before validation: {Reason}", reason);
+                return new BrowserCompanionAcceptResult { Accepted = false, Message = reason };
+            }
             var now = time.GetUtcNow();
             if (now - session.LastEnvelopeAt < TimeSpan.FromMilliseconds(BrowserCompanionLimits.MinMillisecondsBetweenEnvelopes))
             {
@@ -207,6 +212,12 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
                 accepted++;
             }
             session.RejectedMessages += rejected;
+            // Counts and the environment only. An envelope whose pages are all refused used to be indistinguishable from one that
+            // never arrived: heartbeats kept the session Connected while nothing was ever stored, and no surface said so.
+            if (rejected > 0)
+                logger.LogWarning("Browser Companion evidence for environment {ProfileId}: {Accepted} page(s) stored, {Rejected} page(s) rejected (origin not approved for this environment, wrong environment, or a stale visit)", session.ProfileId, accepted, rejected);
+            else
+                logger.LogInformation("Browser Companion evidence for environment {ProfileId}: {Accepted} page(s) stored ({Total} page(s) now have evidence)", session.ProfileId, accepted, session.Pages.Count);
             return new BrowserCompanionAcceptResult { Accepted = accepted > 0 || rejected == 0, AcceptedPages = accepted, RejectedPages = rejected, Message = rejected == 0 ? "OK" : "Some pages were rejected (origin not approved for this environment or stale)." };
         }
     }

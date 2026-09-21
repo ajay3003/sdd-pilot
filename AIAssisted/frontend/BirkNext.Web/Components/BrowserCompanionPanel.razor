@@ -35,7 +35,7 @@
         @* A paired session that is silent needs a reload, and a sentence in the body text was easy to miss.
            It sits above Details so the next step is read before the technical state. Info, not warning: the
            state is expected and recoverable. *@
-        @if (BrowserDiscoveryStates.ShowsGuidance(BrowserDiscoveryStates.Of(Status.State, Evidence.Count > 0)))
+        @if (BrowserDiscoveryStates.ShowsGuidance(DiscoveryState))
         {
             <InlineCallout Title="@BrowserDiscoveryStates.GuidanceTitle"
                            Text="@BrowserDiscoveryStates.GuidanceText"
@@ -143,7 +143,27 @@
     /// Compact mode says what to DO, because the badge beside the title already says what the state IS. It never
     /// restates "Browser Companion is not paired" next to a badge that already reads "Not connected".
     /// </summary>
-    private string CompactActionMessage => Status.State switch
+    /// <summary>
+    /// The same derivation Browser Discovery uses, so the card and the page it sits on cannot describe one situation
+    /// two different ways. Evidence comes from the merged discovery snapshot, not from the session.
+    /// </summary>
+    private BrowserDiscoveryState DiscoveryState =>
+        BrowserDiscoveryStates.Of(Status.State, Evidence.Count > 0, BrowserDiscoveryStates.OnApprovedPage(Status));
+
+    private string CompactActionMessage => DiscoveryState switch
+    {
+        // "Collecting" is a claim about reporting, so it waits for evidence that reporting actually happened. Knowing
+        // which page is open proves the companion is alive, never that anything was observed on it.
+        BrowserDiscoveryState.EvidenceAvailable when Status.State == BrowserCompanionState.Connected =>
+            "Collecting browser evidence from approved application pages in your managed Edge session.",
+        BrowserDiscoveryState.ConnectedOnApprovedPageWithoutEvidence =>
+            "Connected to an approved application page. Waiting for browser evidence.",
+        BrowserDiscoveryState.ConnectedWithoutEvidence =>
+            "Connected. Open an approved application page in your managed Edge session to start collecting browser evidence.",
+        _ => LegacyActionMessage,
+    };
+
+    private string LegacyActionMessage => Status.State switch
     {
         BrowserCompanionState.Connected => "Collecting browser evidence from approved application pages in your managed Edge session.",
         BrowserCompanionState.Disconnected => "Open the application in your managed Edge to resume reporting.",

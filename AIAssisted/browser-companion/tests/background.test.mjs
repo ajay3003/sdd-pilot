@@ -6,7 +6,7 @@ import vm from 'node:vm';
 const origin = 'https://m2lbdev.bufetat.no';
 const session = { sessionId: 'session', profileId: 'm2lb', approvedOrigins: [origin], environmentName: 'M2LB' };
 function harness({ local = {}, transient = {}, denied = false, registrationError = false, grant = null,
-                   respond = null, status = 200, offline = false, storageError = false } = {}) {
+                   respond = null, status = 200, offline = false, storageError = false, evidence = null } = {}) {
   const listeners = {}, posts = [], alarms = new Map();
   let registered = [];
   const event = name => ({ addListener(fn) { listeners[name] = fn; } });
@@ -33,6 +33,10 @@ function harness({ local = {}, transient = {}, denied = false, registrationError
     fetch: async (url, options) => {
       posts.push({ url, route: url.split('/').at(-1), body: JSON.parse(options.body) });
       if (offline) throw new TypeError('Failed to fetch');
+      // The evidence route can answer differently from pairing/heartbeat — which is exactly the shape of the live defect.
+      const route = url.split('/').at(-1);
+      if (evidence && route === 'evidence')
+        return { ok: evidence.status < 400, status: evidence.status, text: async () => JSON.stringify(evidence.json) };
       return { ok: status < 400, status, text: async () => JSON.stringify(respond || { accepted: true, ...session }) };
     } });
   context.importScripts = (...files) => files.forEach(file => vm.runInContext(readFileSync(new URL('../' + file, import.meta.url), 'utf8'), context));
@@ -42,7 +46,9 @@ function harness({ local = {}, transient = {}, denied = false, registrationError
     // What the popup's own chrome.permissions.request() does on Allow, including the browser's onAdded event.
     allow: async () => { granted.value = true; await listeners.permissionAdded?.({}); await new Promise(setImmediate); },
     message: (message, from = {}) => new Promise(resolve => listeners.message(message, from, resolve)),
-    heartbeat: () => vm.runInContext('heartbeat()', context) };
+    heartbeat: () => vm.runInContext('heartbeat()', context),
+    flush: () => vm.runInContext('flush()', context),
+    statusNow: () => vm.runInContext('lastStatus', context) };
 }
 
 // The live defect: pairing reached the backend, the worker then asked for the approved-origin permission itself,
@@ -247,4 +253,52 @@ test('the configured backend is the one pairing, heartbeat and validation all us
   const woken = harness({ local: h.local });
   await woken.message({ type: 'popup:status' });
   assert.ok(woken.posts.at(-1).url.startsWith('http://localhost:5199/'));
+});
+
+// ── Evidence delivery is reported, never swallowed ──────────────────────────
+// The live failure: BirkNext said Connected with the right current page while every evidence envelope was refused.
+// Heartbeats and evidence take different backend paths, so a healthy heartbeat proves nothing about evidence.
+
+test('a refused evidence envelope is reported and keeps the session', async () => {
+  const h = harness({ evidence: { status: 403, json: { accepted: false, acceptedPages: 0, rejectedPages: 1,
+    message: 'Some pages were rejected (origin not approved for this environment or stale).' } } });
+  await h.message({ type: 'popup:pair', pairingCode: 'PAIR' });
+
+  await h.message({ type: 'content:evidence', page: { profileId: 'm2lb', pageOrigin: origin, pagePath: '/admin/operations' } }, h.sender);
+  await h.flush();
+
+  const status = h.statusNow();
+  assert.equal(status.state, 'connected', 'a refusal is not a lost session: the pairing is still good');
+  assert.match(status.message, /refused the last browser evidence/);
+  assert.match(status.message, /Some pages were rejected/);
+  // The session survives: only an explicit session/pairing rejection unpairs.
+  assert.equal(h.local.session.sessionId, 'session');
+});
+
+test('an accepted evidence envelope says so', async () => {
+  const h = harness({ evidence: { status: 200, json: { accepted: true, acceptedPages: 1, rejectedPages: 0, message: 'OK' } } });
+  await h.message({ type: 'popup:pair', pairingCode: 'PAIR' });
+
+  await h.message({ type: 'content:evidence', page: { profileId: 'm2lb', pageOrigin: origin, pagePath: '/admin/operations' } }, h.sender);
+  await h.flush();
+
+  assert.equal(h.statusNow().state, 'connected');
+  assert.match(h.statusNow().message, /Last evidence accepted/);
+});
+
+test('current-page and evidence report under the same session identity', async () => {
+  const h = harness();
+  await h.message({ type: 'popup:pair', pairingCode: 'PAIR' });
+
+  await h.message({ type: 'content:page', page: { origin, path: '/admin/operations' } }, h.sender);
+  await h.message({ type: 'content:evidence', page: { profileId: 'm2lb', pageOrigin: origin, pagePath: '/admin/operations' } }, h.sender);
+  await h.flush();
+
+  const heartbeat = h.posts.filter(p => p.route === 'heartbeat').at(-1).body;
+  const envelope = h.posts.filter(p => p.route === 'evidence').at(-1).body;
+  assert.equal(envelope.sessionId, heartbeat.sessionId);
+  assert.equal(envelope.profileId, heartbeat.profileId);
+  // Both describe the same approved application. The heartbeat's path is resolved from the reporting tab, never from the
+  // message, so it is the tab's current route rather than the route the snapshot was built for.
+  assert.equal(heartbeat.currentPageOrigin, envelope.pages[0].pageOrigin);
 });

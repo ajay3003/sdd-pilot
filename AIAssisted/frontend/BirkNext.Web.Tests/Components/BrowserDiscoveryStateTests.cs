@@ -128,13 +128,40 @@ public sealed class BrowserDiscoveryStateTests : BunitContext
 
     // 8, 9, 10, 11, 12.
     [Fact]
-    public async Task ConnectedWithoutEvidenceNeverAsksTheUserToPairAgain()
+    public async Task ConnectedWithNoApprovedPageOpenAsksForTheMissingPage()
     {
-        var cut = await OpenAsync(BrowserCompanionState.Connected, currentPath: "/dashboard");
+        var cut = await OpenAsync(BrowserCompanionState.Connected, currentPath: null);
 
         Text(cut, "bd-session").Should().Be("Connected");
         Text(cut, "browser-discovery-empty").Should().Contain("No browser evidence yet");
         Text(cut, "browser-discovery-empty-help").Should().Be("Open an approved application page to start collecting browser evidence.");
+
+        PairActions(cut).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The live M2LB DEV state: connected, an approved page open and reported, and nothing observed on it. Telling the
+    /// reader to open a page BirkNext is already naming is wrong, and so is claiming evidence is being collected.
+    /// </summary>
+    [Fact]
+    public async Task ConnectedOnTheApprovedPageDoesNotAskForAPageAlreadyOpen()
+    {
+        var cut = await OpenAsync(BrowserCompanionState.Connected, currentPath: "/admin/operations");
+
+        Text(cut, "bd-session").Should().Be("Connected");
+        Text(cut, "bd-current-page").Should().Be(Origin + "/admin/operations");
+        Text(cut, "browser-discovery-empty").Should().Contain("No browser evidence yet");
+        Text(cut, "browser-discovery-empty-help")
+            .Should().Be("Connected to an approved application page. No browser evidence has been received for it yet.");
+        Text(cut, "browser-discovery-empty-help").Should().NotContain("Open");
+
+        // Nothing claims collection is happening before any evidence has arrived.
+        VisibleText(cut.Find("[data-testid=browser-discovery]")).Should().NotContain("Collecting browser evidence");
+        Text(cut, "browser-companion-connection").Should().Be("Connected to an approved application page. Waiting for browser evidence.");
+
+        // Still 0/None: a known current page is liveness, never evidence.
+        Text(cut, "bd-pages-count").Should().Be("0");
+        Text(cut, "bd-last-evidence").Should().Be("None");
 
         // 10. Pairing is done, so nothing asks for it.
         PairActions(cut).Should().BeEmpty();
