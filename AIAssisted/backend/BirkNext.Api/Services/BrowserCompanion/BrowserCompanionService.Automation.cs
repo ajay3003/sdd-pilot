@@ -66,10 +66,21 @@ public sealed partial class BrowserCompanionService
             if (origin is null || !session.ApprovedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
                 return Refuse(command.CommandId, "The command targets an origin this session has not approved.");
 
-            if (session.CurrentPageOrigin is null)
-                return Refuse(command.CommandId, "No approved page is open in the paired browser.");
-            if (!string.Equals(session.CurrentPageOrigin, origin, StringComparison.OrdinalIgnoreCase))
-                return Refuse(command.CommandId, "The paired browser is not on the origin this command targets.");
+            // Bind to a LIVE page. Stored evidence never resolves a target: a command must go to a page that exists
+            // now, and with several open the caller has to say which one rather than have one chosen for it.
+            ExpireLivePages(session, now);
+            var target = command.PageId is { Length: > 0 } requested
+                ? session.LivePages.GetValueOrDefault(requested)
+                : session.CurrentPage;
+            if (target is null)
+                return Refuse(command.CommandId, session.LivePages.Count switch
+                {
+                    0 => "No approved page is open in the paired browser.",
+                    _ when command.PageId is { Length: > 0 } => "The page this command was bound to is no longer open.",
+                    _ => $"{session.LivePages.Count} approved pages are open; the run must name which one to use.",
+                });
+            if (!string.Equals(target.Origin, origin, StringComparison.OrdinalIgnoreCase))
+                return Refuse(command.CommandId, "The live page is not on the origin this command targets.");
 
             // One step at a time. A flow is a sequence, and two commands in flight would make "which click produced this
             // route" unanswerable.
@@ -80,7 +91,9 @@ public sealed partial class BrowserCompanionService
             var timeout = Math.Clamp(command.TimeoutMs, 500, 60_000);
             var pending = new PendingCommand
             {
-                Command = command with { TargetOrigin = origin, TimeoutMs = timeout },
+                // The command carries the page and the content-script instance it was bound to, so every layer below
+                // can check it is still acting on the same page rather than on whatever is open by the time it lands.
+                Command = command with { TargetOrigin = origin, TimeoutMs = timeout, PageId = target.PageId, ContentScriptInstanceId = target.ContentScriptInstanceId },
                 QueuedAt = now,
                 ExpiresAt = now + CommandLifetime,
             };

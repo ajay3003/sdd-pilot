@@ -27,7 +27,10 @@ function harness({ local = {}, transient = {}, denied = false, registrationError
     scripting: { getRegisteredContentScripts: async () => registered, unregisterContentScripts: async () => { registered = []; },
       registerContentScripts: async scripts => { if (registrationError) throw new Error('policy fixture'); registered = scripts; } },
     alarms: { onAlarm: event('alarm'), get: async name => alarms.get(name), clear: async name => alarms.delete(name), create: async (name, value) => alarms.set(name, value) },
-    tabs: { get: async id => ({ id, url: origin + '/?code=DO-NOT-COLLECT#token', incognito: false }) },
+    tabs: {
+      get: async id => ({ id, url: origin + '/?code=DO-NOT-COLLECT#token', incognito: false }),
+      onRemoved: event('tabRemoved'),
+    },
   };
   const context = vm.createContext({ chrome, URL, console: { warn() {}, debug() {} }, setTimeout, clearTimeout,
     fetch: async (url, options) => {
@@ -82,9 +85,12 @@ test('granting the origin starts reporting on the session pairing already create
   assert.equal(h.local.pendingSession, undefined);
   assert.deepEqual(Array.from(h.registered()).flatMap(s => Array.from(s.matches)), [`${origin}/*`, `${origin}/*`]);
   assert.equal(h.alarms.get('birknext-heartbeat').periodInMinutes, 0.5);
-  // And a page in that tab now reports, which is what leaves "Paired · not reporting".
-  await h.message({ type: 'content:page', page: { origin, path: '/' } }, h.sender);
-  assert.equal(h.posts.at(-1).body.currentPageOrigin, origin);
+  // And a content script in that tab registers as live, which is what leaves "Paired · not reporting".
+  await h.message({ type: 'content:live', instanceId: 'abc', route: '/' }, h.sender);
+  await new Promise(setImmediate);
+  assert.equal(h.posts.at(-1).body.livePages.length, 1);
+  assert.equal(h.posts.at(-1).body.livePages[0].origin, origin);
+  assert.equal(h.posts.at(-1).body.currentPageOrigin, origin, 'one live page also fills the single-page field');
 });
 
 test('a grant made outside the popup, or after a worker restart, still activates the parked session', async () => {
@@ -113,7 +119,7 @@ test('unpairing discards a parked session', async () => {
 test('worker restart restores missing heartbeat alarm and approved current page without an active UI', async () => {
   const first = harness();
   assert.equal((await first.message({ type: 'popup:pair', pairingCode: 'PAIR' })).state, 'connected');
-  await first.message({ type: 'content:page', page: { origin, path: '/' } }, first.sender);
+  await first.message({ type: 'content:live', instanceId: 'abc', route: '/' }, first.sender);
   await new Promise(setImmediate);
   assert.equal(first.posts.at(-1).body.currentPageOrigin, origin);
   const restarted = harness({ local: first.local, transient: first.transient });
@@ -290,7 +296,9 @@ test('current-page and evidence report under the same session identity', async (
   const h = harness();
   await h.message({ type: 'popup:pair', pairingCode: 'PAIR' });
 
-  await h.message({ type: 'content:page', page: { origin, path: '/admin/operations' } }, h.sender);
+  // Liveness and evidence are two independent reports from the same content script, which is the point: one says the
+  // page is open, the other says what was seen on it, and neither is derived from the other.
+  await h.message({ type: 'content:live', instanceId: 'abc', route: '/admin/operations' }, h.sender);
   await h.message({ type: 'content:evidence', page: { profileId: 'm2lb', pageOrigin: origin, pagePath: '/admin/operations' } }, h.sender);
   await h.flush();
 
@@ -298,7 +306,7 @@ test('current-page and evidence report under the same session identity', async (
   const envelope = h.posts.filter(p => p.route === 'evidence').at(-1).body;
   assert.equal(envelope.sessionId, heartbeat.sessionId);
   assert.equal(envelope.profileId, heartbeat.profileId);
-  // Both describe the same approved application. The heartbeat's path is resolved from the reporting tab, never from the
-  // message, so it is the tab's current route rather than the route the snapshot was built for.
-  assert.equal(heartbeat.currentPageOrigin, envelope.pages[0].pageOrigin);
+  // Both describe the same approved application. The heartbeat reports where the browser IS, from live page
+  // registration; the envelope reports what was observed. They are produced independently and agree on the origin.
+  assert.equal(heartbeat.livePages[0].origin, envelope.pages[0].pageOrigin);
 });

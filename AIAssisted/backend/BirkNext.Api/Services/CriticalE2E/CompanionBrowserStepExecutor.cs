@@ -33,6 +33,8 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
             ProfileId = context.Flow.ProfileId,
             EnvironmentId = context.Flow.EnvironmentId,
             TargetOrigin = context.TargetOrigin,
+            // Every step of the run goes to the page the run was bound to, never to whichever page is open by now.
+            PageId = context.PageId,
             Action = step.BrowserAction!.Value,
             Selector = step.Selector,
             Value = CriticalE2EVariables.Resolve(step.Value, context, startedAt),

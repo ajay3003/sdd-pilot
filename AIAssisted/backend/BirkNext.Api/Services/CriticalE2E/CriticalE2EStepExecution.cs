@@ -16,6 +16,8 @@ public sealed record CriticalE2ERunContext
     public required DateTimeOffset StartedAt { get; init; }
     public AuthenticatedReviewIdentity? ApiIdentity { get; init; }
     public string? TargetOrigin { get; init; }
+    /// <summary>The live page every browser step of this run is bound to.</summary>
+    public string? PageId { get; init; }
     /// <summary>Values produced by earlier steps, addressable as <c>${step:&lt;stepId&gt;}</c>.</summary>
     public Dictionary<string, string> Outputs { get; } = new(StringComparer.OrdinalIgnoreCase);
 }

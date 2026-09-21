@@ -152,3 +152,22 @@
 
 /* Absent is absent. Muted and worded, never a zero that reads as a measurement. */
 .bd-unmeasured { color: var(--clr-text-muted, #6b7280); font-size: 0.72rem; font-style: italic; white-space: nowrap; }
+
+/* Live session and captured evidence are two questions. They get two strips, each with its own heading, so no reader
+   can take "4 pages with evidence" as an answer to "is anything open right now". */
+.bd-overview-live, .bd-overview-evidence { position: relative; }
+.bd-ov-group {
+  flex-basis: 100%;
+  font-size: .68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-secondary, #666);
+}
+.bd-overview-live { border-left: 3px solid var(--accent, #2563eb); padding-left: .75rem; }
+.bd-overview-evidence { border-left: 3px solid var(--border-color, #ddd); padding-left: .75rem; }
+/* A value that is currently absent should read as absent rather than as a fact. */
+.bd-ov-muted { color: var(--text-secondary, #777); font-weight: 400; }
+
+/* A page row says what it is: open now, open with nothing captured yet, or only a record of a past visit. */
+.bd-pageliveness { display: block; font-size: .72rem; color: var(--text-secondary, #666); }

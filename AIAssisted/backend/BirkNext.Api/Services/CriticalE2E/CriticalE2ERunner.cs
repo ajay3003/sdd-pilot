@@ -9,6 +9,8 @@ public sealed record CriticalE2ERunRequest
     public AuthenticatedReviewIdentity? ApiIdentity { get; init; }
     /// <summary>The approved application origin browser steps act on. Comes from the paired companion session, never from the flow.</summary>
     public string? TargetOrigin { get; init; }
+    /// <summary>The live page the whole run is bound to. A run never follows the user to another tab.</summary>
+    public string? PageId { get; init; }
     public string? BuildId { get; init; }
     public string? ReleaseId { get; init; }
     public string? CommitSha { get; init; }
@@ -29,7 +31,7 @@ public sealed class CriticalE2ERunner(IEnumerable<ICriticalE2EStepExecutor> exec
         var context = new CriticalE2ERunContext
         {
             Flow = flow, RunId = runId, CorrelationId = CriticalE2ECorrelation.New(startedAt), StartedAt = startedAt,
-            ApiIdentity = request.ApiIdentity, TargetOrigin = request.TargetOrigin,
+            ApiIdentity = request.ApiIdentity, TargetOrigin = request.TargetOrigin, PageId = request.PageId,
         };
 
         CriticalE2ERunResult Finish(CriticalE2EStatus status, List<CriticalE2EStepResult> steps, string? reason)

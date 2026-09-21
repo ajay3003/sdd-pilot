@@ -73,23 +73,33 @@ public sealed class CriticalE2EService(
                 Message = CriticalE2EEnvironmentPolicy.BlockedReason(request.EnvironmentType),
             };
 
-        var status = companion.Status(request.ProfileId);
-        if (status.State != BrowserCompanionState.Connected)
+        // Readiness is a statement about the browser right now. Stored evidence contributes nothing to it: a page we
+        // captured a DOM from yesterday is not a page a command can be delivered to today.
+        var live = companion.Status(request.ProfileId).Live;
+        if (!live.ExtensionConnected)
             return new CriticalE2EEngineStatus
             {
                 State = CriticalE2EEngineState.RequiresBrowserSession,
                 Message = "The Browser Companion is not connected.",
                 Action = "Open the application in your normal browser, sign in, and pair the Browser Companion.",
             };
-        if (status.CurrentPageOrigin is null)
+        if (live.LiveApprovedPageCount == 0)
             return new CriticalE2EEngineStatus
             {
                 State = CriticalE2EEngineState.RequiresBrowserSession,
                 Message = "The Browser Companion is connected, but no approved application page is open.",
                 Action = "Open a signed-in page of the application in the paired browser.",
             };
+        if (live.CurrentPage is null)
+            // Choosing one for the user would mean a run silently drove whichever tab registered first.
+            return new CriticalE2EEngineStatus
+            {
+                State = CriticalE2EEngineState.RequiresBrowserSession,
+                Message = $"{live.LiveApprovedPageCount} approved pages are open.",
+                Action = "Leave one application page open, or select the page the run should use.",
+            };
 
-        return new CriticalE2EEngineStatus { State = CriticalE2EEngineState.Ready, Message = $"Ready on {status.CurrentPageOrigin}." };
+        return new CriticalE2EEngineStatus { State = CriticalE2EEngineState.Ready, Message = $"Ready on {live.CurrentPage.Identity}." };
     }
 
     private CriticalE2EEngineStatus IntegrationEngine(CriticalE2EOverviewRequest request, IReadOnlyList<CriticalE2EFlowDefinition> flows)
@@ -126,7 +136,7 @@ public sealed class CriticalE2EService(
 
         // The origin browser steps act on comes from the paired session, not from the flow: a flow definition must not
         // be able to point the authenticated browser at an origin the user never approved.
-        var companionStatus = companion.Status(context.ProfileId);
+        var live = companion.Status(context.ProfileId).Live;
         var runs = new List<CriticalE2ERunResult>();
         foreach (var flow in selected)
         {
@@ -134,7 +144,8 @@ public sealed class CriticalE2EService(
             {
                 Flow = flow,
                 ApiIdentity = Identity(context),
-                TargetOrigin = companionStatus.CurrentPageOrigin,
+                TargetOrigin = live.CurrentOrigin,
+                PageId = live.CurrentPageId,
                 BuildId = context.BuildId,
                 ReleaseId = context.ReleaseId,
                 CommitSha = context.CommitSha,

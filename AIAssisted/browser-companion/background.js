@@ -240,22 +240,15 @@ async function flush() {
 async function heartbeat() {
   const session = await getSession();
   if (!session) return;
-  let currentPage = null;
-  const { reportingPage } = await chrome.storage.session.get('reportingPage');
-  if (reportingPage?.profileId === session.profileId) {
-    try {
-      const tab = await chrome.tabs.get(reportingPage.tabId);
-      if (!tab.incognito && approved(session, tab.url) &&
-          await chrome.permissions.contains({ origins: [`${pageIdentity.originOf(tab.url)}/*`] })) {
-        const identity = pageIdentity.identityOf(sanitize.url(tab.url));
-        currentPage = identity;
-      }
-    } catch { /* The reporting tab was closed or its host permission was removed. */ }
-  }
+  const live = await livePagesFor(session);
+  // The single-page fields stay for a backend that predates live page reporting, and are meaningful only when exactly
+  // one page is open — they cannot describe two tabs, which is the whole reason livePages exists.
+  const only = live.length === 1 ? live[0] : null;
   try {
     const result = await post('heartbeat', {
       sessionId: session.sessionId, profileId: session.profileId, extensionVersion: EXTENSION_VERSION,
-      currentPageOrigin: currentPage ? currentPage.origin : null, currentPagePath: currentPage ? currentPage.path : null,
+      currentPageOrigin: only ? only.origin : null, currentPagePath: only ? only.route : null,
+      livePages: live,
     });
     if (result.ok && result.json && result.json.accepted && lastStatus.state !== 'connected') lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
     if (result.status === 403) { await revokeSession(result.json && result.json.message); return; }
@@ -301,6 +294,7 @@ async function runCommand(session, command) {
   else if (!PROBE_ENVIRONMENTS.includes(session.environmentType)) outcome = refuse('Steps run only against non-production environments.');
   else if (!approved(session, command.targetOrigin)) outcome = refuse('The step targets an origin this session has not approved.');
   else if (!wcagTab || wcagTab.profileId !== session.profileId) outcome = refuse('No approved reporting page is open in this browser.');
+  else if (command.pageId && ![...livePages.values()].some(p => p.pageId === command.pageId)) outcome = refuse('The page this step was bound to is no longer open.');
   else {
     // Claim before dispatching: if the page never answers, the command is still spent, so a retry cannot click again.
     executedCommands.set(id, refuse('The page did not report a result.'));
@@ -321,6 +315,49 @@ async function reportCommand(session, result) {
     trace('CommandResultReported');
   } catch { trace('CommandResultFailed'); }
 }
+
+/**
+ * Approved pages with a live content script, keyed by tab id.
+ *
+ * This is deliberately NOT derived from evidence. A page becomes live the moment its content script starts and stays
+ * live until the tab closes, the script is replaced by a reload, or it stops saying it is there — none of which has
+ * anything to do with whether a DOM snapshot has been collected yet. Evidence arriving used to be what made BirkNext
+ * believe a page was open, which is how a closed tab could still be reported as the current page.
+ */
+const livePages = new Map();
+
+/** Written through so the registry survives the service worker being suspended mid-session. */
+async function restoreLivePages() {
+  if (livePages.size > 0) return;
+  const { livePages: stored } = await chrome.storage.session.get('livePages');
+  for (const page of stored ?? []) livePages.set(page.tabId, page);
+}
+
+async function persistLivePages() {
+  try { await chrome.storage.session.set({ livePages: [...livePages.values()] }); } catch { /* session storage is best effort */ }
+}
+
+/** The live pages that still belong to this session and whose tabs still exist. */
+async function livePagesFor(session) {
+  await restoreLivePages();
+  const out = [];
+  for (const [tabId, page] of [...livePages.entries()]) {
+    if (page.profileId !== session.profileId || !approved(session, page.origin)) { livePages.delete(tabId); continue; }
+    // A tab that has gone is not live, whatever it last reported. onRemoved normally gets here first; this is the
+    // fallback for a worker that was asleep when the tab closed.
+    try { await chrome.tabs.get(tabId); } catch { livePages.delete(tabId); continue; }
+    out.push({ pageId: page.pageId, origin: page.origin, route: page.route, contentScriptInstanceId: page.instanceId });
+  }
+  await persistLivePages();
+  return out;
+}
+
+// Immediate cleanup when a tab closes. onRemoved needs no "tabs" permission — it carries only the id of a tab we
+// already knew about.
+chrome.tabs.onRemoved.addListener(async tabId => {
+  await restoreLivePages();
+  if (livePages.delete(tabId)) { await persistLivePages(); heartbeat(); }
+});
 
 let wcagTab = null;
 // Environments an interactive probe may drive. Production is deliberately absent and must stay absent.
@@ -376,6 +413,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message.page.pageOrigin === pageIdentity.originOf(sender.url);
         if (allowed) queueEvidence(message.page);
         sendResponse({ queued: Boolean(allowed) });
+        break;
+      }
+      // A content script announcing that it is alive on an approved page. Independent of evidence: it arrives at
+      // document_start, long before any DOM snapshot exists, and repeats on every route change.
+      case 'content:live': {
+        const session = await getSession();
+        if (!await approvedSender(session, sender) || !sender.tab) { sendResponse({ ok: false }); break; }
+        await restoreLivePages();
+        const tabId = sender.tab.id;
+        const instanceId = String(message.instanceId || '').slice(0, 32);
+        const origin = pageIdentity.originOf(sender.url);
+        if (!instanceId || !origin) { sendResponse({ ok: false }); break; }
+        livePages.set(tabId, {
+          tabId, pageId: `t${tabId}-${instanceId}`, profileId: session.profileId, origin,
+          // Origin comes from sender.url, which the browser controls; the route comes from the page, which is the
+          // only side that knows where an SPA has navigated to.
+          route: pageIdentity.identityOf(`${origin}${String(message.route || '/')}`)?.path ?? '/', instanceId,
+        });
+        await persistLivePages();
+        wcagTab = { id: tabId, profileId: session.profileId };
+        sendResponse({ ok: true, pageId: `t${tabId}-${instanceId}` });
+        // Tell BirkNext straight away rather than at the next scheduled beat: a page that just opened should not look
+        // closed for another half minute.
+        heartbeat();
         break;
       }
       case 'content:page': {

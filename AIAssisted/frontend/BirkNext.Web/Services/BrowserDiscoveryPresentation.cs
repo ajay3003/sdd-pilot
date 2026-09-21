@@ -680,3 +680,90 @@ public enum BrowserDiscoveryNextAction
     OpenOrRefreshApprovedPage,
     OpenApprovedPage,
 }
+
+/// <summary>One compact fact for the Browser Discovery overview: a label, a value, and a test id.</summary>
+public sealed record BrowserDiscoveryFact(string Label, string Value, string TestId, bool Muted = false);
+
+/// <summary>
+/// Whether a page is open right now, has only been captured before, or both.
+/// </summary>
+public enum BrowserPageLiveness { LiveNow, HistoricalOnly, LiveWithoutEvidence }
+
+/// <summary>
+/// The two questions Browser Discovery has to answer separately: what is live right now, and what have we captured
+/// before.
+///
+/// They were one set of facts, and that is how "Connected · 4 pages with evidence · DOM available" could describe a
+/// browser with no application page open at all. Every label below belongs to exactly one of the two, and nothing in
+/// the live half is derived from stored evidence.
+/// </summary>
+public static class BrowserDiscoveryLive
+{
+    /// <summary>Live facts. Five compact rows; none of them reads stored evidence.</summary>
+    public static IReadOnlyList<BrowserDiscoveryFact> Facts(BrowserCompanionStatus? status)
+    {
+        var live = status?.Live ?? BrowserCompanionLiveSession.Disconnected;
+        return
+        [
+            new("Browser Companion", BrowserDiscoveryStates.SessionLabel(status?.State ?? BrowserCompanionState.NotPaired), "bd-live-session"),
+            new("Live approved pages", live.LiveApprovedPageCount.ToString(), "bd-live-pages"),
+            new("Current page", CurrentPageLabel(live), "bd-current-page", live.CurrentPage is null),
+            // Without a content script there is no DOM to read and no step to run, whatever was captured before.
+            new("Content script", live.ContentScriptAlive ? "Live" : "Not available", "bd-content-script", !live.ContentScriptAlive),
+            new("Live DOM", live.LiveDomAvailable ? "Available now" : "Not available", "bd-live-dom", !live.LiveDomAvailable),
+        ];
+    }
+
+    /// <summary>
+    /// Never "the newest evidence route". With no live page this is None even when a hundred pages have evidence, and
+    /// with several open it says so rather than naming one.
+    /// </summary>
+    public static string CurrentPageLabel(BrowserCompanionLiveSession live) => live switch
+    {
+        { CurrentPage: { } page } => page.Identity,
+        { LiveApprovedPageCount: 0 } => "None",
+        var many => $"{many.LiveApprovedPageCount} pages open",
+    };
+
+    /// <summary>Historical facts. Every label says "evidence", because every one of them is about the past.</summary>
+    public static IReadOnlyList<BrowserDiscoveryFact> EvidenceFacts(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot)
+    {
+        // The stored snapshot is the fuller history (it survives re-pairing); the session summary covers the case where
+        // the snapshot has not been merged yet.
+        var rows = BrowserDiscoveryPresentation.Rows(snapshot);
+        var summary = status?.Evidence ?? BrowserCompanionEvidenceSummary.Empty;
+        var pages = Math.Max(rows.Count, summary.PagesWithEvidence);
+        var last = BrowserDiscoveryPresentation.LastEvidenceAt(snapshot) ?? summary.LastEvidenceAt;
+        return
+        [
+            new("Pages with evidence", pages.ToString(), "bd-evidence-pages"),
+            new("Last evidence", last is { } at ? at.ToLocalTime().ToString("HH:mm:ss") : "None", "bd-last-evidence", last is null),
+            new("DOM evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Dom == BrowserEvidenceState.Available), summary.DomEvidencePageCount)), "bd-evidence-dom"),
+            new("Accessibility evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.WcagAreas.Count > 0), summary.AccessibilityEvidencePageCount)), "bd-evidence-accessibility"),
+            new("Performance evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Performance == BrowserEvidenceState.Available), summary.PerformanceEvidencePageCount)), "bd-evidence-performance"),
+        ];
+    }
+
+    /// <summary>"Available" alone reads as "available now". These counts are all about captures that already happened.</summary>
+    private static string Captured(int pages) => pages == 0 ? "None captured" : $"{pages} page{(pages == 1 ? "" : "s")} captured";
+
+    /// <summary>Is this evidence row a page that is also open right now?</summary>
+    public static BrowserPageLiveness Liveness(BrowserPageRow row, BrowserCompanionLiveSession? live) =>
+        live?.LivePages.Any(p => string.Equals(p.Identity, row.Identity, StringComparison.OrdinalIgnoreCase)) == true
+            ? BrowserPageLiveness.LiveNow
+            : BrowserPageLiveness.HistoricalOnly;
+
+    public static string LivenessLabel(BrowserPageLiveness liveness) => liveness switch
+    {
+        BrowserPageLiveness.LiveNow => "Live now",
+        BrowserPageLiveness.LiveWithoutEvidence => "Live now · no evidence yet",
+        _ => "Historical evidence only",
+    };
+
+    /// <summary>Live pages that have produced no evidence yet — real, current, and invisible to an evidence-only list.</summary>
+    public static IReadOnlyList<BrowserCompanionLivePage> LiveWithoutEvidence(BrowserCompanionLiveSession? live, EndpointDiscoverySnapshot? snapshot)
+    {
+        var known = BrowserDiscoveryPresentation.Rows(snapshot).Select(r => r.Identity).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return live?.LivePages.Where(p => !known.Contains(p.Identity)).ToList() ?? [];
+    }
+}

@@ -11,6 +11,29 @@
   globalThis.__birkNextCompanionActive = true;
 
   const win = window, doc = document;
+  // Identifies THIS content script instance. A full page load makes a new one, which is how the backend tells a reload
+  // apart from a second tab instead of accumulating phantom live pages.
+  const instanceId = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+  let livePageId = null;
+
+  /**
+   * Announces that this page is alive on an approved origin.
+   *
+   * Deliberately separate from evidence reporting. Page liveness is continuous — it starts when the script starts and
+   * ends when the tab does — while an evidence visit begins and ends with every SPA route change. Deriving one from the
+   * other made the browser appear to vanish mid-navigation, and made a closed tab appear open as long as its last
+   * snapshot was still arriving.
+   */
+  let announcedRoute = null;
+  async function announceLive() {
+    if (!scope) return;
+    announcedRoute = C.pageIdentity.identityOf(win.location.href)?.path ?? '/';
+    // The page reports its own route: sender.url is the frame's committed URL and does not follow a same-document
+    // pushState, so trusting it would freeze the route at whatever the tab first loaded.
+    lastAnnouncedAt = Date.now();
+    const response = await send({ type: 'content:live', instanceId, route: announcedRoute });
+    if (response?.pageId) livePageId = response.pageId;
+  }
   let scope = null;           // { profileId, approvedOrigins }
   let visit = null;           // current visit from the navigation tracker
   let snapshotSequence = 0;
@@ -28,6 +51,8 @@
       layoutBusy = true;
       try {
         scope = await send({ type: 'content:session' });
+    // Live before any evidence: a page the user just opened is open, whether or not anything has been observed on it.
+    if (scope && C.pageIdentity.isApprovedOrigin(C.pageIdentity.originOf(win.location.href), scope.approvedOrigins)) await announceLive();
         if (!isApprovedVisit(visit) || !C.wcagInteraction.allowed(scope?.environmentType, true)) { respond({ message: 'Passive checks only for this environment.' }); return; }
         if (message.type === 'wcag:keyboard') {
           keyboardObservation?.stop();
@@ -312,7 +337,8 @@
     // The visit object is shared from route change on, so errors and interactions before stabilization are attributed to it.
     onVisitStart: v => {
       visit = v;
-      if (isApprovedVisit(v)) send({ type: 'content:page' });
+      // The route moved; the page did not. Re-announcing keeps the route current without the page ever being absent.
+      if (isApprovedVisit(v)) { announceLive(); send({ type: 'content:page' }); }
     },
     onVisit: async v => {
       visit = v;
@@ -327,8 +353,8 @@
     },
   });
 
-  let pageHeartbeat = null;
-  win.addEventListener('pagehide', () => { clearInterval(pageHeartbeat); if (visit && visit.stabilized) emit('final'); for (const o of observers) { try { o.disconnect(); } catch { } } tracker.dispose(); });
+  let pageHeartbeat = null, livenessHeartbeat = null, lastAnnouncedAt = 0;
+  win.addEventListener('pagehide', () => { clearInterval(pageHeartbeat); clearInterval(livenessHeartbeat); if (visit && visit.stabilized) emit('final'); for (const o of observers) { try { o.disconnect(); } catch { } } tracker.dispose(); });
 
   (async () => {
     scope = await send({ type: 'content:session' });
@@ -339,5 +365,16 @@
     pageHeartbeat = setInterval(() => {
       if (isApprovedVisit(visit)) send({ type: 'content:page' });
     }, 15000);
+    // Liveness is its own path, deliberately not gated on an evidence visit: this page is open whether or not anything
+    // has been observed on it, and it stays open across the gap between one visit ending and the next beginning.
+    //
+    // It also re-announces whenever the route moves. A pushState from the application runs in the MAIN world, which an
+    // isolated-world history patch cannot see, so comparing the path is the only way the route stays current without
+    // waiting for the evidence tracker to notice on its own poll.
+    livenessHeartbeat = setInterval(() => {
+      if (!scope || !C.pageIdentity.isApprovedOrigin(C.pageIdentity.originOf(win.location.href), scope.approvedOrigins)) return;
+      const route = C.pageIdentity.identityOf(win.location.href)?.path ?? '/';
+      if (route !== announcedRoute || Date.now() - lastAnnouncedAt > 15000) announceLive();
+    }, 500);
   })();
 })();

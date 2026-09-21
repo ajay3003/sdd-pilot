@@ -146,8 +146,13 @@ public sealed record CompanionAutomationCommand
     public string EnvironmentId { get; init; } = "";
     /// <summary>Canonical origin the page must still be on when the command executes.</summary>
     public string TargetOrigin { get; init; } = "";
-    /// <summary>Optional page identity (origin + normalized path) when the flow targets one specific page.</summary>
+    /// <summary>
+    /// The live page this command is bound to. Set by the backend when the command is queued; a run never retargets
+    /// itself to a different page, because "whichever page is open now" is not a test.
+    /// </summary>
     public string? PageId { get; init; }
+    /// <summary>The content script instance that was live when the command was queued. A reload replaces it, and a command bound to the old one is stale.</summary>
+    public string? ContentScriptInstanceId { get; init; }
     public CompanionActionKind Action { get; init; }
     public CompanionSelector? Selector { get; init; }
     /// <summary>Input for Fill/Select, or the route for Navigate. Never code.</summary>

@@ -160,8 +160,11 @@ public sealed class BrowserCompanionServiceTests
         result.AcceptedPages.Should().Be(1);
         var status = _service.Status("dev");
         status.PagesWithEvidence.Should().Be(1);
-        status.CurrentPagePath.Should().Be("/children/search");
+        status.Evidence.PagesWithEvidence.Should().Be(1);
         status.Pages.Single().Identity.Should().Be("https://m2lbdev.bufetat.no/children/search");
+        // Evidence does not move the browser: where the browser IS comes from live page registration only.
+        status.CurrentPagePath.Should().BeNull();
+        status.Live.LiveApprovedPageCount.Should().Be(0);
     }
 
     /// <summary>
@@ -262,8 +265,10 @@ public sealed class BrowserCompanionServiceTests
             Pages = [Page("dev", origin, "/admin/operations", visit)] }, Extension);
 
         result.AcceptedPages.Should().Be(1, result.Message);
+        // The point of this case is that the hostname survives sanitization intact, which the stored evidence shows.
+        // It deliberately no longer reads the current page, which evidence must never set.
         _service.Status("dev").Pages.Single().PageOrigin.Should().Be(origin);
-        _service.Status("dev").CurrentPageOrigin.Should().Be(origin);
+        _service.Status("dev").Evidence.HistoricalRoutes.Should().Contain("/admin/operations");
     }
 
     /// <summary>The ordinary case stays ordinary: no canonicalization change may cost M2LB DEV its evidence.</summary>

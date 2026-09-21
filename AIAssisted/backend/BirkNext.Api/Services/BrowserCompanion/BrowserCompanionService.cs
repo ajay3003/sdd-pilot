@@ -72,8 +72,13 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         /// <summary>While this is in the future the companion polls quickly, because a Critical E2E run is expected.</summary>
         public DateTimeOffset AutomationWindowUntil { get; set; } = DateTimeOffset.MinValue;
         public string ExtensionVersion { get; set; } = "";
-        public string? CurrentPageOrigin { get; set; }
-        public string? CurrentPagePath { get; set; }
+        /// <summary>Approved pages with a live content script, keyed by PageId. Only the heartbeat writes this.</summary>
+        public Dictionary<string, BrowserCompanionLivePage> LivePages { get; } = new(StringComparer.Ordinal);
+        public DateTimeOffset? LastContentScriptSeenAt { get; set; }
+        /// <summary>Derived from LivePages, never from evidence: the single open page, or null when zero or several.</summary>
+        public BrowserCompanionLivePage? CurrentPage => LivePages.Count == 1 ? LivePages.Values.First() : null;
+        public string? CurrentPageOrigin => CurrentPage?.Origin;
+        public string? CurrentPagePath => CurrentPage?.Route;
         public int RejectedMessages { get; set; }
         public Dictionary<string, BrowserPageEvidence> Pages { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, PendingCommand> Commands { get; } = new(StringComparer.Ordinal);
@@ -155,23 +160,10 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
             var heartbeatAt = time.GetUtcNow();
             session.LastSeenAt = heartbeatAt;
             session.ExtensionVersion = Safe(heartbeat.ExtensionVersion, 40);
-            // The same canonicalization the approved list was built with, for the same reason as the evidence path:
-            // this origin is compared, not displayed, so it must never be put through free-text redaction first.
-            var origin = ApplicationPagePolicy.CanonicalOrigin(heartbeat.CurrentPageOrigin);
-            if (origin is not null && session.ApprovedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
-            {
-                session.CurrentPageOrigin = origin;
-                session.CurrentPagePath = BrowserCompanionEvidenceSanitizer.NormalizePath(heartbeat.CurrentPagePath);
-            }
-            else
-            {
-                // The active tab is not an approved page: the companion is connected but idle for this environment.
-                session.CurrentPageOrigin = null;
-                session.CurrentPagePath = null;
-            }
-            // A queued command rides back on this response. It is only handed out when the companion is actually on an
-            // approved page — a command aimed at a page that is no longer open is a stale click, not a pending one.
-            var command = session.CurrentPageOrigin is null ? null : ClaimNextCommand(session, heartbeatAt);
+            ReconcileLivePages(session, heartbeat, heartbeatAt);
+            // A queued command rides back on this response. It is only handed out when a live page is actually there to
+            // receive it — a command aimed at a page that is no longer open is a stale click, not a pending one.
+            var command = session.CurrentPage is null ? null : ClaimNextCommand(session, heartbeatAt);
             var fast = command is not null || heartbeatAt < session.AutomationWindowUntil;
             return new BrowserCompanionAcceptResult { Accepted = true, Message = "OK", PendingCommand = command, NextHeartbeatMs = fast ? 500 : null };
         }
@@ -232,8 +224,7 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
                     continue;
                 }
                 session.Pages[page.Identity] = page;
-                session.CurrentPageOrigin = page.PageOrigin;
-                session.CurrentPagePath = page.PagePath;
+                // Evidence does not move the browser. Where the browser IS comes from live page registration only.
                 accepted++;
             }
             session.RejectedMessages += rejected;
@@ -268,6 +259,8 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
                     CurrentPageOrigin = session.CurrentPageOrigin, CurrentPagePath = session.CurrentPagePath,
                     PagesWithEvidence = session.Pages.Count, RejectedMessages = session.RejectedMessages,
                     Pages = session.Pages.Values.OrderByDescending(p => p.CapturedAt).ToList(),
+                    Live = LiveSession(session, connected, now),
+                    Evidence = EvidenceSummary(session),
                     Message = connected ? "Browser Companion connected." : "Browser Companion paired but not reporting. Open an approved page in the paired browser, or check that the extension is enabled.",
                 };
             }
@@ -312,11 +305,89 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
                 {
                     foreach (var key in _challengesByProfile.Where(c => now > c.Value.ExpiresAt || c.Value.Used).Select(c => c.Key).ToList()) _challengesByProfile.Remove(key);
                     foreach (var key in _sessionsByProfile.Where(s => s.Value.Expired(now)).Select(s => s.Key).ToList()) _sessionsByProfile.Remove(key);
+                    foreach (var session in _sessionsByProfile.Values) ExpireLivePages(session, now);
                 }
             }
         }
         catch (OperationCanceledException) { }
     }
+
+    /// <summary>
+    /// How long a live page survives without the content script saying it is still there. The companion heartbeats
+    /// every 30 seconds and faster during a run, so this tolerates three misses — long enough to ride out a suspended
+    /// worker, short enough that a browser which was killed stops being reported as having pages open.
+    /// </summary>
+    public static readonly TimeSpan LivePageLifetime = TimeSpan.FromMinutes(2);
+
+    /// <summary>
+    /// Replaces the live page set with what the extension just reported. A page the heartbeat no longer mentions is
+    /// gone — a closed tab, a navigation away from an approved origin, or a reload that replaced the instance.
+    /// Unapproved origins are dropped here, so an approved-origin check never has to be repeated downstream.
+    /// </summary>
+    private void ReconcileLivePages(Session session, BrowserCompanionHeartbeat heartbeat, DateTimeOffset now)
+    {
+        var reported = heartbeat.LivePages ?? [];
+        // Compatibility with an extension build that predates live page reporting: its single current page still counts
+        // as one live page. It cannot describe two tabs, which is exactly why the newer field exists.
+        if (reported.Count == 0 && ApplicationPagePolicy.CanonicalOrigin(heartbeat.CurrentPageOrigin) is { } legacy
+            && session.ApprovedOrigins.Contains(legacy, StringComparer.OrdinalIgnoreCase))
+            reported = [new BrowserCompanionLivePageReport("legacy", legacy, BrowserCompanionEvidenceSanitizer.NormalizePath(heartbeat.CurrentPagePath), "legacy")];
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var page in reported.Take(BrowserCompanionLimits.MaxLivePages))
+        {
+            var origin = ApplicationPagePolicy.CanonicalOrigin(page.Origin);
+            if (origin is null || !session.ApprovedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase)) continue;
+            var pageId = BrowserCompanionEvidenceSanitizer.Identifier(page.PageId);
+            var instance = BrowserCompanionEvidenceSanitizer.Identifier(page.ContentScriptInstanceId);
+            if (pageId.Length == 0 || instance.Length == 0) continue;
+            seen.Add(pageId);
+            var route = BrowserCompanionEvidenceSanitizer.NormalizePath(page.Route);
+            // A new instance on the same tab is a reload: it replaces the page rather than adding one.
+            session.LivePages[pageId] = session.LivePages.TryGetValue(pageId, out var existing) && existing.ContentScriptInstanceId == instance
+                ? existing with { Route = route, LastSeenAt = now }
+                : new BrowserCompanionLivePage
+                {
+                    PageId = pageId, Origin = origin, Route = route, ContentScriptInstanceId = instance,
+                    RegisteredAt = now, LastSeenAt = now,
+                };
+        }
+        foreach (var gone in session.LivePages.Keys.Where(k => !seen.Contains(k)).ToList()) session.LivePages.Remove(gone);
+        if (seen.Count > 0) session.LastContentScriptSeenAt = now;
+        ExpireLivePages(session, now);
+    }
+
+    private static void ExpireLivePages(Session session, DateTimeOffset now)
+    {
+        foreach (var stale in session.LivePages.Where(p => now - p.Value.LastSeenAt > LivePageLifetime).Select(p => p.Key).ToList())
+            session.LivePages.Remove(stale);
+    }
+
+    private static BrowserCompanionLiveSession LiveSession(Session session, bool connected, DateTimeOffset now)
+    {
+        // A session that is not currently reporting has no live pages, whatever it last said: liveness that outlives
+        // its own evidence of life is not liveness.
+        if (!connected) return new BrowserCompanionLiveSession { ProfileId = session.ProfileId, ExtensionConnected = false, LastExtensionHeartbeatAt = session.LastSeenAt };
+        ExpireLivePages(session, now);
+        return new BrowserCompanionLiveSession
+        {
+            ProfileId = session.ProfileId,
+            ExtensionConnected = true,
+            LastExtensionHeartbeatAt = session.LastSeenAt,
+            LastContentScriptHeartbeatAt = session.LastContentScriptSeenAt,
+            LivePages = session.LivePages.Values.OrderBy(p => p.RegisteredAt).ToList(),
+        };
+    }
+
+    private static BrowserCompanionEvidenceSummary EvidenceSummary(Session session) => new()
+    {
+        PagesWithEvidence = session.Pages.Count,
+        LastEvidenceAt = session.Pages.Count == 0 ? null : session.Pages.Values.Max(p => p.CapturedAt),
+        DomEvidencePageCount = session.Pages.Values.Count(p => p.Dom is not null),
+        AccessibilityEvidencePageCount = session.Pages.Values.Count(p => p.Accessibility is not null),
+        PerformanceEvidencePageCount = session.Pages.Values.Count(p => p.Performance is not null),
+        HistoricalRoutes = session.Pages.Values.Select(p => p.PagePath).Distinct(StringComparer.Ordinal).OrderBy(r => r, StringComparer.Ordinal).Take(50).ToList(),
+    };
 
     // ── helpers ──────────────────────────────────────────────────────────────
 

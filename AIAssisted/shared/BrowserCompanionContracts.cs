@@ -96,8 +96,18 @@ public sealed record BrowserCompanionPairResult
     public string Message { get; init; } = "";
 }
 
-/// <summary>Extension → backend: liveness plus the current approved page (identity only).</summary>
-public sealed record BrowserCompanionHeartbeat(string SessionId, string ProfileId, string? CurrentPageOrigin, string? CurrentPagePath, string ExtensionVersion);
+/// <summary>
+/// Extension → backend: liveness, plus every approved page the companion currently has a content script on.
+///
+/// <paramref name="LivePages"/> is the live truth. The single-page fields are a compatibility fallback for an older
+/// extension build and are used only when no live pages are reported — they cannot describe two open tabs.
+/// </summary>
+public sealed record BrowserCompanionHeartbeat(
+    string SessionId, string ProfileId, string? CurrentPageOrigin, string? CurrentPagePath, string ExtensionVersion,
+    List<BrowserCompanionLivePageReport>? LivePages = null);
+
+/// <summary>One live page as the extension reports it. Small on purpose: this rides on every heartbeat.</summary>
+public sealed record BrowserCompanionLivePageReport(string PageId, string Origin, string Route, string ContentScriptInstanceId);
 
 /// <summary>Extension → backend: one or more page evidence snapshots (batched; never one message per DOM node or entry).</summary>
 public sealed record BrowserCompanionEvidenceEnvelope
@@ -143,13 +153,25 @@ public sealed record BrowserCompanionStatus
     public DateTimeOffset? LastSeenAt { get; init; }
     public string? ExtensionVersion { get; init; }
     public IReadOnlyList<string> ApprovedOrigins { get; init; } = [];
+    /// <summary>Live: the origin of the single open approved page, or null. Never set from stored evidence.</summary>
     public string? CurrentPageOrigin { get; init; }
     public string? CurrentPagePath { get; init; }
+    /// <summary>Historical. A count of pages we have captured evidence for, which says nothing about what is open.</summary>
     public int PagesWithEvidence { get; init; }
     public int RejectedMessages { get; init; }
     /// <summary>Latest safe evidence per page (identity, metrics, rule ids, sanitized selectors). Memory-only on the backend.</summary>
     public List<BrowserPageEvidence> Pages { get; init; } = [];
     public string Message { get; init; } = "";
+
+    /// <summary>What is true in the browser right now. Never derived from <see cref="Pages"/>.</summary>
+    public BrowserCompanionLiveSession Live { get; init; } = BrowserCompanionLiveSession.Disconnected;
+    /// <summary>What was captured before. Survives every tab closing.</summary>
+    public BrowserCompanionEvidenceSummary Evidence { get; init; } = BrowserCompanionEvidenceSummary.Empty;
+
+    /// <summary>
+    /// The extension is talking to BirkNext. It does NOT mean an approved page is open, a content script is alive, a
+    /// DOM is readable, or that browser automation can run — read <see cref="Live"/> for any of those.
+    /// </summary>
     public bool Connected => State == BrowserCompanionState.Connected;
 }
 
@@ -444,6 +466,8 @@ public sealed record BrowserBlazorSummary
 public static class BrowserCompanionLimits
 {
     public const int MaxPagesPerEnvelope = 20;
+    /// <summary>Live approved pages tracked per session. A person does not have fifty M2LB tabs open; a loop might.</summary>
+    public const int MaxLivePages = 20;
     public const int MaxPagesPerEnvironment = 200;
     public const int MaxRuntimeErrorsPerPage = 50;
     public const int MaxAccessibilityRulesPerPage = 40;
@@ -467,4 +491,124 @@ public static class BrowserCompanionLimits
     public static readonly TimeSpan SessionIdleLifetime = TimeSpan.FromMinutes(3);
     public static readonly TimeSpan SessionAbsoluteLifetime = TimeSpan.FromHours(12);
     public static readonly TimeSpan ConnectedWindow = TimeSpan.FromSeconds(45);
+}
+
+// ── Live session state ─────────────────────────────────────────────────────────
+//
+// Everything below answers "what is true in the browser right now". It is deliberately a separate model from the
+// evidence summary further down, which answers "what did we capture before". The two were one object, and that is how
+// a closed tab could still report a current page: an evidence envelope arriving late set it.
+
+/// <summary>
+/// One approved application page that is open in the paired browser right now.
+///
+/// Liveness is a property of the PAGE, not of the evidence visit inside it. An SPA route change ends a visit and starts
+/// another; the page does not stop existing in between, and a model that conflated the two made the browser appear to
+/// vanish mid-navigation.
+/// </summary>
+public sealed record BrowserCompanionLivePage
+{
+    /// <summary>
+    /// Stable for as long as this content script instance lives: tab plus instance. A URL is not an identity — two tabs
+    /// can show the same route — and a route is mutable, so neither can be used here.
+    /// </summary>
+    public string PageId { get; init; } = "";
+    public string Origin { get; init; } = "";
+    /// <summary>Normalized path. Mutable: it changes as the user navigates within the same live page.</summary>
+    public string Route { get; init; } = "";
+    /// <summary>Changes on every full page load, which is how a reload replaces a live page instead of duplicating it.</summary>
+    public string ContentScriptInstanceId { get; init; } = "";
+    public DateTimeOffset RegisteredAt { get; init; }
+    public DateTimeOffset LastSeenAt { get; init; }
+    public string Identity => $"{Origin}{Route}";
+}
+
+/// <summary>
+/// What BirkNext currently knows about the paired browser. Nothing here is derived from stored evidence.
+/// </summary>
+public sealed record BrowserCompanionLiveSession
+{
+    public string? ProfileId { get; init; }
+    /// <summary>The extension is talking to BirkNext. It says nothing about whether an application page is open.</summary>
+    public bool ExtensionConnected { get; init; }
+    public DateTimeOffset? LastExtensionHeartbeatAt { get; init; }
+    public List<BrowserCompanionLivePage> LivePages { get; init; } = [];
+    public DateTimeOffset? LastContentScriptHeartbeatAt { get; init; }
+
+    public int LiveApprovedPageCount => LivePages.Count;
+    /// <summary>A content script is running somewhere we can reach. Without one there is no DOM to read or act on.</summary>
+    public bool ContentScriptAlive => LivePages.Count > 0;
+
+    /// <summary>
+    /// The one live page, when there is exactly one. With several open there is no current page: picking the first
+    /// would silently aim a command at whichever happened to register first.
+    /// </summary>
+    public BrowserCompanionLivePage? CurrentPage => LivePages.Count == 1 ? LivePages[0] : null;
+    public string? CurrentPageId => CurrentPage?.PageId;
+    public string? CurrentOrigin => CurrentPage?.Origin;
+    public string? CurrentRoute => CurrentPage?.Route;
+
+    /// <summary>
+    /// A live DOM exists to read and act on. True only with a live page and a live content script — never because a DOM
+    /// was captured earlier.
+    /// </summary>
+    public bool LiveDomAvailable => ExtensionConnected && ContentScriptAlive;
+
+    /// <summary>Typed commands can be delivered: connected, exactly one live page, and a content script on it.</summary>
+    public bool AutomationAvailable => ExtensionConnected && CurrentPage is not null;
+
+    public static readonly BrowserCompanionLiveSession Disconnected = new();
+}
+
+// ── Historical evidence state ──────────────────────────────────────────────────
+
+/// <summary>
+/// What the companion captured previously. It survives tabs closing, the browser closing and the session expiring, and
+/// it proves nothing about the present.
+/// </summary>
+public sealed record BrowserCompanionEvidenceSummary
+{
+    public int PagesWithEvidence { get; init; }
+    public DateTimeOffset? LastEvidenceAt { get; init; }
+    public int DomEvidencePageCount { get; init; }
+    public int AccessibilityEvidencePageCount { get; init; }
+    public int PerformanceEvidencePageCount { get; init; }
+    /// <summary>Routes evidence was captured on. Not routes that are open.</summary>
+    public List<string> HistoricalRoutes { get; init; } = [];
+
+    public bool Any => PagesWithEvidence > 0;
+    public static readonly BrowserCompanionEvidenceSummary Empty = new();
+}
+
+/// <summary>
+/// How current a piece of evidence is relative to what is being claimed with it. Browser Discovery does not care;
+/// Critical E2E does, because evidence captured yesterday must never stand in as proof of today's run.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BrowserEvidenceFreshness
+{
+    /// <summary>Captured before the current browser session. Diagnostics only.</summary>
+    Historical,
+    /// <summary>Captured during the current browser session, but before the run that is citing it.</summary>
+    CurrentSession,
+    /// <summary>Captured after the run started, on the page the run is bound to. The only kind that can back a result.</summary>
+    CurrentRun,
+}
+
+public static class BrowserEvidenceFreshnessPolicy
+{
+    /// <summary>
+    /// Freshness is a fact about time and page, not a judgement. Evidence only counts as a run's own when it was
+    /// captured after the run started AND on the page the run is bound to — either condition alone lets a snapshot from
+    /// a different tab, or from before the first click, be cited as the outcome.
+    /// </summary>
+    public static BrowserEvidenceFreshness Classify(
+        DateTimeOffset capturedAt, DateTimeOffset? sessionStartedAt, DateTimeOffset? runStartedAt,
+        string? evidenceIdentity = null, string? runPageIdentity = null)
+    {
+        var samePage = runPageIdentity is null || string.Equals(evidenceIdentity, runPageIdentity, StringComparison.OrdinalIgnoreCase);
+        if (runStartedAt is { } run && capturedAt >= run && samePage) return BrowserEvidenceFreshness.CurrentRun;
+        if (sessionStartedAt is { } session && capturedAt >= session) return BrowserEvidenceFreshness.CurrentSession;
+        return BrowserEvidenceFreshness.Historical;
+    }
 }

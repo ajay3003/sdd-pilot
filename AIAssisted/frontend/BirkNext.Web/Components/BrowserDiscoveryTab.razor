@@ -11,13 +11,22 @@
 *@
 <section class="bd" data-testid="browser-discovery" aria-label="Browser discovery">
 
-    <div class="bd-overview" data-testid="browser-discovery-summary">
+    @* Two questions, never one row: what is live in the browser right now, and what we captured before. *@
+    <div class="bd-overview bd-overview-live" data-testid="browser-discovery-live" aria-label="Live browser session">
+        <span class="bd-ov-group">Live session</span>
         <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Browser session</span><span class="bd-ov-value" data-testid="bd-session">@BrowserDiscoveryStates.SessionLabel(Status.State)</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Pages with evidence</span><span class="bd-ov-value" data-testid="bd-pages-count">@Rows.Count</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Last evidence</span><span class="bd-ov-value bd-mono" data-testid="bd-last-evidence">@(LastEvidence is { } t ? Time(t) : "None")</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Current page</span><span class="bd-ov-value bd-mono" data-testid="bd-current-page">@CurrentPage</span></div>
-        @* Approved origins is a security fact, not a review metric; it lives in the Browser Companion details. *@
+        @foreach (var fact in BrowserDiscoveryLive.Facts(Status))
+        {
+            <div class="bd-ov-item"><span class="bd-ov-label">@fact.Label</span><span class="bd-ov-value bd-mono @(fact.Muted ? "bd-ov-muted" : "")" data-testid="@fact.TestId">@fact.Value</span></div>
+        }
+    </div>
+
+    <div class="bd-overview bd-overview-evidence" data-testid="browser-discovery-summary" aria-label="Captured evidence">
+        <span class="bd-ov-group">Historical evidence</span>
+        @foreach (var fact in BrowserDiscoveryLive.EvidenceFacts(Status, Snapshot))
+        {
+            <div class="bd-ov-item"><span class="bd-ov-label">@fact.Label</span><span class="bd-ov-value @(fact.Muted ? "bd-ov-muted" : "")" data-testid="@fact.TestId">@fact.Value</span></div>
+        }
     </div>
 
     <nav class="bd-nav" role="tablist" aria-label="Browser discovery views">
@@ -52,6 +61,7 @@
                         <thead>
                             <tr>
                                 <th scope="col">Page / Route</th>
+                                <th scope="col">State</th>
                                 <th scope="col">WCAG areas</th>
                                 <th scope="col">DOM</th>
                                 <th scope="col">Performance evidence</th>
@@ -66,11 +76,21 @@
                                     <th scope="row" class="bd-mono bd-route">
                                         <button type="button" class="bd-routelink" data-testid="browser-discovery-open-page" @onclick="() => OpenPage(row.Identity)">@row.Route</button>
                                     </th>
+                                    @* A page with evidence is not a page that is open. *@
+                                    <td data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.Live))</td>
                                     <td>@AreaBadges(row.WcagAreas)</td>
                                     <td>@StateBadge(row.Dom)</td>
                                     <td>@StateBadge(row.Performance)</td>
                                     <td class="bd-mono">@(row.LastSeen is { } seen ? Time(seen) : "—")</td>
                                     <td><span class="bd-source">@row.Source</span></td>
+                                </tr>
+                            }
+                            @foreach (var live in BrowserDiscoveryLive.LiveWithoutEvidence(Status?.Live, Snapshot))
+                            {
+                                <tr data-testid="browser-discovery-page-row">
+                                    <th scope="row" class="bd-mono bd-route">@live.Route</th>
+                                    <td data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserPageLiveness.LiveWithoutEvidence)</td>
+                                    <td>—</td><td>—</td><td>—</td><td class="bd-mono">—</td><td><span class="bd-source">Live page</span></td>
                                 </tr>
                             }
                         </tbody>
@@ -115,6 +135,15 @@
                             data-testid="browser-discovery-page-link" @onclick="() => _selected = row.Identity">
                         <span class="bd-pagetitle">@row.Route</span>
                         <span class="bd-pagesub">@(row.LastSeen is { } s ? Time(s) : "—")</span>
+                        <span class="bd-pageliveness" data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.Live))</span>
+                    </button>
+                }
+                @foreach (var live in BrowserDiscoveryLive.LiveWithoutEvidence(Status?.Live, Snapshot))
+                {
+                    <button type="button" class="bd-pagelink" disabled data-testid="browser-discovery-page-link">
+                        <span class="bd-pagetitle">@live.Route</span>
+                        <span class="bd-pagesub">No evidence yet</span>
+                        <span class="bd-pageliveness" data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserPageLiveness.LiveWithoutEvidence)</span>
                     </button>
                 }
             </aside>
@@ -525,8 +554,6 @@
         BrowserCompanionState.Expired => "Session expired",
         _ => "Not connected"
     };
-    private string CurrentPage => Status.CurrentPageOrigin is { Length: > 0 } o ? $"{o}{Status.CurrentPagePath}"
-        : Status.State == BrowserCompanionState.Connected ? "No approved page open" : "—";
 
     private (string Key, string Label, int? Count)[] Views =>
         [("overview", "Overview", null), ("pages", "Pages", Rows.Count), ("evidence", "Evidence", null)];

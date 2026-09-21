@@ -106,6 +106,29 @@ Login and MFA are never automated. Nothing else in the flow is manual.
 
 ---
 
+## Live state versus captured evidence
+
+Browser Discovery answers two questions, and they are kept apart on purpose:
+
+| Live session | Historical evidence |
+|---|---|
+| Is the extension connected? | How many pages have we captured? |
+| How many approved pages are open **now**? | When was the last capture? |
+| Which page, and which route? | DOM / accessibility / performance evidence, per page |
+| Is a content script alive? | |
+| Is a **live DOM** available? | |
+
+A connected extension does not mean an application page is open. Captured DOM evidence does not mean a DOM is readable
+now. **Critical E2E readiness comes only from the live half** — it is Blocked with no live page, however much evidence
+exists, and Ready with a live page and no evidence at all.
+
+Page liveness is continuous: a page is live from the moment its content script starts until its tab closes, the script
+is replaced by a reload, or it stops reporting. An SPA route change moves the route and does not end the page. Evidence
+visits start and end with every route change, which is a different lifecycle and no longer drives liveness.
+
+A run binds to one live page and its content-script instance, and stays on it. With two approved pages open there is no
+current page: the run has to name one rather than have one chosen for it.
+
 ## Safety
 
 Enforced, with tests, at every layer rather than by hiding a button:

@@ -135,7 +135,13 @@
 
     private BrowserCompanionStatus Status => Runtime?.For(Profile?.Id) ?? new();
     private IReadOnlyList<string> ApprovedOrigins => Status.ApprovedOrigins.Count > 0 ? Status.ApprovedOrigins : BrowserCompanionScope.ApprovedOrigins(Profile);
-    private string CurrentPage => Status.CurrentPageOrigin is { Length: > 0 } o ? $"{o}{Status.CurrentPagePath}" : (Status.State == BrowserCompanionState.Connected ? "No approved page open" : "—");
+    /// <summary>
+    /// The live page, and only the live page. "Connected" says the extension is talking to BirkNext; it never implies
+    /// an application page is open, so this reads None rather than borrowing the newest evidence route.
+    /// </summary>
+    private string CurrentPage => Status.State == BrowserCompanionState.Connected
+        ? BrowserDiscoveryLive.CurrentPageLabel(Status.Live)
+        : "—";
     private IReadOnlyList<BrowserPageEvidence> Evidence =>
         (Services.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(Profile?.Id ?? "").Pages
             .Where(p => p.BrowserEvidence is not null).Select(p => p.BrowserEvidence!).ToList() ?? Status.Pages;
