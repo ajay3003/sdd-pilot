@@ -24,15 +24,16 @@ for (const h of manifest.host_permissions || []) {
 if ((manifest.optional_host_permissions || []).includes('<all_urls>')) fail('optional_host_permissions must not contain <all_urls>');
 if (!manifest.background || !manifest.background.service_worker) fail('service worker missing');
 
-const files = ['background.js', 'content.js', 'main-world.js', 'popup.js', 'lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js'];
+const files = ['background.js', 'content.js', 'main-world.js', 'popup.js', 'lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/automation.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js'];
 for (const f of files) {
   if (!existsSync(path.join(root, f))) fail(`missing ${f}`);
   execFileSync(process.execPath, ['--check', path.join(root, f)], { stdio: 'inherit' });
 }
 for (const f of files.filter(f => !f.startsWith('vendor/'))) {
   const src = readFileSync(path.join(root, f), 'utf8');
-  // Credential-bearing browser APIs the companion must never call (comments/regexes that merely mention the words are fine).
-  for (const banned of ['document.cookie', 'localStorage.', 'sessionStorage.', 'chrome.cookies', 'chrome.webRequest', 'getAllResponseHeaders', '.headers.get(', 'msal.', 'chrome.tabs.query']) {
+  // Credential-bearing browser APIs the companion must never call, and the code-evaluation sinks that would let a
+  // typed probe command smuggle in JavaScript (comments/regexes that merely mention the words are fine).
+  for (const banned of ['eval(', 'new Function', 'document.cookie', 'localStorage.', 'sessionStorage.', 'chrome.cookies', 'chrome.webRequest', 'getAllResponseHeaders', '.headers.get(', 'msal.', 'chrome.tabs.query']) {
     if (src.includes(banned)) fail(`${f} must not reference ${banned}`);
   }
 }

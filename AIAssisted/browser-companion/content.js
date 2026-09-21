@@ -47,6 +47,55 @@
     })().catch(() => respond({ message: 'Layout probes unavailable; no pass recorded.' }));
     return true;
   });
+  // ── Critical E2E probe ─────────────────────────────────────────────────────
+  // BirkNext asks for one allow-listed action against a described element and gets back an outcome. It never sends
+  // JavaScript: the message carries an action name and a selector description, so there is nothing here to eval. The
+  // action is performed the way a person would perform it — a hidden or disabled control is reported, not forced.
+  let probeBusy = false;
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message?.type !== 'e2e:probe') return;
+    const startedAt = new Date().toISOString(), started = Date.now();
+    const finish = result => respond({
+      commandId: message.commandId ?? null, startedAt, completedAt: new Date().toISOString(),
+      durationMs: Date.now() - started, observedRoute: C.sanitize.text(win.location.pathname),
+      summary: null, error: null, ...result,
+    });
+    if (sender.id !== chrome.runtime.id || !C.automation) { finish({ status: 'blocked', error: 'Probe runner unavailable.' }); return; }
+    if (probeBusy) { finish({ status: 'blocked', error: 'A probe is already running on this page.' }); return; }
+    if (!isApprovedVisit(visit)) { finish({ status: 'blocked', error: 'No approved active page.' }); return; }
+    (async () => {
+      probeBusy = true;
+      try {
+        scope = await send({ type: 'content:session' });
+        // The same non-production gate the layout probes use, re-checked in the page: the worker's answer is not the
+        // only thing standing between a probe and a production page.
+        if (!isApprovedVisit(visit) || !C.wcagInteraction.allowed(scope?.environmentType, true)) {
+          finish({ status: 'blocked', error: 'Probes run only on approved non-production pages.' }); return;
+        }
+        const command = message.command;
+        if (!C.automation.ACTIONS.includes(command?.action)) {
+          finish({ status: 'blocked', error: `Action not allowed: ${C.sanitize.text(String(command?.action))}` }); return;
+        }
+        const timeoutMs = Math.min(Math.max(Number(command.timeoutMs) || 5000, 500), 15000);
+        // Wait for the application to render rather than sleeping a fixed amount: an SPA settles when it settles, and
+        // a fixed delay is either a flake or wasted time. The last attempt's outcome is the reported one.
+        let outcome = { status: 'failed', error: 'Probe did not run.' };
+        await C.automation.waitFor(() => {
+          outcome = C.automation.perform(doc, win, command);
+          return outcome.status === 'passed';
+        }, { timeoutMs, intervalMs: 150 });
+        finish({
+          status: outcome.status,
+          summary: outcome.summary ? C.sanitize.text(outcome.summary) : null,
+          error: outcome.error ? C.sanitize.text(outcome.error) : null,
+        });
+      } catch (e) {
+        finish({ status: 'blocked', error: C.sanitize.text(`Probe could not run: ${e && e.message}`) });
+      } finally { probeBusy = false; }
+    })();
+    return true;
+  });
+
   const runtime = { errors: new Map(), errorCount: 0, rejectionCount: 0, resourceFailureCount: 0, errorsBeforeStabilization: 0 };
   const lcpEntries = [], layoutShiftEntries = [], longTaskEntries = [], eventEntries = [], firstInputEntries = [];
   const observers = [];

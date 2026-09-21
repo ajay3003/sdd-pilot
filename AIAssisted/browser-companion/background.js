@@ -9,7 +9,7 @@ const BACKEND_CANDIDATES = ['http://127.0.0.1:5000', 'http://localhost:5000'];
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const CONTENT_SCRIPT_ID = 'birknext-companion-content';
 const MAIN_WORLD_SCRIPT_ID = 'birknext-companion-main';
-const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
+const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/automation.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
 const HEARTBEAT_ALARM = 'birknext-heartbeat';
 const FLUSH_DELAY_MS = 1500;
 const MAX_PAGES_PER_ENVELOPE = 20;
@@ -269,6 +269,8 @@ async function heartbeat() {
 }
 
 let wcagTab = null;
+// Environments an interactive probe may drive. Production is deliberately absent and must stay absent.
+const PROBE_ENVIRONMENTS = ['Local', 'Development', 'QA', 'Test', 'RC'];
 chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === HEARTBEAT_ALARM) heartbeat(); });
 
 // ── Messages from popup and content scripts ────────────────────────────────
@@ -282,10 +284,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (sender.tab) { sendResponse({ message: 'Popup action required.' }); break; }
         const status = await validate();
         if (status.state !== 'connected' || !wcagTab || wcagTab.profileId !== status.session.profileId ||
-            !['Local', 'Development', 'QA', 'Test', 'RC'].includes(status.session.environmentType)) {
+            !PROBE_ENVIRONMENTS.includes(status.session.environmentType)) {
           sendResponse({ message: 'Layout probes require a paired non-production page. Re-pair after changing environment policy.' }); break;
         }
         sendResponse(await chrome.tabs.sendMessage(wcagTab.id, { type: message.type === 'popup:wcag-keyboard' ? 'wcag:keyboard' : 'wcag:layout' }));
+        break;
+      }
+      // A Critical E2E probe: BirkNext names an allow-listed ACTION and describes an element; no code crosses this
+      // boundary. Same gate as the layout probes — paired session, the extension's own approved reporting tab, and a
+      // non-production environment. Production is never driven.
+      case 'popup:e2e-probe': {
+        // Only the extension's own UI may ask for a probe. A page that somehow reached this worker is not the
+        // extension, whether or not it happens to live in a tab.
+        if (!sender.url || !sender.url.startsWith(chrome.runtime.getURL(''))) { sendResponse({ status: 'blocked', error: 'Probes are requested from the BirkNext companion, not from a page.' }); break; }
+        const probeStatus = await validate();
+        if (probeStatus.state !== 'connected' || !wcagTab || wcagTab.profileId !== probeStatus.session.profileId ||
+            !PROBE_ENVIRONMENTS.includes(probeStatus.session.environmentType)) {
+          sendResponse({ status: 'blocked', error: 'Probes require a paired non-production reporting page.' }); break;
+        }
+        sendResponse(await chrome.tabs.sendMessage(wcagTab.id, { type: 'e2e:probe', commandId: message.commandId ?? null, command: message.command }));
         break;
       }
       case 'popup:pair': sendResponse(await pair(message.pairingCode)); break;

@@ -82,6 +82,27 @@
     try { const result = await send({ type: 'popup:wcag-layout' }); $('message').textContent = result?.message || 'Layout probes unavailable.'; }
     finally { $('wcagLayout').disabled = false; }
   });
+  // Spike control for the Critical E2E probe: see the element, click it, confirm where it landed. Three named
+  // actions, no code, and each step reported separately so a failure says which step failed.
+  $('probeRun').addEventListener('click', async () => {
+    const name = $('probeName').value.trim(), route = $('probeRoute').value.trim();
+    if (!name) { $('message').textContent = 'Name the link or button to probe.'; return; }
+    $('probeRun').disabled = true;
+    try {
+      const steps = [
+        ['See it', { action: 'assertVisible', selector: { kind: 'text', value: name }, timeoutMs: 8000 }],
+        ['Click it', { action: 'click', selector: { kind: 'text', value: name }, timeoutMs: 8000 }],
+        ...(route ? [['Route', { action: 'assertRoute', expected: route, timeoutMs: 8000 }]] : []),
+      ];
+      const lines = [];
+      for (const [label, command] of steps) {
+        const r = await send({ type: 'popup:e2e-probe', commandId: label + '-' + Date.now(), command });
+        lines.push(label + ': ' + (r?.status ?? 'no response') + ' — ' + (r?.summary || r?.error || '') + ' (' + (r?.durationMs ?? '?') + ' ms)');
+        if (r?.status !== 'passed') break;   // a failed step makes every later step meaningless
+      }
+      $('message').textContent = lines.join(' | ');
+    } finally { $('probeRun').disabled = false; }
+  });
   $('wcagKeyboard').addEventListener('click', async () => {
     const result = await send({ type: 'popup:wcag-keyboard' });
     $('message').textContent = result?.message || 'Keyboard observation unavailable.';
