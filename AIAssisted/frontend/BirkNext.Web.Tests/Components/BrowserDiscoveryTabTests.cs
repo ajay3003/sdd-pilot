@@ -131,7 +131,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
         var table = cut.Find("[data-testid=browser-discovery-overview-table]");
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page / Route", "WCAG areas", "DOM", "Performance evidence", "Last seen", "Source");
+            .Should().Equal("Page / Route", "State", "WCAG areas", "DOM", "Performance evidence", "Last seen", "Source");
 
         var rows = cut.FindAll("[data-testid=browser-discovery-page-row]");
         rows.Count.Should().Be(2, "the proxy-only page produced no browser evidence");
@@ -168,9 +168,10 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
         var row = cut.Find("[data-testid=browser-discovery-page-row]");
         var cells = row.QuerySelectorAll("td").Select(c => c.TextContent.Trim()).ToList();
-        cells[1].Should().Be("Available", "DOM evidence exists");
-        cells[2].Should().Be("Unavailable", "no performance evidence was observed");
-        cells[2].Should().NotBe("0");
+        cells[0].Should().Be("Historical evidence only", "evidence for a page says nothing about whether it is open");
+        cells[2].Should().Be("Available", "DOM evidence exists");
+        cells[3].Should().Be("Unavailable", "no performance evidence was observed");
+        cells[3].Should().NotBe("0");
         row.TextContent.Should().NotContainAny("Passed", "Failed", "Good", "Poor", "Needs improvement");
         row.QuerySelector("[data-testid=browser-discovery-areas-none]")!.TextContent
             .Should().Contain("No accessibility evidence");
@@ -330,7 +331,8 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         // Approved origins moved out of the primary summary into the companion details.
         cut.FindAll("[data-testid=bd-origins]").Should().BeEmpty();
         Text(cut, "browser-companion-origins").Should().Contain(Origin);
-        Text(cut, "bd-current-page").Should().Be(Origin + "/dashboard");
+        Text(cut, "bd-current-page").Should().Be(state == BrowserCompanionState.Connected ? Origin + "/dashboard" : "None",
+            "only a reporting session can have a page open right now");
 
         // Connected is a session state, never evidence — and nothing says evidence is being collected before any arrived.
         Text(cut, "bd-pages-count").Should().Be("0");

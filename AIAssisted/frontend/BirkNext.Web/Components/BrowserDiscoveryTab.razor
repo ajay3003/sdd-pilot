@@ -77,7 +77,7 @@
                                         <button type="button" class="bd-routelink" data-testid="browser-discovery-open-page" @onclick="() => OpenPage(row.Identity)">@row.Route</button>
                                     </th>
                                     @* A page with evidence is not a page that is open. *@
-                                    <td data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.Live))</td>
+                                    <td data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.EffectiveLive))</td>
                                     <td>@AreaBadges(row.WcagAreas)</td>
                                     <td>@StateBadge(row.Dom)</td>
                                     <td>@StateBadge(row.Performance)</td>
@@ -135,7 +135,7 @@
                             data-testid="browser-discovery-page-link" @onclick="() => _selected = row.Identity">
                         <span class="bd-pagetitle">@row.Route</span>
                         <span class="bd-pagesub">@(row.LastSeen is { } s ? Time(s) : "—")</span>
-                        <span class="bd-pageliveness" data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.Live))</span>
+                        <span class="bd-pageliveness" data-testid="browser-discovery-page-liveness">@BrowserDiscoveryLive.LivenessLabel(BrowserDiscoveryLive.Liveness(row, Status?.EffectiveLive))</span>
                     </button>
                 }
                 @foreach (var live in BrowserDiscoveryLive.LiveWithoutEvidence(Status?.Live, Snapshot))

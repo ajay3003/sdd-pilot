@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BirkNext.BrowserCompanion;
 using BirkNext.CriticalE2E;
 using BirkNext.LocalHttpsProxy;
 
@@ -63,7 +64,8 @@ public static class CriticalE2EVariables
 public static class CriticalE2EStepOutcome
 {
     public static CriticalE2EStepResult From(CriticalE2EStepDefinition step, DateTimeOffset startedAt, DateTimeOffset completedAt,
-        CriticalE2EStatus status, string? summary = null, string? error = null, string? route = null, string? value = null, string? evidence = null) =>
+        CriticalE2EStatus status, string? summary = null, string? error = null, string? route = null, string? value = null,
+        string? evidence = null, BrowserEvidenceFreshness? freshness = null) =>
         new()
         {
             StepId = step.StepId,
@@ -78,6 +80,7 @@ public static class CriticalE2EStepOutcome
             ObservedRoute = route,
             ObservedValue = value,
             EvidenceReference = evidence,
+            EvidenceFreshness = freshness,
         };
 
     /// <summary>A readable line for a step whose author did not write one. Never the raw definition dumped into the UI.</summary>

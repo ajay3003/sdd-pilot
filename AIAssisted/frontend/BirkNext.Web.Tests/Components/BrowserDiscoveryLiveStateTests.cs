@@ -88,14 +88,14 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         SeedEvidence();
         var cut = await OpenAsync(Status());
 
-        Text(cut, "bd-live-session").Should().Be("Connected");
+        Text(cut, "bd-session").Should().Be("Connected");
         Text(cut, "bd-live-pages").Should().Be("0");
         Text(cut, "bd-current-page").Should().Be("None", "the newest evidence route is not the current page");
         Text(cut, "bd-content-script").Should().Be("Not available");
         Text(cut, "bd-live-dom").Should().Be("Not available");
 
         // The evidence is still there and still says so — in its own section, in past tense.
-        Text(cut, "bd-evidence-pages").Should().Be("1");
+        Text(cut, "bd-pages-count").Should().Be("1");
         Text(cut, "bd-last-evidence").Should().Be(Captured.ToLocalTime().ToString("HH:mm:ss"));
         Text(cut, "bd-evidence-dom").Should().Contain("captured");
     }
@@ -126,7 +126,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         Text(cut, "bd-current-page").Should().Be($"{Origin}/admin/operations");
         Text(cut, "bd-content-script").Should().Be("Live");
         Text(cut, "bd-live-dom").Should().Be("Available now");
-        Text(cut, "bd-evidence-pages").Should().Be("0", "this is a valid state, not a broken one");
+        Text(cut, "bd-pages-count").Should().Be("0", "this is a valid state, not a broken one");
         Text(cut, "bd-last-evidence").Should().Be("None");
     }
 
@@ -137,7 +137,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         var cut = await OpenAsync(Status(livePages: ("/arkiv", "abc")));
 
         Text(cut, "bd-current-page").Should().EndWith("/arkiv");
-        Text(cut, "bd-evidence-pages").Should().Be("1", "the other page's evidence is still listed");
+        Text(cut, "bd-pages-count").Should().Be("1", "the other page's evidence is still listed");
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         Text(cut, "bd-live-pages").Should().Be("0");
         Text(cut, "bd-current-page").Should().Be("None");
         Text(cut, "bd-live-dom").Should().Be("Not available");
-        Text(cut, "bd-evidence-pages").Should().Be("1", "the history is not a casualty of the browser going away");
+        Text(cut, "bd-pages-count").Should().Be("1", "the history is not a casualty of the browser going away");
     }
 
     [Fact]

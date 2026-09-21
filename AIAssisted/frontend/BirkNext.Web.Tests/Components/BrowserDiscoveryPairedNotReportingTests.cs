@@ -156,7 +156,7 @@ public sealed class BrowserDiscoveryPairedNotReportingTests : BunitContext
         var cut = await OpenAsync(BrowserCompanionState.Disconnected);
 
         Text(cut, "bd-session").Should().Be("Paired · not reporting");
-        Text(cut, "bd-current-page").Should().Be("—", "the canonical empty value this strip already uses");
+        Text(cut, "bd-current-page").Should().Be("None", "an absent live page is stated as a word, beside the live page count");
         Text(cut, "bd-pages-count").Should().Be("0");
         Text(cut, "bd-last-evidence").Should().Be("None");
         // The full next-action sentence belongs to the empty state, not the strip.

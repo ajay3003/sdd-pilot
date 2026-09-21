@@ -141,11 +141,13 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
     {
         var cut = await OpenAsync(BrowserCompanionState.Connected);
 
-        var labels = cut.FindAll("[data-testid=browser-discovery-summary] .bd-ov-label")
-            .Select(l => l.TextContent.Trim()).ToList();
-        labels.Should().Equal("Target", "Browser session", "Pages with evidence", "Last evidence", "Current page");
+        var live = cut.FindAll("[data-testid=browser-discovery-live] .bd-ov-label").Select(l => l.TextContent.Trim()).ToList();
+        live.Should().Equal("Target", "Browser Companion", "Live approved pages", "Current page", "Content script", "Live DOM");
 
-        foreach (var id in new[] { "bd-target", "bd-session", "bd-pages-count", "bd-last-evidence", "bd-current-page" })
+        var evidence = cut.FindAll("[data-testid=browser-discovery-summary] .bd-ov-label").Select(l => l.TextContent.Trim()).ToList();
+        evidence.Should().Equal("Pages with evidence", "Last evidence", "DOM evidence", "Accessibility evidence", "Performance evidence");
+
+        foreach (var id in new[] { "bd-target", "bd-session", "bd-live-pages", "bd-current-page", "bd-pages-count", "bd-last-evidence" })
             cut.FindAll($"[data-testid={id}]").Should().ContainSingle(id);
     }
 
@@ -171,7 +173,7 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
         var cut = await OpenAsync(BrowserCompanionState.Connected, currentPath: null);
 
         Text(cut, "bd-session").Should().Be("Connected", "the session is up");
-        Text(cut, "bd-current-page").Should().Be("No approved page open", "which is a different fact from having no session");
+        Text(cut, "bd-current-page").Should().Be("None", "the live page count beside it already says there is no page open");
         // Still no evidence, and the help reflects that pairing is already done.
         cut.Find("[data-testid=browser-discovery-empty]").TextContent
             .Should().Contain("Open an approved application page to start collecting browser evidence")

@@ -702,10 +702,10 @@ public static class BrowserDiscoveryLive
     /// <summary>Live facts. Five compact rows; none of them reads stored evidence.</summary>
     public static IReadOnlyList<BrowserDiscoveryFact> Facts(BrowserCompanionStatus? status)
     {
-        var live = status?.Live ?? BrowserCompanionLiveSession.Disconnected;
+        var live = status?.EffectiveLive ?? BrowserCompanionLiveSession.Disconnected;
         return
         [
-            new("Browser Companion", BrowserDiscoveryStates.SessionLabel(status?.State ?? BrowserCompanionState.NotPaired), "bd-live-session"),
+            new("Browser Companion", BrowserDiscoveryStates.SessionLabel(status?.State ?? BrowserCompanionState.NotPaired), "bd-session"),
             new("Live approved pages", live.LiveApprovedPageCount.ToString(), "bd-live-pages"),
             new("Current page", CurrentPageLabel(live), "bd-current-page", live.CurrentPage is null),
             // Without a content script there is no DOM to read and no step to run, whatever was captured before.
@@ -736,7 +736,7 @@ public static class BrowserDiscoveryLive
         var last = BrowserDiscoveryPresentation.LastEvidenceAt(snapshot) ?? summary.LastEvidenceAt;
         return
         [
-            new("Pages with evidence", pages.ToString(), "bd-evidence-pages"),
+            new("Pages with evidence", pages.ToString(), "bd-pages-count"),
             new("Last evidence", last is { } at ? at.ToLocalTime().ToString("HH:mm:ss") : "None", "bd-last-evidence", last is null),
             new("DOM evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Dom == BrowserEvidenceState.Available), summary.DomEvidencePageCount)), "bd-evidence-dom"),
             new("Accessibility evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.WcagAreas.Count > 0), summary.AccessibilityEvidencePageCount)), "bd-evidence-accessibility"),

@@ -169,6 +169,30 @@ public sealed record BrowserCompanionStatus
     public BrowserCompanionEvidenceSummary Evidence { get; init; } = BrowserCompanionEvidenceSummary.Empty;
 
     /// <summary>
+    /// Live state, filled in from the single-page fields when <see cref="Live"/> was not populated — by an older
+    /// backend, or by a caller that only knows the one-page shape.
+    ///
+    /// This is not a back door to the old mixing: <see cref="CurrentPageOrigin"/> is itself live data now (the backend
+    /// sets it only from a registered live page, never from stored evidence), so filling in from it is filling in from
+    /// liveness. What it cannot do is describe two open tabs, which is why the richer field exists.
+    /// </summary>
+    public BrowserCompanionLiveSession EffectiveLive => Live.ExtensionConnected || Live.LivePages.Count > 0
+        ? Live
+        : new BrowserCompanionLiveSession
+        {
+            ProfileId = ProfileId,
+            ExtensionConnected = Connected,
+            LastExtensionHeartbeatAt = LastSeenAt,
+            LivePages = CurrentPageOrigin is { Length: > 0 } origin && Connected
+                ? [new BrowserCompanionLivePage
+                {
+                    PageId = "current", Origin = origin, Route = CurrentPagePath ?? "/", ContentScriptInstanceId = "current",
+                    RegisteredAt = LastSeenAt ?? default, LastSeenAt = LastSeenAt ?? default,
+                }]
+                : [],
+        };
+
+    /// <summary>
     /// The extension is talking to BirkNext. It does NOT mean an approved page is open, a content script is alive, a
     /// DOM is readable, or that browser automation can run — read <see cref="Live"/> for any of those.
     /// </summary>

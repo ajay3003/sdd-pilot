@@ -1,4 +1,5 @@
 using BirkNext.Api.Services.BrowserCompanion;
+using BirkNext.BrowserCompanion;
 using BirkNext.CriticalE2E;
 
 namespace BirkNext.Api.Services.CriticalE2E;
@@ -14,6 +15,20 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
     : ICriticalE2EStepExecutor
 {
     public bool CanExecute(CriticalE2EStepDefinition step) => step.IsBrowserStep;
+
+    /// <summary>
+    /// How current the evidence this step points at actually is. Without this, a result could reference a page whose
+    /// last capture was yesterday and read exactly like one backed by a snapshot taken during the run.
+    /// </summary>
+    private BrowserEvidenceFreshness? Freshness(CriticalE2ERunContext context, string? evidenceReference)
+    {
+        if (string.IsNullOrWhiteSpace(evidenceReference)) return null;
+        var status = companion.Status(context.Flow.ProfileId);
+        if (status.Pages.FirstOrDefault(p => string.Equals(p.Identity, evidenceReference, StringComparison.OrdinalIgnoreCase)) is not { } page)
+            return null;
+        return BrowserEvidenceFreshnessPolicy.Classify(page.CapturedAt, status.PairedAt, context.StartedAt,
+            page.Identity, context.TargetOrigin is null ? null : evidenceReference);
+    }
 
     public async Task<CriticalE2EStepResult> ExecuteAsync(CriticalE2EStepDefinition step, CriticalE2ERunContext context, CancellationToken cancellationToken)
     {
@@ -64,6 +79,7 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
 
         return CriticalE2EStepOutcome.From(step, startedAt, time.GetUtcNow(), result.Status,
             summary: result.SafeSummary, error: result.SanitizedError, route: result.ObservedRoute,
-            value: result.ObservedValue, evidence: result.EvidenceReference);
+            value: result.ObservedValue, evidence: result.EvidenceReference,
+            freshness: Freshness(context, result.EvidenceReference));
     }
 }

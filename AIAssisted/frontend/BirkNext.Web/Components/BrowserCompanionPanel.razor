@@ -140,7 +140,7 @@
     /// an application page is open, so this reads None rather than borrowing the newest evidence route.
     /// </summary>
     private string CurrentPage => Status.State == BrowserCompanionState.Connected
-        ? BrowserDiscoveryLive.CurrentPageLabel(Status.Live)
+        ? BrowserDiscoveryLive.CurrentPageLabel(Status.EffectiveLive)
         : "—";
     private IReadOnlyList<BrowserPageEvidence> Evidence =>
         (Services.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(Profile?.Id ?? "").Pages

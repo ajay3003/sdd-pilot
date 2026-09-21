@@ -358,6 +358,12 @@ public sealed record CriticalE2EStepResult
     public string? ObservedRoute { get; init; }
     public string? ObservedValue { get; init; }
     public string? EvidenceReference { get; init; }
+    /// <summary>
+    /// How current the referenced browser evidence is relative to this run. A step that cites evidence captured before
+    /// the run started is citing something that cannot be its own outcome, and the result says so rather than letting
+    /// yesterday stand in for today.
+    /// </summary>
+    public BrowserCompanion.BrowserEvidenceFreshness? EvidenceFreshness { get; init; }
 }
 
 public sealed record CriticalE2ERunResult
