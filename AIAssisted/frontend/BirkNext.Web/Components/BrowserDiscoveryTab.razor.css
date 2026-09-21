@@ -162,7 +162,7 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .06em;
-  color: var(--text-secondary, #666);
+  color: var(--clr-text-muted);
 }
 .bd-overview-live { border-left: 3px solid var(--accent, #2563eb); padding-left: .75rem; }
 .bd-overview-evidence { border-left: 3px solid var(--border-color, #ddd); padding-left: .75rem; }
@@ -170,24 +170,24 @@
 .bd-ov-muted { color: var(--text-secondary, #777); font-weight: 400; }
 
 /* A page row says what it is: open now, open with nothing captured yet, or only a record of a past visit. */
-.bd-pageliveness { display: block; font-size: .72rem; color: var(--text-secondary, #666); }
+.bd-pageliveness { display: block; font-size: .72rem; color: var(--clr-text-muted); }
 
 /* One notice, one explanation, one action. Sized to be noticed without becoming a banner that dominates the page. */
 .bd-alert {
   display: flex; gap: .75rem; align-items: flex-start;
   padding: .85rem 1rem; border-radius: 8px;
-  border: 1px solid var(--border-color, #e3e3e3);
+  border: 1px solid var(--clr-border-subtle);
   border-left-width: 4px;
-  background: var(--surface-subtle, #fafafa);
+  background: var(--clr-surface-white);
 }
-.bd-alert-needs-action { border-left-color: #c08a00; }
+.bd-alert-needs-action { border-left-color: var(--clr-warning); }
 .bd-alert-icon { flex: 0 0 auto; width: 1.25rem; height: 1.25rem; margin-top: .1rem; opacity: .8; }
 .bd-alert-body { flex: 1 1 auto; display: flex; flex-direction: column; gap: .2rem; }
 .bd-alert-title { margin: 0; font-size: .95rem; font-weight: 600; }
-.bd-alert-text { margin: 0; font-size: .85rem; color: var(--text-secondary, #555); }
+.bd-alert-text { margin: 0; font-size: .85rem; color: var(--clr-text-muted); }
 /* Captured evidence survives a lost pairing; saying so keeps the warning from reading as data loss. */
-.bd-alert-note { margin: .15rem 0 0; font-size: .8rem; color: var(--text-secondary, #666); font-style: italic; }
-.bd-live-note { margin: -.25rem 0 0; font-size: .82rem; color: var(--text-secondary, #666); }
+.bd-alert-note { margin: .15rem 0 0; font-size: .8rem; color: var(--clr-text-muted); font-style: italic; }
+.bd-live-note { margin: -.25rem 0 0; font-size: .82rem; color: var(--clr-text-muted); }
 
 /* Icons carry no meaning on their own — every one of these sits beside its own text. */
 .bd-icon-link-off, .bd-icon-signal-off {

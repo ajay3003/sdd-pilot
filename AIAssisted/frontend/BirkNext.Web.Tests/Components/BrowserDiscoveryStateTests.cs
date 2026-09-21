@@ -227,8 +227,15 @@ public sealed class BrowserDiscoveryStateTests : BunitContext
         // extension.s own "Not paired" wording inside a collapsed details block; that is the extension speaking,
         // not this page restating the state, so the visible surface is what is scanned.
         var visible = VisibleText(cut.Find("[data-testid=browser-discovery]"));
-        foreach (var synonym in new[] { "Not paired", "No session", "Disconnected", "not currently connected" })
+        foreach (var synonym in new[] { "No session", "Disconnected", "not currently connected" })
             visible.Should().NotContain(synonym);
+        // REVERSAL: "Not paired" used to be forbidden outright as a near-synonym of the badge. A pairing that was
+        // never made and a pairing whose extension is offline need different actions, and naming the first is the only
+        // way to ask for the one thing that fixes it. It appears once, in the notice that carries the action, and
+        // never as a second state label beside the badge.
+        // It appears once on the visible surface, as the heading of the notice that carries the Pair action.
+        Occurrences(visible, "not paired").Should().Be(1);
+        Text(cut, "bd-companion-alert-title").Should().Be("Browser Companion not paired");
 
         // 25. One absence sentence, and the companion card says what to do rather than restating the badge.
         Occurrences(cut.Markup, "No browser evidence").Should().Be(1);

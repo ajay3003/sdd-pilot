@@ -1,6 +1,7 @@
 @using BirkNext.LocalHttpsProxy
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
 
 @*
     Authentication readiness: the verdict, the three prerequisites behind it, and the hand-off to Endpoint Discovery.
@@ -82,6 +83,21 @@
         </div>
     }
 
+    @if (Proxy is { } runtime && Summary.Prerequisites.Count > 0)
+    {
+        <ReviewDisclosure Text="View technical details" CollapseText="Hide technical details"
+                          TestId="auth-technical-details" Class="disclosure-inline disclosure-small">
+            <dl class="ar-facts ar-facts-technical" data-testid="auth-technical-facts">
+                <div><dt>Runtime id</dt><dd>@(runtime.RuntimeId ?? "—")</dd></div>
+                <div><dt>Proxy endpoint</dt><dd>@(runtime.ExpectedProxyPort is { } p ? $"127.0.0.1:{p}" : "—")</dd></div>
+                <div><dt>Edge process id</dt><dd>@(runtime.EdgeProcessId?.ToString() ?? "—")</dd></div>
+                <div><dt>Edge launched with</dt><dd>@(runtime.EdgeProxyPort is { } e ? $"--proxy-server=127.0.0.1:{e}" : "—")</dd></div>
+                <div><dt>Profile path</dt><dd>@(runtime.EdgeProfileDirectory ?? "—")</dd></div>
+                <div><dt>Certificate thumbprint</dt><dd>@(string.IsNullOrWhiteSpace(runtime.Certificate.Thumbprint) ? "—" : runtime.Certificate.Thumbprint)</dd></div>
+            </dl>
+        </ReviewDisclosure>
+    }
+
     @* Endpoint Discovery is never disabled from here: it holds observed traffic from more than one source, so an
        incomplete proxy setup limits what arrives next rather than making the surface useless. *@
     <article class="ar-cta" data-testid="auth-discovery-cta">
@@ -107,6 +123,8 @@
     [Parameter, EditorRequired] public AuthenticationReadinessSummary Summary { get; set; } = new(AuthenticationReadiness.Checking, "Checking…", "", []);
     /// <summary>How many endpoints Endpoint Discovery already holds, so an incomplete setup is not reported as nothing to see.</summary>
     [Parameter] public int KnownEndpoints { get; set; }
+    /// <summary>The proxy runtime, for the technical details disclosure only. Readiness never reads it directly.</summary>
+    [Parameter] public LocalHttpsProxyStatus? Proxy { get; set; }
     [Parameter] public bool Busy { get; set; }
     /// <summary>Receives the prerequisite's ActionId. The host owns every one of these operations.</summary>
     [Parameter] public EventCallback<string?> OnAction { get; set; }

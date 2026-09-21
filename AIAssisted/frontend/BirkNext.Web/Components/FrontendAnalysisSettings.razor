@@ -516,6 +516,7 @@
 
                 <AuthenticationReadinessPanel Summary="AuthReadiness"
                                               KnownEndpoints="KnownEndpointCount"
+                                              Proxy="@(_proxyRuntime is null ? null : ProxyStatus)"
                                               Busy="@(_proxyRuntime?.Busy == true)"
                                               OnAction="RunAuthPrerequisiteActionAsync"
                                               OnVerify="@(() => _showManualVerification = true)"
@@ -533,8 +534,10 @@
                     </div>
 
                     <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Provider</dt><dd data-testid="authentication-provider">@AuthenticationPresentation.DetectedProviderLabel(_detectionResult)</dd></div>
+                        <div class="fa-dl-row"><dt>Detected method</dt><dd data-testid="authentication-provider">@AuthenticationPresentation.DetectedProviderLabel(_detectionResult)</dd></div>
+                        <div class="fa-dl-row"><dt>Detection</dt><dd data-testid="authentication-detection-state">@AuthenticationDetectionStateLabel</dd></div>
                         <div class="fa-dl-row"><dt>Configuration</dt><dd data-testid="authentication-match-summary">@AuthenticationPresentation.StateSummary(AuthenticationMatch)</dd></div>
+                        <div class="fa-dl-row"><dt>Configuration source</dt><dd data-testid="authentication-config-source">@ConfigurationSourceLabel</dd></div>
                         @* The target's own access requirement, named so it cannot be read as testing availability. *@
                         <div class="fa-dl-row"><dt>Sign-in required</dt><dd data-testid="authentication-sign-in-required">@BoolLabel(CurrentProfile?.Authentication.RequiresAuthentication ?? false)</dd></div>
                     </dl>
@@ -591,10 +594,16 @@
                     </div>
                     <dl class="fa-detail-list">
                         <div class="fa-dl-row"><dt>Status</dt><dd data-testid="authentication-verification-status">@(ManualVerificationRequired ? ManualVerificationLabel : "Not required for this method")</dd></div>
+                        <div class="fa-dl-row"><dt>Last verification</dt><dd data-testid="authentication-verification-last">@LastVerificationLabel</dd></div>
+                        <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authentication-verification-mode">@VerificationModeLabel</dd></div>
                     </dl>
                     @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
                     {
                         <button type="button" class="btn-secondary fa-btn-sm" data-testid="authentication-verification-open" @onclick='() => _activeTab = "target"'>Open verification instructions</button>
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !AuthReadiness.CanVerify)
+                        {
+                            <p class="fa-auth-help" data-testid="authentication-verification-blocked">Proxy-assisted verification also needs the prerequisites above.</p>
+                        }
                     }
                     <p class="fa-auth-help" data-testid="authentication-verification-scope">Verification confirms the target's authentication configuration and sign-in workflow. It does not create an authenticated testing context.</p>
                 </section>
@@ -1673,6 +1682,22 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private ManagedEdgeRuntime? _edgeRuntime;
     private LocalHttpsProxyRuntime? _proxyRuntime;
     private bool _showManualVerification;
+
+    /// <summary>Detected, partially detected, not detected or unavailable — never "verified", which is the next card's word.</summary>
+    private string AuthenticationDetectionStateLabel => _detectionResult switch
+    {
+        null => "Not run",
+        { Success: true } r when HasDetectedAuthSettings(r) => "Detected",
+        { Success: true } => "Partially detected",
+        _ => "Not detected",
+    };
+
+    /// <summary>Where the detected configuration came from. "Not available" rather than a blank, which reads as a missing value.</summary>
+    private string ConfigurationSourceLabel =>
+        _detectionResult?.Success == true ? "Detect Settings" : "Not available";
+
+    private string LastVerificationLabel =>
+        CurrentProfile?.ManualVerification is { VerifiedAt: { } at } ? at.ToLocalTime().ToString("d MMM yyyy HH:mm") : "Never";
 
     /// <summary>The one readiness derivation, fed the state this page already holds. Nothing is recomputed here.</summary>
     private AuthenticationReadinessSummary AuthReadiness => AuthenticationReadinessPresentation.Summarize(

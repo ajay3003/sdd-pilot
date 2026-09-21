@@ -812,16 +812,20 @@ public static class BrowserCompanionSituations
     /// The one notice for this state, or null. A connected companion with no page open is not a warning: nothing is
     /// wrong and nothing needs fixing, so it is stated in the live facts and nowhere else.
     /// </summary>
-    public static BrowserCompanionAlert? Alert(BrowserCompanionSituation situation) => situation switch
+    public static BrowserCompanionAlert? Alert(BrowserCompanionSituation situation, int pagesWithEvidence = 0) => situation switch
     {
         BrowserCompanionSituation.NotPaired => new(
             "link-off", "Browser Companion not paired",
             "Pair the Browser Companion extension with this Target Environment before live browser evidence can be collected.",
             "Pair Browser Companion", "needs-action"),
 
+        // "Open or refresh a page" is only true while nothing has arrived. Once evidence exists, a page clearly was
+        // opened, and repeating the instruction describes a situation the reader is no longer in.
         BrowserCompanionSituation.PairedNotConnected => new(
             "signal-off", "Browser Companion paired but not connected",
-            "The pairing exists, but the extension is not currently reporting. Open or refresh an approved application page in the paired browser.",
+            pagesWithEvidence > 0
+                ? "The pairing exists, but the extension is not currently reporting."
+                : "The pairing exists, but the extension is not currently reporting. Open or refresh an approved application page in the paired browser.",
             "Recheck", "needs-action"),
 
         _ => null,

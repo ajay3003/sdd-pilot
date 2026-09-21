@@ -12,7 +12,7 @@
 <section class="bd" data-testid="browser-discovery" aria-label="Browser discovery">
 
     @* One notice for the companion situation, or none. A connected companion with no page open is not a warning. *@
-    @if (BrowserCompanionSituations.Alert(Situation) is { } alert)
+    @if (BrowserCompanionSituations.Alert(Situation, Rows.Count) is { } alert)
     {
         <div class="bd-alert bd-alert-@alert.Tone" role="status" data-testid="bd-companion-alert">
             <span class="bd-alert-icon bd-icon-@alert.Icon" aria-hidden="true"></span>
@@ -36,8 +36,6 @@
     <div class="bd-overview bd-overview-live" data-testid="browser-discovery-live" aria-label="Live browser session">
         <span class="bd-ov-group">Live session</span>
         <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Pairing</span><span class="bd-ov-value" data-testid="bd-pairing">@BrowserCompanionSituations.PairingLabel(Situation)</span></div>
-        <div class="bd-ov-item"><span class="bd-ov-label">Connection</span><span class="bd-ov-value" data-testid="bd-connection">@BrowserCompanionSituations.ConnectionLabel(Situation)</span></div>
         @foreach (var fact in BrowserDiscoveryLive.Facts(Status))
         {
             <div class="bd-ov-item"><span class="bd-ov-label">@fact.Label</span><span class="bd-ov-value bd-mono @(fact.Muted ? "bd-ov-muted" : "")" data-testid="@fact.TestId">@fact.Value</span></div>

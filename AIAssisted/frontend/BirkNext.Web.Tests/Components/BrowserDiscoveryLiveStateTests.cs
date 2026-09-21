@@ -194,7 +194,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         var cut = await OpenAsync(Status(BrowserCompanionState.NotPaired));
 
         Text(cut, "bd-companion-alert-title").Should().Be("Browser Companion not paired");
-        Text(cut, "bd-pairing").Should().Be("Not paired");
+        Text(cut, "bd-session").Should().Be("Not connected");
         // The warning must not read as data loss: captured evidence is untouched by a missing pairing.
         Text(cut, "bd-companion-alert-history").Should().Contain("still available");
         Text(cut, "bd-pages-count").Should().Be("1");
@@ -208,8 +208,8 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         var title = Text(cut, "bd-companion-alert-title");
         title.Should().Be("Browser Companion paired but not connected");
         title.Should().NotBe("Browser Companion not paired", "telling someone to pair when they have is how a status surface loses trust");
-        Text(cut, "bd-pairing").Should().Be("Paired");
-        Text(cut, "bd-connection").Should().Be("Not connected");
+        // The badge gives the short state; the notice gives the distinction that decides what to do about it.
+        Text(cut, "bd-session").Should().Be("Paired · not reporting");
     }
 
     [Fact]
@@ -218,8 +218,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         var cut = await OpenAsync(Status());
 
         cut.FindAll("[data-testid=bd-companion-alert]").Should().BeEmpty("nothing is wrong and nothing needs fixing");
-        Text(cut, "bd-pairing").Should().Be("Paired");
-        Text(cut, "bd-connection").Should().Be("Connected");
+        Text(cut, "bd-session").Should().Be("Connected");
         Text(cut, "bd-live-pages").Should().Be("0");
         Text(cut, "bd-live-note").Should().Contain("No approved application page is currently reporting");
     }
@@ -248,7 +247,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
     {
         SeedEvidence();
         var cut = await OpenAsync(Status(BrowserCompanionState.NotPaired));
-        Text(cut, "bd-pairing").Should().Be("Not paired");
+        Text(cut, "bd-session").Should().Be("Not connected");
         Text(cut, "bd-current-page").Should().Be("None");
         Text(cut, "bd-live-dom").Should().Be("Not available");
     }
