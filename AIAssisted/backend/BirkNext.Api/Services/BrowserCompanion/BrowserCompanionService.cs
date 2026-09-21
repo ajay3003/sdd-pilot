@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using BirkNext.BrowserCompanion;
+using BirkNext.CriticalE2E;
 
 namespace BirkNext.Api.Services.BrowserCompanion;
 
@@ -16,6 +17,20 @@ public interface IBrowserCompanionService
     BrowserCompanionStatus Unpair(string profileId);
     /// <summary>Extension: is this session still valid (used on browser start to decide whether the popup shows Connected).</summary>
     BrowserCompanionPairResult ValidateSession(string sessionId, string profileId, string extensionOrigin);
+    /// <summary>
+    /// BirkNext: tell the companion a Critical E2E run is expected for this environment, so it polls at step speed
+    /// rather than at the 30-second liveness cadence. Called when the user opens the run surface, not only when they
+    /// press Run — otherwise the first step of every run waits for the next scheduled heartbeat.
+    /// </summary>
+    void OpenAutomationWindow(string profileId);
+    /// <summary>BirkNext: queue one typed browser command for the paired session. Refused unless every gate in <see cref="BrowserCompanionService.Dispatch"/> holds.</summary>
+    CompanionCommandDispatchResult Dispatch(CompanionAutomationCommand command);
+    /// <summary>BirkNext: wait for the outcome of a queued command, or for its deadline.</summary>
+    Task<CompanionAutomationResult> AwaitResultAsync(string commandId, CancellationToken cancellationToken);
+    /// <summary>BirkNext: give up on a queued command (user cancelled, or the run ended).</summary>
+    void CancelCommand(string commandId, string reason);
+    /// <summary>Extension: report the outcome of a command. Idempotent — a replayed result never overwrites the first one.</summary>
+    BrowserCompanionAcceptResult CompleteCommand(CompanionAutomationResultEnvelope envelope, string extensionOrigin);
 }
 
 /// <summary>
@@ -24,7 +39,7 @@ public interface IBrowserCompanionService
 /// stated environment, comes from the same extension origin, targets an approved origin and respects the payload limits. Nothing is
 /// persisted here: the frontend merges accepted evidence into its per-environment Endpoint Discovery store.
 /// </summary>
-public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sanitizer, TimeProvider time, ILogger<BrowserCompanionService> logger)
+public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sanitizer, TimeProvider time, ILogger<BrowserCompanionService> logger)
     : BackgroundService, IBrowserCompanionService
 {
     private const string CodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I
@@ -54,11 +69,14 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
         public required DateTimeOffset PairedAt { get; init; }
         public DateTimeOffset LastSeenAt { get; set; }
         public DateTimeOffset LastEnvelopeAt { get; set; } = DateTimeOffset.MinValue;
+        /// <summary>While this is in the future the companion polls quickly, because a Critical E2E run is expected.</summary>
+        public DateTimeOffset AutomationWindowUntil { get; set; } = DateTimeOffset.MinValue;
         public string ExtensionVersion { get; set; } = "";
         public string? CurrentPageOrigin { get; set; }
         public string? CurrentPagePath { get; set; }
         public int RejectedMessages { get; set; }
         public Dictionary<string, BrowserPageEvidence> Pages { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, PendingCommand> Commands { get; } = new(StringComparer.Ordinal);
         public DateTimeOffset AbsoluteExpiry => PairedAt + BrowserCompanionLimits.SessionAbsoluteLifetime;
         public bool Expired(DateTimeOffset now) => now > AbsoluteExpiry || now - LastSeenAt > BrowserCompanionLimits.SessionIdleLifetime;
     }
@@ -134,7 +152,8 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
         {
             var session = Resolve(heartbeat.SessionId, heartbeat.ProfileId, extensionOrigin, out var reason);
             if (session is null) return new BrowserCompanionAcceptResult { Accepted = false, Message = reason };
-            session.LastSeenAt = time.GetUtcNow();
+            var heartbeatAt = time.GetUtcNow();
+            session.LastSeenAt = heartbeatAt;
             session.ExtensionVersion = Safe(heartbeat.ExtensionVersion, 40);
             // The same canonicalization the approved list was built with, for the same reason as the evidence path:
             // this origin is compared, not displayed, so it must never be put through free-text redaction first.
@@ -150,7 +169,11 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
                 session.CurrentPageOrigin = null;
                 session.CurrentPagePath = null;
             }
-            return new BrowserCompanionAcceptResult { Accepted = true, Message = "OK" };
+            // A queued command rides back on this response. It is only handed out when the companion is actually on an
+            // approved page — a command aimed at a page that is no longer open is a stale click, not a pending one.
+            var command = session.CurrentPageOrigin is null ? null : ClaimNextCommand(session, heartbeatAt);
+            var fast = command is not null || heartbeatAt < session.AutomationWindowUntil;
+            return new BrowserCompanionAcceptResult { Accepted = true, Message = "OK", PendingCommand = command, NextHeartbeatMs = fast ? 500 : null };
         }
     }
 

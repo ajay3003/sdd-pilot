@@ -47,50 +47,69 @@
     })().catch(() => respond({ message: 'Layout probes unavailable; no pass recorded.' }));
     return true;
   });
-  // ── Critical E2E probe ─────────────────────────────────────────────────────
+  // ── Critical E2E step runner ───────────────────────────────────────────────
   // BirkNext asks for one allow-listed action against a described element and gets back an outcome. It never sends
   // JavaScript: the message carries an action name and a selector description, so there is nothing here to eval. The
-  // action is performed the way a person would perform it — a hidden or disabled control is reported, not forced.
+  // action is performed the way a person would perform it — a hidden, disabled or read-only control is reported, not
+  // forced. Statuses are the shared contract's (Passed / Failed / Blocked), so no mapping layer can drift.
   let probeBusy = false;
+  const finishedCommands = new Map();   // commandId -> result, so a redelivered command is answered, not re-executed
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
-    if (message?.type !== 'e2e:probe') return;
+    if (message?.type !== 'e2e:command') return;
+    const command = message.command || {};
     const startedAt = new Date().toISOString(), started = Date.now();
-    const finish = result => respond({
-      commandId: message.commandId ?? null, startedAt, completedAt: new Date().toISOString(),
-      durationMs: Date.now() - started, observedRoute: C.sanitize.text(win.location.pathname),
-      summary: null, error: null, ...result,
-    });
-    if (sender.id !== chrome.runtime.id || !C.automation) { finish({ status: 'blocked', error: 'Probe runner unavailable.' }); return; }
-    if (probeBusy) { finish({ status: 'blocked', error: 'A probe is already running on this page.' }); return; }
-    if (!isApprovedVisit(visit)) { finish({ status: 'blocked', error: 'No approved active page.' }); return; }
+    const finish = result => {
+      const full = {
+        commandId: command.commandId ?? null, stepId: command.stepId ?? '', startedAt,
+        completedAt: new Date().toISOString(), durationMs: Date.now() - started,
+        observedRoute: win.location.pathname, observedValue: null, assertionResult: null,
+        evidenceReference: visit && isApprovedVisit(visit) ? `${visit.origin}${visit.path}` : null,
+        safeSummary: null, sanitizedError: null, ...result,
+      };
+      if (command.commandId) finishedCommands.set(command.commandId, full);
+      respond(full);
+    };
+    if (sender.id !== chrome.runtime.id || !C.automation) { finish({ status: 'Blocked', sanitizedError: 'Step runner unavailable.' }); return; }
+    // The same command arriving twice is answered with what already happened. A worker restart mid-flight must not turn
+    // one click into two.
+    if (command.commandId && finishedCommands.has(command.commandId)) { respond(finishedCommands.get(command.commandId)); return; }
+    if (probeBusy) { finish({ status: 'Blocked', sanitizedError: 'A step is already running on this page.' }); return; }
+    if (!isApprovedVisit(visit)) { finish({ status: 'Blocked', sanitizedError: 'No approved active page.' }); return; }
     (async () => {
       probeBusy = true;
       try {
         scope = await send({ type: 'content:session' });
-        // The same non-production gate the layout probes use, re-checked in the page: the worker's answer is not the
-        // only thing standing between a probe and a production page.
+        // The same non-production gate the worker applied, re-checked in the page: the worker's answer is not the only
+        // thing standing between a step and a production page.
         if (!isApprovedVisit(visit) || !C.wcagInteraction.allowed(scope?.environmentType, true)) {
-          finish({ status: 'blocked', error: 'Probes run only on approved non-production pages.' }); return;
+          finish({ status: 'Blocked', sanitizedError: 'Steps run only on approved non-production pages.' }); return;
         }
-        const command = message.command;
-        if (!C.automation.ACTIONS.includes(command?.action)) {
-          finish({ status: 'blocked', error: `Action not allowed: ${C.sanitize.text(String(command?.action))}` }); return;
+        // The page must still be the page the command was aimed at.
+        if (command.targetOrigin && command.targetOrigin !== visit.origin) {
+          finish({ status: 'Blocked', sanitizedError: 'The browser page changed before the step ran.' }); return;
         }
-        const timeoutMs = Math.min(Math.max(Number(command.timeoutMs) || 5000, 500), 15000);
-        // Wait for the application to render rather than sleeping a fixed amount: an SPA settles when it settles, and
-        // a fixed delay is either a flake or wasted time. The last attempt's outcome is the reported one.
-        let outcome = { status: 'failed', error: 'Probe did not run.' };
+        if (!C.automation.ACTIONS.includes(command.action)) {
+          finish({ status: 'Blocked', sanitizedError: `Action not allowed: ${C.sanitize.text(String(command.action))}` }); return;
+        }
+        const timeoutMs = Math.min(Math.max(Number(command.timeoutMs) || 5000, 500), 60000);
+        // Wait for the application to render rather than sleeping: an SPA settles when it settles, and a fixed delay is
+        // either a flake or wasted time. A mutating action runs once; only observations are retried.
+        let outcome = { status: 'failed', error: 'Step did not run.' };
+        const once = C.automation.MUTATING.includes(command.action);
         await C.automation.waitFor(() => {
+          if (once && outcome.status === 'passed') return true;
           outcome = C.automation.perform(doc, win, command);
-          return outcome.status === 'passed';
+          return once || outcome.status === 'passed';
         }, { timeoutMs, intervalMs: 150 });
         finish({
-          status: outcome.status,
-          summary: outcome.summary ? C.sanitize.text(outcome.summary) : null,
-          error: outcome.error ? C.sanitize.text(outcome.error) : null,
+          status: outcome.status === 'passed' ? 'Passed' : 'Failed',
+          assertionResult: outcome.assertionResult ?? null,
+          observedValue: outcome.observedValue == null ? null : C.sanitize.text(String(outcome.observedValue)),
+          safeSummary: outcome.summary ? C.sanitize.text(outcome.summary) : null,
+          sanitizedError: outcome.error ? C.sanitize.text(outcome.error) : null,
         });
       } catch (e) {
-        finish({ status: 'blocked', error: C.sanitize.text(`Probe could not run: ${e && e.message}`) });
+        finish({ status: 'Blocked', sanitizedError: C.sanitize.text(`Step could not run: ${e && e.message}`) });
       } finally { probeBusy = false; }
     })();
     return true;

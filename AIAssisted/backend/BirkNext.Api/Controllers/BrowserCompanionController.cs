@@ -2,6 +2,7 @@ using System.Net;
 using BirkNext.Api.Services.BrowserCompanion;
 using BirkNext.Api.Services.ManagedEdge;
 using BirkNext.BrowserCompanion;
+using BirkNext.CriticalE2E;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -57,6 +58,11 @@ public sealed class BrowserCompanionExtensionController(IBrowserCompanionService
     [HttpPost("heartbeat")]
     [RequestSizeLimit(8 * 1024)]
     public IActionResult Heartbeat(BrowserCompanionHeartbeat request) => Run(() => Ok(companion.Heartbeat(request, ExtensionOrigin)));
+
+    /// <summary>The outcome of one typed browser command. Same loopback + extension-origin gate and same session proof as evidence.</summary>
+    [HttpPost("command-result")]
+    [RequestSizeLimit(8 * 1024)]
+    public IActionResult CommandResult(CompanionAutomationResultEnvelope envelope) => Run(() => Ok(companion.CompleteCommand(envelope, ExtensionOrigin)));
 
     [HttpPost("evidence")]
     [RequestSizeLimit(BrowserCompanionLimits.MaxEnvelopeBytes)]

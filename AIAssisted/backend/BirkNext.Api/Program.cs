@@ -242,6 +242,15 @@ builder.Services.AddSingleton<BirkNext.Api.Services.BrowserCompanion.BrowserComp
 builder.Services.AddSingleton<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.BrowserCompanion.IBrowserCompanionService>(sp => sp.GetRequiredService<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>());
 builder.Services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<BirkNext.Api.Services.BrowserCompanion.BrowserCompanionService>());
+
+// Critical E2E Regression. One runner, several step executors: browser steps and integration steps differ entirely in
+// how they reach the system and not at all in what a result means.
+builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStore, BirkNext.Api.Services.CriticalE2E.CriticalE2EStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStepExecutor, BirkNext.Api.Services.CriticalE2E.CompanionBrowserStepExecutor>();
+builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStepExecutor, BirkNext.Api.Services.CriticalE2E.IntegrationStepExecutor>();
+builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EStepExecutor, BirkNext.Api.Services.CriticalE2E.EventHubStepExecutor>();
+builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.CriticalE2ERunner>();
+builder.Services.AddSingleton<BirkNext.Api.Services.CriticalE2E.ICriticalE2EService, BirkNext.Api.Services.CriticalE2E.CriticalE2EService>();
 builder.Services.AddScoped<BirkNext.Api.Controllers.BrowserCompanionExtensionCallerFilter>();
 builder.Services.AddSingleton<IAuthenticatedBrowserHost, PlaywrightAuthenticatedBrowserHost>();
 builder.Services.AddSingleton<AuthenticationOriginPolicy>();

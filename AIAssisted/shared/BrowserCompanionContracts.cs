@@ -114,6 +114,18 @@ public sealed record BrowserCompanionAcceptResult
     public int AcceptedPages { get; init; }
     public int RejectedPages { get; init; }
     public string Message { get; init; } = "";
+    /// <summary>
+    /// A Critical E2E browser command for the companion to execute, carried on the heartbeat the extension was already
+    /// making. It is handed out exactly once: a retried heartbeat receives null, which is what stops a retry becoming a
+    /// second click. Null on every ordinary heartbeat.
+    /// </summary>
+    public CriticalE2E.CompanionAutomationCommand? PendingCommand { get; init; }
+    /// <summary>
+    /// How soon BirkNext would like the next heartbeat, in milliseconds. Set only while a Critical E2E run window is
+    /// open, so a flow advances at step speed instead of at the 30-second liveness cadence. Null the rest of the time:
+    /// the companion is an observer, and an observer that polls constantly is a cost with no reader.
+    /// </summary>
+    public int? NextHeartbeatMs { get; init; }
 }
 
 /// <summary>UI → backend status/unpair for one Target Environment.</summary>

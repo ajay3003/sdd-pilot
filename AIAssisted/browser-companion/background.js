@@ -260,12 +260,66 @@ async function heartbeat() {
     if (result.ok && result.json && result.json.accepted && lastStatus.state !== 'connected') lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
     if (result.status === 403) { await revokeSession(result.json && result.json.message); return; }
     trace(result.ok ? 'HeartbeatSucceeded' : 'HeartbeatRejected');
+    if (result.ok && result.json) await afterHeartbeat(session, result.json);
     // A backend that answers otherwise is still a backend: these credentials remain good, and a transient
     // fault must never unpair.
   } catch {
     trace('HeartbeatFailed');
     lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback.', session };
   }
+}
+
+// Commands already executed by this worker. A redelivered command is answered from here, never performed twice.
+const executedCommands = new Map();
+let pollTimer = null;
+
+/**
+ * Runs one queued Critical E2E step, then comes straight back for the next one. Between steps the worker polls at the
+ * cadence the backend asks for, so a flow does not advance at heartbeat speed; when no run is in progress the backend
+ * asks for nothing and the ordinary 30-second alarm is the only traffic.
+ */
+async function afterHeartbeat(session, body) {
+  if (body.pendingCommand) await runCommand(session, body.pendingCommand);
+  if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
+  const next = body.pendingCommand ? 250 : Number(body.nextHeartbeatMs) || 0;
+  if (next > 0) pollTimer = setTimeout(() => heartbeat(), Math.max(next, 250));
+}
+
+async function runCommand(session, command) {
+  const id = command && command.commandId;
+  if (!id) return;
+  if (executedCommands.has(id)) { await reportCommand(session, executedCommands.get(id)); return; }
+
+  const started = new Date().toISOString();
+  const refuse = reason => ({
+    commandId: id, stepId: command.stepId || '', status: 'Blocked', startedAt: started,
+    completedAt: new Date().toISOString(), durationMs: 0, sanitizedError: reason,
+  });
+
+  let outcome;
+  if (command.profileId !== session.profileId) outcome = refuse('The step belongs to a different Target Environment.');
+  else if (!PROBE_ENVIRONMENTS.includes(session.environmentType)) outcome = refuse('Steps run only against non-production environments.');
+  else if (!approved(session, command.targetOrigin)) outcome = refuse('The step targets an origin this session has not approved.');
+  else if (!wcagTab || wcagTab.profileId !== session.profileId) outcome = refuse('No approved reporting page is open in this browser.');
+  else {
+    // Claim before dispatching: if the page never answers, the command is still spent, so a retry cannot click again.
+    executedCommands.set(id, refuse('The page did not report a result.'));
+    try {
+      outcome = await chrome.tabs.sendMessage(wcagTab.id, { type: 'e2e:command', command });
+    } catch {
+      outcome = refuse('The approved page could not be reached; it may have been closed.');
+    }
+  }
+  executedCommands.set(id, outcome);
+  if (executedCommands.size > 200) executedCommands.delete(executedCommands.keys().next().value);
+  await reportCommand(session, outcome);
+}
+
+async function reportCommand(session, result) {
+  try {
+    await post('command-result', { sessionId: session.sessionId, profileId: session.profileId, extensionVersion: EXTENSION_VERSION, result });
+    trace('CommandResultReported');
+  } catch { trace('CommandResultFailed'); }
 }
 
 let wcagTab = null;
@@ -302,7 +356,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             !PROBE_ENVIRONMENTS.includes(probeStatus.session.environmentType)) {
           sendResponse({ status: 'blocked', error: 'Probes require a paired non-production reporting page.' }); break;
         }
-        sendResponse(await chrome.tabs.sendMessage(wcagTab.id, { type: 'e2e:probe', commandId: message.commandId ?? null, command: message.command }));
+        sendResponse(await chrome.tabs.sendMessage(wcagTab.id, { type: 'e2e:command', command: { ...message.command, commandId: message.commandId ?? null } }));
         break;
       }
       case 'popup:pair': sendResponse(await pair(message.pairingCode)); break;
