@@ -1,0 +1,114 @@
+{
+  "startCommands": 2,
+  "stopCommands": 1,
+  "snapshots": [
+    {
+      "label": "initial",
+      "runtimeId": "9425472da4e74e09bafc85edeed0b5c3",
+      "port": 0,
+      "edgeProcessId": null,
+      "edgeRunning": false,
+      "proxyListening": false,
+      "status": "Stopped"
+    },
+    {
+      "label": "listener started",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": null,
+      "edgeRunning": false,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "started",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "refresh 1",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "refresh 2",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "hard refresh",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "tab navigation",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "route navigation",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "second BirkNext tab",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "repeated Start",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 8888,
+      "edgeProcessId": 33584,
+      "edgeRunning": true,
+      "proxyListening": true,
+      "status": "Running"
+    },
+    {
+      "label": "explicit Stop",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 0,
+      "edgeProcessId": null,
+      "edgeRunning": false,
+      "proxyListening": false,
+      "status": "Stopped"
+    },
+    {
+      "label": "refresh after Stop",
+      "runtimeId": "31b36ec88e404c4d929ad54fb5139c8a",
+      "port": 0,
+      "edgeProcessId": null,
+      "edgeRunning": false,
+      "proxyListening": false,
+      "status": "Stopped"
+    }
+  ]
+}
