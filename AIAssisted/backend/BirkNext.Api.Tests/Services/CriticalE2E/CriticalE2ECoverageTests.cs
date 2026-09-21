@@ -19,9 +19,13 @@ public sealed class CriticalE2ECoverageTests
         {
             Id = id, Module = module, Name = id, Mode = mode, ProfileId = "dev", EnvironmentId = "env-1",
             Enabled = enabled, RequiredForRelease = required,
+            // A real assertion names the element it asserts about; one that does not cannot run, which is exactly what
+            // the wellFormed: false case exercises.
             Steps = wellFormed
-                ? [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertVisible, IsFinalAssertion = true }]
-                : [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.Click }],
+                ? [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertVisible,
+                    Selector = new CompanionSelector { Kind = CompanionSelectorKind.TestId, Value = "status" }, IsFinalAssertion = true }]
+                : [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.Click,
+                    Selector = new CompanionSelector { Kind = CompanionSelectorKind.TestId, Value = "open" } }],
         };
 
     private static CriticalE2ERunResult Run(string flowId, CriticalE2EStatus status, string? buildId = "12345", int minutesAgo = 1) => new()
@@ -72,6 +76,26 @@ public sealed class CriticalE2ECoverageTests
         var summary = CriticalE2ECoverage.Summarize(Flow("f1", "Person", wellFormed: false), [], "12345");
         summary.Configured.Should().BeFalse();
         summary.ConfigurationProblem.Should().Contain("final business assertion");
+    }
+
+    [Fact]
+    public void ABrowserStepWithNothingToActOnCannotRun()
+    {
+        var flow = Flow("f1", "Person") with
+        {
+            Steps = [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertVisible, IsFinalAssertion = true }],
+        };
+        CriticalE2ECoverage.ConfigurationProblem(flow).Should().Contain("no element to act on");
+    }
+
+    [Fact]
+    public void ARouteAssertionNeedsNoElement()
+    {
+        var flow = Flow("f1", "Person") with
+        {
+            Steps = [new CriticalE2EStepDefinition { StepId = "s1", BrowserAction = CompanionActionKind.AssertRoute, Expected = "/saker", IsFinalAssertion = true }],
+        };
+        CriticalE2ECoverage.ConfigurationProblem(flow).Should().BeNull();
     }
 
     [Fact]
