@@ -11,9 +11,42 @@ public static class ApplicationPagePolicy
         "msauth.net", "msftauth.net", "login.live.com", "login.windows.net"
     }.Any(domain => host.Equals(domain, StringComparison.OrdinalIgnoreCase) || host.EndsWith("." + domain, StringComparison.OrdinalIgnoreCase));
 
-    public static bool IsApplicationOrigin(string? origin, IReadOnlyList<string>? applicationOrigins = null) =>
-        Uri.TryCreate(origin, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" &&
-        !IsInfrastructureHost(uri.Host) && (applicationOrigins is null || applicationOrigins.Contains(uri.GetLeftPart(UriPartial.Authority), StringComparer.OrdinalIgnoreCase));
+    /// <summary>
+    /// The canonical origin identity of a page: scheme, host and non-default port, and nothing else. This is the ONE
+    /// canonicalization for every origin in the Browser Companion channel — the approved list, the evidence a page
+    /// reports and the heartbeat's current page all pass through here, so both sides of every comparison are produced
+    /// the same way.
+    ///
+    /// It is deliberately not a sanitizer. An origin is an identity that is about to be matched against origins the
+    /// user explicitly approved, and free-text credential redaction rewrites anything token-shaped: a hostname with a
+    /// 32-character label, or one containing a word the generic patterns treat as sensitive, would be redacted into a
+    /// value that can never match the approval it was checked against. A hostname is not a secret, and an origin that
+    /// does not match an approved one is rejected regardless of what it spells.
+    ///
+    /// <see cref="Uri"/> supplies the normalization: scheme and host are lower-cased, the default port for the scheme
+    /// is dropped, and path, query and fragment are discarded, so <c>https://APP.test:443/x?q#f</c> and
+    /// <c>https://app.test</c> are one identity. Returns null for anything that is not an absolute http/https URI, and
+    /// for a value carrying userinfo — an origin never carries credentials, and accepting one would mean putting a
+    /// password into an identity field.
+    /// </summary>
+    public static string? CanonicalOrigin(string? value)
+    {
+        if (!Uri.TryCreate((value ?? "").Trim(), UriKind.Absolute, out var uri)) return null;
+        if (uri.Scheme is not ("https" or "http") || uri.UserInfo.Length > 0 || uri.Host.Length == 0) return null;
+        return uri.IsDefaultPort ? $"{uri.Scheme}://{uri.Host}" : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
+    }
+
+    /// <summary>
+    /// Exact canonical-origin membership. Never a wildcard, a suffix or a prefix: an approved origin admits that origin
+    /// and nothing else, so a subdomain, another scheme or another port is a different application.
+    /// </summary>
+    public static bool IsApplicationOrigin(string? origin, IReadOnlyList<string>? applicationOrigins = null)
+    {
+        if (CanonicalOrigin(origin) is not { } canonical) return false;
+        // CanonicalOrigin has already proved this parses as an absolute http/https URI, so the host read cannot throw.
+        return !IsInfrastructureHost(new Uri(canonical).Host) &&
+               (applicationOrigins is null || applicationOrigins.Contains(canonical, StringComparer.OrdinalIgnoreCase));
+    }
 }
 
 /// <summary>

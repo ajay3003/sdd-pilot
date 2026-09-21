@@ -33,9 +33,9 @@ public sealed class BrowserCompanionServiceTests
     private BrowserCompanionPairingChallenge Start(string profile = "dev", params string[] origins) =>
         _service.StartPairing(new BrowserCompanionPairingStartRequest(profile, "M2LB DEV", "Development", origins.Length == 0 ? ["https://m2lbdev.bufetat.no/"] : origins));
 
-    private BrowserCompanionPairResult Pair(string profile = "dev")
+    private BrowserCompanionPairResult Pair(string profile = "dev", params string[] origins)
     {
-        var challenge = Start(profile);
+        var challenge = Start(profile, origins);
         return _service.CompletePairing(new BrowserCompanionPairRequest(challenge.PairingCode, "0.1.0"), Extension);
     }
 
@@ -219,6 +219,183 @@ public sealed class BrowserCompanionServiceTests
         stored.Accessibility!.RulesEvaluated.Should().Be(24);
         stored.Accessibility.Findings.Should().BeEmpty();
         stored.CapturedAt.Should().Be(visit, "the evidence timestamp is recorded even when nothing was found");
+    }
+
+    // -- Page origin is an identity, never free text --------------------------
+    // Same defect class as the environment id: an origin that is about to be compared with the origins the user
+    // approved must not first be run through the credential redaction meant for text observed on a page.
+
+    /// <summary>
+    /// A hostname label of 32+ alphanumerics is a perfectly ordinary hostname. The generic "32+ char token" redaction
+    /// rule does not know that, and would have turned this origin into "[REDACTED]" - unable to match the very
+    /// approval it was being checked against, exactly as the environment id was.
+    /// </summary>
+    [Fact]
+    public void Evidence_LongAlphanumericHostnameLabel_IsNotRedacted()
+    {
+        const string origin = "https://abcdefghijklmnopqrstuvwxyz0123456789.bufetat.no";
+        var paired = Pair("dev", origin);
+        var visit = _time.GetUtcNow();
+
+        var result = _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", origin, "/admin/operations", visit)] }, Extension);
+
+        result.AcceptedPages.Should().Be(1, result.Message);
+        _service.Status("dev").Pages.Single().PageOrigin.Should().Be(origin);
+    }
+
+    /// <summary>
+    /// "case-..." matches the generic person/case identifier redaction rule. A hostname that happens to spell it is
+    /// still just a hostname, and the only thing that decides whether it may report is the approved list.
+    /// </summary>
+    [Theory]
+    [InlineData("https://case-management.bufetat.no")]
+    [InlineData("https://person-register.bufetat.no")]
+    [InlineData("https://secret.bufetat.no")]
+    [InlineData("https://token-service.bufetat.no")]
+    public void Evidence_HostnameSpellingASensitivePattern_IsNotAltered(string origin)
+    {
+        var paired = Pair("dev", origin);
+        var visit = _time.GetUtcNow();
+
+        var result = _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", origin, "/admin/operations", visit)] }, Extension);
+
+        result.AcceptedPages.Should().Be(1, result.Message);
+        _service.Status("dev").Pages.Single().PageOrigin.Should().Be(origin);
+        _service.Status("dev").CurrentPageOrigin.Should().Be(origin);
+    }
+
+    /// <summary>The ordinary case stays ordinary: no canonicalization change may cost M2LB DEV its evidence.</summary>
+    [Fact]
+    public void Evidence_M2lbDevOrigin_StillAccepted()
+    {
+        var paired = Pair();
+        var visit = _time.GetUtcNow();
+
+        _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", "https://m2lbdev.bufetat.no", "/admin/operations", visit)] }, Extension).AcceptedPages.Should().Be(1);
+        _service.Status("dev").Pages.Single().PageOrigin.Should().Be("https://m2lbdev.bufetat.no");
+    }
+
+    /// <summary>
+    /// Path, query, fragment, casing, an explicit default port and a trailing slash are all spellings of one origin.
+    /// The canonical identity is what is compared, so none of them decides whether a page may report.
+    /// </summary>
+    [Theory]
+    [InlineData("https://m2lbdev.bufetat.no")]
+    [InlineData("https://m2lbdev.bufetat.no/")]
+    [InlineData("https://m2lbdev.bufetat.no:443")]
+    [InlineData("https://M2LBDEV.BUFETAT.NO")]
+    [InlineData("https://m2lbdev.bufetat.no/admin/operations")]
+    [InlineData("https://m2lbdev.bufetat.no/admin/operations?token=SECRET")]
+    [InlineData("https://m2lbdev.bufetat.no/admin#fragment")]
+    public void Evidence_EverySpellingOfTheApprovedOrigin_IsOneCanonicalIdentity(string reported)
+    {
+        var paired = Pair();
+        var visit = _time.GetUtcNow();
+
+        var result = _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", reported, "/admin/operations", visit)] }, Extension);
+
+        result.AcceptedPages.Should().Be(1, result.Message);
+        _service.Status("dev").Pages.Single().PageOrigin.Should().Be("https://m2lbdev.bufetat.no",
+            "path, query, fragment, casing, the default port and a trailing slash are not part of an origin");
+    }
+
+    /// <summary>A non-default port is part of the identity, so it is neither dropped nor silently accepted.</summary>
+    [Fact]
+    public void Evidence_NonDefaultPort_IsPartOfTheIdentity()
+    {
+        var paired = Pair("dev", "https://app.bufetat.no:8443");
+        var visit = _time.GetUtcNow();
+
+        _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", "https://app.bufetat.no:8443/x", "/x", visit)] }, Extension).AcceptedPages.Should().Be(1);
+        _service.Status("dev").Pages.Single().PageOrigin.Should().Be("https://app.bufetat.no:8443");
+
+        // The same host on the default port is a different origin and was never approved.
+        _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", "https://app.bufetat.no", "/x", visit.AddSeconds(1))] }, Extension).AcceptedPages.Should().Be(0);
+    }
+
+    /// <summary>Canonicalization is not admission: a malformed or non-http(s) origin has no identity and cannot report.</summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("not a url")]
+    [InlineData("m2lbdev.bufetat.no")]
+    [InlineData("file:///C:/m2lbdev")]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("data:text/html,x")]
+    [InlineData("https://user:pw@m2lbdev.bufetat.no")]
+    public void Evidence_MalformedOrCredentialBearingOrigin_Rejected(string origin)
+    {
+        var paired = Pair();
+        var visit = _time.GetUtcNow();
+
+        var result = _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", origin, "/admin/operations", visit)] }, Extension);
+
+        result.AcceptedPages.Should().Be(0);
+        result.RejectedPages.Should().Be(1);
+        _service.Status("dev").PagesWithEvidence.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Approval stays exact. Nothing about canonicalizing an origin admits a neighbour: not a subdomain, not a parent
+    /// domain, not a name the approved one is a prefix or suffix of, not another scheme, not identity infrastructure.
+    /// </summary>
+    [Theory]
+    [InlineData("https://evil.m2lbdev.bufetat.no")]
+    [InlineData("https://bufetat.no")]
+    [InlineData("https://m2lbdev.bufetat.no.evil.test")]
+    [InlineData("https://notm2lbdev.bufetat.no")]
+    [InlineData("http://m2lbdev.bufetat.no")]
+    [InlineData("https://m2lbdev.bufetat.no:8443")]
+    [InlineData("https://login.microsoftonline.com")]
+    public void Evidence_UnapprovedOrigin_StillRejected(string origin)
+    {
+        var paired = Pair();
+        var visit = _time.GetUtcNow();
+
+        var result = _service.AcceptEvidence(new BrowserCompanionEvidenceEnvelope { SessionId = paired.SessionId!, ProfileId = "dev",
+            Pages = [Page("dev", origin, "/admin/operations", visit)] }, Extension);
+
+        result.AcceptedPages.Should().Be(0);
+        _service.Status("dev").PagesWithEvidence.Should().Be(0);
+    }
+
+    /// <summary>
+    /// The heartbeat current page is the other identity comparison against the approved list, and it took the same
+    /// redaction path. A hostname the generic rules find suspicious must still be reported as the current page.
+    /// </summary>
+    [Fact]
+    public void Heartbeat_CurrentPageOnASensitiveLookingHostname_IsStillReported()
+    {
+        const string origin = "https://abcdefghijklmnopqrstuvwxyz0123456789.bufetat.no";
+        var paired = Pair("dev", origin);
+
+        _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", origin + "/admin/operations?token=SECRET", "/admin/operations", "0.1.0"), Extension)
+            .Accepted.Should().BeTrue();
+
+        var status = _service.Status("dev");
+        status.CurrentPageOrigin.Should().Be(origin);
+        status.CurrentPagePath.Should().Be("/admin/operations");
+    }
+
+    /// <summary>An unapproved or malformed current page clears the current page rather than being reported.</summary>
+    [Fact]
+    public void Heartbeat_UnapprovedOrMalformedCurrentPage_IsNotReported()
+    {
+        var paired = Pair();
+        _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", "https://m2lbdev.bufetat.no", "/a", "0.1.0"), Extension);
+        _service.Status("dev").CurrentPageOrigin.Should().Be("https://m2lbdev.bufetat.no");
+
+        _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", "https://evil.test", "/a", "0.1.0"), Extension);
+        _service.Status("dev").CurrentPageOrigin.Should().BeNull();
+
+        _service.Heartbeat(new BrowserCompanionHeartbeat(paired.SessionId!, "dev", "not a url", "/a", "0.1.0"), Extension);
+        _service.Status("dev").CurrentPageOrigin.Should().BeNull();
     }
 
     [Fact]

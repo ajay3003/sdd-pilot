@@ -136,8 +136,10 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
             if (session is null) return new BrowserCompanionAcceptResult { Accepted = false, Message = reason };
             session.LastSeenAt = time.GetUtcNow();
             session.ExtensionVersion = Safe(heartbeat.ExtensionVersion, 40);
-            var origin = sanitizer.Url(heartbeat.CurrentPageOrigin).TrimEnd('/');
-            if (origin.Length > 0 && session.ApprovedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+            // The same canonicalization the approved list was built with, for the same reason as the evidence path:
+            // this origin is compared, not displayed, so it must never be put through free-text redaction first.
+            var origin = ApplicationPagePolicy.CanonicalOrigin(heartbeat.CurrentPageOrigin);
+            if (origin is not null && session.ApprovedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
             {
                 session.CurrentPageOrigin = origin;
                 session.CurrentPagePath = BrowserCompanionEvidenceSanitizer.NormalizePath(heartbeat.CurrentPagePath);
@@ -315,11 +317,11 @@ public sealed class BrowserCompanionService(BrowserCompanionEvidenceSanitizer sa
     /// <summary>Only a browser-extension origin (as sent by the extension's own fetch) may pair or report evidence; a web page never can.</summary>
     public static bool IsExtensionOrigin(string? origin) => origin is not null && ExtensionOriginPattern.IsMatch(origin.Trim());
 
+    /// <summary>The approved list is built with the one canonicalization, so an approved origin and a reported origin
+    /// are the same string whenever they are the same application.</summary>
     private static IReadOnlyList<string> NormalizeOrigins(IReadOnlyList<string>? origins) =>
-        (origins ?? []).Select(o => Uri.TryCreate(o?.Trim(), UriKind.Absolute, out var u) && u.Scheme is "https" or "http" ? OriginOf(u) : null)
+        (origins ?? []).Select(ApplicationPagePolicy.CanonicalOrigin)
             .Where(o => o is not null && ApplicationPagePolicy.IsApplicationOrigin(o)).Cast<string>().Distinct(StringComparer.OrdinalIgnoreCase).Take(32).ToList();
-
-    public static string OriginOf(Uri uri) => uri.IsDefaultPort ? $"{uri.Scheme}://{uri.Host}" : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
 
     private static string NewCode()
     {

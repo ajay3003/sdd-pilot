@@ -61,7 +61,11 @@ public sealed class BrowserCompanionEvidenceSanitizer(BrowserEvidenceSanitizer i
 
     public BrowserPageEvidence Sanitize(BrowserPageEvidence evidence)
     {
-        var origin = Url(evidence.PageOrigin).TrimEnd('/');
+        // NOT Url()/Text(). PageOrigin is the identity AcceptEvidence matches against the origins the user approved,
+        // and free-text credential redaction would rewrite a hostname that merely looks token-shaped into a value that
+        // can never match its own approval. Canonicalization is the whole treatment an origin needs; a value that is
+        // not a canonical http(s) origin becomes "" and is rejected by the approved-origin check.
+        var origin = ApplicationPagePolicy.CanonicalOrigin(evidence.PageOrigin) ?? "";
         var path = NormalizePath(evidence.PagePath);
         return new BrowserPageEvidence
         {

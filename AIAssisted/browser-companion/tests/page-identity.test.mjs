@@ -51,3 +51,27 @@ test('the M2LB DEV target URL matches its approved origin however it is written'
   for (const url of ['http://m2lbdev.bufetat.no/', 'https://m2lbdev.bufetat.no:8443/', 'https://m2lbqa.bufetat.no/'])
     assert.equal(pageIdentity.isApprovedOrigin(pageIdentity.originOf(url), approved), false, url);
 });
+
+// The origin the content script puts in the envelope is an identity the backend matches against the approved list.
+// It is produced by canonicalization alone — nothing here inspects what the hostname spells, and nothing may.
+test('a hostname that looks token-shaped or sensitive is still reported unaltered', () => {
+  for (const host of [
+    'abcdefghijklmnopqrstuvwxyz0123456789.bufetat.no', // 36-character label: a token to a redaction rule, a host here
+    'case-management.bufetat.no',
+    'person-register.bufetat.no',
+    'token-service.bufetat.no',
+    'secret.bufetat.no',
+  ]) {
+    const origin = pageIdentity.originOf(`https://${host}/admin/operations?token=SECRET#f`);
+    assert.equal(origin, `https://${host}`);
+    assert.equal(pageIdentity.isApprovedOrigin(origin, [`https://${host}`]), true);
+  }
+});
+
+// Both sides of the comparison have to spell one origin the same way. These are the forms where a URL parser and
+// .NET's Uri could plausibly disagree: bracketed IPv6 literals, and credentials that are not part of an origin.
+test('canonical origins agree with the backend form: bracketed IPv6, userinfo dropped', () => {
+  assert.equal(pageIdentity.originOf('https://[::1]:8443/x'), 'https://[::1]:8443');
+  assert.equal(pageIdentity.originOf('https://[::1]/x'), 'https://[::1]');
+  assert.equal(pageIdentity.originOf('https://user:pw@m2lbdev.bufetat.no/x'), 'https://m2lbdev.bufetat.no');
+});

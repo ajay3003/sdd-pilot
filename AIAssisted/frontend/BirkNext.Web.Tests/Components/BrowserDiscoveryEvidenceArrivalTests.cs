@@ -125,4 +125,58 @@ public sealed class BrowserDiscoveryEvidenceArrivalTests : BunitContext
         BrowserDiscoveryPresentation.PagesWithEvidence(snapshot).Should().Be(1);
         BrowserDiscoveryPresentation.LastEvidenceAt(snapshot).Should().Be(Captured);
     }
+
+    /// <summary>
+    /// The third identity comparison in the chain: Browser Discovery admits a page only when its origin is one of the
+    /// environment's application origins. Both sides of that comparison are produced by the same canonicalization, so
+    /// a hostname that a generic redaction rule would find suspicious still reaches the table.
+    /// </summary>
+    [Theory]
+    [InlineData("https://abcdefghijklmnopqrstuvwxyz0123456789.bufetat.no")]
+    [InlineData("https://case-management.bufetat.no")]
+    [InlineData("https://app.bufetat.no:8443")]
+    public async Task EvidenceOnASensitiveLookingOrEndpointedOriginStillReachesBrowserDiscovery(string origin)
+    {
+        var profile = new FrontendAnalysisProfile { Id = _profileId, Name = "M2LB DEV", TargetUrl = origin + "/admin" };
+        BrowserCompanionScope.ApprovedOrigins(profile).Should().ContainSingle(
+            "the approved list is canonicalized, so the Target URL path never becomes part of the origin")
+            .Which.Should().Be(origin);
+
+        var evidence = EvidenceWithNoFindings() with { PageOrigin = origin };
+        var api = new Mock<IBrowserCompanionApiService>();
+        api.Setup(a => a.StatusAsync(_profileId, It.IsAny<CancellationToken>())).ReturnsAsync(new BrowserCompanionStatus
+        {
+            ProfileId = _profileId, State = BrowserCompanionState.Connected, ApprovedOrigins = [origin],
+            CurrentPageOrigin = origin, CurrentPagePath = Path, PagesWithEvidence = 1, Pages = [evidence],
+        });
+
+        await using var runtime = new BrowserCompanionRuntime(api.Object, Discovery, Services.GetRequiredService<IJSRuntime>());
+        await runtime.FollowAsync(profile);
+
+        var snapshot = Discovery.GetSnapshot(_profileId);
+        snapshot.Pages.Should().ContainSingle().Which.Identity.Should().Be(origin + Path);
+        BrowserDiscoveryPresentation.PagesWithEvidence(snapshot).Should().Be(1);
+    }
+
+    /// <summary>A page from an origin this environment never approved is still not admitted by any spelling of it.</summary>
+    [Theory]
+    [InlineData("https://evil.m2lbdev.bufetat.no")]
+    [InlineData("https://m2lbdev.bufetat.no:8443")]
+    [InlineData("http://m2lbdev.bufetat.no")]
+    [InlineData("not a url")]
+    public async Task EvidenceFromAnUnapprovedOriginNeverReachesBrowserDiscovery(string origin)
+    {
+        var evidence = EvidenceWithNoFindings() with { PageOrigin = origin };
+        var api = new Mock<IBrowserCompanionApiService>();
+        api.Setup(a => a.StatusAsync(_profileId, It.IsAny<CancellationToken>())).ReturnsAsync(new BrowserCompanionStatus
+        {
+            ProfileId = _profileId, State = BrowserCompanionState.Connected, ApprovedOrigins = [Origin],
+            PagesWithEvidence = 1, Pages = [evidence],
+        });
+
+        await using var runtime = new BrowserCompanionRuntime(api.Object, Discovery, Services.GetRequiredService<IJSRuntime>());
+        await runtime.FollowAsync(_profile);
+
+        Discovery.GetSnapshot(_profileId).Pages.Should().BeEmpty();
+    }
 }

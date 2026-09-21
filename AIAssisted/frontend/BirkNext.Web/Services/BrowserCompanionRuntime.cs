@@ -40,13 +40,12 @@ public static class BrowserCompanionScope
     {
         if (profile is null) return [];
         var origins = new List<string>();
+        // The same canonicalization the backend approves and compares with — a second copy of the rule here is how the
+        // two sides drift apart.
         void Add(string? url)
         {
-            if (Uri.TryCreate(url?.Trim(), UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" && !ApplicationPagePolicy.IsInfrastructureHost(uri.Host))
-            {
-                var origin = uri.IsDefaultPort ? $"{uri.Scheme}://{uri.Host}" : $"{uri.Scheme}://{uri.Host}:{uri.Port}";
-                if (!origins.Contains(origin, StringComparer.OrdinalIgnoreCase)) origins.Add(origin);
-            }
+            if (ApplicationPagePolicy.CanonicalOrigin(url) is { } origin && ApplicationPagePolicy.IsApplicationOrigin(origin)
+                && !origins.Contains(origin, StringComparer.OrdinalIgnoreCase)) origins.Add(origin);
         }
         Add(profile.TargetUrl);
         // Redirect permission is not application-page ownership.
