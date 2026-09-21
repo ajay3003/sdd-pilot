@@ -236,19 +236,25 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
         performance.TextContent.Should().NotContain("Lighthouse");
     }
 
-    // 28. A domain with no evidence shows no count at all.
+    // 28. A domain with no evidence shows no count — and a domain that HAS findings never denies them.
     [Fact]
-    public void ADomainWithoutEvidenceShowsNoFindingCount()
+    public void ADomainWithoutEvidenceShowsNoFindingCount_ButOneWithFindingsDoesNotDenyThem()
     {
         var outcomes = Enum.GetValues<FrontendQualityEngineId>()
             .Select(id => Outcome(id, FrontendQualityEngineExecutionState.Unavailable));
 
         var page = Result(CompletedReport(outcomes: outcomes));
 
+        // Security's own engines did not run, but the report carries its missing-CSP finding. Saying "no evidence"
+        // here denied a finding listed further down the same page.
         var security = Domain(page, FrontendQualityCategory.Security);
-        security.QuerySelector("[data-testid=fqr-domain-result-state]")!.TextContent.Trim().Should().Be("No evidence");
-        security.QuerySelector("[data-testid=fqr-domain-result-count]").Should().BeNull("nothing established a number");
-        security.TextContent.Should().Contain("nothing can be concluded about it");
+        security.QuerySelector("[data-testid=fqr-domain-result-count]").Should().NotBeNull("the domain has a finding");
+        security.TextContent.Should().NotContain("nothing can be concluded about it");
+
+        // A domain with neither an engine nor a finding still establishes no number.
+        var blazor = Domain(page, FrontendQualityCategory.BlazorWasm);
+        blazor.QuerySelector("[data-testid=fqr-domain-result-count]").Should().BeNull("nothing established a number");
+        blazor.TextContent.Should().Contain("No dedicated assessment evidence");
     }
 
     // 29. An execution failure is reported as one.

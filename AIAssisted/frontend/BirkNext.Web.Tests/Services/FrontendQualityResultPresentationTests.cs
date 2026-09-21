@@ -183,7 +183,7 @@ public sealed class FrontendQualityResultPresentationTests
 
         security.State.Should().Be(FrontendQualityDomainResultState.NoEvidence);
         security.FindingCount.Should().BeNull("a domain nothing assessed has an unknown number of issues");
-        security.Summary.Should().Be("No evidence is available for this domain, so nothing can be concluded about it.");
+        security.Summary.Should().Be("No dedicated assessment evidence for this domain.");
         security.Summary.Should().NotContain("0");
     }
 
@@ -196,7 +196,7 @@ public sealed class FrontendQualityResultPresentationTests
 
         performance.State.Should().Be(FrontendQualityDomainResultState.NotAssessed);
         performance.FindingCount.Should().BeNull();
-        performance.Summary.Should().Be("This area was not assessed in this run.");
+        performance.Summary.Should().Be("Not assessed in this run.");
     }
 
     [Fact]

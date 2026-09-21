@@ -138,17 +138,24 @@ public static class FrontendQualityResultPresentation
         // Accessibility also draws on the WCAG assessment, which can hold recorded manual reviews when no engine ran.
         var hasWcagEvidence = category == FrontendQualityCategory.Accessibility && accessibility is { WithEvidence: > 0 };
 
+        // Findings this run actually recorded for the domain. A domain that HAS findings has evidence, whatever its own
+        // engines reported: Security said "No evidence is available for this domain" while the same page listed missing
+        // CSP, HSTS, X-Content-Type-Options, Permissions-Policy and Referrer-Policy findings under that very category.
+        // Suppressing the count because the engine outcome said so made the card contradict the findings table.
+        var categoryFindings = report.Findings.Count(f => f.Category == category);
+
         var state =
             assessed.Count > 0 || hasWcagEvidence
                 ? assessed.Count < active.Count ? FrontendQualityDomainResultState.CompletedWithLimitedEvidence
                                                 : FrontendQualityDomainResultState.Completed
+            // No engine of this domain completed, yet findings for it exist. They came from evidence this run collected,
+            // so the domain was reviewed — with less than its own engines would have given it.
+            : categoryFindings > 0 ? FrontendQualityDomainResultState.CompletedWithLimitedEvidence
             : errored.Count > 0 ? FrontendQualityDomainResultState.FailedToRun
             : active.Count > 0 ? FrontendQualityDomainResultState.NoEvidence
             : FrontendQualityDomainResultState.NotAssessed;
 
-        int? findingCount = FrontendQualityDomainResultStates.CarriesFindings(state)
-            ? report.Findings.Count(f => f.Category == category)
-            : null;
+        int? findingCount = FrontendQualityDomainResultStates.CarriesFindings(state) ? categoryFindings : null;
 
         return new FrontendQualityDomainResult(
             category,
@@ -174,10 +181,12 @@ public static class FrontendQualityResultPresentation
             return accessibility.Statement;
 
         if (state == FrontendQualityDomainResultState.NotAssessed)
-            return "This area was not assessed in this run.";
+            return "Not assessed in this run.";
 
+        // "No evidence" reads as a data failure and, for Security, as a claim that nothing was found anywhere. What is
+        // actually missing is this domain's own engine; findings that belong to other domains are unaffected.
         if (state == FrontendQualityDomainResultState.NoEvidence)
-            return "No evidence is available for this domain, so nothing can be concluded about it.";
+            return "No dedicated assessment evidence for this domain.";
 
         if (state == FrontendQualityDomainResultState.FailedToRun)
             return "An evidence source for this domain did not complete, so the domain was not reviewed.";

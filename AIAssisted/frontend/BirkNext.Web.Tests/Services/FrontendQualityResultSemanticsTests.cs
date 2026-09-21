@@ -124,4 +124,44 @@ public sealed class FrontendQualityResultSemanticsTests
         assessed.EngineOutcomes.Should().OnlyContain(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed);
         assessed.SecurityScore.Should().Be(57, "the engine ran, so its score is a measurement");
     }
+
+    // ── §89. A domain never denies the findings it has ──────────────────────
+
+    /// <summary>
+    /// Security's own engines did not run, so the card said "No evidence is available for this domain, so nothing can
+    /// be concluded about it" — on a page that listed missing CSP, HSTS and three more headers under that very
+    /// category. Whatever produced those findings, the domain has evidence.
+    /// </summary>
+    // 18, 19.
+    [Fact]
+    public void ADomainWithFindingsIsNeverReportedAsHavingNoEvidence()
+    {
+        var report = BlockedRequiredWithOptionalEvidence(findings: 0);
+        report.Findings.Add(new FrontendQualityFinding
+        {
+            Category = FrontendQualityCategory.Security, Severity = FrontendQualitySeverity.Critical,
+            Title = "Missing Content-Security-Policy",
+        });
+
+        var security = FrontendQualityResultPresentation.Build(report).Domains
+            .Single(d => d.Category == FrontendQualityCategory.Security);
+
+        security.State.Should().NotBe(FrontendQualityDomainResultState.NoEvidence);
+        security.FindingCount.Should().Be(1, "the finding exists, so the count is known");
+        security.Summary.Should().NotContain("nothing can be concluded");
+    }
+
+    // 20.
+    [Fact]
+    public void ADomainWithNeitherEngineNorFindingStatesWhatIsMissing()
+    {
+        var report = BlockedRequiredWithOptionalEvidence(findings: 0);
+
+        var security = FrontendQualityResultPresentation.Build(report).Domains
+            .Single(d => d.Category == FrontendQualityCategory.Security);
+
+        security.FindingCount.Should().BeNull("nothing established a number");
+        security.Summary.Should().Contain("No dedicated assessment evidence");
+        security.Summary.Should().NotContain("nothing can be concluded");
+    }
 }
