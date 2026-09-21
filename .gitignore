@@ -212,3 +212,6 @@ AIAssisted/bisect-wt/
 
 # Redirected build output used for isolated test/build runs (never commit)
 .ar-out/
+
+# Critical E2E flow definitions and run history (workstation-local QA evidence)
+AIAssisted/backend/BirkNext.Api/App_Data/
