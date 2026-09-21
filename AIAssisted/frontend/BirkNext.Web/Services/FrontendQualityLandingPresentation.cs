@@ -42,7 +42,8 @@ public static class FrontendQualityLandingPresentation
     public static FrontendQualityCoverageSummaryModel CoverageSummary(IReadOnlyList<FrontendQualityCoverageRow> rows) => new(
         TotalCount: rows.Count,
         AvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.Available),
-        NotAvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotAvailable));
+        NotAvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotAvailable),
+        NotRequiredCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotRequired));
 
     /// <summary>"11 automated or passive checks included" — never a result claim, because nothing has run yet.</summary>
     public static string CheckSummary => $"{CheckCount} automated or passive checks included";
@@ -138,17 +139,26 @@ public static class FrontendQualityLandingPresentation
         details.AddRange(context.ValidationWarnings);
         if (details.Count > 0)
         {
+            // Listed so the reader can see what is off, never counted with what is broken and never a reason to be
+            // Limited on its own: an engine switched off is working as configured, and asking someone to fix it is
+            // asking them to undo their own decision.
+            details.AddRange(capabilities
+                .Where(c => c.Policy == FrontendQualityEngineRequirement.Optional && FrontendQualityCapabilityStates.IsDisabled(c.State))
+                .Select(c => $"{c.DisplayName}: disabled by configuration"));
             var requiredUnavailable = unavailable.Where(c => c.Policy == FrontendQualityEngineRequirement.Required).Select(c => c.DisplayName).ToList();
+            // An engine somebody switched off is reported as switched off, in its own sentence. Merged into the
+            // unavailable count it read as a fault, and sent the reader to fix something that is working as configured.
             var message = unavailable.Count switch
             {
                 0 => "The configuration has warnings. Target reachability is verified when the review starts.",
                 1 => requiredUnavailable.Count == 1
                     ? $"1 required capability is unavailable ({requiredUnavailable[0]}); required coverage will stay incomplete."
-                    : "1 optional capability is unavailable.",
+                    : "1 enabled optional capability is currently unavailable.",
                 _ => requiredUnavailable.Count > 0
                     ? $"{unavailable.Count} capabilities are unavailable, including required {string.Join(", ", requiredUnavailable)}."
-                    : $"{unavailable.Count} optional capabilities are unavailable.",
+                    : $"{unavailable.Count} enabled optional capabilities are currently unavailable.",
             };
+
             // The action follows the cause: capability limitations are fixed where engines are configured; a configuration
             // warning with nothing unavailable belongs to the Target Environment itself.
             return unavailable.Count > 0
@@ -328,7 +338,7 @@ public static class FrontendQualityLandingPresentation
                     ? FrontendQualityDimensionState.PartialEvidence
                     : FrontendQualityDimensionState.NotIncluded;
 
-            var limitation = Limitation(category, state, optionalMissing, baselineReady);
+            var limitation = Limitation(category, state, optionalMissing);
             var scopeNote = accessibility ? (accessibilityProfile ?? WcagProfiles.Norwegian).Label : null;
 
             return new FrontendQualityDimensionCard(
@@ -341,9 +351,15 @@ public static class FrontendQualityLandingPresentation
     /// One short sentence about impact, in evidence words. The exact engine-level reason stays in Review capabilities;
     /// this line says only what it means for the domain.
     /// </summary>
+    /// <summary>
+    /// One short sentence about impact. A Limited domain names the contributor that is actually missing, because a fixed
+    /// sentence per category could not: Performance said "Optional browser evidence is unavailable" while browser
+    /// evidence existed and Lighthouse was the engine that could not start. The engine is named once, here, and the
+    /// technical reason stays in Review capabilities.
+    /// </summary>
     private static string? Limitation(
         FrontendQualityCategory category, FrontendQualityDimensionState state,
-        IReadOnlyList<FrontendQualityCapabilityRow> optionalMissing, bool baselineReady) => state switch
+        IReadOnlyList<FrontendQualityCapabilityRow> optionalMissing) => state switch
     {
         FrontendQualityDimensionState.NotIncluded => "Nothing in this review contributes to this area.",
 
@@ -354,17 +370,19 @@ public static class FrontendQualityLandingPresentation
         FrontendQualityDimensionState.PartialEvidence =>
             "Baseline evidence is unavailable; the remaining checks still run.",
 
-        FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Security =>
-            "Passive security evidence is unavailable.",
-        FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Accessibility =>
-            "Some automated accessibility evidence is unavailable.",
+        FrontendQualityDimensionState.Limited when optionalMissing.Count > 0 =>
+            $"{Names(optionalMissing)} evidence is unavailable.",
         FrontendQualityDimensionState.Limited =>
-            "Optional browser evidence is unavailable.",
+            "Some optional evidence for this area is unavailable.",
 
         FrontendQualityDimensionState.Included when category == FrontendQualityCategory.Accessibility =>
             "Automated evidence is partial; some criteria require manual assessment.",
         _ => null,
     };
+
+    private static string Names(IReadOnlyList<FrontendQualityCapabilityRow> rows) =>
+        rows.Count == 1 ? rows[0].DisplayName
+        : string.Join(" and ", string.Join(", ", rows.Take(rows.Count - 1).Select(r => r.DisplayName)), rows[^1].DisplayName);
 
     public static string Purpose(FrontendQualityCategory category) => category switch
     {

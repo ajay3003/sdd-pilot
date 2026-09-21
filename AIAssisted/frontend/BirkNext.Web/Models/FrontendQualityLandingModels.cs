@@ -92,9 +92,21 @@ public static class FrontendQualityCapabilityStates
         _ => "attention",
     };
 
-    /// <summary>The capability is part of this review (enabled and selected), whatever its availability.</summary>
-    public static bool IsActive(FrontendQualityCapabilityState state) =>
-        state is not (FrontendQualityCapabilityState.Disabled or FrontendQualityCapabilityState.NotSelected);
+    /// <summary>
+    /// The capability is part of this review (enabled and selected), whatever its availability.
+    ///
+    /// Switched off in System Settings counts as off. It was excluded here for only one of the two ways an engine can be
+    /// disabled, so a system-disabled engine stayed "active but not available" — it was counted among the unavailable
+    /// capabilities on the readiness card and it pushed its domains to Limited. Nobody is going to fix an engine they
+    /// turned off, and "unavailable" says something is wrong.
+    /// </summary>
+    public static bool IsActive(FrontendQualityCapabilityState state) => !IsDisabled(state);
+
+    /// <summary>Deliberately off — by profile activation, by per-review selection, or in System Settings.</summary>
+    public static bool IsDisabled(FrontendQualityCapabilityState state) =>
+        state is FrontendQualityCapabilityState.Disabled
+              or FrontendQualityCapabilityState.NotSelected
+              or FrontendQualityCapabilityState.DisabledInSystemSettings;
 
     /// <summary>The capability is active and nothing known prevents it from running.</summary>
     public static bool IsAvailable(FrontendQualityCapabilityState state) =>
@@ -317,9 +329,16 @@ public sealed record FrontendQualityCapabilitySummary(
 /// Compact counts for the collapsed "Coverage" row. Descriptive counts only — the coverage model carries no measured
 /// proportion, so no percentage is invented from it.
 /// </summary>
-public sealed record FrontendQualityCoverageSummaryModel(int TotalCount, int AvailableCount, int NotAvailableCount)
+public sealed record FrontendQualityCoverageSummaryModel(int TotalCount, int AvailableCount, int NotAvailableCount, int NotRequiredCount = 0)
 {
-    public string Headline => NotAvailableCount == 0
-        ? $"{AvailableCount} of {TotalCount} areas available"
-        : $"{AvailableCount} of {TotalCount} areas available · {NotAvailableCount} not available";
+    /// <summary>
+    /// An area this target does not need is not an area this review is missing. Counting every row into one denominator
+    /// read as "3 of 5 areas available" on a target with no sign-in — two of which were never applicable — which states
+    /// a shortfall that does not exist.
+    /// </summary>
+    public string Headline => NotAvailableCount > 0
+        ? $"{AvailableCount} available · {NotAvailableCount} not available{(NotRequiredCount > 0 ? $" · {NotRequiredCount} not required" : "")}"
+        : NotRequiredCount > 0
+            ? $"{AvailableCount} available · {NotRequiredCount} not required"
+            : $"All {AvailableCount} applicable areas available";
 }

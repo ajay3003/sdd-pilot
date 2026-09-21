@@ -181,7 +181,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
 
         // One state, one explanation, one action.
         page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be("Review can run with limitations");
-        page.Find("[data-testid=fqr-readiness-message]").TextContent.Should().Be("1 optional capability is unavailable.");
+        page.Find("[data-testid=fqr-readiness-message]").TextContent.Should().Be("1 enabled optional capability is currently unavailable.");
         Collapsed(page, "fqr-readiness-limitations").Should().BeTrue();
         page.Find("[data-testid=fqr-run]").HasAttribute("disabled").Should().BeFalse();
 
@@ -219,7 +219,9 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
 
         Collapsed(page, "fqr-coverage-disclosure").Should().BeTrue();
         var expectedRows = page.Find("[data-testid=fqr-coverage]").QuerySelectorAll("[data-testid=fqr-coverage-row]").Length;
-        Toggle(page, "fqr-coverage-disclosure").TextContent.Should().Contain("Coverage").And.Contain($"of {expectedRows} areas available");
+        // An area this target does not need is not an area the review is missing, so the hint states both facts
+        // rather than folding them into one denominator.
+        Toggle(page, "fqr-coverage-disclosure").TextContent.Should().Contain("Coverage").And.Contain("available");
 
         Toggle(page, "fqr-coverage-disclosure").Click();
 
@@ -242,8 +244,11 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var available = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.Available));
         var hint = page.Find("[data-testid=fqr-coverage-disclosure-toggle] .disclosure-hint").TextContent;
 
-        hint.Should().Be($"{available} of {rows.Count} areas available");
+        var notRequired = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotRequired));
+        hint.Should().Contain($"{available} available");
+        if (notRequired > 0) hint.Should().Contain($"{notRequired} not required");
         hint.Should().NotContain("%");
+        hint.Should().NotContain($"of {rows.Count}", "a not-required area is not a missing one");
     }
 
     // ── §38. Checks ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -567,7 +572,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         page.WaitForAssertion(() =>
             page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Limited"));
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent
-            .Should().Be("Optional browser evidence is unavailable.");
+            .Should().Be("Lighthouse evidence is unavailable.");
     }
 
     // 40, 41. Accessibility stays scoped by the selected profile, which is shown on both the card and the domain.

@@ -89,7 +89,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
 
         performance.State.Should().Be(FrontendQualityDimensionState.Limited);
         performance.State.Should().NotBe(FrontendQualityDimensionState.NotIncluded);
-        performance.Limitation.Should().Be("Optional browser evidence is unavailable.");
+        performance.Limitation.Should().Be("Lighthouse evidence is unavailable.", "the limitation names the contributor that is missing");
     }
 
     [Fact]
@@ -109,7 +109,8 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
             Engine(FrontendQualityEngineIdDto.BrowserRuntime, available: false));
 
         Card(cards, FrontendQualityCategory.Performance).State.Should().NotBe(FrontendQualityDimensionState.NotIncluded);
-        Card(cards, FrontendQualityCategory.Performance).Limitation.Should().NotContain("Lighthouse");
+        // The limitation names the contributor that is missing; the technical reason stays in Review capabilities.
+        Card(cards, FrontendQualityCategory.Performance).Limitation.Should().Be("Lighthouse evidence is unavailable.");
     }
 
     // ── 10–12. Security ────────────────────────────────────────────────────
@@ -121,7 +122,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         var security = Card(cards, FrontendQualityCategory.Security);
 
         security.State.Should().Be(FrontendQualityDimensionState.Limited);
-        security.Limitation.Should().Be("Passive security evidence is unavailable.");
+        security.Limitation.Should().Be("Passive Security evidence is unavailable.");
         // The exact engine diagnostic is not duplicated onto the card.
         security.Limitation.Should().NotContain("Passive Security engine").And.NotContain("Blocked by deployment policy");
     }
@@ -140,7 +141,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         row.Summary.Should().Contain("not available in this environment");
         // …while the domain card says only what it means for the review.
         FrontendQualityLandingPresentation.Dimensions(rows).Single(c => c.Category == FrontendQualityCategory.Security)
-            .Limitation.Should().Be("Passive security evidence is unavailable.");
+            .Limitation.Should().Be("Passive Security evidence is unavailable.");
     }
 
     // ── 13–20. Accessibility ───────────────────────────────────────────────
@@ -213,7 +214,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         var blazor = Card(cards, FrontendQualityCategory.BlazorWasm);
 
         blazor.State.Should().Be(FrontendQualityDimensionState.Limited);
-        blazor.Limitation.Should().Be("Optional browser evidence is unavailable.");
+        blazor.Limitation.Should().Be("Browser Runtime evidence is unavailable.");
         blazor.Purpose.Should().Contain("Static Blazor");
     }
 
@@ -270,13 +271,20 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
             Engine(FrontendQualityEngineIdDto.Lighthouse, available: false)));
 
         var section = cut.Find("[data-testid=fqr-dimensions]").TextContent;
-        foreach (var engineName in new[] { "Passive Security", "Lighthouse", "Browser Quality", "BirkNext Performance Quality", "Browser Runtime", "Static Security" })
-            section.Should().NotContain(engineName, "engine names belong to Review capabilities");
 
-        // Each limitation appears at most once across the six cards.
+        // A limitation names the contributor that is missing. The previous rule kept engine names off these cards
+        // entirely, which forced one fixed sentence per category — and a fixed sentence goes stale: Performance said
+        // "Optional browser evidence is unavailable" while four pages of browser evidence existed and Lighthouse was
+        // the engine that could not start. The engine is named once, in the limitation; the technical reason and the
+        // engine inventory still belong to Review capabilities.
+        foreach (var available in new[] { "Browser Quality", "BirkNext Performance Quality", "Static Security" })
+            section.Should().NotContain(available, "only a contributor that is actually missing is named");
+
+        // Still one short sentence per card, and no card lists more than its own missing contributors.
         var limitations = cut.FindAll("[data-testid=fqr-dimension-limitation]").Select(l => l.TextContent.Trim()).ToList();
-        limitations.Where(l => l == "Optional browser evidence is unavailable.").Should().HaveCountLessThanOrEqualTo(3,
-            "shared wording is fine, but it must stay one short sentence per card");
+        limitations.Should().OnlyContain(l => l.Count(c => c == '.') <= 1, "one sentence, not an engine report");
+        limitations.Should().OnlyContain(l => !l.Contains("Optional browser evidence is unavailable"),
+            "the generic sentence that could not stay true is gone");
     }
 
     // ── 29 (accessibility of the UI). ──────────────────────────────────────

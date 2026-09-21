@@ -378,7 +378,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
         page.Find("[data-testid=fqr-readiness]").GetAttribute("role").Should().Be("status");
         page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be("Review can run with limitations");
-        page.Find("[data-testid=fqr-readiness-message]").TextContent.Should().Be("1 optional capability is unavailable.");
+        page.Find("[data-testid=fqr-readiness-message]").TextContent.Should().Be("1 enabled optional capability is currently unavailable.");
         page.Find("[data-testid=fqr-readiness-details]").TextContent.Should().Contain("Lighthouse: Unavailable");
         RunButton(page).HasAttribute("disabled").Should().BeFalse("an unavailable optional engine never blocks the review");
 
@@ -389,8 +389,11 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         // The domain reports the impact in evidence words; the engine name stays in Review capabilities above.
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Limited");
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent
-            .Should().Be("Optional browser evidence is unavailable.");
-        page.Find("[data-testid=fqr-dimensions]").TextContent.Should().NotContain("Lighthouse");
+            .Should().Be("Lighthouse evidence is unavailable.");
+        // The domain card names what is missing. It still carries no engine inventory: engines that are available
+        // are never listed there.
+        page.Find("[data-testid=fqr-dimensions]").TextContent.Should().Contain("Lighthouse evidence is unavailable.")
+            .And.NotContain("Static Security").And.NotContain("Browser Quality");
     }
 
     // 10. Passive security deployment limitation is presented correctly (technical reason collapsed).

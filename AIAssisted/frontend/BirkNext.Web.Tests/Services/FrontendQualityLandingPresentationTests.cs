@@ -114,8 +114,10 @@ public sealed class FrontendQualityLandingPresentationTests
         var rows = Capabilities(context, Status(Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse, ready: false, reason: "not installed"), Engine(FrontendQualityEngineIdDto.PassiveSecurity)));
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
-        readiness.Message.Should().Be("1 optional capability is unavailable.");
-        readiness.Details.Should().ContainSingle().Which.Should().Be("Lighthouse: Unavailable");
+        readiness.Message.Should().Be("1 enabled optional capability is currently unavailable.");
+        // What cannot run, then what is switched off — listed apart, never counted together.
+        readiness.Details.Should().Contain("Lighthouse: Unavailable");
+        readiness.Details.Should().OnlyContain(d => d.Contains("Unavailable") || d.Contains("disabled by configuration"));
         readiness.CanRun.Should().BeTrue();
     }
 
@@ -129,8 +131,9 @@ public sealed class FrontendQualityLandingPresentationTests
         // review the public shell; the DOM engine is blocked by browser protection and Lighthouse has no authenticated mode.
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
-        readiness.Message.Should().Be("2 optional capabilities are unavailable.");
-        readiness.Details.Should().BeEquivalentTo(["Accessibility: Unavailable", "Lighthouse: Not supported for this target"]);
+        readiness.Message.Should().Be("2 enabled optional capabilities are currently unavailable.");
+        readiness.Details.Should().Contain(["Accessibility: Unavailable", "Lighthouse: Not supported for this target"]);
+        readiness.Details.Where(d => !d.Contains("disabled by configuration")).Should().HaveCount(2);
         Row(rows, FrontendQualityEngineId.StaticSecurity).IsAvailable.Should().BeTrue();
         Row(rows, FrontendQualityEngineId.PassivePerformance).IsAvailable.Should().BeTrue();
         Row(rows, FrontendQualityEngineId.PassiveSecurity).State.Should().Be(FrontendQualityCapabilityState.Ready, "ZAP passively scans the public shell");
@@ -320,10 +323,10 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var performance = cards.Single(c => c.Category == FrontendQualityCategory.Performance);
         performance.State.Should().Be(FrontendQualityDimensionState.Limited);
-        performance.Limitation.Should().Be("Optional browser evidence is unavailable.");
+        performance.Limitation.Should().Be("Lighthouse evidence is unavailable.");
         var security = cards.Single(c => c.Category == FrontendQualityCategory.Security);
         security.State.Should().Be(FrontendQualityDimensionState.Limited);
-        security.Limitation.Should().Be("Passive security evidence is unavailable.");
+        security.Limitation.Should().Be("Passive Security evidence is unavailable.");
         var accessibility = cards.Single(c => c.Category == FrontendQualityCategory.Accessibility);
         accessibility.State.Should().Be(FrontendQualityDimensionState.Included);
         accessibility.ManualReviewRequired.Should().BeTrue();
