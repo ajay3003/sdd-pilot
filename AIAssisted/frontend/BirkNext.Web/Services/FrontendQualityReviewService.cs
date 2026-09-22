@@ -200,12 +200,21 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
         };
     }
 
+    /// <summary>
+    /// Probe results about the API SURFACE, which the frontend performance review does not own. They reached the result
+    /// as frontend Performance findings, so "No OpenAPI document detected at probed paths" appeared as something wrong
+    /// with the frontend's performance. API documentation belongs to API Quality Review; what this review can honestly
+    /// carry is the probe outcome, as a readiness indicator drawn from evidence it happens to have.
+    /// </summary>
+    private static readonly HashSet<string> ApiSurfaceProbeFindingIds = new(StringComparer.Ordinal) { "API-R001" };
+
     private static FrontendQualityFinding MapPerformanceFinding(PerformanceFinding f)
     {
         var cat = f.Category switch
         {
             PerformanceCategory.BlazorRuntime => FrontendQualityCategory.BlazorWasm,
             PerformanceCategory.Compression   => FrontendQualityCategory.BlazorWasm,
+            _ when ApiSurfaceProbeFindingIds.Contains(f.Id) => FrontendQualityCategory.Readiness,
             _                                 => FrontendQualityCategory.Performance,
         };
 
@@ -221,6 +230,11 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
             SourceSystem   = "Performance",
             EngineId       = FrontendQualityEngineId.PassivePerformance,
             SourceRuleId   = f.Id,
+            // A probe of the API surface is evidence this review happens to hold, not an observation it made about the
+            // frontend. Derived keeps it out of the source-finding headline while leaving it fully inspectable.
+            Origin         = ApiSurfaceProbeFindingIds.Contains(f.Id)
+                ? FrontendQualityFindingOrigin.Derived
+                : FrontendQualityFindingOrigin.Source,
         };
     }
 
@@ -443,6 +457,8 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                 Description    = $"{cat.CategoryName} readiness is {ReadinessStateLabel(cat.State)} (score {cat.Score}/100, {cat.FindingsCount} finding{(cat.FindingsCount != 1 ? "s" : "")}).",
                 Recommendation = $"Review {cat.CategoryName} findings and apply recommendations to improve the readiness score above 80.",
                 SourceSystem   = "Readiness",
+                // A conclusion about evidence the other domains already reported, not a new observation of the target.
+                Origin         = FrontendQualityFindingOrigin.Derived,
             };
         }
 
@@ -458,6 +474,9 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                 Recommendation = risk.Recommendation,
                 Evidence       = risk.Evidence,
                 SourceSystem   = "Readiness",
+                // The top risks are the performance findings again, restated as readiness. Counting them as source
+                // findings reported "Large application JavaScript payload" twice in one review.
+                Origin         = FrontendQualityFindingOrigin.Derived,
             };
         }
     }

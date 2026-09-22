@@ -103,7 +103,7 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
 
     /// <summary>The result blocks in document order — the reading order and the focus order.</summary>
     private static IReadOnlyList<string> Order(IRenderedComponent<FrontendQualityReview> page) =>
-        page.FindAll("[data-testid=fqr-result-summary], [data-testid=fqr-domain-results], [data-testid=fqr-all-findings], [data-testid=fqr-result-details]")
+        page.FindAll("[data-testid=fqr-result-summary], [data-testid=fqr-key-issues], [data-testid=fqr-domain-results], [data-testid=fqr-recommendation-themes], [data-testid=fqr-result-details]")
             .Select(e => e.GetAttribute("data-testid")!).ToList();
 
     private static IElement Domain(IRenderedComponent<FrontendQualityReview> page, FrontendQualityCategory category) =>
@@ -125,9 +125,12 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
     {
         var page = Result();
 
-        Order(page).Should().Equal("fqr-result-summary", "fqr-domain-results", "fqr-all-findings", "fqr-result-details");
+        // 47. Result, then what to act on, then the domains, then the work, then everything else collapsed.
+        // "All findings" is no longer a top-level section: it is one disclosure inside Review details.
+        Order(page).Should().Equal(
+            "fqr-result-summary", "fqr-key-issues", "fqr-domain-results", "fqr-recommendation-themes", "fqr-result-details");
         page.Find("#fqr-result-heading").TextContent.Should().Be("Review result");
-        page.Find("[data-testid=fqr-result-state]").TextContent.Trim().Should().Be("Completed with manual review required");
+        page.Find("[data-testid=fqr-result-state]").TextContent.Should().Contain("Completed with manual review required");
         page.Find("[data-testid=fqr-run-again]").TextContent.Trim().Should().Be("Run again");
     }
 
@@ -166,7 +169,7 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
 
         var accessibility = Domain(page, FrontendQualityCategory.Accessibility);
         accessibility.QuerySelector("[data-testid=fqr-domain-result-summary]")!.TextContent
-            .Should().Be("No automated WCAG violations were detected in the available evidence. Manual review is still required.");
+            .Should().Be("No automated WCAG violations were detected in the available evidence. Manual assessment is still required.");
     }
 
     // ── §45. Result order ─────────────────────────────────────────────────────────────────────────────────────────
@@ -219,7 +222,9 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
 
     // ── §47. Domain results ───────────────────────────────────────────────────────────────────────────────────────
 
-    // 26. An unavailable optional engine is a limitation on the evidence, not the domain's headline.
+    // 26, 20, 72. An unavailable optional engine is a limitation on the EVIDENCE, not the domain's headline — and the
+    // limitation names it. "1 evidence source did not contribute to this domain" kept the engine out of the card and
+    // sent the reader to the engine matrix to find out which one it was.
     [Fact]
     public void AnUnavailableOptionalEngineDoesNotBecomeTheDomainHeadline()
     {
@@ -232,8 +237,14 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
 
         var performance = Domain(page, FrontendQualityCategory.Performance);
         performance.QuerySelector("[data-testid=fqr-domain-result-state]")!.TextContent.Trim().Should().Be("Completed with limited evidence");
-        performance.QuerySelector("[data-testid=fqr-domain-result-count]")!.TextContent.Should().Be("1 finding");
-        performance.TextContent.Should().NotContain("Lighthouse");
+        // 33. Two different questions, answered separately: how many things to fix, and how much evidence there is.
+        performance.QuerySelector("[data-testid=fqr-domain-result-count]")!.TextContent.Should().Be("1 logical issue · 1 source finding");
+
+        // The headline — state and summary — stays about the domain's result.
+        performance.QuerySelector("[data-testid=fqr-domain-result-summary]")!.TextContent.Should().NotContain("Lighthouse");
+        // The limitation line, and only the limitation line, names what did not contribute.
+        performance.QuerySelector("[data-testid=fqr-domain-result-limitation]")!.TextContent
+            .Should().Be("Lighthouse did not contribute to this domain.");
     }
 
     // 28. A domain with no evidence shows no count — and a domain that HAS findings never denies them.

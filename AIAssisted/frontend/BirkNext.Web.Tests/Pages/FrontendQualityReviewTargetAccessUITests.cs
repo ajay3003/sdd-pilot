@@ -168,7 +168,10 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         var perfRow = component.Find("tr[data-engine-id='PassivePerformance']");
         perfRow.QuerySelector("[data-testid='fqr-assessment']")!.TextContent.Should().Be("Assessed");
         perfRow.QuerySelector("[data-testid='fqr-state']")!.TextContent.Should().Be("Completed — no findings");
-        component.Markup.Should().Contain("Required engine could not assess the target (1 of 2 required engines completed)");
+        // 5. The release decision moved to the top of the result. What the engine diagnostics owe the reader is which
+        // required engine could not assess the target and why — which the coverage summary above already states.
+        component.Markup.Should().NotContain("Required engine could not assess the target");
+        component.Markup.Should().NotContain("Release disposition");
         component.Markup.Should().NotContain("Not ready");
     }
 }

@@ -41,6 +41,7 @@ public sealed class WasmApiAnalysisService : IWasmApiAnalysisService
         ILogger<WasmApiAnalysisService> logger)
     {
         _client = client;
+        _client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "DiscoveryProbe");
         _logger = logger;
     }
 
@@ -301,11 +302,15 @@ public sealed class WasmApiAnalysisService : IWasmApiAnalysisService
             findings.Add(new PerformanceFinding
             {
                 Id          = "API-R001",
-                Title       = "No REST API documentation found",
+                // What the probe established is that four well-known paths did not serve an OpenAPI document. That is
+                // not the same as "this API has no documentation", which is what the old title asserted — the document
+                // may live elsewhere, require authentication, or be published outside the application.
+                Title       = "No OpenAPI document detected at probed paths",
                 Severity    = PerformanceSeverity.Info,
                 Category    = PerformanceCategory.ApiCalls,
-                Description = "No OpenAPI (Swagger) documentation was found at common paths. " +
-                              "Without API documentation, clients and QA tooling cannot enumerate or validate endpoints.",
+                Description = "No OpenAPI (Swagger) document answered at the common paths probed. This does not establish " +
+                              "that the API is undocumented: the document may be published elsewhere or require authentication. " +
+                              "API documentation is assessed by API Quality Review.",
                 Recommendation = "Add OpenAPI documentation using Swashbuckle.AspNetCore. " +
                                  "Expose the spec at /swagger/v1/swagger.json and " +
                                  "enable SwaggerUI in development environments.",

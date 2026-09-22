@@ -1,0 +1,70 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* One card per thing to DO. Previously one per source observation, which turned five contrast observations into five
+   identical cards and a fifty-seven-observation review into a wall nobody reads. Priority follows the worst issue the
+   theme fixes; the counts say how much work it is, and never raise the priority. *@
+<div class="fqr-recommendations" data-testid="fqr-recommendations">
+    @if (Themes.Count == 0)
+    {
+        <div class="fqr-empty-panel" data-testid="fqr-recommendations-empty">
+            No remediation was recommended by the evidence this review collected. Manual assessment obligations still apply.
+        </div>
+    }
+    else
+    {
+        <ul class="fqr-recommendation-list">
+            @foreach (var theme in Visible)
+            {
+                <li class="fqr-recommendation fqr-recommendation-@theme.Priority.ToString().ToLowerInvariant()"
+                    data-testid="fqr-recommendation" data-priority="@theme.Priority" data-key="@theme.Key">
+                    <div class="fqr-recommendation-head">
+                        <span class="fqr-pill fqr-pill-@Tone(theme.Priority)" data-testid="fqr-recommendation-priority">@theme.PriorityLabel</span>
+                        <span class="fqr-pill fqr-pill-muted">@FrontendQualityCategoryEngines.Label(theme.PrimaryCategory)</span>
+                    </div>
+                    <p class="fqr-recommendation-title" data-testid="fqr-recommendation-title">@theme.Title</p>
+                    <p class="fqr-recommendation-scale" data-testid="fqr-recommendation-scale">@theme.ScaleLabel</p>
+
+                    @if (theme.Issues.Count > 1 || theme.AffectedPages.Count > 0)
+                    {
+                        <ReviewDisclosure Text="What this covers" CollapseText="Hide what this covers"
+                                          Class="disclosure-inline disclosure-small" TestId="@($"fqr-recommendation-detail-{theme.Key.GetHashCode():X}")">
+                            <ul class="fqr-recommendation-issues" data-testid="fqr-recommendation-issues">
+                                @foreach (var issue in theme.Issues)
+                                {
+                                    <li>@issue.CanonicalTitle <span class="fqr-muted">— @issue.ScaleLabel</span></li>
+                                }
+                            </ul>
+                        </ReviewDisclosure>
+                    }
+                </li>
+            }
+        </ul>
+
+        @if (Themes.Count > Visible.Count)
+        {
+            <button type="button" class="btn-secondary fqr-recommendation-more" data-testid="fqr-recommendations-more"
+                    @onclick="() => _showAll = true">
+                View all @Themes.Count recommendations
+            </button>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityRecommendationTheme> Themes { get; set; } = [];
+    /// <summary>How many to show before asking. The rest are one click away, never removed.</summary>
+    [Parameter] public int VisibleCount { get; set; } = FrontendQualityRecommendationGrouper.DefaultVisibleCount;
+
+    private bool _showAll;
+
+    private IReadOnlyList<FrontendQualityRecommendationTheme> Visible =>
+        _showAll ? Themes : Themes.Take(VisibleCount).ToList();
+
+    private static string Tone(FrontendQualitySeverity severity) => severity switch
+    {
+        FrontendQualitySeverity.Critical or FrontendQualitySeverity.High => "attention",
+        FrontendQualitySeverity.Medium => "warning",
+        _ => "muted",
+    };
+}

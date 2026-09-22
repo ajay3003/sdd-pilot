@@ -1,19 +1,27 @@
 @using BirkNext.Web.Models
 
-@* One review domain's RESULT. The summary is always visible — collapsing it would hide the findings — while the detailed
-   evidence behind it opens on request. A domain with no evidence says so; it never reports zero findings, because nothing
-   established that number. *@
+@* One review domain's RESULT, as a compact card. The summary is always visible — collapsing it would hide the result —
+   while the source findings behind it open on request. Every domain used to expand its full finding list by default,
+   which put thirty performance cards between the reader and everything below them.
+
+   A domain with no evidence says so; it never reports zero findings, because nothing established that number. *@
 <section class="fqr-section fqr-domain-result" aria-labelledby="@_headingId"
-         data-testid="fqr-domain-result" data-category="@Result.Category" data-state="@Result.State">
+         data-testid="fqr-domain-result" data-category="@Result.Category" data-state="@Result.State"
+         data-derived="@Result.Derived.ToString().ToLowerInvariant()">
     <div class="fqr-domain-result-head">
         <h2 id="@_headingId">@Result.Title</h2>
-        <span class="fqr-pill fqr-pill-@FrontendQualityDomainResultStates.Tone(Result.State)" data-testid="fqr-domain-result-state">
-            @FrontendQualityDomainResultStates.Label(Result.State)
-        </span>
-        @* A count only ever appears when a review actually ran for this domain. *@
-        @if (Result.FindingCount is { } findings)
+        @* "Derived" for a domain that draws conclusions from other domains' evidence rather than observing the target. *@
+        <span class="fqr-pill fqr-pill-@(Result.Derived ? "muted" : FrontendQualityDomainResultStates.Tone(Result.State))"
+              data-testid="fqr-domain-result-state">@Result.StateLabel</span>
+        @* A requirement no engine can discharge, stated beside the result rather than folded into it. *@
+        @if (Result.ManualAssessmentRequired)
         {
-            <span class="fqr-domain-result-count" data-testid="fqr-domain-result-count">@findings finding@(findings == 1 ? "" : "s")</span>
+            <span class="fqr-pill fqr-pill-info" data-testid="fqr-domain-result-manual">Manual assessment required</span>
+        }
+        @* Counts only ever appear when a review actually ran for this domain — and say which kind they are. *@
+        @if (Result.CountLabel is { Length: > 0 } counts)
+        {
+            <span class="fqr-domain-result-count" data-testid="fqr-domain-result-count">@counts</span>
         }
     </div>
 
@@ -53,7 +61,7 @@
     [Parameter] public string? Scope { get; set; }
     /// <summary>Rendered above the detail, for statements about the result itself (such as a changed profile).</summary>
     [Parameter] public RenderFragment? Notice { get; set; }
-    /// <summary>Disclosure label, e.g. "View performance details". Omit to render the detail inline.</summary>
+    /// <summary>Disclosure label, e.g. "View 30 source findings". Omit to render the detail inline.</summary>
     [Parameter] public string? DetailsText { get; set; }
     [Parameter] public RenderFragment? ChildContent { get; set; }
 

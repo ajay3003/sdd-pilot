@@ -360,7 +360,16 @@ public class WasmApiAnalysisServiceTests
         var findings = WasmApiAnalysisService.GenerateApiFindings(input, new ApiAnalysisThresholds());
 
         findings.Should().Contain(f => f.Id == "API-R001");
-        findings.Single(f => f.Id == "API-R001").Severity.Should().Be(PerformanceSeverity.Info);
+        var probe = findings.Single(f => f.Id == "API-R001");
+        probe.Severity.Should().Be(PerformanceSeverity.Info);
+
+        // 22, 73. What the probe established is that the paths it tried did not serve an OpenAPI document. It is not
+        // evidence that the API is undocumented — the document may be published elsewhere or require authentication —
+        // and the old title ("No REST API documentation found") asserted exactly that.
+        probe.Title.Should().Be("No OpenAPI document detected at probed paths");
+        probe.Title.Should().NotContain("No REST API documentation found");
+        probe.Description.Should().Contain("does not establish that the API is undocumented");
+        probe.Description.Should().Contain("API documentation is assessed by API Quality Review");
     }
 
     [Fact]

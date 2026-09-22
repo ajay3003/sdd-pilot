@@ -2,7 +2,22 @@ using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>Pure, deterministic grouping over already-normalized source findings.</summary>
+/// <summary>
+/// Pure, deterministic grouping of source observations into the problems a person would actually act on.
+///
+/// Two things are grouped, and they are different:
+///
+/// <list type="bullet">
+/// <item><b>The registry</b> names cross-engine equivalences a string could never establish — that ZAP rule 10038 and
+/// the static header check are the same missing Content-Security-Policy. Those are product decisions.</item>
+/// <item><b>The derived key</b> handles the ordinary case: one rule firing on many pages. The route is lifted off the
+/// observation and collected as a place, so five contrast observations are one issue on five pages.</item>
+/// </list>
+///
+/// The old implementation had only the registry, and a guard that dropped BACK to one-issue-per-observation as soon as
+/// a rule fired more than once — exactly the repeated case. 57 observations produced 56 issues, and the result read as
+/// 56 separate problems.
+/// </summary>
 public static class FrontendQualityLogicalIssueGrouper
 {
     private sealed record Rule(
@@ -12,59 +27,80 @@ public static class FrontendQualityLogicalIssueGrouper
         string Recommendation,
         IReadOnlySet<(FrontendQualityEngineId EngineId, string SourceRuleId)> AcceptedIdentities);
 
+    private static Rule Header(string key, string header, string title, string recommendation, params (FrontendQualityEngineId, string)[] identities) =>
+        new($"headers:{key}:missing", title, FrontendQualityCategory.Security, recommendation, new HashSet<(FrontendQualityEngineId, string)>(identities));
+
+    /// <summary>
+    /// Response-header issues are ONE fact about the target that two checks both notice: the static security scan
+    /// records it under Security, and the derived standards pass records it again under Standards. The primary domain
+    /// is Security, because that is where the risk is; Standards keeps its source observation and appears as a related
+    /// domain rather than as a second problem to fix.
+    /// </summary>
     private static readonly IReadOnlyList<Rule> Registry =
     [
-        new(
-            "headers:csp:missing",
-            "Content Security Policy header missing",
-            FrontendQualityCategory.Security,
+        Header("csp", "Content-Security-Policy", "Content Security Policy header missing",
             "Configure a restrictive Content-Security-Policy header on application responses.",
-            new HashSet<(FrontendQualityEngineId, string)>
-            {
-                (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-CONTENT-SECURITY-POLICY"),
-                (FrontendQualityEngineId.StaticSecurity, "std-csp-missing"),
-                (FrontendQualityEngineId.PassiveSecurity, "10038"),
-            }),
-        new(
-            "headers:nosniff:missing",
-            "X-Content-Type-Options nosniff header missing",
-            FrontendQualityCategory.Security,
+            (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-CONTENT-SECURITY-POLICY"),
+            (FrontendQualityEngineId.StaticSecurity, "std-csp-missing"),
+            (FrontendQualityEngineId.PassiveSecurity, "10038")),
+
+        Header("nosniff", "X-Content-Type-Options", "X-Content-Type-Options nosniff header missing",
             "Set X-Content-Type-Options: nosniff on application responses.",
-            new HashSet<(FrontendQualityEngineId, string)>
-            {
-                (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-X-CONTENT-TYPE-OPTIONS"),
-                (FrontendQualityEngineId.PassiveSecurity, "10021"),
-            }),
+            (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-X-CONTENT-TYPE-OPTIONS"),
+            (FrontendQualityEngineId.PassiveSecurity, "10021")),
+
+        Header("hsts", "Strict-Transport-Security", "Strict-Transport-Security (HSTS) header missing",
+            "Add 'Strict-Transport-Security: max-age=31536000; includeSubDomains' to all HTTPS responses.",
+            (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-STRICT-TRANSPORT-SECURITY"),
+            (FrontendQualityEngineId.StaticSecurity, "std-hsts-missing"),
+            (FrontendQualityEngineId.PassiveSecurity, "10035")),
+
+        Header("permissions-policy", "Permissions-Policy", "Permissions-Policy header missing",
+            "Add a 'Permissions-Policy' header to your server or CDN configuration.",
+            (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-PERMISSIONS-POLICY"),
+            (FrontendQualityEngineId.StaticSecurity, "std-permissionspolicy-missing")),
+
+        Header("referrer-policy", "Referrer-Policy", "Referrer-Policy header missing",
+            "Add a 'Referrer-Policy' header to your server or CDN configuration.",
+            (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-REFERRER-POLICY"),
+            (FrontendQualityEngineId.StaticSecurity, "std-referrerpolicy-missing")),
+
+        Header("frame-options", "X-Frame-Options", "Clickjacking protection header missing",
+            "Set X-Frame-Options: DENY, or a frame-ancestors directive in the Content-Security-Policy.",
+            (FrontendQualityEngineId.StaticSecurity, "HDR-MISSING-X-FRAME-OPTIONS"),
+            (FrontendQualityEngineId.StaticSecurity, "std-xframeoptions-missing"),
+            (FrontendQualityEngineId.PassiveSecurity, "10020")),
     ];
 
     public static List<FrontendQualityLogicalIssue> Group(IReadOnlyList<FrontendQualityFinding> findings)
     {
-        var indexed = findings.Select((finding, index) => new IndexedInstance(index, finding, ToInstance(finding))).ToList();
-        var matched = indexed.Select(item => new MatchedInstance(item, FindRule(item.Instance))).ToList();
-        var issues = new List<FrontendQualityLogicalIssue>();
+        var instances = findings.Select(ToInstance).ToList();
 
-        foreach (var rule in Registry)
+        // One pass, one key per observation: a registered equivalence when the product declares one, otherwise the
+        // rule-and-subject key. Every observation lands in exactly one group, so nothing is counted twice and nothing
+        // is dropped.
+        var groups = new List<(string Key, Rule? Rule, List<FrontendQualityFindingInstance> Instances)>();
+        var index = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        foreach (var instance in instances)
         {
-            var candidates = matched.Where(item => item.Rule == rule).Select(item => item.Item).ToList();
-            if (candidates.Count == 0) continue;
-
-            // Repeated results from one engine are location-sensitive and cannot be merged safely.
-            if (candidates.Count != candidates
-                    .Select(item => (item.Instance.EngineId, item.Instance.SourceRuleId))
-                    .Distinct()
-                    .Count())
+            var rule = FindRule(instance);
+            var key = rule?.LogicalId ?? FrontendQualityIssueIdentity.DerivedKey(instance);
+            if (index.TryGetValue(key, out var position))
             {
-                issues.AddRange(candidates.Select(ToStandalone));
+                groups[position].Instances.Add(instance);
                 continue;
             }
-
-            issues.Add(ToRegisteredIssue(rule, candidates.Select(item => item.Instance).ToList()));
+            index[key] = groups.Count;
+            groups.Add((key, rule, [instance]));
         }
 
-        issues.AddRange(matched.Where(item => item.Rule is null).Select(item => ToStandalone(item.Item)));
-        return issues
+        return groups
+            .Select(group => ToIssue(group.Key, group.Rule, group.Instances))
+            // Severest first, then the best-evidenced, then a stable order so two runs of the same review agree.
             .OrderBy(issue => issue.PrimarySeverity)
             .ThenByDescending(issue => EvidencePriority(issue.EvidenceStrength))
+            .ThenByDescending(issue => issue.AffectedPages.Count)
             .ThenBy(issue => issue.CanonicalTitle, StringComparer.Ordinal)
             .ThenBy(issue => issue.LogicalId, StringComparer.Ordinal)
             .ToList();
@@ -74,55 +110,80 @@ public static class FrontendQualityLogicalIssueGrouper
         string.IsNullOrWhiteSpace(finding.SourceRuleId) ? null : Registry.FirstOrDefault(rule =>
             rule.AcceptedIdentities.Contains((finding.EngineId, finding.SourceRuleId)));
 
-    private static FrontendQualityLogicalIssue ToRegisteredIssue(
-        Rule rule,
-        List<FrontendQualityFindingInstance> instances)
+    private static FrontendQualityLogicalIssue ToIssue(
+        string key, Rule? rule, List<FrontendQualityFindingInstance> instances)
     {
-        var ordered = instances.OrderBy(instance => instance.EngineId).ThenBy(instance => instance.SourceFindingId, StringComparer.Ordinal).ToList();
+        // Evidence is listed by SOURCE, which is how a reader checks provenance: all of one engine's observations
+        // together, in a stable order two runs of the same review will agree on.
+        var ordered = instances
+            .OrderBy(instance => instance.EngineId)
+            .ThenBy(instance => instance.Page ?? "", StringComparer.Ordinal)
+            .ThenBy(instance => instance.SourceFindingId, StringComparer.Ordinal)
+            .ToList();
+
+        // Severity reconciliation: grouped observations can disagree (the static scan calls a missing CSP Critical,
+        // the standards pass calls it High). The highest supported severity wins, and every source severity survives
+        // on its own instance — nothing is invented and nothing is quietly lowered.
+        var severity = ordered.Min(instance => instance.Severity);
+
+        // The severest observation names the issue and owns its domain, whatever order the evidence is listed in.
+        var lead = ordered.OrderBy(instance => instance.Severity).First();
+
+        // The domain of the severest observation leads; every other domain the issue was observed in is related.
+        var category = rule?.Category ?? lead.Category;
+        var related = ordered.Select(instance => instance.Category).Distinct().Where(c => c != category).Order().ToList();
+
+        var pages = ordered
+            .Select(instance => instance.Page)
+            .Where(page => !string.IsNullOrWhiteSpace(page))
+            .Select(page => page!)
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        var engines = ordered.Select(instance => instance.EngineId).Distinct().Order().ToList();
         var disposition = ordered.Any(instance => instance.ReviewDisposition == FrontendQualityReviewDisposition.ManualVerificationRequired)
             ? FrontendQualityReviewDisposition.ManualVerificationRequired
             : FrontendQualityReviewDisposition.AutomatedFinding;
+
         return new FrontendQualityLogicalIssue
         {
-            LogicalId = rule.LogicalId,
-            CanonicalTitle = rule.CanonicalTitle,
-            PrimarySeverity = ordered.Min(instance => instance.Severity),
-            Sources = ordered.Select(instance => instance.EngineId).Distinct().Order().ToList(),
+            LogicalId = rule?.LogicalId ?? key,
+            CanonicalTitle = rule?.CanonicalTitle ?? lead.Subject ?? lead.Title,
+            PrimarySeverity = severity,
+            Sources = engines,
             FindingInstances = ordered,
             EvidenceStrength = StrongestEvidence(ordered),
-            Confidence = ordered.Select(instance => instance.EngineId).Distinct().Count() > 1
-                ? FrontendQualityEvidenceConfidence.High
+            // Corroboration, and only corroboration. Two independent engines reaching the same conclusion is stronger
+            // than one engine reaching it repeatedly, and a SINGLE observation gets no confidence value at all — there
+            // is nothing to corroborate it, and a label would be a judgement the evidence does not support.
+            Confidence = ordered.Count == 1 ? null
+                : engines.Count > 1 ? FrontendQualityEvidenceConfidence.High
                 : FrontendQualityEvidenceConfidence.Moderate,
             ReviewDisposition = disposition,
-            Category = rule.Category,
-            Recommendation = rule.Recommendation,
+            Category = category,
+            RelatedCategories = related,
+            Recommendation = rule?.Recommendation ?? lead.Recommendation,
             ManualVerificationRequired = disposition == FrontendQualityReviewDisposition.ManualVerificationRequired,
-            GroupingReason = "Exact registered source-rule equivalence.",
-        };
-    }
-
-    private static FrontendQualityLogicalIssue ToStandalone(IndexedInstance item)
-    {
-        var instance = item.Instance;
-        return new FrontendQualityLogicalIssue
-        {
-            LogicalId = $"finding:{instance.EngineId}:{Uri.EscapeDataString(instance.SourceFindingId)}:{item.Index}",
-            CanonicalTitle = instance.Title,
-            PrimarySeverity = instance.Severity,
-            Sources = [instance.EngineId],
-            FindingInstances = [instance],
-            EvidenceStrength = instance.EvidenceStrength,
-            Confidence = null,
-            ReviewDisposition = instance.ReviewDisposition,
-            Category = instance.Category,
-            Recommendation = instance.Recommendation,
-            ManualVerificationRequired = instance.ReviewDisposition == FrontendQualityReviewDisposition.ManualVerificationRequired,
+            AffectedPages = pages,
+            // Nothing here asks for a change; an absent optional capability is worth knowing, not worth counting.
+            Informational = ordered.All(instance => instance.Severity == FrontendQualitySeverity.Info),
+            // A conclusion restating observations reported elsewhere is not a new problem.
+            Derived = ordered.All(instance => instance.Origin == FrontendQualityFindingOrigin.Derived),
+            GroupingReason = rule is not null
+                ? "Registered cross-source equivalence."
+                : pages.Count > 1
+                    ? $"Same source rule and subject observed on {pages.Count} pages."
+                    : ordered.Count > 1
+                        ? "Same source rule and subject."
+                        : null,
         };
     }
 
     private static FrontendQualityFindingInstance ToInstance(FrontendQualityFinding finding)
     {
         var engineId = finding.EngineId ?? InferEngineId(finding.SourceSystem);
+        var page = FrontendQualityIssueIdentity.Page(finding);
         return new FrontendQualityFindingInstance
         {
             EngineId = engineId,
@@ -140,6 +201,9 @@ public static class FrontendQualityLogicalIssueGrouper
             ReviewDisposition = finding.Status == CheckExecutionStatus.NotAssessed
                 ? FrontendQualityReviewDisposition.ManualVerificationRequired
                 : FrontendQualityReviewDisposition.AutomatedFinding,
+            Page = page is null ? null : ReportExportService.SanitizePassive(page),
+            Subject = ReportExportService.SanitizePassive(FrontendQualityIssueIdentity.Subject(finding)),
+            Origin = finding.Origin,
         };
     }
 
@@ -175,7 +239,4 @@ public static class FrontendQualityLogicalIssueGrouper
         FrontendQualityEvidenceStrength.DerivedSummary => 1,
         _ => 0,
     };
-
-    private sealed record IndexedInstance(int Index, FrontendQualityFinding Finding, FrontendQualityFindingInstance Instance);
-    private sealed record MatchedInstance(IndexedInstance Item, Rule? Rule);
 }

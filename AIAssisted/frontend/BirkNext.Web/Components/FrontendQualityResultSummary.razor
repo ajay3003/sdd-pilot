@@ -1,19 +1,70 @@
 @using BirkNext.Web.Models
 
-@* What was reviewed, when, against which accessibility profile, and how the review ended — the first thing a reader of a
-   finished review needs. The state is a text label, never colour alone, and it is the RESULT of the run: pre-run readiness
-   said whether the review could start, which is a different question and is not repeated here. *@
+@* The whole decision surface of a finished review: how it ended, what that means for a release, what it ran against,
+   and how much there is to act on. The state is a text label, never colour alone, and it is the RESULT of the run —
+   pre-run readiness answered whether the review could start, which is a different question and is not repeated here.
+
+   The release decision used to sit at the bottom of Review details, below the engine matrix. It is the thing a reader
+   comes here to find out, so it is stated next to the result rather than after the diagnostics. *@
 <section class="fqr-card fqr-result-summary" aria-labelledby="fqr-result-heading" data-testid="fqr-result-summary">
     <div class="fqr-result-head">
         <div>
             <h2 id="fqr-result-heading">Review result</h2>
             <p class="fqr-result-state" data-testid="fqr-result-state">
                 <span class="fqr-pill fqr-pill-@FrontendQualityResultStates.Tone(Result.State)">@Result.StateLabel</span>
+                @* A requirement no engine can discharge, stated beside the result rather than inside it. *@
+                @if (Result.Completeness is { ManualAssessment: FrontendQualityManualAssessmentState.Required })
+                {
+                    <span class="fqr-pill fqr-pill-info" data-testid="fqr-result-manual">Manual assessment required</span>
+                }
             </p>
             <p class="fqr-result-summary-text" data-testid="fqr-result-summary-text">@Result.Summary</p>
         </div>
         <button type="button" class="btn-primary fqr-result-rerun" data-testid="fqr-run-again" @onclick="RunAgain">Run again</button>
     </div>
+
+    @* ── The release decision, where the decision is made ──────────────────────────────────────────────────────── *@
+    @if (Result.Release is { } release)
+    {
+        <div class="fqr-release fqr-release-@release.Tone" role="status" data-testid="fqr-release"
+             data-disposition="@release.Disposition">
+            <div class="fqr-release-head">
+                <span class="fqr-release-label">Release decision</span>
+                <strong class="fqr-release-value" data-testid="fqr-release-label">@release.Label</strong>
+            </div>
+            <p class="fqr-release-statement" data-testid="fqr-release-statement">@release.Statement</p>
+            @if (release.Reasons.Count > 0)
+            {
+                <ul class="fqr-release-reasons" data-testid="fqr-release-reasons">
+                    @foreach (var reason in release.Reasons)
+                    {
+                        <li>@reason</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+
+    @* ── What there is to act on. Three different things, never one number. ────────────────────────────────────── *@
+    <dl class="fqr-result-metrics" data-testid="fqr-result-metrics">
+        @* What there is to FIX. Deduplicated, so one defect seen on five routes is one item here. *@
+        <div><dt>Logical issues</dt><dd data-testid="fqr-metric-logical">@Result.LogicalIssueCount</dd></div>
+        @* What the review SAW. Always larger, and never a count of problems. *@
+        <div><dt>Source findings</dt><dd data-testid="fqr-metric-source">@Result.SourceFindingCount</dd></div>
+        <div>
+            <dt>Critical/high source observations</dt>
+            <dd data-testid="fqr-metric-critical-high">@Result.CriticalHighSourceCount</dd>
+        </div>
+        @if (Result.DerivedIndicatorCount > 0)
+        {
+            @* Conclusions drawn from the observations above; listed apart so they are never added to them. *@
+            <div><dt>Derived indicators</dt><dd data-testid="fqr-metric-derived">@Result.DerivedIndicatorCount</dd></div>
+        }
+        @if (Result.InformationalIssueCount > 0)
+        {
+            <div><dt>Informational observations</dt><dd data-testid="fqr-metric-informational">@Result.InformationalIssueCount</dd></div>
+        }
+    </dl>
 
     <dl class="fqr-target-list fqr-result-meta" data-testid="fqr-result-meta">
         <div>
@@ -40,6 +91,30 @@
             </div>
         }
     </dl>
+
+    @* ── Completeness, on the dimensions that can actually differ ──────────────────────────────────────────────── *@
+    @if (Result.Completeness is { } completeness)
+    {
+        <dl class="fqr-completeness" data-testid="fqr-completeness">
+            <div><dt>Execution</dt><dd data-testid="fqr-completeness-execution">@completeness.ExecutionLabel</dd></div>
+            <div>
+                <dt>Required coverage</dt>
+                <dd data-testid="fqr-completeness-required">@completeness.RequiredCoverageLabel
+                    <span class="fqr-muted">(@completeness.RequiredAssessed of @completeness.RequiredTotal)</span>
+                </dd>
+            </div>
+            <div>
+                <dt>Optional coverage</dt>
+                <dd data-testid="fqr-completeness-optional">@completeness.OptionalCoverageLabel
+                    @if (completeness.OptionalTotal > 0)
+                    {
+                        <span class="fqr-muted">(@completeness.OptionalAssessed of @completeness.OptionalTotal)</span>
+                    }
+                </dd>
+            </div>
+            <div><dt>Manual assessment</dt><dd data-testid="fqr-completeness-manual">@completeness.ManualAssessmentLabel</dd></div>
+        </dl>
+    }
 </section>
 
 @code {

@@ -1,0 +1,96 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* The actionable result surface: distinct problems, each with the scale of the evidence behind it.
+   One card is one thing to fix — a contrast defect seen on five routes is one card that says "5 affected pages",
+   not five cards. The occurrences are all still here, one disclosure in. *@
+<div class="fqr-logical-issues" data-testid="fqr-logical-issues">
+    @if (Issues.Count == 0)
+    {
+        <div class="fqr-empty-panel" data-testid="fqr-logical-issues-empty">
+            No automated finding was produced. This does not remove manual assessment obligations or evidence limitations.
+        </div>
+    }
+    else
+    {
+        <ul class="fqr-issue-list">
+            @foreach (var issue in Issues)
+            {
+                <li class="fqr-issue fqr-issue-@issue.PrimarySeverity.ToString().ToLowerInvariant()"
+                    data-testid="fqr-logical-issue" data-logical-id="@issue.LogicalId" data-severity="@issue.PrimarySeverity">
+                    <div class="fqr-issue-head">
+                        <span class="fqr-severity fqr-severity-@issue.PrimarySeverity.ToString().ToLowerInvariant()">@issue.PrimarySeverity</span>
+                        <span class="fqr-issue-title" data-testid="fqr-issue-title">@issue.CanonicalTitle</span>
+                        <span class="fqr-pill fqr-pill-muted" data-testid="fqr-issue-domain">@FrontendQualityCategoryEngines.Label(issue.Category)</span>
+                        @* The same problem in another domain, named rather than duplicated into it. *@
+                        @if (issue.RelatedCategories.Count > 0)
+                        {
+                            <span class="fqr-issue-related" data-testid="fqr-issue-related">
+                                also in @string.Join(", ", issue.RelatedCategories.Select(FrontendQualityCategoryEngines.Label))
+                            </span>
+                        }
+                        @if (issue.Informational)
+                        {
+                            <span class="fqr-pill fqr-pill-info" data-testid="fqr-issue-informational">Informational</span>
+                        }
+                    </div>
+
+                    @* How much of it there is. Places and observations, never presented as a number of problems. *@
+                    <p class="fqr-issue-scale" data-testid="fqr-issue-scale">@issue.ScaleLabel</p>
+                    <p class="fqr-issue-action" data-testid="fqr-issue-action"><strong>Recommended action:</strong> @issue.Recommendation</p>
+
+                    @if (issue.ManualVerificationRequired)
+                    {
+                        <p class="fqr-issue-manual" data-testid="fqr-issue-manual">Automated evidence cannot settle this; a person has to verify it.</p>
+                    }
+
+                    @if (issue.AffectedPages.Count > 0)
+                    {
+                        <ReviewDisclosure Text="@($"Affected pages ({issue.AffectedPages.Count})")" CollapseText="Hide affected pages"
+                                          Class="disclosure-inline disclosure-small" TestId="@($"fqr-issue-pages-{issue.LogicalId}")">
+                            <ul class="fqr-issue-pages" data-testid="fqr-issue-page-list">
+                                @* Not named "page": @page is a Razor directive and cannot be used as an expression. *@
+                                @foreach (var route in issue.AffectedPages)
+                                {
+                                    <li><code>@route</code></li>
+                                }
+                            </ul>
+                        </ReviewDisclosure>
+                    }
+
+                    <ReviewDisclosure Text="@($"Source evidence ({issue.SourceFindingCount})")" CollapseText="Hide source evidence"
+                                      Class="disclosure-inline disclosure-small" TestId="@($"fqr-issue-evidence-{issue.LogicalId}")">
+                        <p class="fqr-issue-provenance" data-testid="fqr-issue-provenance">
+                            <strong>Observed by:</strong> @string.Join(", ", issue.Sources.Select(FrontendQualityDecisionSupportService.SourceLabel))
+                            @if (issue.Confidence is { } confidence)
+                            {
+                                <span> · <strong>Confidence:</strong> @confidence</span>
+                            }
+                            @if (issue.GroupingReason is { Length: > 0 } reason)
+                            {
+                                <span> · <strong>Grouped because:</strong> @reason</span>
+                            }
+                        </p>
+                        @foreach (var instance in issue.FindingInstances)
+                        {
+                            <div class="fqr-evidence-group" data-source-finding-id="@instance.SourceFindingId">
+                                <p>
+                                    <strong>@FrontendQualityDecisionSupportService.SourceLabel(instance.EngineId):</strong>
+                                    @instance.Title (@instance.Severity)
+                                </p>
+                                @if (instance.SanitizedEvidence.Count > 0)
+                                {
+                                    <ul>@foreach (var evidence in instance.SanitizedEvidence) { <li><code>@evidence</code></li> }</ul>
+                                }
+                            </div>
+                        }
+                    </ReviewDisclosure>
+                </li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityLogicalIssue> Issues { get; set; } = [];
+}

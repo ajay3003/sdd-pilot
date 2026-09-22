@@ -169,7 +169,10 @@ public sealed class FrontendQualityResultPresentationTests
 
         blazor.State.Should().Be(FrontendQualityDomainResultState.CompletedWithLimitedEvidence);
         blazor.State.Should().NotBe(FrontendQualityDomainResultState.FailedToRun);
-        blazor.Limitation.Should().Be("Browser evidence was unavailable, so this domain was reviewed on its static evidence only.");
+        // 20, 72. The engine that did not contribute is NAMED. "1 evidence source did not contribute to this domain"
+        // was true and sent the reader to the engine matrix to work out which one.
+        blazor.Limitation.Should().Be("BrowserRuntime did not contribute to this domain.", "the outcome's own display name is used verbatim");
+        blazor.Limitation.Should().NotContain("1 evidence source");
         blazor.Limitation.Should().NotContainAny("Browser Companion", "pairing", "Browser Quality");
     }
 
@@ -241,7 +244,7 @@ public sealed class FrontendQualityResultPresentationTests
 
         accessibility.Failed.Should().Be(0);
         accessibility.Statement.Should().Be(
-            "No automated WCAG violations were detected in the available evidence. Manual review is still required.");
+            "No automated WCAG violations were detected in the available evidence. Manual assessment is still required.");
         foreach (var claim in new[] { "Passed", "Compliant", "conformance", "No accessibility issues" })
             accessibility.Statement.Should().NotContain(claim);
     }

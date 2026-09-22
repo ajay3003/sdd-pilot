@@ -1,0 +1,67 @@
+@using BirkNext.Web.Models
+
+@* The accessibility result in five numbers a reader can hold at once.
+
+   The partition is the point: every criterion in the profile either has execution evidence or does not, and those two
+   numbers add up to the profile size. The other two — failure evidence, manual assessment — describe criteria INSIDE
+   that partition, so they overlap it deliberately and say so. The old summary put five counts side by side with no
+   stated relationship, two of which ("5 require manual review", "10 manual assessment required") were near synonyms
+   and two of which ("38 not yet assessed", "35 with evidence") appeared to contradict each other. *@
+<section class="fqr-a11y-summary" aria-labelledby="fqr-a11y-summary-heading" data-testid="fqr-accessibility-summary">
+    <h3 id="fqr-a11y-summary-heading">Accessibility assessment</h3>
+    <p class="fqr-a11y-profile" data-testid="fqr-a11y-profile">@Result.ProfileLabel</p>
+
+    <dl class="fqr-a11y-counts">
+        <div data-testid="fqr-a11y-count" data-count="profile">
+            <dt>Criteria in profile</dt><dd>@Result.CriteriaInScope</dd>
+        </div>
+        @* The partition. These two always add up to the profile. *@
+        <div data-testid="fqr-a11y-count" data-count="with-evidence">
+            <dt>With execution evidence</dt><dd>@Result.WithEvidence</dd>
+        </div>
+        <div data-testid="fqr-a11y-count" data-count="without-evidence">
+            <dt>Without execution evidence</dt><dd>@Result.WithoutExecutionEvidence</dd>
+        </div>
+        @* Inside the partition; overlapping on purpose. *@
+        <div data-testid="fqr-a11y-count" data-count="failure-evidence">
+            <dt>With automated failure evidence</dt><dd>@Result.WithFailureEvidence</dd>
+        </div>
+        <div data-testid="fqr-a11y-count" data-count="manual">
+            <dt>Require manual assessment</dt><dd>@Result.RequireManualAssessment</dd>
+        </div>
+    </dl>
+
+    @* Never "passed": an absence of detected violations establishes nothing. *@
+    <p class="fqr-a11y-caveat" data-testid="fqr-a11y-caveat">@FrontendQualityAccessibilityResult.ConformanceCaveat</p>
+
+    <ReviewDisclosure Text="How these counts relate" CollapseText="Hide how these counts relate"
+                      Class="disclosure-inline disclosure-small" TestId="fqr-a11y-overlap">
+        <ul class="fqr-a11y-overlap" data-testid="fqr-a11y-overlap-list">
+            <li>
+                <strong>With</strong> and <strong>without execution evidence</strong> divide the profile:
+                @Result.WithEvidence + @Result.WithoutExecutionEvidence = @Result.CriteriaInScope.
+            </li>
+            <li>
+                <strong>Failure evidence</strong> counts criteria whose assessment recorded an actual failure. It is a
+                subset of the criteria with execution evidence, never derived from a source flag on its own.
+            </li>
+            <li>
+                <strong>Require manual assessment</strong> counts criteria a person still has to assess — those no
+                automation can decide, together with any the assessment explicitly marked review-required
+                (@Result.ExplicitReviewRequired of them). A criterion that is both is counted once, and it can also
+                carry execution evidence.
+            </li>
+            @if (Result.EvidencedWithoutDetermination > 0)
+            {
+                <li>
+                    @Result.EvidencedWithoutDetermination criteria have execution evidence but no completed
+                    determination. Evidence is not an assessment, so they are not counted as assessed.
+                </li>
+            }
+        </ul>
+    </ReviewDisclosure>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityAccessibilityResult Result { get; set; } = default!;
+}

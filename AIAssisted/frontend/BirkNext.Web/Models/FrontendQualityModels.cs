@@ -43,6 +43,19 @@ public enum PreflightStatus
     TimedOut,
 }
 
+/// <summary>
+/// Where a finding came from. QA Readiness restates risks the performance evidence already produced, so counting its
+/// items alongside the observations they are drawn from reported the same problem twice and inflated the headline.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum FrontendQualityFindingOrigin
+{
+    /// <summary>An observation an engine made about the target.</summary>
+    Source,
+    /// <summary>A conclusion drawn from source observations that are already reported elsewhere in this review.</summary>
+    Derived,
+}
+
 public sealed class FrontendQualityFinding
 {
     [JsonPropertyName("id")]             public string                   Id             { get; init; } = "";
@@ -56,6 +69,8 @@ public sealed class FrontendQualityFinding
     [JsonPropertyName("engineId")]       public FrontendQualityEngineId? EngineId       { get; init; }
     [JsonPropertyName("sourceRuleId")]   public string?                  SourceRuleId   { get; init; }
     [JsonPropertyName("status")]         public CheckExecutionStatus     Status         { get; init; } = CheckExecutionStatus.Passed;
+    /// <summary>Source by default: everything an engine observed directly. Only derived conclusions say otherwise.</summary>
+    [JsonPropertyName("origin")]         public FrontendQualityFindingOrigin Origin      { get; init; } = FrontendQualityFindingOrigin.Source;
 }
 
 public sealed class FrontendQualityCategoryScore

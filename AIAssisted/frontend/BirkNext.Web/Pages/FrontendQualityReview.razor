@@ -255,16 +255,15 @@
     @if (_report is not null)
     {
         var report = _report;
-        var topRisks = report.Findings
-            .Where(f => f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)
-            .OrderBy(f => f.Severity)
-            .ThenBy(f => f.Category)
-            .ThenBy(f => f.Title)
-            .ToList();
         var filtered = FilteredFindings(report.Findings).ToList();
-        var recommendations = BuildRecommendationCards(report).ToList();
         @* The result is projected from the report alone; the current profile selection is passed only to detect drift. *@
         var result = FrontendQualityResultPresentation.Build(report, WcagSnapshot.Wcag.ProfileId);
+        @* Actionable = not informational and not derived: an absent optional capability and a restated conclusion are
+           both worth keeping and neither is a problem to fix. *@
+        var actionableIssues = report.LogicalIssues.Where(i => i.IsActionable).ToList();
+        var keyIssues = actionableIssues.Take(KeyIssueCount).ToList();
+        var themes = FrontendQualityRecommendationGrouper.Build(report.LogicalIssues);
+        var evidenceRecords = DistinctEvidence(report);
 
         @* ── 1. The result itself: what ran, against what, and how it ended. ────────────────────────────────── *@
         <FrontendQualityResultSummary Result="result" RunAgain="RunReview" />
@@ -285,13 +284,29 @@
             </div>
         }
 
-        @* ── 2. What each domain found. Accessibility first: it carries the statutory obligation. ───────────── *@
+        @* ── 2. Key logical issues: the few things worth acting on first. ─────────────────────────────────────── *@
+        <section class="fqr-section" aria-labelledby="fqr-key-issues-heading" data-testid="fqr-key-issues">
+            <div class="fqr-section-head">
+                <h2 id="fqr-key-issues-heading">Key logical issues</h2>
+                <p class="fqr-section-note">The most severe distinct problems this review found. Every issue is listed further down.</p>
+            </div>
+            <FrontendQualityLogicalIssues Issues="keyIssues" />
+            @if (actionableIssues.Count > keyIssues.Count)
+            {
+                <p class="fqr-section-note" data-testid="fqr-key-issues-more">
+                    @(actionableIssues.Count - keyIssues.Count) further logical issue@(actionableIssues.Count - keyIssues.Count == 1 ? "" : "s") in <strong>Logical issues</strong> below.
+                </p>
+            }
+        </section>
+
+        @* ── 3. What each domain found. Accessibility first: it carries the statutory obligation. ───────────── *@
         <div class="fqr-domain-results" data-testid="fqr-domain-results">
             @foreach (var domain in result.Domains)
             {
                 @if (domain.Category == FrontendQualityCategory.Accessibility)
                 {
-                    <FrontendQualityDomainResultSection Result="domain" Scope="@AccessibilityScope(result)">
+                    <FrontendQualityDomainResultSection Result="domain" Scope="@AccessibilityScope(result)"
+                                                        DetailsText="View all 48-criterion detail">
                         <Notice>
                             @* The result keeps the profile it ran under; a later selection asks for a new run, it never relabels this one. *@
                             @if (result.ProfileDrift is { } drift)
@@ -300,9 +315,13 @@
                                     <span aria-hidden="true">⚠</span> @drift
                                 </div>
                             }
+                            @* Five numbers that can be held at once; the overlapping states live in the criteria view. *@
+                            @if (result.Accessibility is { } accessibility)
+                            {
+                                <FrontendQualityAccessibilitySummary Result="accessibility" />
+                            }
                         </Notice>
                         <ChildContent>
-                            @* WcagWorkspace is the detailed accessibility result surface; its criteria matrix collapses on its own. *@
                             @if (report.Wcag is { } wcag)
                             {
                                 @* Collapsed by default here: a finished review leads with its summary, not a 48-row matrix. *@
@@ -314,6 +333,7 @@
                 }
                 else
                 {
+                    @* Source findings behind a disclosure: the domain card states the result, the list is the evidence. *@
                     <FrontendQualityDomainResultSection Result="domain" DetailsText="@DomainDetailsText(domain)">
                         @if (DomainFindings(report, domain.Category).Count == 0)
                         {
@@ -337,39 +357,75 @@
             }
         </div>
 
+        @* ── 4. What to fix, grouped by the work rather than by the observation. ──────────────────────────────── *@
+        <section class="fqr-section" aria-labelledby="fqr-recommendations-heading" data-testid="fqr-recommendation-themes">
+            <div class="fqr-section-head">
+                <h2 id="fqr-recommendations-heading">Recommendations</h2>
+                <p class="fqr-section-note">One entry per remediation. An issue observed on several pages is one job, not one per page.</p>
+            </div>
+            <FrontendQualityRecommendations Themes="themes" />
+        </section>
 
-        @* ── 3. Cross-domain triage: every finding in one filterable place, after the per-domain results. ───── *@
-        <section class="fqr-section fqr-all-findings" aria-labelledby="fqr-all-findings-heading" data-testid="fqr-all-findings">
-            <h2 id="fqr-all-findings-heading">All findings</h2>
-
-            <section class="fqr-section" aria-label="Category summary">
-                <SectionHeader Title="Category Summary" />
-                <div class="fqr-category-grid">
-                    @foreach (var category in Enum.GetValues<FrontendQualityCategory>())
-                    {
-                        var summary = GetCategorySummary(report, category);
-                        <button type="button"
-                                class="fqr-category-card @(_catFilter == category ? "is-active" : "")"
-                                @onclick="() => SetCategoryFilter(category)"
-                                aria-pressed="@(_catFilter == category)"
-                                aria-label="Filter findings by @CategoryLabel(category)">
-                            <span class="fqr-category-title">@CategoryLabel(category)</span>
-                            <strong>@summary.Total</strong>
-                            <span class="fqr-category-sub">total findings</span>
-                            <dl class="fqr-category-counts">
-                                <div><dt>Critical</dt><dd>@summary.Critical</dd></div>
-                                <div><dt>High</dt><dd>@summary.High</dd></div>
-                                <div><dt>Medium</dt><dd>@summary.Medium</dd></div>
-                                <div><dt>Low</dt><dd>@summary.Low</dd></div>
-                            </dl>
-                        </button>
-                    }
+        @* ── 5. Manual follow-up. Two different obligations, kept apart. ──────────────────────────────────────── *@
+        @if (result.Accessibility is { RequireManualAssessment: > 0 } manualAccessibility || report.ManualReviewItems.Count > 0)
+        {
+            <section class="fqr-section" aria-labelledby="fqr-manual-heading" data-testid="fqr-manual-followup">
+                <div class="fqr-section-head">
+                    <h2 id="fqr-manual-heading">Manual follow-up</h2>
                 </div>
-            </section>
 
-            <section class="fqr-section" aria-label="Detailed findings">
-                <SectionHeader Title="Detailed Findings" />
-                <div class="fqr-findings-toolbar" role="group" aria-label="Filter findings">
+                @* Mandatory: criteria no automation can decide. Not a shortfall in the engines. *@
+                @if (result.Accessibility is { RequireManualAssessment: > 0 } mandatory)
+                {
+                    <div class="fqr-manual-block" data-testid="fqr-manual-mandatory">
+                        <h3>Mandatory manual assessment</h3>
+                        <p>
+                            <strong>Accessibility.</strong> @mandatory.RequireManualAssessment of
+                            @mandatory.CriteriaInScope criteria in @mandatory.ProfileLabel require a person to assess them.
+                            This is what those criteria require; it is not a gap in the automated coverage.
+                        </p>
+                    </div>
+                }
+
+                @* Recommended: a human check that strengthens a conclusion the engines already reached. *@
+                @if (report.ManualReviewItems.Count > 0)
+                {
+                    <div class="fqr-manual-block" data-testid="fqr-manual-recommended">
+                        <h3>Recommended human verification</h3>
+                        <ReviewDisclosure Text="@($"View {report.ManualReviewItems.Count} verification item{(report.ManualReviewItems.Count == 1 ? "" : "s")}")"
+                                          CollapseText="Hide verification items" Class="disclosure-inline" TestId="fqr-manual-items">
+                            <ul class="fqr-manual-list" data-testid="fqr-manual-item-list">
+                                @foreach (var item in report.ManualReviewItems)
+                                {
+                                    <li data-testid="fqr-manual-item">
+                                        <strong>@item.Title</strong> — @item.Reason
+                                        <span class="fqr-muted">(@item.Source)</span>
+                                    </li>
+                                }
+                            </ul>
+                        </ReviewDisclosure>
+                    </div>
+                }
+            </section>
+        }
+
+        @* ── 6. Everything else, collapsed. Raw evidence and diagnostics are kept, not shown. ─────────────────── *@
+        <section class="fqr-section fqr-details" aria-labelledby="fqr-result-details-heading" data-testid="fqr-result-details">
+            <div class="fqr-section-head">
+                <h2 id="fqr-result-details-heading">Review details</h2>
+                <p class="fqr-section-note">Every issue, every source observation, and how this review was executed.</p>
+            </div>
+
+            <ReviewDisclosure Text="Logical issues" CollapseText="Hide logical issues"
+                              Hint="@($"{actionableIssues.Count} actionable{(result.InformationalIssueCount > 0 ? $" · {result.InformationalIssueCount} informational" : "")}")"
+                              TestId="fqr-all-logical-issues" Class="fqr-detail-disclosure">
+                <FrontendQualityLogicalIssues Issues="report.LogicalIssues" />
+            </ReviewDisclosure>
+
+            <ReviewDisclosure Text="Source findings" CollapseText="Hide source findings"
+                              Hint="@($"{report.Findings.Count} observation{(report.Findings.Count == 1 ? "" : "s")} from every engine")"
+                              TestId="fqr-all-findings" Class="fqr-detail-disclosure">
+                <div class="fqr-findings-toolbar" role="group" aria-label="Filter source findings">
                     <input type="search"
                            class="form-control fqr-search"
                            placeholder="Search findings..."
@@ -419,7 +475,7 @@
                             <tbody>
                                 @foreach (var finding in filtered)
                                 {
-                                    <tr>
+                                    <tr data-origin="@finding.Origin">
                                         <td><span class="fqr-severity fqr-severity-@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span></td>
                                         <td>@CategoryLabel(finding.Category)</td>
                                         <td>
@@ -427,6 +483,10 @@
                                             @if (!string.IsNullOrWhiteSpace(finding.SourceSystem))
                                             {
                                                 <span class="fqr-source">@finding.SourceSystem</span>
+                                            }
+                                            @if (finding.Origin == FrontendQualityFindingOrigin.Derived)
+                                            {
+                                                <span class="fqr-pill fqr-pill-muted" data-testid="fqr-finding-derived">Derived</span>
                                             }
                                         </td>
                                         <td>@finding.Description</td>
@@ -437,153 +497,140 @@
                         </table>
                     </div>
                 }
-            </section>
+            </ReviewDisclosure>
 
-            @if (recommendations.Count > 0)
-            {
-                <section class="fqr-section" aria-label="Recommendations">
-                    <SectionHeader Title="Recommendations" />
-                    <div class="fqr-recommendation-grid">
-                        @foreach (var rec in recommendations)
-                        {
-                            <article class="fqr-recommendation-card fqr-recommendation-@rec.Priority.ToLowerInvariant()">
-                                <div class="fqr-recommendation-priority">@rec.Priority Priority</div>
-                                <h3>@rec.Title</h3>
-                                <p>@rec.Description</p>
-                                <div class="fqr-recommendation-benefit">
-                                    <span>Expected benefit</span>
-                                    <p>@rec.ExpectedBenefit</p>
-                                </div>
-                            </article>
-                        }
-                    </div>
-                </section>
-            }
-        </section>
+            <ReviewDisclosure Text="Engine coverage" CollapseText="Hide engine coverage"
+                              Hint="@EngineCoverageHint(result)" TestId="fqr-engine-coverage" Class="fqr-detail-disclosure">
+                <FrontendQualityDecisionSupport Report="report" />
+            </ReviewDisclosure>
 
-        @* ── 4. Review details: how the review was executed. Supporting evidence, never the headline. ───────── *@
-        <section class="fqr-section fqr-details" aria-labelledby="fqr-result-details-heading" data-testid="fqr-result-details">
-            <div class="fqr-section-head">
-                <h2 id="fqr-result-details-heading">Review details</h2>
-                <p class="fqr-section-note">How this review was executed, and what it could reach at the time it ran.</p>
-            </div>
+            <ReviewDisclosure Text="Target access at review start" CollapseText="Hide target access"
+                              Hint="What this review could reach when it ran" TestId="fqr-result-technical" Class="fqr-detail-disclosure">
+                @if (report.ActiveEngines is { } engines)
+                {
+                    <FrontendQualityActiveEnginesPanel Snapshot="engines" />
+                }
+                @if (report.TargetAccess is { } access)
+                {
+                    <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" />
+                }
+            </ReviewDisclosure>
 
-            @if (report.ActiveEngines is not null || report.TargetAccess is not null)
-            {
-                <ReviewDisclosure Text="Technical details: engines and target access at review start" CollapseText="Hide engines and target access details" TestId="fqr-result-technical" Class="fqr-card-disclosure">
-                    @if (report.ActiveEngines is { } engines)
-                    {
-                        <FrontendQualityActiveEnginesPanel Snapshot="engines" />
-                    }
-                    @if (report.TargetAccess is { } access)
-                    {
-                        <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" />
-                    }
-                </ReviewDisclosure>
-            }
+            @* Scores are per-engine numbers on different scales. They were never comparable, and none of them is the
+               review's result — so they sit here rather than anywhere a reader might add them up. *@
+            <ReviewDisclosure Text="Engine scores" CollapseText="Hide engine scores"
+                              Hint="Per-source scores; not comparable and not a review result" TestId="fqr-engine-scores" Class="fqr-detail-disclosure">
+                <FrontendQualityEngineScores Report="report" />
+            </ReviewDisclosure>
 
-            <FrontendQualityDecisionSupport Report="report" />
-
-            <section class="fqr-section" aria-label="Technical details">
-                <details class="fqr-technical-details">
-                    <summary>Technical Details</summary>
-                    <div class="fqr-technical-grid">
-                        <InfoRow Label="Target URL (Requested)">@report.TargetUrl</InfoRow>
-                        @if (!string.IsNullOrWhiteSpace(report.FinalUrl) && report.FinalUrl != report.TargetUrl)
-                        {
-                            <InfoRow Label="Target URL (Final)">@report.FinalUrl</InfoRow>
-                            @if (report.RedirectOccurred)
+            <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details"
+                              Hint="Execution, scope, limitations and raw evidence" TestId="fqr-result-diagnostics" Class="fqr-detail-disclosure">
+                <div class="fqr-technical" data-testid="fqr-technical">
+                    <section class="fqr-technical-block" aria-labelledby="fqr-tech-execution">
+                        <h3 id="fqr-tech-execution">Execution</h3>
+                        <dl class="fqr-technical-list-grid" data-testid="fqr-technical-execution">
+                            <div><dt>Target URL (requested)</dt><dd>@report.TargetUrl</dd></div>
+                            @if (!string.IsNullOrWhiteSpace(report.FinalUrl) && report.FinalUrl != report.TargetUrl)
                             {
-                                <InfoRow Label="Redirect Occurred">Yes</InfoRow>
-                            }
-                        }
-                        <InfoRow Label="Generated">@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
-                        @if (report.CompletedAt.HasValue && report.DurationMs.HasValue)
-                        {
-                            <InfoRow Label="Completed">@report.CompletedAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</InfoRow>
-                            <InfoRow Label="Duration">@(report.DurationMs.Value / 1000.0)s</InfoRow>
-                        }
-                        <InfoRow Label="Assessment Completeness">@(report.Completeness?.ToString() ?? "Unknown")</InfoRow>
-                        @if (report.AssessedEngines.Count > 0)
-                        {
-                            <InfoRow Label="Assessed Engines">@string.Join(", ", report.AssessedEngines)</InfoRow>
-                        }
-                        @if (report.SkippedEngines.Count > 0)
-                        {
-                            <InfoRow Label="Skipped Engines">@string.Join(", ", report.SkippedEngines)</InfoRow>
-                        }
-                        @if (report.FailedEngines.Count > 0)
-                        {
-                            <InfoRow Label="Failed Engines">@string.Join(", ", report.FailedEngines)</InfoRow>
-                        }
-                        <InfoRow Label="Application">@(report.IsBlazorWasm ? "Blazor WASM detected" : "Blazor WASM not detected")</InfoRow>
-                        @if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
-                        {
-                            <InfoRow Label="Error">@report.ErrorMessage</InfoRow>
-                        }
-                        @if (report.Risks.Count > 0)
-                        {
-                            <div class="fqr-technical-list">
-                                <h3>Risks</h3>
-                                <ul>
-                                    @foreach (var risk in report.Risks)
-                                    {
-                                        <li>@risk</li>
-                                    }
-                                </ul>
-                            </div>
-                        }
-                        @if (report.Limitations.Count > 0)
-                        {
-                            <div class="fqr-technical-list">
-                                <h3>Assessment Limitations</h3>
-                                <ul>
-                                    @foreach (var limitation in report.Limitations)
-                                    {
-                                        <li>@limitation</li>
-                                    }
-                                </ul>
-                            </div>
-                        }
-                        <div class="fqr-technical-list">
-                            <h3>Scope</h3>
-                            <p>This review combines the configured static, passive, and real-browser engines shown in the engine matrix. It does not establish:</p>
-                            <ul>
-                                <li>Active vulnerability scanning or penetration testing</li>
-                                <li>WCAG conformance or completion of manual accessibility testing</li>
-                                <li>Production field Core Web Vitals or field INP</li>
-                                <li>End-to-end user flow validation</li>
-                            </ul>
-                        </div>
-                        @if (report.Findings.Any(f => f.Evidence.Count > 0))
-                        {
-                            <div class="fqr-technical-list fqr-technical-evidence">
-                                <h3>Evidence</h3>
-                                @foreach (var finding in report.Findings.Where(f => f.Evidence.Count > 0))
+                                <div><dt>Target URL (final)</dt><dd>@report.FinalUrl</dd></div>
+                                @if (report.RedirectOccurred)
                                 {
-                                    <div class="fqr-evidence-group">
-                                        <strong>@finding.Title</strong>
-                                        <ul>
-                                            @foreach (var evidence in finding.Evidence)
-                                            {
-                                                <li><code>@evidence</code></li>
-                                            }
-                                        </ul>
-                                    </div>
+                                    <div><dt>Redirect occurred</dt><dd>Yes</dd></div>
                                 }
-                            </div>
-                        }
-                    </div>
-                </details>
-            </section>
+                            }
+                            <div><dt>Generated</dt><dd>@report.GeneratedAt.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd></div>
+                            @if (report.CompletedAt.HasValue && report.DurationMs.HasValue)
+                            {
+                                <div><dt>Completed</dt><dd>@report.CompletedAt.Value.ToString("yyyy-MM-dd HH:mm:ss") UTC</dd></div>
+                                <div><dt>Duration</dt><dd>@(report.DurationMs.Value / 1000.0)s</dd></div>
+                            }
+                            <div><dt>Application</dt><dd>@(report.IsBlazorWasm ? "Blazor WASM detected" : "Blazor WASM not detected")</dd></div>
+                            @if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
+                            {
+                                <div><dt>Error</dt><dd>@report.ErrorMessage</dd></div>
+                            }
+                        </dl>
+                    </section>
 
+                    @* The four dimensions again, in their exact source values. Never one "completeness" word. *@
+                    @if (result.Completeness is { } completeness)
+                    {
+                        <section class="fqr-technical-block" aria-labelledby="fqr-tech-coverage">
+                            <h3 id="fqr-tech-coverage">Coverage</h3>
+                            <dl class="fqr-technical-list-grid" data-testid="fqr-technical-coverage">
+                                <div><dt>Execution</dt><dd>@completeness.ExecutionLabel</dd></div>
+                                <div><dt>Required coverage</dt><dd>@completeness.RequiredCoverageLabel (@completeness.RequiredAssessed of @completeness.RequiredTotal)</dd></div>
+                                <div><dt>Optional coverage</dt><dd>@completeness.OptionalCoverageLabel (@completeness.OptionalAssessed of @completeness.OptionalTotal)</dd></div>
+                                <div><dt>Manual assessment</dt><dd>@completeness.ManualAssessmentLabel</dd></div>
+                                @if (report.AssessedEngines.Count > 0)
+                                {
+                                    <div><dt>Assessed engines</dt><dd>@string.Join(", ", report.AssessedEngines)</dd></div>
+                                }
+                                @if (report.SkippedEngines.Count > 0)
+                                {
+                                    <div><dt>Skipped engines</dt><dd>@string.Join(", ", report.SkippedEngines)</dd></div>
+                                }
+                                @if (report.FailedEngines.Count > 0)
+                                {
+                                    <div><dt>Failed engines</dt><dd>@string.Join(", ", report.FailedEngines)</dd></div>
+                                }
+                            </dl>
+                        </section>
+                    }
+
+                    <section class="fqr-technical-block" aria-labelledby="fqr-tech-scope">
+                        <h3 id="fqr-tech-scope">Scope</h3>
+                        <p>This review combines the configured static, passive and real-browser engines shown in Engine coverage. It does not establish:</p>
+                        <ul>
+                            <li>Active vulnerability scanning or penetration testing</li>
+                            <li>WCAG conformance or completion of manual accessibility assessment</li>
+                            <li>Production field Core Web Vitals or field INP</li>
+                            <li>End-to-end user flow validation</li>
+                        </ul>
+                    </section>
+
+                    @if (report.Risks.Count > 0 || report.Limitations.Count > 0)
+                    {
+                        <section class="fqr-technical-block" aria-labelledby="fqr-tech-limits">
+                            <h3 id="fqr-tech-limits">Limitations</h3>
+                            @if (report.Risks.Count > 0)
+                            {
+                                <ul data-testid="fqr-technical-risks">@foreach (var risk in report.Risks) { <li>@risk</li> }</ul>
+                            }
+                            @if (report.Limitations.Count > 0)
+                            {
+                                <ul data-testid="fqr-technical-limitations">@foreach (var limitation in report.Limitations) { <li>@limitation</li> }</ul>
+                            }
+                        </section>
+                    }
+
+                    @* One block per distinct evidence record. The same three payload records were repeated for every
+                       finding that cited them, so the same lines appeared several times in one list. *@
+                    @if (evidenceRecords.Count > 0)
+                    {
+                        <section class="fqr-technical-block" aria-labelledby="fqr-tech-evidence">
+                            <h3 id="fqr-tech-evidence">Raw evidence</h3>
+                            <ul class="fqr-technical-evidence-list" data-testid="fqr-technical-evidence">
+                                @foreach (var record in evidenceRecords)
+                                {
+                                    <li>
+                                        <code>@record.Value</code>
+                                        <span class="fqr-muted">@record.Sources</span>
+                                    </li>
+                                }
+                            </ul>
+                        </section>
+                    }
+                </div>
+            </ReviewDisclosure>
         </section>
     }
+
 </div>
 
 @code {
-    private sealed record CategorySummary(int Total, int Critical, int High, int Medium, int Low);
-    private sealed record RecommendationView(string Priority, string Title, string Description, string ExpectedBenefit);
+    /// <summary>One distinct evidence record and every finding that cited it — the same record, listed once.</summary>
+    private sealed record EvidenceRecord(string Value, string Sources);
 
     /// <summary>Landing-view projection built once per render from the authoritative state held by this page.</summary>
     private sealed record LandingView(
@@ -713,7 +760,35 @@
     /// </summary>
     private void OnResultProfileChanged(string profileId) => StateHasChanged();
 
-    private static string DomainDetailsText(FrontendQualityDomainResult domain) => $"View {domain.Title.ToLowerInvariant()} findings";
+    /// <summary>How many logical issues the result leads with before asking the reader to open the full list.</summary>
+    private const int KeyIssueCount = 5;
+
+    /// <summary>Names what opening the disclosure shows: source observations, and how many of them.</summary>
+    private static string DomainDetailsText(FrontendQualityDomainResult domain) => domain.FindingCount switch
+    {
+        null or 0 => $"View {domain.Title.ToLowerInvariant()} detail",
+        1 => "View 1 source finding",
+        var count => $"View {count} source findings",
+    };
+
+    private static string EngineCoverageHint(FrontendQualityResultView result) =>
+        result.Completeness is not { } completeness ? "Engine outcomes for this run"
+            : $"Required {completeness.RequiredAssessed}/{completeness.RequiredTotal} · Optional {completeness.OptionalAssessed}/{completeness.OptionalTotal}";
+
+    /// <summary>
+    /// Every evidence line once, with the findings that cited it. The raw-evidence block grouped by FINDING, so the
+    /// three payload records shared by "Large application JavaScript payload", "Large uncompressed assets" and "Large
+    /// CSS payload" were printed three times each and the list read as far more evidence than the review had.
+    /// </summary>
+    private static IReadOnlyList<EvidenceRecord> DistinctEvidence(FrontendQualityReviewReport report) => report.Findings
+        .SelectMany(finding => finding.Evidence.Select(evidence => (Evidence: evidence, finding.Title)))
+        .Where(item => !string.IsNullOrWhiteSpace(item.Evidence))
+        .GroupBy(item => item.Evidence, StringComparer.Ordinal)
+        .OrderBy(group => group.Key, StringComparer.Ordinal)
+        .Select(group => new EvidenceRecord(
+            group.Key,
+            string.Join(", ", group.Select(item => item.Title).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))))
+        .ToList();
 
     /// <summary>The findings this run recorded for one domain, most severe first.</summary>
     private static IReadOnlyList<FrontendQualityFinding> DomainFindings(FrontendQualityReviewReport report, FrontendQualityCategory category) =>
@@ -1125,42 +1200,6 @@
         return q;
     }
 
-    private static CategorySummary GetCategorySummary(FrontendQualityReviewReport report, FrontendQualityCategory category)
-    {
-        var findings = report.Findings.Where(f => f.Category == category).ToList();
-        return new CategorySummary(
-            findings.Count,
-            findings.Count(f => f.Severity == FrontendQualitySeverity.Critical),
-            findings.Count(f => f.Severity == FrontendQualitySeverity.High),
-            findings.Count(f => f.Severity == FrontendQualitySeverity.Medium),
-            findings.Count(f => f.Severity == FrontendQualitySeverity.Low));
-    }
-
-    private static IEnumerable<RecommendationView> BuildRecommendationCards(FrontendQualityReviewReport report)
-    {
-        foreach (var finding in report.Findings
-            .Where(f => f.Severity is not FrontendQualitySeverity.Info && !string.IsNullOrWhiteSpace(f.Recommendation))
-            .OrderBy(f => f.Severity)
-            .ThenBy(f => f.Category)
-            .ThenBy(f => f.Title))
-        {
-            yield return new RecommendationView(
-                RecommendationPriority(finding.Severity),
-                finding.Title,
-                finding.Recommendation,
-                ExpectedBenefit(finding));
-        }
-
-        foreach (var recommendation in report.Recommendations)
-        {
-            yield return new RecommendationView(
-                "Low",
-                ShortTitle(recommendation),
-                recommendation,
-                "Improves review completeness and keeps follow-up work visible.");
-        }
-    }
-
     /// <summary>
     /// A category whose contributing engines were all disabled/not selected at review start shows "Not enabled" rather than a
     /// dash that reads like a failed assessment. Uses the review's own activation snapshot, never current settings.
@@ -1170,34 +1209,6 @@
         if (report.ActiveEngines is not { } active) return false;
         var engines = FrontendQualityCategoryEngines.For(category);
         return engines.Count > 0 && engines.All(id => !active.IsActive(id));
-    }
-
-    private static string RecommendationPriority(FrontendQualitySeverity severity) => severity switch
-    {
-        FrontendQualitySeverity.Critical => "Critical",
-        FrontendQualitySeverity.High     => "High",
-        FrontendQualitySeverity.Medium   => "Medium",
-        _                                => "Low",
-    };
-
-    private static string ExpectedBenefit(FrontendQualityFinding finding) => finding.Category switch
-    {
-        FrontendQualityCategory.Security      => "Reduces exploitable frontend risk and strengthens deployment confidence.",
-        FrontendQualityCategory.Performance   => "Improves load behavior, responsiveness, and user-perceived stability.",
-        FrontendQualityCategory.Accessibility => "Improves usability for assistive technologies and reduces compliance risk.",
-        FrontendQualityCategory.Standards     => "Improves standards compliance and makes future audits easier to pass.",
-        FrontendQualityCategory.BlazorWasm    => "Improves Blazor WASM reliability, startup behavior, and operational readiness.",
-        FrontendQualityCategory.Readiness     => "Improves release confidence and clarifies go/no-go decision inputs.",
-        _                                     => "Improves frontend quality and audit readiness.",
-    };
-
-    private static string ShortTitle(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return "Recommendation";
-        var trimmed = text.Trim();
-        var stop = trimmed.IndexOfAny(['.', ':', '-']);
-        if (stop > 12) trimmed = trimmed[..stop];
-        return trimmed.Length <= 72 ? trimmed : $"{trimmed[..69]}...";
     }
 
     private static string CategoryLabel(FrontendQualityCategory c) => c switch

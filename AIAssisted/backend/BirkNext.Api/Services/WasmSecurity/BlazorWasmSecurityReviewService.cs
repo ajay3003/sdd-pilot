@@ -35,6 +35,7 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
         ILogger<BlazorWasmSecurityReviewService> logger)
     {
         _http   = http;
+        _http.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "DiscoveryProbe");
         _logger = logger;
     }
 
@@ -619,7 +620,8 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
         return "Unknown";
     }
 
-    private static IEnumerable<WasmSecurityFinding> CheckBackendEndpoints(
+    /// <summary>Internal, like every other check in this file, so its severity policy can be asserted directly.</summary>
+    internal static IEnumerable<WasmSecurityFinding> CheckBackendEndpoints(
         IReadOnlyList<DiscoveredEndpoint> endpoints, WasmScanRequest request)
     {
         var suspicious = endpoints.Where(e => e.Classification == "Suspicious").ToList();
@@ -653,11 +655,18 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
             {
                 Id          = "ENDPOINT-LOCALHOST",
                 Title       = $"{localhost.Count} localhost URL(s) found in client assets",
-                Severity    = WasmSecuritySeverity.High,
+                // A development artifact, not a route to compromise. A localhost URL in a deployed build resolves to
+                // the VISITOR's own machine, so it breaks the call or reaches nothing; it exposes no data and grants no
+                // access. That is a real defect worth removing and it is not the same risk as MSAL-LOCALHOST-REDIRECT,
+                // where a localhost redirect URI genuinely lets a token be redirected to a local attacker machine and
+                // stays High. Severity here follows the risk model, on every environment — it is not a discount for
+                // Development targets.
+                Severity    = WasmSecuritySeverity.Medium,
                 Category    = WasmSecurityCategory.DevelopmentArtifact,
                 Status      = WasmSecurityStatus.Fail,
-                Description = "Localhost URLs are embedded in client-side assets. " +
-                              "These are development artifacts that should not be present in deployed builds.",
+                Description = "Localhost URLs are embedded in client-side assets. These are development artifacts that " +
+                              "should not be present in deployed builds: they resolve to the visitor's own machine, so the " +
+                              "calls fail or reach something unintended. No data is exposed by their presence.",
                 Recommendation = "Remove localhost URLs from deployed configuration. " +
                                  "Use environment-specific appsettings or build-time replacement.",
                 Evidence    = localhost.Take(5).Select(e => new WasmSecurityEvidence { Key = "url", MaskedValue = e.Url, Context = e.FoundIn }).ToList(),

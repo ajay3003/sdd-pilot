@@ -1194,3 +1194,131 @@
     ::deep .fqr-target-access-group .fqr-target-access-list > div,
     ::deep .fqr-evidence-list > div { grid-template-columns: 1fr; gap: 0.1rem; }
 }
+
+/* ── Release decision: the result's primary statement, beside the result itself ──────────────────────────────── */
+::deep .fqr-release {
+    margin: .9rem 0 0;
+    padding: .7rem .9rem;
+    border: 1px solid var(--clr-border);
+    border-left: 4px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+
+::deep .fqr-release-ready { border-left-color: var(--clr-success); background: var(--clr-success-bg); }
+::deep .fqr-release-warning { border-left-color: var(--clr-warning); background: var(--clr-warning-bg-light); }
+::deep .fqr-release-attention { border-left-color: var(--clr-danger, #c62828); background: var(--clr-warning-bg); }
+
+::deep .fqr-release-head { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+
+::deep .fqr-release-label {
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+}
+
+::deep .fqr-release-value { font-size: 1.05rem; color: var(--clr-text-heading); }
+::deep .fqr-release-statement { margin: .35rem 0 0; font-size: .9rem; color: var(--clr-text-body); }
+::deep .fqr-release-reasons { margin: .45rem 0 0; padding-left: 1.1rem; font-size: .86rem; color: var(--clr-text-body); }
+::deep .fqr-release-reasons li { margin: .15rem 0; }
+
+/* ── Headline metrics: three different things, never one number ──────────────────────────────────────────────── */
+::deep .fqr-result-metrics,
+::deep .fqr-completeness {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(11rem, 100%), 1fr));
+    gap: .5rem 1.25rem;
+    margin: .9rem 0 0;
+}
+
+::deep .fqr-result-metrics > div,
+::deep .fqr-completeness > div {
+    padding: .5rem .65rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+
+::deep .fqr-result-metrics dt,
+::deep .fqr-completeness dt { font-size: .75rem; color: var(--clr-text-subtle); }
+::deep .fqr-result-metrics dd { margin: .15rem 0 0; font-size: 1.4rem; font-weight: 700; color: var(--clr-text-heading); }
+::deep .fqr-completeness dd { margin: .15rem 0 0; font-size: .92rem; font-weight: 600; color: var(--clr-text-heading); }
+
+/* ── Logical issues: one row per problem ─────────────────────────────────────────────────────────────────────── */
+::deep .fqr-issue-list,
+::deep .fqr-recommendation-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+
+::deep .fqr-issue,
+::deep .fqr-recommendation {
+    padding: .7rem .85rem;
+    border: 1px solid var(--clr-border);
+    border-left: 3px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface-white);
+}
+
+::deep .fqr-issue-critical, ::deep .fqr-recommendation-critical { border-left-color: var(--clr-danger, #c62828); }
+::deep .fqr-issue-high, ::deep .fqr-recommendation-high { border-left-color: var(--clr-warning); }
+::deep .fqr-issue-medium, ::deep .fqr-recommendation-medium { border-left-color: var(--clr-info); }
+
+::deep .fqr-issue-head,
+::deep .fqr-recommendation-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+::deep .fqr-issue-title { font-weight: 600; color: var(--clr-text-heading); }
+::deep .fqr-issue-related { font-size: .8rem; color: var(--clr-text-subtle); }
+::deep .fqr-issue-scale,
+::deep .fqr-recommendation-scale { margin: .3rem 0 0; font-size: .82rem; color: var(--clr-text-subtle); }
+::deep .fqr-issue-action { margin: .3rem 0 0; font-size: .88rem; color: var(--clr-text-body); }
+::deep .fqr-issue-manual { margin: .3rem 0 0; font-size: .85rem; color: var(--clr-warning); }
+::deep .fqr-issue-provenance { margin: 0 0 .4rem; font-size: .82rem; color: var(--clr-text-subtle); }
+::deep .fqr-issue-pages { margin: 0; padding-left: 1.1rem; font-size: .85rem; }
+::deep .fqr-recommendation-title { margin: .35rem 0 0; font-weight: 600; color: var(--clr-text-heading); }
+::deep .fqr-recommendation-issues { margin: 0; padding-left: 1.1rem; font-size: .85rem; }
+::deep .fqr-recommendation-more { margin-top: .7rem; }
+
+/* ── Accessibility summary: the partition, then what sits inside it ──────────────────────────────────────────── */
+::deep .fqr-a11y-summary {
+    margin: .8rem 0 0;
+    padding: .75rem .9rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+
+::deep .fqr-a11y-summary h3 { margin: 0; font-size: .95rem; color: var(--clr-text-heading); }
+::deep .fqr-a11y-profile { margin: .15rem 0 .6rem; font-size: .85rem; color: var(--clr-text-subtle); }
+
+::deep .fqr-a11y-counts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+    gap: .5rem .9rem;
+    margin: 0;
+}
+
+::deep .fqr-a11y-counts > div { text-align: center; }
+::deep .fqr-a11y-counts dt { font-size: .75rem; color: var(--clr-text-subtle); order: 2; }
+::deep .fqr-a11y-counts dd { margin: 0; font-size: 1.5rem; font-weight: 700; color: var(--clr-text-heading); }
+::deep .fqr-a11y-counts > div { display: flex; flex-direction: column; }
+::deep .fqr-a11y-caveat { margin: .6rem 0 0; font-size: .82rem; color: var(--clr-text-subtle); }
+::deep .fqr-a11y-overlap { margin: 0; padding-left: 1.1rem; font-size: .85rem; color: var(--clr-text-body); }
+::deep .fqr-a11y-overlap li { margin: .25rem 0; }
+
+/* ── Manual follow-up: two obligations, kept apart ───────────────────────────────────────────────────────────── */
+::deep .fqr-manual-block { margin-top: .8rem; }
+::deep .fqr-manual-block h3 { margin: 0 0 .3rem; font-size: .9rem; color: var(--clr-text-heading); }
+::deep .fqr-manual-list { margin: 0; padding-left: 1.1rem; font-size: .88rem; }
+::deep .fqr-manual-list li { margin: .2rem 0; }
+
+/* ── Raw evidence, one row per distinct record ───────────────────────────────────────────────────────────────── */
+::deep .fqr-technical-evidence-list { margin: 0; padding-left: 1.1rem; font-size: .85rem; }
+::deep .fqr-technical-evidence-list li { margin: .25rem 0; overflow-wrap: anywhere; }
+::deep .fqr-technical-evidence-list .fqr-muted { display: block; font-size: .78rem; }
+::deep .fqr-engine-scores .fqr-technical-list-grid dd { font-weight: 500; }
+
+@media (max-width: 760px) {
+    ::deep .fqr-result-metrics,
+    ::deep .fqr-completeness,
+    ::deep .fqr-a11y-counts { grid-template-columns: 1fr; }
+    ::deep .fqr-a11y-counts > div { text-align: left; }
+}

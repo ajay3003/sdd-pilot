@@ -1,0 +1,62 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* Per-source scores, with their provenance attached.
+
+   These are four numbers on four different scales, produced by four engines that looked at different things. They were
+   shown as a metric row near the top of the result, where they read as a scoreboard and invited comparison and mental
+   averaging. None of them is the review's result, and no combination of them is either — so they live behind a
+   disclosure, each one labelled with what it actually measures.
+
+   A score is also a claim about a target the engine looked at. The values survive on the report from an earlier
+   computation, so a blocked engine still carried one: Static Security showed a number beside its own "not assessed".
+   An engine that never ran reports "Not assessed" rather than a stale number or a zero. *@
+<div class="fqr-engine-scores" data-testid="fqr-engine-score-list">
+    <p class="fqr-section-note" data-testid="fqr-engine-scores-note">
+        Each score comes from one engine and is on that engine's own scale. They are not comparable with each other,
+        they do not combine, and none of them is this review's result.
+    </p>
+    <dl class="fqr-technical-list-grid">
+        @foreach (var score in Scores)
+        {
+            <div data-testid="fqr-engine-score" data-score="@score.Key">
+                <dt>@score.Label</dt>
+                <dd>
+                    <strong data-testid="fqr-engine-score-value">@score.Value</strong>
+                    <span class="fqr-muted"> — @score.Provenance</span>
+                </dd>
+            </div>
+        }
+    </dl>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityReviewReport Report { get; set; } = default!;
+
+    private sealed record ScoreRow(string Key, string Label, string Value, string Provenance);
+
+    private IEnumerable<ScoreRow> Scores =>
+    [
+        new("legacy", "Legacy static review score",
+            Score(Report.OverallScore, FrontendQualityEngineId.StaticSecurity, FrontendQualityEngineId.PassivePerformance),
+            "Static and passive legacy scope only; not every enabled engine contributes to it"),
+        new("security", "Static security score",
+            Score(Report.SecurityScore, FrontendQualityEngineId.StaticSecurity),
+            "Static Security source"),
+        new("performance", "Passive performance score",
+            Score(Report.PerformanceScore, FrontendQualityEngineId.PassivePerformance),
+            "Passive Performance source"),
+        new("lighthouse", "Lighthouse performance score",
+            Score(Report.LighthouseReport?.PerformanceScore, FrontendQualityEngineId.Lighthouse),
+            "Synthetic lab measurement; not production field data"),
+    ];
+
+    /// <summary>
+    /// The score, but only when every engine it is derived from actually assessed the target. Otherwise "Not assessed":
+    /// the review did not measure this, and a stale number reads as though it had. Never 0 — an absence is not a zero.
+    /// </summary>
+    private string Score(int? value, params FrontendQualityEngineId[] sources) =>
+        sources.All(id => Report.EngineOutcomes.Any(o => o.EngineId == id && o.ExecutionState == FrontendQualityEngineExecutionState.Assessed))
+            ? value?.ToString() ?? "—"          // it looked, and produced no number
+            : "Not assessed";                   // it never looked, so any number on the report is not about this run
+}

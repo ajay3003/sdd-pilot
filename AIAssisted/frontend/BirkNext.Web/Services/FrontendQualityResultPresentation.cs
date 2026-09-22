@@ -33,12 +33,24 @@ public static class FrontendQualityResultPresentation
     public static FrontendQualityResultView Build(FrontendQualityReviewReport report, string? currentProfileId = null)
     {
         var accessibility = Accessibility(report);
-        var domains = DomainOrder.Select(category => Domain(report, category, accessibility)).ToList();
+        // Grouping is deterministic over the findings, so a report that reached this view without its issues populated
+        // still gets the same answer rather than reporting that nothing survived. The orchestrator's own grouping is
+        // preferred when present, because it is what the run recorded.
+        var issues = report.LogicalIssues.Count > 0 || report.Findings.Count == 0
+            ? report.LogicalIssues
+            : FrontendQualityLogicalIssueGrouper.Group(report.Findings);
+        var domains = DomainOrder.Select(category => Domain(report, category, accessibility, issues)).ToList();
         var state = State(report, domains, accessibility);
+        var completeness = Completeness(report, state, accessibility);
+
+        // Source observations exclude derived conclusions: QA Readiness restates risks the performance evidence already
+        // produced, and counting both reported the same problem twice in the headline.
+        var sourceFindings = report.Findings.Count(f => f.Origin == FrontendQualityFindingOrigin.Source);
+        var derived = report.Findings.Count(f => f.Origin == FrontendQualityFindingOrigin.Derived);
 
         return new FrontendQualityResultView(
             State: state,
-            Summary: Summary(state, report, domains),
+            Summary: Summary(state, report, domains, issues),
             Environment: report.TargetEnvironment?.Name ?? "Unnamed environment",
             EnvironmentType: report.TargetEnvironment?.EnvironmentType ?? "—",
             // The target the review actually ran against, as the report recorded it — not whatever is selected now.
@@ -49,7 +61,84 @@ public static class FrontendQualityResultPresentation
             CriteriaInScope: accessibility?.CriteriaInScope,
             Domains: domains,
             Accessibility: accessibility,
-            ProfileDrift: ProfileDrift(report, currentProfileId));
+            ProfileDrift: ProfileDrift(report, currentProfileId),
+            Completeness: completeness,
+            Release: Release(report, completeness, issues, accessibility),
+            SourceFindingCount: sourceFindings,
+            LogicalIssueCount: issues.Count(issue => issue.IsActionable),
+            CriticalHighSourceCount: report.Findings.Count(f =>
+                f.Origin == FrontendQualityFindingOrigin.Source &&
+                f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High),
+            DerivedIndicatorCount: derived,
+            InformationalIssueCount: issues.Count(issue => issue.Informational));
+    }
+
+    // ── Completeness, on its own dimensions ───────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Four independent answers. "Assessment completeness: Full" was read off required coverage alone, so a review with
+    /// three optional engines that never ran and an outstanding manual accessibility assessment called itself complete.
+    /// </summary>
+    public static FrontendQualityCompleteness Completeness(
+        FrontendQualityReviewReport report,
+        FrontendQualityResultState state,
+        FrontendQualityAccessibilityResult? accessibility)
+    {
+        var coverage = report.Coverage ?? FrontendQualityCoverage.Evaluate(report.EngineOutcomes);
+        var optional =
+            coverage.OptionalTotal == 0 ? FrontendQualityOptionalCoverageState.NotApplicable
+            : coverage.OptionalAssessed == coverage.OptionalTotal ? FrontendQualityOptionalCoverageState.Complete
+            : coverage.OptionalAssessed == 0 ? FrontendQualityOptionalCoverageState.None
+            : FrontendQualityOptionalCoverageState.Partial;
+
+        var manual = report.ManualReviewItems.Count > 0 || accessibility is { RequireManualAssessment: > 0 }
+            ? FrontendQualityManualAssessmentState.Required
+            : FrontendQualityManualAssessmentState.NotRequired;
+
+        return new FrontendQualityCompleteness(
+            state, coverage.RequiredCoverageState, optional, manual,
+            coverage.RequiredAssessed, coverage.RequiredTotal, coverage.OptionalAssessed, coverage.OptionalTotal);
+    }
+
+    // ── Release decision ──────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The decision, with its reasons in the reader's terms. Reasons count LOGICAL ISSUES: the number of times a problem
+    /// was observed says how much evidence there is, not how serious the situation is, and using occurrences made a
+    /// single contrast defect on five routes look like five reasons not to release.
+    /// </summary>
+    public static FrontendQualityReleaseDecision Release(
+        FrontendQualityReviewReport report,
+        FrontendQualityCompleteness completeness,
+        IReadOnlyList<FrontendQualityLogicalIssue> issues,
+        FrontendQualityAccessibilityResult? accessibility)
+    {
+        var disposition = report.ReleaseDisposition ?? FrontendQualityReleaseDisposition.ReviewRequired;
+        var criticalHigh = issues.Count(issue => issue.IsActionable &&
+            issue.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High);
+
+        var reasons = new List<string>();
+        if (completeness.RequiredCoverage != FrontendQualityRequiredCoverageState.AllRequiredAssessed)
+            reasons.Add($"{completeness.RequiredAssessed} of {completeness.RequiredTotal} required engines completed.");
+        if (criticalHigh > 0)
+            reasons.Add($"{criticalHigh} critical or high logical issue{(criticalHigh == 1 ? "" : "s")} to resolve.");
+        if (accessibility is { RequireManualAssessment: > 0 } a)
+            reasons.Add($"{a.RequireManualAssessment} WCAG criteria still require manual assessment.");
+        if (completeness.OptionalCoverage is FrontendQualityOptionalCoverageState.Partial or FrontendQualityOptionalCoverageState.None)
+            reasons.Add($"Optional evidence is incomplete ({completeness.OptionalAssessed} of {completeness.OptionalTotal} optional engines completed).");
+
+        var (label, statement) = disposition switch
+        {
+            FrontendQualityReleaseDisposition.Blocked => ("Blocked",
+                "A configured release-blocking condition applies, or a required engine could not assess the target."),
+            // Deliberately not "ready" or "approved": the review has no basis for either.
+            FrontendQualityReleaseDisposition.NoAutomatedBlockDetected => ("No automated block detected",
+                "This review's automated evidence found nothing that blocks a release. It is not a release approval."),
+            _ => ("Review required",
+                "This review's automated evidence has to be read by a person before a release decision can be made."),
+        };
+
+        return new FrontendQualityReleaseDecision(disposition, label, statement, reasons);
     }
 
     // ── Overall result ────────────────────────────────────────────────────────────────────────────────────────────
@@ -91,13 +180,24 @@ public static class FrontendQualityResultPresentation
             : FrontendQualityResultState.Completed;
     }
 
+    /// <summary>
+    /// The one sentence under the result state. It counts PROBLEMS, because that is the question a reader is asking —
+    /// and it says "logical issues", never a bare "N findings". "57 findings" counted every observation, including
+    /// three QA Readiness items restating risks the same review had already reported, and read as 57 things to fix.
+    /// </summary>
     private static string Summary(
         FrontendQualityResultState state,
         FrontendQualityReviewReport report,
-        IReadOnlyList<FrontendQualityDomainResult> domains)
+        IReadOnlyList<FrontendQualityDomainResult> domains,
+        IReadOnlyList<FrontendQualityLogicalIssue> issues)
     {
         var reviewed = domains.Count(d => FrontendQualityDomainResultStates.CarriesFindings(d.State));
-        var findings = domains.Where(d => d.FindingCount.HasValue).Sum(d => d.FindingCount!.Value);
+        var actionable = issues.Count(issue => issue.IsActionable);
+        var observations = report.Findings.Count(f => f.Origin == FrontendQualityFindingOrigin.Source);
+
+        var scale = actionable == 0
+            ? "No logical issue was identified in the evidence reviewed"
+            : $"{actionable} logical issue{(actionable == 1 ? "" : "s")} from {observations} source observation{(observations == 1 ? "" : "s")}, across {reviewed} of {domains.Count} review domains";
 
         return state switch
         {
@@ -108,14 +208,12 @@ public static class FrontendQualityResultPresentation
             // Says what is missing AND what survived, so partial evidence is never presented as nothing.
             FrontendQualityResultState.Incomplete =>
                 $"{report.Coverage?.RequiredAssessed ?? 0} of {report.Coverage?.RequiredTotal ?? 0} required engines completed. "
-                + (findings > 0
-                    ? $"Available evidence produced {findings} finding{(findings == 1 ? "" : "s")} across {reviewed} of {domains.Count} review domains."
-                    : "No other evidence source produced findings."),
+                + (actionable > 0 ? $"Available evidence produced {scale.ToLowerInvariant()}." : "No other evidence source produced findings."),
             FrontendQualityResultState.CompletedWithManualReview =>
-                $"{findings} finding{(findings == 1 ? "" : "s")} across {reviewed} of {domains.Count} review domains. Parts of this review can only be completed by a person.",
+                $"{scale}. Parts of this review can only be completed by a person.",
             FrontendQualityResultState.CompletedWithLimitations =>
-                $"{findings} finding{(findings == 1 ? "" : "s")} across {reviewed} of {domains.Count} review domains; some evidence was unavailable.",
-            _ => $"{findings} finding{(findings == 1 ? "" : "s")} across all {domains.Count} review domains.",
+                $"{scale}; some evidence was unavailable.",
+            _ => $"{scale}.",
         };
     }
 
@@ -124,7 +222,8 @@ public static class FrontendQualityResultPresentation
     private static FrontendQualityDomainResult Domain(
         FrontendQualityReviewReport report,
         FrontendQualityCategory category,
-        FrontendQualityAccessibilityResult? accessibility)
+        FrontendQualityAccessibilityResult? accessibility,
+        IReadOnlyList<FrontendQualityLogicalIssue> issues)
     {
         var engines = FrontendQualityCategoryEngines.For(category).ToHashSet();
         var outcomes = report.EngineOutcomes.Where(o => engines.Contains(o.EngineId)).ToList();
@@ -143,6 +242,13 @@ public static class FrontendQualityResultPresentation
         // CSP, HSTS, X-Content-Type-Options, Permissions-Policy and Referrer-Policy findings under that very category.
         // Suppressing the count because the engine outcome said so made the card contradict the findings table.
         var categoryFindings = report.Findings.Count(f => f.Category == category);
+        // QA Readiness draws its items from evidence the other domains already reported. They are indicators, not new
+        // observations, and the domain says so rather than presenting them as findings of its own.
+        var derived = categoryFindings > 0 && report.Findings.Where(f => f.Category == category)
+            .All(f => f.Origin == FrontendQualityFindingOrigin.Derived);
+        // Distinct problems whose PRIMARY domain is this one. An issue two domains both observe (a missing response
+        // header) counts once, where it is owned; the other domain keeps its source observations and lists it as related.
+        var categoryIssues = issues.Count(issue => issue.Category == category && issue.IsActionable);
 
         var state =
             assessed.Count > 0 || hasWcagEvidence
@@ -162,8 +268,11 @@ public static class FrontendQualityResultPresentation
             FrontendQualityCategoryEngines.Label(category),
             state,
             Summary(category, state, findingCount, accessibility),
-            Limitation(state, active, assessed, errored),
-            findingCount);
+            Limitation(category, state, active, assessed, errored, categoryFindings),
+            findingCount,
+            LogicalIssueCount: findingCount is null || derived ? null : categoryIssues,
+            Derived: derived,
+            ManualAssessmentRequired: category == FrontendQualityCategory.Accessibility && accessibility is { RequireManualAssessment: > 0 });
     }
 
     /// <summary>
@@ -204,37 +313,81 @@ public static class FrontendQualityResultPresentation
             FrontendQualityCategory.Security => $"{found} for security. Passive and static review cannot establish that an application is secure.",
             FrontendQualityCategory.Standards => $"{found} for standards compliance, derived from the checks this review ran.",
             FrontendQualityCategory.BlazorWasm => $"{found} for the Blazor/WASM delivery of this frontend.",
-            FrontendQualityCategory.Readiness => $"{found}. QA readiness is derived from the evidence the other domains produced.",
+            // Never "findings": these restate what the other domains already reported, and calling them findings is
+            // what let three indicators add three problems to a total that already contained them.
+            FrontendQualityCategory.Readiness => findingCount switch
+            {
+                0 => "No readiness indicator was derived from the evidence this review collected.",
+                1 => "1 readiness indicator, derived from evidence the other domains produced.",
+                _ => $"{findingCount} readiness indicators, derived from evidence the other domains produced.",
+            },
             _ => $"{found}.",
         };
     }
 
-    /// <summary>One line about what was missing, in evidence words. Null when nothing was.</summary>
+    /// <summary>
+    /// What was missing, BY NAME. "1 evidence source did not contribute to this domain" is true and sends the reader to
+    /// the engine matrix to work out which one; the engine that did not run is known here, so it is said here.
+    ///
+    /// The other half is the contradiction this also resolves: a domain can hold findings while its own dedicated engine
+    /// shows "not assessed", because another engine's evidence covered it. Left unsaid, the result and the engine matrix
+    /// appear to disagree.
+    /// </summary>
     private static string? Limitation(
+        FrontendQualityCategory category,
         FrontendQualityDomainResultState state,
         IReadOnlyList<FrontendQualityEngineOutcome> active,
         IReadOnlyList<FrontendQualityEngineOutcome> assessed,
-        IReadOnlyList<FrontendQualityEngineOutcome> errored)
+        IReadOnlyList<FrontendQualityEngineOutcome> errored,
+        int categoryFindings)
     {
         if (state is FrontendQualityDomainResultState.NotAssessed) return null;
 
         if (state is FrontendQualityDomainResultState.FailedToRun)
-            return $"{errored.Count} evidence source{(errored.Count == 1 ? "" : "s")} did not complete. This is an execution problem, not a review finding.";
+            return $"{Names(errored)} did not complete. This is an execution problem, not a review finding.";
 
-        var missing = active.Count - assessed.Count;
-        if (missing <= 0) return null;
+        var missing = active.Except(assessed).ToList();
+        if (missing.Count == 0) return null;
 
-        // Browser-dependent evidence is the common case and worth naming as a kind, never as a product.
-        var browserOnly = active.Except(assessed).All(o => o.OutcomeReason is
-            FrontendQualityEngineOutcomeReason.BrowserCompanionNotConnected or
-            FrontendQualityEngineOutcomeReason.BrowserCompanionNoEvidence or
-            FrontendQualityEngineOutcomeReason.PerformanceEvidenceUnavailable or
-            FrontendQualityEngineOutcomeReason.SessionUnavailable or
-            FrontendQualityEngineOutcomeReason.BrowserDomUnavailableForMethod);
+        var contributed = assessed.Count > 0 ? Names(assessed) : null;
 
-        return browserOnly
-            ? "Browser evidence was unavailable, so this domain was reviewed on its static evidence only."
-            : $"{missing} evidence source{(missing == 1 ? "" : "s")} did not contribute to this domain.";
+        // The dedicated engine of a domain is the one whose absence needs explaining, because the domain is named after
+        // it: Accessibility findings from Browser Quality while the Accessibility engine is blocked reads as a fault
+        // until someone says where the evidence came from.
+        var dedicated = DedicatedEngine(category);
+        if (dedicated is { } id && missing.Any(o => o.EngineId == id) && contributed is not null && categoryFindings > 0)
+            return $"{Name(missing.First(o => o.EngineId == id))} did not run; {contributed} evidence contributed to this domain instead.";
+
+        return $"{Names(missing)} did not contribute to this domain.";
+    }
+
+    /// <summary>The engine a domain is named after, where it has one. Its absence is the limitation worth naming first.</summary>
+    private static FrontendQualityEngineId? DedicatedEngine(FrontendQualityCategory category) => category switch
+    {
+        FrontendQualityCategory.Accessibility => FrontendQualityEngineId.Accessibility,
+        FrontendQualityCategory.Security => FrontendQualityEngineId.PassiveSecurity,
+        _ => null,
+    };
+
+    /// <summary>
+    /// The engine's own display name, or a readable rendering of its id when the outcome carries none. "BrowserRuntime"
+    /// is an identifier; a sentence a person reads says "Browser Runtime".
+    /// </summary>
+    private static string Name(FrontendQualityEngineOutcome outcome) =>
+        string.IsNullOrWhiteSpace(outcome.DisplayName) ? Spaced(outcome.EngineId.ToString()) : outcome.DisplayName;
+
+    private static string Spaced(string identifier) =>
+        string.Concat(identifier.Select((ch, i) => i > 0 && char.IsUpper(ch) ? " " + ch : ch.ToString()));
+
+    private static string Names(IReadOnlyList<FrontendQualityEngineOutcome> outcomes)
+    {
+        var names = outcomes.Select(Name).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        return names.Count switch
+        {
+            0 => "An evidence source",
+            1 => names[0],
+            _ => string.Join(" and ", string.Join(", ", names.Take(names.Count - 1)), names[^1]),
+        };
     }
 
     // ── Accessibility ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -255,7 +408,14 @@ public static class FrontendQualityResultPresentation
             RequireManualReview: criteria.Count(c => c.Status == WcagStatus.ManualReviewRequired),
             ManualOnly: criteria.Count(c => c.Definition.AutomationLevel == WcagAutomation.Manual),
             NotAssessed: criteria.Count(c => c.Status == WcagStatus.NotTested),
-            WithEvidence: criteria.Count(c => c.EvidenceCount > 0));
+            WithEvidence: criteria.Count(c => c.EvidenceCount > 0),
+            // ONE primary manual number, as a union: a criterion that is manual-only AND carries an explicit
+            // review-required result is one criterion for a person to assess, not two. Showing "5 require manual
+            // review" beside "10 of 48 manual assessment required" made them read as competing totals.
+            RequireManualAssessment: criteria.Count(c =>
+                c.Definition.AutomationLevel == WcagAutomation.Manual || c.Status == WcagStatus.ManualReviewRequired),
+            // The subset with an explicit result, kept as detail behind the primary number.
+            ExplicitReviewRequired: criteria.Count(c => c.Status == WcagStatus.ManualReviewRequired));
     }
 
     /// <summary>

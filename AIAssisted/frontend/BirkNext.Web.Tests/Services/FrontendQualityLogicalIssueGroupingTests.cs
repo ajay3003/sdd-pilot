@@ -60,9 +60,11 @@ public sealed class FrontendQualityLogicalIssueGroupingTests
             [Finding("unknown-1", FrontendQualityEngineId.Accessibility, "axe-unknown", "Unknown")])
             .Should().ContainSingle().Subject;
 
-        issue.LogicalId.Should().StartWith("finding:Accessibility:unknown-1:");
+        // 11. Identity is the rule that fired and what it fired about — never the finding id, which is unique per
+        // observation and could therefore never group anything.
+        issue.LogicalId.Should().Be("rule:Accessibility:axe-unknown:unknown");
         issue.FindingInstances.Should().ContainSingle().Which.SourceFindingId.Should().Be("unknown-1");
-        issue.Confidence.Should().BeNull();
+        issue.Confidence.Should().BeNull("a single observation has nothing corroborating it");
     }
 
     [Fact]
@@ -89,8 +91,11 @@ public sealed class FrontendQualityLogicalIssueGroupingTests
         issues.Should().ContainSingle().Which.CanonicalTitle.Should().Be("Content Security Policy header missing");
     }
 
+    // 7, 29. One registered rule reported twice is one missing header observed twice, not two headers to add. The
+    // old guard dropped back to one-issue-per-observation whenever a rule fired more than once, which is precisely the
+    // repeated case — and it is why 57 observations produced 56 issues.
     [Fact]
-    public void SameEngineRepeatedRegisteredRule_RemainsSeparate()
+    public void SameEngineRepeatedRegisteredRule_IsOneIssueWithBothObservations()
     {
         var issues = FrontendQualityLogicalIssueGrouper.Group(
         [
@@ -98,8 +103,11 @@ public sealed class FrontendQualityLogicalIssueGroupingTests
             Finding("response-b", FrontendQualityEngineId.PassiveSecurity, "10038", "CSP B"),
         ]);
 
-        issues.Should().HaveCount(2);
-        issues.Should().OnlyContain(issue => issue.FindingInstances.Count == 1);
+        var issue = issues.Should().ContainSingle().Subject;
+        issue.SourceFindingCount.Should().Be(2, "both observations are kept and inspectable");
+        issue.FindingInstances.Select(i => i.SourceFindingId).Should().BeEquivalentTo(["response-a", "response-b"]);
+        // 56. Repetition by one engine is not corroboration by two.
+        issue.Confidence.Should().Be(FrontendQualityEvidenceConfidence.Moderate);
     }
 
     [Fact]
