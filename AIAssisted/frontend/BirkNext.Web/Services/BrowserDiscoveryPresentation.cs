@@ -43,11 +43,14 @@ public sealed record BrowserObservation(
     string Key, string Id, string Label, string Detail, string? CriterionId,
     BrowserObservationState State, int Elements, int FlaggedCount, int UncertainCount, bool Automated)
 {
-    /// <summary>The compact right-hand text of an observation row. Counts only; never a verdict word.</summary>
+    /// <summary>
+    /// The compact right-hand text of an observation row. Counts and the collector's own outcome, never a verdict:
+    /// "source flag" says the Browser Companion check marked something, not that a success criterion failed.
+    /// </summary>
     public string StateDetail => State switch
     {
-        BrowserObservationState.Flagged => FlaggedCount > 0 ? $"{FlaggedCount} flagged" : "flagged",
-        BrowserObservationState.Uncertain => UncertainCount > 0 ? $"{UncertainCount} uncertain" : "uncertain",
+        BrowserObservationState.Flagged => FlaggedCount > 0 ? $"{FlaggedCount} source flag{(FlaggedCount == 1 ? "" : "s")}" : "source flag",
+        BrowserObservationState.Uncertain => UncertainCount > 0 ? $"{UncertainCount} source uncertaint{(UncertainCount == 1 ? "y" : "ies")}" : "source uncertainty",
         _ => Elements > 0 ? $"{Elements} observed" : "evaluated",
     };
 }
@@ -58,7 +61,7 @@ public sealed record BrowserPrincipleEvidence(WcagPrinciple Principle, IReadOnly
     public int Flagged => Observations.Count(o => o.State == BrowserObservationState.Flagged);
     public int Uncertain => Observations.Count(o => o.State == BrowserObservationState.Uncertain);
 
-    /// <summary>What is worth reading when this principle is expanded: anything flagged, uncertain, or that examined elements.</summary>
+    /// <summary>What is worth reading when this principle is expanded: any non-neutral outcome, or anything that examined elements.</summary>
     public IReadOnlyList<BrowserObservation> Primary =>
         Observations.Where(o => o.State != BrowserObservationState.Observed || o.Elements > 0).ToList();
 
@@ -77,7 +80,7 @@ public sealed record BrowserPrincipleEvidence(WcagPrinciple Principle, IReadOnly
 /// this principle" means, and an observation mapped to three criteria genuinely is evidence about three principles.
 /// Principle counts therefore do not sum to the page total.</item>
 /// <item>Page totals (<see cref="Evaluated"/>, <see cref="Flagged"/>, <see cref="Uncertain"/>) and
-/// <see cref="Attention"/> count each underlying observation once, by <see cref="BrowserObservation.Key"/>.</item>
+/// <see cref="NonNeutral"/> count each underlying observation once, by <see cref="BrowserObservation.Key"/>.</item>
 /// <item>Scope is evidence that maps to at least one WCAG criterion; a rule the collector could not relate to a
 /// criterion has no principle to sit under and is not counted here.</item>
 /// </list>
@@ -85,7 +88,9 @@ public sealed record BrowserPrincipleEvidence(WcagPrinciple Principle, IReadOnly
 /// </summary>
 public sealed record BrowserAccessibilityOverview(
     IReadOnlyList<BrowserPrincipleEvidence> Principles,
-    IReadOnlyList<BrowserObservation> Attention,
+    /// <summary>Observations the collector did not report as plain "observed" — its own flags and uncertainties.
+    /// Named for what it is, because "requiring attention" is a judgement Browser Discovery does not make.</summary>
+    IReadOnlyList<BrowserObservation> NonNeutral,
     int Evaluated, int Flagged, int Uncertain,
     IReadOnlyList<BrowserObservation> AutomatedRules)
 {
@@ -119,7 +124,8 @@ public sealed record BrowserAccessibilityComparisonRow(
     string Identity, string Route, DateTimeOffset ObservedAt, WcagPrinciple Principle, BrowserObservation Observation)
 {
     public string? CriterionId => Observation.CriterionId;
-    public bool NeedsAttention => Observation.State != BrowserObservationState.Observed;
+    /// <summary>The collector reported something other than a plain observation. Not a review obligation.</summary>
+    public bool NonNeutral => Observation.State != BrowserObservationState.Observed;
 }
 
 /// <summary>
@@ -193,7 +199,33 @@ public static class BrowserDiscoveryPresentation
 
     /// <summary>Stated wherever WCAG areas appear, so the grouping can never read as an assessment.</summary>
     public const string AreaDisclaimer =
-        "WCAG areas show which principles the observed evidence relates to. They are not an assessment: no page is marked as passing, failing or conformant here. Frontend Quality Review interprets this evidence.";
+        "WCAG areas and criterion references show how raw evidence is mapped. They are not assessment results: no page is marked as passing, failing or conformant here. Frontend Quality Review interprets this evidence.";
+
+    /// <summary>
+    /// Stated wherever the collector's own flags and uncertainties are counted. They are outcomes of Browser Companion
+    /// checks, and the distance between that and a WCAG result is the whole product boundary.
+    /// </summary>
+    public const string RawOutcomeDisclaimer =
+        "These are raw Browser Companion check outcomes, not WCAG assessment results. Frontend Quality Review interprets them.";
+
+    /// <summary>The one hand-off sentence. Said once per view, never after every section.</summary>
+    public const string HandoffTitle = "Frontend Quality Review";
+    public const string HandoffText =
+        "Interpret captured browser evidence, apply accessibility profiles and review findings.";
+    public const string HandoffAction = "Open Frontend Quality Review";
+
+    /// <summary>How the collector reported one observation. Source wording, never review wording.</summary>
+    public static string RawOutcomeLabel(BrowserObservationState state) => state switch
+    {
+        BrowserObservationState.Flagged => "Source flag",
+        BrowserObservationState.Uncertain => "Source uncertainty",
+        _ => "Observed",
+    };
+
+    /// <summary>"22 source flags · 29 source uncertainties", or empty when the collector reported neither.</summary>
+    public static string RawOutcomeLine(int flags, int uncertainties) => Join(
+        flags > 0 ? $"{flags} source flag{(flags == 1 ? "" : "s")}" : null,
+        uncertainties > 0 ? $"{uncertainties} source uncertaint{(uncertainties == 1 ? "y" : "ies")}" : null);
 
     public static string PrincipleLabel(WcagPrinciple principle) => principle switch
     {
@@ -203,9 +235,12 @@ public static class BrowserDiscoveryPresentation
         _ => "Robust"
     };
 
-    /// <summary>Evidence availability wording. Never "Passed"/"Failed", never 0.</summary>
+    /// <summary>
+    /// Historical evidence wording. "Available" reads as "available now", which is the live session's word; stored
+    /// evidence was captured in the past and says so. Never "Passed"/"Failed", never 0.
+    /// </summary>
     public static string StateLabel(BrowserEvidenceState state) =>
-        state == BrowserEvidenceState.Available ? "Available" : "Unavailable";
+        state == BrowserEvidenceState.Available ? "Captured" : "Not captured";
 
     public static string StateCss(BrowserEvidenceState state) =>
         state == BrowserEvidenceState.Available ? "available" : "unavailable";
@@ -300,8 +335,8 @@ public static class BrowserDiscoveryPresentation
             var observation = new BrowserObservation(
                 $"check:{check.CheckId}", check.CheckId, $"Check · {check.CheckId}",
                 Join($"{check.Tested} element(s) examined",
-                     check.Failed > 0 ? $"{check.Failed} flagged" : null,
-                     check.Uncertain > 0 ? $"{check.Uncertain} uncertain" : null),
+                     check.Failed > 0 ? $"{check.Failed} source flag(s)" : null,
+                     check.Uncertain > 0 ? $"{check.Uncertain} source uncertaint(ies)" : null),
                 null,
                 check.Failed > 0 ? BrowserObservationState.Flagged
                     : check.Uncertain > 0 ? BrowserObservationState.Uncertain : BrowserObservationState.Observed,
@@ -426,7 +461,7 @@ public static class BrowserDiscoveryPresentation
         }
 
         return new BrowserEvidenceInventory(dom,
-            // Attention first, then the biggest observations, then a stable page/rule order.
+            // Non-neutral source outcomes first, then the biggest observations, then a stable page/rule order.
             accessibility.OrderByDescending(r => r.Observation.State).ThenByDescending(r => r.Observation.Elements)
                 .ThenBy(r => r.Route, StringComparer.Ordinal).ThenBy(r => r.Observation.Label, StringComparer.OrdinalIgnoreCase).ToList(),
             performance, accessiblePages, observations, flagged, uncertain);
@@ -518,6 +553,27 @@ public static class BrowserDiscoveryPresentation
         return items;
     }
 
+    /// <summary>
+    /// The compact DOM line the selected page leads with: three structural counts, no verdict. The full set stays in
+    /// Evidence → DOM rather than being repeated here.
+    /// </summary>
+    public static string DomSummaryLine(BrowserDomSummary? dom) => dom is null ? "" : Join(
+        $"{dom.NodeCount} node{(dom.NodeCount == 1 ? "" : "s")}",
+        $"{dom.InteractiveCount} interactive element{(dom.InteractiveCount == 1 ? "" : "s")}",
+        dom.FormControlCount > 0 ? $"{dom.FormControlCount} form control{(dom.FormControlCount == 1 ? "" : "s")}" : null);
+
+    /// <summary>The compact accessibility line: how much raw evidence exists, in the collector's own terms.</summary>
+    public static string AccessibilitySummaryLine(BrowserAccessibilityOverview overview) =>
+        overview.Evaluated == 0 ? "" : $"{overview.Evaluated} raw check{(overview.Evaluated == 1 ? "" : "s")} observed";
+
+    /// <summary>
+    /// The compact performance line: how the page was observed and the one timing that describes the visit. Raw
+    /// values only — thresholds are Frontend Quality Review's.
+    /// </summary>
+    public static string PerformanceSummaryLine(BrowserPerformanceSummary? performance) => performance is null ? "" : Join(
+        ObservationLabel(performance),
+        performance.StabilizationMs is { } ms ? $"{ms:0} ms page stabilization" : null);
+
     /// <summary>"initial-load" / "spa-navigation" describe how the page was observed; they are not a quality phase.</summary>
     public static string ObservationLabel(BrowserPerformanceSummary? performance) => performance?.ObservationType switch
     {
@@ -536,6 +592,9 @@ public static class BrowserDiscoveryPresentation
         >= 1024 => $"{value / 1024d:0.#} KB",
         _ => $"{value} B"
     };
+
+    /// <summary>The one separator for compact evidence lines, so a line never ends with a dangling dot.</summary>
+    public static string Line(params string?[] parts) => Join(parts);
 
     private static string Join(params string?[] parts) =>
         string.Join(" · ", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
@@ -685,6 +744,16 @@ public enum BrowserDiscoveryNextAction
 public sealed record BrowserDiscoveryFact(string Label, string Value, string TestId, bool Muted = false);
 
 /// <summary>
+/// Captured evidence, counted per kind. Every field is about the PAST: a count here says nothing about whether the
+/// browser is connected now, and a live connection says nothing about these counts.
+/// </summary>
+public sealed record BrowserEvidenceTotals(
+    int Pages, int DomPages, int AccessibilityPages, int PerformancePages, DateTimeOffset? LastCapturedAt)
+{
+    public bool Any => Pages > 0;
+}
+
+/// <summary>
 /// Whether a page is open right now, has only been captured before, or both.
 /// </summary>
 public enum BrowserPageLiveness { LiveNow, HistoricalOnly, LiveWithoutEvidence }
@@ -725,27 +794,51 @@ public static class BrowserDiscoveryLive
         var many => $"{many.LiveApprovedPageCount} pages open",
     };
 
+    /// <summary>
+    /// How much evidence has been captured, per kind. The ONE merge of the two histories BirkNext holds — the stored
+    /// discovery snapshot (fuller, survives re-pairing) and the session's own summary (covers a snapshot that has not
+    /// been merged yet) — so every surface that reports captured evidence reports the same numbers.
+    /// </summary>
+    public static BrowserEvidenceTotals Totals(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot)
+    {
+        var rows = BrowserDiscoveryPresentation.Rows(snapshot);
+        var summary = status?.Evidence ?? BrowserCompanionEvidenceSummary.Empty;
+        return new(
+            Math.Max(rows.Count, summary.PagesWithEvidence),
+            Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Dom == BrowserEvidenceState.Available), summary.DomEvidencePageCount),
+            Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.WcagAreas.Count > 0), summary.AccessibilityEvidencePageCount),
+            Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Performance == BrowserEvidenceState.Available), summary.PerformanceEvidencePageCount),
+            BrowserDiscoveryPresentation.LastEvidenceAt(snapshot) ?? summary.LastEvidenceAt);
+    }
+
+    /// <summary>
+    /// The live page as a ROUTE, which is what identifies a page to a reviewer. Identity (origin + route) remains the
+    /// live page's identity everywhere it matters; this is only how it is read out. Same rules as
+    /// <see cref="CurrentPageLabel"/>: no live page is "None", and several open pages are counted rather than named.
+    /// </summary>
+    public static string CurrentRouteLabel(BrowserCompanionLiveSession live) => live switch
+    {
+        { CurrentPage: { } page } => page.Route.Length == 0 ? "/" : page.Route,
+        { LiveApprovedPageCount: 0 } => "None",
+        var many => $"{many.LiveApprovedPageCount} pages open",
+    };
+
     /// <summary>Historical facts. Every label says "evidence", because every one of them is about the past.</summary>
     public static IReadOnlyList<BrowserDiscoveryFact> EvidenceFacts(BrowserCompanionStatus? status, EndpointDiscoverySnapshot? snapshot)
     {
-        // The stored snapshot is the fuller history (it survives re-pairing); the session summary covers the case where
-        // the snapshot has not been merged yet.
-        var rows = BrowserDiscoveryPresentation.Rows(snapshot);
-        var summary = status?.Evidence ?? BrowserCompanionEvidenceSummary.Empty;
-        var pages = Math.Max(rows.Count, summary.PagesWithEvidence);
-        var last = BrowserDiscoveryPresentation.LastEvidenceAt(snapshot) ?? summary.LastEvidenceAt;
+        var totals = Totals(status, snapshot);
         return
         [
-            new("Pages with evidence", pages.ToString(), "bd-pages-count"),
-            new("Last evidence", last is { } at ? at.ToLocalTime().ToString("HH:mm:ss") : "None", "bd-last-evidence", last is null),
-            new("DOM evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Dom == BrowserEvidenceState.Available), summary.DomEvidencePageCount)), "bd-evidence-dom"),
-            new("Accessibility evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.WcagAreas.Count > 0), summary.AccessibilityEvidencePageCount)), "bd-evidence-accessibility"),
-            new("Performance evidence", Captured(Math.Max(BrowserDiscoveryPresentation.PagesWith(snapshot, r => r.Performance == BrowserEvidenceState.Available), summary.PerformanceEvidencePageCount)), "bd-evidence-performance"),
+            new("Pages with evidence", totals.Pages.ToString(), "bd-pages-count"),
+            new("Last evidence", totals.LastCapturedAt is { } at ? at.ToLocalTime().ToString("HH:mm:ss") : "None", "bd-last-evidence", totals.LastCapturedAt is null),
+            new("DOM evidence", Captured(totals.DomPages), "bd-evidence-dom"),
+            new("Accessibility evidence", Captured(totals.AccessibilityPages), "bd-evidence-accessibility"),
+            new("Performance evidence", Captured(totals.PerformancePages), "bd-evidence-performance"),
         ];
     }
 
     /// <summary>"Available" alone reads as "available now". These counts are all about captures that already happened.</summary>
-    private static string Captured(int pages) => pages == 0 ? "None captured" : $"{pages} page{(pages == 1 ? "" : "s")} captured";
+    public static string Captured(int pages) => pages == 0 ? "None captured" : $"{pages} page{(pages == 1 ? "" : "s")} captured";
 
     /// <summary>Is this evidence row a page that is also open right now?</summary>
     public static BrowserPageLiveness Liveness(BrowserPageRow row, BrowserCompanionLiveSession? live) =>

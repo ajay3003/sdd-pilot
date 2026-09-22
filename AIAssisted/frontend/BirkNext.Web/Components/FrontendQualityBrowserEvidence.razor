@@ -1,0 +1,52 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* Browser evidence as an INPUT to this review, never as something this page administers. Browser Discovery owns the
+   Browser Companion session, the approved origins and the extension, so no pairing, unpairing or installation control
+   appears here — only the state this review reads, and a way to go to the page that owns it.
+
+   Two groups, never one: what the browser is doing NOW, and what has been CAPTURED. A connected session says nothing
+   about how fresh the stored evidence is, and stored evidence says nothing about whether a browser is open. *@
+<div class="fqr-browser-evidence" data-testid="fqr-browser-evidence">
+    <div class="fqr-evidence-groups">
+        <section class="fqr-evidence-group" aria-labelledby="fqr-evidence-live-heading" data-testid="fqr-evidence-live">
+            <h3 id="fqr-evidence-live-heading">Live browser</h3>
+            <dl class="fqr-evidence-list">
+                <div>
+                    <dt>Browser Companion</dt>
+                    <dd data-testid="fqr-evidence-session">
+                        <span class="fqr-pill fqr-pill-@(Model.LiveConnected ? "ready" : "muted")">
+                            <span aria-hidden="true">@(Model.LiveConnected ? "✓" : "○")</span> @Model.LiveStatus
+                        </span>
+                    </dd>
+                </div>
+                @* The route, which is what identifies a page to a reviewer. The full URL is technical detail. *@
+                <div><dt>Current page</dt><dd class="fqr-evidence-route" data-testid="fqr-evidence-current-page">@Model.CurrentPage</dd></div>
+                <div><dt>Live DOM</dt><dd data-testid="fqr-evidence-live-dom">@(Model.LiveDomAvailable ? "Available now" : "Not available")</dd></div>
+            </dl>
+        </section>
+
+        <section class="fqr-evidence-group" aria-labelledby="fqr-evidence-history-heading" data-testid="fqr-evidence-history">
+            <h3 id="fqr-evidence-history-heading">Captured evidence</h3>
+            <dl class="fqr-evidence-list">
+                <div><dt>Pages captured</dt><dd data-testid="fqr-evidence-pages">@Model.PagesCaptured</dd></div>
+                @* "DOM evidence", not "DOM quality": this review has not judged anything yet. *@
+                <div><dt>DOM evidence</dt><dd data-testid="fqr-evidence-dom">@Model.DomEvidence</dd></div>
+                <div><dt>Accessibility evidence</dt><dd data-testid="fqr-evidence-accessibility">@Model.AccessibilityEvidence</dd></div>
+                <div><dt>Performance evidence</dt><dd data-testid="fqr-evidence-performance">@Model.PerformanceEvidence</dd></div>
+                @* Labelled as history, so it can never be read as a heartbeat from the live session above. *@
+                <div><dt>Last captured evidence</dt><dd data-testid="fqr-evidence-last">@Model.LastCapturedLabel</dd></div>
+            </dl>
+        </section>
+    </div>
+
+    <p class="fqr-section-note" data-testid="fqr-evidence-ownership">@FrontendQualityBrowserEvidencePresentation.OwnershipNote</p>
+    <p class="fqr-evidence-actions">
+        <a class="fqr-link" href="@FrontendQualityBrowserEvidencePresentation.BrowserDiscoveryHref" data-testid="fqr-evidence-open-discovery">Open Browser Discovery</a>
+    </p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public FrontendQualityBrowserEvidenceModel Model { get; set; } =
+        new("Not connected", false, "None", "None", false, false, 0, "None captured", "None captured", "None captured", null, []);
+}

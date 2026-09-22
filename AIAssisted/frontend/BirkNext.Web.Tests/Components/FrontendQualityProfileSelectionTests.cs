@@ -40,8 +40,12 @@ public sealed class FrontendQualityProfileSelectionTests : BunitContext
         WcagProfiles.Norwegian.CriteriaInScope.Should().Be(48);
         WcagProfiles.Norwegian.CriterionIds.Should().HaveCount(48).And.OnlyHaveUniqueItems();
 
+        // 4, 8, 9. The count is the SIZE OF THE PROFILE, which is all that is known before a review runs.
+        // "Applicable" is a property of the target — which criteria a page actually engages — and nothing has been
+        // assessed at this point, so the word claimed a determination that had not been made.
         Card().Find("[data-testid=fqr-profile-scope]").TextContent.Trim()
-            .Should().Be($"{WcagProfiles.Norwegian.CriteriaInScope} applicable success criteria");
+            .Should().Be($"{WcagProfiles.Norwegian.CriteriaInScope} criteria in selected profile");
+        Card().Markup.Should().NotContain("applicable");
     }
 
     // ── 3–5. All three profiles are offered and correctly labelled ──────────

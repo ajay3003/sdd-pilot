@@ -1,14 +1,19 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
-@* Review capabilities: Required and Optional engines with typed state labels, a plain-language summary, an optional
-   per-review "Include" opt-out (enabled backend engines only — it never enables a disabled engine), and the exact technical
-   reason collapsed by default. Deployment-policy limitations are shown as environment facts, not application defects. *@
-@* The name of this block is carried by the disclosure that hosts it ("Review capabilities"), so it is not repeated here. *@
+@* The engines of this review, on three axes that are never merged into one status:
+     ROLE          Required / Optional  — the group this row sits in
+     CONFIGURATION Enabled / Disabled   — what the Target Environment saved
+     RUNTIME       Ready / Available / Unavailable / … — what is true right now
+   "Passive Security · Enabled · Unavailable" is a capability problem; "Browser Runtime · Disabled" is a decision. A
+   disabled engine is therefore never labelled unavailable, and an unavailable one never reads as switched off.
+
+   The per-review "Include" opt-out applies to enabled backend engines only — it never enables a disabled engine. The
+   exact technical reason stays collapsed. The name of this block is carried by the disclosure that hosts it. *@
 <div class="fqr-capabilities" data-testid="fqr-capabilities">
     <div class="fqr-section-head">
         <div class="fqr-section-head-row">
-            <p class="fqr-engine-summary" data-testid="fqr-engine-summary">@FrontendQualityLandingPresentation.EngineSummary(Rows)</p>
+            <p class="fqr-engine-summary" data-testid="fqr-engine-summary">@FrontendQualityLandingPresentation.CapabilitySummary(Rows).Collapsed</p>
             @* Configuration lives in Target Environment; this page only reports it. *@
             <a class="btn-secondary fqr-edit-engines" href="@FrontendQualityLandingPresentation.FrontendReviewEnginesHref" data-testid="fqr-edit-engines">Edit engines</a>
         </div>
@@ -43,21 +48,24 @@
                                 <div class="fqr-capability-main">
                                     <span class="fqr-capability-glyph" aria-hidden="true">@(row.IsAvailable ? "✓" : "○")</span>
                                     <span class="fqr-capability-name">@row.DisplayName</span>
-                                    <span class="fqr-pill fqr-pill-@FrontendQualityCapabilityStates.Tone(row.State)" data-testid="fqr-capability-state">@FrontendQualityCapabilityStates.Label(row.State)</span>
-                                    @* Saved activation shown next to the live state, so "Unavailable" never reads as "switched off". *@
+                                    @* Saved configuration first, then what is true right now. Two chips, because they
+                                       are two facts: one is a decision someone made, the other is a condition. *@
                                     @if (row.ShowsEnabledAlongsideState)
                                     {
                                         <span class="fqr-capability-enabled" data-testid="fqr-capability-enabled">Enabled</span>
                                     }
+                                    <span class="fqr-pill fqr-pill-@FrontendQualityCapabilityStates.Tone(row.State)" data-testid="fqr-capability-state">@FrontendQualityCapabilityStates.Label(row.State)</span>
                                     @if (row.SelectableEngineId is { } selectable)
                                     {
-                                        <label class="fqr-capability-include">
+                                        @* Per-RUN inclusion, distinct from the saved Enabled toggle above it: clearing it
+                                           leaves the engine enabled and excludes it from the next run only. *@
+                                        <label class="fqr-capability-include" title="Include in this review run. The engine stays enabled in the Target Environment.">
                                             <input type="checkbox"
                                                    checked="@row.Selected"
-                                                   aria-label="@($"Include {row.DisplayName} in this review")"
+                                                   aria-label="@($"Include {row.DisplayName} in this review run")"
                                                    data-testid="fqr-capability-include"
                                                    @onchange="@((ChangeEventArgs e) => SelectionChanged.InvokeAsync((selectable, (bool)e.Value!)))" />
-                                            <span>Include</span>
+                                            <span>Include in this run</span>
                                         </label>
                                     }
                                 </div>

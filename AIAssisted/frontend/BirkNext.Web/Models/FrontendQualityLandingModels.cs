@@ -70,7 +70,9 @@ public static class FrontendQualityCapabilityStates
     public static string Label(FrontendQualityCapabilityState state) => state switch
     {
         FrontendQualityCapabilityState.Ready => "Ready",
-        FrontendQualityCapabilityState.Enabled => "Enabled",
+        // Runtime vocabulary only. Configuration ("Enabled" / "Disabled") is shown separately beside this label, so
+        // the same word can never stand for both "switched on in the Target Environment" and "nothing is stopping it".
+        FrontendQualityCapabilityState.Enabled => "Available",
         FrontendQualityCapabilityState.Checking => "Checking…",
         FrontendQualityCapabilityState.Disabled => "Disabled",
         FrontendQualityCapabilityState.NotSelected => "Not selected",
@@ -135,11 +137,13 @@ public sealed record FrontendQualityCapabilityRow(
 {
     public bool IsActive => FrontendQualityCapabilityStates.IsActive(State);
     public bool IsAvailable => FrontendQualityCapabilityStates.IsAvailable(State);
-    /// <summary>Show the saved "Enabled" fact alongside a state that does not already imply it.</summary>
-    public bool ShowsEnabledAlongsideState => Enabled && State is not (
-        FrontendQualityCapabilityState.Disabled or
-        FrontendQualityCapabilityState.Enabled or
-        FrontendQualityCapabilityState.DisabledInSystemSettings);
+    /// <summary>
+    /// Show the saved configuration ("Enabled") beside the runtime state. True whenever the Target Environment has the
+    /// engine switched on, so the two axes are always readable apart: "Enabled · Unavailable" is a capability problem,
+    /// "Enabled · Not selected" is a choice for this run, and "Disabled" alone is a configuration decision — the one
+    /// case where the state label already IS the configuration and a second chip would only repeat it.
+    /// </summary>
+    public bool ShowsEnabledAlongsideState => Enabled && State is not FrontendQualityCapabilityState.Disabled;
 }
 
 /// <summary>
@@ -178,9 +182,13 @@ public static class FrontendQualityDimensionStates
     };
 }
 
-/// <param name="ManualReviewRequired">
-/// The domain needs human assessment that no engine can supply. Rendered beside the scope status rather than
-/// replacing it, so "Included · Manual review required" stays one honest statement rather than two competing ones.
+/// <param name="ManualAssessmentRequired">
+/// The domain needs human assessment that no engine can supply. Rendered beside the scope status rather than replacing
+/// it, so "Included · Manual assessment required" stays one honest statement rather than two competing ones.
+///
+/// It is a property of the criteria, NOT of the automation: it is true when every automated source is available and it
+/// stays true however complete the automated coverage becomes. "Manual assessment" is the one term used for it across
+/// the review; "manual review" was a second name for the same thing and is gone.
 /// </param>
 /// <param name="ScopeNote">Short scope fact, such as the selected accessibility profile. Never an engine name.</param>
 public sealed record FrontendQualityDimensionCard(
@@ -189,7 +197,7 @@ public sealed record FrontendQualityDimensionCard(
     string Purpose,
     FrontendQualityDimensionState State,
     string? Limitation,
-    bool ManualReviewRequired = false,
+    bool ManualAssessmentRequired = false,
     string? ScopeNote = null);
 
 public sealed record FrontendQualityCheckGroup(string Title, IReadOnlyList<string> Checks, string? Note = null);
@@ -241,6 +249,34 @@ public sealed record FrontendQualityTargetSummaryModel(
 public sealed record FrontendQualityTechnicalField(string Label, string Value);
 
 public sealed record FrontendQualityEvidenceRow(string Label, string Value, bool Available);
+
+/// <summary>
+/// Browser evidence as this review consumes it. Live and historical are separate fields on purpose: nothing in the
+/// live half may be derived from the historical half, or the other way round.
+/// </summary>
+/// <param name="LiveDomAvailable">A DOM can be read from the open page right now. Not the same as captured DOM evidence.</param>
+/// <param name="ApprovedOrigins">Technical context. Administered in Browser Discovery; shown here only under technical details.</param>
+public sealed record FrontendQualityBrowserEvidenceModel(
+    string LiveStatus,
+    bool LiveConnected,
+    string CurrentPage,
+    /// <summary>Origin + route: the live page's full identity, for technical details only.</summary>
+    string CurrentPageIdentity,
+    bool HasLivePage,
+    bool LiveDomAvailable,
+    int PagesCaptured,
+    string DomEvidence,
+    string AccessibilityEvidence,
+    string PerformanceEvidence,
+    DateTimeOffset? LastCapturedAt,
+    IReadOnlyList<string> ApprovedOrigins)
+{
+    /// <summary>Exact local timestamp, labelled as history wherever it is shown. Never a live heartbeat.</summary>
+    public string LastCapturedLabel =>
+        LastCapturedAt is { } at ? at.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") : "None captured";
+
+    public bool HasHistory => PagesCaptured > 0;
+}
 
 /// <summary>Workflow-oriented authenticated-review panel; built only when the target requires authentication.</summary>
 public sealed record FrontendQualityAuthenticatedReviewModel(
@@ -306,39 +342,60 @@ public static class FrontendQualityCategoryEngines
 /// </summary>
 /// <param name="RequiredButDisabledCount">Required by policy but switched off — a configuration inconsistency, not a run failure.</param>
 /// <param name="NeedsPairingCount">Active, but waiting on a one-time setup or a session (Browser Companion pairing, review sign-in).</param>
+/// <param name="DisabledCount">
+/// Engines deliberately off for this run — switched off in the Target Environment, deselected for this review, or
+/// switched off in System Settings. Counted apart from <paramref name="AvailableNowCount"/> on purpose: a switched-off
+/// engine is working as configured and must never be counted, or read, as something that is unavailable.
+/// </param>
 public sealed record FrontendQualityCapabilitySummary(
     int TotalCount,
     int EnabledCount,
     int AvailableNowCount,
     int RequiredButDisabledCount,
-    int NeedsPairingCount)
+    int NeedsPairingCount,
+    int DisabledCount = 0)
 {
     /// <summary>The full line shown with the expanded list: what is configured, then what can actually run right now.</summary>
     public string Headline => $"{EnabledCount} of {TotalCount} engines enabled · {AvailableNowCount} available right now";
 
     /// <summary>
-    /// The short fact for the collapsed row — how much capability the next run actually has. A Required engine switched
-    /// off is surfaced here too, because it is a configuration inconsistency the user would otherwise have to expand to find.
+    /// The collapsed row: the three axes, each with its own count and none of them merged. A Required engine switched
+    /// off is appended, because it is a configuration inconsistency the user would otherwise have to expand to find.
     /// </summary>
-    public string Collapsed => RequiredButDisabledCount > 0
-        ? $"{AvailableNowCount} available now · {RequiredButDisabledCount} required engine{(RequiredButDisabledCount == 1 ? "" : "s")} disabled"
-        : $"{AvailableNowCount} available now";
+    public string Collapsed
+    {
+        get
+        {
+            var line = $"{EnabledCount} enabled · {AvailableNowCount} available";
+            if (DisabledCount > 0) line += $" · {DisabledCount} disabled";
+            if (RequiredButDisabledCount > 0)
+                line += $" · {RequiredButDisabledCount} required engine{(RequiredButDisabledCount == 1 ? "" : "s")} disabled";
+            return line;
+        }
+    }
 }
 
 /// <summary>
 /// Compact counts for the collapsed "Coverage" row. Descriptive counts only — the coverage model carries no measured
 /// proportion, so no percentage is invented from it.
 /// </summary>
-public sealed record FrontendQualityCoverageSummaryModel(int TotalCount, int AvailableCount, int NotAvailableCount, int NotRequiredCount = 0)
+/// <param name="PublicOnlyCount">
+/// Access paths that reach the public frontend but not the signed-in application. Counted in its own bucket because it
+/// is neither available nor unavailable, and folding it into either one would overstate or understate what can be reached.
+/// </param>
+public sealed record FrontendQualityCoverageSummaryModel(
+    int TotalCount, int AvailableCount, int NotAvailableCount, int NotRequiredCount = 0, int PublicOnlyCount = 0)
 {
     /// <summary>
-    /// An area this target does not need is not an area this review is missing. Counting every row into one denominator
-    /// read as "3 of 5 areas available" on a target with no sign-in — two of which were never applicable — which states
-    /// a shortfall that does not exist.
+    /// What the collapsed "Review access" row says. Arithmetic ("3 available · 2 not required") is correct and tells the
+    /// reader nothing: an access path this target does not need is not one the review is missing, so the whole answer to
+    /// "can this review reach what it needs?" is a sentence, not a sum. The counts stay in the expanded rows, where each
+    /// one is attached to the path it describes.
     /// </summary>
-    public string Headline => NotAvailableCount > 0
-        ? $"{AvailableCount} available · {NotAvailableCount} not available{(NotRequiredCount > 0 ? $" · {NotRequiredCount} not required" : "")}"
-        : NotRequiredCount > 0
-            ? $"{AvailableCount} available · {NotRequiredCount} not required"
-            : $"All {AvailableCount} applicable areas available";
+    public string Headline =>
+        NotAvailableCount > 0
+            ? $"{NotAvailableCount} access path{(NotAvailableCount == 1 ? "" : "s")} not available"
+            : PublicOnlyCount > 0
+                ? "Automated review limited to the public frontend"
+                : "All required access paths available";
 }

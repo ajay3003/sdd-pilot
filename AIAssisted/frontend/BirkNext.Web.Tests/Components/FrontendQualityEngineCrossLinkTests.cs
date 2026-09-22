@@ -66,9 +66,11 @@ public sealed class FrontendQualityEngineCrossLinkTests : BunitContext
         // The block is named once, by the disclosure that hosts it, so it carries no heading of its own.
         head.QuerySelector("h2").Should().BeNull();
 
-        // Configuration and capability are counted separately.
+        // 16, 17. The three axes, each with its own count: configuration, capability, and what is switched off.
         var summary = cut.Find("[data-testid=fqr-engine-summary]").TextContent;
-        summary.Should().Contain("8 engines enabled").And.Contain("available right now");
+        summary.Should().Be("5 enabled · 5 available · 3 disabled");
+        // The disabled engines are never folded into the unavailable ones.
+        summary.Should().NotContain("unavailable");
         cut.Find("[data-testid=fqr-engine-configuration-note]").TextContent
             .Should().Contain("configured per Target Environment");
     }

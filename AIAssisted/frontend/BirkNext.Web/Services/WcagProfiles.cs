@@ -20,10 +20,21 @@ public sealed record WcagAssessmentProfile(string ProfileId, string DisplayName,
     /// <summary>Criteria this profile puts in scope. The count is derived, never hard-coded in the UI.</summary>
     public int CriteriaInScope => CriterionIds.Count;
 
-    /// <summary>One line under the name in the selector: what the profile is for.</summary>
+    /// <summary>
+    /// One line under the name in the selector: how many criteria this profile puts in scope.
+    ///
+    /// Deliberately NOT "applicable success criteria". Applicability is a property of the target — which criteria a
+    /// particular page actually engages — and nothing has been assessed when this line is read. The number is the size
+    /// of the profile, which is all that is known before a review runs.
+    /// </summary>
     public string ScopeSummary => ProfileId == "legacy-unknown"
         ? "Original profile and version are unknown."
-        : $"{CriteriaInScope} applicable success criteria";
+        : $"{CriteriaInScope} criteria in this profile";
+
+    /// <summary>The same fact stated for the profile that is currently chosen, where "this profile" would be ambiguous.</summary>
+    public string SelectedScopeSummary => ProfileId == "legacy-unknown"
+        ? "Original profile and version are unknown."
+        : $"{CriteriaInScope} criteria in selected profile";
 }
 
 /// <summary>Membership only; all criterion metadata remains in WcagRegistry.</summary>

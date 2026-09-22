@@ -118,6 +118,8 @@
 ::deep .fqr-pill-attention { background: var(--clr-warning-bg-light); color: var(--clr-warning); border-color: var(--clr-warning-border); }
 ::deep .fqr-pill-pending { background: var(--clr-info-bg-light); color: var(--clr-info); border-color: var(--clr-info-border); }
 ::deep .fqr-pill-muted { background: var(--clr-surface); color: var(--clr-text-subtle); border-color: var(--clr-border); }
+/* Neutral information, not a warning: a requirement that was always going to be there is not something going wrong. */
+::deep .fqr-pill-info { background: var(--clr-info-bg-light); color: var(--clr-info); border-color: var(--clr-info-border); }
 
 /* ── Target summary ── */
 ::deep .fqr-target-list,
@@ -1120,4 +1122,75 @@
     /* Severity above the title rather than a narrow squeezed column. */
     ::deep .fqr-domain-finding { grid-template-columns: 1fr; }
     ::deep .fqr-domain-finding-desc { grid-column: 1; }
+}
+
+/* ── Target environment access: two groups, each able to fall to one column ───────────────────────────────────────
+   One eleven-row table needed a wide screen and read as an undifferentiated list of technical values. */
+::deep .fqr-target-access-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(19rem, 100%), 1fr));
+    gap: 0.75rem 1.5rem;
+}
+
+::deep .fqr-target-access-group h3 {
+    margin: 0 0 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+}
+
+::deep .fqr-target-access-group .fqr-target-access-list > div { grid-template-columns: 9.5rem 1fr; }
+::deep .fqr-access-url { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.82rem; }
+
+/* ── Browser evidence: live facts and captured facts, never one list ──────────────────────────────────────────── */
+::deep .fqr-browser-evidence .fqr-evidence-groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+    gap: 0.75rem 1.5rem;
+}
+
+::deep .fqr-browser-evidence .fqr-evidence-group { margin-top: 0; }
+
+::deep .fqr-browser-evidence .fqr-evidence-group h3 {
+    margin: 0 0 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+}
+
+::deep .fqr-evidence-list { margin: 0; }
+
+::deep .fqr-evidence-list > div {
+    display: grid;
+    grid-template-columns: 11rem 1fr;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    padding: 0.2rem 0;
+}
+
+::deep .fqr-evidence-list dt { color: var(--clr-text-subtle); }
+::deep .fqr-evidence-list dd { margin: 0; overflow-wrap: anywhere; }
+::deep .fqr-evidence-route { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.85rem; }
+::deep .fqr-evidence-actions { margin: 0.6rem 0 0; font-size: 0.9rem; }
+
+/* ── Technical details: one disclosure, several labelled blocks ───────────────────────────────────────────────── */
+::deep .fqr-technical-block { margin-top: 1rem; }
+::deep .fqr-technical-block:first-child { margin-top: 0; }
+
+::deep .fqr-technical-block h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--clr-text-heading);
+}
+
+::deep .fqr-technical .fqr-mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: 0.82rem; }
+
+@media (max-width: 760px) {
+    ::deep .fqr-target-access-group .fqr-target-access-list > div,
+    ::deep .fqr-evidence-list > div { grid-template-columns: 1fr; gap: 0.1rem; }
 }

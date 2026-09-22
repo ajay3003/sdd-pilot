@@ -51,9 +51,9 @@
             *@
             <section class="fqr-decide" aria-label="Review setup" data-testid="fqr-decide">
                 <div class="fqr-decide-cards">
-                    <FrontendQualityTargetSummary Summary="landing.Target"
-                                                  TechnicalFields="landing.TechnicalFields"
-                                                  ChangeHref="@TargetEnvironmentsHref" />
+                    @* No technical disclosure here: the exact source values live in the ONE Technical details
+                       disclosure at the end of Review details, so there is a single place to look for them. *@
+                    <FrontendQualityTargetSummary Summary="landing.Target" ChangeHref="@TargetEnvironmentsHref" />
                     @* Review scope, stated before the run: which criteria accessibility is judged against. *@
                     <FrontendQualityProfileCard Selected="SelectedWcagProfile" ProfileChanged="OnWcagProfileChanged" />
                     <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
@@ -97,8 +97,9 @@
             }
 
             @*
-                3. Review details. Everything technical, collapsed by default: each row states one fact, and expanding it
-                reveals the existing detail unchanged. Nothing here changes the scope stated above.
+                3. Review details. Everything technical, collapsed by default, ordered from what the reviewer asks about
+                to what only an engineer asks about: access → scope → engines → evidence → scope boundary → diagnostics.
+                Each row states one fact; expanding it reveals the detail. Nothing here changes the scope stated above.
             *@
             <section class="fqr-section fqr-details" aria-labelledby="fqr-details-heading" data-testid="fqr-details">
                 <div class="fqr-section-head">
@@ -106,10 +107,11 @@
                     <p class="fqr-section-note">How this review is set up and what it can reach right now.</p>
                 </div>
 
+                @* 1. Review access — which surfaces of the target this review can reach. *@
                 @if (_access is { } landingAccess)
                 {
                     var coverageRows = FrontendQualityLandingPresentation.Coverage(landingAccess, _caps);
-                    <ReviewDisclosure Text="Coverage" CollapseText="Hide coverage"
+                    <ReviewDisclosure Text="Review access" CollapseText="Hide review access"
                                       Hint="@FrontendQualityLandingPresentation.CoverageSummary(coverageRows).Headline"
                                       TestId="fqr-coverage-disclosure" Class="fqr-detail-disclosure">
                         <FrontendQualityCoverageSummary Rows="coverageRows">
@@ -120,25 +122,67 @@
                     </ReviewDisclosure>
                 }
 
-                <ReviewDisclosure Text="Checks" CollapseText="Hide checks"
-                                  Hint="@FrontendQualityLandingPresentation.CheckSummary"
+                @* 2. Review scope — the areas the automated and passive review covers, named rather than counted. *@
+                <ReviewDisclosure Text="Review scope" CollapseText="Hide review scope"
+                                  Hint="@FrontendQualityLandingPresentation.ReviewScopeSummary"
                                   TestId="fqr-checks-disclosure" Class="fqr-detail-disclosure">
                     <FrontendQualityChecksSection Groups="FrontendQualityLandingPresentation.CheckGroups" />
                 </ReviewDisclosure>
 
-                @if (_activeEngines is { } landingEngines)
+                @* 3. Engines — ONE engine list. The "Active review engines" strip that used to sit inside it listed the
+                       same engines a second time, in a second vocabulary. *@
+                @if (_activeEngines is not null)
                 {
-                    <ReviewDisclosure Text="Review capabilities" CollapseText="Hide review capabilities"
+                    <ReviewDisclosure Text="Engines" CollapseText="Hide engines"
                                       Hint="@FrontendQualityLandingPresentation.CapabilitySummary(landing.Capabilities).Collapsed"
                                       TestId="fqr-capabilities-disclosure" Class="fqr-detail-disclosure">
-                    <FrontendQualityCapabilityList Rows="landing.Capabilities" SelectionChanged="OnCapabilitySelectionChanged">
-                        <EngineDetails>
-                            <FrontendQualityActiveEnginesPanel Snapshot="landingEngines" />
+                        <FrontendQualityCapabilityList Rows="landing.Capabilities" SelectionChanged="OnCapabilitySelectionChanged" />
+                    </ReviewDisclosure>
+                }
+
+                @* 4. Browser evidence — consumed, never administered. Browser Discovery owns the session and the setup. *@
+                @if (LandingBrowserEvidence is { } evidence)
+                {
+                    <ReviewDisclosure Text="Browser evidence" CollapseText="Hide browser evidence"
+                                      Hint="@FrontendQualityBrowserEvidencePresentation.Collapsed(evidence)"
+                                      TestId="fqr-companion" Class="fqr-detail-disclosure">
+                        <FrontendQualityBrowserEvidence Model="evidence" />
+                    </ReviewDisclosure>
+                }
+
+                @* 5. Outside this review — scope boundaries, not gaps. *@
+                <ReviewDisclosure Text="Outside this review" CollapseText="Hide what is outside this review"
+                                  Hint="@FrontendQualityLandingPresentation.OutsideReviewSummary"
+                                  TestId="fqr-not-assessed-disclosure" Class="fqr-detail-disclosure">
+                    <FrontendQualityNotAssessedList Items="FrontendQualityLandingPresentation.NotAssessed" />
+                </ReviewDisclosure>
+
+                @* 6. Technical details — the one place engine ids, layer state, runtime reasons, the full target URL,
+                       approved origins and exact timestamps live. No decision above this line needs them. *@
+                <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details"
+                                  Hint="Engine internals, target and evidence diagnostics"
+                                  TestId="fqr-technical-disclosure" Class="fqr-detail-disclosure">
+                    <div class="fqr-technical" data-testid="fqr-technical">
+                        @if (landing.TechnicalFields.Count > 0)
+                        {
+                            <section class="fqr-technical-block" aria-labelledby="fqr-technical-target-heading">
+                                <h3 id="fqr-technical-target-heading">Target environment</h3>
+                                <dl class="fqr-technical-list-grid" data-testid="fqr-technical-target">
+                                    @foreach (var field in landing.TechnicalFields)
+                                    {
+                                        <div><dt>@field.Label</dt><dd>@field.Value</dd></div>
+                                    }
+                                </dl>
+                            </section>
+                        }
+
+                        <section class="fqr-technical-block" aria-labelledby="fqr-technical-engines-heading">
+                            <h3 id="fqr-technical-engines-heading">Engine capability</h3>
                             @if (_readinessPending)
                             {
                                 <p class="fqr-muted fqr-engine-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
                             }
-                            @if (_engineStatus != null)
+                            @if (_engineStatus is not null)
                             {
                                 var activeBackendIds = ActiveBackendEngineIds;
                                 <div class="fqr-engine-grid" data-testid="fqr-engine-grid">
@@ -164,24 +208,28 @@
                                     }
                                 </div>
                             }
-                        </EngineDetails>
-                    </FrontendQualityCapabilityList>
-                    </ReviewDisclosure>
-                }
+                            else if (!_readinessPending)
+                            {
+                                <p class="fqr-muted" data-testid="fqr-engine-grid-empty">No backend engine capability status has been read for this target.</p>
+                            }
+                        </section>
 
-                <ReviewDisclosure Text="Not assessed" CollapseText="Hide not assessed"
-                                  Hint="@FrontendQualityLandingPresentation.NotAssessedSummary"
-                                  TestId="fqr-not-assessed-disclosure" Class="fqr-detail-disclosure">
-                    <FrontendQualityNotAssessedList Items="FrontendQualityLandingPresentation.NotAssessed" />
+                        @if (LandingBrowserEvidence is { } technicalEvidence)
+                        {
+                            <section class="fqr-technical-block" aria-labelledby="fqr-technical-evidence-heading">
+                                <h3 id="fqr-technical-evidence-heading">Browser evidence</h3>
+                                <dl class="fqr-technical-list-grid" data-testid="fqr-technical-evidence">
+                                    @* Administered in Browser Discovery; shown here because it explains which pages can
+                                       ever produce evidence, not because this page can change it. *@
+                                    <div><dt>Approved origins</dt><dd class="fqr-mono">@(technicalEvidence.ApprovedOrigins.Count == 0 ? "None" : string.Join(", ", technicalEvidence.ApprovedOrigins))</dd></div>
+                                    @* The live page's full identity (origin + route); the evidence block reads out the route. *@
+                                    <div><dt>Current page identity</dt><dd class="fqr-mono">@technicalEvidence.CurrentPageIdentity</dd></div>
+                                    <div><dt>Last captured evidence</dt><dd>@technicalEvidence.LastCapturedLabel</dd></div>
+                                </dl>
+                            </section>
+                        }
+                    </div>
                 </ReviewDisclosure>
-
-                @* Browser evidence is supporting detail: the readiness and domain lines already say what its absence costs. *@
-                @if (_context is not null && _context.ActiveTargetError is null && (_context.FeatureToggles.EnableBrowserQualityEngine || _context.FeatureToggles.EnablePerformanceQualityEngine) && _companionRuntime is not null)
-                {
-                    <ReviewDisclosure Text="Browser evidence" CollapseText="Hide browser evidence" Hint="@CompanionHint" TestId="fqr-companion" Class="fqr-detail-disclosure">
-                        <BrowserCompanionPanel Profile="_context.ActiveProfile" Runtime="_companionRuntime" ProxyRunning="@ProxyRunningForLanding" />
-                    </ReviewDisclosure>
-                }
             </section>
 
             @if (_running)
@@ -604,15 +652,23 @@
     private BrowserCompanionState? CompanionState =>
         _companionRuntime is null || _context is null || _context.ActiveTargetError is not null ? null : _companionRuntime.For(_context.ActiveProfile.Id).State;
 
-    private string? CompanionHint => CompanionState switch
+    /// <summary>
+    /// Browser evidence this review will read, or null when no Browser Companion engine is enabled for this target and
+    /// there is therefore nothing to consume. Built from the Browser Companion session and the stored discovery
+    /// snapshot — the same two sources Browser Discovery reads, through the same derivations, so the two pages cannot
+    /// disagree about what was captured or about whether a browser is open.
+    /// </summary>
+    private FrontendQualityBrowserEvidenceModel? LandingBrowserEvidence
     {
-        BrowserCompanionState.Connected => "Connected",
-        BrowserCompanionState.Disconnected => "Paired · not reporting",
-        BrowserCompanionState.PairingPending => "Pairing…",
-        BrowserCompanionState.Expired => "Session expired",
-        BrowserCompanionState.NotPaired => "Not connected",
-        _ => null,
-    };
+        get
+        {
+            if (_context is null || _context.ActiveTargetError is not null) return null;
+            if (!_context.FeatureToggles.EnableBrowserQualityEngine && !_context.FeatureToggles.EnablePerformanceQualityEngine) return null;
+            if (_companionRuntime is null) return null;
+            var snapshot = (ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(_context.ActiveProfile.Id);
+            return FrontendQualityBrowserEvidencePresentation.Build(_companionRuntime.For(_context.ActiveProfile.Id), snapshot);
+        }
+    }
 
     private LandingView BuildLanding()
     {

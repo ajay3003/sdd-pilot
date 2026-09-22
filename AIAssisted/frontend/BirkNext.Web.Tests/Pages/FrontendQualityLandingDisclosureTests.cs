@@ -181,7 +181,13 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
 
         // One state, one explanation, one action.
         page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be("Review can run with limitations");
-        page.Find("[data-testid=fqr-readiness-message]").TextContent.Should().Be("1 enabled optional capability is currently unavailable.");
+        // 2. The unavailable capability is NAMED in the message itself. "1 enabled optional capability is currently
+        // unavailable" is true and useless: the reader still has to expand and scroll to learn which one.
+        var message = page.Find("[data-testid=fqr-readiness-message]").TextContent;
+        message.Should().StartWith("Lighthouse is unavailable.");
+        message.Should().NotContain("1 enabled optional capability");
+        // 5, 34, 35. Optional depth, never a blocked review.
+        message.Should().NotContainAny("cannot run", "cannot start", "Failed");
         Collapsed(page, "fqr-readiness-limitations").Should().BeTrue();
         page.Find("[data-testid=fqr-run]").HasAttribute("disabled").Should().BeFalse();
 
@@ -219,9 +225,12 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
 
         Collapsed(page, "fqr-coverage-disclosure").Should().BeTrue();
         var expectedRows = page.Find("[data-testid=fqr-coverage]").QuerySelectorAll("[data-testid=fqr-coverage-row]").Length;
-        // An area this target does not need is not an area the review is missing, so the hint states both facts
-        // rather than folding them into one denominator.
-        Toggle(page, "fqr-coverage-disclosure").TextContent.Should().Contain("Coverage").And.Contain("available");
+        // 9, 39. The collapsed row answers "can this review reach what it needs?" in words. Counting ("3 available ·
+        // 2 not required") was correct arithmetic the reader still had to finish; an access path this target does not
+        // need is not one the review is missing.
+        Toggle(page, "fqr-coverage-disclosure").TextContent.Should().Contain("Review access")
+            .And.Contain("All required access paths available");
+        Toggle(page, "fqr-coverage-disclosure").TextContent.Should().NotContain("Coverage");
 
         Toggle(page, "fqr-coverage-disclosure").Click();
 
@@ -245,24 +254,34 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var hint = page.Find("[data-testid=fqr-coverage-disclosure-toggle] .disclosure-hint").TextContent;
 
         var notRequired = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotRequired));
-        hint.Should().Contain($"{available} available");
-        if (notRequired > 0) hint.Should().Contain($"{notRequired} not required");
+        var notAvailable = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotAvailable));
+
+        // The summary is a statement about the rows, derived from them and agreeing with them.
+        available.Should().BePositive();
+        notAvailable.Should().Be(0, "this public target can reach everything it needs");
+        hint.Should().Be("All required access paths available");
+        // 10, 19. Not required stays its own state in the expanded rows; it is never promoted to Available.
+        notRequired.Should().BePositive();
+        rows.Should().NotContain(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotRequired)
+                                   && r.TextContent.Contains("✓ Available"));
         hint.Should().NotContain("%");
         hint.Should().NotContain($"of {rows.Count}", "a not-required area is not a missing one");
     }
 
-    // ── §38. Checks ─────────────────────────────────────────────────────────────────────────────────────────────────
+    // ── §38. Review scope ───────────────────────────────────────────────────────────────────────────────────────────
 
-    // 14, 15, 16, 17.
+    // 14, 15, 16, 17, 23, 24.
     [Fact]
-    public void ChecksAreCountedWhenCollapsed_AndTheCountComesFromTheModel()
+    public void ReviewScopeNamesItsAreasWhenCollapsed_AndNeverCountsChecks()
     {
         var page = Page();
 
         Collapsed(page, "fqr-checks-disclosure").Should().BeTrue();
         var hint = page.Find("[data-testid=fqr-checks-disclosure-toggle] .disclosure-hint").TextContent;
-        hint.Should().Be($"{FrontendQualityLandingPresentation.CheckCount} automated or passive checks included");
-        hint.Should().Be(FrontendQualityLandingPresentation.CheckSummary);
+        hint.Should().Be(FrontendQualityLandingPresentation.ReviewScopeSummary);
+        hint.Should().Be("Security · Performance · Accessibility · Blazor / WASM · Standards / QA readiness");
+        // 23. The check list is not a set of comparable units, so no number derived from it may be shown.
+        hint.Should().NotMatchRegex(@"\d+ (automated|passive|checks)").And.NotContain("checks included");
         // §29: nothing has run, so nothing may read as a result.
         hint.Should().NotContainAny("passed", "failed", "tests");
 
@@ -270,6 +289,30 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
 
         Body(page, "fqr-checks-disclosure").QuerySelectorAll("[data-testid=fqr-check-group]").Select(g => g.GetAttribute("data-group"))
             .Should().Equal("Security", "Performance", "Accessibility", "Blazor / WASM", "Standards / QA readiness");
+    }
+
+    // 25, 26. The accessibility disclaimer says both halves and claims no conformance — and is said once.
+    [Fact]
+    public void TheAccessibilityDisclaimerIsExactAndStatedOnce()
+    {
+        var page = Page();
+        Toggle(page, "fqr-checks-disclosure").Click();
+        var body = Body(page, "fqr-checks-disclosure");
+
+        var disclaimer = FrontendQualityLandingPresentation.AccessibilityDisclaimer;
+        disclaimer.Should().Contain("do not establish complete WCAG conformance")
+                  .And.Contain("do not replace the required manual assessment");
+        body.TextContent.Should().Contain(disclaimer);
+        // The old generic footer applied an accessibility statement to bundle sizes and service workers too.
+        body.TextContent.Should().NotContain("Automated results never replace manual testing.");
+        Occurrences(body.TextContent, disclaimer).Should().Be(1);
+    }
+
+    private static int Occurrences(string haystack, string needle)
+    {
+        var count = 0;
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0; i = haystack.IndexOf(needle, i + 1, StringComparison.Ordinal)) count++;
+        return count;
     }
 
     // ── §39. Capabilities ───────────────────────────────────────────────────────────────────────────────────────────
@@ -283,12 +326,12 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-run]").HasAttribute("disabled").Should().BeFalse());
 
         Collapsed(page, "fqr-capabilities-disclosure").Should().BeTrue();
-        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").TextContent.Should().Contain("Review capabilities").And.Contain("available now");
+        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").TextContent.Should().Contain("Engines").And.Contain("available");
 
         Toggle(page, "fqr-capabilities-disclosure").Click();
 
         var body = Body(page, "fqr-capabilities-disclosure");
-        // 22. Enabled (saved configuration) and Available (live capability) stay separate facts.
+        // 22, 29, 30. Enabled (saved configuration) and Unavailable (runtime) stay separate facts on the same row.
         var lighthouse = body.QuerySelector($"[data-testid=fqr-capability][data-engine-id='{FrontendQualityEngineId.Lighthouse}']")!;
         lighthouse.QuerySelector("[data-testid=fqr-capability-state]")!.TextContent.Should().Be("Unavailable");
         lighthouse.QuerySelector("[data-testid=fqr-capability-enabled]")!.TextContent.Should().Be("Enabled");
@@ -317,8 +360,10 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         summary.AvailableNowCount.Should().Be(1, "enabled is not available");
         summary.RequiredButDisabledCount.Should().Be(1);
         summary.NeedsPairingCount.Should().Be(1);
-        // 23. A Required engine switched off is visible on the collapsed row, not only after expanding.
-        summary.Collapsed.Should().Be("1 available now · 1 required engine disabled");
+        summary.DisabledCount.Should().Be(1, "Passive Performance is switched off");
+        // 16, 27. Three axes on the collapsed row — configuration, capability, and what is switched off — plus the
+        // Required engine somebody switched off, which is a configuration inconsistency worth seeing without expanding.
+        summary.Collapsed.Should().Be("3 enabled · 1 available · 1 disabled · 1 required engine disabled");
     }
 
     // 23. The RequiredButDisabled warning itself survives inside the expanded detail.
@@ -351,19 +396,23 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         page.FindAll("[data-testid=fqr-capability-group]").Should().OnlyContain(g => g.Closest(".disclosure-body") != null);
     }
 
-    // ── §40. Not assessed ───────────────────────────────────────────────────────────────────────────────────────────
+    // ── §40. Outside this review ────────────────────────────────────────────────────────────────────────────────────
 
-    // 24, 25, 26, 27.
+    // 21, 24, 25, 26, 27, 34, 38.
     [Fact]
-    public void NotAssessedIsACompactNeutralSummary_AndKeepsEveryExcludedArea()
+    public void OutsideThisReviewNamesItsAreas_AndReadsAsAScopeBoundary()
     {
         var page = Page();
 
         Collapsed(page, "fqr-not-assessed-disclosure").Should().BeTrue();
+        // 21, 34. "Not assessed · 3 areas not assessed by this review" sounded like coverage this review owed and did
+        // not deliver. These are boundaries, so the section is named for the boundary and the areas are listed.
+        page.Find("[data-testid=fqr-not-assessed-disclosure-toggle] .disclosure-text").TextContent.Trim()
+            .Should().Be("Outside this review");
         var hint = page.Find("[data-testid=fqr-not-assessed-disclosure-toggle] .disclosure-hint").TextContent;
-        hint.Should().Be($"{FrontendQualityLandingPresentation.NotAssessed.Count} areas not assessed by this review");
-        // 27. Nothing here implies a failure or a missing implementation.
-        hint.Should().NotContainAny("missing", "failed", "not implemented", "incomplete");
+        hint.Should().Be("Core Web Vitals · Testability · Observability");
+        // 27, 38. Nothing here implies a failure or a missing implementation.
+        hint.Should().NotContainAny("missing", "failed", "not implemented", "incomplete", "not assessed");
 
         Toggle(page, "fqr-not-assessed-disclosure").Click();
 
@@ -503,7 +552,9 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
             .QuerySelectorAll(":scope > .disclosure > .disclosure-toggle .disclosure-text")
             .Select(t => t.TextContent.Trim()).ToList();
 
-        titles.Should().Equal("Coverage", "Checks", "Review capabilities", "Not assessed");
+        // 46. High-level to technical: what the review can reach, what it covers, what runs it, what it reads,
+        // where its scope ends, and only then the diagnostics.
+        titles.Should().Equal("Review access", "Review scope", "Engines", "Outside this review", "Technical details");
         titles.Should().OnlyHaveUniqueItems();
     }
 
@@ -584,7 +635,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         page.Find("[data-testid=fqr-profile-name]").TextContent.Trim().Should().Be(WcagProfiles.Norwegian.Label);
         var accessibility = page.Find("[data-testid=fqr-dimension][data-category='Accessibility']");
         accessibility.QuerySelector("[data-testid=fqr-dimension-scope]")!.TextContent.Should().Be(WcagProfiles.Norwegian.Label);
-        accessibility.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Should().Be("Manual review required");
+        accessibility.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Should().Be("Manual assessment required");
         accessibility.QuerySelector("[data-testid=fqr-dimension-state]")!.TextContent.Should().NotBe("Not included");
     }
 
@@ -600,8 +651,11 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         headings.Should().OnlyHaveUniqueItems();
         headings.Should().NotContain("Capabilities").And.NotContain("Engine readiness");
 
-        // "Review capabilities" names the concept exactly once, on the disclosure that opens it.
+        // "Engines" names the concept exactly once, on the disclosure that opens it.
         page.Find("[data-testid=fqr-details]").QuerySelectorAll(".disclosure-text")
-            .Count(t => t.TextContent.Trim() == "Review capabilities").Should().Be(1);
+            .Count(t => t.TextContent.Trim() == "Engines").Should().Be(1);
+        // 15, 45. And the engine set is listed exactly once on the whole pre-run page.
+        page.FindAll("[data-testid=fqr-capabilities]").Should().ContainSingle();
+        page.FindAll("[data-testid=fqr-active-engines]").Should().BeEmpty();
     }
 }

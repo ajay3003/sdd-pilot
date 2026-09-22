@@ -8,25 +8,41 @@
    deliberately separate — the manual verification status versus automated engine access. Non-secret values only. *@
 <section class="fqr-target-access fqr-target-access-@ModeClass" aria-label="Target environment access" data-testid="fqr-target-access">
     <h2>Target environment access</h2>
-    <dl class="fqr-target-access-list">
-        <div><dt>Target</dt><dd data-testid="fqr-access-target">@Access.EnvironmentName <span class="fqr-muted">(@Access.EnvironmentType)</span></dd></div>
-        <div><dt>URL</dt><dd data-testid="fqr-access-url">@Access.TargetUrl</dd></div>
-        <div><dt>Authentication</dt><dd data-testid="fqr-access-auth">@(Access.RequiresAuthentication ? Access.AuthenticationType.ToString() : "Not required")</dd></div>
-        <div><dt>Testing method</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)</dd></div>
-        <div><dt>Access mode</dt><dd data-testid="fqr-access-mode">@FrontendQualityTargetAccess.ModeLabel(Access.Mode)</dd></div>
-        <div><dt>Authenticated context</dt><dd data-testid="fqr-access-context">@FrontendQualityTargetAccess.ApiContextLabel(Access)</dd></div>
-        <div><dt>Browser DOM</dt><dd data-testid="fqr-access-dom">@FrontendQualityTargetAccess.BrowserDomLabel(Access)</dd></div>
-        @if (Access.ManagedEdgeState is { } edge && Access.Method == AuthenticatedTestingMethod.ManagedEdgeCdp)
-        {
-            <div><dt>Managed Edge (CDP)</dt><dd data-testid="fqr-access-cdp">@AuthenticatedTestingMethodLabels.Connection(edge)</dd></div>
-        }
-        @if (Access.ProxyState is { } proxy && Access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
-        {
-            <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@AuthenticatedTestingMethodLabels.ProxyState(proxy)</dd></div>
-        }
-        <div><dt>Manual verification</dt><dd data-testid="fqr-access-manual">@FrontendQualityTargetAccess.ManualVerificationLabel(Access.ManualVerificationStatus)</dd></div>
-        <div><dt>Automated engine access</dt><dd data-testid="fqr-access-automated">@FrontendQualityTargetAccess.AutomatedAccessLabel(Access)</dd></div>
-    </dl>
+    @*
+        Two groups rather than one eleven-row table. They answer different questions and were read as one list of
+        technical values: WHAT is being reviewed (a fact about the environment) and HOW this review can reach it
+        (a fact about right now). Splitting them also lets the card wrap to one column instead of needing a wide screen.
+    *@
+    <div class="fqr-target-access-groups">
+        <div class="fqr-target-access-group" data-testid="fqr-access-group-target">
+            <h3>Target access</h3>
+            <dl class="fqr-target-access-list">
+                <div><dt>Target</dt><dd data-testid="fqr-access-target">@Access.EnvironmentName <span class="fqr-muted">(@Access.EnvironmentType)</span></dd></div>
+                <div><dt>URL</dt><dd class="fqr-access-url" data-testid="fqr-access-url">@Access.TargetUrl</dd></div>
+                <div><dt>Authentication</dt><dd data-testid="fqr-access-auth">@(Access.RequiresAuthentication ? Access.AuthenticationType.ToString() : "Not required")</dd></div>
+                <div><dt>Access mode</dt><dd data-testid="fqr-access-mode">@FrontendQualityTargetAccess.ModeLabel(Access.Mode)</dd></div>
+            </dl>
+        </div>
+        <div class="fqr-target-access-group" data-testid="fqr-access-group-testing">
+            <h3>Testing access</h3>
+            <dl class="fqr-target-access-list">
+                <div><dt>Browser DOM</dt><dd data-testid="fqr-access-dom">@FrontendQualityTargetAccess.BrowserDomLabel(Access)</dd></div>
+                <div><dt>Authenticated context</dt><dd data-testid="fqr-access-context">@FrontendQualityTargetAccess.ApiContextLabel(Access)</dd></div>
+                <div><dt>Testing method</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)</dd></div>
+                @if (Access.ManagedEdgeState is { } edge && Access.Method == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                {
+                    <div><dt>Managed Edge (CDP)</dt><dd data-testid="fqr-access-cdp">@AuthenticatedTestingMethodLabels.Connection(edge)</dd></div>
+                }
+                @if (Access.ProxyState is { } proxy && Access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
+                {
+                    <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@AuthenticatedTestingMethodLabels.ProxyState(proxy)</dd></div>
+                }
+                @* Kept next to, never merged with, automated access: a person can sign in where an engine cannot. *@
+                <div><dt>Manual verification</dt><dd data-testid="fqr-access-manual">@FrontendQualityTargetAccess.ManualVerificationLabel(Access.ManualVerificationStatus)</dd></div>
+                <div><dt>Automated engines</dt><dd data-testid="fqr-access-automated">@FrontendQualityTargetAccess.AutomatedAccessLabel(Access)</dd></div>
+            </dl>
+        </div>
+    </div>
     @if (Access.RequiresAuthentication)
     {
         <p class="fqr-target-access-reason" role="status" data-testid="fqr-access-reason">@Access.Reason</p>

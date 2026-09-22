@@ -186,14 +186,14 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
         var card = page.Find("[data-testid=fqr-dimension][data-category='Accessibility']");
         card.QuerySelector("[data-testid=fqr-dimension-state]")!.TextContent.Should().Be("Included");
-        card.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Should().Be("Manual review required");
+        card.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Should().Be("Manual assessment required");
         card.QuerySelector("[data-testid=fqr-dimension-scope]")!.TextContent.Should().Be("Norwegian public-sector requirements — WCAG 2.1");
         card.QuerySelector("[data-testid=fqr-dimension-limitation]")!.TextContent.Should().Contain("require manual assessment");
     }
 
-    // 4. Checks are collapsed by default.
+    // 4. Review scope is collapsed by default and names its areas rather than counting checks.
     [Fact]
-    public void Checks_CollapsedByDefault_WithCount()
+    public void ReviewScope_CollapsedByDefault_NamesAreasInsteadOfCountingChecks()
     {
         Register(HttpOnlyContext());
 
@@ -201,8 +201,9 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         var toggle = page.Find("[data-testid=fqr-checks-disclosure-toggle]");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
-        toggle.TextContent.Should().Contain("Checks")
-            .And.Contain($"{FrontendQualityLandingPresentation.CheckCount} automated or passive checks included");
+        toggle.TextContent.Should().Contain("Review scope")
+            .And.Contain(FrontendQualityLandingPresentation.ReviewScopeSummary)
+            .And.NotContain("checks included");
         page.Find("[data-testid=fqr-checks-disclosure-body]").HasAttribute("hidden").Should().BeTrue();
     }
 
@@ -221,13 +222,17 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         groups.Select(g => g.GetAttribute("data-group")).Should().Equal("Security", "Performance", "Accessibility", "Blazor / WASM", "Standards / QA readiness");
         page.Find("[data-testid=fqr-check-group][data-group='Security']").TextContent.Should().Contain("Security headers").And.Contain("CORS").And.Contain("Content Security Policy");
         page.Find("[data-testid=fqr-check-group][data-group='Performance']").TextContent.Should().Contain("Bundle size").And.Contain("Compression").And.Contain("Cache headers").And.Contain("Lazy loading");
-        page.Find("[data-testid=fqr-check-group][data-group='Accessibility']").TextContent.Should().Contain("axe-core").And.Contain("Manual accessibility testing remains separate");
+        // 14, 25. One accessibility disclaimer, stating both halves: no conformance claim, and manual assessment is
+        // required whatever the automation finds.
+        page.Find("[data-testid=fqr-check-group][data-group='Accessibility']").TextContent.Should().Contain("axe-core")
+            .And.Contain(FrontendQualityLandingPresentation.AccessibilityDisclaimer);
         page.Find("[data-testid=fqr-check-group][data-group='Blazor / WASM']").TextContent.Should().Contain("boot resources").And.Contain("Service worker");
         page.Markup.Should().NotContain("OWASP");
         // Not assessed items are informational, not failures.
         var notAssessed = page.FindAll("[data-testid=fqr-not-assessed-item]");
         notAssessed.Select(i => i.QuerySelector("strong")!.TextContent).Should().Equal("Core Web Vitals", "Testability", "Observability");
-        notAssessed[0].TextContent.Should().Contain("Requires production field data");
+        // 22, 35. A separate measurement path, not coverage this review owes.
+        notAssessed[0].TextContent.Should().Contain("Measured separately").And.Contain("field data");
         page.Find("[data-testid=fqr-not-assessed]").QuerySelectorAll(".fqr-pill-attention, .fqr-pill-warning").Should().BeEmpty();
     }
 
@@ -305,10 +310,21 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         toggle.Click();
         page.Find("[data-testid=fqr-coverage-technical-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         page.Find("[data-testid=fqr-coverage-technical-body]").HasAttribute("hidden").Should().BeFalse();
-        // Target technical details are likewise collapsed.
-        page.Find("[data-testid=fqr-target-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        page.Find("[data-testid=fqr-target-technical-body]").HasAttribute("hidden").Should().BeTrue();
-        page.Find("[data-testid=fqr-target-technical-body]").TextContent.Should().Contain("Environment type").And.Contain("Development");
+
+        // 11, 22. Target access and testing access are two groups, not one eleven-row table.
+        var access = page.Find("[data-testid=fqr-target-access]");
+        access.QuerySelector("[data-testid=fqr-access-group-target]")!.TextContent.Should().Contain("Target access").And.Contain("Access mode");
+        access.QuerySelector("[data-testid=fqr-access-group-testing]")!.TextContent.Should().Contain("Testing access").And.Contain("Browser DOM");
+
+        // 44, 52, 56. The exact source values are in the ONE Technical details disclosure, collapsed, and the target
+        // card no longer carries a second technical surface of its own.
+        page.FindAll("[data-testid=fqr-target-technical-toggle]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-technical-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        var technical = page.Find("[data-testid=fqr-technical-disclosure-body]");
+        technical.HasAttribute("hidden").Should().BeTrue();
+        technical.QuerySelector("[data-testid=fqr-technical-target]")!.TextContent.Should().Contain("Environment type").And.Contain("Development");
+        // 57. Diagnostics only — never a token, secret or credential.
+        technical.TextContent.Should().NotContainAny("token", "secret", "password", "Bearer ");
     }
 
     // 8. Authenticated workflow appears only when relevant.
@@ -378,7 +394,13 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
         page.Find("[data-testid=fqr-readiness]").GetAttribute("role").Should().Be("status");
         page.Find("[data-testid=fqr-readiness-title]").TextContent.Should().Be("Review can run with limitations");
-        page.Find("[data-testid=fqr-readiness-message]").TextContent.Should().Be("1 enabled optional capability is currently unavailable.");
+        // 2. The unavailable capability is NAMED in the message itself. "1 enabled optional capability is currently
+        // unavailable" is true and useless: the reader still has to expand and scroll to learn which one.
+        var message = page.Find("[data-testid=fqr-readiness-message]").TextContent;
+        message.Should().StartWith("Lighthouse is unavailable.");
+        message.Should().NotContain("1 enabled optional capability");
+        // 5, 34, 35. Optional depth, never a blocked review.
+        message.Should().NotContainAny("cannot run", "cannot start", "Failed");
         page.Find("[data-testid=fqr-readiness-details]").TextContent.Should().Contain("Lighthouse: Unavailable");
         RunButton(page).HasAttribute("disabled").Should().BeFalse("an unavailable optional engine never blocks the review");
 
@@ -437,8 +459,12 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         var page = Render<FrontendQualityReview>();
 
         page.WaitForAssertion(() => Capability(page, FrontendQualityEngineId.Lighthouse).QuerySelector("[data-testid=fqr-capability-state]")!.TextContent.Should().Be("Unavailable"));
-        State(page, FrontendQualityEngineId.StaticSecurity).Should().Be("Enabled");
-        State(page, FrontendQualityEngineId.PassivePerformance).Should().Be("Enabled");
+        // 17. RUNTIME vocabulary: an HTTP engine whose readiness is never probed is "Available", not "Enabled".
+        // "Enabled" is the CONFIGURATION word and is carried by its own chip, so the two can be read apart.
+        State(page, FrontendQualityEngineId.StaticSecurity).Should().Be("Available");
+        State(page, FrontendQualityEngineId.PassivePerformance).Should().Be("Available");
+        Capability(page, FrontendQualityEngineId.StaticSecurity).QuerySelector("[data-testid=fqr-capability-enabled]")!
+            .TextContent.Should().Be("Enabled", "the saved configuration is stated separately from the runtime state");
         State(page, FrontendQualityEngineId.BrowserRuntime).Should().Be("Disabled");
         State(page, FrontendQualityEngineId.Accessibility).Should().Be("Not selected");
         State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Unavailable");
@@ -460,7 +486,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         page.WaitForAssertion(() => State(page, FrontendQualityEngineId.Accessibility).Should().Be("Requires browser session"));
         Capability(page, FrontendQualityEngineId.Accessibility).QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Contain("Sign in for review");
-        State(page, FrontendQualityEngineId.StaticSecurity).Should().Be("Enabled");
+        State(page, FrontendQualityEngineId.StaticSecurity).Should().Be("Available");
         Capability(page, FrontendQualityEngineId.StaticSecurity).QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Contain("public frontend");
         State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Not supported for this target");
     }
@@ -506,7 +532,8 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
         var include = Capability(page, FrontendQualityEngineId.Lighthouse).QuerySelector("[data-testid=fqr-capability-include]")!;
-        include.GetAttribute("aria-label").Should().Be("Include Lighthouse in this review");
+        // 18. Per-RUN inclusion, named so it cannot be confused with the saved Enabled toggle beside it.
+        include.GetAttribute("aria-label").Should().Be("Include Lighthouse in this review run");
         include.Change(false);
         context.ReviewEngineSelection.LighthouseSelected.Should().BeFalse();
         State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Not selected");
@@ -574,21 +601,31 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.FindAll("table").Should().BeEmpty("the landing view has no tabular data");
     }
 
+    // 19, 20, 32, 33, 53, 54. The per-engine diagnostics moved out of the engine list into Technical details, where
+    // they are collapsed by default. Nothing was lost: engine ids, layer state and the runtime reason are all still there.
     [Fact]
-    public void EngineDetails_CollapsedByDefault_StillHoldsActiveEngineSummaryAndCards()
+    public void EngineDiagnosticsLiveUnderTechnicalDetails_NotInTheEngineList()
     {
-        Register(Context(), [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)]);
+        Register(Context(), [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse),
+            Engine(FrontendQualityEngineIdDto.PassiveSecurity, ready: false, reason: "Container runtime unavailable.")]);
 
         var page = Render<FrontendQualityReview>();
 
         page.WaitForAssertion(() => page.FindAll(".fqr-engine-card").Should().HaveCount(3));
-        page.Find("[data-testid=fqr-engine-details-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-        var body = page.Find("[data-testid=fqr-engine-details-body]");
+        page.Find("[data-testid=fqr-technical-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        var body = page.Find("[data-testid=fqr-technical-disclosure-body]");
         body.HasAttribute("hidden").Should().BeTrue();
-        body.QuerySelector("[data-testid=fqr-active-count]")!.TextContent.Should().Be("5 enabled");
         body.QuerySelectorAll(".fqr-engine-card").Should().HaveCount(3);
-        body.TextContent.Should().Contain("Engine ID").And.Contain("Deployment policy");
-        // Implementation vocabulary does not leak outside the disclosure.
-        page.Find("[data-testid=fqr-capabilities] .fqr-capability-groups").TextContent.Should().NotContain("Layer").And.NotContain("Engine ID");
+        body.TextContent.Should().Contain("Engine ID").And.Contain("Deployment policy").And.Contain("System Settings");
+        // 33. The runtime reason is still reachable.
+        body.TextContent.Should().Contain("Container runtime unavailable.");
+
+        // 45. The duplicate "Active review engines" strip is gone from the pre-run page entirely.
+        page.FindAll("[data-testid=fqr-active-engines]").Should().BeEmpty();
+        page.FindAll("[data-testid=fqr-active-count]").Should().BeEmpty();
+
+        // Implementation vocabulary does not leak into the engine list a normal reader sees.
+        var list = page.Find("[data-testid=fqr-capabilities] .fqr-capability-groups").TextContent;
+        list.Should().NotContain("Layer").And.NotContain("Engine ID").And.NotContain("Deployment policy");
     }
 }

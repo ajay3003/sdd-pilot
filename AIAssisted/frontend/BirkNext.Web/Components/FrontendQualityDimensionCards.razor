@@ -12,10 +12,11 @@
                     <div class="fqr-dimension-head">
                         <h3>@card.Title</h3>
                         <span class="fqr-pill fqr-pill-@FrontendQualityDimensionStates.Tone(card.State)" data-testid="fqr-dimension-state">@FrontendQualityDimensionStates.Label(card.State)</span>
-                        @* A requirement no engine can satisfy, shown beside the scope rather than replacing it. *@
-                        @if (card.ManualReviewRequired)
+                        @* A requirement no engine can satisfy, shown beside the scope rather than replacing it. It is
+                           not a warning about the automation, so it carries the neutral tone rather than the attention one. *@
+                        @if (card.ManualAssessmentRequired)
                         {
-                            <span class="fqr-pill fqr-pill-attention" data-testid="fqr-dimension-manual">Manual review required</span>
+                            <span class="fqr-pill fqr-pill-info" data-testid="fqr-dimension-manual">Manual assessment required</span>
                         }
                     </div>
                     @if (!string.IsNullOrWhiteSpace(card.ScopeNote))

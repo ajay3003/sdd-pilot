@@ -68,7 +68,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
 
         // Copy stays short: one purpose line and at most one limitation line.
         cut.FindAll("[data-testid=fqr-dimension-limitation]")
-            .Should().OnlyContain(l => l.TextContent.Trim().Length <= 120);
+            .Should().OnlyContain(l => l.TextContent.Trim().Length <= 140);
     }
 
     [Fact]
@@ -122,7 +122,12 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         var security = Card(cards, FrontendQualityCategory.Security);
 
         security.State.Should().Be(FrontendQualityDimensionState.Limited);
-        security.Limitation.Should().Be("Passive Security evidence is unavailable.");
+        // 5, 36. The baseline that still runs is named first; the missing optional engine follows as the reason the
+        // coverage is reduced. Leading with "Passive Security evidence is unavailable" beside the word Limited read
+        // as "security cannot be reviewed", which is the opposite of what the state means.
+        security.Limitation.Should().Be(
+            "Static security review is included. Passive Security is unavailable, so passive security coverage is limited.");
+        security.Limitation.Should().NotContainAny("cannot be reviewed", "Failed", "not reviewed");
         // The exact engine diagnostic is not duplicated onto the card.
         security.Limitation.Should().NotContain("Passive Security engine").And.NotContain("Blocked by deployment policy");
     }
@@ -141,7 +146,8 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         row.Summary.Should().Contain("not available in this environment");
         // …while the domain card says only what it means for the review.
         FrontendQualityLandingPresentation.Dimensions(rows).Single(c => c.Category == FrontendQualityCategory.Security)
-            .Limitation.Should().Be("Passive Security evidence is unavailable.");
+            .Limitation.Should().Be(
+                "Static security review is included. Passive Security is unavailable, so passive security coverage is limited.");
     }
 
     // ── 13–20. Accessibility ───────────────────────────────────────────────
@@ -153,7 +159,7 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         var accessibility = Card(cards, FrontendQualityCategory.Accessibility);
 
         accessibility.State.Should().NotBe(FrontendQualityDimensionState.NotIncluded);
-        accessibility.ManualReviewRequired.Should().BeTrue();
+        accessibility.ManualAssessmentRequired.Should().BeTrue();
     }
 
     [Fact]
@@ -188,7 +194,9 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         var cut = Render(Cards(Context(), null, Engine(FrontendQualityEngineIdDto.Accessibility)));
         var card = cut.FindAll("[data-testid=fqr-dimension]").Single(c => c.GetAttribute("data-category") == "Accessibility");
 
-        card.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Trim().Should().Be("Manual review required");
+        // 7. One canonical term across the review: "manual assessment", never a second name for the same concept.
+        card.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Trim().Should().Be("Manual assessment required");
+        cut.Markup.Should().NotContain("Manual review required");
         // Only Accessibility carries it.
         cut.FindAll("[data-testid=fqr-dimension-manual]").Should().ContainSingle();
     }
@@ -280,9 +288,12 @@ public sealed class FrontendQualityDomainSemanticsTests : BunitContext
         foreach (var available in new[] { "Browser Quality", "BirkNext Performance Quality", "Static Security" })
             section.Should().NotContain(available, "only a contributor that is actually missing is named");
 
-        // Still one short sentence per card, and no card lists more than its own missing contributors.
+        // Still short, and no card lists more than its own missing contributors. Two sentences are allowed where the
+        // first one states what IS reviewed: "Static security review is included." has to come before the limitation,
+        // or a Limited domain reads as an absent one. It is never more than that.
         var limitations = cut.FindAll("[data-testid=fqr-dimension-limitation]").Select(l => l.TextContent.Trim()).ToList();
-        limitations.Should().OnlyContain(l => l.Count(c => c == '.') <= 1, "one sentence, not an engine report");
+        limitations.Should().OnlyContain(l => l.Length <= 140, "a card, not a paragraph");
+        limitations.Should().OnlyContain(l => l.Count(c => c == '.') <= 2, "at most what runs and what does not — never an engine report");
         limitations.Should().OnlyContain(l => !l.Contains("Optional browser evidence is unavailable"),
             "the generic sentence that could not stay true is gone");
     }

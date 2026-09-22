@@ -36,20 +36,30 @@ public static class FrontendQualityLandingPresentation
         NeedsPairingCount: rows.Count(r => r.IsActive && r.State is
             FrontendQualityCapabilityState.NotConfigured or
             FrontendQualityCapabilityState.RequiresBrowserSession or
-            FrontendQualityCapabilityState.RequiresAuthenticatedContext));
+            FrontendQualityCapabilityState.RequiresAuthenticatedContext),
+        // Switched off, by whichever of the three switches. Never added to the unavailable count: the engine is doing
+        // exactly what it was configured to do, and counting it as unavailable asks someone to fix their own decision.
+        DisabledCount: rows.Count(r => FrontendQualityCapabilityStates.IsDisabled(r.State)));
 
-    /// <summary>Counts behind the collapsed coverage row; derived from the same rows the expanded list renders.</summary>
+    /// <summary>Counts behind the collapsed "Review access" row; derived from the same rows the expanded list renders.</summary>
     public static FrontendQualityCoverageSummaryModel CoverageSummary(IReadOnlyList<FrontendQualityCoverageRow> rows) => new(
         TotalCount: rows.Count,
         AvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.Available),
         NotAvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotAvailable),
-        NotRequiredCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotRequired));
+        NotRequiredCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotRequired),
+        PublicOnlyCount: rows.Count(r => r.State is FrontendQualityCoverageState.PublicOnly));
 
-    /// <summary>"11 automated or passive checks included" — never a result claim, because nothing has run yet.</summary>
-    public static string CheckSummary => $"{CheckCount} automated or passive checks included";
+    /// <summary>
+    /// What the automated and passive part of this review covers, named rather than counted.
+    ///
+    /// The old line counted the check list ("11 automated or passive checks included"). The items in that list are not
+    /// comparable units — "CORS" and "Startup asset analysis" are one entry each — so the number measured how the list
+    /// happens to be written, and it moved whenever a group was reworded. The areas are the stable fact.
+    /// </summary>
+    public static string ReviewScopeSummary => string.Join(" · ", CheckGroups.Select(g => g.Title));
 
-    /// <summary>Neutral scope information: these areas are out of scope, which is not a failure or a missing feature.</summary>
-    public static string NotAssessedSummary => $"{NotAssessed.Count} area{(NotAssessed.Count == 1 ? "" : "s")} not assessed by this review";
+    /// <summary>The scope boundary, named. These areas are outside this review, which is not a failure or a gap in it.</summary>
+    public static string OutsideReviewSummary => string.Join(" · ", NotAssessed.Select(i => i.Title));
     public const string SystemSettingsHref = "/admin/system-settings";
 
     public const string ReadyTitle = "Ready to review";
@@ -146,17 +156,22 @@ public static class FrontendQualityLandingPresentation
                 .Where(c => c.Policy == FrontendQualityEngineRequirement.Optional && FrontendQualityCapabilityStates.IsDisabled(c.State))
                 .Select(c => $"{c.DisplayName}: disabled by configuration"));
             var requiredUnavailable = unavailable.Where(c => c.Policy == FrontendQualityEngineRequirement.Required).Select(c => c.DisplayName).ToList();
+            var optionalUnavailable = unavailable.Where(c => c.Policy == FrontendQualityEngineRequirement.Optional).Select(c => c.DisplayName).ToList();
             // An engine somebody switched off is reported as switched off, in its own sentence. Merged into the
             // unavailable count it read as a fault, and sent the reader to fix something that is working as configured.
+            //
+            // The capability is NAMED here, in the one line the reader sees before deciding to run. "1 enabled optional
+            // capability is currently unavailable" is true and useless: it says a limitation exists and makes finding out
+            // which one an expand-and-scroll exercise, on the surface whose whole job is that decision.
             var message = unavailable.Count switch
             {
                 0 => "The configuration has warnings. Target reachability is verified when the review starts.",
-                1 => requiredUnavailable.Count == 1
-                    ? $"1 required capability is unavailable ({requiredUnavailable[0]}); required coverage will stay incomplete."
-                    : "1 enabled optional capability is currently unavailable.",
-                _ => requiredUnavailable.Count > 0
-                    ? $"{unavailable.Count} capabilities are unavailable, including required {string.Join(", ", requiredUnavailable)}."
-                    : $"{unavailable.Count} enabled optional capabilities are currently unavailable.",
+                _ when requiredUnavailable.Count == unavailable.Count && unavailable.Count == 1 =>
+                    $"{requiredUnavailable[0]} is unavailable and is required; required coverage will stay incomplete.",
+                _ when requiredUnavailable.Count > 0 =>
+                    $"{unavailable.Count} capabilities are unavailable, including required {Join(requiredUnavailable)}; required coverage will stay incomplete.",
+                1 => $"{optionalUnavailable[0]} is unavailable. The review runs without it, with less depth in the areas it contributes to.",
+                _ => $"{optionalUnavailable.Count} optional capabilities are unavailable: {Join(optionalUnavailable)}. The review runs without them, with less depth in the areas they contribute to.",
             };
 
             // The action follows the cause: capability limitations are fixed where engines are configured; a configuration
@@ -343,7 +358,7 @@ public static class FrontendQualityLandingPresentation
 
             return new FrontendQualityDimensionCard(
                 category, FrontendQualityCategoryEngines.Label(category), Purpose(category), state, limitation,
-                ManualReviewRequired: accessibility, ScopeNote: scopeNote);
+                ManualAssessmentRequired: accessibility, ScopeNote: scopeNote);
         }).ToList();
     }
 
@@ -364,25 +379,45 @@ public static class FrontendQualityLandingPresentation
         FrontendQualityDimensionState.NotIncluded => "Nothing in this review contributes to this area.",
 
         FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Accessibility =>
-            "Automated accessibility evidence is unavailable; the profile's criteria still require manual assessment.",
+            "No automated accessibility evidence is available. The profile's criteria are still in scope and require manual assessment.",
         FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Readiness =>
             "Derived from partial review evidence.",
         FrontendQualityDimensionState.PartialEvidence =>
             "Baseline evidence is unavailable; the remaining checks still run.",
+
+        // Security names its own baseline, because "Passive Security evidence is unavailable" beside the word Limited
+        // read as "security cannot be reviewed". The static security review is unaffected and says so first.
+        FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Security && optionalMissing.Count > 0 =>
+            $"Static security review is included. {Names(optionalMissing)} {(optionalMissing.Count == 1 ? "is" : "are")} unavailable, so passive security coverage is limited.",
+
+        FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Accessibility && optionalMissing.Count > 0 =>
+            $"{Names(optionalMissing)} evidence is unavailable, so automated accessibility coverage is reduced.",
 
         FrontendQualityDimensionState.Limited when optionalMissing.Count > 0 =>
             $"{Names(optionalMissing)} evidence is unavailable.",
         FrontendQualityDimensionState.Limited =>
             "Some optional evidence for this area is unavailable.",
 
+        // Not a shortfall in the automation. Manual assessment is what these criteria require, and it would still be
+        // required if every automated source were available — so this sentence never blames the engines for it.
         FrontendQualityDimensionState.Included when category == FrontendQualityCategory.Accessibility =>
-            "Automated evidence is partial; some criteria require manual assessment.",
+            "Automated accessibility evidence is included. Some WCAG criteria require manual assessment regardless of automated coverage.",
         _ => null,
     };
 
-    private static string Names(IReadOnlyList<FrontendQualityCapabilityRow> rows) =>
-        rows.Count == 1 ? rows[0].DisplayName
-        : string.Join(" and ", string.Join(", ", rows.Take(rows.Count - 1).Select(r => r.DisplayName)), rows[^1].DisplayName);
+    /// <summary>"A", "A and B", "A, B and C". Used wherever capabilities are named in a sentence rather than counted.</summary>
+    private static string Join(IEnumerable<string> names)
+    {
+        var list = names.ToList();
+        return list.Count switch
+        {
+            0 => "",
+            1 => list[0],
+            _ => string.Join(" and ", string.Join(", ", list.Take(list.Count - 1)), list[^1]),
+        };
+    }
+
+    private static string Names(IReadOnlyList<FrontendQualityCapabilityRow> rows) => Join(rows.Select(r => r.DisplayName));
 
     public static string Purpose(FrontendQualityCategory category) => category switch
     {
@@ -402,18 +437,28 @@ public static class FrontendQualityLandingPresentation
     [
         new("Security", ["Security headers", "Content Security Policy (CSP)", "CORS", "Passive frontend security indicators (no compliance claim)"]),
         new("Performance", ["Bundle size", "Compression", "Cache headers", "Lazy loading (static detection)"]),
-        new("Accessibility", ["Automated axe-core checks (when the Accessibility capability is enabled)"], "Manual accessibility testing remains separate; zero automated violations does not establish WCAG conformance."),
+        new("Accessibility", ["Automated axe-core checks (when the Accessibility capability is enabled)"], AccessibilityDisclaimer),
         new("Blazor / WASM", ["Startup asset analysis (boot resources and assemblies)", "Service worker detection (static)"]),
         new("Standards / QA readiness", [], "Standards compliance is derived from the security-header checks above; QA readiness indicators are derived from the collected performance evidence. No additional requests are made."),
     ];
 
-    public static int CheckCount => CheckGroups.Sum(g => g.Checks.Count);
+    /// <summary>
+    /// The one accessibility disclaimer on this page. Both halves matter and neither implies the other: automated checks
+    /// cannot establish conformance, and manual assessment is required whatever those checks find. Said where the
+    /// accessibility scope is, and nowhere else — repeated in five places it stops being read at all.
+    /// </summary>
+    public const string AccessibilityDisclaimer =
+        "Automated accessibility checks do not establish complete WCAG conformance and do not replace the required manual assessment.";
 
+    /// <summary>
+    /// Scope boundaries, not gaps. Each says where the area belongs instead, so none of them reads as something this
+    /// review failed to do.
+    /// </summary>
     public static readonly IReadOnlyList<FrontendQualityNotAssessedItem> NotAssessed =
     [
-        new("Core Web Vitals", "Requires production field data or a supported browser measurement path."),
-        new("Testability", "Not part of this frontend audit."),
-        new("Observability", "Not part of this frontend audit."),
+        new("Core Web Vitals", "Measured separately: requires production field data or a supported field measurement path."),
+        new("Testability", "Not part of Frontend Quality Review."),
+        new("Observability", "Not part of Frontend Quality Review."),
     ];
 
     // ── Coverage ──────────────────────────────────────────────────────────────────────────────────────────────────────

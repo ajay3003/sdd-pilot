@@ -1,7 +1,11 @@
 @using BirkNext.Web.Models
 
-@* The automated/passive checks this review runs, grouped. Named by the disclosure that hosts it; nothing here is a result,
-   because nothing has run yet. "Not assessed by this review" is a separate block (FrontendQualityNotAssessedList). *@
+@* The automated/passive review scope, by area. Named by the disclosure that hosts it; nothing here is a result, because
+   nothing has run yet, and nothing here is counted — the entries are not comparable units. Areas OUTSIDE this review are
+   a separate block (FrontendQualityNotAssessedList).
+
+   The accessibility disclaimer lives on the accessibility group, where the accessibility scope is. It used to be
+   repeated as a footer under every group, which said it about bundle sizes and service workers too. *@
 <div class="fqr-checks" data-testid="fqr-checks">
     <div class="fqr-check-groups">
         @foreach (var group in Groups)
@@ -24,7 +28,6 @@
             </div>
         }
     </div>
-    <p class="fqr-section-note">Automated results never replace manual testing.</p>
 </div>
 
 @code {
