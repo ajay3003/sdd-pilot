@@ -17,6 +17,9 @@
                 Description="Review integrations between services for contract compatibility, message quality, reliability, errors, and runtime evidence." >
         @if (_report is not null)
         {
+            @* Same action pattern as the Frontend Quality and API Quality Review results: return to the setup view
+               first, then export. "Back" and "Run Review Again" stay apart — one navigates, the other starts work. *@
+            <button type="button" class="btn-primary" @onclick="BackToSetup" data-testid="iqr-back">Back to Integration Quality Review</button>
             <button type="button" class="btn-secondary" @onclick="ExportHtml" data-testid="iqr-export">Export HTML</button>
         }
     </PageHeader>
@@ -609,6 +612,20 @@
     {
         _context = await ContextFactory.GetActiveContextAsync();
     }
+
+    /// <summary>
+    /// Return to the setup view. A view transition and nothing else: it starts no review, discards no result and
+    /// resets no filter.
+    ///
+    /// Unlike the API Quality Review's equivalent there is no history store to guard against here, and
+    /// <see cref="RefreshContext"/> reloads only the context — but Back still does not call it. Refreshing the
+    /// environment is a separate decision with its own button in the result actions, and folding it into Back would
+    /// make one control do two things.
+    ///
+    /// The completed run is untouched: <see cref="RuntimeReviewSessionService"/> still holds it, so re-entering the
+    /// page restores it.
+    /// </summary>
+    private void BackToSetup() => _report = null;
 
     private async Task ExportHtml()
     {

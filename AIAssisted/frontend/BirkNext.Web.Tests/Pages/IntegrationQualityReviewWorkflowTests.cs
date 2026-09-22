@@ -338,4 +338,110 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         }
         page.FindAll(".iqr-pill").Should().OnlyContain(p => p.TextContent.Trim().Length > 0, "state chips carry text");
     }
+
+    // ── Returning to the setup view ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Drives the page to a completed result, the way a user does: the service returns a report and Run is clicked.
+    /// </summary>
+    private IRenderedComponent<IntegrationQualityReview> Result(params IntegrationConfig[] integrations)
+    {
+        _review.Setup(r => r.AnalyzeAsync(It.IsAny<IntegrationQualityRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(((IntegrationQualityReport?)new IntegrationQualityReport
+            {
+                EnvironmentName = "M2LB QA", GeneratedAt = DateTime.UtcNow, OverallScore = 72,
+                IntegrationCount = integrations.Length, EnabledCount = integrations.Count(i => i.Enabled),
+                Findings =
+                [
+                    new IntegrationFinding
+                    {
+                        Severity = IntegrationFindingSeverity.High, Title = "No runtime evidence",
+                        Description = "The integration is configured but was never observed.",
+                    },
+                ],
+            }, (string?)null));
+
+        var page = Landing(integrations.Length > 0 ? integrations : [Rest()]);
+        page.Find("[data-testid=iqr-run-review]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=iqr-results]"));
+        return page;
+    }
+
+    /// <summary>
+    /// The result page offered no way back to the setup view: only Export HTML at the top, and an in-result row whose
+    /// buttons all either start work or leave the page. The Frontend Quality and API Quality Review results already
+    /// had the pattern, so this is the same one.
+    /// </summary>
+    [Fact]
+    public void TheResultOffersBackToTheSetupViewBesideExport()
+    {
+        var page = Result();
+
+        var actions = page.Find(".page-header").QuerySelectorAll("button")
+            .Select(b => b.TextContent.Trim()).ToList();
+
+        // Navigate first, then export — the order the other two review results use.
+        actions.Should().Equal("Back to Integration Quality Review", "Export HTML");
+        // Reachable by its accessible name, and never an icon alone.
+        page.Find("[data-testid=iqr-back]").TextContent.Trim().Should().Be("Back to Integration Quality Review");
+    }
+
+    // Back navigates. It does not start a review, and the run is never re-issued.
+    [Fact]
+    public void BackReturnsToSetupWithoutRunningAnything()
+    {
+        var page = Result();
+        _review.Invocations.Clear();
+
+        page.Find("[data-testid=iqr-back]").Click();
+
+        page.WaitForAssertion(() => page.Find("[data-testid=iqr-decide]"));
+        page.FindAll("[data-testid=iqr-results]").Should().BeEmpty();
+        _review.Verify(r => r.AnalyzeAsync(It.IsAny<IntegrationQualityRequest>(), It.IsAny<CancellationToken>()), Times.Never,
+            "Back is navigation; Run Review Again is the action that starts work");
+    }
+
+    // The completed run survives Back: the runtime session still holds it, so re-entering the page shows it again.
+    [Fact]
+    public void BackPreservesTheCompletedRun()
+    {
+        var page = Result();
+        var session = Services.GetRequiredService<RuntimeReviewSessionService>();
+        var before = session.IntegrationQualityReview.Report;
+        before.Should().NotBeNull();
+
+        page.Find("[data-testid=iqr-back]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=iqr-decide]"));
+
+        // Nothing was discarded or reset: it is the same report the run recorded.
+        session.IntegrationQualityReview.Report.Should().BeSameAs(before);
+        var reopened = Render<IntegrationQualityReview>();
+        reopened.WaitForAssertion(() => reopened.Find("[data-testid=iqr-results]"));
+    }
+
+    // The rerun action is unchanged and still runs a review.
+    [Fact]
+    public void RunAgainStillStartsAReview()
+    {
+        var page = Result();
+        _review.Invocations.Clear();
+
+        page.Find("[data-testid=iqr-rerun-btn]").Click();
+
+        page.WaitForAssertion(() =>
+            _review.Verify(r => r.AnalyzeAsync(It.IsAny<IntegrationQualityRequest>(), It.IsAny<CancellationToken>()), Times.Once));
+        page.Find("[data-testid=iqr-results]").Should().NotBeNull();
+    }
+
+    // Export is unchanged and still exports the completed result.
+    [Fact]
+    public void ExportStillExportsTheResult()
+    {
+        var page = Result();
+        var export = Services.GetRequiredService<IReportExportService>();
+
+        page.Find("[data-testid=iqr-export]").Click();
+
+        Mock.Get(export).Verify(e => e.ExportIntegrationQualityReview(It.IsAny<IntegrationQualityReport>(), It.IsAny<string>()), Times.Once);
+    }
 }
