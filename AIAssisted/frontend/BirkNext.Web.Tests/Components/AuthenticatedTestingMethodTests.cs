@@ -91,6 +91,13 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     }
 
     private static void Click(IRenderedComponent<Component> cut, string label) => cut.FindAll("button").Single(b => b.TextContent.Trim() == label).Click();
+
+    /// <summary>
+    /// Starting and stopping the proxy are the Local HTTPS Proxy prerequisite card's own actions now. The runtime panel
+    /// no longer carries a second, differently guarded pair of buttons for the same two operations.
+    /// </summary>
+    private static void ProxyAction(IRenderedComponent<Component> cut) => cut.Find("[data-testid='auth-action-proxy']").Click();
+    private static string ProxyPrerequisite(IRenderedComponent<Component> cut) => cut.Find("[data-testid='auth-status-proxy']").TextContent.Trim();
     private static void OpenTab(IRenderedComponent<Component> cut, string label) => cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == label).Click();
     private static bool HasButton(IRenderedComponent<Component> cut, string label) => cut.FindAll("button").Any(b => b.TextContent.Trim() == label);
     private static bool Has(IRenderedComponent<Component> cut, string testId) => cut.FindAll($"[data-testid='{testId}']").Count > 0;
@@ -304,7 +311,9 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         SelectMethod(cut, AuthenticatedTestingMethod.LocalHttpsProxy);
         Assert.True(Has(cut, "authenticated-testing-method-environment-blocked"));
         Assert.Contains("Production", Row(cut, "proxy-environment"));
-        Assert.True(cut.FindAll("button").Single(b => b.TextContent.Trim() == "Start authenticated proxy").HasAttribute("disabled"));
+        // The proxy prerequisite card owns starting, so an environment that may never run one is offered no action at all.
+        Assert.Equal("Not available here", ProxyPrerequisite(cut));
+        Assert.Empty(cut.FindAll("[data-testid='auth-action-proxy']"));
         Click(cut, "Save changes");
         Assert.Equal(AuthenticatedTestingMethod.ManagedEdgeCdp, Persisted().Authentication.AuthenticatedTestingMethod);
         Assert.Equal(0, SaveCalls());
@@ -363,7 +372,10 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var cut = Open();
         Click(cut, "Detect settings");
         OpenTab(cut, "Authentication");
-        Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Detected & configured authentication"));
+        // One configuration section; detection is a block inside it rather than a second full-width card.
+        Assert.Single(cut.FindAll("h3").Where(x => x.TextContent == "Authentication configuration"));
+        Assert.Single(cut.FindAll("[data-testid='authentication-discovery']"));
+        Assert.Single(cut.FindAll("h4").Where(x => x.TextContent == "Detection"));
         Assert.Empty(cut.FindAll(".fa-result-grid"));
         Assert.DoesNotContain("Detected Authentication", cut.Markup);
         Assert.True(HasButton(cut, "Apply authentication"));
@@ -416,7 +428,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     {
         var cut = Open(authenticationJson: """{"authenticatedTestingMethod":"LocalHttpsProxy"}""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Verified", Row(cut, "capability-rest")));
         Click(cut, "Edit Environment");
         SelectMethod(cut, AuthenticatedTestingMethod.ManualOnly);
@@ -491,7 +503,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
 
         await cut.InvokeAsync(() => Click(cut, "Check proxy compatibility"));
         cut.WaitForAssertion(() => Assert.Contains("m2lbdev.bufetat.no:443", Row(cut, "proxy-approved-hosts")));
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
         Assert.Contains("fa-state-ready", cut.Find("[data-testid='local-https-proxy-panel']").ClassList);
         Assert.Contains("Runtime: Authenticated API context available", Row(cut, "local-https-proxy-panel"));
@@ -527,7 +539,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.Equal("Available", Row(cut, "validation-coverage-public"));
 
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Stop proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Stopped", Row(cut, "proxy-state")));
         Assert.Equal("Waiting for authenticated traffic", Row(cut, "proxy-credential"));
         _proxyApi.Verify(a => a.StopAsync(It.Is<LocalHttpsProxySessionRequest>(r => r.SessionId == "proxy-session" && r.ProfileId == "dev")), Times.Once);
@@ -540,7 +552,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     {
         var cut = Open(authenticationJson: """{ "authenticationType": "MicrosoftEntraId", "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
         Click(cut, "Edit Environment");
         OpenTab(cut, "Target Application");
@@ -567,12 +579,16 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         // Normal managed Edge / manual instructions.
         Assert.Equal("Manual", Row(cut, "proxy-browser-auth"));
         Assert.Contains("dedicated proxy Microsoft Edge", cut.Markup);
-        Assert.True(HasButton(cut, "Open browser"));
+        // Opening the browser belongs to the Dedicated Edge prerequisite card, and with the proxy stopped there is
+        // nothing to point a browser at — so no action is offered anywhere, rather than a disabled one in two places.
+        Assert.False(HasButton(cut, "Open browser"));
+        Assert.Equal("Waiting for the proxy", cut.Find("[data-testid='auth-status-browser']").TextContent.Trim());
         Assert.False(Has(cut, "proxy-setup-instructions"));
         Assert.Contains("does not change your default Windows or Edge proxy settings", Row(cut, "proxy-browser-note"));
         Assert.Contains("127.0.0.1", Row(cut, "proxy-browser-endpoint"));
-        // Before the proxy is started the browser step is not actionable.
-        Assert.Contains("Complete Steps 1", Row(cut, "proxy-browser-prerequisite"));
+        // Before the proxy is started the browser is not actionable, and the reason names the proxy rather than a step number.
+        Assert.Contains("Start the local proxy first", Row(cut, "proxy-browser-prerequisite"));
+        Assert.DoesNotContain("Step 1", cut.Markup);
     }
 
     [Fact]
@@ -580,7 +596,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     {
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
         // Ready mock is Listening with a Trusted certificate → no prerequisite blocker and a concrete endpoint.
         Assert.False(Has(cut, "proxy-browser-prerequisite"));
@@ -606,7 +622,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     {
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
         Assert.True(_proxyRuntime.SessionActive);
 
@@ -641,7 +657,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     {
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
 
         // The compact context/capability summary stays; the detailed endpoint tables and replay checks are gone from Authentication.
@@ -652,9 +668,10 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         Assert.False(Has(cut, "observed-endpoints"));
         Assert.False(Has(cut, "proxy-checks"));
         Assert.False(HasButton(cut, "Run authenticated REST GET"));
-        // A link points to the new tab.
+        // One hand-off: the sentence stays, the second button is gone, and the pane's single CTA is the one below.
         Assert.True(Has(cut, "proxy-discovery-link"));
-        Assert.True(HasButton(cut, "View Endpoint Discovery"));
+        Assert.False(HasButton(cut, "View Endpoint Discovery"));
+        Assert.Single(cut.FindAll("[data-testid='auth-open-discovery']"));
     }
 
     [Fact]
@@ -666,7 +683,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         _proxyApi.Setup(a => a.StatusAsync(It.IsAny<LocalHttpsProxySessionRequest>())).ReturnsAsync(contextOnly);
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.Equal("Ready", Row(cut, "proxy-state")));
 
         Assert.Equal("Available", Row(cut, "capability-api"));
@@ -679,7 +696,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
     {
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         cut.WaitForAssertion(() => Assert.True(_proxyRuntime.Status.AuthenticatedRestObserved));
 
         // Endpoint discovery lives in the app-scoped runtime, not the component: navigation must not clear it.
@@ -695,7 +712,7 @@ public sealed class AuthenticatedTestingMethodTests : BunitContext
         var discovery = Services.GetRequiredService<IEndpointDiscoveryService>();
         var cut = Open(authenticationJson: """{ "authenticatedTestingMethod": "LocalHttpsProxy" }""");
         OpenTab(cut, "Authentication");
-        await cut.InvokeAsync(() => Click(cut, "Start authenticated proxy"));
+        await cut.InvokeAsync(() => ProxyAction(cut));
         // Starting the proxy folds observed traffic into the persisted, app-scoped discovery store.
         cut.WaitForAssertion(() => Assert.NotEmpty(discovery.GetSnapshot("dev").Pages));
 

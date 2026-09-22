@@ -98,11 +98,14 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     private static IElement Testid(IRenderedComponent<Component> cut, string id) => cut.Find($"[data-testid='{id}']");
     private static string Row(IRenderedComponent<Component> cut, string id) => Testid(cut, id).TextContent.Trim();
 
-    /// <summary>Text the reader can actually see: a collapsed disclosure body is hidden and does not count.</summary>
+    /// <summary>
+    /// Text the reader can actually see. A ReviewDisclosure body is <c>hidden</c> while collapsed and a closed
+    /// &lt;details&gt; renders only its summary; neither counts as something the page is saying.
+    /// </summary>
     private static string VisibleText(IElement element)
     {
         var clone = (IElement)element.Clone(true);
-        foreach (var hidden in clone.QuerySelectorAll("[hidden]").ToList()) hidden.Remove();
+        foreach (var collapsed in clone.QuerySelectorAll("[hidden], details:not([open])").ToList()) collapsed.Remove();
         return clone.TextContent;
     }
 
@@ -118,18 +121,56 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
 
     // 1, 5.
     [Fact]
-    public void TheTabLeadsWithDetectedConfiguredThenVerificationThenAuthenticatedTesting()
+    public void TheTabLeadsWithReadinessThenPrerequisitesThenConfigurationVerificationAndContext()
     {
         var cut = Detect(MatchingAuthentication);
 
-        cut.FindAll("[data-testid='authentication-discovery'], [data-testid='authentication-verification'], [data-testid='authenticated-testing'], [data-testid='authentication-configuration']")
+        cut.FindAll("[data-testid='auth-readiness-hero'], [data-testid='auth-prerequisites'], [data-testid='authentication-configuration'], [data-testid='authentication-verification'], [data-testid='authenticated-testing'], [data-testid='auth-discovery-cta']")
             .Select(e => e.GetAttribute("data-testid"))
-            .Should().Equal("authentication-discovery", "authentication-verification", "authenticated-testing",
-                            "authentication-configuration");
+            .Should().Equal("auth-readiness-hero", "auth-prerequisites", "authentication-configuration",
+                            "authentication-verification", "authenticated-testing", "auth-discovery-cta");
 
-        cut.Find("#authentication-status-heading").TextContent.Should().Be("Detected & configured authentication");
-        cut.Find("#authentication-verification-heading").TextContent.Should().Be("Verification");
-        cut.Find("#authenticated-testing-heading").TextContent.Should().Be("Authenticated testing");
+        cut.Find("#authentication-configuration-heading").TextContent.Should().Be("Authentication configuration");
+        cut.Find("#authentication-verification-heading").TextContent.Should().Be("Authentication verification");
+        cut.Find("#authenticated-testing-heading").TextContent.Should().Be("Authenticated testing context");
+        // Detection is a block inside the configuration section, not a second full-width configuration card.
+        Testid(cut, "authentication-discovery").Closest("[data-testid='authentication-configuration']").Should().NotBeNull();
+        cut.Find("#authentication-status-heading").TextContent.Should().Be("Detection");
+    }
+
+    /// <summary>
+    /// The exact defect this pane was rebuilt for, pinned end to end: detection finds Entra ID, the saved configuration
+    /// matches it, and the page must not lead with a verdict saying nothing is configured.
+    /// </summary>
+    [Fact]
+    public void ADetectedProviderMatchingTheSavedConfigurationIsNeverCalledUnconfigured()
+    {
+        var cut = Detect(MatchingAuthentication);
+
+        Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
+        Row(cut, "authentication-configuration-state").Should().Be("Configured");
+        Row(cut, "auth-summary-configuration").Should().Be("Configured");
+
+        var visible = VisibleText(cut.Find("[data-testid='fa-auth-panel']"));
+        visible.Should().NotContain("No authentication is configured");
+        visible.Should().NotContain("No authentication provider is configured");
+        Row(cut, "auth-readiness-state").Should().NotBe("Not configured");
+    }
+
+    /// <summary>
+    /// And the reason it used to happen: readiness was handed the target's own sign-in requirement. A target that
+    /// forces no sign-in still has a configured provider, and the pane says so.
+    /// </summary>
+    [Fact]
+    public void ASavedProviderIsConfiguredEvenWhenTheTargetForcesNoSignIn()
+    {
+        var cut = Detect(MatchingAuthentication.Replace("\"requiresAuthentication\": true", "\"requiresAuthentication\": false"));
+
+        Row(cut, "authentication-sign-in-required").Should().Be("No");
+        Row(cut, "authentication-configuration-state").Should().Be("Configured");
+        Row(cut, "auth-summary-configuration").Should().Be("Configured");
+        VisibleText(cut.Find("[data-testid='fa-auth-panel']"))
+            .Should().NotContain("provider is configured for this Target Environment");
     }
 
     // 2, 3, 4. The workflow is a procedure, not a status wall.
@@ -140,15 +181,18 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
 
         var toggle = Testid(cut, "authenticated-testing-setup-toggle");
         toggle.GetAttribute("aria-expanded").Should().Be("false");
-        // One constant action; the state it opens onto rides along as the hint.
+        // One constant action. The state is already the summary's Testing context row and the card's own badge;
+        // repeating it on the toggle a line below made three copies of one word.
         toggle.TextContent.Should().Contain("View setup details");
-        toggle.QuerySelector(".disclosure-hint")!.TextContent.Trim()
-            .Should().Be(AuthenticatedTestingStates.Label(AuthenticatedTestingState.NotConnected));
+        toggle.QuerySelector(".disclosure-hint").Should().BeNull();
         Testid(cut, "authenticated-testing-setup-body").HasAttribute("hidden").Should().BeTrue();
 
-        // The proxy's own diagnostics and the capability inventory are inside it, not above it.
+        // The proxy's own diagnostics are inside it, not above it.
         Testid(cut, "authenticated-testing-setup-body").QuerySelector("[data-testid='local-https-proxy-panel']").Should().NotBeNull();
-        Testid(cut, "authenticated-testing-setup-body").QuerySelector("[data-testid='authenticated-capabilities']").Should().NotBeNull();
+        // The capability inventory is its own collapsed disclosure on the pane, stated once for whichever method is saved.
+        Testid(cut, "authenticated-testing-setup-body").QuerySelector("[data-testid='authenticated-capabilities']").Should().BeNull();
+        Testid(cut, "auth-capabilities-toggle").GetAttribute("aria-expanded").Should().Be("false");
+        Testid(cut, "auth-capabilities-body").QuerySelector("[data-testid='authenticated-capabilities']").Should().NotBeNull();
 
         toggle.Click();
         Testid(cut, "authenticated-testing-setup-body").HasAttribute("hidden").Should().BeFalse();
@@ -162,9 +206,9 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     {
         var cut = Open(NoSignInRequired);
 
-        // The target's own requirement…
+        // The target's own requirement, owned by the configuration section…
         Row(cut, "authentication-sign-in-required").Should().Be("No");
-        Testid(cut, "authentication-discovery").TextContent.Should().Contain("Sign-in required");
+        Testid(cut, "authentication-configuration").TextContent.Should().Contain("Sign-in required");
 
         // …and BirkNext's testing access, which is a different question with a different answer.
         Row(cut, "authenticated-testing-state").Should().Be("Not connected");
@@ -180,9 +224,9 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
     {
         var cut = Detect(MatchingAuthentication);
 
-        Testid(cut, "authentication-sign-in-required").Closest("[data-testid='authentication-discovery']").Should().NotBeNull();
+        Testid(cut, "authentication-sign-in-required").Closest("[data-testid='authentication-configuration']").Should().NotBeNull();
         Testid(cut, "authenticated-testing-state").Closest("[data-testid='authenticated-testing']").Should().NotBeNull();
-        Testid(cut, "authentication-discovery").QuerySelector("[data-testid='authenticated-testing-state']").Should().BeNull();
+        Testid(cut, "authentication-configuration").QuerySelector("[data-testid='authenticated-testing-state']").Should().BeNull();
         Testid(cut, "authenticated-testing").QuerySelector("[data-testid='authentication-sign-in-required']").Should().BeNull();
     }
 
@@ -213,8 +257,8 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         var cut = Detect(MatchingAuthentication);
         var visible = VisibleText(cut.Find("[data-testid='fa-auth-panel']"));
 
-        // The one primary statement.
-        Occurrences(visible, "Not connected").Should().BeLessThanOrEqualTo(2, "the state and the setup hint carry it");
+        // The summary row and the card badge, and nothing else.
+        Occurrences(visible, "Not connected").Should().Be(2, "the readiness summary and the card's own badge carry it");
 
         // Its near-synonyms belong to the setup workflow and the capability list, which are collapsed.
         foreach (var synonym in new[]
@@ -237,24 +281,32 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         var body = Testid(cut, "authenticated-testing-setup-body");
         body.QuerySelector("[data-testid='proxy-credential']").Should().NotBeNull();
         body.QuerySelector("[data-testid='proxy-authenticated-traffic']").Should().NotBeNull();
-        body.QuerySelector("[data-testid='capability-rest']").Should().NotBeNull();
-        body.QuerySelector("[data-testid='capability-graphql']").Should().NotBeNull();
+
+        // The per-surface statuses survive too, in the one capability inventory.
+        var capabilities = Testid(cut, "auth-capabilities-body");
+        capabilities.QuerySelector("[data-testid='capability-rest']").Should().NotBeNull();
+        capabilities.QuerySelector("[data-testid='capability-graphql']").Should().NotBeNull();
     }
 
     // ── §39. The four setup steps ────────────────────────────────────────────────────────────
 
-    // 17, 22.
+    // 17, 22. The numbered rails are gone: prerequisites are three status cards, and the runtime panel keeps only
+    // what those cards do not own.
     [Fact]
-    public void TheSetupPresentsFourStepsAndMarksNoneComplete()
+    public void ThePrerequisitesAreStatusCardsAndTheSetupIsNoLongerANumberedWizard()
     {
         var cut = Detect(MatchingAuthentication);
+
+        var prerequisites = Testid(cut, "auth-prerequisites");
+        prerequisites.QuerySelectorAll("h5").Select(h => h.TextContent.Trim()).Should().Equal(
+            "HTTPS inspection certificate", "Local HTTPS Proxy", "Dedicated Edge browser");
+        foreach (var step in new[] { "Step 1", "Step 2", "Step 3", "Step 4" })
+            cut.Markup.Should().NotContain(step);
+
         Testid(cut, "authenticated-testing-setup-toggle").Click();
-
         var body = Testid(cut, "authenticated-testing-setup-body");
-        body.QuerySelectorAll("h4").Select(h => h.TextContent.Trim()).Should().Equal(
-            "Step 1 — Proxy", "Step 2 — Certificate", "Step 3 — Browser", "Step 4 — Authenticated API context");
 
-        // Nothing has run, so no step claims success.
+        // Nothing has run, so nothing claims success.
         body.QuerySelector("[data-testid='proxy-state']")!.TextContent.Should().NotContain("Listening");
         body.QuerySelector("[data-testid='proxy-credential']")!.TextContent.Should().Contain("Waiting for authenticated traffic");
     }
@@ -274,8 +326,8 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         // 27. The per-surface rows are not in the primary surface.
         VisibleText(cut.Find("[data-testid='authenticated-testing']")).Should().NotContain("REST · Authenticated endpoint");
 
-        // 28. Expanding the setup reveals the existing distinctions, unflattened.
-        Testid(cut, "authenticated-testing-setup-toggle").Click();
+        // 28. Expanding Testing capabilities reveals the existing distinctions, unflattened.
+        Testid(cut, "auth-capabilities-toggle").Click();
         var capabilities = Testid(cut, "authenticated-capabilities").TextContent;
         capabilities.Should().Contain("REST · Public discovery").And.Contain("REST · Authenticated endpoint");
         capabilities.Should().Contain("GraphQL · Schema discovery").And.Contain("GraphQL · Authenticated query endpoint");
@@ -295,6 +347,11 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
             .Should().Contain("Manual authentication verification required");
         verification.QuerySelector("[data-testid='authentication-verification-open']")!.TextContent.Trim()
             .Should().Be("Open verification instructions");
+        // The Method row describes how VERIFICATION is performed. It used to report how authentication was DETECTED,
+        // which made the card say "Manual verification required" with the method "Automated detection".
+        verification.QuerySelector("[data-testid='authentication-verification-method']")!.TextContent.Trim()
+            .Should().Be("Manual verification in a signed-in browser");
+        verification.TextContent.Should().NotContain("Automated detection");
         Row(cut, "authentication-verification-scope").Should().Contain("does not create an authenticated testing context");
 
         // 32. The two states are independent: verification is still required while testing is not connected.
@@ -311,9 +368,13 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         var cut = Detect(MatchingAuthentication);
 
         Row(cut, "authentication-match-summary").Should().Contain("matches saved configuration");
-        // The read-only section no longer echoes the same provider and sign-in fields.
         Testid(cut, "authentication-configuration").TextContent.Should().Contain("edited here");
-        VisibleText(cut.Find("[data-testid='authentication-configuration']")).Should().NotContain("Microsoft Entra ID");
+
+        // One configuration section, so the provider is named once as configured and once as detected — never in a
+        // second full-width card that repeats both.
+        cut.FindAll("[data-testid='authentication-configuration']").Should().ContainSingle();
+        Row(cut, "authentication-configured-provider").Should().Be("Microsoft Entra ID");
+        Occurrences(VisibleText(cut.Find("[data-testid='fa-auth-panel']")), "Microsoft Entra ID").Should().Be(2);
     }
 
     // 34, 35, 36.
@@ -359,7 +420,7 @@ public sealed class AuthenticationTabHierarchyTests : BunitContext
         Row(cut, "testing-access-public").Should().Be("Available");
         Row(cut, "testing-access-api").Should().Be("Not available");
 
-        Testid(cut, "authenticated-testing-setup-toggle").Click();
+        Testid(cut, "auth-capabilities-toggle").Click();
         var capabilities = Testid(cut, "authenticated-capabilities");
         capabilities.QuerySelector("[data-testid='capability-rest']")!.TextContent.Should().Be("Not observed");
         capabilities.QuerySelector("[data-testid='capability-graphql']")!.TextContent.Should().Be("Not observed");

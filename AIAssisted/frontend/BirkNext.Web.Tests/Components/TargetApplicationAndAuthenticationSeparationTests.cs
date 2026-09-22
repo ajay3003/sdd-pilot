@@ -264,7 +264,10 @@ public sealed class TargetApplicationAndAuthenticationSeparationTests : BunitCon
         OpenTab(cut, "Authentication");
 
         Row(cut, "authentication-verification-status").Should().Contain("Manual authentication verification required");
-        Row(cut, "authentication-verification-method").Should().Be("Automated detection");
+        // How verification is performed — not how authentication was detected. The card used to report the detection
+        // mode here, so it said "Manual verification required" with the method "Automated detection".
+        Row(cut, "authentication-verification-method").Should().Be("Manual verification in a signed-in browser");
+        Testid(cut, "authentication-verification").TextContent.Should().NotContain("Automated detection");
         cut.FindAll("button").Should().ContainSingle(b => b.TextContent.Trim() == "Open verification instructions");
     }
 

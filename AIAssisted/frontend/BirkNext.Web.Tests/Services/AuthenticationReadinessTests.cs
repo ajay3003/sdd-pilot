@@ -31,9 +31,11 @@ public sealed class AuthenticationReadinessTests
 
     private static AuthenticationReadinessSummary Summarize(
         LocalHttpsProxyStatus? proxy = null, ProxyCertificateStatus? certificate = null,
-        bool configured = true, bool loaded = true,
-        AuthenticatedTestingMethod method = AuthenticatedTestingMethod.LocalHttpsProxy) =>
-        AuthenticationReadinessPresentation.Summarize(configured, method, proxy ?? Proxy(), certificate ?? Certificate(), loaded);
+        AuthConfigurationState configured = AuthConfigurationState.Configured, bool loaded = true,
+        AuthenticatedTestingMethod method = AuthenticatedTestingMethod.LocalHttpsProxy,
+        string? scopeFingerprint = null, bool environmentAllowed = true) =>
+        AuthenticationReadinessPresentation.Summarize(configured, method, proxy ?? Proxy(), certificate ?? Certificate(), loaded,
+            scopeFingerprint, environmentAllowed);
 
     private static AuthenticationPrerequisite Item(AuthenticationReadinessSummary s, string id) =>
         s.Prerequisites.Single(p => p.Id == id);
@@ -114,7 +116,7 @@ public sealed class AuthenticationReadinessTests
     [Fact]
     public void ManualInstallOffersInstructionsRatherThanAnInstallButtonThatCannotWork()
     {
-        var summary = AuthenticationReadinessPresentation.Summarize(true, AuthenticatedTestingMethod.LocalHttpsProxy,
+        var summary = AuthenticationReadinessPresentation.Summarize(AuthConfigurationState.Configured, AuthenticatedTestingMethod.LocalHttpsProxy,
             Proxy(), new ProxyCertificateStatus { State = ProxyCertificateTrustState.NotTrusted, InstallSupported = false }, loaded: true);
         Item(summary, "certificate").ActionLabel.Should().Be("View setup instructions");
     }
@@ -187,12 +189,105 @@ public sealed class AuthenticationReadinessTests
         summary.Prerequisites.Should().NotContain(p => p.StatusLabel.Contains("Not"), "a first fetch must not render a false negative");
     }
 
+    /// <summary>
+    /// A missing provider is a missing provider — not a missing certificate, a stopped proxy or a closed browser. The
+    /// prerequisites belong to the chosen METHOD and stay reported and operable, because "is the certificate trusted?"
+    /// has the same answer either way and the user may well be preparing before configuring.
+    /// </summary>
     [Fact]
     public void NoAuthenticationConfiguredIsNotConfiguredRatherThanFailing()
     {
-        var summary = Summarize(configured: false);
+        var summary = Summarize(configured: AuthConfigurationState.NotConfigured);
         summary.State.Should().Be(AuthenticationReadiness.NotConfigured);
-        summary.Prerequisites.Should().BeEmpty("there is nothing to prepare until a method is chosen");
+        summary.Detail.Should().Be("No authentication provider is configured for this Target Environment.");
+        summary.CanVerify.Should().BeFalse();
+        summary.Prerequisites.Should().HaveCount(3, "the proxy method's prerequisites do not depend on the provider");
+        summary.Prerequisites.Should().OnlyContain(p => p.State == AuthPrerequisiteState.Ok);
+    }
+
+    [Fact]
+    public void AProxyThePolicyForbidsIsExplainedRatherThanOffered()
+    {
+        var summary = Summarize(
+            Proxy(LocalHttpsProxyState.Stopped, LocalHttpsProxyRuntimePhase.Stopped, DedicatedBrowserVerification.NotRunning),
+            environmentAllowed: false);
+        var proxy = Item(summary, "proxy");
+        proxy.StatusLabel.Should().Be("Not available here");
+        proxy.Explanation.Should().Contain("non-production");
+        proxy.ActionLabel.Should().BeNull("a start this environment may never perform is not a button");
+    }
+
+    [Fact]
+    public void ASessionBelongingToAnotherEnvironmentIsNamedRatherThanAdopted()
+    {
+        var running = Proxy() with { SessionId = "other-session", ContextFingerprint = "other-fingerprint", ProfileId = "acc" };
+        var proxy = Item(Summarize(running, scopeFingerprint: "this-fingerprint"), "proxy");
+        proxy.StatusLabel.Should().Be("Running for another environment");
+        proxy.Explanation.Should().Contain("acc");
+        proxy.ActionLabel.Should().Be("Stop proxy", "stopping someone else's session stays an explicit act");
+    }
+
+    /// <summary>
+    /// The defect this whole derivation was rewritten for. Readiness used to be handed the target's own
+    /// "requires sign-in" flag, so a fully configured Entra ID environment whose target happens not to force a
+    /// sign-in announced "No authentication is configured" — directly above a card saying the detected provider
+    /// matched the saved configuration.
+    /// </summary>
+    [Fact]
+    public void AConfiguredEnvironmentIsNeverReportedAsUnconfigured()
+    {
+        var configured = new FrontendAuthenticationSettings
+        {
+            AuthenticationType = FrontendAuthenticationType.MicrosoftEntraId,
+            RequiresAuthentication = false,
+            ExpectedAuthority = "https://login.microsoftonline.com/tenant",
+            ExpectedClientId = "22222222-2222-2222-2222-222222222222",
+        };
+
+        AuthenticationPaneStates.Configuration(configured).Should().Be(AuthConfigurationState.Configured);
+
+        var summary = Summarize(configured: AuthenticationPaneStates.Configuration(configured));
+        summary.State.Should().NotBe(AuthenticationReadiness.NotConfigured);
+        summary.Detail.Should().NotContain("No authentication");
+        summary.Label.Should().Be("Ready");
+    }
+
+    [Fact]
+    public void TheNotConfiguredSentenceNamesTheConfiguration_NotTheTarget()
+    {
+        // "No authentication is configured for this Target Environment" read as a claim about the target application.
+        // What is actually missing is a provider in BirkNext's own saved configuration.
+        Summarize(configured: AuthConfigurationState.NotConfigured).Detail
+            .Should().Be("No authentication provider is configured for this Target Environment.");
+    }
+
+    [Fact]
+    public void AHalfWrittenConfigurationIsLimitedEvenWithEveryPrerequisiteInPlace()
+    {
+        var summary = Summarize(configured: AuthConfigurationState.Partial);
+        summary.State.Should().Be(AuthenticationReadiness.Limited);
+        summary.Detail.Should().Be("The saved authentication configuration is incomplete.");
+        summary.Prerequisites.Should().OnlyContain(p => p.State == AuthPrerequisiteState.Ok,
+            "the prerequisites really are in place; it is the configuration that is not");
+    }
+
+    /// <summary>
+    /// Readiness is about prerequisites. Whether a person has confirmed the sign-in workflow is a separate answer on a
+    /// separate card, and letting it decide this one is how "manual verification required" came to mean "not configured".
+    /// </summary>
+    [Fact]
+    public void AnUnverifiedButFullyPreparedEnvironmentIsStillReady()
+    {
+        var summary = Summarize();
+        summary.State.Should().Be(AuthenticationReadiness.Ready);
+        summary.Label.Should().NotContain("verif");
+        summary.Detail.Should().NotContain("verif");
+    }
+
+    [Fact]
+    public void AHalfWrittenConfigurationStillShowsItsPrerequisites()
+    {
+        Summarize(configured: AuthConfigurationState.Partial).Prerequisites.Should().HaveCount(3);
     }
 
     [Fact]

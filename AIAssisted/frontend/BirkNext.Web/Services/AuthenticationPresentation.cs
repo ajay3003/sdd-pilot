@@ -238,6 +238,8 @@ public enum AuthenticatedTestingState
     WaitingForTraffic,
     /// <summary>Some authenticated access exists, but not all of what the method can provide.</summary>
     Partial,
+    /// <summary>A context existed and its session has expired. Not the same as never having had one.</summary>
+    Expired,
     /// <summary>No authenticated context exists.</summary>
     NotConnected,
     /// <summary>The saved method provides no automated authenticated access at all.</summary>
@@ -257,6 +259,7 @@ public static class AuthenticatedTestingStates
         AuthenticatedTestingState.Ready => "Ready",
         AuthenticatedTestingState.WaitingForTraffic => "Waiting for authenticated traffic",
         AuthenticatedTestingState.Partial => "Partial",
+        AuthenticatedTestingState.Expired => "Expired",
         AuthenticatedTestingState.ManualOnly => "Manual only",
         _ => "Not connected",
     };

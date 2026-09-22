@@ -4,33 +4,48 @@
 @using BirkNext.Web.Shared.Components.Common
 
 @*
-    Authentication readiness: the verdict, the three prerequisites behind it, and the hand-off to Endpoint Discovery.
+    The Authentication pane, in the order a reader needs it: the verdict, the prerequisites behind it, the three cards
+    that answer configuration / verification / testing context, the Endpoint Discovery hand-off, and then the two
+    disclosures nobody needs until something is wrong.
 
-    One state, one explanation, one action. Everything a prerequisite needs to say is said on its own card and nowhere
-    else, so a stopped proxy is not announced four times on the way down the page.
+    Every state here comes from one derived AuthenticationPaneState. No card works out its own answer, which is how the
+    page used to end up saying "No authentication is configured" directly above "Matches saved configuration".
 *@
 <section class="ar" data-testid="auth-readiness" aria-label="Authentication readiness">
 
     <div class="ar-hero ar-tone-@Summary.Tone" data-testid="auth-readiness-hero">
         <div class="ar-hero-head">
-            <h3 class="ar-hero-title">Authentication testing</h3>
+            <span class="ar-icon ar-icon-key" aria-hidden="true"></span>
+            <h3 class="ar-hero-title">Authentication</h3>
             <span class="ar-chip ar-chip-@Summary.Tone" data-testid="auth-readiness-state">@Summary.Label</span>
         </div>
         <p class="ar-hero-detail" data-testid="auth-readiness-detail">@Summary.Detail</p>
 
-        @if (Summary.Prerequisites.Count > 0)
-        {
-            @* The compact roll-up. Each line is a marker and a short label; the reasoning lives on the cards. *@
-            <ul class="ar-rollup" data-testid="auth-readiness-rollup">
-                @foreach (var item in Summary.Prerequisites)
-                {
-                    <li class="ar-rollup-item ar-tone-@item.Tone" data-testid="auth-rollup-@item.Id">
-                        <span aria-hidden="true">@(item.State == AuthPrerequisiteState.Ok ? "✓" : item.State == AuthPrerequisiteState.NotRequired ? "·" : "!")</span>
-                        <span>@item.Title — @item.StatusLabel</span>
-                    </li>
-                }
-            </ul>
-        }
+        @*
+            The three answers, side by side and never substituted for one another. Prerequisite detail is deliberately
+            absent: each prerequisite says its piece once, on its own card.
+        *@
+        <dl class="ar-summary" data-testid="auth-readiness-summary">
+            <div>
+                <dt>Configuration</dt>
+                <dd class="ar-tone-@AuthenticationPaneStates.ConfigurationTone(State.Configuration)" data-testid="auth-summary-configuration">
+                    @AuthenticationPaneStates.ConfigurationLabel(State.Configuration)
+                </dd>
+            </div>
+            <div>
+                <dt>Verification</dt>
+                <dd class="ar-tone-@AuthenticationPaneStates.VerificationTone(State.Verification)" data-testid="auth-summary-verification">
+                    @AuthenticationPaneStates.VerificationLabel(State.Verification)
+                </dd>
+            </div>
+            <div>
+                <dt>Testing context</dt>
+                @* The same words the Authenticated testing context card uses, from the same derivation. *@
+                <dd class="ar-tone-@AuthenticatedTestingStates.Tone(State.TestingContext)" data-testid="auth-summary-context">
+                    @AuthenticatedTestingStates.Label(State.TestingContext)
+                </dd>
+            </div>
+        </dl>
 
         <div class="ar-hero-actions">
             <button type="button" class="btn-primary" data-testid="auth-verify"
@@ -45,58 +60,52 @@
 
     @if (Summary.Prerequisites.Count > 0)
     {
-        <div class="ar-cards">
-            @foreach (var item in Summary.Prerequisites)
-            {
-                <article class="ar-card ar-tone-@item.Tone" data-testid="auth-card-@item.Id">
-                    <div class="ar-card-head">
-                        <span class="ar-icon ar-icon-@item.Icon" aria-hidden="true"></span>
-                        <div>
-                            <h4 class="ar-card-title">@item.Title</h4>
-                            <span class="ar-chip ar-chip-@item.Tone" data-testid="auth-status-@item.Id">@item.StatusLabel</span>
+        @* Status cards, not a wizard. Once the system is operational this is not a linear sequence, and numbering it
+           told the reader to start at the top even when only the third one needed anything. *@
+        <div class="ar-section" data-testid="auth-prerequisites">
+            <h4 class="ar-section-title" id="auth-prerequisites-heading">Prerequisites</h4>
+            <div class="ar-cards" role="group" aria-labelledby="auth-prerequisites-heading">
+                @foreach (var item in Summary.Prerequisites)
+                {
+                    <article class="ar-card ar-tone-@item.Tone" data-testid="auth-card-@item.Id">
+                        <div class="ar-card-head">
+                            <span class="ar-icon ar-icon-@item.Icon" aria-hidden="true"></span>
+                            <div>
+                                <h5 class="ar-card-title">@item.Title</h5>
+                                <span class="ar-chip ar-chip-@item.Tone" data-testid="auth-status-@item.Id">@item.StatusLabel</span>
+                            </div>
                         </div>
-                    </div>
 
-                    @if (item.Explanation is { Length: > 0 })
-                    {
-                        <p class="ar-card-text">@item.Explanation</p>
-                    }
+                        @if (item.Explanation is { Length: > 0 })
+                        {
+                            <p class="ar-card-text">@item.Explanation</p>
+                        }
 
-                    @if (item.Facts is { Count: > 0 } facts)
-                    {
-                        @* Runtime facts only while there is a runtime; empty rows for a stopped proxy are noise. *@
-                        <dl class="ar-facts">
-                            @foreach (var (label, value) in facts)
-                            {
-                                <div><dt>@label</dt><dd>@value</dd></div>
-                            }
-                        </dl>
-                    }
+                        @if (item.Facts is { Count: > 0 } facts)
+                        {
+                            @* Runtime facts only while there is a runtime; empty rows for a stopped proxy are noise. *@
+                            <dl class="ar-facts">
+                                @foreach (var (label, value) in facts)
+                                {
+                                    <div><dt>@label</dt><dd>@value</dd></div>
+                                }
+                            </dl>
+                        }
 
-                    @if (item.ActionLabel is { Length: > 0 } action)
-                    {
-                        <button type="button" class="btn-secondary" data-testid="auth-action-@item.Id"
-                                disabled="@Busy" @onclick="() => OnAction.InvokeAsync(item.ActionId)">@action</button>
-                    }
-                </article>
-            }
+                        @if (item.ActionLabel is { Length: > 0 } action)
+                        {
+                            <button type="button" class="btn-secondary" data-testid="auth-action-@item.Id"
+                                    disabled="@Busy" @onclick="() => OnAction.InvokeAsync(item.ActionId)">@action</button>
+                        }
+                    </article>
+                }
+            </div>
         </div>
     }
 
-    @if (Proxy is { } runtime && Summary.Prerequisites.Count > 0)
-    {
-        <ReviewDisclosure Text="View technical details" CollapseText="Hide technical details"
-                          TestId="auth-technical-details" Class="disclosure-inline disclosure-small">
-            <dl class="ar-facts ar-facts-technical" data-testid="auth-technical-facts">
-                <div><dt>Runtime id</dt><dd>@(runtime.RuntimeId ?? "—")</dd></div>
-                <div><dt>Proxy endpoint</dt><dd>@(runtime.ExpectedProxyPort is { } p ? $"127.0.0.1:{p}" : "—")</dd></div>
-                <div><dt>Edge process id</dt><dd>@(runtime.EdgeProcessId?.ToString() ?? "—")</dd></div>
-                <div><dt>Edge launched with</dt><dd>@(runtime.EdgeProxyPort is { } e ? $"--proxy-server=127.0.0.1:{e}" : "—")</dd></div>
-                <div><dt>Profile path</dt><dd>@(runtime.EdgeProfileDirectory ?? "—")</dd></div>
-                <div><dt>Certificate thumbprint</dt><dd>@(string.IsNullOrWhiteSpace(runtime.Certificate.Thumbprint) ? "—" : runtime.Certificate.Thumbprint)</dd></div>
-            </dl>
-        </ReviewDisclosure>
-    }
+    @* Configuration, verification and authenticated context. The host owns them because they are bound to its draft
+       and its runtimes; they belong here in the reading order. *@
+    @ChildContent
 
     @* Endpoint Discovery is never disabled from here: it holds observed traffic from more than one source, so an
        incomplete proxy setup limits what arrives next rather than making the surface useless. *@
@@ -117,19 +126,68 @@
             Open Endpoint Discovery →
         </button>
     </article>
+
+    @if (Capabilities is not null)
+    {
+        <ReviewDisclosure Text="Testing capabilities" CollapseText="Hide testing capabilities"
+                          TestId="auth-capabilities" Class="disclosure-inline disclosure-small">
+            @Capabilities
+        </ReviewDisclosure>
+    }
+
+    @if (Proxy is not null || AuthenticationFacts is { Count: > 0 })
+    {
+        <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details"
+                          TestId="auth-technical-details" Class="disclosure-inline disclosure-small">
+            @if (Proxy is { } runtime)
+            {
+                <dl class="ar-facts ar-facts-technical" data-testid="auth-technical-facts">
+                    <div><dt>Runtime id</dt><dd>@(runtime.RuntimeId ?? "—")</dd></div>
+                    <div><dt>Proxy endpoint</dt><dd>@(runtime.ExpectedProxyPort is { } p ? $"127.0.0.1:{p}" : "—")</dd></div>
+                    <div><dt>Edge process id</dt><dd>@(runtime.EdgeProcessId?.ToString() ?? "—")</dd></div>
+                    <div><dt>Edge launched with</dt><dd>@(runtime.EdgeProxyPort is { } e ? $"--proxy-server=127.0.0.1:{e}" : "—")</dd></div>
+                    <div><dt>Profile path</dt><dd>@(runtime.EdgeProfileDirectory ?? "—")</dd></div>
+                    <div><dt>Proxy started</dt><dd>@(runtime.StartedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</dd></div>
+                    <div><dt>Certificate thumbprint</dt><dd>@(string.IsNullOrWhiteSpace(runtime.Certificate.Thumbprint) ? "—" : runtime.Certificate.Thumbprint)</dd></div>
+                    <div><dt>Certificate expires</dt><dd>@(runtime.Certificate.NotAfter?.ToLocalTime().ToString("d MMM yyyy") ?? "—")</dd></div>
+                </dl>
+            }
+            @* The configured identifiers are diagnostics down here, and the readable summary up in the configuration
+               card. They are never a secret — BirkNext has no field for one — but they are nobody's first question. *@
+            @if (AuthenticationFacts is { Count: > 0 } authFacts)
+            {
+                <dl class="ar-facts ar-facts-technical" data-testid="auth-technical-authentication">
+                    @foreach (var (label, value) in authFacts)
+                    {
+                        <div><dt>@label</dt><dd>@value</dd></div>
+                    }
+                </dl>
+            }
+        </ReviewDisclosure>
+    }
+
 </section>
 
 @code {
-    [Parameter, EditorRequired] public AuthenticationReadinessSummary Summary { get; set; } = new(AuthenticationReadiness.Checking, "Checking…", "", []);
+    /// <summary>The one derived state. Every label on this surface is read from it; none is recomputed.</summary>
+    [Parameter, EditorRequired] public AuthenticationPaneState State { get; set; } = default!;
     /// <summary>How many endpoints Endpoint Discovery already holds, so an incomplete setup is not reported as nothing to see.</summary>
     [Parameter] public int KnownEndpoints { get; set; }
     /// <summary>The proxy runtime, for the technical details disclosure only. Readiness never reads it directly.</summary>
     [Parameter] public LocalHttpsProxyStatus? Proxy { get; set; }
+    /// <summary>Saved authentication identifiers for the technical details disclosure. Never a credential.</summary>
+    [Parameter] public IReadOnlyList<(string Label, string Value)>? AuthenticationFacts { get; set; }
     [Parameter] public bool Busy { get; set; }
     /// <summary>Receives the prerequisite's ActionId. The host owns every one of these operations.</summary>
     [Parameter] public EventCallback<string?> OnAction { get; set; }
     [Parameter] public EventCallback OnVerify { get; set; }
     [Parameter] public EventCallback OnOpenDiscovery { get; set; }
+    /// <summary>Configuration, verification and authenticated context, placed between prerequisites and the hand-off.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    /// <summary>The capability inventory, collapsed by default.</summary>
+    [Parameter] public RenderFragment? Capabilities { get; set; }
+
+    private AuthenticationReadinessSummary Summary => State.Readiness;
 
     private (string Status, string Tone, string? Note) Discovery => EndpointDiscoveryCta.Status(Summary, KnownEndpoints);
     private string DiscoveryStatus => Discovery.Status;

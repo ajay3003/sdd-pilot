@@ -105,11 +105,13 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
     private static void OpenSetupDetails(IRenderedComponent<Component> cut) =>
         cut.Find("[data-testid='authenticated-testing-setup-toggle']").Click();
 
-    /// <summary>Starts the proxy from the panel itself, so the runtime session is bound to the real profile.</summary>
+    /// <summary>
+    /// Starts the proxy from the Local HTTPS Proxy prerequisite card, which owns the operation, so the runtime session
+    /// is bound to the real profile.
+    /// </summary>
     private static void StartProxy(IRenderedComponent<Component> cut)
     {
-        OpenSetupDetails(cut);
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Start authenticated proxy").Click();
+        cut.Find("[data-testid='auth-action-proxy']").Click();
         cut.WaitForAssertion(() => Row(cut, "proxy-state").Should().NotBe("Not started"));
     }
 
@@ -126,10 +128,28 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
         All(cut, "authenticated-testing-access").Should().ContainSingle();
         All(cut, "authenticated-testing-setup-toggle").Should().ContainSingle();
 
-        // Three access rows, no finer grain: REST, GraphQL and the certificate belong in the details.
+        // Access rows, no finer grain: REST, GraphQL and the certificate belong elsewhere.
         Row(cut, "testing-access-public").Should().Be("Available");
         Row(cut, "testing-access-api").Should().Be("Not available");
         Row(cut, "testing-access-dom").Should().Be("Not available");
+        // An authenticated API context and an authenticated browser DOM stay two answers, never one.
+        All(cut, "testing-access-api").Should().ContainSingle();
+        All(cut, "testing-access-dom").Should().ContainSingle();
+    }
+
+    /// <summary>
+    /// Proxy traffic produces an API context and never a DOM. Reporting the card as simply "Ready" would tell a reader
+    /// who needs the DOM that they can proceed.
+    /// </summary>
+    [Fact]
+    public void AnAvailableApiContextNeverImpliesAnAvailableBrowserDom()
+    {
+        var cut = Open();
+        StartProxy(cut);
+
+        cut.WaitForAssertion(() => Row(cut, "testing-access-api").Should().Be("Available"));
+        Row(cut, "testing-access-dom").Should().Be("Not available");
+        Row(cut, "testing-access-traffic").Should().NotBeEmpty();
     }
 
     [Fact]
@@ -140,7 +160,7 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
 
         primary.Should().NotContain(AuthenticatedTestingStates.Purpose);
         primary.Should().NotContain(DevOnlyNote);
-        primary.Should().NotContain("Start authenticated proxy");
+        primary.Should().NotContain("Check proxy compatibility");
         primary.Should().NotContain(AuthenticatedTestingStates.EndpointHandoff);
         // No warning-styled strip on a card whose state is merely "not set up yet".
         Primary(cut).QuerySelectorAll(".fa-section-note").Should().BeEmpty();
@@ -155,7 +175,7 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
 
         Has(cut, "authenticated-testing-method").Should().BeFalse("method is a row of the authenticated testing card now");
         All(cut, "authenticated-testing").Should().ContainSingle();
-        cut.FindAll("h3").Count(h => h.TextContent.Trim() == "Authenticated testing").Should().Be(1);
+        cut.FindAll("h3").Count(h => h.TextContent.Trim() == "Authenticated testing context").Should().Be(1);
         // Everything the deleted card carried is still reachable, one disclosure away.
         OpenSetupDetails(cut);
         Has(cut, "authenticated-testing-method-others").Should().BeTrue();
@@ -250,7 +270,9 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
         Row(cut, "authenticated-testing-edge-setup")
             .Should().Be("Open the dedicated proxy browser below; normal Edge and Windows proxy settings stay unchanged.");
         Row(cut, "authenticated-testing-discovery-link").Should().Contain(AuthenticatedTestingStates.EndpointHandoff);
-        Has(cut, "authenticated-testing-open-discovery").Should().BeTrue();
+        // One Endpoint Discovery call to action on the pane: the hand-off here is a sentence, not a second button.
+        Has(cut, "authenticated-testing-open-discovery").Should().BeFalse();
+        All(cut, "auth-open-discovery").Should().ContainSingle();
     }
 
     [Fact]
@@ -279,15 +301,17 @@ public sealed class AuthenticatedTestingDensityTests : BunitContext
     }
 
     [Fact]
-    public void TheStateIsNamedOnceOnTheCardAndEchoedOnlyAsTheDisclosureHint()
+    public void TheStateIsNamedOnceOnTheCardAndOnceInTheReadinessSummary()
     {
         var cut = Open();
         var label = AuthenticatedTestingStates.Label(AuthenticatedTestingState.NotConnected);
 
         Row(cut, "authenticated-testing-state").Should().Be(label);
-        // The hint on the toggle is the one deliberate repeat: it tells the reader what is inside.
-        cut.Find("[data-testid='authenticated-testing-setup-toggle'] .disclosure-hint").TextContent.Trim().Should().Be(label);
-        Occurrences(PrimaryText(cut), label).Should().Be(2);
+        // The readiness summary and the card say the same word because they read the same derivation.
+        Row(cut, "auth-summary-context").Should().Be(label);
+        // Inside the card itself it is stated exactly once; the toggle no longer echoes it.
+        Occurrences(PrimaryText(cut), label).Should().Be(1);
+        cut.FindAll("[data-testid='authenticated-testing-setup-toggle'] .disclosure-hint").Should().BeEmpty();
     }
 
     // ── Wording that would be a claim rather than an instruction ─────────────────────────────

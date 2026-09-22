@@ -514,32 +514,55 @@
             {
                 <div class="fa-auth-layout" data-testid="fa-auth-panel">
 
-                <AuthenticationReadinessPanel Summary="AuthReadiness"
+                @*
+                    One surface, read top to bottom: the verdict, the prerequisites behind it, then configuration,
+                    verification and authenticated context as three separate answers, then the hand-off, then the
+                    disclosures. The panel owns the frame and the reading order; this page owns the three cards that
+                    are bound to its draft and its runtimes.
+                *@
+                <AuthenticationReadinessPanel State="AuthPane"
                                               KnownEndpoints="KnownEndpointCount"
                                               Proxy="@(_proxyRuntime is null ? null : ProxyStatus)"
+                                              AuthenticationFacts="AuthenticationTechnicalFacts"
                                               Busy="@(_proxyRuntime?.Busy == true)"
                                               OnAction="RunAuthPrerequisiteActionAsync"
-                                              OnVerify="@(() => _showManualVerification = true)"
-                                              OnOpenDiscovery='@(() => _activeTab = "endpoint")' />
+                                              OnVerify="VerifyAuthentication"
+                                              OnOpenDiscovery='@(() => _activeTab = "endpoint")'>
+                <ChildContent>
 
                 @*
-                    1. Detected & configured authentication — what the target uses, and whether the saved
-                    configuration agrees. "Sign-in required" describes the TARGET APPLICATION; whether BirkNext
-                    has authenticated testing access is a different question, answered in section 3.
+                    1. Authentication configuration — ONE section for what is saved and what detection found about it.
+                    These were two full-width cards that disagreed in public: the readiness verdict called the
+                    environment unconfigured while the card below it said the detected provider matched the saved
+                    configuration. Saved-versus-draft belongs to the section; detected-versus-configured belongs to the
+                    detection block inside it. "Sign-in required" describes the TARGET APPLICATION, and is named so it
+                    cannot be read as testing availability.
                 *@
-                <section class="fa-auth-status fa-state-@AuthenticationDiscoveryState" data-testid="authentication-discovery" aria-labelledby="authentication-status-heading">
+                <section class="fa-auth-configuration fa-state-@(HasUnsavedAuthenticationChanges ? "draft" : "saved")" data-testid="authentication-configuration" aria-labelledby="authentication-configuration-heading">
+                <div class="fa-card-heading">
+                    <h3 id="authentication-configuration-heading">Authentication configuration</h3>
+                    <span class="fa-card-status" role="status">@(HasUnsavedAuthenticationChanges ? "Unsaved changes" : _isEditMode ? "Editing draft" : "Saved configuration")</span>
+                </div>
+
+                <dl class="fa-detail-list">
+                    <div class="fa-dl-row"><dt>Configuration</dt><dd data-testid="authentication-configuration-state">@AuthenticationPaneStates.ConfigurationLabel(AuthPane.Configuration)</dd></div>
+                    <div class="fa-dl-row"><dt>Provider</dt><dd data-testid="authentication-configured-provider">@AuthenticationPresentation.ProviderLabel(CurrentProfile?.Authentication.AuthenticationType ?? FrontendAuthenticationType.None)</dd></div>
+                    <div class="fa-dl-row"><dt>Sign-in required</dt><dd data-testid="authentication-sign-in-required">@BoolLabel(CurrentProfile?.Authentication.RequiresAuthentication ?? false)</dd></div>
+                </dl>
+
+                @* Detection, inside the section it describes. Its state machine — not detected, proposal available,
+                   applied to draft, matches saved, stale — is unchanged; only its place on the page moved. *@
+                <div class="fa-auth-status fa-state-@AuthenticationDiscoveryState" data-testid="authentication-discovery" aria-labelledby="authentication-status-heading">
                     <div class="fa-card-heading">
-                        <h3 id="authentication-status-heading">Detected &amp; configured authentication</h3>
+                        <h4 id="authentication-status-heading">Detection</h4>
                         <span class="fa-card-status" role="status">@AuthenticationDiscoveryLabel</span>
                     </div>
 
                     <dl class="fa-detail-list">
                         <div class="fa-dl-row"><dt>Detected method</dt><dd data-testid="authentication-provider">@AuthenticationPresentation.DetectedProviderLabel(_detectionResult)</dd></div>
                         <div class="fa-dl-row"><dt>Detection</dt><dd data-testid="authentication-detection-state">@AuthenticationDetectionStateLabel</dd></div>
-                        <div class="fa-dl-row"><dt>Configuration</dt><dd data-testid="authentication-match-summary">@AuthenticationPresentation.StateSummary(AuthenticationMatch)</dd></div>
+                        <div class="fa-dl-row"><dt>Detected configuration</dt><dd data-testid="authentication-match-summary">@AuthenticationPresentation.StateSummary(AuthenticationMatch)</dd></div>
                         <div class="fa-dl-row"><dt>Configuration source</dt><dd data-testid="authentication-config-source">@ConfigurationSourceLabel</dd></div>
-                        @* The target's own access requirement, named so it cannot be read as testing availability. *@
-                        <div class="fa-dl-row"><dt>Sign-in required</dt><dd data-testid="authentication-sign-in-required">@BoolLabel(CurrentProfile?.Authentication.RequiresAuthentication ?? false)</dd></div>
                     </dl>
 
                     <div class="fa-auth-actions">
@@ -580,158 +603,8 @@
                         </dl>
                         <p class="fa-auth-help">Expected authentication settings only. Never enter passwords, tokens or client secrets — BirkNext has no field for them.</p>
                     </details>
-                </section>
+                </div>
 
-                @*
-                    2. Verification — whether the saved authentication configuration has been confirmed by a
-                    person. Passing this does NOT create an authenticated testing context, and authenticated
-                    traffic appearing does NOT mark it passed. The two are kept apart deliberately.
-                *@
-                <section class="fa-detection-summary fa-state-@(ManualVerificationRequired ? "needs-action" : "ready")" data-testid="authentication-verification" aria-labelledby="authentication-verification-heading">
-                    <div class="fa-card-heading">
-                        <h3 id="authentication-verification-heading">Verification</h3>
-                        <span class="fa-card-status" role="status" data-testid="authentication-verification-method">@VerificationModeLabel</span>
-                    </div>
-                    <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Status</dt><dd data-testid="authentication-verification-status">@(ManualVerificationRequired ? ManualVerificationLabel : "Not required for this method")</dd></div>
-                        <div class="fa-dl-row"><dt>Last verification</dt><dd data-testid="authentication-verification-last">@LastVerificationLabel</dd></div>
-                        <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authentication-verification-mode">@VerificationModeLabel</dd></div>
-                    </dl>
-                    @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
-                    {
-                        <button type="button" class="btn-secondary fa-btn-sm" data-testid="authentication-verification-open" @onclick='() => _activeTab = "target"'>Open verification instructions</button>
-                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !AuthReadiness.CanVerify)
-                        {
-                            <p class="fa-auth-help" data-testid="authentication-verification-blocked">Proxy-assisted verification also needs the prerequisites above.</p>
-                        }
-                    }
-                    <p class="fa-auth-help" data-testid="authentication-verification-scope">Verification confirms the target's authentication configuration and sign-in workflow. It does not create an authenticated testing context.</p>
-                </section>
-
-                @*
-                    3. Authenticated testing — whether BirkNext can obtain authenticated evidence right now.
-                    One state, one explanation, one action; the setup workflow and the capability inventory are
-                    each one disclosure away.
-                *@
-                <section class="fa-detection-summary fa-state-@AuthenticatedTestingStates.Tone(TestingState)" data-testid="authenticated-testing" aria-labelledby="authenticated-testing-heading">
-                    <div class="fa-card-heading">
-                        <h3 id="authenticated-testing-heading">Authenticated testing</h3>
-                        <span class="fa-card-status" role="status" data-testid="authenticated-testing-state">@AuthenticatedTestingStates.Label(TestingState)</span>
-                    </div>
-                    <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)</dd></div>
-                    </dl>
-                    @* Browser routing is the step nothing else tells the user about, so it is the one callout here.
-                       Same shared primitive as Browser Discovery's guidance: one callout design, not two. *@
-                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
-                    {
-                        <InlineCallout Title="@AuthenticatedTestingStates.ProxyGuidanceTitle(ProxyStatus, BrowserWasRoutedThroughProxy)"
-                                       Text="@AuthenticatedTestingStates.ProxyGuidanceText(ProxyStatus, BrowserWasRoutedThroughProxy)"
-                                       TestId="authenticated-testing-proxy-guidance" />
-                    }
-
-                    @* Compact access summary; the finer REST/GraphQL/DOM distinctions live in the details. *@
-                    <dl class="fa-detail-list" data-testid="authenticated-testing-access">
-                        <div class="fa-dl-row"><dt>Public frontend and API</dt><dd data-testid="testing-access-public">Available</dd></div>
-                        <div class="fa-dl-row"><dt>Authenticated API</dt><dd data-testid="testing-access-api">@(AuthenticatedApiAvailable ? "Available" : "Not available")</dd></div>
-                        <div class="fa-dl-row"><dt>Authenticated browser DOM</dt><dd data-testid="testing-access-dom">@(AuthenticatedDomAvailable ? "Available" : "Not available")</dd></div>
-                    </dl>
-
-                    @*
-                        One disclosure for everything about how this method is set up and configured: the runtime
-                        workflow, the other methods, the DEV-only credential note and the Endpoint Discovery handoff.
-                        They were four surfaces describing one subject.
-                    *@
-                    <ReviewDisclosure Text="View setup details" CollapseText="Hide setup details"
-                                      Hint="@AuthenticatedTestingStates.Label(TestingState)"
-                                      TestId="authenticated-testing-setup" Class="disclosure-inline">
-
-                        <p class="fa-auth-help" data-testid="authenticated-testing-purpose">@AuthenticatedTestingStates.Purpose</p>
-
-                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
-                        {
-                            <dl class="fa-detail-list">
-                                <div class="fa-dl-row"><dt>Edge browser</dt><dd data-testid="authenticated-testing-edge-setup">@AuthenticatedTestingStates.EdgeBrowserSetup(ProxyStatus, BrowserWasRoutedThroughProxy)</dd></div>
-                            </dl>
-                        }
-
-                        @* The saved method and the alternatives to it, edited here and nowhere else. *@
-                        @if (_isEditMode && _editProfile is not null)
-                        {
-                            <label class="fa-label" for="authenticated-testing-method-select">Method</label>
-                            <select id="authenticated-testing-method-select" class="form-control" @bind="_editProfile.Authentication.AuthenticatedTestingMethod">
-                                <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.EditOption(AuthenticatedTestingMethod.LocalHttpsProxy)</option>
-                                <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
-                                <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
-                            </select>
-                        }
-                        else
-                        {
-                            <dl class="fa-detail-list">
-                                <div class="fa-dl-row"><dt>Other available methods</dt><dd data-testid="authenticated-testing-method-others">@AuthenticatedTestingMethodLabels.OtherMethods(SelectedTestingMethod)</dd></div>
-                            </dl>
-                        }
-
-                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile))
-                        {
-                            <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
-                        }
-
-                        @* The SAVED method decides which runtime panel appears. Runtime operations are transient:
-                           they never enter edit mode, never show Save changes and never persist evidence. *@
-                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
-                        {
-                            <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" />
-                        }
-                        else if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
-                        {
-                            <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" OnViewDiscovery='() => _activeTab = "endpoint"' />
-                        }
-
-                        @* Detailed traffic belongs to Endpoint Discovery; this is the handoff, not a copy of it. *@
-                        <p class="fa-auth-help" data-testid="authenticated-testing-discovery-link">
-                            @AuthenticatedTestingStates.EndpointHandoff
-                            <button type="button" class="fa-linkbtn" data-testid="authenticated-testing-open-discovery" @onclick='() => _activeTab = "endpoint"'>Open Endpoint Discovery</button>
-                        </p>
-
-                        @* A quiet aside, kept intact: the credential wording is a security guarantee, not copy. *@
-                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
-                        {
-                            <p class="fa-auth-note" data-testid="authenticated-testing-method-help">
-                                <span class="fa-auth-note-tag">DEV only</span>
-                                <span data-testid="proxy-security-warning">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span>
-                            </p>
-                        }
-                        else
-                        {
-                            <p class="fa-auth-help" data-testid="authenticated-testing-method-help">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</p>
-                        }
-                    </ReviewDisclosure>
-                </section>
-
-                @* Manual verification only has no runtime panel of its own, so it keeps its own surface. *@
-                @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManualOnly)
-                {
-                <section class="fa-detection-summary fa-state-@(ManualStatus == ManualAuthenticationVerificationStatus.Passed ? "ready" : ManualStatus == ManualAuthenticationVerificationStatus.Failed ? "blocked" : "needs-action")" data-testid="manual-only-panel" aria-label="Manual verification only">
-                    <h3>Manual verification</h3>
-                    <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Status</dt><dd>@ManualStatus</dd></div></dl>
-                    <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
-                    @if (_manualInstructionsOpen)
-                    {
-                        <p>Open @CurrentTargetUrl in your managed Edge work profile, sign in manually, and confirm access to the target application.</p>
-                        <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
-                        <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
-                    }
-                    <p>Manual verification confirms user access only. It does not enable authenticated REST, GraphQL or browser automation.</p>
-                    @* This method has no runtime panel, so it is the only place its capability inventory appears. *@
-                    <AuthenticatedCapabilities Api="false" Dom="false" Rest="false" GraphQl="false" TrafficVerified="false" />
-                </section>
-                }
-
-
-                @* ── 3. Saved authentication configuration ── *@
-                <section class="fa-auth-configuration fa-state-@(HasUnsavedAuthenticationChanges ? "draft" : "saved")" data-testid="authentication-configuration">
-                <div class="fa-card-heading"><h3>Authentication configuration</h3><span class="fa-card-status" role="status">@(HasUnsavedAuthenticationChanges ? "Unsaved changes" : _isEditMode ? "Editing draft" : "Saved configuration")</span></div>
                 @if (_isEditMode && _editProfile is not null)
                 {
                     var auth = _editProfile.Authentication;
@@ -784,6 +657,17 @@
                                       @onchange="e => auth.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
                         </div>
 
+                        @* The saved method and the alternatives to it, edited here and nowhere else: the method is part
+                           of the saved authentication configuration, so this is the card that owns draft-versus-saved. *@
+                        <div class="form-field fa-field-full">
+                            <label class="fa-label" for="authenticated-testing-method-select">Authenticated testing method</label>
+                            <select id="authenticated-testing-method-select" class="form-control" @bind="auth.AuthenticatedTestingMethod">
+                                <option value="@AuthenticatedTestingMethod.LocalHttpsProxy">@AuthenticatedTestingMethodLabels.EditOption(AuthenticatedTestingMethod.LocalHttpsProxy)</option>
+                                <option value="@AuthenticatedTestingMethod.ManagedEdgeCdp">@AuthenticatedTestingMethodLabels.CdpOption</option>
+                                <option value="@AuthenticatedTestingMethod.ManualOnly">@AuthenticatedTestingMethodLabels.ManualOption</option>
+                            </select>
+                        </div>
+
                         @* Browser delivery trust: saved policy for managed-Edge authenticated testing. Exact origin is always preferred;
                            ApprovedMcasProxyOrigin only ADDS an approved, correlated Defender for Cloud Apps fallback. Changing it follows the normal
                            draft -> Save changes / Cancel flow and never marks public target detection stale. *@
@@ -810,10 +694,9 @@
                 else
                 {
                     var auth = profile.Authentication;
-                    @* Read-only mode: provider, configuration match and sign-in requirement are already stated once at
-                       the top, so this section only says where they are edited. Identifiers and redirect URLs live
-                       only in the single comparison above. *@
-                    <p class="fa-auth-help" data-testid="authentication-configuration-readonly">Authentication settings are edited here. Use Edit Environment to change the provider, sign-in requirement or expected identifiers.</p>
+                    @* Read-only mode: the high-level state is stated above and the identifiers live in the one
+                       comparison, so this only says where they are edited. *@
+                    <p class="fa-auth-help" data-testid="authentication-configuration-readonly">Authentication settings are edited here. Use Edit Environment to change the provider, sign-in requirement, authenticated testing method or expected identifiers.</p>
                     @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
                     {
                     <div class="fa-field-full fa-state-saved fa-auth-subcard" data-testid="browser-delivery-trust">
@@ -829,6 +712,156 @@
                 }
 
                 </section>
+
+                @*
+                    2. Verification — whether a PERSON has confirmed the sign-in workflow. Passing this does NOT create
+                    an authenticated testing context, and authenticated traffic appearing does NOT mark it passed. The
+                    "Method" row says how verification is performed; how authentication was DETECTED is a fact about
+                    detection and lives in the configuration section, which is where it stopped contradicting this card.
+                *@
+                <section class="fa-detection-summary fa-state-@AuthenticationPaneStates.VerificationTone(AuthPane.Verification)" data-testid="authentication-verification" aria-labelledby="authentication-verification-heading">
+                    <div class="fa-card-heading">
+                        <h3 id="authentication-verification-heading">Authentication verification</h3>
+                        <span class="fa-card-status" role="status" data-testid="authentication-verification-state">@AuthenticationPaneStates.VerificationLabel(AuthPane.Verification)</span>
+                    </div>
+                    <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Status</dt><dd data-testid="authentication-verification-status">@(ManualVerificationRequired ? ManualVerificationLabel : "Not required for this method")</dd></div>
+                        <div class="fa-dl-row"><dt>Last verification</dt><dd data-testid="authentication-verification-last">@LastVerificationLabel</dd></div>
+                        <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authentication-verification-method">@AuthenticationPaneStates.VerificationMethod(AuthPane.Verification)</dd></div>
+                    </dl>
+                    @if (ManualVerificationRequired && SelectedTestingMethod != AuthenticatedTestingMethod.ManualOnly)
+                    {
+                        <button type="button" class="btn-secondary fa-btn-sm" data-testid="authentication-verification-open" @onclick='() => _activeTab = "target"'>Open verification instructions</button>
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !AuthReadiness.CanVerify)
+                        {
+                            <p class="fa-auth-help" data-testid="authentication-verification-blocked">Proxy-assisted verification also needs the prerequisites above.</p>
+                        }
+                    }
+                    <p class="fa-auth-help" data-testid="authentication-verification-scope">Verification confirms the target's authentication configuration and sign-in workflow. It does not create an authenticated testing context.</p>
+                </section>
+
+                @*
+                    3. Authenticated testing context — whether BirkNext can obtain authenticated evidence right now.
+                    An authenticated API context and an authenticated browser DOM are different capabilities and are
+                    reported separately; neither is implied by the other, and neither is implied by proxy traffic.
+                *@
+                <section class="fa-detection-summary fa-state-@AuthenticatedTestingStates.Tone(AuthPane.TestingContext)" data-testid="authenticated-testing" aria-labelledby="authenticated-testing-heading">
+                    <div class="fa-card-heading">
+                        <h3 id="authenticated-testing-heading">Authenticated testing context</h3>
+                        <span class="fa-card-status" role="status" data-testid="authenticated-testing-state">@AuthenticatedTestingStates.Label(AuthPane.TestingContext)</span>
+                    </div>
+                    <dl class="fa-detail-list">
+                        <div class="fa-dl-row"><dt>Method</dt><dd data-testid="authenticated-testing-method-value">@AuthenticatedTestingMethodLabels.Option(SelectedTestingMethod)</dd></div>
+                    </dl>
+                    @* Browser routing is the step nothing else tells the user about, so it is the one callout here.
+                       Same shared primitive as Browser Discovery's guidance: one callout design, not two. *@
+                    @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                    {
+                        <InlineCallout Title="@AuthenticatedTestingStates.ProxyGuidanceTitle(ProxyStatus, BrowserWasRoutedThroughProxy)"
+                                       Text="@AuthenticatedTestingStates.ProxyGuidanceText(ProxyStatus, BrowserWasRoutedThroughProxy)"
+                                       TestId="authenticated-testing-proxy-guidance" />
+                    }
+
+                    @* Compact access summary; the finer REST/GraphQL distinctions live in Testing capabilities. *@
+                    <dl class="fa-detail-list" data-testid="authenticated-testing-access">
+                        <div class="fa-dl-row"><dt>Public frontend and API</dt><dd data-testid="testing-access-public">Available</dd></div>
+                        <div class="fa-dl-row"><dt>Authenticated API</dt><dd data-testid="testing-access-api">@AuthenticationPaneStates.Availability(AuthenticatedApiAvailable)</dd></div>
+                        <div class="fa-dl-row"><dt>Authenticated browser DOM</dt><dd data-testid="testing-access-dom">@AuthenticationPaneStates.Availability(AuthenticatedDomAvailable)</dd></div>
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                        {
+                            <div class="fa-dl-row"><dt>Authenticated traffic</dt><dd data-testid="testing-access-traffic">@AuthenticatedTestingMethodLabels.AuthenticatedTraffic(ProxyStatus)</dd></div>
+                            @if (ProxyStatus.CredentialExpiresAt is { } expires)
+                            {
+                                <div class="fa-dl-row"><dt>Session expires</dt><dd data-testid="testing-access-expiry">@expires.ToLocalTime().ToString("HH:mm:ss")</dd></div>
+                            }
+                        }
+                    </dl>
+
+                    @*
+                        One disclosure for how this method is operated: the purpose, the runtime panel, the other
+                        methods and the DEV-only credential note. The certificate, the proxy and the browser are
+                        prerequisites and are stated on their own cards above, not repeated in here.
+                    *@
+                    <ReviewDisclosure Text="View setup details" CollapseText="Hide setup details"
+                                      TestId="authenticated-testing-setup" Class="disclosure-inline">
+
+                        <p class="fa-auth-help" data-testid="authenticated-testing-purpose">@AuthenticatedTestingStates.Purpose</p>
+
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                        {
+                            <dl class="fa-detail-list">
+                                <div class="fa-dl-row"><dt>Edge browser</dt><dd data-testid="authenticated-testing-edge-setup">@AuthenticatedTestingStates.EdgeBrowserSetup(ProxyStatus, BrowserWasRoutedThroughProxy)</dd></div>
+                            </dl>
+                        }
+
+                        @if (!_isEditMode)
+                        {
+                            <dl class="fa-detail-list">
+                                <div class="fa-dl-row"><dt>Other available methods</dt><dd data-testid="authenticated-testing-method-others">@AuthenticatedTestingMethodLabels.OtherMethods(SelectedTestingMethod)</dd></div>
+                            </dl>
+                        }
+
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile))
+                        {
+                            <p role="alert" data-testid="authenticated-testing-method-environment-blocked">@LocalHttpsProxyEnvironmentPolicy.EnvironmentBlockedReason</p>
+                        }
+
+                        @* The SAVED method decides which runtime panel appears. Runtime operations are transient:
+                           they never enter edit mode, never show Save changes and never persist evidence. *@
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManagedEdgeCdp)
+                        {
+                            <ManagedEdgeConnectionPanel Runtime="_edgeRuntime" Profile="CurrentProfile" />
+                        }
+                        else if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                        {
+                            <LocalHttpsProxyPanel Runtime="_proxyRuntime" Profile="CurrentProfile" />
+                        }
+
+                        @* Endpoint Discovery has exactly one call to action on this page, below. This is the sentence
+                           that says why, not a second button competing with it. *@
+                        <p class="fa-auth-help" data-testid="authenticated-testing-discovery-link">@AuthenticatedTestingStates.EndpointHandoff</p>
+
+                        @* A quiet aside, kept intact: the credential wording is a security guarantee, not copy. *@
+                        @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                        {
+                            <p class="fa-auth-note" data-testid="authenticated-testing-method-help">
+                                <span class="fa-auth-note-tag">DEV only</span>
+                                <span data-testid="proxy-security-warning">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</span>
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="fa-auth-help" data-testid="authenticated-testing-method-help">@AuthenticatedTestingMethodLabels.Help(SelectedTestingMethod)</p>
+                        }
+                    </ReviewDisclosure>
+                </section>
+
+                @* Manual verification only has no runtime panel of its own, so it keeps its own surface. *@
+                @if (SelectedTestingMethod == AuthenticatedTestingMethod.ManualOnly)
+                {
+                <section class="fa-detection-summary fa-state-@(ManualStatus == ManualAuthenticationVerificationStatus.Passed ? "ready" : ManualStatus == ManualAuthenticationVerificationStatus.Failed ? "blocked" : "needs-action")" data-testid="manual-only-panel" aria-label="Manual verification only">
+                    <h3>Manual verification</h3>
+                    <dl class="fa-detail-list"><div class="fa-dl-row"><dt>Target</dt><dd>@CurrentProfile?.Name</dd></div><div class="fa-dl-row"><dt>Status</dt><dd>@ManualStatus</dd></div></dl>
+                    <SecondaryButton OnClick="OpenManualVerification">Open verification instructions</SecondaryButton>
+                    @if (_manualInstructionsOpen)
+                    {
+                        <p>Open @CurrentTargetUrl in your managed Edge work profile, sign in manually, and confirm access to the target application.</p>
+                        <PrimaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Passed))" Disabled="@(!CanRecordManualVerification)">Mark verification passed</PrimaryButton>
+                        <SecondaryButton OnClick="@(() => RecordManualVerificationAsync(ManualAuthenticationVerificationStatus.Failed))" Disabled="@(!CanRecordManualVerification)">Mark verification failed</SecondaryButton>
+                    }
+                    <p>Manual verification confirms user access only. It does not enable authenticated REST, GraphQL or browser automation.</p>
+                </section>
+                }
+
+                </ChildContent>
+                <Capabilities>
+                    @* The capability inventory, stated once for whichever method is saved. It used to be rendered by
+                       each method's own runtime panel, which is why it could appear twice or not at all. *@
+                    <AuthenticatedCapabilities Api="AuthenticatedApiAvailable" Dom="AuthenticatedDomAvailable"
+                                               Rest="AuthenticatedRestObserved" GraphQl="AuthenticatedGraphQlObserved"
+                                               TrafficVerified="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)" />
+                </Capabilities>
+                </AuthenticationReadinessPanel>
                 </div>
             }
 
@@ -1498,13 +1531,30 @@
 
         </div>
 
-        @* ── Reset entire profile ── *@
+        @* ── Advanced / Maintenance ──
+           Resetting the profile is destructive and is nobody's next step, so it is collapsed, styled as destructive
+           and separated from the workflow above rather than sitting in the page footer as an ordinary button. *@
         @if (!_isEditMode)
         {
-            <div class="fa-profile-reset-zone">
-                <span class="fa-profile-reset-label">Reset entire profile to defaults — keeps Name, Environment Type, Target URL, and Notes.</span>
-                <SecondaryButton OnClick="@(() => _showResetConfirm = true)" Class="fa-btn-sm">Reset Profile</SecondaryButton>
-            </div>
+            <ReviewDisclosure Text="Advanced / Maintenance" CollapseText="Hide Advanced / Maintenance"
+                              TestId="profile-advanced" Class="disclosure-inline disclosure-small">
+                @* One maintenance section for the whole profile. Removing the HTTPS inspection certificate used to be a
+                   normal-looking button beside "Install", one click from the workflow; it belongs with Reset Profile. *@
+                @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                {
+                    <div class="fa-profile-reset-zone" data-testid="advanced-remove-certificate">
+                        <span class="fa-profile-reset-label">Remove the HTTPS inspection certificate — removes the <em>BirkNext DEV HTTPS Inspection CA</em> from this Windows user's trust store. Authenticated proxy testing stops working until it is installed again.</span>
+                        <DangerButton OnClick="RemoveProxyCertificateAsync" Class="fa-btn-sm"
+                                      Disabled="@(_proxyRuntime is null || _proxyRuntime.Busy || ProxyStatus.Certificate.State != ProxyCertificateTrustState.Trusted)">
+                            Remove test certificate
+                        </DangerButton>
+                    </div>
+                }
+                <div class="fa-profile-reset-zone" data-testid="advanced-reset-profile">
+                    <span class="fa-profile-reset-label">Reset Target Environment profile — resets configuration to defaults while keeping Name, Environment Type, Target URL and Notes.</span>
+                    <DangerButton OnClick="@(() => _showResetConfirm = true)" Class="fa-btn-sm">Reset Profile</DangerButton>
+                </div>
+            </ReviewDisclosure>
         }
 
     </div>
@@ -1681,16 +1731,24 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     private ManagedEdgeRuntime? _edgeRuntime;
     private LocalHttpsProxyRuntime? _proxyRuntime;
-    private bool _showManualVerification;
 
-    /// <summary>Detected, partially detected, not detected or unavailable — never "verified", which is the next card's word.</summary>
-    private string AuthenticationDetectionStateLabel => _detectionResult switch
+    /// <summary>
+    /// The pane's primary action. Verification is performed by a person in a signed-in browser, so this opens the
+    /// instructions that describe it — on the Manual-only method's own panel, otherwise beside the detection result on
+    /// Target Application. It previously set a flag nothing read, which made the primary button do nothing at all.
+    /// </summary>
+    private void VerifyAuthentication()
     {
-        null => "Not run",
-        { Success: true } r when HasDetectedAuthSettings(r) => "Detected",
-        { Success: true } => "Partially detected",
-        _ => "Not detected",
-    };
+        if (SelectedTestingMethod == AuthenticatedTestingMethod.ManualOnly) { OpenManualVerification(); return; }
+        _activeTab = "target";
+        OpenManualVerification();
+    }
+
+    /// <summary>Detected, partially detected, not detected or unavailable — never "verified", which is another card's word.</summary>
+    private AuthDetectionState AuthenticationDetection =>
+        AuthenticationPaneStates.Detection(_detectionResult, _detectionResult is not null && HasDetectedAuthSettings(_detectionResult));
+
+    private string AuthenticationDetectionStateLabel => AuthenticationPaneStates.DetectionLabel(AuthenticationDetection);
 
     /// <summary>Where the detected configuration came from. "Not available" rather than a blank, which reads as a missing value.</summary>
     private string ConfigurationSourceLabel =>
@@ -1699,13 +1757,69 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string LastVerificationLabel =>
         CurrentProfile?.ManualVerification is { VerifiedAt: { } at } ? at.ToLocalTime().ToString("d MMM yyyy HH:mm") : "Never";
 
+    /// <summary>
+    /// What is SAVED for this environment. Deliberately NOT <c>RequiresAuthentication</c>, which describes the target's
+    /// own access rule: passing that flag here is what made a fully configured Entra ID environment announce
+    /// "No authentication is configured" directly above "Matches saved configuration".
+    /// </summary>
+    private AuthConfigurationState AuthenticationConfiguration =>
+        AuthenticationPaneStates.Configuration(CurrentProfile?.Authentication);
+
     /// <summary>The one readiness derivation, fed the state this page already holds. Nothing is recomputed here.</summary>
     private AuthenticationReadinessSummary AuthReadiness => AuthenticationReadinessPresentation.Summarize(
-        CurrentProfile?.Authentication.RequiresAuthentication == true,
+        AuthenticationConfiguration,
         SelectedTestingMethod,
         _proxyRuntime is null ? null : ProxyStatus,
         _proxyRuntime is null ? null : ProxyStatus.Certificate,
-        _proxyRuntime?.Loaded == true);
+        _proxyRuntime?.Loaded == true,
+        CurrentProfile is { } scope ? LocalHttpsProxyScope.Fingerprint(scope) : null,
+        LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile));
+
+    /// <summary>
+    /// The one canonical pane state. Every card on the Authentication tab reads its verdict from here rather than
+    /// working one out from a neighbouring concept.
+    /// </summary>
+    private AuthenticationPaneState AuthPane => AuthenticationPaneStates.Derive(
+        CurrentProfile?.Authentication,
+        _detectionResult,
+        _detectionResult is not null && HasDetectedAuthSettings(_detectionResult),
+        AuthenticationMatch,
+        ManualVerificationRequired,
+        ManualStatus,
+        TestingState,
+        AuthenticatedApiAvailable,
+        AuthenticatedDomAvailable,
+        ProxyStatus.CredentialExpired,
+        AuthReadiness);
+
+    /// <summary>
+    /// Authentication diagnostics for the Technical details disclosure.
+    ///
+    /// The expected Authority, Tenant and Client ID are deliberately NOT repeated here: they already have exactly one
+    /// home — the detected-versus-configured comparison — which is itself one disclosure away and says more about each
+    /// value than a bare copy could. This lists what that table does not, and points at it for what it does.
+    /// </summary>
+    private IReadOnlyList<(string Label, string Value)> AuthenticationTechnicalFacts
+    {
+        get
+        {
+            var auth = CurrentProfile?.Authentication;
+            return
+            [
+                ("Saved verification mode", auth?.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge ? "Manual (managed Edge)" : "Automatic"),
+                ("Manual verification status", ManualStatus.ToString()),
+                ("Detection", AuthenticationPaneStates.DetectionLabel(AuthenticationDetection)),
+                ("Detection source", ConfigurationSourceLabel),
+                ("Expected identifiers", "Authentication configuration → Detection → View details"),
+            ];
+        }
+    }
+
+    /// <summary>Removing the trusted root is maintenance, not workflow, so it lives behind Advanced / Maintenance.</summary>
+    private async Task RemoveProxyCertificateAsync()
+    {
+        if (_proxyRuntime is not null) await _proxyRuntime.RemoveCertificateAsync();
+    }
 
     /// <summary>Endpoint Discovery already holds these, so an incomplete proxy setup is never reported as nothing to see.</summary>
     private int KnownEndpointCount => ProxyStatus.ObservedEndpoints.Count;
@@ -1739,7 +1853,6 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     /// <summary>Whether a browser has been routed through this proxy at any point in the current session.</summary>
     private bool BrowserWasRoutedThroughProxy => _proxyRuntime?.BrowserWasRouted ?? false;
-    private string VerificationModeLabel => CurrentProfile?.Authentication.VerificationMode == AuthenticationVerificationMode.ManualManagedEdge ? "Manual verification" : "Automated detection";
     private AuthenticatedTestingMethod SelectedTestingMethod => CurrentProfile?.Authentication.AuthenticatedTestingMethod ?? AuthenticatedTestingMethod.ManagedEdgeCdp;
     private AuthenticatedCapabilitySummary Coverage => AuthenticatedTestingMethodLabels.Capabilities(SelectedTestingMethod, EdgeStatus, ProxyStatus);
 

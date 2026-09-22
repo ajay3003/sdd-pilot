@@ -311,7 +311,10 @@
     min-width: 0;
 }
 
-.fa-auth-layout ::deep > section {
+/* The readiness panel (.ar) IS the pane now: it owns the reading order and each card inside it draws its own
+   frame, so the panel itself must not also be a card or the page gains a border around everything. */
+.fa-auth-layout ::deep > section:not(.ar),
+.fa-auth-layout ::deep .ar > section {
     padding: 1rem;
     border: 1px solid var(--clr-border-subtle);
     border-radius: var(--radius-md);
@@ -323,6 +326,8 @@
     margin: 0 0 .75rem;
     font-size: 1rem;
 }
+/* The hero owns its own heading metrics; the pane-wide h3 rule must not reach into it. */
+.fa-auth-layout ::deep .ar-hero-title { margin: 0; font-size: 1.05rem; }
 
 .fa-auth-layout ::deep .fa-card-heading {
     display: flex;
@@ -354,7 +359,17 @@
 .fa-auth-layout ::deep .fa-state-neutral > .fa-card-heading .fa-card-status { color: var(--clr-text-muted); }
 .fa-page-unsaved { color: var(--clr-warning); font-weight: 600; font-size: .875rem; }
 .fa-auth-layout ::deep [data-testid="browser-delivery-trust"],
-.fa-auth-layout ::deep .fa-auth-step[class*="fa-state-"] { padding: .75rem; }
+.fa-auth-layout ::deep .fa-auth-status[class*="fa-state-"] { padding: .75rem; }
+
+/* Detection sits inside the one configuration section rather than beside it as a second full-width card. */
+.fa-auth-layout ::deep .fa-auth-status {
+    border-radius: var(--radius-md);
+    margin: .75rem 0;
+}
+.fa-auth-layout ::deep .fa-auth-status h4 {
+    margin: 0;
+    font-size: .95rem;
+}
 
 /* ── Authentication status card ─────────────────────────────────────────────── */
 
@@ -614,14 +629,14 @@
 .fa-auth-layout ::deep dt { color: var(--clr-text-muted); }
 .fa-auth-layout ::deep dd { margin: 0; overflow-wrap: anywhere; }
 .fa-auth-layout ::deep button { margin: .25rem .25rem .25rem 0; }
-.fa-auth-layout ::deep [data-testid="authenticated-capabilities"] { margin-top: 1rem; }
+.fa-auth-layout ::deep [data-testid="authenticated-capabilities"] h3 { font-size: .95rem; }
 
+/* Still used by the managed-Edge CDP panel, which this redesign deliberately leaves alone. */
 .fa-auth-layout ::deep .fa-auth-steps {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
 }
-
 .fa-auth-layout ::deep .fa-auth-step { min-width: 0; }
 .fa-auth-layout ::deep .fa-auth-step .fa-dl-row { grid-template-columns: minmax(6rem, 1fr) minmax(0, 2fr); }
 

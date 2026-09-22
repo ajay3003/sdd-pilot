@@ -34,13 +34,22 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
         };
 
     private IRenderedComponent<AuthenticationReadinessPanel> Render(
-        LocalHttpsProxyStatus? proxy = null, ProxyCertificateStatus? certificate = null, bool loaded = true, int knownEndpoints = 0)
+        LocalHttpsProxyStatus? proxy = null, ProxyCertificateStatus? certificate = null, bool loaded = true, int knownEndpoints = 0,
+        AuthConfigurationState configuration = AuthConfigurationState.Configured,
+        AuthVerificationState verification = AuthVerificationState.Required,
+        AuthenticatedTestingState context = AuthenticatedTestingState.NotConnected)
     {
         var resolved = proxy ?? Proxy();
         var summary = AuthenticationReadinessPresentation.Summarize(
-            true, AuthenticatedTestingMethod.LocalHttpsProxy, resolved, certificate ?? Certificate(), loaded);
+            configuration, AuthenticatedTestingMethod.LocalHttpsProxy, resolved, certificate ?? Certificate(), loaded);
+        var state = new AuthenticationPaneState(
+            configuration, AuthDetectionState.Detected, AuthenticationMatchState.MatchesSaved,
+            verification, context,
+            AuthenticatedApiAvailable: context == AuthenticatedTestingState.Ready,
+            AuthenticatedDomAvailable: false,
+            summary);
         return Render<AuthenticationReadinessPanel>(p => p
-            .Add(c => c.Summary, summary)
+            .Add(c => c.State, state)
             .Add(c => c.Proxy, resolved)
             .Add(c => c.KnownEndpoints, knownEndpoints));
     }
@@ -96,6 +105,73 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
         // The technical details are diagnostics, never credentials.
         foreach (var forbidden in new[] { "Bearer", "Authorization", "Set-Cookie", "secret", "password" })
             markup.Should().NotContain(forbidden);
+    }
+
+    // ── The three answers in the hero ────────────────────────────────────────
+
+    /// <summary>
+    /// The regression this pane was rebuilt for. Configuration, verification and testing context are three questions
+    /// with three answers, and the hero states each one without borrowing another's word. The page used to lead with
+    /// "Not configured" because the target did not force a sign-in, while the card below reported that the detected
+    /// provider matched the saved configuration.
+    /// </summary>
+    [Fact]
+    public void TheHeroStatesConfigurationVerificationAndContextSeparately()
+    {
+        var cut = Render(verification: AuthVerificationState.Required, context: AuthenticatedTestingState.Ready);
+
+        Text(cut, "auth-summary-configuration").Should().Be("Configured");
+        Text(cut, "auth-summary-verification").Should().Be("Manual verification required");
+        Text(cut, "auth-summary-context").Should().Be("Ready");
+
+        // Verification still being required does not make the pane, or the configuration, unconfigured.
+        Text(cut, "auth-readiness-state").Should().Be("Ready");
+        cut.Find("[data-testid=auth-readiness-hero]").TextContent.Should().NotContain("No authentication");
+    }
+
+    [Fact]
+    public void AnUnconfiguredEnvironmentSaysWhichConfigurationIsMissing()
+    {
+        var cut = Render(configuration: AuthConfigurationState.NotConfigured, verification: AuthVerificationState.NotApplicable);
+
+        Text(cut, "auth-summary-configuration").Should().Be("Not configured");
+        Text(cut, "auth-readiness-detail").Should().Be("No authentication provider is configured for this Target Environment.");
+        // The prerequisites are the method's, not the provider's, so they stay visible and operable.
+        cut.FindAll("[data-testid=auth-prerequisites]").Should().ContainSingle();
+        cut.Find("[data-testid=auth-verify]").HasAttribute("disabled").Should().BeTrue();
+    }
+
+    [Fact]
+    public void AnAvailableApiContextIsNotReportedAsAnAvailableBrowserDom()
+    {
+        var api = new AuthenticationPaneState(
+            AuthConfigurationState.Configured, AuthDetectionState.Detected, AuthenticationMatchState.MatchesSaved,
+            AuthVerificationState.Required, AuthenticatedTestingState.Partial,
+            AuthenticatedApiAvailable: true, AuthenticatedDomAvailable: false,
+            AuthenticationReadinessPresentation.Summarize(AuthConfigurationState.Configured,
+                AuthenticatedTestingMethod.LocalHttpsProxy, Proxy(), Certificate(), loaded: true));
+
+        api.AuthenticatedApiAvailable.Should().BeTrue();
+        api.AuthenticatedDomAvailable.Should().BeFalse("proxy traffic never produces a DOM");
+        api.TestingContext.Should().Be(AuthenticatedTestingState.Partial,
+            "an API context without an observed endpoint is partial access, not full access");
+    }
+
+    // ── Prerequisites as cards, not as a wizard ──────────────────────────────
+
+    [Fact]
+    public void PrerequisitesAreThreeStatusCardsUnderOneHeadingAndAreNeverNumbered()
+    {
+        var cut = Render();
+        var section = cut.Find("[data-testid=auth-prerequisites]");
+
+        section.QuerySelector("#auth-prerequisites-heading")!.TextContent.Trim().Should().Be("Prerequisites");
+        section.QuerySelectorAll(".ar-card").Should().HaveCount(3);
+        foreach (var id in new[] { "certificate", "proxy", "browser" })
+            cut.FindAll($"[data-testid=auth-card-{id}]").Should().ContainSingle();
+
+        foreach (var step in new[] { "Step 1", "Step 2", "Step 3", "Step 4" })
+            cut.Markup.Should().NotContain(step, "the setup is not a linear wizard once the system is operational");
     }
 
     // ── Verification action ──────────────────────────────────────────────────
