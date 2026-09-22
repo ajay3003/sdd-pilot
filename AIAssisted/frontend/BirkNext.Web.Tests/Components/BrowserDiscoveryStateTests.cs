@@ -218,10 +218,12 @@ public sealed class BrowserDiscoveryStateTests : BunitContext
     {
         var cut = await OpenAsync(BrowserCompanionState.NotPaired);
 
-        // 23. "Not connected" is the primary wording, as a short label on the two surfaces that own a state.
-        Occurrences(cut.Markup, "Not connected").Should().Be(2);
+        // 23. "Not connected" is the primary wording, and now appears exactly once: the Live session strip owns the
+        // state, and the setup disclosure states pairing and connection as its own two rows rather than as a badge.
+        Occurrences(cut.Markup, "Not connected").Should().Be(1);
         Text(cut, "bd-session").Should().Be("Not connected");
-        Text(cut, "browser-companion-state").Should().Be("Not connected");
+        cut.FindAll("[data-testid=browser-companion-state]").Should().BeEmpty();
+        Text(cut, "browser-companion-pairing").Should().Be("Not paired");
 
         // 21, 24. Its near-synonyms are not on the primary surface. The developer install aside quotes the
         // extension.s own "Not paired" wording inside a collapsed details block; that is the extension speaking,
@@ -298,19 +300,29 @@ public sealed class BrowserDiscoveryStateTests : BunitContext
             All(cut, $"browser-discovery-nav-{absent}").Should().BeEmpty(absent);
     }
 
-    // ── §36. Reset Profile is a profile action ───────────────────────────────────────────────
+    // ── §36. Maintenance belongs to the pane that owns it ────────────────────────────────────
 
     // 26, 27, 28.
+    /// <summary>
+    /// Resetting the profile is General's, and removing the HTTPS inspection certificate is Authentication's.
+    /// A page-wide maintenance footer put both of them under Browser Discovery, which owns neither.
+    /// </summary>
     [Fact]
-    public async Task ResettingTheProfileIsNotABrowserDiscoveryAction()
+    public async Task NeitherResetProfileNorCertificateMaintenanceIsABrowserDiscoveryAction()
     {
-        (await OpenAsync(BrowserCompanionState.NotPaired)).Markup.Should().NotContain("Reset Profile");
+        (await OpenAsync(BrowserCompanionState.NotPaired)).Markup
+            .Should().NotContain("Reset Profile").And.NotContain("Remove test certificate");
 
-        // It lives at profile level, outside every tab panel, and stays reachable there.
         var settings = Render<Settings>();
         settings.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("Dev")).Click();
         settings.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Browser Discovery").Click();
 
+        settings.FindAll("[data-testid=profile-advanced]").Should().BeEmpty("Browser Discovery owns no destructive action");
+        settings.FindAll("button").Select(b => b.TextContent.Trim())
+            .Should().NotContain("Reset Profile").And.NotContain("Remove test certificate");
+
+        // And it is still reachable from the pane that does own it.
+        settings.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "General").Click();
         var reset = settings.FindAll("button").Single(b => b.TextContent.Trim() == "Reset Profile");
         reset.Closest("[data-testid=browser-discovery]").Should().BeNull();
         reset.Closest(".fa-profile-reset-zone").Should().NotBeNull();
@@ -324,7 +336,8 @@ public sealed class BrowserDiscoveryStateTests : BunitContext
         var cut = await OpenAsync(BrowserCompanionState.NotPaired);
 
         Text(cut, "bd-session").Should().NotBeNullOrWhiteSpace();
-        Text(cut, "browser-companion-state").Should().NotBeNullOrWhiteSpace();
+        Text(cut, "browser-companion-pairing").Should().NotBeNullOrWhiteSpace();
+        Text(cut, "browser-companion-connection-state").Should().NotBeNullOrWhiteSpace();
 
         var details = cut.Find("[data-testid=browser-companion-details]");
         details.TagName.Should().Be("DETAILS");

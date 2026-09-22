@@ -69,7 +69,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     {
         PageOrigin = Origin, PagePath = "/proxy-only",
         Endpoints = [new() { Scheme = "https", Host = "api.example.test", Port = 443, Path = "/api/items",
-                             Category = ObservedTrafficCategory.Rest, LastObservedAt = Observed }]
+                             Provenance = RequestProvenance.ApplicationTraffic, Category = ObservedTrafficCategory.Rest, LastObservedAt = Observed }]
     });
 
     private IRenderedComponent<BrowserDiscoveryTab> Open(BrowserCompanionRuntime? runtime = null) =>
@@ -130,8 +130,11 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         var cut = Open();
 
         var table = cut.Find("[data-testid=browser-discovery-overview-table]");
+        // Presence of each evidence type, not what any of it says. WCAG-area mapping is evidence metadata and
+        // belongs to Evidence → Accessibility; on nearly every row here it read as assessment coverage.
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page / Route", "State", "WCAG areas", "DOM", "Performance evidence", "Last seen", "Source");
+            .Should().Equal("Page / Route", "State", "DOM evidence", "Accessibility evidence", "Performance evidence", "Last seen", "Source");
+        table.QuerySelectorAll("[data-testid=browser-discovery-area-badge]").Should().BeEmpty();
 
         var rows = cut.FindAll("[data-testid=browser-discovery-page-row]");
         rows.Count.Should().Be(2, "the proxy-only page produced no browser evidence");
@@ -143,21 +146,28 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         table.TextContent.Should().NotContain("Proxy");
     }
 
+    /// <summary>
+    /// WCAG areas are how raw evidence is mapped, not a per-page review status, so Overview does not carry them at
+    /// all: a row of Perceivable/Operable/Understandable/Robust chips on every page read as assessment coverage.
+    /// The mapping survives where it is useful — in the Evidence explorer, next to the criterion it maps to.
+    /// </summary>
     [Fact]
-    public void WcagAreaBadgesGroupEvidenceAndNeverRenderPassOrFail()
+    public void WcagAreaMappingIsEvidenceMetadataAndLivesInTheEvidenceExplorer()
     {
         SeedFullPage();
         var cut = Open();
 
-        var row = cut.Find("[data-testid=browser-discovery-page-row]");
-        row.QuerySelectorAll("[data-testid=browser-discovery-area-badge]").Select(b => b.TextContent.Trim())
-            .Should().Equal("Perceivable", "Operable", "Understandable", "Robust");
+        cut.FindAll("[data-testid=browser-discovery-area-badge]").Should().BeEmpty("Overview states presence, not mapping");
+        cut.FindAll("[data-testid=browser-discovery-area-disclaimer]").Should().BeEmpty();
 
-        foreach (var badge in row.QuerySelectorAll("[data-testid=browser-discovery-area-badge]"))
+        Nav(cut, "evidence");
+        cut.Find("[data-testid=browser-discovery-evidence-nav-accessibility]").Click();
+        cut.FindAll("[data-testid=browser-discovery-area-badge]").Should().NotBeEmpty();
+        foreach (var badge in cut.FindAll("[data-testid=browser-discovery-area-badge]"))
             badge.TextContent.Should().NotContainAny("Pass", "Fail", "Compliant", "Conform");
 
-        // The grouping states its own meaning, in text.
-        Text(cut, "browser-discovery-area-disclaimer").Should().Contain("not an assessment");
+        // And it still says what it is, where it appears.
+        Text(cut, "browser-discovery-area-disclaimer").Should().Contain("not assessment results");
     }
 
     [Fact]
@@ -169,12 +179,12 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         var row = cut.Find("[data-testid=browser-discovery-page-row]");
         var cells = row.QuerySelectorAll("td").Select(c => c.TextContent.Trim()).ToList();
         cells[0].Should().Be("Historical evidence only", "evidence for a page says nothing about whether it is open");
-        cells[2].Should().Be("Available", "DOM evidence exists");
-        cells[3].Should().Be("Unavailable", "no performance evidence was observed");
+        // Stored evidence was captured in the past. "Available" is the live session's word and means available now.
+        cells[1].Should().Be("Captured", "DOM evidence exists");
+        cells[2].Should().Be("Not captured", "no accessibility evidence was observed");
+        cells[3].Should().Be("Not captured", "no performance evidence was observed");
         cells[3].Should().NotBe("0");
         row.TextContent.Should().NotContainAny("Passed", "Failed", "Good", "Poor", "Needs improvement");
-        row.QuerySelector("[data-testid=browser-discovery-areas-none]")!.TextContent
-            .Should().Contain("No accessibility evidence");
     }
 
     // ── 29. Pages ────────────────────────────────────────────────────────────
@@ -187,19 +197,24 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         Nav(cut, "pages");
 
         Text(cut, "browser-discovery-selected-page").Should().Be("/dashboard");
-        Text(cut, "browser-discovery-page-dom-state").Should().Be("Available");
-        Text(cut, "browser-discovery-page-performance-state").Should().Be("Available");
+        Text(cut, "browser-discovery-page-dom-state").Should().Be("Captured");
+        Text(cut, "browser-discovery-page-performance-state").Should().Be("Captured");
+        Text(cut, "browser-discovery-page-accessibility-state").Should().Be("Captured");
 
-        // Accessibility evidence is grouped under the principle each item belongs to.
-        cut.Find("[data-testid=browser-discovery-area-perceivable]").TextContent
-            .Should().Contain("Image without text alternative").And.Contain("1.1.1");
-        cut.Find("[data-testid=browser-discovery-area-operable]").TextContent.Should().Contain("a11y-page-title");
-        cut.Find("[data-testid=browser-discovery-area-understandable]").TextContent.Should().Contain("a11y-document-lang");
-        cut.Find("[data-testid=browser-discovery-area-robust]").TextContent.Should().Contain("aria-roles");
+        // One compact line per evidence type: raw counts, no rule catalogue. The per-principle grouping and the
+        // full metric list are the Evidence explorer's, and used to be inlined here as well.
+        Text(cut, "browser-discovery-page-dom-line").Should().Contain("812 nodes");
+        Text(cut, "browser-discovery-page-accessibility-line").Should().Contain("raw check");
+        Text(cut, "browser-discovery-page-performance-line").Should().NotBeNullOrWhiteSpace();
+        foreach (var area in new[] { "perceivable", "operable", "understandable", "robust" })
+            cut.FindAll($"[data-testid=browser-discovery-area-{area}]").Should().BeEmpty(area);
+        cut.FindAll("[data-testid=browser-discovery-page-dom]").Should().BeEmpty();
+        cut.FindAll("[data-testid=browser-discovery-page-performance]").Should().BeEmpty();
 
-        cut.Find("[data-testid=browser-discovery-page-dom]").TextContent.Should().Contain("812");
-        cut.Find("[data-testid=browser-discovery-page-performance]").TextContent
-            .Should().Contain("1234 ms").And.Contain("Largest contentful paint");
+        // The raw detail is one click away, in the explorer that owns it.
+        cut.Find("[data-testid=browser-discovery-page-raw]").Click();
+        cut.Find("[data-testid=browser-discovery-nav-evidence]").GetAttribute("aria-selected").Should().Be("true");
+        cut.Find("[data-testid=browser-discovery-evidence-dom-row]").TextContent.Should().Contain("812");
     }
 
     [Fact]
@@ -210,8 +225,9 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         Nav(cut, "pages");
 
         cut.FindAll("[data-testid=browser-discovery-page-performance]").Should().BeEmpty();
-        Text(cut, "browser-discovery-page-performance-empty").Should().Contain("No performance evidence");
-        Text(cut, "browser-discovery-page-areas-empty").Should().Contain("No accessibility evidence");
+        Text(cut, "browser-discovery-page-performance-state").Should().Be("Not captured");
+        Text(cut, "browser-discovery-page-performance-line").Should().BeEmpty("nothing was observed, so nothing is summarised");
+        Text(cut, "browser-discovery-page-accessibility-state").Should().Be("Not captured");
 
         var detail = cut.Find(".bd-pagedetail").TextContent;
         detail.Should().NotContainAny("Conformance", "Compliant", "WCAG score", "Passed", "Failed", "0 ms");
@@ -254,7 +270,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         cut.Find("[data-testid=browser-discovery-evidence-nav-accessibility]").Click();
         var accessibility = cut.Find("[data-testid=browser-discovery-evidence-accessibility-table]");
         accessibility.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page", "WCAG area", "Criterion", "Evidence item", "Observation", "Observed at");
+            .Should().Equal("Page", "WCAG area", "Criterion mapping", "Evidence item", "Raw observation", "Observed at");
         accessibility.TextContent.Should().Contain("Perceivable").And.Contain("1.1.1");
         cut.FindAll("[data-testid=browser-discovery-evidence-dom-table]").Should().BeEmpty();
 
@@ -361,9 +377,17 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         // The duplicated read-outs live in the Browser Discovery summary row only.
         foreach (var duplicated in new[] { "target", "pages", "dom", "accessibility", "performance" })
             cut.FindAll($"[data-testid=browser-companion-{duplicated}]").Should().BeEmpty(duplicated);
-        // Connection state and message remain on the card.
-        cut.FindAll("[data-testid=browser-companion-state]").Should().ContainSingle();
-        cut.FindAll("[data-testid=browser-companion-connection]").Should().ContainSingle();
+
+        // And so does the session state: a second large Connected card under a Live session strip that already
+        // says Connected is the duplication this surface exists to avoid. What is left is setup and control.
+        cut.FindAll("[data-testid=browser-companion-state]").Should().BeEmpty();
+        cut.FindAll("[data-testid=browser-discovery-companion-setup]").Should().ContainSingle();
+        // Setup states pairing and connection as its own two facts, which is what setup is about.
+        Text(cut, "browser-companion-pairing").Should().Be("Not paired");
+        Text(cut, "browser-companion-connection-state").Should().Be("—");
+        // Pairing here is never the prominent action: the notice and the empty state own that.
+        cut.Find("[data-testid=browser-discovery-companion-setup-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        cut.Find("[data-testid=browser-discovery-companion-setup-body]").HasAttribute("hidden").Should().BeTrue();
     }
 
     // ── 31. No review duplication ────────────────────────────────────────────
@@ -442,10 +466,15 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         SeedBarePage();
         var cut = Open();
 
+        // One compact call to action. The per-evidence-type counts this used to restate are the Historical
+        // evidence strip's, three rows above it, and saying them twice made the hand-off into a paragraph.
         var handoff = cut.Find("[data-testid=browser-discovery-handoff]").TextContent;
-        handoff.Should().Contain("Accessibility evidence available for 1 page(s)");
-        handoff.Should().Contain("Performance evidence available for 1 page(s)");
-        Text(cut, "browser-discovery-dom-count").Should().Contain("2 page(s)");
+        handoff.Should().Contain("Frontend Quality Review").And.Contain("Interpret captured browser evidence");
+        handoff.Should().NotContain("evidence available for");
+        Text(cut, "bd-evidence-dom").Should().Be("2 pages captured");
+        Text(cut, "bd-evidence-accessibility").Should().Be("1 page captured");
+        Text(cut, "bd-evidence-performance").Should().Be("1 page captured");
+
         // One destination, stated once: the same link repeated per evidence type read as three different places to go.
         cut.Find("[data-testid=browser-discovery-open-review]").GetAttribute("href")
             .Should().Be("/frontend-quality-review");
@@ -458,21 +487,21 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     [InlineData("overview")]
     [InlineData("pages")]
     [InlineData("shared")]
-    [InlineData("integrations")]
+    
     public void EndpointViewsRetainNetworkOwnershipAndNeverRenderBrowserAssessments(string view)
     {
         SeedFullPage();
         var cut = Render<EndpointDiscoveryTab>(p => p.Add(c => c.Profile, _profile).Add(c => c.ProxyStatus,
             new LocalHttpsProxyStatus
             {
-                State = LocalHttpsProxyState.Ready, AuthenticatedCredentialAvailable = true,
+                ProxyListening = true, RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, State = LocalHttpsProxyState.Ready, AuthenticatedCredentialAvailable = true,
                 ObservedNetworkEndpoints = [new() { Scheme = "https", Host = "api.example.test", Port = 443, Path = "/api/items",
-                    PageOrigin = Origin, PagePath = "/dashboard", Category = ObservedTrafficCategory.Rest, LastObservedAt = DateTimeOffset.UtcNow }]
+                    PageOrigin = Origin, PagePath = "/dashboard", Provenance = RequestProvenance.ApplicationTraffic, Category = ObservedTrafficCategory.Rest, LastObservedAt = DateTimeOffset.UtcNow }]
             }));
 
         cut.Find("[data-testid=discovery-active]").TextContent.Should().Be("Active");
-        cut.Markup.Should().Contain("What this application communicates with");
-        foreach (var id in new[] { "pages", "shared", "integrations" })
+        cut.Markup.Should().Contain("Observed backend communication");
+        foreach (var id in new[] { "pages", "shared" })
             cut.FindAll($"[data-testid=discovery-nav-{id}]").Should().ContainSingle();
 
         cut.Find($"[data-testid=discovery-nav-{view}]").Click();

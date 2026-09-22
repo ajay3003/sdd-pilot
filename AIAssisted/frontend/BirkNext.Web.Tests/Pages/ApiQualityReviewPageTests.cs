@@ -33,7 +33,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
 
     private static ObservedNetworkEndpoint Ep(string path, bool auth, ObservedTrafficCategory cat = ObservedTrafficCategory.Rest, GraphQlOperationType op = GraphQlOperationType.None, string? name = null) => new()
     {
-        Category = cat, Scheme = "https", Host = "api-dev.bufetat.no", Port = 443, Path = path, Method = cat == ObservedTrafficCategory.GraphQl ? "POST" : "GET", AuthObserved = auth, LastStatus = 200, Count = 4,
+        Provenance = RequestProvenance.ApplicationTraffic, Category = cat, Scheme = "https", Host = "api-dev.bufetat.no", Port = 443, Path = path, Method = cat == ObservedTrafficCategory.GraphQl ? "POST" : "GET", AuthObserved = auth, LastStatus = 200, Count = 4,
         FirstObservedAt = T0, LastObservedAt = T0, Confidence = ObservedEndpointConfidence.Verified, PageOrigin = Origin, PagePath = "/barn/1", OperationType = op, OperationName = name,
     };
 
@@ -164,7 +164,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         JSInterop.Mode = JSRuntimeMode.Loose;
         var profile = new FrontendAnalysisProfile { Id = "dev", Name = "M2LB DEV", TargetUrl = Origin + "/" };
         var endpoint = Ep("/api/children", auth: true) with { Path = "/api/children" };
-        var status = new LocalHttpsProxyStatus { SessionId = "s", State = LocalHttpsProxyState.Ready, ObservedNetworkEndpoints = [endpoint] };
+        var status = new LocalHttpsProxyStatus { ProxyListening = true, RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, SessionId = "s", State = LocalHttpsProxyState.Ready, ObservedNetworkEndpoints = [endpoint] };
         var cut = Render<EndpointDiscoveryTab>(p => p.Add(x => x.Profile, profile).Add(x => x.ProxyStatus, status));
         cut.Find("[data-testid=discovery-nav-pages]").Click();
         cut.Find(".ed-expand").Click();

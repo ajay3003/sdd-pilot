@@ -99,11 +99,11 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
 
         // The old chorus of near-synonyms is gone: the state is named once, as a badge.
         Occurrences(cut.Markup, "is not paired").Should().Be(0);
-        // The state appears as a short label on each of the two surfaces (summary strip, companion badge) and
-        // nowhere as a sentence. That is the shape being enforced, not a single global occurrence.
-        Occurrences(cut.Markup, "Not connected").Should().Be(2);
+        // The state appears once, as a short label on the Live session strip that owns it. The companion surface
+        // is setup now — pairing and connection as its own rows — so there is no second badge repeating it.
+        Occurrences(cut.Markup, "Not connected").Should().Be(1);
         Text(cut, "bd-session").Should().Be("Not connected");
-        Text(cut, "browser-companion-state").Should().Be("Not connected");
+        cut.FindAll("[data-testid=browser-companion-state]").Should().BeEmpty();
     }
 
     [Fact]
@@ -111,7 +111,9 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
     {
         var cut = await OpenAsync(BrowserCompanionState.NotPaired, currentPath: null);
 
-        Text(cut, "browser-companion-state").Should().Be("Not connected");
+        // Setup states pairing and connection as facts about setup; the session state stays with the Live strip.
+        Text(cut, "browser-companion-pairing").Should().Be("Not paired");
+        Text(cut, "browser-companion-connection-state").Should().Be("—");
         // The note is an instruction, not the same state in sentence form.
         var note = Text(cut, "browser-companion-connection");
         note.Should().Contain("Pair the managed Edge browser");
@@ -161,8 +163,9 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
     {
         var cut = await OpenAsync(state);
 
+        // One surface owns the session state, so the canonical wording appears once rather than on two badges.
         Text(cut, "bd-session").Should().Be(expected);
-        Text(cut, "browser-companion-state").Should().Be(expected);
+        cut.FindAll("[data-testid=browser-companion-state]").Should().BeEmpty();
         // One canonical vocabulary: the alternatives never appear as a primary state.
         cut.Markup.Should().NotContain("No session").And.NotContain("Disconnected");
     }

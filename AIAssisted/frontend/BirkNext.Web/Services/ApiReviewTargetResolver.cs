@@ -23,7 +23,7 @@ public static class ApiReviewTargetResolver
         var environmentId = context.ActiveProfile.Id;
         var configuredAuth = context.RequiresAuthentication || context.ApiAuth.AuthType != TargetApiAuthType.None;
         var observed = discovery.Pages.SelectMany(p => p.Endpoints).Concat(discovery.Shared)
-            .Where(e => e.Category is ObservedTrafficCategory.Rest or ObservedTrafficCategory.GraphQl).ToList();
+            .Where(NetworkEvidencePolicy.IsApiCandidate).ToList();
         var targets = new List<ApiReviewTarget>();
 
         // ── GraphQL endpoints (learned path) ──
@@ -65,7 +65,7 @@ public static class ApiReviewTargetResolver
         }
 
         // ── Configured REST base / health / OpenAPI ──
-        if (Uri.TryCreate(context.RestBaseUrl?.Trim(), UriKind.Absolute, out var restUri) && restUri.Scheme is "https" or "http")
+        if (Uri.TryCreate(context.RestBaseUrl?.Trim(), UriKind.Absolute, out var restUri) && restUri.Scheme is "https" or "http" && NetworkEvidencePolicy.Classify(restUri.AbsolutePath) == NetworkResourceKind.Unknown)
         {
             var basePath = Normalize(restUri.AbsolutePath);
             var existing = targets.FirstOrDefault(t => t.ApiType == ApiReviewTargetType.Rest && SameOrigin(t, restUri) && (t.BasePath.Equals(basePath, StringComparison.OrdinalIgnoreCase) || t.BasePath.StartsWith(basePath.TrimEnd('/') + "/", StringComparison.OrdinalIgnoreCase)));

@@ -39,7 +39,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
     private static ObservedNetworkEndpoint Ep(string path, bool auth, ObservedTrafficCategory cat = ObservedTrafficCategory.Rest, GraphQlOperationType op = GraphQlOperationType.None, string? name = null, string method = "GET") => new()
     {
-        Category = cat, Scheme = "https", Host = ApiHost, Port = 443, Path = path, Method = cat == ObservedTrafficCategory.GraphQl ? "POST" : method,
+        Provenance = RequestProvenance.ApplicationTraffic, Category = cat, Scheme = "https", Host = ApiHost, Port = 443, Path = path, Method = cat == ObservedTrafficCategory.GraphQl ? "POST" : method,
         AuthObserved = auth, LastStatus = 200, Count = 3, FirstObservedAt = T0, LastObservedAt = T0,
         Confidence = ObservedEndpointConfidence.Verified, PageOrigin = Origin, PagePath = "/barn/1", OperationType = op, OperationName = name,
     };

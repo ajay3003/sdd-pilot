@@ -64,6 +64,7 @@ public sealed class DirectUpstreamConnector(string? upstreamProxy = null) : IUps
 /// </summary>
 internal sealed class ProxyExchange
 {
+    public RequestProvenance Provenance { get; init; } = RequestProvenance.Unknown;
     public required string Host { get; init; }
     public required int Port { get; init; }
     public required string Method { get; init; }
@@ -325,6 +326,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
 
     private sealed class PendingRequest(string method, string? path, string? requestContentType, string? bearer, GraphQlOperationType graphQlOperation, string? graphQlOperationName, string? referer, bool upgrade, long startedTimestamp)
     {
+        public RequestProvenance Provenance { get; init; }
         public string Method { get; } = method;
         /// <summary>Stopwatch timestamp taken when the request head was received (performance metadata only).</summary>
         public long StartedTimestamp { get; } = startedTimestamp;
@@ -371,7 +373,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                     finally { Array.Clear(body); }
                 }
                 else await clientReader.CopyBodyAsync(server, framing, cts.Token);
-                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.Header("Referer"), request.IsUpgrade, startedTimestamp);
+                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.Header("Referer"), request.IsUpgrade, startedTimestamp) { Provenance = NetworkEvidencePolicy.FromMarker(request.Header(NetworkEvidencePolicy.ProvenanceHeader), request.Header("Sec-Fetch-Mode") is not null || request.Header("Referer") is not null) };
                 await pending.Writer.WriteAsync(record, cts.Token);
                 await server.FlushAsync(cts.Token);
                 if (record.IsUpgrade)
@@ -445,7 +447,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             Host = host, Port = port, Method = request.Method, StatusCode = statusCode, BearerToken = request.Bearer,
             Path = request.Path, RequestContentType = request.RequestContentType, ResponseContentType = responseContentType,
             GraphQlOperationType = request.GraphQlOperation, GraphQlOperationName = request.GraphQlOperationName,
-            Referer = request.Referer, IsWebSocket = statusCode == 101,
+            Provenance = request.Provenance, Referer = request.Referer, IsWebSocket = statusCode == 101,
             DurationMs = Math.Round(Stopwatch.GetElapsedTime(request.StartedTimestamp).TotalMilliseconds, 1),
             CacheDirectives = CacheHeaderMetadata.NormalizeCacheControl(response?.Header("Cache-Control")),
             HasEtag = response?.Header("ETag") is { Length: > 0 },

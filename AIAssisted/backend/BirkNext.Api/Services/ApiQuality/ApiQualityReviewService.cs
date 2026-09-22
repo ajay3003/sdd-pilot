@@ -22,6 +22,7 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
     public ApiQualityReviewService(HttpClient client, ILogger<ApiQualityReviewService> logger, IAuthenticatedReviewGateway authenticatedReview)
     {
         _client = client;
+        _client.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
         _logger = logger;
         _authenticatedReview = authenticatedReview;
     }

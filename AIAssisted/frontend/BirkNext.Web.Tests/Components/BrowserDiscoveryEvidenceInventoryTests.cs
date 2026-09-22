@@ -226,11 +226,12 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
         SelectType(cut, "accessibility");
 
         var counts = Text(cut, "browser-discovery-evidence-a11y-counts");
-        counts.Should().Contain("2 pages observed");
+        counts.Should().Contain("2 pages captured");
         // 7 distinct observations on the roles page + 1 on the clean page.
-        counts.Should().Contain("8 observation(s)");
-        counts.Should().Contain("2 flagged");
-        counts.Should().Contain("1 uncertain");
+        counts.Should().Contain("8 raw observation(s)");
+        // The collector's own outcomes, named as the collector's. Unqualified "flagged" read as a WCAG result.
+        counts.Should().Contain("2 source flag(s)");
+        counts.Should().Contain("1 source uncertaint(ies)");
 
         var areas = Text(cut, "browser-discovery-evidence-a11y-areas");
         areas.Should().Contain("Perceivable").And.Contain("Operable").And.Contain("Understandable").And.Contain("Robust");
@@ -263,11 +264,11 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
         SelectType(cut, "accessibility");
 
         // Evidence exists…
-        Text(cut, "browser-discovery-evidence-a11y-counts").Should().Contain("1 observation(s)");
+        Text(cut, "browser-discovery-evidence-a11y-counts").Should().Contain("1 raw observation(s)");
         cut.FindAll("[data-testid=browser-discovery-evidence-accessibility-empty]").Should().BeEmpty();
-        // …and the default attention view says only that nothing needs attention.
+        // …and the default view says what the collector reported, not what a reviewer must do.
         Text(cut, "browser-discovery-evidence-a11y-none")
-            .Should().Be("No flagged or uncertain observations in the current browser evidence.");
+            .Should().Be("The collector reported no source flags or uncertainties in the current browser evidence.");
         foreach (var verdict in new[] { "No accessibility issues", "Passed", "Compliant", "Conformant" })
             cut.Markup.Should().NotContain(verdict);
         // The full catalogue is still one click away.
@@ -278,23 +279,25 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
 
     // 21, 22, 23.
     [Fact]
-    public void NeedsAttentionIsTheDefaultAndTheStateFilterNarrowsIt()
+    public void NonNeutralSourceOutcomesAreTheDefaultAndTheOutcomeFilterNarrowsThem()
     {
         SeedRoles();
         var cut = OpenEvidence();
         SelectType(cut, "accessibility");
 
+        // The default is still "what is worth looking at", named for what those outcomes are rather than for
+        // what a reviewer is supposed to do about them.
         cut.Find("[data-testid=browser-discovery-filter-state]")
-            .GetAttribute("value").Should().Be("attention");
-        var attention = Rows(cut, "browser-discovery-evidence-a11y-row").Select(r => r.TextContent).ToList();
-        attention.Should().HaveCount(3, "two flagged checks and one uncertain check; evaluated rules are not attention");
-        attention.Should().Contain(t => t.Contains("text-contrast"))
+            .GetAttribute("value").Should().Be("non-neutral");
+        var nonNeutral = Rows(cut, "browser-discovery-evidence-a11y-row").Select(r => r.TextContent).ToList();
+        nonNeutral.Should().HaveCount(3, "two flagged checks and one uncertain check; evaluated rules are neither");
+        nonNeutral.Should().Contain(t => t.Contains("text-contrast"))
             .And.Contain(t => t.Contains("a11y-hidden-focusable"))
             .And.Contain(t => t.Contains("language-parts"));
-        attention.Should().NotContain(t => t.Contains("aria-meter-name"));
-        // Flagged first, then uncertain.
-        attention[0].Should().Contain("flagged");
-        attention[^1].Should().Contain("uncertain");
+        nonNeutral.Should().NotContain(t => t.Contains("aria-meter-name"));
+        // Source flags first, then source uncertainties.
+        nonNeutral[0].Should().Contain("source flag");
+        nonNeutral[^1].Should().Contain("source uncertaint");
 
         Choose(cut, "browser-discovery-filter-state", "flagged");
         Rows(cut, "browser-discovery-evidence-a11y-row").Should().HaveCount(2);
@@ -450,8 +453,10 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
         SeedClean();
         var cut = OpenEvidence();
 
+        // One compact hand-off card instead of a paragraph restating the boundary after every block.
         Text(cut, "browser-discovery-evidence-handoff")
-            .Should().Contain("Browser Discovery records raw evidence. Frontend Quality Review interprets it.");
+            .Should().Contain("Frontend Quality Review")
+            .And.Contain("Interpret captured browser evidence");
         cut.Find("[data-testid=browser-discovery-open-review-evidence]").GetAttribute("href")
             .Should().Be("/frontend-quality-review");
         cut.FindAll("a[href='/frontend-quality-review']").Should().ContainSingle("one handoff, not one per evidence type");
@@ -468,6 +473,7 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
         }
 
         SelectType(cut, "accessibility");
-        cut.Markup.Should().Contain("WCAG areas show which principles the observed evidence relates to");
+        cut.Markup.Should().Contain("WCAG areas and criterion references show how raw evidence is mapped");
+        cut.Markup.Should().Contain("not WCAG assessment results");
     }
 }

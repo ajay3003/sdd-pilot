@@ -100,7 +100,7 @@ public sealed class BrowserDiscoveryEvidenceArrivalTests : BunitContext
         row.TextContent.Should().Contain(Path).And.Contain("Browser Companion");
 
         // Zero findings is still evidence, and still never a conformance claim.
-        row.TextContent.Should().Contain("Available");
+        row.TextContent.Should().Contain("Captured");
         foreach (var overclaim in new[] { "WCAG compliant", "Conformant", "Passed", "No accessibility issues" })
             cut.Markup.Should().NotContain(overclaim);
     }

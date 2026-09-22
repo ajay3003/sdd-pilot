@@ -35,7 +35,7 @@ public class RuntimeObservationMappingTests
             Port = port,
             Path = path,
             Method = "GET",
-            Category = category,
+            Provenance = RequestProvenance.ApplicationTraffic, Category = category,
             Source = source,
             OperationName = operationName,
             FirstObservedAt = T0,

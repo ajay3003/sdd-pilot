@@ -40,7 +40,7 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
         bool auth = true, GraphQlOperationType op = GraphQlOperationType.None, string host = "api-dev.bufetat.no") =>
         new()
         {
-            Category = cat, Scheme = "https", Host = host, Port = 443, Path = path, Method = method,
+            Provenance = RequestProvenance.ApplicationTraffic, Category = cat, Scheme = "https", Host = host, Port = 443, Path = path, Method = method,
             AuthObserved = auth, LastStatus = 200, Source = EndpointDiscoverySource.AuthenticatedProxyTraffic,
             Confidence = ObservedEndpointConfidence.Verified, Count = 4,
             FirstObservedAt = DateTimeOffset.UtcNow, LastObservedAt = DateTimeOffset.UtcNow, OperationType = op,
@@ -49,7 +49,7 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
 
     private static LocalHttpsProxyStatus Traffic(params ObservedNetworkEndpoint[] endpoints) => new()
     {
-        SessionId = "s", State = LocalHttpsProxyState.Ready,
+        ProxyListening = true, RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, SessionId = "s", State = LocalHttpsProxyState.Ready,
         AuthenticatedCredentialAvailable = true, ObservedNetworkEndpoints = endpoints,
     };
 
@@ -90,14 +90,13 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
 
         var order = cut.Find("[data-testid='discovery-overview']").QuerySelectorAll(".ed-ov-label")
             .Select(l => l.TextContent.Trim()).ToList();
-        order.Should().Equal("Target", "Discovery session", "Network correlation", "Authenticated context",
-                             "Pages observed", "Backend communication observed", "Last observed traffic");
+        order.Should().Equal("Observation", "Authenticated traffic", "Page correlation", "Last traffic", "Freshness");
 
         Text(cut, "discovery-active").Should().Be("Active");
-        Text(cut, "discovery-network").Should().Be("Available");
-        Text(cut, "discovery-auth-context").Should().Be("Available");
+        Text(cut, "discovery-network").Should().Be("Observed");
+        Text(cut, "discovery-auth-context").Should().Be("Bearer observed");
         Text(cut, "discovery-pages-count").Should().Be("1");
-        Text(cut, "discovery-hosts-count").Should().Be("3", "three distinct hosts were observed");
+        Text(cut, "discovery-hosts-count").Should().Be("2", "technical resources do not count as backend hosts");
 
         // 6. "Saved application analyses" is no longer a primary runtime status.
         cut.Markup.Should().NotContain("Saved application analyses");
@@ -107,7 +106,7 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
     [Fact]
     public void TheSessionStateUsesOneVocabulary()
     {
-        Text(Tab(Dev(), Stopped()), "discovery-active").Should().Be("Stopped");
+        Text(Tab(Dev(), Stopped()), "discovery-active").Should().Be("Inactive");
         Text(MixedTab(), "discovery-active").Should().Be("Active");
 
         Tab(Dev(), Stopped()).Markup.Should().NotContain("Discovery session (live)");
@@ -119,7 +118,7 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
     {
         var cut = Tab(Dev(), Stopped());
 
-        Text(cut, "discovery-auth-context").Should().Be("Not available");
+        Text(cut, "discovery-auth-context").Should().Be("Unavailable");
         Has(cut, "discovery-open-authentication").Should().BeFalse("no host is wired up in this render");
 
         // None of the Authentication tab.s setup procedure leaks into this surface.
@@ -133,20 +132,17 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
     public void TheBackendViewIsNamedConfiguredNotObserved()
     {
         var cut = MixedTab();
-
-        Text(cut, "discovery-nav-integrations").Should().Contain("Configured backend integrations");
-        cut.Find("[data-testid='discovery-nav-integrations']").TextContent.Should().NotBe("Backend integrations (1)");
+        Has(cut, "discovery-nav-integrations").Should().BeFalse();
+        cut.Find("[data-testid='discovery-open-integrations']").Should().NotBeNull();
     }
 
     // 9. A zero here is about configuration, because that is what the view holds.
     [Fact]
     public void AnEmptyConfiguredViewTalksAboutConfigurationNotObservation()
     {
-        var cut = Tab(Dev(), Traffic(Ep(ObservedTrafficCategory.Rest, "/api/barn")));
-        cut.Find("[data-testid='discovery-nav-integrations']").Click();
-
-        Text(cut, "discovery-backend-empty").Should().Be("No backend integrations are configured for this Target Environment.");
-        Text(cut, "discovery-backend-note").Should().Contain("configured values, not observed traffic");
+        var cut = Tab(Dev(), Traffic());
+        Has(cut, "discovery-backend-integrations").Should().BeFalse();
+        Text(cut, "discovery-configured-pointer").Should().Contain("managed in Integrations");
     }
 
     // §9, §11. A configured integration is never rendered as observed traffic.
@@ -154,16 +150,9 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
     public void AConfiguredIntegrationNeverAppearsInTheObservedTrafficTable()
     {
         var cut = MixedTab();
-
-        var observed = Text(cut, "discovery-overview-table");
-        observed.Should().NotContain("M2LB Events");
-        observed.Should().NotContain("Event Hub");
-        // Its absence is explained rather than left as a silent gap.
-        Text(cut, "discovery-configured-pointer").Should().Contain("configuration, not observed traffic");
-
-        // And it is still fully reachable where it belongs.
-        cut.Find("[data-testid='discovery-nav-integrations']").Click();
-        Text(cut, "discovery-backend-integrations").Should().Contain("M2LB Events");
+        Text(cut, "discovery-overview-table").Should().NotContain("M2LB Events");
+        Text(cut, "discovery-configured-pointer").Should().Contain("managed in Integrations");
+        Has(cut, "discovery-backend-integrations").Should().BeFalse();
     }
 
     // 10, 11. Configured integrations stay owned by the Integrations tab, and the link points there.
@@ -171,12 +160,8 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
     public void TheConfiguredViewLinksToTheTabThatOwnsThem()
     {
         var cut = MixedTab();
-        cut.Find("[data-testid='discovery-nav-integrations']").Click();
-
-        cut.Find("[data-testid='discovery-open-integrations']").GetAttribute("href")
-            .Should().Be(EndpointDiscoveryPresentation.IntegrationsHref);
-        // No editing controls: this page reports, it does not configure.
-        cut.Find("[data-testid='discovery-backend-integrations']").QuerySelectorAll("input, select, textarea").Should().BeEmpty();
+        cut.Find("[data-testid='discovery-open-integrations']").GetAttribute("href").Should().Be(EndpointDiscoveryPresentation.IntegrationsHref);
+        Has(cut, "discovery-backend-integrations").Should().BeFalse();
     }
 
     // ── §39. The communication table ─────────────────────────────────────────────────────────
@@ -189,10 +174,10 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
 
         var table = cut.Find("[data-testid='discovery-overview-table']");
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Service / Host", "Type", "Pages", "Auth", "Calls", "Last seen", "Source");
+            .Should().Equal("Service / Host", "Type", "Pages", "Auth", "Calls", "Last seen", "Transport", "Provenance");
 
         var body = table.TextContent;
-        body.Should().Contain("api-dev.bufetat.no").And.Contain("login.microsoftonline.com").And.Contain("cdn.example.test");
+        body.Should().Contain("api-dev.bufetat.no").And.Contain("login.microsoftonline.com").And.NotContain("cdn.example.test");
         // 17. Source stays evidence provenance.
         table.QuerySelectorAll("tbody .ed-source").Should().OnlyContain(s => s.TextContent.Trim() == "Proxy");
         // 18, 19. Counts and timestamps survive.
@@ -267,14 +252,18 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
         cut.Find("[data-testid='discovery-delete-all-confirm']").Should().NotBeNull();
     }
 
-    // 26, 27. Resetting a profile is a profile-level action and is not owned by this tab.
+    // 26, 27. Resetting a profile belongs to General, and no other pane offers it.
     [Fact]
     public void ResettingTheProfileIsNotAnEndpointDiscoveryAction()
     {
         MixedTab().Markup.Should().NotContain("Reset Profile");
 
-        // It lives at profile level, outside the tab panel, and is reachable from any tab.
         var settings = RenderSettings();
+        settings.FindAll("[data-testid=profile-advanced]").Should().BeEmpty("this tab owns no destructive action");
+        settings.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Reset Profile");
+
+        // And it is still there, on the tab that owns it.
+        settings.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "General").Click();
         var reset = settings.FindAll("button").Single(b => b.TextContent.Trim() == "Reset Profile");
         reset.Closest("[data-testid='endpoint-discovery']").Should().BeNull();
         reset.Closest(".fa-profile-reset-zone").Should().NotBeNull();
@@ -294,10 +283,10 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
 
         // 33. Correlation availability follows the capture session, not any integration conclusion.
         EndpointDiscoveryPresentation.CorrelationLabel(Stopped()).Should().Be("Unavailable");
-        EndpointDiscoveryPresentation.CorrelationLabel(Traffic()).Should().Be("Available");
+        EndpointDiscoveryPresentation.CorrelationLabel(Traffic()).Should().Be("Awaiting page evidence");
 
         // 34. Authenticated context is about capture, and says nothing about the application's policy.
-        EndpointDiscoveryPresentation.AuthenticatedContextLabel(Stopped()).Should().Be("Not available");
+        EndpointDiscoveryPresentation.AuthenticatedContextLabel(Stopped()).Should().Be("Unavailable");
         cut.Markup.Should().NotContain("Sign-in required");
 
         // 35. Page attribution here is network traffic, not DOM or browser evidence.

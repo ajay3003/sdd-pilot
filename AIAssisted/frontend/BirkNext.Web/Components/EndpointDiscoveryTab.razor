@@ -8,49 +8,64 @@
 
 <section class="ed" data-testid="endpoint-discovery" aria-label="Endpoint discovery">
 
-    @* Primary state first: is capture running, can it attribute traffic, and what has actually been seen.
-       "Pages observed" is the count of page analyses — they exist because traffic was observed, so naming
-       them "saved analyses" described the storage rather than the evidence. *@
+    <h4>Live discovery</h4>
     <div class="ed-overview" data-testid="discovery-overview">
-        <div class="ed-ov-item"><span class="ed-ov-label">Target</span><span class="ed-ov-value" data-testid="discovery-target">@(Profile?.Name ?? "—")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Discovery session</span><span class="ed-ov-value @(DiscoveryActive ? "ed-active" : "")" data-testid="discovery-active">@EndpointDiscoveryPresentation.SessionLabel(ProxyStatus)</span></div>
-        <div class="ed-ov-item" title="@EndpointDiscoveryPresentation.CorrelationHint"><span class="ed-ov-label">Network correlation</span><span class="ed-ov-value" data-testid="discovery-network">@EndpointDiscoveryPresentation.CorrelationLabel(ProxyStatus)</span></div>
-        <div class="ed-ov-item">
-            <span class="ed-ov-label">Authenticated context</span>
-            <span class="ed-ov-value" data-testid="discovery-auth-context">@EndpointDiscoveryPresentation.AuthenticatedContextLabel(ProxyStatus)</span>
-            @* Reported here, owned by Authentication; this page never explains the setup. *@
-            @if (!ProxyStatus.AuthenticatedCredentialAvailable && OnOpenAuthentication.HasDelegate)
-            {
-                <button type="button" class="ed-link" data-testid="discovery-open-authentication" @onclick="() => OnOpenAuthentication.InvokeAsync()">Open Authentication</button>
-            }
-        </div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Pages observed</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Snapshot.Pages.Count</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Backend communication observed</span><span class="ed-ov-value" data-testid="discovery-hosts-count">@EndpointDiscoveryPresentation.ObservedHostCount(AllEndpoints)</span></div>
-        <div class="ed-ov-item ed-ov-secondary"><span class="ed-ov-label">Last observed traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@LastTrafficLabel</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Observation</span><span class="ed-ov-value" data-testid="discovery-active">@(Live.ObservationActive ? "Active" : "Inactive")</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Authenticated traffic</span><span class="ed-ov-value" data-testid="discovery-auth-context">@Live.AuthenticatedTrafficState</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Page correlation</span><span class="ed-ov-value" data-testid="discovery-network">@Live.PageCorrelationState</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Last traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@(Live.LastTrafficAt is { } at ? Time(at) : "Unavailable")</span></div>
+        <div class="ed-ov-item" title="Recent means traffic captured within the last two minutes of the current running listener."><span class="ed-ov-label">Freshness</span><span class="ed-ov-value">@Live.TrafficFreshness</span></div>
     </div>
+    @if (!Live.ObservationActive)
+    {
+        <p role="status">Network observation inactive. New traffic is not currently being captured. Historical evidence remains available.</p>
+    }
+    else if (!ProxyStatus.AuthenticatedCredentialAvailable)
+    {
+        <p role="status">Authenticated traffic not currently available for review execution. Public/background discovery can continue.</p>
+    }
+    @if ((!Live.ObservationActive || !ProxyStatus.AuthenticatedCredentialAvailable) && OnOpenAuthentication.HasDelegate)
+    {
+        <button type="button" class="ed-link" data-testid="discovery-open-authentication" @onclick="() => OnOpenAuthentication.InvokeAsync()">Review Authentication</button>
+    }
+    <h4>Observed evidence</h4>
+    <div class="ed-overview" data-testid="discovery-evidence-summary">
+        <div class="ed-ov-item"><span class="ed-ov-label">Application pages observed</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Evidence.ApplicationPageCount</span></div>
+        <div class="ed-ov-item" title="Distinct hostnames, case-insensitive; eligible observed application traffic only. Ports do not create additional hosts."><span class="ed-ov-label">Backend hosts observed</span><span class="ed-ov-value" data-testid="discovery-hosts-count">@Evidence.BackendHostCount</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Application requests</span><span class="ed-ov-value">@Evidence.TotalObservedRequestCount</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Shared / background requests</span><span class="ed-ov-value">@Evidence.SharedBackgroundCount</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Discovery probes</span><span class="ed-ov-value">@Evidence.ProbeCount</span></div>
+        <div class="ed-ov-item"><span class="ed-ov-label">Last captured evidence</span><span class="ed-ov-value">@(Evidence.LastCapturedEvidenceAt is { } captured ? captured.ToLocalTime().ToString("g") : "None retained")</span></div>
+    </div>
+    <p class="ed-note">Counts describe retained evidence, not lifetime traffic. Unknown historical provenance is inspectable below and excluded from application totals.</p>
 
-    <nav class="ed-nav" role="tablist">
-        <button type="button" class="ed-navbtn @(_view == "overview" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-overview" @onclick='() => _view = "overview"'>Overview</button>
-        <button type="button" class="ed-navbtn @(_view == "pages" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-pages" @onclick='() => _view = "pages"'>Pages (@Snapshot.Pages.Count)</button>
-        <button type="button" class="ed-navbtn @(_view == "shared" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-shared" @onclick='() => _view = "shared"'>Shared / background (@Snapshot.Shared.Count)</button>
-        @* Named for what it holds: configured values the proxy cannot observe, never observed traffic. *@
-        <button type="button" class="ed-navbtn @(_view == "integrations" ? "ed-navbtn-active" : "")" data-testid="discovery-nav-integrations" @onclick='() => _view = "integrations"'>Configured backend integrations (@BackendIntegrations.Count)</button>
+    <nav class="ed-nav" role="tablist" aria-label="Observed network evidence">
+        @for (var i = 0; i < Views.Length; i++)
+        {
+            var index = i;
+            var view = Views[i];
+            <button type="button" role="tab" id="@($"discovery-tab-{view.Key}")" aria-controls="discovery-evidence-panel" aria-selected="@(_view == view.Key ? "true" : "false")"
+                    tabindex="@(_view == view.Key ? 0 : -1)" @ref="_tabButtons[index]" @onkeydown="e => NavigateTab(e, index)"
+                    class="ed-navbtn @(_view == view.Key ? "ed-navbtn-active" : "")" data-testid="@($"discovery-nav-{view.Key}")" @onclick="() => _view = view.Key">@view.Label</button>
+        }
     </nav>
+    <div id="discovery-evidence-panel" role="tabpanel" aria-labelledby="@($"discovery-tab-{_view}")">
+
 
     @if (_view == "overview")
     {
         <div class="ed-panel">
-            <h4>What this application communicates with</h4>
+            <h4>Observed backend communication</h4>
             @* Observed traffic only. Configured integrations are not observations and are listed separately. *@
-            @if (AllEndpoints.Count == 0)
+            @if (OverviewRows.Count == 0)
             {
-                <p class="ed-empty" data-testid="discovery-empty">No endpoint traffic has been observed yet. Start the Local HTTPS Proxy, sign in through your normal managed Edge, and use the target application.</p>
+                <p class="ed-empty" data-testid="discovery-empty">No backend communication observed yet. @(Live.ObservationActive ? "Use the application to generate traffic." : "Review observation setup.")</p>
             }
             else
             {
                 <div class="ed-tablewrap">
                     <table class="ed-table" data-testid="discovery-overview-table">
-                        <thead><tr><th>Service / Host</th><th>Type</th><th>Pages</th><th>Auth</th><th>Calls</th><th>Last seen</th><th>Source</th></tr></thead>
+                        <thead><tr><th>Service / Host</th><th>Type</th><th>Pages</th><th>Auth</th><th>Calls</th><th>Last seen</th><th>Transport</th><th>Provenance</th></tr></thead>
                         <tbody>
                             @foreach (var svc in OverviewRows)
                             {
@@ -62,16 +77,13 @@
                                     <td>@EndpointDiscoveryPresentation.ObservedAuthLabel(svc.AuthObserved)</td>
                                     <td>@svc.Calls</td>
                                     <td class="ed-mono">@Time(svc.LastSeen)</td>
-                                    <td><span class="ed-source">Proxy</span></td>
+                                    <td>@svc.Transport</td><td>@svc.Provenance</td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
-                @if (BackendIntegrations.Count > 0)
-                {
-                    <p class="ed-note" data-testid="discovery-configured-pointer">@EndpointDiscoveryPresentation.ConfiguredBackendPointer</p>
-                }
+
             }
         </div>
     }
@@ -81,14 +93,15 @@
             <aside class="ed-pagelist">
                 @if (Snapshot.Pages.Count == 0)
                 {
-                    <p class="ed-empty">No pages observed yet.</p>
+                    <p class="ed-empty">No application pages have produced correlated network evidence yet.</p>
                 }
                 else
                 {
                     @foreach (var pg in OrderedPages)
                     {
                         <button type="button" class="ed-pagelink @(SelectedPage?.Identity == pg.Identity ? "ed-pagelink-active" : "")" data-testid="discovery-page-link" @onclick="() => _selectedPage = pg.Identity">
-                            <span class="ed-pagetitle">@pg.Title</span>
+                            <span class="ed-pagetitle">@pg.PagePath</span>
+                            <span>@pg.DisplayName</span><span>@(pg.NetworkHistory.Count + 1) captures ? Last observed @Time(pg.LastObservedAt)</span>
                             <span class="ed-pagecount">@(pg.IsWaitingForFreshTraffic ? "Waiting for fresh traffic" : $"{AppEndpointCount(pg)} endpoints{(pg.HasBrowserEvidence ? " · browser" : "")}")</span>
                         </button>
                     }
@@ -99,12 +112,19 @@
                 {
                     <div class="ed-page-head">
                         <div>
-                            <h4 class="ed-page-title" data-testid="discovery-selected-page">@sel.Title</h4>
+                            <h4 class="ed-page-title" data-testid="discovery-selected-page">@sel.PagePath</h4>
                             <p class="ed-page-sub ed-mono">@sel.Identity · last @Time(sel.LastObservedAt)</p>
                         </div>
-                        <div class="ed-page-actions">
+                        <details class="ed-page-actions"><summary>Analysis history / maintenance</summary>
+                            <p>@(sel.NetworkHistory.Count + 1) retained captures. Refresh archives current evidence and waits for new traffic.</p>
+                            @foreach (var capture in sel.NetworkHistory.OrderByDescending(c => c.LastObservedAt))
+                            {
+                                <details><summary>Generation @capture.Generation - @capture.LastObservedAt.ToLocalTime().ToString("g")</summary>
+                                    @RenderEndpointTable(VisibleEndpoints(capture.Endpoints), "discovery-capture-table", "No network requests in this capture.")
+                                </details>
+                            }
                             <button type="button" class="btn-secondary fa-btn-sm" data-testid="discovery-refresh" disabled="@(_refreshing is not null)"
-                                    title="Clear this page's current observations and collect fresh endpoint traffic as you use the page again."
+                                    title="Archive this page's current observations and collect fresh endpoint traffic as you use the page again."
                                     @onclick="() => RefreshPage(sel.Identity)">Refresh analysis</button>
                             @if (_confirmDeletePage == sel.Identity)
                             {
@@ -115,18 +135,18 @@
                             {
                                 <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-page" @onclick="() => _confirmDeletePage = sel.Identity">Delete analysis</button>
                             }
-                        </div>
+                        </details>
                     </div>
                     @if (_confirmDeletePage == sel.Identity)
                     {
-                        <p class="ed-warn" data-testid="discovery-delete-page-note">Delete analysis for "@sel.Title"? This removes discovered endpoint history for this page only. Target Environment configuration is not changed.</p>
+                        <p class="ed-warn" data-testid="discovery-delete-page-note">Delete analysis for "@sel.PagePath"? This removes discovered endpoint history for this page only. Target Environment configuration is not changed.</p>
                     }
                     @if (sel.IsWaitingForFreshTraffic)
                     {
                         <p class="ed-note" data-testid="discovery-page-state">Waiting for fresh traffic. Use this page in the target application to collect fresh endpoint traffic.</p>
                     }
                     <h5 class="ed-section-title">Network</h5>
-                    @RenderEndpointTable(VisibleEndpoints(sel.Endpoints), "discovery-page-table", "No endpoints observed for this page yet.")
+                    @RenderEndpointTable(VisibleEndpoints(sel.Endpoints.Where(NetworkEvidencePolicy.IsApplicationTraffic).ToList()), "discovery-page-table", "No endpoints observed for this page yet.")
                 }
                 else
                 {
@@ -139,55 +159,28 @@
     {
         <div class="ed-panel">
             <p class="ed-note">Requests that could not be confidently correlated to a single page: background polling, shared configuration, global authentication and telemetry.</p>
-            @RenderEndpointTable(VisibleEndpoints(Snapshot.Shared), "discovery-shared-table", "No shared or background traffic observed yet.")
+            @RenderEndpointTable(VisibleEndpoints(Snapshot.Shared.Where(e => NetworkEvidencePolicy.ProvenanceOf(e) is not (RequestProvenance.DiscoveryProbe or RequestProvenance.BirkNextDiagnostic)).ToList()), "discovery-shared-table", "No shared or background traffic observed yet.")
         </div>
     }
-    else
-    {
-        <div class="ed-panel">
-            <p class="ed-note" data-testid="discovery-backend-note">@EndpointDiscoveryPresentation.ConfiguredBackendIntroduction</p>
-            <p class="ed-note">
-                <a class="ed-link" href="@EndpointDiscoveryPresentation.IntegrationsHref" data-testid="discovery-open-integrations">Open configured integrations</a>
-            </p>
-            @if (BackendIntegrations.Count == 0)
-            {
-                @* Configured, not observed: the honest empty state is about configuration. *@
-                <p class="ed-empty" data-testid="discovery-backend-empty">@EndpointDiscoveryPresentation.ConfiguredBackendEmpty</p>
-            }
-            else
-            {
-                <div class="ed-tablewrap">
-                    <table class="ed-table" data-testid="discovery-backend-integrations">
-                        <thead><tr><th>Name</th><th>Type / Protocol</th><th>Host / Resource</th><th>Source</th><th>Runtime observed</th></tr></thead>
-                        <tbody>
-                            @foreach (var integration in BackendIntegrations)
-                            {
-                                <tr>
-                                    <td>@integration.Name</td>
-                                    <td><span class="ed-badge ed-badge-backend">@integration.Protocol</span></td>
-                                    <td class="ed-mono">@(integration.Resource ?? "—")</td>
-                                    <td><span class="ed-source ed-source-config">@integration.Source</span></td>
-                                    <td>No</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </div>
-    }
+    </div>
+    <p class="ed-note" data-testid="discovery-configured-pointer">Configured integrations are managed in Integrations.
+        <a href="@EndpointDiscoveryPresentation.IntegrationsHref" data-testid="discovery-open-integrations">Open Integrations</a>
+    </p>
+    <details data-testid="discovery-technical"><summary>Technical / discovery probe activity (@TechnicalEndpoints.Sum(e => e.Count) requests)</summary>
+        @RenderEndpointTable(VisibleEndpoints(TechnicalEndpoints), "discovery-technical-table", "No technical or discovery probe requests match these filters.")
+    </details>
 
     @*
         Secondary management, below the evidence and away from the view navigation. Deleting every saved
         analysis is not a way to move around the page, so it does not sit beside the things that are.
     *@
-    @if (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0)
+    @if (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0 || Snapshot.ExcludedPageHistory.Count > 0)
     {
-        <div class="ed-manage" data-testid="discovery-manage">
-            <span class="ed-manage-label">Saved analyses: @Snapshot.Pages.Count</span>
+        <details class="ed-manage" data-testid="discovery-manage"><summary>Analysis history</summary>
+            <span class="ed-manage-label">Retained page analyses: @History.RetainedPageAnalyses; technical analyses: @History.ExcludedTechnicalAnalyses</span>
             @if (_confirmDeleteAll)
             {
-                <span class="ed-confirm" role="alert">Delete all saved analyses for this Target Environment? Configured integrations are kept.
+                <span class="ed-confirm" role="alert">Delete all retained page captures, shared, technical and probe evidence for this Target Environment? Configured integrations are kept.
                     <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-all-confirm" @onclick="DeleteAll">Delete all</button>
                     <button type="button" class="btn-secondary fa-btn-sm" @onclick="() => _confirmDeleteAll = false">Cancel</button>
                 </span>
@@ -196,7 +189,14 @@
             {
                 <button type="button" class="ed-danger-link" data-testid="discovery-delete-all" @onclick="() => _confirmDeleteAll = true">Delete all analyses</button>
             }
-        </div>
+            @foreach (var old in Snapshot.ExcludedPageHistory)
+            {
+                <details><summary>@old.PagePath ? @NetworkEvidencePolicy.Classify(old.PagePath)</summary>
+                    <p>Last captured @old.LastObservedAt.ToLocalTime().ToString("g"). Historical provenance may be unknown.</p>
+                    @RenderEndpointTable(VisibleEndpoints(old.Endpoints), "discovery-history-table", "No retained network endpoints.")
+                </details>
+            }
+        </details>
     }
 </section>
 
@@ -208,27 +208,36 @@
     /// <summary>Raised when the reader needs the Authentication tab. This page reports auth evidence; it never owns the setup.</summary>
     [Parameter] public EventCallback OnOpenAuthentication { get; set; }
 
+    private static readonly (string Key, string Label)[] Views = [("overview", "Overview"), ("pages", "Pages"), ("shared", "Shared / background")];
+    private readonly ElementReference[] _tabButtons = new ElementReference[3];
+    private async Task NavigateTab(KeyboardEventArgs e, int index)
+    {
+        var next = e.Key switch { "ArrowRight" => (index + 1) % 3, "ArrowLeft" => (index + 2) % 3, "Home" => 0, "End" => 2, _ => -1 };
+        if (next < 0) return;
+        _view = Views[next].Key;
+        await _tabButtons[next].FocusAsync();
+    }
     private string _view = "overview";
     private string? _selectedPage;
     private string? _confirmDeletePage;
     private string? _refreshing;
     private bool _confirmDeleteAll;
-    private string _categoryFilter = "app";      // app = REST/GraphQL/WebSocket/Auth/Other; excludes static/telemetry
+    private string _categoryFilter = "all";      // app = REST/GraphQL/WebSocket/Auth/Other; excludes static/telemetry
     private string _search = "";
+    private string _provenanceFilter = "all";
+    private bool _authenticatedOnly;
     private readonly HashSet<string> _expanded = new(StringComparer.Ordinal);
 
     private EndpointDiscoverySnapshot Snapshot => Profile is null ? new() : Discovery.GetSnapshot(Profile.Id);
-    private IReadOnlyList<BackendIntegration> BackendIntegrations => EndpointDiscoveryService.BackendIntegrationsFor(Profile);
-    private bool DiscoveryActive => ProxyStatus.State is LocalHttpsProxyState.Listening or LocalHttpsProxyState.WaitingForAuthenticatedTraffic
-        or LocalHttpsProxyState.AuthenticatedTrafficDetected or LocalHttpsProxyState.Ready;
+    private LiveDiscoveryState Live => LiveDiscoveryState.From(ProxyStatus, DateTimeOffset.UtcNow, AllEndpoints.Count > 0);
+    private ObservedNetworkEvidenceSummary Evidence => ObservedNetworkEvidenceSummary.From(Snapshot);
+    private HistoricalAnalysisState History => HistoricalAnalysisState.From(Snapshot);
+    private IReadOnlyList<ObservedNetworkEndpoint> TechnicalEndpoints => AllEndpoints.Where(e => NetworkEvidencePolicy.ResourceOf(e) != NetworkResourceKind.Unknown || NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.Unknown).ToList();
     private PageAnalysis? SelectedPage => Snapshot.Pages.FirstOrDefault(p => p.Identity == _selectedPage) ?? OrderedPages.FirstOrDefault();
-    private IReadOnlyList<PageAnalysis> OrderedPages => Snapshot.Pages.OrderByDescending(p => p.LastObservedAt).ToList();
+    private IReadOnlyList<PageAnalysis> OrderedPages => Snapshot.Pages.Where(p => NetworkEvidencePolicy.IsApplicationPage(p.PagePath)).OrderByDescending(p => p.LastObservedAt).ToList();
 
     private IReadOnlyList<ObservedNetworkEndpoint> AllEndpoints =>
         Snapshot.Pages.SelectMany(p => p.Endpoints).Concat(Snapshot.Shared).ToList();
-
-    private DateTimeOffset? LastTraffic => AllEndpoints.Count == 0 ? null : AllEndpoints.Max(e => e.LastObservedAt);
-    private string LastTrafficLabel => LastTraffic is { } t ? Time(t) : "—";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -245,13 +254,12 @@
     private RenderFragment RenderEndpointTable(IReadOnlyList<ObservedNetworkEndpoint> endpoints, string testId, string emptyMessage) => __builder =>
     {
         <div class="ed-toolbar">
-            <input class="ed-search" placeholder="Search host or path" data-testid="discovery-search" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" />
-            <div class="ed-filters">
-                @foreach (var (key, label) in Filters)
-                {
-                    <button type="button" class="ed-chip @(_categoryFilter == key ? "ed-chip-active" : "")" data-testid="@($"discovery-filter-{key}")" @onclick="() => _categoryFilter = key">@label</button>
-                }
-            </div>
+            <label>Search <input class="ed-search" placeholder="Search host or path" data-testid="discovery-search" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" /></label>
+            <label>Type <select @bind="_categoryFilter" data-testid="discovery-type-filter">@foreach (var (key, label) in Filters) { <option value="@key">@label</option> }</select></label>
+            <label>Provenance <select @bind="_provenanceFilter" data-testid="discovery-provenance-filter">
+                <option value="all">All provenance</option><option value="app">Application / browser traffic</option><option value="shared">Background / shared</option><option value="probe">Discovery probe</option><option value="diagnostic">BirkNext diagnostic</option><option value="unknown">Unknown / historical</option>
+            </select></label>
+            <label><input type="checkbox" @bind="_authenticatedOnly" /> Authenticated only</label>
         </div>
         @if (endpoints.Count == 0)
         {
@@ -261,7 +269,7 @@
         {
             <div class="ed-tablewrap">
                 <table class="ed-table" data-testid="@testId">
-                    <thead><tr><th></th><th>Type</th><th>Method</th><th>Host</th><th>Path</th><th>Auth</th><th>Result</th><th>Calls</th><th>Last seen</th><th>Source</th></tr></thead>
+                    <thead><tr><th></th><th>Type</th><th>Category / reason</th><th>Method</th><th>Host</th><th>Path</th><th>Auth</th><th>Result</th><th>Calls</th><th>Last seen</th><th>Transport</th><th>Provenance</th></tr></thead>
                     <tbody>
                         @foreach (var e in endpoints)
                         {
@@ -269,18 +277,18 @@
                             <tr class="ed-row" data-testid="discovery-endpoint-row">
                                 <td><button type="button" class="ed-expand" @onclick="() => Toggle(key)" aria-label="Toggle details">@(_expanded.Contains(key) ? "▾" : "▸")</button></td>
                                 <td>@CategoryBadge(e.Category)</td>
-                                <td class="ed-mono">@e.Method</td>
+                                <td>@NetworkEvidencePolicy.Reason(e)</td><td class="ed-mono">@e.Method</td>
                                 <td class="ed-mono">@e.Host</td>
                                 <td class="ed-mono ed-path">@e.Path</td>
                                 <td>@(e.AuthObserved ? "Bearer" : "—")</td>
                                 <td>@ResultLabel(e)</td>
                                 <td>@e.Count</td>
                                 <td class="ed-mono">@Time(e.LastObservedAt)</td>
-                                <td><span class="ed-source">Proxy</span></td>
+                                <td>@NetworkEvidencePolicy.TransportLabel(e)</td><td>@NetworkEvidencePolicy.ProvenanceLabel(e)</td>
                             </tr>
                             @if (_expanded.Contains(key))
                             {
-                                <tr class="ed-detailrow"><td></td><td colspan="9">
+                                <tr class="ed-detailrow"><td></td><td colspan="11">
                                     <dl class="ed-detail">
                                         <div><dt>Origin</dt><dd class="ed-mono">@e.Origin</dd></div>
                                         <div><dt>Classification</dt><dd>@e.Category (@e.Confidence)</dd></div>
@@ -293,7 +301,7 @@
                                         <div><dt>Last observed</dt><dd class="ed-mono">@Time(e.LastObservedAt)</dd></div>
                                         <div><dt>Calls</dt><dd>@e.Count</dd></div>
                                         <div><dt>Last status</dt><dd>@(e.LastStatus > 0 ? e.LastStatus.ToString() : "—")</dd></div>
-                                        @if (e.Category is ObservedTrafficCategory.Rest or ObservedTrafficCategory.GraphQl)
+                                        @if (NetworkEvidencePolicy.IsApiCandidate(e))
                                         {
                                             <div><dt>API Quality Review</dt><dd><a class="ed-analyze-link" data-testid="discovery-analyze-api" href="@AnalyzeHref(e)">Analyze in API Review →</a></dd></div>
                                         }
@@ -320,6 +328,16 @@
     private IReadOnlyList<ObservedNetworkEndpoint> VisibleEndpoints(IReadOnlyList<ObservedNetworkEndpoint> source)
     {
         IEnumerable<ObservedNetworkEndpoint> q = source;
+        q = _provenanceFilter switch
+        {
+            "app" => q.Where(e => NetworkEvidencePolicy.IsApplicationTraffic(e) && e.PagePath is not null),
+            "shared" => q.Where(e => e.PagePath is null && NetworkEvidencePolicy.ProvenanceOf(e) is not (RequestProvenance.DiscoveryProbe or RequestProvenance.BirkNextDiagnostic)),
+            "probe" => q.Where(e => NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.DiscoveryProbe),
+            "diagnostic" => q.Where(e => NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.BirkNextDiagnostic),
+            "unknown" => q.Where(e => NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.Unknown),
+            _ => q
+        };
+        if (_authenticatedOnly) q = q.Where(e => e.AuthObserved);
         q = _categoryFilter switch
         {
             "app" => q.Where(e => e.Category is ObservedTrafficCategory.Rest or ObservedTrafficCategory.GraphQl or ObservedTrafficCategory.WebSocket or ObservedTrafficCategory.Authentication or ObservedTrafficCategory.OtherHttp),
@@ -342,11 +360,11 @@
 
     // Application endpoints (excludes static/telemetry) count for a page badge.
     private static int AppEndpointCount(PageAnalysis page) =>
-        page.Endpoints.Count(e => e.Category is not (ObservedTrafficCategory.StaticAsset or ObservedTrafficCategory.Telemetry));
+        page.Endpoints.Count(NetworkEvidencePolicy.IsApplicationTraffic);
 
     // ── overview dedup across pages ──────────────────────────────────────────
 
-    private sealed record OverviewRow(string Host, ObservedTrafficCategory Category, int PageCount, bool AuthObserved, int Calls, DateTimeOffset LastSeen);
+    private sealed record OverviewRow(string Host, ObservedTrafficCategory Category, int PageCount, bool AuthObserved, int Calls, DateTimeOffset LastSeen, string Transport, string Provenance);
 
     private IReadOnlyList<OverviewRow> OverviewRows
     {
@@ -355,14 +373,14 @@
             var byPage = Snapshot.Pages.SelectMany(p => p.Endpoints.Select(e => (Page: (string?)p.Identity, E: e)))
                 .Concat(Snapshot.Shared.Select(e => (Page: (string?)null, E: e)));
             return byPage
-                .Where(x => x.E.Category is not (ObservedTrafficCategory.StaticAsset or ObservedTrafficCategory.Telemetry))
-                .GroupBy(x => (x.E.Host, x.E.Category))
+                .Where(x => NetworkEvidencePolicy.IsApplicationTraffic(x.E))
+                .GroupBy(x => (Host: x.E.Host.ToLowerInvariant(), x.E.Category, x.E.Source, Provenance: NetworkEvidencePolicy.ProvenanceOf(x.E)))
                 .Select(g => new OverviewRow(
                     g.Key.Host, g.Key.Category,
                     g.Where(x => x.Page is not null).Select(x => x.Page).Distinct().Count(),
                     g.Any(x => x.E.AuthObserved),
                     g.Sum(x => x.E.Count),
-                    g.Max(x => x.E.LastObservedAt)))
+                    g.Max(x => x.E.LastObservedAt), NetworkEvidencePolicy.TransportLabel(g.First().E), NetworkEvidencePolicy.ProvenanceLabel(g.First().E)))
                 .OrderByDescending(r => r.LastSeen)
                 .ToList();
         }

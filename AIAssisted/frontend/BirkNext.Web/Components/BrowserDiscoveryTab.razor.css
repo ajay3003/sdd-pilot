@@ -59,8 +59,15 @@
 .bd-source { font-size: 0.72rem; color: var(--clr-text-muted, #6b7280); }
 
 .bd-note { color: var(--clr-text-muted, #6b7280); font-size: 0.78rem; margin: 0.5rem 0; }
-.bd-handoff { margin-top: 0.4rem; }
-.bd-handoff p { margin: 0.2rem 0; font-size: 0.82rem; color: var(--clr-text-body); }
+.bd-handoff {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 0.5rem 1rem; margin-top: 0.75rem; padding: 0.7rem 0.85rem;
+    border: 1px dashed var(--clr-border-subtle); border-radius: 8px;
+}
+.bd-handoff-body { flex: 1 1 18rem; min-width: 0; }
+.bd-handoff-title { margin: 0; font-size: 0.85rem; font-weight: 600; }
+.bd-handoff-text { margin: 0.15rem 0 0; font-size: 0.8rem; color: var(--clr-text-muted, #6b7280); }
+.bd-handoff-action { white-space: nowrap; font-weight: 600; }
 .bd-link { color: var(--clr-primary); }
 
 .bd-empty { padding: 1rem; border: 1px dashed var(--clr-border); border-radius: 10px; background: var(--clr-surface); }
@@ -99,6 +106,16 @@
 /* ── Selected page: compact evidence browser ─────────────────────────────────
    The rule catalogue lives behind disclosures, so the default view of a page stays short enough to read. */
 
+.bd-page-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.75rem; margin-bottom: 0.4rem; }
+.bd-page-head .bd-page-title { margin: 0; }
+
+/* One row per evidence type: presence, then the raw counts. Stacked, because three columns of two-part
+   values wrap into an unreadable grid at the widths this pane actually gets. */
+.bd-evidencelines { grid-template-columns: 1fr; gap: 0.45rem; margin: 0.5rem 0 0.75rem; }
+.bd-evidencelines dd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.6rem; }
+.bd-evidenceline { font-size: 0.8rem; color: var(--clr-text-muted, #6b7280); overflow-wrap: anywhere; }
+
+.bd-pageactions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin: 0.25rem 0 0.5rem; }
 .bd-availability { margin-bottom: 0.5rem; }
 .bd-pagehandoff { margin: 0.5rem 0 0.25rem; }
 

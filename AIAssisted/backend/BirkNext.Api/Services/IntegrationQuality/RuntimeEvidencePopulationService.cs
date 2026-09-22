@@ -128,7 +128,7 @@ public sealed class RuntimeEvidencePopulationService
 
         var evidence = new List<RuntimeIntegrationEvidence>();
 
-        foreach (var observation in observations)
+        foreach (var observation in observations.Where(NetworkEvidencePolicy.IsApiCandidate))
         {
             // Configuration-derived entries carry no proof that anything was executed.
             if (observation.Source != EndpointDiscoverySource.AuthenticatedProxyTraffic)

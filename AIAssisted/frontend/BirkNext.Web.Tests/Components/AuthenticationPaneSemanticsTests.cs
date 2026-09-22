@@ -458,24 +458,28 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         // One Advanced / Maintenance section on the page, collapsed, and nothing destructive outside it.
         cut.FindAll("[data-testid='profile-advanced']").Should().ContainSingle();
         El(cut, "profile-advanced-toggle").GetAttribute("aria-expanded").Should().Be("false");
-        Visible(cut).Should().NotContainAny("Reset Profile", "Remove test certificate");
+        Visible(cut).Should().NotContain("Remove test certificate");
 
         El(cut, "profile-advanced-toggle").Click();
         var body = El(cut, "profile-advanced-body");
-        foreach (var action in new[] { "Reset Profile", "Remove test certificate" })
-        {
-            var button = body.QuerySelectorAll("button").Single(b => b.TextContent.Trim() == action);
-            button.ClassList.Should().Contain("btn-danger", "a destructive action must not look like an ordinary one");
-        }
-        body.QuerySelector("[data-testid='advanced-reset-profile']")!.TextContent
-            .Should().Contain("keeping Name, Environment Type, Target URL and Notes");
+        var button = body.QuerySelectorAll("button").Single(b => b.TextContent.Trim() == "Remove test certificate");
+        button.ClassList.Should().Contain("btn-danger", "a destructive action must not look like an ordinary one");
+        body.QuerySelector("[data-testid='advanced-remove-certificate']")!.TextContent
+            .Should().Contain("BirkNext DEV HTTPS Inspection CA");
+
+        // Authentication owns the certificate it installs, and nothing else. Resetting the whole profile is
+        // General's, and a page-wide maintenance footer used to offer it under every pane including this one.
+        body.QuerySelectorAll("button").Should().NotContain(b => b.TextContent.Trim() == "Reset Profile");
     }
 
+    /// <summary>Reset Profile is the whole profile's, so it lives on General and is offered by no other pane.</summary>
     [Fact]
-    public void ResetProfileStillWorksFromItsNewHome()
+    public void ResetProfileBelongsToGeneralAndStillWorksThere()
     {
         Runtime(Prepared);
         var cut = Open(Configured);
+
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "General").Click();
         El(cut, "profile-advanced-toggle").Click();
 
         El(cut, "profile-advanced-body").QuerySelectorAll("button").Single(b => b.TextContent.Trim() == "Reset Profile").Click();

@@ -2,6 +2,77 @@ using System.Text.Json.Serialization;
 
 namespace BirkNext.LocalHttpsProxy;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum RequestProvenance { Unknown, ApplicationTraffic, BrowserObservedTraffic, DiscoveryProbe, BirkNextDiagnostic }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum NetworkResourceKind
+{
+    Unknown, ApplicationPage, ConfigurationResource, ApiDescriptionResource, StaticAsset,
+    AuthenticationCallback, BackgroundSource, DiscoveryProbe, TechnicalResource
+}
+
+/// <summary>Shared evidence policy. A URL shape cannot establish application provenance or successful execution.</summary>
+public static class NetworkEvidencePolicy
+{
+    public const string ProvenanceHeader = "X-BirkNext-Request-Provenance";
+
+    public static RequestProvenance FromMarker(string? marker, bool browserRequestMetadata = false) => marker switch
+    {
+        "DiscoveryProbe" => RequestProvenance.DiscoveryProbe,
+        "BirkNextDiagnostic" => RequestProvenance.BirkNextDiagnostic,
+        _ => browserRequestMetadata ? RequestProvenance.BrowserObservedTraffic : RequestProvenance.Unknown
+    };
+
+    public static RequestProvenance ProvenanceOf(ObservedNetworkEndpoint e) => e.Provenance != RequestProvenance.Unknown
+        ? e.Provenance : e.Path.Contains("birknext-unknown-route-probe-", StringComparison.OrdinalIgnoreCase)
+            ? RequestProvenance.DiscoveryProbe : RequestProvenance.Unknown;
+
+    public static NetworkResourceKind Classify(string? path, RequestProvenance provenance = RequestProvenance.Unknown, bool correlatedPage = false)
+    {
+        var p = (path ?? "").Split('?', '#')[0].ToLowerInvariant();
+        if (provenance == RequestProvenance.DiscoveryProbe || p.Contains("birknext-unknown-route-probe-")) return NetworkResourceKind.DiscoveryProbe;
+        if (provenance == RequestProvenance.BirkNextDiagnostic) return NetworkResourceKind.TechnicalResource;
+        var file = p.Split('/').Last();
+        if (file.StartsWith("appsettings") && file.EndsWith(".json")) return NetworkResourceKind.ConfigurationResource;
+        if (file is "swagger.json" or "openapi.json" or "swagger.yaml" or "openapi.yaml" || p.StartsWith("/swagger/") || p.StartsWith("/openapi/")) return NetworkResourceKind.ApiDescriptionResource;
+        if (p.StartsWith("/_framework/") || p.StartsWith("/_content/") || new[] { ".js", ".mjs", ".css", ".map", ".wasm", ".png", ".jpg", ".svg", ".ico", ".woff", ".woff2", ".ttf" }.Any(p.EndsWith)) return NetworkResourceKind.StaticAsset;
+        if (p is "/authentication/login-callback" or "/signin-oidc" or "/signout-callback-oidc" || p.EndsWith("/auth/callback")) return NetworkResourceKind.AuthenticationCallback;
+        if (file.EndsWith(".json") || file.EndsWith(".webmanifest")) return NetworkResourceKind.TechnicalResource;
+        if (p.Length == 0) return NetworkResourceKind.Unknown;
+        return correlatedPage ? NetworkResourceKind.ApplicationPage : NetworkResourceKind.Unknown;
+    }
+
+    public static NetworkResourceKind ResourceOf(ObservedNetworkEndpoint e) => Classify(e.Path, ProvenanceOf(e));
+    public static bool IsApplicationPage(string? path) => Classify(path, correlatedPage: true) == NetworkResourceKind.ApplicationPage;
+    public static bool IsApplicationTraffic(ObservedNetworkEndpoint e) =>
+        ProvenanceOf(e) is RequestProvenance.ApplicationTraffic or RequestProvenance.BrowserObservedTraffic
+        && e.Source is not (EndpointDiscoverySource.PublicConfiguration or EndpointDiscoverySource.ConfigurationDiscovery or EndpointDiscoverySource.ManualConfiguration)
+        && ResourceOf(e) == NetworkResourceKind.Unknown
+        && e.Category is not (ObservedTrafficCategory.StaticAsset or ObservedTrafficCategory.Telemetry);
+    public static bool IsApiCandidate(ObservedNetworkEndpoint e) => IsApplicationTraffic(e)
+        && e.Category is ObservedTrafficCategory.Rest or ObservedTrafficCategory.GraphQl;
+    public static string Reason(ObservedNetworkEndpoint e) => ResourceOf(e) switch
+    {
+        NetworkResourceKind.ConfigurationResource => "Configuration",
+        NetworkResourceKind.ApiDescriptionResource => "API description",
+        NetworkResourceKind.StaticAsset => "Static resource",
+        NetworkResourceKind.AuthenticationCallback => "Authentication callback",
+        NetworkResourceKind.DiscoveryProbe => "Discovery probe",
+        NetworkResourceKind.TechnicalResource => "Technical",
+        _ => e.Category switch { ObservedTrafficCategory.Authentication => "Authentication", ObservedTrafficCategory.Telemetry => "Telemetry", ObservedTrafficCategory.StaticAsset => "Static resource", _ => e.PagePath is null ? "Uncorrelated (background / shared)" : "Page correlated" }
+    };
+    public static string ProvenanceLabel(ObservedNetworkEndpoint e) => ProvenanceOf(e) switch
+    {
+        RequestProvenance.ApplicationTraffic => "Application traffic",
+        RequestProvenance.BrowserObservedTraffic => "Browser observed traffic",
+        RequestProvenance.DiscoveryProbe => "Discovery probe",
+        RequestProvenance.BirkNextDiagnostic => "BirkNext diagnostic",
+        _ => "Unknown / historical"
+    };
+    public static string TransportLabel(ObservedNetworkEndpoint e) => e.Source == EndpointDiscoverySource.AuthenticatedProxyTraffic ? "Proxy" : "Unknown";
+}
+
 /// <summary>
 /// Saved Target Environment choice (Authentication section) of HOW authenticated testing is performed for that environment.
 /// Persisted as <c>authentication.authenticatedTestingMethod</c>; a missing field deserializes to <see cref="ManagedEdgeCdp"/> so legacy
@@ -255,6 +326,7 @@ public enum EndpointDiscoverySource { PublicConfiguration, AuthenticatedProxyTra
 /// </summary>
 public sealed record ObservedNetworkEndpoint
 {
+    public RequestProvenance Provenance { get; init; } = RequestProvenance.Unknown;
     public ObservedTrafficCategory Category { get; init; }
     /// <summary>"https" or "wss".</summary>
     public string Scheme { get; init; } = "https";

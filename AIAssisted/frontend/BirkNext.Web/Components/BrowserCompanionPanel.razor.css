@@ -26,3 +26,8 @@
 .bcp-details { margin-top: .5rem; }
 .bcp-details > summary { cursor: pointer; font-size: .8rem; color: var(--clr-text-muted); padding: .2rem 0; }
 .bcp-details > summary:focus-visible { outline: 3px solid var(--clr-primary); outline-offset: 2px; }
+
+/* Setup mode renders inside a disclosure that already frames and names it, so the card chrome would be a box
+   drawn inside a box. Pairing and connection are two rows; nothing here repeats the session state above. */
+.bcp-setup { border: none; padding: 0; background: none; box-shadow: none; }
+.bcp-setupstate { margin-top: 0; }

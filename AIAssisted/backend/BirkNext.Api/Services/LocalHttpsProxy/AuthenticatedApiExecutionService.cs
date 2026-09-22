@@ -57,6 +57,7 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         _store = store;
         _http = new HttpClient(handler ?? CreateHandler(options.Value.UpstreamProxy), disposeHandler: true) { Timeout = TimeSpan.FromSeconds(15) };
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-AuthenticatedApiCheck/1.0");
+        _http.DefaultRequestHeaders.TryAddWithoutValidation(BirkNext.LocalHttpsProxy.NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
     }
 
     private static HttpMessageHandler CreateHandler(string? upstreamProxy)

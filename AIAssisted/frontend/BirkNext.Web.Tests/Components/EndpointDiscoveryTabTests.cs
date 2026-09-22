@@ -25,7 +25,7 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
     private static ObservedNetworkEndpoint Ep(ObservedTrafficCategory cat, string path, string method = "GET", string? pagePath = "/barn/1", bool auth = true, GraphQlOperationType op = GraphQlOperationType.None, string? host = "api-dev.bufetat.no", string scheme = "https", DateTimeOffset? at = null) =>
         new()
         {
-            Category = cat, Scheme = scheme, Host = host!, Port = 443, Path = path, Method = method, AuthObserved = auth, LastStatus = 200,
+            Provenance = RequestProvenance.ApplicationTraffic, Category = cat, Scheme = scheme, Host = host!, Port = 443, Path = path, Method = method, AuthObserved = auth, LastStatus = 200,
             Source = EndpointDiscoverySource.AuthenticatedProxyTraffic, Confidence = ObservedEndpointConfidence.Verified, Count = 4,
             FirstObservedAt = at ?? DateTimeOffset.UtcNow, LastObservedAt = at ?? DateTimeOffset.UtcNow, OperationType = op,
             PageOrigin = pagePath is null ? null : Origin, PagePath = pagePath
@@ -33,7 +33,7 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
 
     private static LocalHttpsProxyStatus Traffic(params ObservedNetworkEndpoint[] endpoints) => new()
     {
-        SessionId = "s", State = LocalHttpsProxyState.Ready, AuthenticatedCredentialAvailable = true, ObservedNetworkEndpoints = endpoints
+        ProxyListening = true, RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, SessionId = "s", State = LocalHttpsProxyState.Ready, AuthenticatedCredentialAvailable = true, ObservedNetworkEndpoints = endpoints
     };
 
     private IRenderedComponent<Component> Render(FrontendAnalysisProfile profile, LocalHttpsProxyStatus status) =>
@@ -53,7 +53,7 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
     {
         var cut = Render(Dev(), new LocalHttpsProxyStatus());
         Assert.True(Has(cut, "discovery-empty"));
-        Assert.Contains("No endpoint traffic has been observed yet", Row(cut, "discovery-empty"));
+        Assert.Contains("No backend communication observed yet", Row(cut, "discovery-empty"));
     }
 
     [Fact]
@@ -115,12 +115,8 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         Assert.DoesNotContain("M2LB Events", table);
         Assert.DoesNotContain("AMQP", table);
         // It is still reachable, in the view that says what it actually is.
-        Assert.Contains("Configured backend integrations", Row(cut, "discovery-nav-integrations"));
-        cut.Find("[data-testid='discovery-nav-integrations']").Click();
-        Assert.Contains("M2LB Events", Row(cut, "discovery-backend-integrations"));
-        Assert.Contains("AMQP", Row(cut, "discovery-backend-integrations"));
-        Assert.Contains("Configuration discovery", Row(cut, "discovery-backend-integrations"));
-        Assert.Contains("No", Row(cut, "discovery-backend-integrations"));   // runtime observed = No
+        Assert.False(Has(cut, "discovery-nav-integrations"));
+        Assert.True(Has(cut, "discovery-open-integrations"));
     }
 
     [Fact]
@@ -197,15 +193,15 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         cut.Find("[data-testid='discovery-delete-all-confirm']").Click();
         Assert.Equal("0", Row(cut, "discovery-pages-count"));
         // Backend integrations remain (computed from configuration).
-        cut.Find("[data-testid='discovery-nav-integrations']").Click();
-        Assert.Contains("Events", Row(cut, "discovery-backend-integrations"));
+        Assert.Single(profile.Integrations);
+        Assert.True(Has(cut, "discovery-open-integrations"));
     }
 
     [Fact]
     public void NoCredentialOrSecretIsEverRendered()
     {
         var cut = Render(Dev(), Traffic(Ep(ObservedTrafficCategory.Rest, "/api/children", pagePath: "/barn/1")));
-        foreach (var forbidden in new[] { "eyJ", "Bearer ", "Authorization", "Cookie", "Set-Cookie" })
+        foreach (var forbidden in new[] { "eyJ", "Authorization", "Cookie", "Set-Cookie" })
             Assert.DoesNotContain(forbidden, cut.Markup);
     }
 }

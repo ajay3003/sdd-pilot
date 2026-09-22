@@ -1532,16 +1532,18 @@
         </div>
 
         @* ── Advanced / Maintenance ──
-           Resetting the profile is destructive and is nobody's next step, so it is collapsed, styled as destructive
-           and separated from the workflow above rather than sitting in the page footer as an ordinary button. *@
-        @if (!_isEditMode)
+           Destructive actions are collapsed, styled as destructive, and shown by the tab that OWNS them. A page-wide
+           footer put the certificate and the profile reset under every pane, so Browser Discovery offered to remove an
+           HTTPS inspection certificate that belongs to Authentication and to reset a profile that belongs to General.
+           Each tab's maintenance is its own. *@
+        @if (!_isEditMode && MaintenanceOwner is { } owner)
         {
             <ReviewDisclosure Text="Advanced / Maintenance" CollapseText="Hide Advanced / Maintenance"
                               TestId="profile-advanced" Class="disclosure-inline disclosure-small">
-                @* One maintenance section for the whole profile. Removing the HTTPS inspection certificate used to be a
-                   normal-looking button beside "Install", one click from the workflow; it belongs with Reset Profile. *@
-                @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)
+                @if (owner == "auth")
                 {
+                    @* Removing the HTTPS inspection certificate used to be a normal-looking button beside "Install",
+                       one click from the workflow. It is maintenance, and it belongs to the pane that installs it. *@
                     <div class="fa-profile-reset-zone" data-testid="advanced-remove-certificate">
                         <span class="fa-profile-reset-label">Remove the HTTPS inspection certificate — removes the <em>BirkNext DEV HTTPS Inspection CA</em> from this Windows user's trust store. Authenticated proxy testing stops working until it is installed again.</span>
                         <DangerButton OnClick="RemoveProxyCertificateAsync" Class="fa-btn-sm"
@@ -1550,10 +1552,13 @@
                         </DangerButton>
                     </div>
                 }
-                <div class="fa-profile-reset-zone" data-testid="advanced-reset-profile">
-                    <span class="fa-profile-reset-label">Reset Target Environment profile — resets configuration to defaults while keeping Name, Environment Type, Target URL and Notes.</span>
-                    <DangerButton OnClick="@(() => _showResetConfirm = true)" Class="fa-btn-sm">Reset Profile</DangerButton>
-                </div>
+                else
+                {
+                    <div class="fa-profile-reset-zone" data-testid="advanced-reset-profile">
+                        <span class="fa-profile-reset-label">Reset Target Environment profile — resets configuration to defaults while keeping Name, Environment Type, Target URL and Notes.</span>
+                        <DangerButton OnClick="@(() => _showResetConfirm = true)" Class="fa-btn-sm">Reset Profile</DangerButton>
+                    </div>
+                }
             </ReviewDisclosure>
         }
 
@@ -1814,6 +1819,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
             ];
         }
     }
+
+    /// <summary>
+    /// Which tab, if any, owns a maintenance section right now. General owns the profile reset; Authentication owns the
+    /// HTTPS inspection certificate, and only while the proxy method that installs it is the saved one. Every other
+    /// pane — Browser Discovery, Endpoint Discovery, the threshold tabs — owns no destructive action and shows none.
+    /// </summary>
+    private string? MaintenanceOwner =>
+        _activeTab == "general" ? "general"
+        : _activeTab == "auth" && SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy ? "auth"
+        : null;
 
     /// <summary>Removing the trusted root is maintenance, not workflow, so it lives behind Advanced / Maintenance.</summary>
     private async Task RemoveProxyCertificateAsync()

@@ -22,7 +22,7 @@ public class IntegrationDiscoveryProposalTests
         string scheme = "https") =>
         new()
         {
-            Category = category, Scheme = scheme, Host = host, Port = port, Path = path,
+            Provenance = RequestProvenance.ApplicationTraffic, Category = category, Scheme = scheme, Host = host, Port = port, Path = path,
             Method = "GET", Source = EndpointDiscoverySource.AuthenticatedProxyTraffic
         };
 

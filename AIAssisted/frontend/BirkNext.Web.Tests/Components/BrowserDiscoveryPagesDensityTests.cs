@@ -12,11 +12,14 @@ using Moq;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Browser Discovery → Pages is an evidence browser, not a rule catalogue. The selected page leads with what it is,
-/// what evidence exists and what was flagged; the individual checks and axe rules stay behind progressive disclosure.
+/// Browser Discovery → Pages answers one page at a time, compactly: which page, whether it is live, when it was
+/// observed, and one line per evidence type. The individual checks, axe rules and per-principle groupings are the
+/// Evidence explorer's — they used to be inlined here as well, which made a selected page several screens long and
+/// turned a page summary into a rule catalogue.
 ///
-/// None of it is an assessment. "Flagged" and "uncertain" describe what the collector observed, never a failed success
-/// criterion, and no count here is a score, a rate or a conformance statement — Frontend Quality Review owns that.
+/// None of it is an assessment. A "source flag" is the Browser Companion marking something, never a failed success
+/// criterion; a "source uncertainty" is the collector being unable to decide, never a manual-review obligation. No
+/// count here is a score, a rate or a conformance statement — Frontend Quality Review owns that.
 /// </summary>
 public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
 {
@@ -159,6 +162,13 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         cut.FindAll("[data-testid=browser-discovery-page-link]")
             .First(b => b.TextContent.Contains(route)).Click();
 
+    /// <summary>Into the raw explorer the way the reader gets there: the selected page's own action.</summary>
+    private static void OpenRawEvidence(IRenderedComponent<BrowserDiscoveryTab> cut, string type = "accessibility")
+    {
+        cut.Find("[data-testid=browser-discovery-page-raw]").Click();
+        cut.Find($"[data-testid=browser-discovery-evidence-nav-{type}]").Click();
+    }
+
     // ── §34. The selected page states itself first ───────────────────────────
 
     // 1, 2, 3, 4, 5, 6.
@@ -172,9 +182,17 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         Text(cut, "browser-discovery-page-observed").Should().Be(Observed.ToLocalTime().ToString("HH:mm:ss"));
         Text(cut, "browser-discovery-page-source").Should().Be("Browser Companion");
 
-        Text(cut, "browser-discovery-page-dom-state").Should().Be("Available");
-        Text(cut, "browser-discovery-page-accessibility-state").Should().Be("Available");
-        Text(cut, "browser-discovery-page-performance-state").Should().Be("Available");
+        // Stored evidence was captured in the past; "Available" is the live session's word.
+        Text(cut, "browser-discovery-page-dom-state").Should().Be("Captured");
+        Text(cut, "browser-discovery-page-accessibility-state").Should().Be("Captured");
+        Text(cut, "browser-discovery-page-performance-state").Should().Be("Captured");
+        Text(cut, "browser-discovery-selected-liveness").Should().Be("Historical evidence only");
+
+        // One compact line per type: raw counts in the collector's own terms, no verdict and no rule list.
+        Text(cut, "browser-discovery-page-dom-line").Should().Be("85 nodes · 17 interactive elements · 3 form controls");
+        Text(cut, "browser-discovery-page-accessibility-line")
+            .Should().Contain("11 raw checks observed").And.Contain("4 source flags").And.Contain("2 source uncertainties");
+        Text(cut, "browser-discovery-page-performance-line").Should().Be("SPA navigation · 813 ms page stabilization");
     }
 
     /// <summary>Unavailable evidence says so. A zero would read as a measurement that was taken.</summary>
@@ -184,8 +202,8 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         SeedOtherPage();
         var cut = OpenPages();
 
-        Text(cut, "browser-discovery-page-performance-state").Should().Be("Unavailable");
-        Text(cut, "browser-discovery-page-performance-empty").Should().Contain("No performance evidence");
+        Text(cut, "browser-discovery-page-performance-state").Should().Be("Not captured");
+        Text(cut, "browser-discovery-page-performance-line").Should().BeEmpty("a line would imply a measurement");
         cut.FindAll("[data-testid=browser-discovery-page-performance]").Should().BeEmpty();
     }
 
@@ -198,16 +216,16 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         SeedRichPage();
         var cut = OpenPages();
 
-        var counts = Text(cut, "browser-discovery-a11y-counts");
-        // Four principles: 1.x, 2.x, 3.x and 4.x all have evidence.
-        counts.Should().Contain("4 WCAG area(s)");
         // 11 distinct observations: 1 finding + 5 checks + 5 axe rules. navigation-structure relates to two
         // principles and is still one observation.
-        counts.Should().Contain("11 check(s) evaluated");
+        var line = Text(cut, "browser-discovery-page-accessibility-line");
+        line.Should().Contain("11 raw checks observed");
         // a11y-image-alt, text-contrast, a11y-hidden-focusable, axe color-contrast.
-        counts.Should().Contain("4 flagged");
+        line.Should().Contain("4 source flags");
         // language-parts, navigation-structure.
-        counts.Should().Contain("2 uncertain");
+        line.Should().Contain("2 source uncertainties");
+        // The WCAG-area count is mapping metadata and belongs to the explorer, not to a page summary.
+        line.Should().NotContain("WCAG area");
     }
 
     /// <summary>
@@ -226,7 +244,7 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
 
         overview.Evaluated.Should().Be(1, "it is one observation");
         overview.Uncertain.Should().Be(1);
-        overview.Attention.Should().ContainSingle();
+        overview.NonNeutral.Should().ContainSingle();
         overview.Principles.Should().HaveCount(2, "it is evidence about two principles");
         overview.Principles.Sum(p => p.Observations.Count).Should().Be(2);
     }
@@ -238,12 +256,10 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         SeedCleanPage();
         var cut = OpenPages();
 
-        Text(cut, "browser-discovery-page-accessibility-state").Should().Be("Available");
-        var counts = Text(cut, "browser-discovery-a11y-counts");
-        counts.Should().Contain("3 check(s) evaluated");
-        counts.Should().NotContain("flagged").And.NotContain("uncertain");
-        cut.FindAll("[data-testid=browser-discovery-a11y-attention]").Should().BeEmpty();
-        cut.FindAll("[data-testid=browser-discovery-page-areas-empty]").Should().BeEmpty();
+        Text(cut, "browser-discovery-page-accessibility-state").Should().Be("Captured");
+        var line = Text(cut, "browser-discovery-page-accessibility-line");
+        line.Should().Be("3 raw checks observed", "an assessment that flagged nothing is still evidence");
+        line.Should().NotContain("source flag").And.NotContain("source uncertaint");
     }
 
     // 12 (and §40).
@@ -252,168 +268,130 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
     {
         SeedRichPage();
         var cut = OpenPages();
-        // Expanded as well as collapsed: the forbidden vocabulary must not be hiding inside a disclosure either.
-        Toggle(cut, "browser-discovery-principle-perceivable");
-        Toggle(cut, "browser-discovery-a11y-rules");
 
         var markup = cut.Find(".bd-pagedetail").TextContent;
         foreach (var verdict in new[]
                  {
                      "WCAG compliant", "Compliant", "Conformant", "Conformance", "Passed", "Failed",
                      "Page health", "Performance passed", "Accessibility passed", "score", "grade", "pass rate",
+                     // The wording this pass removed: a raw source outcome is not a review obligation.
+                     "requiring attention", "Needs attention", "Manual review required",
                  })
             markup.Should().NotContain(verdict);
 
-        Text(cut, "browser-discovery-page-handoff").Should().Contain("Frontend Quality Review interprets it");
+        cut.Find("[data-testid=browser-discovery-open-review-page]").TextContent
+            .Should().Contain("Open Frontend Quality Review");
     }
 
-    // ── §36. Progressive disclosure ──────────────────────────────────────────
+    // ── §36. The deep detail moved to the Evidence explorer ─────────────────
 
-    // 13.
+    /// <summary>
+    /// The rule catalogue, the per-principle grouping and the automated-rule block are not on Pages at all any more —
+    /// not even collapsed. Pages summarizes a page; Evidence explores its observations.
+    /// </summary>
     [Fact]
-    public void TheRuleCatalogueIsNotVisibleUntilTheReaderAsksForIt()
+    public void TheRuleCatalogueIsNotOnPagesAtAll()
     {
         SeedRichPage();
         var cut = OpenPages();
 
-        var visible = VisibleDetail(cut);
-        // Individual axe rules and per-principle check rows are the bulk that made this page unreadable.
-        visible.Should().NotContain("definition-list").And.NotContain("dlitem").And.NotContain("aria-meter-name");
-        visible.Should().NotContain("axe · aria-roles");
+        var detail = cut.Find(".bd-pagedetail").TextContent;
+        detail.Should().NotContain("definition-list").And.NotContain("dlitem").And.NotContain("aria-meter-name");
+        detail.Should().NotContain("axe · aria-roles").And.NotContain("text-contrast");
 
-        IsCollapsed(cut, "browser-discovery-principle-perceivable").Should().BeTrue();
-        IsCollapsed(cut, "browser-discovery-principle-operable").Should().BeTrue();
-        IsCollapsed(cut, "browser-discovery-principle-understandable").Should().BeTrue();
-        IsCollapsed(cut, "browser-discovery-principle-robust").Should().BeTrue();
-        IsCollapsed(cut, "browser-discovery-a11y-rules").Should().BeTrue();
+        foreach (var absent in new[]
+                 {
+                     "browser-discovery-a11y-counts", "browser-discovery-a11y-attention", "browser-discovery-a11y-principles",
+                     "browser-discovery-a11y-automated", "browser-discovery-a11y-rules",
+                     "browser-discovery-area-perceivable", "browser-discovery-page-dom", "browser-discovery-page-performance",
+                 })
+            cut.FindAll($"[data-testid={absent}]").Should().BeEmpty(absent);
     }
 
-    // 14.
+    /// <summary>Compact must not mean lost: every one of those observations is one click away, in the explorer.</summary>
     [Fact]
-    public void APrincipleStatesItsCountsCollapsedAndListsItsChecksWhenExpanded()
+    public void TheSamePageEvidenceIsReachableThroughViewRawEvidence()
     {
         SeedRichPage();
         var cut = OpenPages();
 
-        // Collapsed, it still says what it holds, so the reader can decide whether to open it.
-        var perceivable = cut.Find("[data-testid=browser-discovery-area-perceivable]").TextContent;
-        perceivable.Should().Contain("Perceivable").And.Contain("5 observed").And.Contain("3 flagged");
+        OpenRawEvidence(cut);
 
-        Toggle(cut, "browser-discovery-principle-perceivable");
-
-        IsCollapsed(cut, "browser-discovery-principle-perceivable").Should().BeFalse();
-        var rows = cut.FindAll("[data-testid=browser-discovery-principle-perceivable-item]");
-        rows.Select(r => r.TextContent).Should()
-            .Contain(t => t.Contains("text-contrast"))
-            .And.Contain(t => t.Contains("Image without text alternative"))
-            .And.Contain(t => t.Contains("color-contrast"));
-        // The criterion this listing sits under is shown, without claiming the criterion was assessed.
-        rows.First().TextContent.Should().Contain("WCAG 1.4.3");
+        var table = cut.Find("[data-testid=browser-discovery-evidence-all-rules-table]").TextContent;
+        foreach (var observation in new[] { "text-contrast", "color-contrast", "definition-list", "dlitem", "aria-meter-name" })
+            table.Should().Contain(observation);
+        // And it arrives scoped to the page the reader was looking at.
+        cut.Find("[data-testid=browser-discovery-filter-page]").GetAttribute("value")
+            .Should().Contain("/admin/child-specific-roles");
     }
 
-    // 15, 22.
+    /// <summary>
+    /// The heading "Observed items requiring attention" is gone, and so is every other word that turns a collector
+    /// outcome into a reviewer's obligation. What the collector reported is named as what it is.
+    /// </summary>
     [Fact]
-    public void RulesThatRanAndMatchedNothingStayAvailableBehindTheirOwnDisclosure()
+    public void RawSourceOutcomesAreNamedAsSourceOutcomesAndNeverAsReviewObligations()
     {
         SeedRichPage();
         var cut = OpenPages();
-        Toggle(cut, "browser-discovery-principle-perceivable");
+        OpenRawEvidence(cut);
 
-        // Zero-element rules are not in the principle's primary rows…
-        cut.FindAll("[data-testid=browser-discovery-principle-perceivable-item]")
-            .Select(r => r.TextContent).Should().NotContain(t => t.Contains("definition-list"));
-        // …they are one level further in, and they are still there.
-        IsCollapsed(cut, "browser-discovery-principle-perceivable-evaluated").Should().BeTrue();
-        Toggle(cut, "browser-discovery-principle-perceivable-evaluated");
-        cut.FindAll("[data-testid=browser-discovery-principle-perceivable-evaluated-item]")
-            .Select(r => r.TextContent).Should()
-            .Contain(t => t.Contains("definition-list")).And.Contain(t => t.Contains("dlitem"));
+        var markup = cut.Markup;
+        foreach (var assessment in new[]
+                 {
+                     "Observed items requiring attention", "requiring attention", "Needs attention",
+                     "Manual review required", "Failed criterion", "Failed", "Violation",
+                 })
+            markup.Should().NotContain(assessment);
+
+        Text(cut, "browser-discovery-evidence-a11y-counts")
+            .Should().Contain("source flag(s)").And.Contain("source uncertaint(ies)");
+        Text(cut, "browser-discovery-raw-outcome-disclaimer")
+            .Should().Be("These are raw Browser Companion check outcomes, not WCAG assessment results. Frontend Quality Review interprets them.");
     }
 
-    // 15 (automated block).
     [Fact]
-    public void AutomatedEvidenceIsSummarisedBeforeItsRuleListIsOffered()
-    {
-        SeedRichPage();
-        var cut = OpenPages();
-
-        Text(cut, "browser-discovery-a11y-automated-counts").Should().Contain("5 rule(s) evaluated").And.Contain("1 flagged");
-
-        Toggle(cut, "browser-discovery-a11y-rules");
-        var rules = cut.FindAll("[data-testid=browser-discovery-a11y-rule]").Select(r => r.TextContent).ToList();
-        rules.Should().HaveCount(5);
-        rules[0].Should().Contain("color-contrast").And.Contain("flagged");
-    }
-
-    // 16, and §6/§20/§21.
-    [Fact]
-    public void FlaggedAndUncertainObservationsComeBeforeAnyRuleList()
-    {
-        SeedRichPage();
-        var cut = OpenPages();
-
-        var attention = cut.Find("[data-testid=browser-discovery-a11y-attention]").TextContent;
-        attention.Should().Contain("Observed items requiring attention");
-
-        var items = cut.FindAll("[data-testid=browser-discovery-a11y-attention-item]").Select(i => i.TextContent).ToList();
-        // Flagged first, most elements first; uncertain after. Six qualify, five are previewed.
-        items.Should().HaveCount(5);
-        items[0].Should().Contain("text-contrast").And.Contain("1 flagged");
-        items[1].Should().Contain("a11y-hidden-focusable").And.Contain("1 flagged");
-        items[4].Should().Contain("language-parts").And.Contain("1 uncertain");
-        Text(cut, "browser-discovery-a11y-attention-more").Should().Contain("1 more");
-
-        // And it is visible without opening anything.
-        VisibleDetail(cut).Should().Contain("text-contrast").And.Contain("language-parts");
-    }
-
-    // 17, and §26.
-    [Fact]
-    public void SelectingAnotherPageReplacesTheDetailAndStartsFromTheCollapsedSummary()
+    public void SelectingAnotherPageReplacesTheCompactSummary()
     {
         SeedRichPage();
         SeedOtherPage();
         var cut = OpenPages();
-        Toggle(cut, "browser-discovery-principle-perceivable");
-        IsCollapsed(cut, "browser-discovery-principle-perceivable").Should().BeFalse();
 
         SelectPage(cut, "/admin/general-roles");
-
         Text(cut, "browser-discovery-selected-page").Should().Be("/admin/general-roles");
-        Text(cut, "browser-discovery-a11y-counts").Should().Contain("1 check(s) evaluated");
-        cut.Find("[data-testid=browser-discovery-page-dom]").TextContent.Should().Contain("240");
-        // The previous page's open disclosure does not carry over.
-        IsCollapsed(cut, "browser-discovery-principle-operable").Should().BeTrue();
+        Text(cut, "browser-discovery-page-accessibility-line").Should().Be("1 raw check observed");
+        Text(cut, "browser-discovery-page-dom-line").Should().Contain("240 nodes");
 
         SelectPage(cut, "/admin/child-specific-roles");
         Text(cut, "browser-discovery-selected-page").Should().Be("/admin/child-specific-roles");
-        IsCollapsed(cut, "browser-discovery-principle-perceivable").Should().BeTrue();
+        Text(cut, "browser-discovery-page-dom-line").Should().Contain("85 nodes");
     }
 
     // ── §37. DOM ─────────────────────────────────────────────────────────────
 
-    // 18, 19, 20, 21, 22, 23, 24.
+    /// <summary>
+    /// The DOM block on Pages is three counts. Everything else — landmarks, headings, duplicate ids, hidden
+    /// focusable elements — is structural detail and lives in Evidence → DOM, behind its own disclosure.
+    /// </summary>
     [Fact]
-    public void DomEvidenceIsACompactBlockWithTheStructuralExtrasBehindDisclosure()
+    public void PagesSummarisesDomAndTheStructuralDetailLivesInTheExplorer()
     {
         SeedRichPage();
         var cut = OpenPages();
 
-        var dom = Text(cut, "browser-discovery-page-dom");
-        dom.Should().Contain("Nodes").And.Contain("85");
-        dom.Should().Contain("Maximum depth").And.Contain("14");
-        dom.Should().Contain("Interactive elements").And.Contain("17");
-        dom.Should().Contain("Form controls").And.Contain("3");
-        dom.Should().Contain("Landmarks").And.Contain("banner ×1").And.Contain("navigation ×2");
-        dom.Should().Contain("Headings").And.Contain("h1 ×1");
+        var line = Text(cut, "browser-discovery-page-dom-line");
+        line.Should().Be("85 nodes · 17 interactive elements · 3 form controls");
+        cut.Find(".bd-pagedetail").TextContent.Should().NotContain("Landmarks").And.NotContain("Duplicate ids");
 
-        // The signals the collector only reports when it saw them are one click away, and the button counts them.
-        IsCollapsed(cut, "browser-discovery-page-dom-detail").Should().BeTrue();
-        dom.Should().NotContain("Duplicate ids");
-        Toggle(cut, "browser-discovery-page-dom-detail");
-        var extra = Text(cut, "browser-discovery-page-dom-extra");
-        extra.Should().Contain("Duplicate ids").And.Contain("2");
-        extra.Should().Contain("Hidden focusable elements");
+        cut.Find("[data-testid=browser-discovery-page-raw]").Click();
+        var row = cut.Find("[data-testid=browser-discovery-evidence-dom-row]").TextContent;
+        row.Should().Contain("85").And.Contain("14").And.Contain("17");
+        // A structural count is a structural count: nothing here is styled or worded as a defect.
+        var table = cut.Find("[data-testid=browser-discovery-evidence-dom-table]");
+        table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
+            .Should().Contain("Hidden focusable observed");
+        table.QuerySelector("tbody")!.TextContent.Should().NotContainAny("Passed", "Failed", "defect", "issue");
+        table.QuerySelector("caption")!.TextContent.Should().Contain("none of them is a defect");
     }
 
     /// <summary>Compact must not mean lossy: everything the cross-page Evidence tab reports is still reachable.</summary>
@@ -441,16 +419,20 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         SeedRichPage();
         var cut = OpenPages();
 
-        var performance = Text(cut, "browser-discovery-page-performance");
-        performance.Should().Contain("Cumulative layout shift").And.Contain("0");
-        performance.Should().Contain("Page stabilization").And.Contain("813 ms");
-        // Metrics the browser never reported are absent, not zero.
-        performance.Should().NotContain("Largest contentful paint").And.NotContain("Time to first byte");
+        // The compact line: how the page was observed, and the one timing that describes the visit.
+        Text(cut, "browser-discovery-page-performance-line").Should().Be("SPA navigation · 813 ms page stabilization");
+        cut.Find(".bd-pagedetail").TextContent
+            .Should().NotContainAny("threshold exceeded", "within budget", "Good", "Needs improvement", "Poor");
 
-        var detail = cut.Find(".bd-pagedetail").TextContent;
-        detail.Should().Contain("Observation: SPA navigation");
-        detail.Should().Contain("Raw observations only; thresholds are applied in Frontend Quality Review.");
-        detail.Should().NotContainAny("threshold exceeded", "within budget", "Good", "Needs improvement", "Poor");
+        // The raw field measurements, unchanged, in the explorer that owns them.
+        cut.Find("[data-testid=browser-discovery-page-raw]").Click();
+        cut.Find("[data-testid=browser-discovery-evidence-nav-performance]").Click();
+        var row = cut.Find("[data-testid=browser-discovery-evidence-performance-row]").TextContent;
+        row.Should().Contain("SPA navigation").And.Contain("813 ms");
+        // A metric the browser never reported stays Not observed, never zero.
+        row.Should().Contain("Not observed");
+        cut.Find("[data-testid=browser-discovery-evidence-performance-table]").TextContent
+            .Should().NotContainAny("threshold", "budget", "Good", "Needs improvement", "Poor");
     }
 
     // ── §39. Session management belongs to Overview ──────────────────────────
@@ -470,6 +452,8 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
 
         cut.Find("[data-testid=browser-discovery-nav-overview]").Click();
         cut.FindComponents<BrowserCompanionPanel>().Should().ContainSingle();
+        // And it is setup, not a second status card: a collapsed disclosure holding pairing and its controls.
+        cut.Find("[data-testid=browser-discovery-companion-setup-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         cut.FindAll("[data-testid=browser-companion-details]").Should().ContainSingle();
         Text(cut, "browser-companion-origins").Should().Contain(Origin);
     }
@@ -482,18 +466,21 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         SeedRichPage();
         var cut = OpenPages();
 
-        // Every observation row in the page detail is inside a collapsed disclosure by default.
-        VisibleDetail(cut).Should().NotContain("axe · ");
-        cut.FindAll(".bd-pagedetail .bd-obslist li").Count.Should().BeGreaterThan(5, "the detail exists");
-        VisibleText(cut.Find(".bd-pagedetail")).Split("\n").Should().NotBeEmpty();
+        // No observation rows at all: the catalogue is not collapsed here, it is elsewhere.
+        cut.FindAll(".bd-pagedetail .bd-obslist li").Should().BeEmpty();
 
-        // What the reader does see: the page, its evidence, its counts and what was flagged.
+        // What the reader does see: the page, whether it is live, when it was observed, and one line per type.
         var visible = VisibleDetail(cut);
         visible.Should().Contain("/admin/child-specific-roles");
-        visible.Should().Contain("Available");
-        visible.Should().Contain("11 check(s) evaluated");
-        visible.Should().Contain("Observed items requiring attention");
-        visible.Should().Contain("WCAG areas show which principles the observed evidence relates to");
+        visible.Should().Contain("Captured");
+        visible.Should().Contain("11 raw checks observed");
+        visible.Should().Contain("85 nodes");
+        visible.Should().Contain("SPA navigation");
+        visible.Should().Contain("View raw evidence");
+        visible.Should().Contain("Open Frontend Quality Review");
+
+        // And the boundary sentence is not repeated after every block; Pages carries the action, not a paragraph.
+        visible.Should().NotContain("WCAG areas and criterion references show how raw evidence is mapped");
     }
 
 }

@@ -4,14 +4,27 @@
 @implements IDisposable
 @inject IServiceProvider Services
 
-<section class="bcp" data-testid="browser-companion-panel" aria-label="Browser Companion">
-    <div class="bcp-head">
-        <div>
-            <h4 class="bcp-title">Browser Companion</h4>
-            <p class="bcp-sub">Browser evidence from approved application pages in your managed Edge session.</p>
+<section class="bcp @(Setup ? "bcp-setup" : "")" data-testid="browser-companion-panel" aria-label="Browser Companion">
+    @* Setup mode is reached through a disclosure that already names it, and the host surface already states the
+       session. A second heading and a second Connected badge here is the duplication this mode exists to remove;
+       what replaces it is the pairing/connection pair, which is what setup is actually about. *@
+    @if (Setup)
+    {
+        <dl class="bcp-grid bcp-setupstate" data-testid="browser-companion-setup-state">
+            <div><dt>Pairing</dt><dd data-testid="browser-companion-pairing">@BrowserCompanionSituations.PairingLabel(Situation)</dd></div>
+            <div><dt>Connection</dt><dd data-testid="browser-companion-connection-state">@BrowserCompanionSituations.ConnectionLabel(Situation)</dd></div>
+        </dl>
+    }
+    else
+    {
+        <div class="bcp-head">
+            <div>
+                <h4 class="bcp-title">Browser Companion</h4>
+                <p class="bcp-sub">Browser evidence from approved application pages in your managed Edge session.</p>
+            </div>
+            <span class="bcp-state bcp-state-@StateClass" data-testid="browser-companion-state">@StateLabel</span>
         </div>
-        <span class="bcp-state bcp-state-@StateClass" data-testid="browser-companion-state">@StateLabel</span>
-    </div>
+    }
 
     @* Compact mode: the host surface already shows target, current page, evidence counts, origins and the last
        evidence timestamp, so the card drops the duplicated read-outs and stays connection/action oriented. *@
@@ -102,9 +115,11 @@
             }
         }
     </div>
-    @* A developer aside, kept low-emphasis so it never competes with the primary Pair action. *@
+    @* Not a runtime evidence workflow: loading an unpacked extension is something a developer does once. It sits one
+       disclosure further in than the pairing controls so it never competes with them. *@
     <details class="bcp-install" data-testid="browser-companion-install">
-        <summary>Install the extension (DEV)</summary>
+        <summary>Developer extension setup</summary>
+        <p class="bcp-note">Install the BirkNext Browser Companion extension (DEV).</p>
         <ol>
             <li>In Edge open <code>edge://extensions</code>, enable <em>Developer mode</em>.</li>
             <li>Choose <em>Load unpacked</em> and select <code>AIAssisted/browser-companion</code> from the BirkNext repository.</li>
@@ -125,6 +140,14 @@
     /// approved origins and last-evidence timestamp. Connection state, messages and the pairing actions always remain.
     /// </summary>
     [Parameter] public bool Compact { get; set; }
+
+    /// <summary>
+    /// Render as a setup/control surface rather than a status card: pairing and connection as two rows, the recovery
+    /// actions, and the developer install. The host owns the heading and the session read-out, so neither is repeated.
+    /// </summary>
+    [Parameter] public bool Setup { get; set; }
+
+    private BrowserCompanionSituation Situation => BrowserCompanionSituations.Of(Status);
 
     /// <summary>
     /// Whether this card offers its own Pair control. A host that already shows one — Browser Discovery's empty

@@ -34,6 +34,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
 
     public async Task<ApiReviewReport> RunAsync(ApiReviewRunRequest request, CancellationToken cancellationToken = default)
     {
+        if (!publicClient.DefaultRequestHeaders.Contains(NetworkEvidencePolicy.ProvenanceHeader)) publicClient.DefaultRequestHeaders.TryAddWithoutValidation(NetworkEvidencePolicy.ProvenanceHeader, "BirkNextDiagnostic");
         var startedAt = DateTimeOffset.UtcNow;
         var capabilities = gateway.Resolve(request.Identity);
         var results = new List<ApiReviewTargetResult>();

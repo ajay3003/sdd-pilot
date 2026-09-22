@@ -54,7 +54,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         _authority.Dispose();
         await _upstream.DisposeAsync();
         // SslStreamCertificateContext.Create caches the intermediate into the SChannel CurrentUser\CA store, and the write can land just
-        // after this test disposes. Purge every BirkNext DEV inspection CA (test runs never coexist with a real user proxy) so runs never
+        // after this test disposes. Purge only uniquely named test CAs, preserving a running developer proxy, so runs never
         // accumulate certificates or slow down chain building.
         PurgeInspectionCertificates();
     }
@@ -67,7 +67,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
             {
                 using var store = new X509Store(name, StoreLocation.CurrentUser);
                 store.Open(OpenFlags.ReadWrite);
-                foreach (var certificate in store.Certificates.Cast<X509Certificate2>().Where(c => c.Subject.Contains("BirkNext DEV HTTPS Inspection CA", StringComparison.Ordinal)).ToArray())
+                foreach (var certificate in store.Certificates.Cast<X509Certificate2>().Where(c => System.Text.RegularExpressions.Regex.IsMatch(c.Subject, @"CN=BirkNext DEV HTTPS Inspection CA [0-9a-f]{32}(?:,|$)")).ToArray())
                     try { store.Remove(certificate); } catch (CryptographicException) { }
             }
             catch (CryptographicException) { }
@@ -337,6 +337,25 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ExplicitProbeMarkerSurvivesProxyCaptureAndCannotPromoteAnApiEndpoint()
+    {
+        var port = await StartAsync(Scope());
+        await ProxyClient.InterceptedRequestAsync(port, ApiHost,
+            $"GET /api/children HTTP/1.1\r\nHost: {ApiHost}\r\nAuthorization: Bearer {Jwt(_now.AddHours(1))}\r\nReferer: https://{ApiHost}/admin/operations\r\nX-BirkNext-Request-Provenance: DiscoveryProbe\r\n\r\n");
+        var status = await _service.StatusAsync(Session());
+        for (var i = 0; i < 100 && status.ObservedNetworkEndpoints.Count == 0; i++)
+        {
+            await Task.Delay(10);
+            status = await _service.StatusAsync(Session());
+        }
+        var endpoint = Assert.Single(status.ObservedNetworkEndpoints);
+        Assert.Equal(RequestProvenance.DiscoveryProbe, endpoint.Provenance);
+        Assert.Equal(EndpointDiscoverySource.AuthenticatedProxyTraffic, endpoint.Source);
+        Assert.False(NetworkEvidencePolicy.IsApiCandidate(endpoint));
+        Assert.Empty(status.ObservedEndpoints);
+    }
+
+    [Fact]
     public async Task ObservedTrafficIsCorrelatedToItsPageByRefererEndToEnd()
     {
         var port = await StartAsync(Scope());
@@ -348,6 +367,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         var rest = status.ObservedNetworkEndpoints.Single(e => e.Category == ObservedTrafficCategory.Rest && e.Path == "/api/children");
         Assert.Equal($"https://{ApiHost}", rest.PageOrigin);
         Assert.Equal("/barn/123", rest.PagePath);
+        Assert.Equal(RequestProvenance.BrowserObservedTraffic, rest.Provenance);
         // No credential value in the network projection ("AuthObserved" is a safe boolean).
         var json = JsonSerializer.Serialize(status.ObservedNetworkEndpoints);
         Assert.DoesNotContain("eyJ", json);
