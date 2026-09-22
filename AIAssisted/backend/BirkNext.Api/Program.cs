@@ -221,6 +221,18 @@ builder.Services.AddSingleton<IEdgePolicyReader, WindowsEdgePolicyReader>();
 builder.Services.AddSingleton<IManagedEdgeLauncher, ProcessManagedEdgeLauncher>();
 builder.Services.AddSingleton<IManagedEdgePreflightService, ManagedEdgePreflightService>();
 
+// Browser Automation Diagnostic: Playwright launches its OWN Microsoft Edge against a dedicated BirkNext profile and
+// reports whether automation control survives the configured target. It never signs in, never touches the normal Edge
+// profile and never changes a browser or system setting — it observes behaviour so IT has something concrete to read.
+builder.Services.AddSingleton<BirkNext.Api.Services.BrowserAutomationDiagnostic.IDiagnosticBrowserFactory,
+    BirkNext.Api.Services.BrowserAutomationDiagnostic.PlaywrightDiagnosticBrowserFactory>();
+builder.Services.AddSingleton<BirkNext.Api.Services.BrowserAutomationDiagnostic.IBrowserAutomationDiagnosticService>(sp =>
+    new BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService(
+        sp.GetRequiredService<BirkNext.Api.Services.BrowserAutomationDiagnostic.IDiagnosticBrowserFactory>(),
+        sp.GetRequiredService<IEdgeInstallationLocator>(),
+        sp.GetRequiredService<ILogger<BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService>>(),
+        isLocalWorkstation: () => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value.IsLocalWorkstation));
+
 // DEV-only loopback HTTPS inspection proxy: explicit opt-in per Target Environment, LocalWorkstation runtime only, credential memory-only.
 builder.Services.Configure<LocalHttpsProxyOptions>(builder.Configuration.GetSection(LocalHttpsProxyOptions.SectionName));
 builder.Services.AddSingleton<IProxyCertificateStore>(_ => OperatingSystem.IsWindows() ? new WindowsUserCertificateStore() : new EphemeralCertificateStore { TrustManagementSupported = false });

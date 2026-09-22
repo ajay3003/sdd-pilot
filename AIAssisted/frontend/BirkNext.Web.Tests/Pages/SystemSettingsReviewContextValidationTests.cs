@@ -36,6 +36,10 @@ public class SystemSettingsReviewContextValidationTests : BunitContext
         Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
         Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
         Services.AddSingleton<IDashboardSnapshotService, DashboardSnapshotService>();
+        // The Frontend Engine Capabilities pane reads the saved Target Environments and hosts the browser automation
+        // diagnostic card, so the page needs both even when a test is only looking at the developer menu.
+        Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
+        Services.AddSingleton(Moq.Mock.Of<IBrowserAutomationDiagnosticApiService>());
         Services.AddScoped<RuntimeReviewSessionService>();
         Services.AddScoped<QualityReviewSessionService>();
         Services.AddScoped<ApplicationRuntimeResetService>();

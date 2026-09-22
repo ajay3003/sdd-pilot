@@ -1,0 +1,77 @@
+/* Browser Automation Diagnostic: a compact diagnostic card, not a page. */
+.bad-card { display: block; }
+
+.bad-head h3 { margin: 0; font-size: 1rem; color: var(--clr-text-heading); }
+.bad-sub { margin: .25rem 0 .75rem; font-size: .86rem; color: var(--clr-text-muted); max-width: 70ch; }
+
+.bad-controls {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;   /* stacks on a narrow screen rather than overflowing */
+}
+
+.bad-target-label { font-size: .8rem; color: var(--clr-text-subtle); }
+.bad-target { min-width: min(18rem, 100%); }
+.bad-target-url { margin: .5rem 0 0; font-size: .82rem; overflow-wrap: anywhere; }
+.bad-empty { margin: 0; font-size: .86rem; color: var(--clr-text-muted); }
+
+.bad-progress { margin: .6rem 0 0; font-size: .86rem; color: var(--clr-text-muted); }
+.bad-error { margin: .6rem 0 0; font-size: .86rem; color: var(--clr-danger, #c62828); }
+
+.bad-result {
+    margin-top: .9rem;
+    padding: .75rem .9rem;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface);
+}
+
+.bad-result-head { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+
+.bad-result-label {
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--clr-text-subtle);
+}
+
+.bad-blocked { margin: .5rem 0 0; font-size: .86rem; color: var(--clr-text-body); }
+
+.bad-stages { list-style: none; margin: .7rem 0 0; padding: 0; display: grid; gap: .3rem; }
+
+.bad-stage {
+    display: grid;
+    grid-template-columns: 1.4rem minmax(9rem, auto) 5.5rem 1fr;
+    align-items: baseline;
+    gap: .5rem;
+    font-size: .86rem;
+}
+
+.bad-stage-glyph { text-align: center; font-weight: 700; }
+.bad-stage-name { font-weight: 600; color: var(--clr-text-heading); }
+.bad-stage-state { font-weight: 600; font-size: .78rem; letter-spacing: .03em; }
+.bad-stage-url { grid-column: 4; overflow-wrap: anywhere; }
+.bad-stage-detail { grid-column: 2 / -1; font-size: .82rem; color: var(--clr-text-muted); }
+
+.bad-exception { margin: .7rem 0 0; font-size: .86rem; }
+.bad-interpretation { margin: .5rem 0 0; font-size: .88rem; color: var(--clr-text-body); max-width: 78ch; }
+
+.bad-meta {
+    margin: .7rem 0 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr));
+    gap: .35rem .9rem;
+}
+
+.bad-meta dt { font-size: .75rem; color: var(--clr-text-subtle); }
+.bad-meta dd { margin: 0; font-size: .85rem; overflow-wrap: anywhere; }
+
+.bad-actions { margin-top: .8rem; display: flex; gap: .5rem; flex-wrap: wrap; }
+
+@media (max-width: 760px) {
+    /* The state word moves under the stage name rather than squeezing into a strip too narrow to read. */
+    .bad-stage { grid-template-columns: 1.4rem 1fr; }
+    .bad-stage-state, .bad-stage-url, .bad-stage-detail { grid-column: 2; }
+}

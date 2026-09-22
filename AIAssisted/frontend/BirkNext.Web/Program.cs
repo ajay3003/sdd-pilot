@@ -204,5 +204,6 @@ builder.Services.AddHttpClient<IFrontendLighthouseReviewApiService, FrontendLigh
 builder.Services.AddHttpClient<IFrontendPassiveSecurityApiService, FrontendPassiveSecurityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddFrontendQualityEngineStatusApi(new Uri("http://localhost:5000/"));
+builder.Services.AddBrowserAutomationDiagnosticApi(new Uri("http://localhost:5000/"));
 
 await builder.Build().RunAsync();

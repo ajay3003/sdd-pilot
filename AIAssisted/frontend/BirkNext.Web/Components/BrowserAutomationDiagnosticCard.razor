@@ -1,0 +1,212 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IBrowserAutomationDiagnosticApiService Diagnostic
+@inject IJSRuntime JS
+@implements IDisposable
+
+@*
+    Browser Automation Diagnostic — an engine/runtime diagnostic, which is why it lives with Frontend Engine
+    Capabilities rather than on a review page.
+
+    It answers one question: does Playwright-controlled Microsoft Edge work in general but lose control of THIS target?
+    The contrast between the neutral control page and the target is the whole finding, so the stages are shown in the
+    order they were gathered and a target failure is never presented without the control result beside it.
+*@
+<section class="bad-card" data-testid="browser-automation-diagnostic" aria-labelledby="bad-heading">
+    <div class="bad-head">
+        <div>
+            <h3 id="bad-heading">Browser automation diagnostic</h3>
+            <p class="bad-sub" data-testid="bad-intro">
+                Starts a Playwright-controlled Microsoft Edge in a dedicated BirkNext profile, proves it can control a
+                neutral page, then checks whether it keeps control of the selected target. No sign-in is attempted, and
+                nothing about your browser or its security settings is changed.
+            </p>
+        </div>
+    </div>
+
+    <div class="bad-controls">
+        <label class="bad-target-label" for="bad-target">Target Environment</label>
+        @if (EligibleTargets.Count == 0)
+        {
+            <p class="bad-empty" data-testid="bad-no-targets">
+                No eligible Target Environment. The diagnostic runs against Development and QA targets with a frontend URL.
+            </p>
+        }
+        else
+        {
+            <select id="bad-target" class="form-control bad-target" data-testid="bad-target-select"
+                    value="@_selectedId" @onchange="OnTargetChanged" disabled="@_running">
+                @foreach (var target in EligibleTargets)
+                {
+                    <option value="@target.Id">@target.Name (@target.EnvironmentType)</option>
+                }
+            </select>
+            <button type="button" class="btn-primary" data-testid="bad-run"
+                    disabled="@(_running || Selected is null)" @onclick="RunAsync">
+                @(_running ? "Running diagnostic…" : _report is null ? "Run diagnostic" : "Run again")
+            </button>
+            @if (_running)
+            {
+                <button type="button" class="btn-secondary" data-testid="bad-cancel" @onclick="Cancel">Cancel diagnostic</button>
+            }
+        }
+    </div>
+
+    @if (Selected is { } selected)
+    {
+        <p class="bad-target-url" data-testid="bad-target-url"><code>@selected.TargetUrl</code></p>
+    }
+
+    @if (_running)
+    {
+        <p class="bad-progress" role="status" aria-live="polite" data-testid="bad-progress">
+            A BirkNext diagnostic Edge window will open and close on its own. Do not sign in to it.
+        </p>
+    }
+
+    @if (_requestFailed)
+    {
+        <p class="bad-error" role="alert" data-testid="bad-request-failed">
+            The diagnostic could not be started. BirkNext.Api must be running locally on this workstation.
+        </p>
+    }
+
+    @if (_report is { } report)
+    {
+        <div class="bad-result" data-testid="bad-result" data-result="@report.Result">
+            <div class="bad-result-head">
+                <span class="bad-result-label">Result</span>
+                <span class="fqr-pill fqr-pill-@BrowserAutomationDiagnosticStages.ResultTone(report.Result)"
+                      data-testid="bad-result-label">@report.ResultLabel</span>
+            </div>
+
+            @if (report.BlockedReason is { Length: > 0 } blocked)
+            {
+                <p class="bad-blocked" role="status" data-testid="bad-blocked-reason">@blocked</p>
+            }
+
+            <ul class="bad-stages" data-testid="bad-stages">
+                @foreach (var stage in report.Stages)
+                {
+                    <li class="bad-stage" data-testid="bad-stage" data-stage="@stage.Stage" data-state="@stage.State">
+                        <span class="bad-stage-glyph fqr-pill-@BrowserAutomationDiagnosticStages.Tone(stage.State)"
+                              aria-hidden="true">@BrowserAutomationDiagnosticStages.Glyph(stage.State)</span>
+                        <span class="bad-stage-name">@BrowserAutomationDiagnosticStages.Label(stage.Stage)</span>
+                        @* The state is always a word, never only a colour or a tick. *@
+                        <span class="bad-stage-state" data-testid="bad-stage-state">@BrowserAutomationDiagnosticStages.StateLabel(stage.State)</span>
+                        @if (!string.IsNullOrWhiteSpace(stage.Url))
+                        {
+                            <span class="bad-stage-url"><code>@stage.Url</code></span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(stage.Detail))
+                        {
+                            <span class="bad-stage-detail">@stage.Detail</span>
+                        }
+                    </li>
+                }
+            </ul>
+
+            @if (report.ObservedExceptionType is { Length: > 0 } exceptionType)
+            {
+                <p class="bad-exception" data-testid="bad-exception">
+                    <strong>Observed exception:</strong> <code>@exceptionType</code>
+                </p>
+            }
+
+            @* What was observed, and nothing beyond it. This text never names an organisational control as the cause. *@
+            <p class="bad-interpretation" data-testid="bad-interpretation">@report.Interpretation</p>
+
+            <dl class="bad-meta" data-testid="bad-meta">
+                <div><dt>Target</dt><dd>@report.TargetEnvironmentName (@report.TargetEnvironmentType)</dd></div>
+                <div><dt>Edge</dt><dd>@(report.EdgeVersion ?? "unknown")</dd></div>
+                <div><dt>Playwright</dt><dd>@(report.PlaywrightVersion ?? "unknown")</dd></div>
+                <div><dt>Browser profile</dt><dd>@report.ProfileDescription</dd></div>
+            </dl>
+
+            <div class="bad-actions">
+                <button type="button" class="btn-secondary" data-testid="bad-copy" @onclick="CopyReport">
+                    @(_copied ? "Report copied" : "Copy diagnostic report")
+                </button>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    /// <summary>Target Environments this diagnostic may run against. Production is never among them.</summary>
+    [Parameter, EditorRequired] public IReadOnlyList<FrontendAnalysisProfile> Targets { get; set; } = [];
+
+    private BrowserAutomationDiagnosticReport? _report;
+    private CancellationTokenSource? _cts;
+    private bool _running;
+    private bool _requestFailed;
+    private bool _copied;
+    private string? _selectedId;
+
+    /// <summary>
+    /// Development and QA targets with a frontend URL. The production exclusion is enforced again on the backend —
+    /// this list is the UI not offering what policy would refuse, not the guard itself.
+    /// </summary>
+    private IReadOnlyList<FrontendAnalysisProfile> EligibleTargets => Targets
+        .Where(t => !string.IsNullOrWhiteSpace(t.TargetUrl) && t.EnvironmentType != FrontendEnvironmentType.Production)
+        .ToList();
+
+    private FrontendAnalysisProfile? Selected =>
+        EligibleTargets.FirstOrDefault(t => t.Id == _selectedId) ?? EligibleTargets.FirstOrDefault();
+
+    protected override void OnParametersSet() => _selectedId ??= EligibleTargets.FirstOrDefault()?.Id;
+
+    private void OnTargetChanged(ChangeEventArgs e)
+    {
+        _selectedId = e.Value?.ToString();
+        _report = null;
+        _copied = false;
+    }
+
+    private async Task RunAsync()
+    {
+        if (_running || Selected is not { } target) return;
+        _running = true;
+        _requestFailed = false;
+        _copied = false;
+        _report = null;
+        _cts = new CancellationTokenSource();
+        try
+        {
+            _report = await Diagnostic.RunAsync(new BrowserAutomationDiagnosticRequest
+            {
+                TargetEnvironmentId = target.Id,
+                TargetEnvironmentName = target.Name,
+                TargetUrl = target.TargetUrl ?? "",
+                EnvironmentType = target.EnvironmentType.ToString(),
+            }, _cts.Token);
+            _requestFailed = _report is null;
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancelling is a choice, not a fault: the card simply returns to its idle state.
+        }
+        finally
+        {
+            _running = false;
+            _cts?.Dispose();
+            _cts = null;
+        }
+    }
+
+    private void Cancel() => _cts?.Cancel();
+
+    private async Task CopyReport()
+    {
+        if (_report is null) return;
+        var text = BrowserAutomationDiagnosticReportText.Build(_report);
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); } catch { }
+        _copied = true;
+    }
+
+    public void Dispose()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+    }
+}

@@ -16,6 +16,7 @@
 @inject IDashboardSnapshotService AnalysisSessions
 @inject IExtractionSessionService ExtractionSession
 @inject ApplicationRuntimeResetService RuntimeReset
+@inject IFrontendAnalysisSettingsService FrontendAnalysisSettingsStore
 @inject IArtifactParserService MarkdownEngine
 @inject IReviewContextValidator ReviewContextValidator
 @inject WasmSecurityApiService SecurityApi
@@ -682,6 +683,12 @@ else if (_settings is not null)
                     {
                         <p class="settings-card-note">Frontend engine capability information is not available.</p>
                     }
+                </div>
+
+                @* An engine/runtime diagnostic, so it belongs with the engine capabilities rather than on a review
+                   page or the Target Environment editor. It appears here and nowhere else. *@
+                <div class="settings-card settings-card-full-width">
+                    <BrowserAutomationDiagnosticCard Targets="@FrontendAnalysisSettingsStore.Settings.Profiles" />
                 </div>
             }
 

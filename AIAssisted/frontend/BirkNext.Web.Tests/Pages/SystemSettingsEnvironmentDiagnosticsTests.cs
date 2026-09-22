@@ -44,6 +44,8 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
         Services.AddScoped<ApplicationRuntimeResetService>();
         Services.AddScoped<IExtractionSessionService, ExtractionSessionService>();
         Services.AddSingleton<IFrontendAnalysisSettingsService, FrontendAnalysisSettingsService>();
+        // The Frontend Engine Capabilities pane hosts the browser automation diagnostic card.
+        Services.AddSingleton(Moq.Mock.Of<IBrowserAutomationDiagnosticApiService>());
         Services.AddSingleton<ITargetEnvironmentDetectionApiService, TargetEnvironmentDetectionApiService>();
     }
 
