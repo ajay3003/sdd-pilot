@@ -23,6 +23,9 @@
                 Description="Review discovered REST and GraphQL APIs for security, contract quality, robustness, error handling, and response timing. Read-only.">
         @if (_report is not null)
         {
+            @* Same action pattern as the Frontend Quality Review result: return to the setup view first, then export.
+               "Back" and "Run again" stay apart — one navigates, the other starts work. *@
+            <button type="button" class="btn-primary" @onclick="BackToSetup" data-testid="aqr-back">Back to API Quality Review</button>
             <button type="button" class="btn-secondary" @onclick="ExportHtml" data-testid="aqr-export">Export HTML</button>
         }
     </PageHeader>
@@ -631,6 +634,20 @@
             FrontendOrigin = Uri.TryCreate(context.TargetUrl, UriKind.Absolute, out var origin) ? origin.GetLeftPart(UriPartial.Authority) : null,
         };
     }
+
+    /// <summary>
+    /// Return to the setup view. A view transition and nothing else: it starts no review, records nothing, and clears
+    /// no state the run produced.
+    ///
+    /// It deliberately does NOT call <see cref="RefreshContextAsync"/>, which the Frontend Quality Review's equivalent
+    /// can afford to. That method re-hydrates <c>_report</c> from history (<c>_report ??= _history.LastReport</c>), so
+    /// calling it here would put the result straight back and the button would appear to do nothing — and it rebuilds
+    /// the target selection from the saved configuration, which would silently discard whatever the user had ticked.
+    ///
+    /// The completed run is untouched: it stays in <see cref="IApiReviewHistoryService"/> and in the runtime session,
+    /// so the landing view still shows it and re-opening the page restores it.
+    /// </summary>
+    private void BackToSetup() => _report = null;
 
     private async Task ExportHtml()
     {

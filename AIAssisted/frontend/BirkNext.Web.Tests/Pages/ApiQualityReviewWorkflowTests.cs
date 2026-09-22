@@ -519,4 +519,98 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         }
         page.FindAll(".aqr-pill").Should().OnlyContain(p => p.TextContent.Trim().Length > 0, "state chips carry text, never colour alone");
     }
+
+    // ── Returning to the setup view ───────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The result page offered no way back to the setup view: only Export HTML at the top and "Run API Quality Review
+    /// again" inside the result, which is not navigation — it starts work. Frontend Quality Review already had the
+    /// pattern, so this is the same one.
+    /// </summary>
+    [Fact]
+    public async Task TheResultOffersBackToTheSetupViewBesideExport()
+    {
+        var page = await Result();
+
+        var actions = page.Find(".page-header").QuerySelectorAll("button")
+            .Select(b => b.TextContent.Trim()).ToList();
+
+        // 1, 7. Navigate first, then export — the same order the Frontend Quality Review result uses.
+        actions.Should().Equal("Back to API Quality Review", "Export HTML");
+        // 8. Reachable by its accessible name, and never an icon alone.
+        page.Find("[data-testid=aqr-back]").TextContent.Trim().Should().Be("Back to API Quality Review");
+    }
+
+    // 3. Back navigates. It does not start a review, and the run is never re-issued.
+    [Fact]
+    public async Task BackReturnsToSetupWithoutRunningAnything()
+    {
+        var page = await Result();
+        _review.Invocations.Clear();
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-back]").Click());
+
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-decide]"));
+        page.FindAll("[data-testid=aqr-result-summary]").Should().BeEmpty();
+        _review.Verify(r => r.RunAsync(It.IsAny<ApiReviewRunRequest>(), It.IsAny<CancellationToken>()), Times.Never,
+            "Back is navigation; Run again is the action that starts work");
+    }
+
+    // 4, 6, 9. The completed run survives Back: it stays in history and comes back when the page is re-entered.
+    [Fact]
+    public async Task BackPreservesTheCompletedRun()
+    {
+        var page = await Result();
+        var before = _history.For("dev").LastReport;
+        before.Should().NotBeNull();
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-back]").Click());
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-decide]"));
+
+        // Nothing was deleted or reset: the history entry is the same object the run recorded.
+        _history.For("dev").LastReport.Should().BeSameAs(before);
+        // And re-entering the page shows that result again, exactly as it does after navigating away and returning.
+        var reopened = Render<ApiQualityReview>();
+        reopened.WaitForAssertion(() => reopened.Find("[data-testid=aqr-result-summary]"));
+    }
+
+    // 2, 4. Back leaves the target selection alone. Rebuilding it from the saved configuration — which the page's own
+    // context refresh does — would silently discard whatever the user had ticked before running.
+    [Fact]
+    public async Task BackKeepsTheTargetSelectionTheRunUsed()
+    {
+        var page = await Result();
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-back]").Click());
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-decide]"));
+
+        var selected = page.FindAll("[data-testid=aqr-target]").Count(t => t.ClassList.Contains("aqr-target-selected"));
+        selected.Should().BePositive("the scope the review ran with is still selected");
+    }
+
+    // 5. The rerun action is unchanged and still runs a review.
+    [Fact]
+    public async Task RunAgainStillStartsAReview()
+    {
+        var page = await Result();
+        _review.Invocations.Clear();
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-run]").Click());
+
+        page.WaitForAssertion(() =>
+            _review.Verify(r => r.RunAsync(It.IsAny<ApiReviewRunRequest>(), It.IsAny<CancellationToken>()), Times.Once));
+        page.Find("[data-testid=aqr-result-summary]").Should().NotBeNull();
+    }
+
+    // 6. Export is unchanged and still exports the completed result.
+    [Fact]
+    public async Task ExportStillExportsTheResult()
+    {
+        var page = await Result();
+        var export = Services.GetRequiredService<IReportExportService>();
+
+        await page.InvokeAsync(() => page.Find("[data-testid=aqr-export]").Click());
+
+        Mock.Get(export).Verify(e => e.ExportApiReview(It.IsAny<ApiReviewReport>(), It.IsAny<string>()), Times.Once);
+    }
 }
