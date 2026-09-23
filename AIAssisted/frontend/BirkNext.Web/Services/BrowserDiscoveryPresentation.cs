@@ -41,8 +41,16 @@ public enum BrowserObservationState { Observed, Uncertain, Flagged }
 /// <param name="Elements">How many elements the observation examined. Zero means the rule ran and matched nothing.</param>
 public sealed record BrowserObservation(
     string Key, string Id, string Label, string Detail, string? CriterionId,
-    BrowserObservationState State, int Elements, int FlaggedCount, int UncertainCount, bool Automated)
+    BrowserObservationState State, int Elements, int FlaggedCount, int UncertainCount, bool Automated,
+    string? Source = null, string? Item = null)
 {
+    /// <summary>
+    /// Which evidence source reported this (the summary's <c>Engine</c>, or axe for axe rules), and the rule or evidence
+    /// item it reported. Both come straight from the model; the display never splits a label string to get them.
+    /// </summary>
+    public string SourceLabel => string.IsNullOrWhiteSpace(Source) ? "—" : Source!;
+    public string ItemLabel => string.IsNullOrWhiteSpace(Item) ? Label : Item!;
+
     /// <summary>
     /// The compact right-hand text of an observation row. Counts and the collector's own outcome, never a verdict:
     /// "source flag" says the Browser Companion check marked something, not that a success criterion failed.
@@ -201,12 +209,6 @@ public static class BrowserDiscoveryPresentation
     public const string AreaDisclaimer =
         "WCAG areas and criterion references show how raw evidence is mapped. They are not assessment results: no page is marked as passing, failing or conformant here. Frontend Quality Review interprets this evidence.";
 
-    /// <summary>
-    /// Stated wherever the collector's own flags and uncertainties are counted. They are outcomes of Browser Companion
-    /// checks, and the distance between that and a WCAG result is the whole product boundary.
-    /// </summary>
-    public const string RawOutcomeDisclaimer =
-        "These are raw Browser Companion check outcomes, not WCAG assessment results. Frontend Quality Review interprets them.";
 
     /// <summary>The one hand-off sentence. Said once per view, never after every section.</summary>
     public const string HandoffTitle = "Frontend Quality Review";
@@ -242,7 +244,7 @@ public static class BrowserDiscoveryPresentation
 
     /// <summary>Stated above the accessibility evidence, visible without opening anything.</summary>
     public const string AccessibilityIntro =
-        "Raw accessibility observations from Browser Companion. These are evidence only and are not WCAG findings or compliance results.";
+        "Raw accessibility observations from Browser Companion. These are evidence only and are not WCAG findings or compliance results; Frontend Quality Review interprets them.";
 
     /// <summary>What an uncertainty means — and what it does not create.</summary>
     public const string UncertaintyNote =
@@ -354,7 +356,8 @@ public static class BrowserDiscoveryPresentation
                 Join($"{accessibility.Engine} · {finding.RuleId}",
                      finding.Count > 0 ? $"{finding.Count} element(s) observed" : null,
                      finding.Selectors.Count > 0 ? $"selectors: {string.Join(", ", finding.Selectors.Take(3))}" : null),
-                null, BrowserObservationState.Flagged, finding.Count, finding.Count, 0, false);
+                null, BrowserObservationState.Flagged, finding.Count, finding.Count, 0, false,
+                accessibility.Engine, finding.Title.Length > 0 ? finding.Title : finding.RuleId);
             foreach (var criterion in Criteria(finding.Wcag)) Add(criterion, observation);
         }
 
@@ -369,7 +372,7 @@ public static class BrowserDiscoveryPresentation
                 null,
                 check.Failed > 0 ? BrowserObservationState.Flagged
                     : check.Uncertain > 0 ? BrowserObservationState.Uncertain : BrowserObservationState.Observed,
-                check.Tested, check.Failed, check.Uncertain, false);
+                check.Tested, check.Failed, check.Uncertain, false, accessibility.Engine, check.CheckId);
             foreach (var criterion in CriteriaForCheck(check.CheckId)) Add(criterion, observation);
         }
 
@@ -390,7 +393,7 @@ public static class BrowserDiscoveryPresentation
                 rule.Count > 0 ? $"{rule.Count} node(s) observed" : "evaluated",
                 null, state, rule.Count,
                 state == BrowserObservationState.Flagged ? rule.Count : 0,
-                state == BrowserObservationState.Uncertain ? rule.Count : 0, true);
+                state == BrowserObservationState.Uncertain ? rule.Count : 0, true, "axe", rule.RuleId);
             foreach (var criterion in rule.CriterionIds) Add(criterion, observation);
         }
 
@@ -586,6 +589,28 @@ public static class BrowserDiscoveryPresentation
     /// The compact DOM line the selected page leads with: three structural counts, no verdict. The full set stays in
     /// Evidence → DOM rather than being repeated here.
     /// </summary>
+    /// <summary>
+    /// A historical timestamp that cannot be misread across days: time only when the evidence is from today (local),
+    /// otherwise the date as well, in the dd.MM.yyyy form the product uses. Culture-invariant, so it renders the same
+    /// everywhere and in tests.
+    /// </summary>
+    public static string EvidenceTimestamp(DateTimeOffset at, DateTimeOffset now)
+    {
+        var local = at.ToLocalTime();
+        return local.Date == now.ToLocalTime().Date
+            ? local.ToString("HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)
+            : local.ToString("dd.MM.yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>The full timestamp, for a tooltip beside a time-only display.</summary>
+    public static string FullTimestamp(DateTimeOffset at) =>
+        at.ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+
+    public const string AccessibilityTableNote =
+        "Rows are source observations mapped to related WCAG references. They are not criterion outcomes.";
+
+    public const string RawObservationHelp = "Evidence-only source status; not a BirkNext finding.";
+
     public static string DomSummaryLine(BrowserDomSummary? dom) => dom is null ? "" : Join(
         $"{dom.NodeCount} node{(dom.NodeCount == 1 ? "" : "s")}",
         $"{dom.InteractiveCount} interactive element{(dom.InteractiveCount == 1 ? "" : "s")}",
@@ -712,7 +737,7 @@ public static class BrowserDiscoveryStates
             "Open or refresh an approved application page to start collecting browser evidence.",
         BrowserDiscoveryState.Pairing =>
             "Enter the pairing code in Browser Companion, then open an approved application page.",
-        _ => "Pair the managed Edge browser and open an approved application page to start collecting browser evidence.",
+        _ => "Pair the Browser Companion extension in your managed Edge browser with this Target Environment, then open an approved application page to start collecting browser evidence.",
     };
 
     /// <summary>
@@ -859,7 +884,7 @@ public static class BrowserDiscoveryLive
         return
         [
             new("Pages with evidence", totals.Pages.ToString(), "bd-pages-count"),
-            new("Last evidence", totals.LastCapturedAt is { } at ? at.ToLocalTime().ToString("HH:mm:ss") : "None", "bd-last-evidence", totals.LastCapturedAt is null),
+            new("Last evidence", totals.LastCapturedAt is { } at ? BrowserDiscoveryPresentation.EvidenceTimestamp(at, DateTimeOffset.Now) : "None", "bd-last-evidence", totals.LastCapturedAt is null),
             // The group is headed "Historical evidence", so "captured" three times over said nothing new.
             new("DOM", PageCount(totals.DomPages), "bd-evidence-dom"),
             new("Accessibility", PageCount(totals.AccessibilityPages), "bd-evidence-accessibility"),

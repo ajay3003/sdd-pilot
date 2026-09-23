@@ -475,6 +475,6 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
 
         SelectType(cut, "accessibility");
         cut.Markup.Should().Contain("WCAG areas and criterion references show how raw evidence is mapped");
-        cut.Markup.Should().Contain("not WCAG assessment results");
+        cut.Markup.Should().Contain("not WCAG findings or compliance results");
     }
 }

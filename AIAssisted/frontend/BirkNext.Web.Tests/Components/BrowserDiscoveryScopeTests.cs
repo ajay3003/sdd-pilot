@@ -183,7 +183,7 @@ public sealed class BrowserDiscoveryScopeTests : BunitContext
 
         Text(cut, "browser-discovery-selected-page").Should().Be("/admin/user-access");
         Text(cut, "browser-discovery-selected-liveness").Should().Be("Live now");
-        Text(cut, "browser-discovery-page-observed").Should().Be(Observed.ToLocalTime().ToString("HH:mm:ss"));
+        Text(cut, "browser-discovery-page-observed").Should().Be(BrowserDiscoveryPresentation.EvidenceTimestamp(Observed, DateTimeOffset.Now));
         Text(cut, "browser-discovery-page-source").Should().Be("Browser Companion");
         Text(cut, "browser-discovery-page-dom-line").Should().Be("67 nodes · 14 interactive elements · 1 form control");
         Text(cut, "browser-discovery-page-performance-line").Should().Be("SPA navigation · 810 ms page stabilization");
@@ -235,7 +235,7 @@ public sealed class BrowserDiscoveryScopeTests : BunitContext
         // Every column the raw evidence carries, including the mapping it was grouped by.
         var table = cut.Find("[data-testid=browser-discovery-evidence-accessibility-table]");
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page", "WCAG area", "Related WCAG reference", "Evidence item", "Raw observation", "Observed at");
+            .Should().Equal("Page", "WCAG area", "Related WCAG reference", "Source / evidence item", "Raw observation", "Observed at");
         table.TextContent.Should().Contain("1.1.1").And.Contain("Perceivable");
 
         // The outcome filter narrows by what the collector reported, and says so.

@@ -90,7 +90,7 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
 
         var empty = cut.Find("[data-testid=browser-discovery-empty]");
         empty.TextContent.Should().Contain("No browser evidence yet");
-        empty.TextContent.Should().Contain("Pair the managed Edge browser and open an approved application page");
+        empty.TextContent.Should().Contain("Pair the Browser Companion extension in your managed Edge browser with this Target Environment, then open an approved application page");
 
         // Exactly one absence sentence and one Pair action in the empty state.
         Occurrences(cut.Markup, "No browser evidence").Should().Be(1);
@@ -116,7 +116,7 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
         Text(cut, "browser-companion-connection-state").Should().Be("—");
         // The note is an instruction, not the same state in sentence form.
         var note = Text(cut, "browser-companion-connection");
-        note.Should().Contain("Pair the managed Edge browser");
+        note.Should().Contain("Pair the Browser Companion extension");
         note.Should().NotContain("not paired").And.NotContain("Not connected");
     }
 

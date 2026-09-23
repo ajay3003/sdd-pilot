@@ -178,7 +178,7 @@ public sealed class BrowserDiscoveryPolishTests : BunitContext
         var (cut, _, _) = await OpenAsync();
 
         Text(cut, "bd-pages-count").Should().Be("3");
-        Text(cut, "bd-last-evidence").Should().Be(Captured.ToLocalTime().ToString("HH:mm:ss"));
+        Text(cut, "bd-last-evidence").Should().Be(BrowserDiscoveryPresentation.EvidenceTimestamp(Captured, DateTimeOffset.Now));
         Text(cut, "bd-evidence-dom").Should().Be("3 pages");
         Text(cut, "bd-evidence-accessibility").Should().Be("3 pages");
         Text(cut, "bd-evidence-performance").Should().Be("3 pages");
@@ -308,7 +308,7 @@ public sealed class BrowserDiscoveryPolishTests : BunitContext
         cut.Find("[data-testid=browser-discovery-evidence-nav-accessibility]").Click();
 
         Text(cut, "browser-discovery-evidence-a11y-intro").Should().Be(
-            "Raw accessibility observations from Browser Companion. These are evidence only and are not WCAG findings or compliance results.");
+            "Raw accessibility observations from Browser Companion. These are evidence only and are not WCAG findings or compliance results; Frontend Quality Review interprets them.");
         var counts = Text(cut, "browser-discovery-evidence-a11y-counts");
         counts.Should().Contain("2 source-reported flags").And.Contain("1 source-reported uncertainty");
         Text(cut, "browser-discovery-uncertainty-note").Should().Contain("does not automatically create a manual-review requirement");

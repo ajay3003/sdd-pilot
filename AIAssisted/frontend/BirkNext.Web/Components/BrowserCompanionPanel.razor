@@ -38,7 +38,7 @@
             <div><dt>Performance</dt><dd data-testid="browser-companion-performance">@(Evidence.Any(p => p.Performance is not null) ? "Evidence available" : "Unavailable")</dd></div>
             <div><dt>Accessibility</dt><dd data-testid="browser-companion-accessibility">@(Evidence.Any(p => p.Accessibility is not null) ? "Evidence available" : "Unavailable")</dd></div>
             <div><dt>Approved origins</dt><dd class="bcp-mono" data-testid="browser-companion-origins">@(ApprovedOrigins.Count == 0 ? "—" : string.Join(", ", ApprovedOrigins))</dd></div>
-            <div><dt>Last browser evidence</dt><dd data-testid="browser-companion-last-evidence">@(Evidence.Select(p => (DateTimeOffset?)p.CapturedAt).Max()?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "None")</dd></div>
+            <div><dt>Last browser evidence</dt><dd data-testid="browser-companion-last-evidence">@(Evidence.Select(p => (DateTimeOffset?)p.CapturedAt).Max() is { } last ? BrowserDiscoveryPresentation.EvidenceTimestamp(last, DateTimeOffset.Now) : "None")</dd></div>
         </dl>
     }
     @* Compact mode: the state badge above already names the session state, so the sentence form of the same state is
@@ -65,7 +65,7 @@
             <dl class="bcp-grid">
                 <div><dt>Approved origins</dt><dd class="bcp-mono" data-testid="browser-companion-origins">@(ApprovedOrigins.Count == 0 ? "None" : string.Join(", ", ApprovedOrigins))</dd></div>
                 <div><dt>Current page</dt><dd class="bcp-mono" data-testid="browser-companion-current-page">@CurrentPage</dd></div>
-                <div><dt>Last evidence</dt><dd data-testid="browser-companion-last-evidence">@(Evidence.Select(p => (DateTimeOffset?)p.CapturedAt).Max()?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "None")</dd></div>
+                <div><dt>Last evidence</dt><dd data-testid="browser-companion-last-evidence">@(Evidence.Select(p => (DateTimeOffset?)p.CapturedAt).Max() is { } last ? BrowserDiscoveryPresentation.EvidenceTimestamp(last, DateTimeOffset.Now) : "None")</dd></div>
             </dl>
         </details>
     }
@@ -198,7 +198,9 @@
         BrowserCompanionState.Disconnected => "Open the application in your managed Edge to resume reporting.",
         BrowserCompanionState.PairingPending => "Enter the pairing code in Browser Companion to finish pairing.",
         BrowserCompanionState.Expired => "Pair again to resume collecting browser evidence.",
-        _ => "Pair the managed Edge browser to collect evidence from approved application pages.",
+        // What is actually paired: the Browser Companion extension session, bound to this Target Environment by a
+        // short-lived code. Not "the browser", which is only where the extension runs.
+        _ => "Pair the Browser Companion extension in your managed Edge browser with this Target Environment to collect evidence from its approved origins.",
     };
 
     private string ConnectionMessage => Status.State switch

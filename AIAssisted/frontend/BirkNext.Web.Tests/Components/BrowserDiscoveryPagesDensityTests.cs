@@ -179,7 +179,7 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         var cut = OpenPages();
 
         Text(cut, "browser-discovery-selected-page").Should().Be("/admin/child-specific-roles");
-        Text(cut, "browser-discovery-page-observed").Should().Be(Observed.ToLocalTime().ToString("HH:mm:ss"));
+        Text(cut, "browser-discovery-page-observed").Should().Be(BrowserDiscoveryPresentation.EvidenceTimestamp(Observed, DateTimeOffset.Now));
         Text(cut, "browser-discovery-page-source").Should().Be("Browser Companion");
 
         // Stored evidence was captured in the past; "Available" is the live session's word.
@@ -346,8 +346,10 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
 
         Text(cut, "browser-discovery-evidence-a11y-counts")
             .Should().Contain("source-reported flags").And.Contain("source-reported uncertainties");
-        Text(cut, "browser-discovery-raw-outcome-disclaimer")
-            .Should().Be("These are raw Browser Companion check outcomes, not WCAG assessment results. Frontend Quality Review interprets them.");
+        // One boundary statement, not two saying the same thing: the intro names the raw status and the interpreter.
+        Text(cut, "browser-discovery-evidence-a11y-intro")
+            .Should().Contain("not WCAG findings or compliance results").And.Contain("Frontend Quality Review interprets them");
+        cut.FindAll("[data-testid=browser-discovery-raw-outcome-disclaimer]").Should().BeEmpty();
     }
 
     [Fact]

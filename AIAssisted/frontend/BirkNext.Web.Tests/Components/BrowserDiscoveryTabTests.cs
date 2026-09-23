@@ -270,7 +270,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         cut.Find("[data-testid=browser-discovery-evidence-nav-accessibility]").Click();
         var accessibility = cut.Find("[data-testid=browser-discovery-evidence-accessibility-table]");
         accessibility.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page", "WCAG area", "Related WCAG reference", "Evidence item", "Raw observation", "Observed at");
+            .Should().Equal("Page", "WCAG area", "Related WCAG reference", "Source / evidence item", "Raw observation", "Observed at");
         accessibility.TextContent.Should().Contain("Perceivable").And.Contain("1.1.1");
         cut.FindAll("[data-testid=browser-discovery-evidence-dom-table]").Should().BeEmpty();
 
@@ -313,7 +313,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
 
         Text(cut, "browser-discovery-empty").Should()
             .Contain("No browser evidence yet")
-            .And.Contain("Pair the managed Edge browser and open an approved application page");
+            .And.Contain("Pair the Browser Companion extension in your managed Edge browser with this Target Environment, then open an approved application page");
         cut.FindAll("[data-testid=browser-discovery-page-row]").Should().BeEmpty();
         cut.FindAll("[data-testid=browser-discovery-overview-table]").Should().BeEmpty();
         Text(cut, "bd-pages-count").Should().Be("0");
@@ -325,7 +325,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
     // ── 20. Connection states ────────────────────────────────────────────────
 
     [Theory]
-    [InlineData(BrowserCompanionState.NotPaired, "Not connected", "Pair the managed Edge browser")]
+    [InlineData(BrowserCompanionState.NotPaired, "Not connected", "Pair the Browser Companion extension")]
     [InlineData(BrowserCompanionState.Disconnected, "Paired · not reporting", "Open or refresh an approved application page")]
     // Connected with an approved page open and nothing observed: waiting, never collecting.
     [InlineData(BrowserCompanionState.Connected, "Connected", "Waiting for browser evidence")]

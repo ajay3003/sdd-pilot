@@ -104,7 +104,7 @@ public sealed class BrowserDiscoveryPairedNotReportingTests : BunitContext
         Text(cut, "bd-session").Should().Be("Not connected");
         All(cut, "browser-discovery-pair").Should().ContainSingle();
         Text(cut, "browser-discovery-empty-help").Should().NotBe(NextStep);
-        Text(cut, "browser-discovery-empty-help").Should().StartWith("Pair the managed Edge browser");
+        Text(cut, "browser-discovery-empty-help").Should().StartWith("Pair the Browser Companion extension");
     }
 
     // 6. Once a session is reporting, the refresh guidance is gone.

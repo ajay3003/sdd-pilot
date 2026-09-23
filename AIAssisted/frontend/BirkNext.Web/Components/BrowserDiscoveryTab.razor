@@ -345,8 +345,9 @@
                                             <tr @key="@($"detail:{row.Identity}")" class="bd-detailrow" data-testid="browser-discovery-evidence-dom-extra-row">
                                                 <td colspan="7">
                                                     <span class="bd-dom-extra" data-testid="@($"browser-discovery-evidence-dom-extra-{Slug(row.Identity)}")">
-                                                        <span title="@BrowserDiscoveryPresentation.DepthHelp">Depth <span class="bd-mono">@row.Depth</span></span>
-                                                        <span>iFrames <span class="bd-mono">@row.Iframes</span></span>
+                                                        <span class="bd-dom-extra-label">Additional structure:</span>
+                                                        <span title="@BrowserDiscoveryPresentation.DepthHelp">Depth <span class="bd-mono">@row.Depth</span></span><span aria-hidden="true"> · </span>
+                                                        <span>iFrames <span class="bd-mono">@row.Iframes</span></span><span aria-hidden="true"> · </span>
                                                         <span>Dialogs <span class="bd-mono">@row.Dialogs</span></span>
                                                     </span>
                                                     @if (row.Detail.Count > 0)
@@ -397,7 +398,8 @@
                                     <span class="bd-area-badge" data-testid="browser-discovery-area-badge">@BrowserDiscoveryPresentation.PrincipleLabel(area)</span>
                                 }
                             </p>
-                            <p class="bd-note" data-testid="browser-discovery-raw-outcome-disclaimer">@BrowserDiscoveryPresentation.RawOutcomeDisclaimer</p>
+                            @* The intro above already states the raw-outcome boundary and who interprets it; a second sentence saying
+                               the same was the fourth boundary note stacked above one table. *@
                             <p class="bd-note" data-testid="browser-discovery-area-disclaimer">@BrowserDiscoveryPresentation.AreaDisclaimer</p>
 
                             <div class="bd-filters" data-testid="browser-discovery-evidence-filters">
@@ -728,10 +730,11 @@
     {
         <div class="bd-tablewrap">
             <table class="bd-table" data-testid="@tableTestId">
+                <caption class="bd-caption" data-testid="browser-discovery-a11y-table-note">@BrowserDiscoveryPresentation.AccessibilityTableNote</caption>
                 <thead>
                     <tr>
                         <th scope="col">Page</th><th scope="col">WCAG area</th><th scope="col" title="How this evidence item is mapped to WCAG. A reference, not a result.">Related WCAG reference</th>
-                        <th scope="col">Evidence item</th><th scope="col">Raw observation</th><th scope="col">Observed at</th>
+                        <th scope="col">Source / evidence item</th><th scope="col" title="@BrowserDiscoveryPresentation.RawObservationHelp">Raw observation</th><th scope="col">Observed at</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -741,7 +744,10 @@
                             <th scope="row" class="bd-mono bd-route">@PageLink(row.Identity, row.Route)</th>
                             <td><span class="bd-area-badge">@BrowserDiscoveryPresentation.PrincipleLabel(row.Principle)</span></td>
                             <td class="bd-mono">@(row.CriterionId ?? "—")</td>
-                            <td><span class="bd-evidence-label">@row.Observation.Label</span></td>
+                            <td>
+                                <span class="bd-evidence-source" data-testid="browser-discovery-a11y-source">@row.Observation.SourceLabel</span>
+                                <span class="bd-evidence-label" data-testid="browser-discovery-a11y-item">@row.Observation.ItemLabel</span>
+                            </td>
                             <td><span class="bd-obs-state bd-obs-@row.Observation.State.ToString().ToLowerInvariant()">@row.Observation.StateDetail</span></td>
                             <td class="bd-mono">@Time(row.ObservedAt)</td>
                         </tr>
@@ -768,7 +774,8 @@
         };
     }
 
-    private static string Time(DateTimeOffset value) => value.ToLocalTime().ToString("HH:mm:ss");
+    /// <summary>Every historical timestamp on this surface: time today, date and time otherwise.</summary>
+    private static string Time(DateTimeOffset value) => BrowserDiscoveryPresentation.EvidenceTimestamp(value, DateTimeOffset.Now);
 
     /// <summary>
     /// The one hand-off, rendered wherever a view ends. The boundary sentence used to appear as its own paragraph in

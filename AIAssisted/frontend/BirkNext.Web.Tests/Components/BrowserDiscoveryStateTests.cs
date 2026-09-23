@@ -108,7 +108,7 @@ public sealed class BrowserDiscoveryStateTests : BunitContext
         Text(cut, "bd-session").Should().Be("Not connected");
         Text(cut, "browser-discovery-empty").Should().Contain("No browser evidence yet");
         Text(cut, "browser-discovery-empty-help")
-            .Should().Be("Pair the managed Edge browser and open an approved application page to start collecting browser evidence.");
+            .Should().Be("Pair the Browser Companion extension in your managed Edge browser with this Target Environment, then open an approved application page to start collecting browser evidence.");
 
         // 3. Exactly one Pair control on the whole page, and it belongs to the empty state.
         PairActions(cut).Should().ContainSingle();
@@ -241,7 +241,7 @@ public sealed class BrowserDiscoveryStateTests : BunitContext
 
         // 25. One absence sentence, and the companion card says what to do rather than restating the badge.
         Occurrences(cut.Markup, "No browser evidence").Should().Be(1);
-        Text(cut, "browser-companion-connection").Should().Contain("Pair the managed Edge browser to collect evidence");
+        Text(cut, "browser-companion-connection").Should().Contain("Pair the Browser Companion extension in your managed Edge browser with this Target Environment");
     }
 
     // ── §37. Semantic separations ────────────────────────────────────────────────────────────

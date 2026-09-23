@@ -96,7 +96,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
 
         // The evidence is still there and still says so — in its own section, in past tense.
         Text(cut, "bd-pages-count").Should().Be("1");
-        Text(cut, "bd-last-evidence").Should().Be(Captured.ToLocalTime().ToString("HH:mm:ss"));
+        Text(cut, "bd-last-evidence").Should().Be(BrowserDiscoveryPresentation.EvidenceTimestamp(Captured, DateTimeOffset.Now));
         Text(cut, "bd-evidence-dom").Should().Be("1 page");
         cut.Find("[data-testid=browser-discovery-summary]").TextContent.Should().Contain("Historical evidence");
     }
