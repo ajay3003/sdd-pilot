@@ -30,10 +30,20 @@ public enum BrowserAutomationDiagnosticStage
     BlankPage,
     /// <summary>A neutral control page navigated and stayed under automation control.</summary>
     ControlPage,
-    /// <summary>Navigation to the configured target URL was attempted.</summary>
+    /// <summary>Navigation to the configured target URL was issued and the browser accepted it (response committed).</summary>
     TargetNavigation,
-    /// <summary>The target page/context was still under automation control after navigating.</summary>
+    /// <summary>
+    /// After the navigation — and any redirect it led to — settled, a safe Playwright operation still worked on the
+    /// page. This is about the BROWSER, wherever it ended up; it says nothing about which application that page is.
+    /// </summary>
     TargetControl,
+    /// <summary>The page and context stayed alive through a bounded observation window and answered a second probe.</summary>
+    TargetStability,
+    /// <summary>
+    /// The page Playwright ended up controlling is the configured target application, by defined evidence. NOT the
+    /// same thing as navigation succeeding: a target that redirects to its identity provider has not been reached.
+    /// </summary>
+    TargetApplication,
     /// <summary>This mode's browser was closed.</summary>
     Cleanup,
 }
@@ -48,15 +58,141 @@ public enum BrowserAutomationDiagnosticStageState
     /// <summary>The stage did not fail on its own terms: something refused it, or policy did not permit it.</summary>
     Blocked,
     Cancelled,
+    /// <summary>
+    /// Not reached, for an expected reason that is not a failure — the target handed off to authentication first.
+    /// Informational: the stage's detail says why.
+    /// </summary>
+    NotReached,
+    /// <summary>The evidence needed to decide this stage was not available, so no answer is given either way.</summary>
+    Unknown,
 }
+
+/// <summary>A yes/no fact that may also be honestly unanswered. Never collapsed into a bool, because "not checked" is not "no".</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BrowserAutomationEvidenceAnswer { Unknown, Yes, No }
+
+/// <summary>Where the browser was when the diagnostic last looked — the fact the old single "Target application" stage hid.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BrowserAutomationFinalLocation
+{
+    /// <summary>Not observed: the navigation did not get far enough, or the page was gone before it could be read.</summary>
+    Unknown,
+    /// <summary>Same scheme, host and effective port as the configured target URL.</summary>
+    TargetOrigin,
+    /// <summary>A recognised authentication authority: Microsoft Entra sign-in hosts, or the configured authority.</summary>
+    AuthenticationAuthority,
+    /// <summary>A Defender for Cloud Apps session-control host (<c>*.mcas.ms</c>). The page is proxied, not the target origin.</summary>
+    SessionControlProxy,
+    /// <summary>Anywhere else. Automation may be fine, but this is not the target and not a recognised handoff.</summary>
+    OtherOrigin,
+}
+
+/// <summary>When, relative to the target navigation, a failure happened. The same exception means different things at each point.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BrowserAutomationFailurePhase
+{
+    None,
+    /// <summary>Before the target was contacted: a runtime or control problem, never evidence about the target.</summary>
+    BeforeTargetNavigation,
+    /// <summary>While the browser was navigating to the target: a target-navigation restriction.</summary>
+    DuringTargetNavigation,
+    /// <summary>After navigation returned, while it settled or while the page was first probed: a target-control restriction.</summary>
+    AfterTargetNavigation,
+    /// <summary>During the stability window or its closing probe: control was lost late, after an initial success.</summary>
+    DuringStabilityWindow,
+}
+
+/// <summary>A page, context or browser lifecycle signal Playwright reported. Only the kind and the time — nothing from the page.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BrowserAutomationLifecycleEventKind { PageClosed, PageCrashed, ContextClosed, BrowserDisconnected, PageOpened }
+
+/// <summary>
+/// One main-frame navigation. The URL is sanitized: scheme, host, port and a redacted path; never a query value.
+/// <paramref name="SecondaryPage"/> marks a page the target opened (a sign-in popup), not the diagnostic's own page.
+/// </summary>
+public sealed record BrowserAutomationNavigationStep(
+    int Sequence, long AtMs, string Url, BrowserAutomationFinalLocation Location, bool SecondaryPage = false);
+
+public sealed record BrowserAutomationLifecycleEvent(BrowserAutomationLifecycleEventKind Kind, long AtMs, BrowserAutomationFailurePhase Phase);
+
+/// <summary>
+/// What one mode actually observed at the target, kept as separate facts because they ARE separate facts: the
+/// navigation was accepted, the browser is still controllable, the page is on the target origin, the target redirected
+/// to authentication, the target application was identified. Any one of them can be true while another is false, and
+/// a single "Target application PASS" silently merged them.
+/// </summary>
+public sealed record BrowserAutomationTargetEvidence
+{
+    /// <summary>The configured target URL, sanitized.</summary>
+    public string RequestedUrl { get; init; } = "";
+    /// <summary>The canonical expected origin (scheme://host[:port]) that "target origin reached" is measured against.</summary>
+    public string ExpectedOrigin { get; init; } = "";
+
+    /// <summary>The page URL at the end of the observation, sanitized. Null when the page was never readable after navigating.</summary>
+    public string? FinalUrl { get; init; }
+    public string? FinalScheme { get; init; }
+    public string? FinalHost { get; init; }
+    public string? FinalOrigin { get; init; }
+    public BrowserAutomationFinalLocation FinalLocation { get; init; } = BrowserAutomationFinalLocation.Unknown;
+
+    public BrowserAutomationEvidenceAnswer ExpectedOriginReached { get; init; } = BrowserAutomationEvidenceAnswer.Unknown;
+    /// <summary>Yes when any main-frame navigation reached an authentication authority — even if it later returned to the target.</summary>
+    public BrowserAutomationEvidenceAnswer AuthenticationRedirect { get; init; } = BrowserAutomationEvidenceAnswer.Unknown;
+    /// <summary>The authority host that was reached, if any. A host name only.</summary>
+    public string? AuthenticationHost { get; init; }
+    /// <summary>True when the authentication authority was reached in a page the target opened (a popup), not in the main page.</summary>
+    public bool AuthenticationInSecondaryPage { get; init; }
+    /// <summary>
+    /// The session-control proxy host any page passed through (<c>*.mcas.ms</c>), if one was seen. Observed, and only
+    /// that: it names no policy and no cause.
+    /// </summary>
+    public string? SessionControlHost { get; init; }
+
+    public BrowserAutomationEvidenceAnswer TargetApplicationIdentified { get; init; } = BrowserAutomationEvidenceAnswer.Unknown;
+    /// <summary>What the identification rests on, in the reader's words.</summary>
+    public string IdentificationEvidence { get; init; } = "Not assessed";
+    /// <summary>Whether a structural application marker is configured for this Target Environment.</summary>
+    public bool ApplicationMarkerConfigured { get; init; }
+    /// <summary>Whether that marker was present in the final page. Null when not configured or not checked.</summary>
+    public bool? ApplicationMarkerFound { get; init; }
+
+    /// <summary>True when main-frame navigation went quiet within the bounded settle window; false when the bound was hit.</summary>
+    public bool? NavigationSettled { get; init; }
+    public long? SettleDurationMs { get; init; }
+    public long StabilityWindowMs { get; init; }
+
+    public List<BrowserAutomationNavigationStep> NavigationTrace { get; init; } = [];
+    public List<BrowserAutomationLifecycleEvent> LifecycleEvents { get; init; } = [];
+
+    /// <summary>The exception TYPE at the target, if any, and when it happened relative to the navigation.</summary>
+    public string? ExceptionType { get; init; }
+    public BrowserAutomationFailurePhase FailurePhase { get; init; } = BrowserAutomationFailurePhase.None;
+}
+
+/// <summary>
+/// One of three controls that are routinely confused with each other and must be reported apart. A Playwright result
+/// is evidence about Playwright-owned automation ONLY; it says nothing about whether a person can open DevTools, or
+/// whether CDP may attach to an Edge somebody else started.
+/// </summary>
+public sealed record BrowserAutomationControlDimension(string Name, string State, string Basis);
 
 /// <summary>The outcome of ONE mode. Deliberately about behaviour; no value here names a cause.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum BrowserAutomationDiagnosticModeResult
 {
     NotRun,
-    /// <summary>Playwright kept control of the target in this mode.</summary>
+    /// <summary>Playwright kept stable control, and the page it controls was identified as the target application.</summary>
     Available,
+    /// <summary>
+    /// Playwright kept stable control through the navigation, and the target handed off to its authentication
+    /// authority. Browser automation works through the handoff; the target application itself was not yet reached.
+    /// </summary>
+    AvailableAtAuthenticationBoundary,
+    /// <summary>
+    /// Playwright kept stable control, but the page could not be identified as the target application: it is on the
+    /// target origin without the configured marker, behind a session-control proxy, or somewhere else entirely.
+    /// </summary>
+    AvailableTargetUnconfirmed,
     /// <summary>Automation worked on the control pages in this mode and could not be retained on the target.</summary>
     TargetRestricted,
     /// <summary>Playwright or Microsoft Edge could not start in this mode, so nothing was tested.</summary>
@@ -76,7 +212,11 @@ public enum BrowserAutomationDiagnosticModeResult
 public enum BrowserAutomationDiagnosticComparison
 {
     NotRun,
-    /// <summary>Both modes retained control of the target.</summary>
+    /// <summary>
+    /// Playwright remained controllable through the tested browser path in both modes. NOT a statement that the
+    /// target application — let alone the authenticated application — was reached; each mode's evidence says where
+    /// the browser ended up.
+    /// </summary>
     AutomationAvailable,
     /// <summary>Neither mode retained control, and both proved automation works on a neutral page first.</summary>
     TargetRestrictedInBothModes,
@@ -115,14 +255,39 @@ public sealed record BrowserAutomationDiagnosticModeReport
     public List<BrowserAutomationDiagnosticStageResult> Stages { get; init; } = [];
     /// <summary>The exception type observed at the point of failure, if any. The TYPE only.</summary>
     public string? ObservedExceptionType { get; init; }
+    /// <summary>What this mode observed at the target. Null when the target was never attempted.</summary>
+    public BrowserAutomationTargetEvidence? Target { get; init; }
 
     public BrowserAutomationDiagnosticStageResult? Stage(BrowserAutomationDiagnosticStage stage) =>
         Stages.FirstOrDefault(s => s.Stage == stage);
 
-    /// <summary>This mode kept control of the target. The single fact the authentication prerequisite is built on.</summary>
-    public bool TargetControlAvailable =>
-        Result == BrowserAutomationDiagnosticModeResult.Available &&
-        Stage(BrowserAutomationDiagnosticStage.TargetControl)?.State == BrowserAutomationDiagnosticStageState.Passed;
+    /// <summary>
+    /// Playwright stayed in control of this mode's browser through the target navigation and the stability window,
+    /// wherever the page ended up. The broadest "automation works" fact; it does not say which page is controlled.
+    /// </summary>
+    public bool BrowserControlRetained =>
+        Result is BrowserAutomationDiagnosticModeResult.Available
+            or BrowserAutomationDiagnosticModeResult.AvailableAtAuthenticationBoundary
+            or BrowserAutomationDiagnosticModeResult.AvailableTargetUnconfirmed
+        && Stage(BrowserAutomationDiagnosticStage.TargetControl)?.State == BrowserAutomationDiagnosticStageState.Passed
+        && Stage(BrowserAutomationDiagnosticStage.TargetStability)?.State == BrowserAutomationDiagnosticStageState.Passed;
+
+    /// <summary>
+    /// Control was retained AND the browser ended somewhere the authentication diagnostic can work from: the target
+    /// origin itself, the target's authentication authority, or its session-control proxy. An unrelated final origin
+    /// does not count — the automation survived, but not along the target's path.
+    /// </summary>
+    public bool ControlRetainedThroughTargetNavigation =>
+        BrowserControlRetained
+        && Target?.FinalLocation is BrowserAutomationFinalLocation.TargetOrigin
+            or BrowserAutomationFinalLocation.AuthenticationAuthority
+            or BrowserAutomationFinalLocation.SessionControlProxy;
+
+    /// <summary>The page Playwright controls was identified as the target application. The only route to "Target application PASS".</summary>
+    public bool TargetApplicationIdentified =>
+        BrowserControlRetained
+        && Stage(BrowserAutomationDiagnosticStage.TargetApplication)?.State == BrowserAutomationDiagnosticStageState.Passed
+        && Target?.TargetApplicationIdentified == BrowserAutomationEvidenceAnswer.Yes;
 
     /// <summary>Automation was proven on a neutral page, which is what makes a target result meaningful at all.</summary>
     public bool ControlPageProven =>
@@ -137,6 +302,11 @@ public sealed record BrowserAutomationDiagnosticRequest
     public string TargetUrl { get; init; } = "";
     /// <summary>Development / QA / Production / … — the production guard reads this.</summary>
     public string EnvironmentType { get; init; } = "";
+    /// <summary>
+    /// The Target Environment's expected authentication authority, when configured. Used only to RECOGNISE an
+    /// authentication redirect; the diagnostic never navigates to it and never signs in.
+    /// </summary>
+    public string? Authority { get; init; }
 }
 
 /// <summary>
@@ -168,6 +338,12 @@ public sealed record BrowserAutomationDiagnosticReport
     /// <summary>Headed first, headless second — the order they ran in.</summary>
     public List<BrowserAutomationDiagnosticModeReport> Modes { get; init; } = [];
 
+    /// <summary>
+    /// Corporate DevTools UI, Playwright-owned automation and CDP attach to an existing Edge — three independent
+    /// dimensions, reported apart so that none is ever inferred from another.
+    /// </summary>
+    public List<BrowserAutomationControlDimension> ControlDimensions { get; init; } = [];
+
     public BrowserAutomationDiagnosticModeReport? Mode(BrowserAutomationDiagnosticMode mode) =>
         Modes.FirstOrDefault(m => m.Mode == mode);
 
@@ -177,9 +353,14 @@ public sealed record BrowserAutomationDiagnosticReport
     /// <summary>
     /// The ONE fact the Headless Authentication &amp; Session Control Diagnostic depends on.
     ///
-    /// It is deliberately the HEADLESS mode's target control and nothing else: headed success says nothing about
-    /// unattended execution, and a review that could only be automated with a visible window on someone's desk is not
-    /// a review that can run in CI. Exposed as a single property so no consumer has to re-derive the rule.
+    /// Meaning, precisely: headless Playwright remained in stable control of the browser through the navigation to the
+    /// target, and the browser ended on the target origin or at the target's authentication handoff (identity provider
+    /// or session-control proxy). It does NOT mean the target application was identified: reaching Microsoft Entra
+    /// with control intact is exactly what the authentication diagnostic needs in order to inspect the sign-in, so
+    /// requiring "Target application PASS" here would block the one diagnosis that can explain it.
+    ///
+    /// Headless and nothing else: headed success says nothing about unattended execution. Exposed as a single
+    /// property so no consumer has to re-derive the rule.
     /// </summary>
-    public bool HeadlessTargetControlAvailable => Headless?.TargetControlAvailable == true;
+    public bool HeadlessAutomationControlAfterTargetNavigation => Headless?.ControlRetainedThroughTargetNavigation == true;
 }

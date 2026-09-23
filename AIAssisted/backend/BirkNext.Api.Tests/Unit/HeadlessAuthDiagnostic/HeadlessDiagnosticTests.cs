@@ -15,13 +15,24 @@ public sealed class HeadlessDiagnosticTests
     private static HeadlessDiagnosticRequest Request => new() { TargetEnvironmentId = "qa", TargetEnvironmentName = "QA", TargetUrl = "https://app.qa.example/", EnvironmentType = "QA" };
     private static string Profile => System.IO.Path.Combine(HeadlessDiagnosticPolicy.ProfileRoot, Guid.NewGuid().ToString("N"));
     private static readonly NullLogger<HeadlessDiagnosticService> Log = NullLogger<HeadlessDiagnosticService>.Instance;
+    /// <summary>
+    /// A headless mode that kept stable control through the navigation and reached the Entra redirect — the evidence
+    /// the prerequisite is built on. The failing variant lost the page at the target.
+    /// </summary>
+    private static BrowserAutomationDiagnosticModeReport HeadlessMode(bool passed) => new()
+    {
+        Mode = BrowserAutomationDiagnosticMode.Headless, Headless = true,
+        Result = passed ? BrowserAutomationDiagnosticModeResult.AvailableAtAuthenticationBoundary : BrowserAutomationDiagnosticModeResult.TargetRestricted,
+        Stages = [new(BrowserAutomationDiagnosticStage.TargetControl, passed ? BrowserAutomationDiagnosticStageState.Passed : BrowserAutomationDiagnosticStageState.Blocked),
+                  new(BrowserAutomationDiagnosticStage.TargetStability, passed ? BrowserAutomationDiagnosticStageState.Passed : BrowserAutomationDiagnosticStageState.NotRun)],
+        Target = new() { FinalLocation = passed ? BrowserAutomationFinalLocation.AuthenticationAuthority : BrowserAutomationFinalLocation.Unknown,
+                         AuthenticationHost = passed ? "login.microsoftonline.com" : null },
+    };
     private static BrowserAutomationEvidenceStore Proof(bool passed = true)
     {
         var store = new BrowserAutomationEvidenceStore();
         store.Record(new() { TargetEnvironmentId = Request.TargetEnvironmentId, TargetUrl = Request.TargetUrl,
-            TargetEnvironmentType = Request.EnvironmentType, DiagnosticId = "proof",
-            Modes = [new() { Mode = BrowserAutomationDiagnosticMode.Headless, Result = passed ? BrowserAutomationDiagnosticModeResult.Available : BrowserAutomationDiagnosticModeResult.TargetRestricted,
-                Stages = [new(BrowserAutomationDiagnosticStage.TargetControl, passed ? BrowserAutomationDiagnosticStageState.Passed : BrowserAutomationDiagnosticStageState.Blocked)] }] });
+            TargetEnvironmentType = Request.EnvironmentType, DiagnosticId = "proof", Modes = [HeadlessMode(passed)] });
         return store;
     }
     private sealed class Browser : IHeadlessBrowser, IHeadlessBrowserFactory
@@ -78,8 +89,7 @@ public sealed class HeadlessDiagnosticTests
     {
         var p = new BrowserAutomationEvidenceStore();
         var result = new BrowserAutomationDiagnosticReport { TargetEnvironmentId = "qa", TargetUrl = Request.TargetUrl, TargetEnvironmentType = "QA",
-            Modes = [new() { Mode = BrowserAutomationDiagnosticMode.Headless, Result = BrowserAutomationDiagnosticModeResult.Available,
-                Stages = [new(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.Passed)] }] };
+            Modes = [HeadlessMode(passed: true)] };
         var diagnostic = new Moq.Mock<IBrowserAutomationDiagnosticService>();
         diagnostic.Setup(d => d.RunAsync(Moq.It.IsAny<BrowserAutomationDiagnosticRequest>(), Moq.It.IsAny<CancellationToken>())).ReturnsAsync(result);
         var controller = new BirkNext.Api.Controllers.BrowserAutomationDiagnosticController(diagnostic.Object,

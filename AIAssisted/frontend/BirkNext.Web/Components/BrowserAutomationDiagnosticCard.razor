@@ -22,9 +22,10 @@
             <h3 id="bad-heading">Browser automation diagnostic</h3>
             <p class="bad-sub" data-testid="bad-intro">
                 Starts a Playwright-controlled Microsoft Edge in a dedicated BirkNext profile — once with a visible
-                window and once without — proves each can control a neutral page, then checks whether each keeps
-                control of the selected target. No sign-in is attempted, and nothing about your browser or its
-                security settings is changed.
+                window and once without — proves each can control a neutral page, then follows the selected target
+                and reports where the browser actually ended up (the application, or its sign-in page) and whether
+                Playwright stayed in control. No sign-in is attempted, and nothing about your browser or its security
+                settings is changed.
             </p>
         </div>
     </div>
@@ -117,8 +118,10 @@
                         }
                         else
                         {
+                            @* Setup stages: the browser and the neutral control page. What happened AT the target is
+                               shown separately below, fact by fact, because it is not one pass/fail answer. *@
                             <ul class="bad-stages" data-testid="bad-stages">
-                                @foreach (var stage in mode.Stages)
+                                @foreach (var stage in SetupStages(mode))
                                 {
                                     <li class="bad-stage" data-testid="bad-stage" data-stage="@stage.Stage" data-state="@stage.State">
                                         <span class="bad-stage-glyph fqr-pill-@BrowserAutomationDiagnosticStages.Tone(stage.State)"
@@ -138,6 +141,64 @@
                                 }
                             </ul>
 
+                            @if (mode.Target is { } target)
+                            {
+                                @* Visible without opening anything: where the browser actually ended up is the finding. *@
+                                <section class="bad-target" data-testid="bad-target-evidence" aria-label="At the target">
+                                    <h5 class="bad-target-heading">At the target</h5>
+                                    <dl class="bad-facts">
+                                        @foreach (var fact in BrowserAutomationTargetFacts.For(mode))
+                                        {
+                                            <div class="bad-fact" data-testid="bad-fact" data-fact="@fact.Key">
+                                                <dt>@fact.Label</dt>
+                                                <dd><span class="bad-fact-value fqr-pill-@fact.Tone" data-testid="bad-fact-value">@fact.Value</span></dd>
+                                            </div>
+                                        }
+                                    </dl>
+                                    @if (mode.Stage(BrowserAutomationDiagnosticStage.TargetApplication) is { Detail.Length: > 0 } application)
+                                    {
+                                        <p class="bad-target-note" data-testid="bad-target-application-detail">@application.Detail</p>
+                                    }
+                                    @if (BlockedTargetStage(mode) is { Detail.Length: > 0 } blockedStage)
+                                    {
+                                        <p class="bad-target-note" data-testid="bad-target-blocked-detail">@blockedStage.Detail</p>
+                                    }
+                                    @if (target.NavigationTrace.Count > 0 || target.LifecycleEvents.Count > 0)
+                                    {
+                                        <details class="bad-trace" data-testid="bad-trace">
+                                            <summary>Navigation trace (@target.NavigationTrace.Count, sanitized)</summary>
+                                            <ol class="bad-trace-list">
+                                                @foreach (var step in target.NavigationTrace)
+                                                {
+                                                    <li data-testid="bad-trace-step"><code>@step.Url</code>
+                                                        <span class="bad-trace-meta">@BrowserAutomationTargetFacts.LocationLabel(step.Location)@(step.SecondaryPage ? " · second page" : "") · @step.AtMs ms</span></li>
+                                                }
+                                            </ol>
+                                            @foreach (var e in target.LifecycleEvents)
+                                            {
+                                                <p class="bad-trace-event" data-testid="bad-lifecycle-event">
+                                                    Browser event: @e.Kind at @e.AtMs ms (@BrowserAutomationTargetFacts.PhaseLabel(e.Phase))
+                                                </p>
+                                            }
+                                        </details>
+                                    }
+                                </section>
+                            }
+                            else
+                            {
+                                <ul class="bad-stages" data-testid="bad-target-stages">
+                                    @foreach (var stage in mode.Stages.Where(s => BrowserAutomationDiagnosticStages.TargetStages.Contains(s.Stage)))
+                                    {
+                                        <li class="bad-stage" data-testid="bad-stage" data-stage="@stage.Stage" data-state="@stage.State">
+                                            <span class="bad-stage-glyph fqr-pill-@BrowserAutomationDiagnosticStages.Tone(stage.State)"
+                                                  aria-hidden="true">@BrowserAutomationDiagnosticStages.Glyph(stage.State)</span>
+                                            <span class="bad-stage-name">@BrowserAutomationDiagnosticStages.Label(stage.Stage)</span>
+                                            <span class="bad-stage-state" data-testid="bad-stage-state">@BrowserAutomationDiagnosticStages.StateLabel(stage.State)</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
+
                             @if (mode.ObservedExceptionType is { Length: > 0 } exceptionType)
                             {
                                 <p class="bad-exception" data-testid="bad-exception">
@@ -154,10 +215,24 @@
             @* What was observed, and nothing beyond it. This text never names an organisational control as the cause. *@
             <p class="bad-interpretation" data-testid="bad-interpretation">@report.Interpretation</p>
 
+            @* Three controls that are routinely confused. Reported apart, never inferred from one another. *@
+            @if (report.ControlDimensions.Count > 0)
+            {
+                <dl class="bad-dimensions" data-testid="bad-control-dimensions">
+                    @foreach (var dimension in report.ControlDimensions)
+                    {
+                        <div class="bad-dimension" data-testid="bad-control-dimension">
+                            <dt>@dimension.Name</dt>
+                            <dd><strong data-testid="bad-control-dimension-state">@dimension.State</strong> — @dimension.Basis</dd>
+                        </div>
+                    }
+                </dl>
+            }
+
             @* The prerequisite chain, said in the order the reader has to act on it. *@
             <div class="bad-prerequisite fqr-pill-@BrowserAutomationDiagnosticPrerequisite.Tone(report)"
                  data-testid="bad-prerequisite"
-                 data-available="@report.HeadlessTargetControlAvailable.ToString().ToLowerInvariant()">
+                 data-available="@report.HeadlessAutomationControlAfterTargetNavigation.ToString().ToLowerInvariant()">
                 <p class="bad-prerequisite-head" data-testid="bad-prerequisite-headline">
                     @BrowserAutomationDiagnosticPrerequisite.Headline(report)
                 </p>
@@ -211,6 +286,15 @@
             (BrowserAutomationDiagnosticMode.Headless, report.Headless),
         ];
 
+    /// <summary>Everything except the target stages, which are presented separately (as facts, or as a stage list when no evidence came back).</summary>
+    private static IEnumerable<BrowserAutomationDiagnosticStageResult> SetupStages(BrowserAutomationDiagnosticModeReport mode) =>
+        mode.Stages.Where(s => !BrowserAutomationDiagnosticStages.TargetStages.Contains(s.Stage));
+
+    /// <summary>The target stage that lost control, if any — its detail says when, and on what signal.</summary>
+    private static BrowserAutomationDiagnosticStageResult? BlockedTargetStage(BrowserAutomationDiagnosticModeReport mode) =>
+        mode.Stages.FirstOrDefault(s => BrowserAutomationDiagnosticStages.TargetStages.Contains(s.Stage)
+                                        && s.State is BrowserAutomationDiagnosticStageState.Blocked or BrowserAutomationDiagnosticStageState.Failed);
+
     private FrontendAnalysisProfile? Selected =>
         EligibleTargets.FirstOrDefault(t => t.Id == _selectedId) ?? EligibleTargets.FirstOrDefault();
 
@@ -239,6 +323,7 @@
                 TargetEnvironmentName = target.Name,
                 TargetUrl = target.TargetUrl ?? "",
                 EnvironmentType = target.EnvironmentType.ToString(),
+                Authority = target.Authentication.ExpectedAuthority,
             }, _cts.Token);
             _requestFailed = _report is null;
         }

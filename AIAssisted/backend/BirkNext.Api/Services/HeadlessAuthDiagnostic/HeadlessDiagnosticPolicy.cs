@@ -7,24 +7,44 @@ using BirkNext.Api.Services.ManagedEdge;
 
 namespace BirkNext.Api.Services.HeadlessAuthDiagnostic;
 
-public sealed class BrowserAutomationEvidenceStore
+/// <summary>
+/// The single source of truth for "may the Headless Authentication &amp; Session Control Diagnostic run against this
+/// target". Written by the Browser Automation Diagnostic endpoint, read by the authentication diagnostic; correlated
+/// by Target Environment id, URL and type, and valid for 30 minutes.
+///
+/// What it stores is <see cref="BrowserAutomationDiagnosticReport.HeadlessAutomationControlAfterTargetNavigation"/>:
+/// headless automation stayed in stable control through the target navigation and ended on the target origin or at
+/// its authentication handoff. Deliberately NOT "target application identified" — a valid redirect to Entra is what
+/// the authentication diagnostic exists to inspect.
+/// </summary>
+public sealed class BrowserAutomationEvidenceStore(TimeProvider? clock = null)
 {
-    private readonly ConcurrentDictionary<string, (bool Passed, string Id, DateTimeOffset Time)> _results = new();
+    public static readonly TimeSpan Validity = TimeSpan.FromMinutes(30);
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly ConcurrentDictionary<string, (bool Passed, string Id, DateTimeOffset Time, string Where)> _results = new();
     private static string Key(string id, string url, string type) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{id}\n{url}\n{type}")));
     public void Record(BrowserAutomationDiagnosticReport report)
     {
-        foreach (var entry in _results.Where(e => e.Value.Time < DateTimeOffset.UtcNow.AddMinutes(-30))) _results.TryRemove(entry.Key, out _);
+        var now = _clock.GetUtcNow();
+        foreach (var entry in _results.Where(e => e.Value.Time < now - Validity)) _results.TryRemove(entry.Key, out _);
         // Bound memory even if many distinct targets are submitted.
         if (_results.Count > 1000) _results.Clear();
         _results[Key(report.TargetEnvironmentId, report.TargetUrl, report.TargetEnvironmentType)] =
-            (report.HeadlessTargetControlAvailable,
-                report.DiagnosticId, DateTimeOffset.UtcNow);
+            (report.HeadlessAutomationControlAfterTargetNavigation, report.DiagnosticId, now, Where(report));
     }
     public HeadlessPrerequisite Check(HeadlessDiagnosticRequest request) =>
         _results.TryGetValue(Key(request.TargetEnvironmentId, request.TargetUrl, request.EnvironmentType), out var result)
-        && result.Passed && result.Time >= DateTimeOffset.UtcNow.AddMinutes(-30)
-            ? new(true, "Target control demonstrated by Browser Automation Diagnostic (valid for 30 minutes).", result.Id)
-            : new(false, "Playwright cannot yet be confirmed to retain automation control of this target long enough to evaluate authentication. Run Browser Automation Diagnostic successfully for this exact target first.");
+        && result.Passed && result.Time >= _clock.GetUtcNow() - Validity
+            ? new(true, $"Headless browser automation remained controllable through target navigation ({result.Where}), as demonstrated by the Browser Automation Diagnostic (valid for 30 minutes).", result.Id)
+            : new(false, "Headless browser automation cannot yet be confirmed to stay controllable through navigation to this target. Run Browser Automation Diagnostic successfully for this exact target first.");
+
+    private static string Where(BrowserAutomationDiagnosticReport report) => report.Headless?.Target?.FinalLocation switch
+    {
+        BrowserAutomationFinalLocation.AuthenticationAuthority => $"reached the authentication redirect at {report.Headless.Target.AuthenticationHost}",
+        BrowserAutomationFinalLocation.SessionControlProxy => "reached the session-control proxy",
+        BrowserAutomationFinalLocation.TargetOrigin => "stayed on the target origin",
+        _ => "location not established",
+    };
 }
 
 public sealed class HeadlessDiagnosticOptions
@@ -37,6 +57,21 @@ public sealed class HeadlessVerificationContract
 {
     public string TargetOrigin { get; set; } = "";
     public string AuthenticatedSelector { get; set; } = "";
+    /// <summary>
+    /// Optional structural marker of the application shell that exists BEFORE sign-in (a stable root element such as
+    /// <c>[data-app-shell]</c>). The Browser Automation Diagnostic uses it, after the expected origin, to identify the
+    /// target application. Never page text, never authenticated content.
+    /// </summary>
+    public string ApplicationShellSelector { get; set; } = "";
+
+    /// <summary>The shell marker for a Target Environment — only when its configured origin matches the target URL's.</summary>
+    public static string? ApplicationMarkerFor(HeadlessDiagnosticOptions options, string targetEnvironmentId, string targetUrl) =>
+        options.Verification.GetValueOrDefault(targetEnvironmentId) is { ApplicationShellSelector.Length: > 0 } contract
+        && Uri.TryCreate(contract.TargetOrigin, UriKind.Absolute, out var origin)
+        && Uri.TryCreate(targetUrl, UriKind.Absolute, out var target)
+        && BirkNext.Api.Services.AuthenticatedReview.AuthenticationOriginPolicy.SameOrigin(origin, target)
+            ? contract.ApplicationShellSelector
+            : null;
 }
 
 internal static class HeadlessDiagnosticPolicy

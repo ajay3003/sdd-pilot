@@ -101,8 +101,37 @@
 
 .bad-actions { margin-top: .8rem; display: flex; gap: .5rem; flex-wrap: wrap; }
 
+/* Tones, defined here because the card lives on System Settings, outside the review page that styles them. The
+   label always carries the meaning; the tone only reinforces it. */
+.fqr-pill-ready { background: var(--clr-success-bg); color: var(--clr-success); border-color: var(--clr-success-border); }
+.fqr-pill-warning { background: var(--clr-warning-bg); color: var(--clr-warning); border-color: var(--clr-warning-border); }
+.fqr-pill-attention { background: var(--clr-warning-bg-light); color: var(--clr-warning); border-color: var(--clr-warning-border); }
+.fqr-pill-pending, .fqr-pill-info { background: var(--clr-info-bg-light); color: var(--clr-info); border-color: var(--clr-info-border); }
+.fqr-pill-muted { background: var(--clr-surface); color: var(--clr-text-subtle); border-color: var(--clr-border); }
+
+/* The target evidence: facts, not a single verdict. Visible without opening anything. */
+.bad-target { margin: .7rem 0 0; padding-top: .55rem; border-top: 1px solid var(--clr-border); }
+.bad-target-heading { margin: 0 0 .4rem; font-size: .8rem; font-weight: 700; letter-spacing: .03em; color: var(--clr-text-heading); }
+.bad-facts { margin: 0; display: grid; gap: .25rem; }
+.bad-fact { display: grid; grid-template-columns: minmax(9rem, 13rem) 1fr; gap: .5rem; align-items: baseline; font-size: .84rem; }
+.bad-fact dt { color: var(--clr-text-muted); }
+.bad-fact dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.bad-fact-value { display: inline-block; padding: 0 .35rem; border: 1px solid transparent; border-radius: var(--radius-sm, 4px); font-weight: 600; font-size: .8rem; }
+.bad-target-note { margin: .45rem 0 0; font-size: .82rem; color: var(--clr-text-muted); max-width: 78ch; }
+.bad-trace { margin: .5rem 0 0; font-size: .8rem; }
+.bad-trace summary { cursor: pointer; color: var(--clr-text-subtle); }
+.bad-trace-list { margin: .35rem 0 0; padding-left: 1.3rem; display: grid; gap: .2rem; }
+.bad-trace-list code { overflow-wrap: anywhere; }
+.bad-trace-meta { margin-left: .4rem; color: var(--clr-text-subtle); }
+.bad-trace-event { margin: .3rem 0 0; color: var(--clr-text-muted); }
+
+.bad-dimensions { margin: .8rem 0 0; display: grid; gap: .35rem; }
+.bad-dimension dt { font-size: .78rem; color: var(--clr-text-subtle); }
+.bad-dimension dd { margin: 0; font-size: .84rem; max-width: 78ch; }
+
 @media (max-width: 760px) {
     /* The state word moves under the stage name rather than squeezing into a strip too narrow to read. */
     .bad-stage { grid-template-columns: 1.4rem 1fr; }
     .bad-stage-state, .bad-stage-url, .bad-stage-detail { grid-column: 2; }
+    .bad-fact { grid-template-columns: 1fr; gap: 0; }
 }

@@ -26,7 +26,15 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
         new() { Id = id, Name = name, EnvironmentType = type, TargetUrl = url };
 
     private static readonly FrontendAnalysisProfile Dev = Profile("dev", "M2LB DEV", FrontendEnvironmentType.Development);
-    private static readonly FrontendAnalysisProfile Qa = Profile("qa", "M2LB QA", FrontendEnvironmentType.QA, "https://m2lbqa.example.test/");
+    private static readonly FrontendAnalysisProfile Qa = WithAuthority(
+        Profile("qa", "M2LB QA", FrontendEnvironmentType.QA, "https://m2lbqa.example.test/"),
+        "https://login.microsoftonline.com/tenant-qa/v2.0");
+
+    private static FrontendAnalysisProfile WithAuthority(FrontendAnalysisProfile profile, string authority)
+    {
+        profile.Authentication.ExpectedAuthority = authority;
+        return profile;
+    }
     private static readonly FrontendAnalysisProfile Prod = Profile("prod", "M2LB PROD", FrontendEnvironmentType.Production, "https://m2lb.example.test/");
 
     private const string ProfileNote =
@@ -38,7 +46,19 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
         string? detail = null, string? url = null, string? exceptionType = null) =>
         new(stage, state, detail, url, exceptionType);
 
-    /// <summary>A mode that kept control of the target all the way through.</summary>
+    private static List<BrowserAutomationDiagnosticStageResult> SetupStagesPassed() =>
+    [
+        Stage(BrowserAutomationDiagnosticStage.Runtime, BrowserAutomationDiagnosticStageState.Passed, "Microsoft Edge 153.0.3456.78 found."),
+        Stage(BrowserAutomationDiagnosticStage.EdgeLaunch, BrowserAutomationDiagnosticStageState.Passed),
+        Stage(BrowserAutomationDiagnosticStage.PersistentContext, BrowserAutomationDiagnosticStageState.Passed),
+        Stage(BrowserAutomationDiagnosticStage.BlankPage, BrowserAutomationDiagnosticStageState.Passed),
+        Stage(BrowserAutomationDiagnosticStage.ControlPage, BrowserAutomationDiagnosticStageState.Passed, url: "https://example.com/"),
+    ];
+
+    private static BrowserAutomationDiagnosticStageResult Cleanup() =>
+        Stage(BrowserAutomationDiagnosticStage.Cleanup, BrowserAutomationDiagnosticStageState.Passed, "Diagnostic browser closed.");
+
+    /// <summary>A mode that kept control and whose page was identified as the target application.</summary>
     private static BrowserAutomationDiagnosticModeReport AvailableMode(BrowserAutomationDiagnosticMode mode) => new()
     {
         Mode = mode,
@@ -48,15 +68,86 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
         ProfileDescription = string.Format(ProfileNote, mode),
         Stages =
         [
-            Stage(BrowserAutomationDiagnosticStage.Runtime, BrowserAutomationDiagnosticStageState.Passed, "Microsoft Edge 153.0.3456.78 found."),
-            Stage(BrowserAutomationDiagnosticStage.EdgeLaunch, BrowserAutomationDiagnosticStageState.Passed),
-            Stage(BrowserAutomationDiagnosticStage.PersistentContext, BrowserAutomationDiagnosticStageState.Passed),
-            Stage(BrowserAutomationDiagnosticStage.BlankPage, BrowserAutomationDiagnosticStageState.Passed),
-            Stage(BrowserAutomationDiagnosticStage.ControlPage, BrowserAutomationDiagnosticStageState.Passed, url: "https://example.com/"),
+            .. SetupStagesPassed(),
             Stage(BrowserAutomationDiagnosticStage.TargetNavigation, BrowserAutomationDiagnosticStageState.Passed, url: "https://m2lbdev.example.test/"),
             Stage(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.Passed),
-            Stage(BrowserAutomationDiagnosticStage.Cleanup, BrowserAutomationDiagnosticStageState.Passed, "Diagnostic browser closed."),
+            Stage(BrowserAutomationDiagnosticStage.TargetStability, BrowserAutomationDiagnosticStageState.Passed),
+            Stage(BrowserAutomationDiagnosticStage.TargetApplication, BrowserAutomationDiagnosticStageState.Passed,
+                "Identified by: Expected target origin and the configured application marker."),
+            Cleanup(),
         ],
+        Target = new()
+        {
+            RequestedUrl = "https://m2lbdev.example.test/", ExpectedOrigin = "https://m2lbdev.example.test",
+            FinalUrl = "https://m2lbdev.example.test/oversikt", FinalScheme = "https", FinalHost = "m2lbdev.example.test",
+            FinalOrigin = "https://m2lbdev.example.test", FinalLocation = BrowserAutomationFinalLocation.TargetOrigin,
+            ExpectedOriginReached = BrowserAutomationEvidenceAnswer.Yes, AuthenticationRedirect = BrowserAutomationEvidenceAnswer.No,
+            TargetApplicationIdentified = BrowserAutomationEvidenceAnswer.Yes,
+            IdentificationEvidence = "Expected target origin and the configured application marker.",
+            ApplicationMarkerConfigured = true, ApplicationMarkerFound = true, NavigationSettled = true, StabilityWindowMs = 5000,
+            NavigationTrace = [new(1, 180, "https://m2lbdev.example.test/", BrowserAutomationFinalLocation.TargetOrigin)],
+        },
+    };
+
+    /// <summary>
+    /// What M2LB really does for a fresh profile: the navigation is accepted, the SPA redirects to Entra, and Playwright
+    /// stays in control of THAT page. Automation available; target application not yet reached.
+    /// </summary>
+    private static BrowserAutomationDiagnosticModeReport AuthRedirectMode(BrowserAutomationDiagnosticMode mode) => new()
+    {
+        Mode = mode,
+        Headless = mode == BrowserAutomationDiagnosticMode.Headless,
+        Result = BrowserAutomationDiagnosticModeResult.AvailableAtAuthenticationBoundary,
+        EdgeVersion = "153.0.3456.78",
+        ProfileDescription = string.Format(ProfileNote, mode),
+        Stages =
+        [
+            .. SetupStagesPassed(),
+            Stage(BrowserAutomationDiagnosticStage.TargetNavigation, BrowserAutomationDiagnosticStageState.Passed, url: "https://m2lbdev.example.test/"),
+            Stage(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.Passed),
+            Stage(BrowserAutomationDiagnosticStage.TargetStability, BrowserAutomationDiagnosticStageState.Passed),
+            Stage(BrowserAutomationDiagnosticStage.TargetApplication, BrowserAutomationDiagnosticStageState.NotReached,
+                "Not yet reached — authentication required first. The browser is at login.microsoftonline.com."),
+            Cleanup(),
+        ],
+        Target = new()
+        {
+            RequestedUrl = "https://m2lbdev.example.test/", ExpectedOrigin = "https://m2lbdev.example.test",
+            FinalUrl = "https://login.microsoftonline.com/[tenant]/oauth2/v2.0/authorize?[redacted]", FinalScheme = "https",
+            FinalHost = "login.microsoftonline.com", FinalOrigin = "https://login.microsoftonline.com",
+            FinalLocation = BrowserAutomationFinalLocation.AuthenticationAuthority,
+            ExpectedOriginReached = BrowserAutomationEvidenceAnswer.No, AuthenticationRedirect = BrowserAutomationEvidenceAnswer.Yes,
+            AuthenticationHost = "login.microsoftonline.com", TargetApplicationIdentified = BrowserAutomationEvidenceAnswer.No,
+            IdentificationEvidence = "Not yet reached: the target redirected to authentication first.",
+            NavigationSettled = true, StabilityWindowMs = 5000,
+            NavigationTrace =
+            [
+                new(1, 180, "https://m2lbdev.example.test/", BrowserAutomationFinalLocation.TargetOrigin),
+                new(2, 3900, "https://login.microsoftonline.com/[tenant]/oauth2/v2.0/authorize?[redacted]", BrowserAutomationFinalLocation.AuthenticationAuthority),
+            ],
+        },
+    };
+
+    /// <summary>Navigation and the first probe succeeded; then the page closed during the stability window.</summary>
+    private static BrowserAutomationDiagnosticModeReport LateCloseMode(BrowserAutomationDiagnosticMode mode) => AuthRedirectMode(mode) with
+    {
+        Result = BrowserAutomationDiagnosticModeResult.TargetRestricted,
+        Stages =
+        [
+            .. SetupStagesPassed(),
+            Stage(BrowserAutomationDiagnosticStage.TargetNavigation, BrowserAutomationDiagnosticStageState.Passed),
+            Stage(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.Passed),
+            Stage(BrowserAutomationDiagnosticStage.TargetStability, BrowserAutomationDiagnosticStageState.Blocked,
+                "The navigation was accepted and the first probe succeeded, then playwright reported PageClosed at 5200 ms during the stability window. Control was lost late, after an initial success."),
+            Stage(BrowserAutomationDiagnosticStage.TargetApplication, BrowserAutomationDiagnosticStageState.NotRun),
+            Cleanup(),
+        ],
+        Target = AuthRedirectMode(mode).Target! with
+        {
+            TargetApplicationIdentified = BrowserAutomationEvidenceAnswer.Unknown,
+            FailurePhase = BrowserAutomationFailurePhase.DuringStabilityWindow,
+            LifecycleEvents = [new(BrowserAutomationLifecycleEventKind.PageClosed, 5200, BrowserAutomationFailurePhase.DuringStabilityWindow)],
+        },
     };
 
     /// <summary>The spike's outcome for one mode: control pages fine, target closed.</summary>
@@ -76,11 +167,18 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
             Stage(BrowserAutomationDiagnosticStage.BlankPage, BrowserAutomationDiagnosticStageState.Passed),
             Stage(BrowserAutomationDiagnosticStage.ControlPage, BrowserAutomationDiagnosticStageState.Passed, url: "https://example.com/"),
             Stage(BrowserAutomationDiagnosticStage.TargetNavigation, BrowserAutomationDiagnosticStageState.Blocked,
-                "The Playwright-controlled page or context was closed while navigating to the target application.",
+                "Playwright reported TargetClosedException while navigating to the target application: the Playwright-controlled page or context was closed. Target-navigation restriction.",
                 "https://m2lbdev.example.test/", "TargetClosedException"),
             Stage(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.NotRun),
+            Stage(BrowserAutomationDiagnosticStage.TargetStability, BrowserAutomationDiagnosticStageState.NotRun),
+            Stage(BrowserAutomationDiagnosticStage.TargetApplication, BrowserAutomationDiagnosticStageState.NotRun),
             Stage(BrowserAutomationDiagnosticStage.Cleanup, BrowserAutomationDiagnosticStageState.Passed, "Diagnostic browser closed."),
         ],
+        Target = new()
+        {
+            RequestedUrl = "https://m2lbdev.example.test/", ExpectedOrigin = "https://m2lbdev.example.test",
+            ExceptionType = "TargetClosedException", FailurePhase = BrowserAutomationFailurePhase.DuringTargetNavigation,
+        },
     };
 
     private static BrowserAutomationDiagnosticReport Report(
@@ -125,16 +223,38 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
         AvailableMode(BrowserAutomationDiagnosticMode.Headed),
         RestrictedMode(BrowserAutomationDiagnosticMode.Headless));
 
+    private const string AvailableInterpretation =
+        // Verbatim from BrowserAutomationDiagnosticPolicy.Interpretation.
+        "Playwright remained in control of the browser through the tested path in both headed and headless "
+        + "Microsoft Edge. That is a statement about browser automation, not about which page was reached. It does "
+        + "not establish that authentication, MFA or Conditional Access work under automation — that is assessed "
+        + "separately by the Headless Authentication & Session Control Diagnostic. No sign-in was attempted.";
+
+    private static readonly List<BrowserAutomationControlDimension> Dimensions =
+    [
+        new("Corporate Edge DevTools UI (F12 / Inspect)", "Unknown", "Not observed by this diagnostic."),
+        new("Playwright-owned browser automation", "Available", "Observed in this run: headed available, headless available."),
+        new("CDP attach to an existing or protected Edge", "Not tested", "This diagnostic never attaches to an Edge it did not start."),
+    ];
+
     private static BrowserAutomationDiagnosticReport AutomationAvailable() => Report(
         BrowserAutomationDiagnosticComparison.AutomationAvailable,
         "Browser automation available",
-        // Verbatim from BrowserAutomationDiagnosticPolicy.Interpretation.
-        "Playwright retained control of the target in both headed and headless Microsoft Edge. Browser automation "
-        + "is not the blocker. This does not establish that authentication, MFA or Conditional Access work under "
-        + "automation — that is assessed separately by the Headless Authentication & Session Control Diagnostic. "
-        + "No sign-in was attempted.",
+        AvailableInterpretation + " In both modes, the page Playwright controlled was identified as the target application.",
         AvailableMode(BrowserAutomationDiagnosticMode.Headed),
-        AvailableMode(BrowserAutomationDiagnosticMode.Headless));
+        AvailableMode(BrowserAutomationDiagnosticMode.Headless)) with { ControlDimensions = Dimensions };
+
+    /// <summary>The M2LB reality for a fresh profile: all automation works, and both modes end on Entra.</summary>
+    private static BrowserAutomationDiagnosticReport AvailableThroughAuthRedirect() => Report(
+        BrowserAutomationDiagnosticComparison.AutomationAvailable,
+        "Browser automation available",
+        AvailableInterpretation + " In both modes, the target redirected to authentication (login.microsoftonline.com) and "
+        + "Playwright remained in control of the browser through that handoff. This proves browser automation is available "
+        + "through the authentication handoff. It does NOT prove that the authenticated target application is controllable: "
+        + "the target application was not yet reached. Corporate Edge visible DevTools policy is a separate control and is "
+        + "not inferred from this result.",
+        AuthRedirectMode(BrowserAutomationDiagnosticMode.Headed),
+        AuthRedirectMode(BrowserAutomationDiagnosticMode.Headless)) with { ControlDimensions = Dimensions };
 
     private IRenderedComponent<BrowserAutomationDiagnosticCard> Card(params FrontendAnalysisProfile[] targets)
     {
@@ -258,7 +378,7 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
 
         var headed = ModePanel(card, "Headed");
         headed.GetAttribute("data-mode-result").Should().Be("Available");
-        headed.QuerySelector("[data-testid=bad-mode-result]")!.TextContent.Trim().Should().Be("Automation available");
+        headed.QuerySelector("[data-testid=bad-mode-result]")!.TextContent.Trim().Should().Be("Target application controllable");
         headed.QuerySelector("[data-testid=bad-mode-result]")!.ClassList.Should().Contain("fqr-pill-ready");
         headed.QuerySelector("[data-testid=bad-mode-description]")!.TextContent.Should().Contain("visible Edge window");
 
@@ -272,7 +392,12 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
             .Should().Contain("unattended pipeline");
     }
 
-    // 29, 30. Every stage is shown per mode, with its state as a WORD, and the control/target contrast intact.
+    private static string Fact(IElement panel, string key) => panel
+        .QuerySelectorAll("[data-testid=bad-fact]").Single(f => f.GetAttribute("data-fact") == key)
+        .QuerySelector("[data-testid=bad-fact-value]")!.TextContent.Trim();
+
+    // 29, 30. Setup stages are listed per mode with their state as a WORD; what happened AT the target is shown as
+    // separate facts beside them, with the control/target contrast intact.
     [Fact]
     public void EveryStageIsShownWithinItsOwnMode()
     {
@@ -280,24 +405,122 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
 
         foreach (var mode in new[] { "Headed", "Headless" })
         {
-            var stages = ModePanel(card, mode).QuerySelectorAll("[data-testid=bad-stage]");
+            var stages = ModePanel(card, mode).QuerySelectorAll("[data-testid=bad-stages] [data-testid=bad-stage]");
             stages.Select(s => s.GetAttribute("data-stage")).Should().Equal(
-                "Runtime", "EdgeLaunch", "PersistentContext", "BlankPage", "ControlPage",
-                "TargetNavigation", "TargetControl", "Cleanup");
+                "Runtime", "EdgeLaunch", "PersistentContext", "BlankPage", "ControlPage", "Cleanup");
         }
 
         // The contrast a reader needs, inside the mode where it happened: the control page passed, the target did not.
         var headless = ModePanel(card, "Headless");
         State(headless, "ControlPage").Should().Be("PASS");
-        State(headless, "TargetNavigation").Should().Be("BLOCKED");
-        State(headless, "TargetControl").Should().Be("Not run");
+        Fact(headless, "navigation").Should().Be("BLOCKED");
+        Fact(headless, "control").Should().Be("Not run");
+        Fact(headless, "exception").Should().Contain("TargetClosedException").And.Contain("during target navigation");
 
         // And the headed mode, which is the one that worked, is not contaminated by the headless result.
-        State(ModePanel(card, "Headed"), "TargetControl").Should().Be("PASS");
+        Fact(ModePanel(card, "Headed"), "control").Should().Be("PASS");
+        Fact(ModePanel(card, "Headed"), "application").Should().Be("PASS");
 
         static string State(IElement panel, string stage) => panel
             .QuerySelectorAll("[data-testid=bad-stage]").Single(s => s.GetAttribute("data-stage") == stage)
             .QuerySelector("[data-testid=bad-stage-state]")!.TextContent.Trim();
+    }
+
+    // §37, §30 (frontend). The M2LB reality: the target redirected to Entra. The card shows where the browser actually
+    // is, that control survived, and that the target application was NOT reached — never "Target application PASS".
+    [Fact]
+    public void AnEntraRedirectIsShownAsNotYetReached_NeverTargetApplicationPass()
+    {
+        var card = Ran(AvailableThroughAuthRedirect());
+
+        foreach (var mode in new[] { "Headed", "Headless" })
+        {
+            var panel = ModePanel(card, mode);
+            Fact(panel, "requested").Should().Be("https://m2lbdev.example.test/");
+            Fact(panel, "navigation").Should().Be("PASS");
+            Fact(panel, "final-host").Should().Be("login.microsoftonline.com");
+            Fact(panel, "final-location").Should().StartWith("https://login.microsoftonline.com/");
+            Fact(panel, "expected-origin").Should().Be("NO");
+            Fact(panel, "auth-redirect").Should().Be("DETECTED");
+            Fact(panel, "control").Should().Be("PASS");
+            Fact(panel, "stability").Should().Be("PASS");
+            Fact(panel, "application").Should().Be("NOT YET REACHED");
+            Fact(panel, "application").Should().NotBe("PASS");
+
+            panel.GetAttribute("data-mode-result").Should().Be("AvailableAtAuthenticationBoundary");
+            panel.QuerySelector("[data-testid=bad-mode-result]")!.TextContent.Trim()
+                .Should().Be("Available through authentication redirect");
+        }
+
+        // The whole card never pairs the words "Target application" with PASS for this run.
+        var facts = card.FindAll("[data-testid=bad-fact]")
+            .Select(f => Normalise(f.TextContent)).ToList();
+        facts.Should().NotContain(f => f.StartsWith("Target application") && f.EndsWith("PASS"));
+        card.Find("[data-testid=bad-interpretation]").TextContent.Should()
+            .Contain("does NOT prove that the authenticated target application is controllable");
+    }
+
+    // §38. An authentication redirect is an expected boundary: informational, not red and not a failure.
+    [Fact]
+    public void TheAuthenticationRedirectIsInformational_NotAFailure()
+    {
+        var headless = ModePanel(Ran(AvailableThroughAuthRedirect()), "Headless");
+
+        Tone(headless, "auth-redirect").Should().Be("fqr-pill-info");
+        Tone(headless, "application").Should().Be("fqr-pill-info");
+        Tone(headless, "control").Should().Be("fqr-pill-ready");
+        headless.QuerySelector("[data-testid=bad-mode-result]")!.ClassList.Should().Contain("fqr-pill-info")
+            .And.NotContain("fqr-pill-attention").And.NotContain("fqr-pill-warning");
+
+        static string Tone(IElement panel, string key) => panel
+            .QuerySelectorAll("[data-testid=bad-fact]").Single(f => f.GetAttribute("data-fact") == key)
+            .QuerySelector("[data-testid=bad-fact-value]")!.ClassList.Single(c => c.StartsWith("fqr-pill-"));
+    }
+
+    // §37. The important evidence is visible without opening Technical details; only the raw trace is disclosed.
+    [Fact]
+    public void TheTargetEvidenceIsVisibleWithoutOpeningAnything()
+    {
+        var headless = ModePanel(Ran(AvailableThroughAuthRedirect()), "Headless");
+
+        var evidence = headless.QuerySelector("[data-testid=bad-target-evidence]")!;
+        evidence.Closest("details").Should().BeNull();
+        headless.QuerySelector("[data-testid=bad-trace]")!.TagName.Should().Be("DETAILS");
+        headless.QuerySelectorAll("[data-testid=bad-trace-step]").Select(s => Normalise(s.TextContent)).Should().HaveCount(2)
+            .And.Contain(s => s.Contains("authorize?[redacted]") && s.Contains("authentication authority"));
+    }
+
+    // §32 (frontend). A late close is shown as a blocked stability check with the event that caused it.
+    [Fact]
+    public void ALateCloseIsShownAsABlockedStabilityCheck()
+    {
+        var card = Ran(Report(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes,
+            "Target-specific automation restriction detected in both modes", "…",
+            LateCloseMode(BrowserAutomationDiagnosticMode.Headed), LateCloseMode(BrowserAutomationDiagnosticMode.Headless)));
+
+        var headless = ModePanel(card, "Headless");
+        Fact(headless, "control").Should().Be("PASS");
+        Fact(headless, "stability").Should().Be("BLOCKED");
+        Fact(headless, "application").Should().Be("Not run");
+        headless.QuerySelector("[data-testid=bad-target-blocked-detail]")!.TextContent.Should().Contain("Control was lost late");
+        headless.QuerySelector("[data-testid=bad-lifecycle-event]")!.TextContent.Should().Contain("PageClosed");
+        card.Find("[data-testid=bad-prerequisite]").GetAttribute("data-available").Should().Be("false");
+    }
+
+    // §23, §24, §36. Three independent controls, shown apart; a working Playwright never reads as "DevTools enabled".
+    [Fact]
+    public void IndependentControlsAreShownApartAndNothingClaimsDevToolsIsEnabled()
+    {
+        var card = Ran(AvailableThroughAuthRedirect());
+
+        card.FindAll("[data-testid=bad-control-dimension]").Select(d => d.QuerySelector("dt")!.TextContent.Trim()).Should().Equal(
+            "Corporate Edge DevTools UI (F12 / Inspect)", "Playwright-owned browser automation", "CDP attach to an existing or protected Edge");
+        card.FindAll("[data-testid=bad-control-dimension-state]").Select(d => d.TextContent.Trim())
+            .Should().Equal("Unknown", "Available", "Not tested");
+
+        var text = Normalise(card.Find("[data-testid=browser-automation-diagnostic]").TextContent);
+        text.Should().NotContainAny("DevTools enabled", "DevTools is enabled", "DevTools disabled", "DevTools is disabled",
+            "Security policy blocked target", "security policy blocked");
     }
 
     // The exception type is reported inside the mode that observed it, never attributed to the run as a whole.
@@ -443,15 +666,15 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
     {
         var text = BrowserAutomationDiagnosticReportText.Build(HeadlessOnlyRestricted());
 
-        text.Should().Contain("Browser Automation Diagnostic");
+        text.Should().Contain("BROWSER AUTOMATION DIAGNOSTIC");
         text.Should().Contain("M2LB DEV").And.Contain("https://m2lbdev.example.test/");
         text.Should().Contain("Control URL: https://example.com/");
         text.Should().Contain("Edge: 153.0.3456.78").And.Contain("Playwright: 1.49.0.0");
         // The stage lines, which are the whole point of handing this over.
-        text.Should().Contain("Control page: PASS").And.Contain("Target navigation: BLOCKED");
+        text.Should().Contain("Control page: PASS").And.Contain("Initial navigation: BLOCKED");
         text.Should().Contain("Observed exception: TargetClosedException");
         // Each mode states its own verdict, so neither can be read off the other.
-        text.Should().Contain("Result: Automation available").And.Contain("Result: Restricted for this target");
+        text.Should().Contain("Result: Target application controllable").And.Contain("Result: Restricted for this target");
         // 7. The question everyone asks first, answered without being asked.
         text.Should().Contain("No login, MFA, credential or token was attempted or captured");
 
@@ -471,7 +694,33 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
             .And.Contain("Headed-only success is not sufficient");
 
         BrowserAutomationDiagnosticReportText.Build(AutomationAvailable())
-            .Should().Contain("Headless mode kept control of this target");
+            .Should().Contain("Headless automation stayed in control through the navigation to this target");
+    }
+
+    // §40. The IT report is evidence-rich, and for an Entra redirect it says what was and was not proven.
+    [Fact]
+    public void TheCopiedReportSpellsOutTheAuthenticationHandoff()
+    {
+        var text = BrowserAutomationDiagnosticReportText.Build(AvailableThroughAuthRedirect());
+
+        text.Should().Contain("Requested target: https://m2lbdev.example.test/");
+        text.Should().Contain("Final location: https://login.microsoftonline.com/[tenant]/oauth2/v2.0/authorize?[redacted]");
+        text.Should().Contain("Final host: login.microsoftonline.com");
+        text.Should().Contain("Expected target origin: NO");
+        text.Should().Contain("Authentication redirect: DETECTED");
+        text.Should().Contain("Browser control after navigation: PASS");
+        text.Should().Contain("Stability check: PASS");
+        text.Should().Contain("Target application: NOT YET REACHED");
+        text.Should().Contain("Navigation trace (sanitized):");
+        text.Should().Contain("does NOT prove that the authenticated target application is controllable");
+        text.Should().Contain("Corporate Edge visible DevTools policy is a separate control and is not inferred from this result");
+        text.Should().Contain("INDEPENDENT CONTROLS").And.Contain("CDP attach to an existing or protected Edge: Not tested");
+        text.Should().Contain("redirect to login.microsoftonline.com");
+
+        // §36. Never the false PASS, never a DevTools claim, never an unevidenced policy claim.
+        text.Should().NotContain("Target application: PASS");
+        text.Should().NotContainAny("DevTools enabled", "DevTools is enabled", "Security policy blocked target");
+        text.Should().NotContainAny("state=", "nonce=", "login_hint", "code=");
     }
 
     // A mode that never ran says so, rather than being absent and read as a pass.
@@ -533,7 +782,45 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
                 r.TargetEnvironmentId == "qa" &&
                 r.TargetEnvironmentName == "M2LB QA" &&
                 r.TargetUrl == "https://m2lbqa.example.test/" &&
-                r.EnvironmentType == "QA"),
+                r.EnvironmentType == "QA" &&
+                r.Authority == "https://login.microsoftonline.com/tenant-qa/v2.0"),
             It.IsAny<CancellationToken>()), Times.Once));
+    }
+
+    // The M2LB popup shape: the handoff happened in a second page, and a session-control hop was observed. Both are
+    // shown as observations; neither is shown as a cause.
+    [Fact]
+    public void APopupHandoffAndASessionControlHopAreShownAsObservations()
+    {
+        var popup = AvailableMode(BrowserAutomationDiagnosticMode.Headless) with
+        {
+            Target = AvailableMode(BrowserAutomationDiagnosticMode.Headless).Target! with
+            {
+                FinalUrl = "https://m2lbdev.example.test/authentication/login?[redacted]",
+                ApplicationMarkerConfigured = false, ApplicationMarkerFound = null,
+                AuthenticationRedirect = BrowserAutomationEvidenceAnswer.Yes, AuthenticationHost = "login.microsoftonline.com",
+                AuthenticationInSecondaryPage = true, SessionControlHost = "m2lbdev-example-test.access.mcas.ms",
+                NavigationTrace =
+                [
+                    new(1, 200, "https://m2lbdev.example.test/", BrowserAutomationFinalLocation.TargetOrigin),
+                    new(2, 1200, "https://m2lbdev.example.test/authentication/login?[redacted]", BrowserAutomationFinalLocation.TargetOrigin),
+                    new(3, 1800, "https://login.microsoftonline.com/[tenant]/oauth2/v2.0/authorize?[redacted]", BrowserAutomationFinalLocation.AuthenticationAuthority, SecondaryPage: true),
+                ],
+            },
+        };
+        var card = Ran(Report(BrowserAutomationDiagnosticComparison.AutomationAvailable, "Browser automation available",
+            AvailableInterpretation, AvailableMode(BrowserAutomationDiagnosticMode.Headed), popup));
+
+        var headless = ModePanel(card, "Headless");
+        Fact(headless, "auth-redirect").Should().Be("DETECTED (second page: login.microsoftonline.com)");
+        Fact(headless, "session-control").Should().Be("OBSERVED (m2lbdev-example-test.access.mcas.ms)");
+        Fact(headless, "authenticated-application").Should().StartWith("NOT ASSESSED");
+        headless.QuerySelectorAll("[data-testid=bad-trace-step]").Last().TextContent.Should().Contain("second page");
+
+        var text = BrowserAutomationDiagnosticReportText.Build(Report(BrowserAutomationDiagnosticComparison.AutomationAvailable,
+            "Browser automation available", AvailableInterpretation, AvailableMode(BrowserAutomationDiagnosticMode.Headed), popup));
+        text.Should().Contain("Session-control proxy: OBSERVED (m2lbdev-example-test.access.mcas.ms)")
+            .And.Contain("Authenticated application: NOT ASSESSED")
+            .And.Contain("authentication authority, second page");
     }
 }

@@ -28,9 +28,15 @@ internal sealed class BrowserAutomationDiagnosticService(
     ILogger<BrowserAutomationDiagnosticService> logger,
     Func<bool>? isLocalWorkstation = null,
     Func<BrowserAutomationDiagnosticMode, string>? profileDirectory = null,
-    string controlUrl = BrowserAutomationDiagnosticPolicy.DefaultControlUrl)
+    string controlUrl = BrowserAutomationDiagnosticPolicy.DefaultControlUrl,
+    BrowserAutomationTargetObservationTiming? observationTiming = null,
+    Func<BrowserAutomationDiagnosticRequest, string?>? applicationMarker = null)
     : IBrowserAutomationDiagnosticService
 {
+    private readonly BrowserAutomationTargetObservationTiming timing =
+        observationTiming ?? BrowserAutomationTargetObservationTiming.Default;
+    /// <summary>The structural application marker configured for a Target Environment, if any. Never guessed.</summary>
+    private readonly Func<BrowserAutomationDiagnosticRequest, string?> _applicationMarker = applicationMarker ?? (_ => null);
     private readonly Func<bool> _isLocalWorkstation = isLocalWorkstation ?? (() => true);
     private readonly Func<BrowserAutomationDiagnosticMode, string> _profileDirectory =
         profileDirectory ?? BrowserAutomationDiagnosticPolicy.ProfileDirectory;
@@ -86,8 +92,8 @@ internal sealed class BrowserAutomationDiagnosticService(
     /// </summary>
     private BrowserAutomationDiagnosticReport Publish(BrowserAutomationDiagnosticReport report)
     {
-        logger.LogInformation("BrowserAutomationComparisonCalculated {DiagnosticId} {Comparison} {HeadlessTargetControl}",
-            report.DiagnosticId, report.Result, report.HeadlessTargetControlAvailable);
+        logger.LogInformation("BrowserAutomationComparisonCalculated {DiagnosticId} {Comparison} {HeadlessControlAfterTargetNavigation}",
+            report.DiagnosticId, report.Result, report.HeadlessAutomationControlAfterTargetNavigation);
         return report;
     }
 
@@ -222,56 +228,247 @@ internal sealed class BrowserAutomationDiagnosticService(
         }
 
         // ── Target ────────────────────────────────────────────────────────────────────────────────────────────────
+        // Four questions, answered separately because each can be true while the next is false: did the browser
+        // accept the navigation; is the browser still controllable once it has settled wherever the target sent it;
+        // does it STAY controllable; and is the page it controls actually the target application.
+        var target = new TargetObservation(run.Request, _applicationMarker(run.Request), timing);
+        browser.BeginTargetObservation();
+
         modeRun.CurrentStage = BrowserAutomationDiagnosticStage.TargetNavigation;
         try
         {
             await browser.NavigateAsync(new Uri(run.Request.TargetUrl), BrowserAutomationDiagnosticPolicy.TargetNavigationTimeout, ct);
+            target.NavigationReturnedAtMs = browser.ObservationElapsedMs;
             modeRun.Pass(BrowserAutomationDiagnosticStage.TargetNavigation,
-                "Navigation to the target application was issued.", run.Request.TargetUrl);
+                "The browser accepted the navigation to the target URL. This says nothing yet about where the page ended up.",
+                target.RequestedUrl);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             var type = BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex);
+            modeRun.Target = target.Build(browser, BrowserAutomationFailurePhase.DuringTargetNavigation, type);
             switch (BrowserAutomationDiagnosticExceptionClassifier.Classify(ex))
             {
                 case BrowserAutomationFailureKind.TargetClosed:
-                    return modeRun.TargetRestricted(BrowserAutomationDiagnosticStage.TargetNavigation, type, run, mode, logger);
+                    return modeRun.TargetRestricted(BrowserAutomationDiagnosticStage.TargetNavigation, type,
+                        BrowserAutomationFailurePhase.DuringTargetNavigation, run, mode, logger);
                 case BrowserAutomationFailureKind.Timeout:
-                    return modeRun.TargetTimedOut(BrowserAutomationDiagnosticStage.TargetNavigation, type, run.Request.TargetUrl);
+                    return modeRun.TargetTimedOut(BrowserAutomationDiagnosticStage.TargetNavigation, type, target.RequestedUrl);
                 default:
                     modeRun.Fail(BrowserAutomationDiagnosticStage.TargetNavigation,
                         "Navigation to the target application failed before automation control could be tested.",
-                        type, run.Request.TargetUrl);
+                        type, target.RequestedUrl);
                     return BrowserAutomationDiagnosticModeResult.Failed;
             }
         }
 
-        // ── Target control ────────────────────────────────────────────────────────────────────────────────────────
-        // Navigation returning is not the finding. The spike's browser accepted the navigation and then closed the
-        // page, so control is asserted separately, after the fact.
+        // ── Browser control after navigation ──────────────────────────────────────────────────────────────────────
+        // Not read at commit: an MSAL single-page app redirects to its identity provider from script after it boots,
+        // so the URL at commit is the app shell and says nothing about where the browser will be a moment later.
+        var phase = BrowserAutomationFailurePhase.AfterTargetNavigation;
         modeRun.CurrentStage = BrowserAutomationDiagnosticStage.TargetControl;
         try
         {
-            if (!await browser.IsControllableAsync(BrowserAutomationDiagnosticPolicy.ControlCheckTimeout, ct))
-                return modeRun.TargetRestricted(BrowserAutomationDiagnosticStage.TargetControl, null, run, mode, logger);
+            target.Settle = await browser.WaitForNavigationToSettleAsync(timing.QuietPeriod, timing.SettleBound, ct);
+            if (target.Settle.Outcome == DiagnosticSettleOutcome.Terminated)
+                return target.Restricted(modeRun, browser, BrowserAutomationDiagnosticStage.TargetControl, null, phase, run, mode, logger);
+
+            var first = await browser.ProbeAsync(target.MarkerSelector, BrowserAutomationDiagnosticPolicy.ControlCheckTimeout, ct);
+            if (first.PageClosed)
+                return target.Restricted(modeRun, browser, BrowserAutomationDiagnosticStage.TargetControl, null, phase, run, mode, logger);
+            target.Observe(first);
+            target.ControlProvenAtMs = browser.ObservationElapsedMs;
 
             modeRun.Pass(BrowserAutomationDiagnosticStage.TargetControl,
-                "Playwright retained control of the target page.", run.Request.TargetUrl);
-            logger.LogInformation("{Mode}TargetControlPassed {DiagnosticId}", mode, run.DiagnosticId);
-            return BrowserAutomationDiagnosticModeResult.Available;
+                "After navigation settled, Playwright read the page title and document element. This is about the "
+                + "browser, wherever it ended up — not about which application the page is.", target.LastUrl);
+
+            // ── Stability ─────────────────────────────────────────────────────────────────────────────────────────
+            phase = BrowserAutomationFailurePhase.DuringStabilityWindow;
+            modeRun.CurrentStage = BrowserAutomationDiagnosticStage.TargetStability;
+            if (!await browser.ObserveStabilityAsync(timing.StabilityWindow, ct))
+                return target.Restricted(modeRun, browser, BrowserAutomationDiagnosticStage.TargetStability, null, phase, run, mode, logger);
+
+            // A navigation during the window (a late redirect) gets the same bounded settle before the final read.
+            var late = await browser.WaitForNavigationToSettleAsync(timing.QuietPeriod, timing.SettleBound, ct);
+            if (late.Outcome == DiagnosticSettleOutcome.Terminated)
+                return target.Restricted(modeRun, browser, BrowserAutomationDiagnosticStage.TargetStability, null, phase, run, mode, logger);
+
+            var second = await browser.ProbeAsync(target.MarkerSelector, BrowserAutomationDiagnosticPolicy.ControlCheckTimeout, ct);
+            if (second.PageClosed)
+                return target.Restricted(modeRun, browser, BrowserAutomationDiagnosticStage.TargetStability, null, phase, run, mode, logger);
+            target.Observe(second);
+
+            modeRun.Pass(BrowserAutomationDiagnosticStage.TargetStability,
+                $"No page close, crash, context close or disconnect during the {timing.StabilityWindow.TotalSeconds:0.#} s "
+                + "observation window, and a second probe succeeded afterwards. A close after the window cannot be excluded.",
+                target.LastUrl);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             var type = BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex);
+            var stage = modeRun.CurrentStage;
             if (BrowserAutomationDiagnosticExceptionClassifier.Classify(ex) == BrowserAutomationFailureKind.TargetClosed)
-                return modeRun.TargetRestricted(BrowserAutomationDiagnosticStage.TargetControl, type, run, mode, logger);
+                return target.Restricted(modeRun, browser, stage, type, phase, run, mode, logger);
 
-            modeRun.Fail(BrowserAutomationDiagnosticStage.TargetControl,
-                "Automation control of the target page could not be verified.", type, run.Request.TargetUrl);
+            modeRun.Target = target.Build(browser, phase, type);
+            modeRun.Fail(stage, "Automation control after the target navigation could not be verified.", type, target.LastUrl);
             return BrowserAutomationDiagnosticModeResult.Failed;
         }
+
+        // ── Target application ────────────────────────────────────────────────────────────────────────────────────
+        // Control is proven. Which page is being controlled is a separate question, answered from where the browser
+        // actually is — never from where it was asked to go.
+        modeRun.CurrentStage = BrowserAutomationDiagnosticStage.TargetApplication;
+        var evidence = target.Build(browser, BrowserAutomationFailurePhase.None, null);
+        modeRun.Target = evidence;
+        var (state, detail) = BrowserAutomationDiagnosticPolicy.TargetApplicationStage(evidence);
+        modeRun.Record(BrowserAutomationDiagnosticStage.TargetApplication, state, detail, evidence.FinalUrl);
+        logger.LogInformation("{Mode}TargetObserved {DiagnosticId} {FinalLocation} {FinalHost} {AuthenticationRedirect} {Identified}",
+            mode, run.DiagnosticId, evidence.FinalLocation, evidence.FinalHost, evidence.AuthenticationRedirect,
+            evidence.TargetApplicationIdentified);
+
+        return evidence switch
+        {
+            { TargetApplicationIdentified: BrowserAutomationEvidenceAnswer.Yes } => BrowserAutomationDiagnosticModeResult.Available,
+            { FinalLocation: BrowserAutomationFinalLocation.AuthenticationAuthority } =>
+                BrowserAutomationDiagnosticModeResult.AvailableAtAuthenticationBoundary,
+            _ => BrowserAutomationDiagnosticModeResult.AvailableTargetUnconfirmed,
+        };
+    }
+
+    /// <summary>
+    /// Accumulates what one mode sees at the target and turns it into sanitized evidence. Raw URLs live only in here
+    /// and in the browser; nothing leaves without going through <see cref="BrowserAutomationTargetLocationPolicy.Sanitize"/>.
+    /// </summary>
+    private sealed class TargetObservation(
+        BrowserAutomationDiagnosticRequest request, string? markerSelector, BrowserAutomationTargetObservationTiming timing)
+    {
+        private readonly Uri _target = new(request.TargetUrl);
+        private DiagnosticPageProbe? _last;
+
+        public string? MarkerSelector { get; } = string.IsNullOrWhiteSpace(markerSelector) ? null : markerSelector;
+        public DiagnosticSettleResult? Settle { get; set; }
+        public string RequestedUrl => BrowserAutomationTargetLocationPolicy.Sanitize(request.TargetUrl);
+        public string? LastUrl => _last is null ? null : SanitizeObserved(_last.Url);
+
+        /// <summary>When, on the observation clock, the navigation call returned and the first probe succeeded.</summary>
+        public long? NavigationReturnedAtMs { get; set; }
+        public long? ControlProvenAtMs { get; set; }
+
+        public void Observe(DiagnosticPageProbe probe) => _last = probe;
+
+        /// <summary>Which part of the target observation a lifecycle signal arrived in, from its timestamp.</summary>
+        private BrowserAutomationFailurePhase PhaseAt(long atMs) =>
+            NavigationReturnedAtMs is not { } returned || atMs <= returned ? BrowserAutomationFailurePhase.DuringTargetNavigation
+            : ControlProvenAtMs is not { } proven || atMs <= proven ? BrowserAutomationFailurePhase.AfterTargetNavigation
+            : BrowserAutomationFailurePhase.DuringStabilityWindow;
+
+        public BrowserAutomationDiagnosticModeResult Restricted(
+            ModeRun modeRun, IDiagnosticBrowser browser, BrowserAutomationDiagnosticStage stage, string? exceptionType,
+            BrowserAutomationFailurePhase phase, Run run, BrowserAutomationDiagnosticMode mode, ILogger log)
+        {
+            modeRun.Target = Build(browser, phase, exceptionType);
+            return modeRun.TargetRestricted(stage, exceptionType, phase, run, mode, log);
+        }
+
+        public BrowserAutomationTargetEvidence Build(IDiagnosticBrowser browser, BrowserAutomationFailurePhase phase, string? exceptionType)
+        {
+            var raw = browser.NavigationTrace;
+            var trace = raw
+                .Select((n, i) => new BrowserAutomationNavigationStep(i + 1, n.AtMs, SanitizeObserved(n.Url), Classify(n.Url), n.SecondaryPage))
+                .ToList();
+
+            // The final location is the last thing the diagnostic READ from a live page. When the page died before it
+            // could be read, the last navigation the browser reported is the best available answer — and it is
+            // labelled as such by FinalLocation being taken from the trace, never from the requested URL.
+            // The final location is always the diagnostic's OWN page; a popup is reported in the trace, not as "final".
+            var finalRaw = _last?.Url ?? raw.LastOrDefault(n => !n.SecondaryPage)?.Url;
+            Uri.TryCreate(finalRaw, UriKind.Absolute, out var final);
+            var location = Classify(finalRaw);
+            var observed = location != BrowserAutomationFinalLocation.Unknown;
+
+            var authStep = trace.FirstOrDefault(s => s.Location == BrowserAutomationFinalLocation.AuthenticationAuthority);
+            var authHost = location == BrowserAutomationFinalLocation.AuthenticationAuthority ? final!.IdnHost
+                : authStep is not null && Uri.TryCreate(raw[authStep.Sequence - 1].Url, UriKind.Absolute, out var a) ? a.IdnHost
+                : null;
+            var authInPopup = location != BrowserAutomationFinalLocation.AuthenticationAuthority && authStep is { SecondaryPage: true };
+            var sessionHost = raw.Select(n => Uri.TryCreate(n.Url, UriKind.Absolute, out var u) ? u : null)
+                .FirstOrDefault(u => u is not null && BrowserAutomationTargetLocationPolicy.IsSessionControlProxy(u))?.IdnHost;
+
+            var markerFound = location == BrowserAutomationFinalLocation.TargetOrigin ? _last?.MarkerFound : null;
+            var controlRetained = phase == BrowserAutomationFailurePhase.None && _last is not null;
+            var (identified, basis) = Identify(location, controlRetained, markerFound);
+
+            return new BrowserAutomationTargetEvidence
+            {
+                RequestedUrl = RequestedUrl,
+                ExpectedOrigin = BrowserAutomationTargetLocationPolicy.CanonicalOrigin(_target) ?? "",
+                FinalUrl = finalRaw is null ? null : SanitizeObserved(finalRaw),
+                FinalScheme = final?.Scheme,
+                FinalHost = final is { Scheme: "http" or "https" } ? final.IdnHost : null,
+                FinalOrigin = final is null ? null : BrowserAutomationTargetLocationPolicy.CanonicalOrigin(final),
+                FinalLocation = location,
+                ExpectedOriginReached = !observed ? BrowserAutomationEvidenceAnswer.Unknown
+                    : location == BrowserAutomationFinalLocation.TargetOrigin ? BrowserAutomationEvidenceAnswer.Yes
+                    : BrowserAutomationEvidenceAnswer.No,
+                AuthenticationRedirect = authHost is not null ? BrowserAutomationEvidenceAnswer.Yes
+                    : observed ? BrowserAutomationEvidenceAnswer.No : BrowserAutomationEvidenceAnswer.Unknown,
+                AuthenticationHost = authHost,
+                AuthenticationInSecondaryPage = authInPopup,
+                SessionControlHost = sessionHost,
+                TargetApplicationIdentified = identified,
+                IdentificationEvidence = basis,
+                ApplicationMarkerConfigured = MarkerSelector is not null,
+                ApplicationMarkerFound = markerFound,
+                NavigationSettled = Settle is null ? null : Settle.Outcome == DiagnosticSettleOutcome.Settled,
+                SettleDurationMs = Settle?.DurationMs,
+                StabilityWindowMs = (long)timing.StabilityWindow.TotalMilliseconds,
+                NavigationTrace = trace,
+                LifecycleEvents = browser.LifecycleEvents
+                    .Select(e => new BrowserAutomationLifecycleEvent(e.Kind, e.AtMs, PhaseAt(e.AtMs)))
+                    .ToList(),
+                ExceptionType = exceptionType,
+                FailurePhase = phase,
+            };
+        }
+
+        /// <summary>
+        /// The evidence hierarchy: the expected origin first, then — when one is configured for this Target
+        /// Environment — a structural application marker. Authenticated content is never required: before sign-in it
+        /// cannot exist, and demanding it would make every pre-authentication run "not identified".
+        /// </summary>
+        private (BrowserAutomationEvidenceAnswer, string) Identify(
+            BrowserAutomationFinalLocation location, bool controlRetained, bool? markerFound)
+        {
+            if (!controlRetained) return (BrowserAutomationEvidenceAnswer.Unknown, "Not assessed: automation control was not retained.");
+            return location switch
+            {
+                BrowserAutomationFinalLocation.TargetOrigin when MarkerSelector is null =>
+                    (BrowserAutomationEvidenceAnswer.Yes,
+                        "Expected target origin. No application marker is configured for this Target Environment, so the origin is the only evidence."),
+                BrowserAutomationFinalLocation.TargetOrigin when markerFound == true =>
+                    (BrowserAutomationEvidenceAnswer.Yes, "Expected target origin and the configured application marker."),
+                BrowserAutomationFinalLocation.TargetOrigin =>
+                    (BrowserAutomationEvidenceAnswer.Unknown,
+                        "Expected target origin, but the configured application marker was not found."),
+                BrowserAutomationFinalLocation.AuthenticationAuthority =>
+                    (BrowserAutomationEvidenceAnswer.No, "Not yet reached: the target redirected to authentication first."),
+                BrowserAutomationFinalLocation.SessionControlProxy =>
+                    (BrowserAutomationEvidenceAnswer.No, "The page is delivered through a session-control proxy host, not the target origin."),
+                BrowserAutomationFinalLocation.OtherOrigin =>
+                    (BrowserAutomationEvidenceAnswer.No, "The final location is outside the expected origin and is not a recognised authentication authority."),
+                _ => (BrowserAutomationEvidenceAnswer.Unknown, "The final location could not be read."),
+            };
+        }
+
+        private BrowserAutomationFinalLocation Classify(string? url) =>
+            BrowserAutomationTargetLocationPolicy.Classify(url, _target, request.Authority);
+
+        private string SanitizeObserved(string url) =>
+            BrowserAutomationTargetLocationPolicy.Sanitize(url, Classify(url) == BrowserAutomationFinalLocation.AuthenticationAuthority);
     }
 
     private EdgeInstallation? SafeLocateEdge()
@@ -291,6 +488,7 @@ internal sealed class BrowserAutomationDiagnosticService(
         public string ProfileDirectory { get; } = profileDirectory;
         public string? EdgeVersion { get; set; }
         public string? ObservedExceptionType { get; private set; }
+        public BrowserAutomationTargetEvidence? Target { get; set; }
         public BrowserAutomationDiagnosticStage CurrentStage { get; set; } = BrowserAutomationDiagnosticStage.Runtime;
 
         public void Pass(BrowserAutomationDiagnosticStage stage, string detail, string? url = null) =>
@@ -307,25 +505,28 @@ internal sealed class BrowserAutomationDiagnosticService(
         /// the control page to have passed, because without that contrast a closed target page is just a browser that
         /// cannot be automated at all.
         /// </summary>
+        /// <para>
+        /// The exception type is reported only when there WAS one. A close observed through Page.Close with no
+        /// exception is reported as the event it was, not relabelled as a TargetClosedException nobody threw.
+        /// </para>
         public BrowserAutomationDiagnosticModeResult TargetRestricted(
-            BrowserAutomationDiagnosticStage stage, string? exceptionType, Run run,
+            BrowserAutomationDiagnosticStage stage, string? exceptionType, BrowserAutomationFailurePhase phase, Run run,
             BrowserAutomationDiagnosticMode currentMode, ILogger log)
         {
-            var type = exceptionType ?? BrowserAutomationDiagnosticExceptionClassifier.TargetClosedExceptionName;
+            var url = Target?.FinalUrl ?? Target?.RequestedUrl;
             if (_stages.FirstOrDefault(s => s.Stage == BrowserAutomationDiagnosticStage.ControlPage) is not
                 { State: BrowserAutomationDiagnosticStageState.Passed })
             {
                 Fail(stage, "Automation control was lost, but the control page had not passed, so this says nothing "
-                          + "specific about the target.", type, run.Request.TargetUrl);
+                          + "specific about the target.", exceptionType, url);
                 return BrowserAutomationDiagnosticModeResult.ControlFailure;
             }
 
-            ObservedExceptionType ??= type;
+            ObservedExceptionType ??= exceptionType;
             Record(stage, BrowserAutomationDiagnosticStageState.Blocked,
-                "The Playwright-controlled page or context was closed while navigating to the target application.",
-                run.Request.TargetUrl, type);
-            log.LogInformation("{Mode}TargetControlBlocked {DiagnosticId} {Stage} {ExceptionType}",
-                currentMode, run.DiagnosticId, stage, type);
+                BrowserAutomationDiagnosticPolicy.RestrictionDetail(phase, exceptionType, Target), url, exceptionType);
+            log.LogInformation("{Mode}TargetControlBlocked {DiagnosticId} {Stage} {Phase} {ExceptionType}",
+                currentMode, run.DiagnosticId, stage, phase, exceptionType);
             return BrowserAutomationDiagnosticModeResult.TargetRestricted;
         }
 
@@ -343,7 +544,7 @@ internal sealed class BrowserAutomationDiagnosticService(
             return BrowserAutomationDiagnosticModeResult.Failed;
         }
 
-        private void Record(BrowserAutomationDiagnosticStage stage, BrowserAutomationDiagnosticStageState state,
+        public void Record(BrowserAutomationDiagnosticStage stage, BrowserAutomationDiagnosticStageState state,
             string? detail, string? url, string? exceptionType = null)
         {
             if (_stages.Any(s => s.Stage == stage)) return;   // a stage reports once
@@ -367,6 +568,7 @@ internal sealed class BrowserAutomationDiagnosticService(
                 ProfileDescription = BrowserAutomationDiagnosticPolicy.ProfileDescription(mode),
                 Stages = stages,
                 ObservedExceptionType = ObservedExceptionType,
+                Target = Target,
             };
         }
     }
@@ -405,14 +607,21 @@ internal sealed class BrowserAutomationDiagnosticService(
                 .ToList(),
         };
 
-        private BrowserAutomationDiagnosticReport Build(BrowserAutomationDiagnosticComparison result, string? blockedReason) => new()
+        private BrowserAutomationDiagnosticReport Build(BrowserAutomationDiagnosticComparison result, string? blockedReason)
+        {
+            var modes = _modes.Count > 0
+                ? _modes
+                : [Empty(BrowserAutomationDiagnosticMode.Headed), Empty(BrowserAutomationDiagnosticMode.Headless)];
+            var headed = modes.FirstOrDefault(m => m.Mode == BrowserAutomationDiagnosticMode.Headed);
+            var headless = modes.FirstOrDefault(m => m.Mode == BrowserAutomationDiagnosticMode.Headless);
+            return new()
         {
             DiagnosticId = DiagnosticId,
             StartedAt = StartedAt,
             CompletedAt = DateTimeOffset.UtcNow,
             Result = result,
             ResultLabel = BrowserAutomationDiagnosticPolicy.ResultLabel(result),
-            Interpretation = BrowserAutomationDiagnosticPolicy.Interpretation(result),
+            Interpretation = BrowserAutomationDiagnosticPolicy.Interpretation(result, headed, headless),
             BlockedReason = blockedReason,
             TargetEnvironmentId = Request.TargetEnvironmentId,
             TargetEnvironmentName = Request.TargetEnvironmentName,
@@ -422,9 +631,9 @@ internal sealed class BrowserAutomationDiagnosticService(
             EdgeVersion = EdgeVersion ?? _modes.Select(m => m.EdgeVersion).FirstOrDefault(v => v is not null),
             PlaywrightVersion = typeof(IPlaywright).Assembly.GetName().Version?.ToString(),
             OperatingSystem = RuntimeInformation.OSDescription,
-            Modes = _modes.Count > 0
-                ? _modes
-                : [Empty(BrowserAutomationDiagnosticMode.Headed), Empty(BrowserAutomationDiagnosticMode.Headless)],
+            Modes = modes,
+            ControlDimensions = BrowserAutomationDiagnosticPolicy.ControlDimensions(result, headed, headless),
         };
+        }
     }
 }

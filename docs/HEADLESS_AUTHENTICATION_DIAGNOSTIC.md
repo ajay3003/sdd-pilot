@@ -6,7 +6,9 @@ This diagnostic asks whether the selected Target Environment can establish a usa
 
 Target Environment → Authentication → Authentication diagnostics. The compact result has a Copy IT report action and collapsed Technical details with stages, timing, exception types, browser versions and sanitized navigation.
 
-Browser Automation Diagnostic remains independent in System Settings → Frontend Engine Capabilities. Run it first for the same environment, URL and environment type. The API records its headless target-control result in memory for 30 minutes. Headed success alone is insufficient. A subsequent failed run revokes the proof. Server restart and target changes require another prerequisite run. No client-supplied boolean can satisfy this prerequisite.
+Browser Automation Diagnostic remains independent in System Settings → Frontend Engine Capabilities. Run it first for the same environment, URL and environment type. The API records its headless result in memory for 30 minutes (`BrowserAutomationEvidenceStore`, the single source of truth).
+
+The recorded fact is `HeadlessAutomationControlAfterTargetNavigation`: headless Playwright stayed in stable control of the browser through the navigation to the target (post-settle probe, a bounded stability window with no page close / crash / context close / disconnect, and a second probe), and the browser ended on the target origin or at the target's authentication handoff (Microsoft Entra sign-in hosts, the configured authority, or a `*.mcas.ms` session-control proxy). It deliberately does **not** require the target application to have been identified: a fresh profile is redirected to Entra before it can see the application, and that redirect is exactly what this diagnostic inspects. An unrelated final origin does not qualify. Headed success alone is insufficient. A subsequent failed run revokes the proof. Server restart and target changes require another prerequisite run. No client-supplied boolean can satisfy this prerequisite.
 
 POST `api/headless-auth-diagnostic/prerequisite` checks that evidence; POST `api/headless-auth-diagnostic/run` enforces the prerequisite again and returns a report, including blocked results. Cancellation is a separate run status.
 
@@ -53,6 +55,8 @@ V1 therefore requires an explicit, non-secret authenticated application-shell co
 }
 ```
 
+Optionally, the same contract can carry `"ApplicationShellSelector"`: a stable structural marker of the application shell that exists **before** sign-in (for example a root element with a `data-app-shell` attribute supplied by the target owner). The Browser Automation Diagnostic uses it, after the expected origin, to decide whether the page Playwright controls is the target application; without it, the origin is the only identification evidence and the report says so. It is never used as authentication evidence.
+
 The selector is read only at the exact configured target origin, with no login controls present. Do not configure a generic public shell selector such as `body` or `main`. Cookies, a callback URL, an HTTP 200 or the disappearance of Entra alone never establish authentication. Missing positive evidence produces Unknown on timeout. Proxied application-origin verification is deliberately conservative: it remains Unknown unless the exact target-origin verification contract is satisfied.
 
 After verification, safe title and DOM reads must succeed for Ready. A verified session plus retained automation control plus no interaction yields Ready / None. A precise observed blocker yields Not Ready; uncertainty or a timeout yields Unknown. The result describes the current fresh diagnostic context; an approved future QA identity may behave differently. No QA identity authentication mechanism is implemented here.
@@ -69,7 +73,7 @@ Run focused backend tests using `--filter FullyQualifiedName~HeadlessDiagnosticT
 
 Real Edge adapter tests use local synthetic pages only. Set `RUN_HEADLESS_EDGE_DIAGNOSTIC_TESTS=true` and run `--filter FullyQualifiedName~HeadlessEdgeAcceptanceTests`; otherwise these tests explicitly skip. They seed prerequisite evidence to isolate the real headless adapter, so they are not an end-to-end validation of Diagnostic 1.
 
-For target acceptance, run Browser Automation Diagnostic, record both mode results, then run this diagnostic only if headless target control is demonstrated. Preserve the report even if it stops at interactive login: MFA and later controls cannot be inferred beyond that point. A real DEV/QA result requires access to the configured environment and must not be fabricated from the synthetic tests.
+For target acceptance, run Browser Automation Diagnostic, record both mode results (requested URL, final location, whether an authentication redirect was detected, browser control, stability, target application), then run this diagnostic only if headless control through the target navigation is demonstrated. Preserve the report even if it stops at interactive login: MFA and later controls cannot be inferred beyond that point. A real DEV/QA result requires access to the configured environment and must not be fabricated from the synthetic tests.
 
 ## Technical references
 

@@ -26,17 +26,41 @@ public sealed class BrowserAutomationDiagnosticRunTests
         public Func<BrowserAutomationDiagnosticLaunchOptions, Task>? OnLaunch;
         /// <summary>Called for each navigation, with the mode and URL, so a test can fail one mode only.</summary>
         public Func<BrowserAutomationDiagnosticMode, Uri, Task>? OnNavigate;
-        /// <summary>Called for each controllability check, with the mode and how many have happened before it.</summary>
+        /// <summary>Called for each about:blank/control-page check, with the mode and how many have happened before it.</summary>
         public Func<BrowserAutomationDiagnosticMode, int, Task<bool>>? OnIsControllable;
+        /// <summary>Where the target navigation ends up, as the browser would report it. Null: it stays where it was sent.</summary>
+        public Func<BrowserAutomationDiagnosticMode, Uri, string?>? RedirectTo;
+        /// <summary>URLs a second page (a sign-in popup the target opens) navigates through, in order.</summary>
+        public Func<BrowserAutomationDiagnosticMode, Uri, string[]?>? PopupNavigates;
+        /// <summary>Called for each target probe (0 = after settling, 1 = after the stability window). May throw.</summary>
+        public Func<BrowserAutomationDiagnosticMode, int, Task>? OnProbe;
+        /// <summary>Whether the page is already closed at a given probe.</summary>
+        public Func<BrowserAutomationDiagnosticMode, int, bool>? ProbeFindsPageClosed;
+        /// <summary>Whether the page closes during the stability window (Page.Close is then reported, with no exception).</summary>
+        public Func<BrowserAutomationDiagnosticMode, bool>? ClosesDuringStability;
+        public Func<BrowserAutomationDiagnosticMode, int, DiagnosticSettleOutcome>? SettleOutcome;
+        public bool? MarkerFound;
         public bool PersistentContext = true;
+
+        private readonly List<DiagnosticNavigationObservation> _trace = [];
+        private readonly List<DiagnosticLifecycleObservation> _events = [];
+        private string _url = "about:blank";
+        private long _clock;
+        private int _probes;
+        private int _settles;
 
         public BrowserAutomationDiagnosticMode Mode { get; } = mode;
         public int ControlChecks { get; private set; }
         public List<Uri> Navigations { get; } = [];
+        public List<string?> MarkerSelectors { get; } = [];
+        public List<TimeSpan> StabilityWindows { get; } = [];
         public bool Disposed { get; private set; }
         public BrowserAutomationDiagnosticLaunchOptions? LaunchOptions { get; private set; }
         public string? EdgeVersion => "153.0.0.0";
         public bool HasPersistentContext => LaunchOptions is not null && PersistentContext;
+        public IReadOnlyList<DiagnosticNavigationObservation> NavigationTrace => _trace;
+        public IReadOnlyList<DiagnosticLifecycleObservation> LifecycleEvents => _events;
+        public long ObservationElapsedMs => _clock;
 
         public async Task LaunchAsync(BrowserAutomationDiagnosticLaunchOptions options, CancellationToken ct)
         {
@@ -49,6 +73,18 @@ public sealed class BrowserAutomationDiagnosticRunTests
             ct.ThrowIfCancellationRequested();
             Navigations.Add(url);
             if (OnNavigate is not null) await OnNavigate(Mode, url);
+            _url = url.AbsoluteUri;
+            _trace.Add(new(_clock += 10, _url));
+            if (RedirectTo?.Invoke(Mode, url) is { } final)
+            {
+                _url = final;
+                _trace.Add(new(_clock += 400, final));
+            }
+            if (PopupNavigates?.Invoke(Mode, url) is { } popup)
+            {
+                _events.Add(new(BrowserAutomationLifecycleEventKind.PageOpened, _clock += 50));
+                foreach (var step in popup) _trace.Add(new(_clock += 300, step, SecondaryPage: true));
+            }
         }
 
         public async Task<bool> IsControllableAsync(TimeSpan timeout, CancellationToken ct)
@@ -56,6 +92,42 @@ public sealed class BrowserAutomationDiagnosticRunTests
             ct.ThrowIfCancellationRequested();
             var index = ControlChecks++;
             return OnIsControllable is null || await OnIsControllable(Mode, index);
+        }
+
+        public void BeginTargetObservation()
+        {
+            _trace.Clear();
+            _events.Clear();
+            _clock = 0;
+        }
+
+        public Task<DiagnosticSettleResult> WaitForNavigationToSettleAsync(TimeSpan quietPeriod, TimeSpan bound, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            var outcome = SettleOutcome?.Invoke(Mode, _settles++) ?? DiagnosticSettleOutcome.Settled;
+            if (outcome == DiagnosticSettleOutcome.Terminated) _events.Add(new(BrowserAutomationLifecycleEventKind.PageClosed, _clock += 5));
+            return Task.FromResult(new DiagnosticSettleResult(outcome, 1200));
+        }
+
+        public Task<bool> ObserveStabilityAsync(TimeSpan window, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            StabilityWindows.Add(window);
+            _clock += 100;
+            if (ClosesDuringStability?.Invoke(Mode) != true) return Task.FromResult(true);
+            _events.Add(new(BrowserAutomationLifecycleEventKind.PageClosed, _clock += 1500));
+            return Task.FromResult(false);
+        }
+
+        public async Task<DiagnosticPageProbe> ProbeAsync(string? markerSelector, TimeSpan timeout, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            var index = _probes++;
+            MarkerSelectors.Add(markerSelector);
+            _clock += 20;
+            if (OnProbe is not null) await OnProbe(Mode, index);
+            if (ProbeFindsPageClosed?.Invoke(Mode, index) == true) return new(_url, PageClosed: true, MarkerFound: null);
+            return new(_url, PageClosed: false, markerSelector is null ? null : MarkerFound);
         }
 
         public ValueTask DisposeAsync()
@@ -103,9 +175,13 @@ public sealed class BrowserAutomationDiagnosticRunTests
             EnvironmentType = environmentType, TargetUrl = TargetUrl,
         };
 
+    /// <summary>Tiny, so the suite is fast; the real durations and their rationale live in BrowserAutomationTargetObservationTiming.</summary>
+    private static readonly BrowserAutomationTargetObservationTiming FastTiming =
+        new(TimeSpan.FromMilliseconds(1), TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(2));
+
     private static IBrowserAutomationDiagnosticService Service(
         FakeFactory factory, bool isLocalWorkstation = true, bool edgeFound = true,
-        Func<BrowserAutomationDiagnosticMode, string>? profile = null)
+        Func<BrowserAutomationDiagnosticMode, string>? profile = null, string? marker = null)
     {
         var type = typeof(BrowserAutomationDiagnosticPolicy).Assembly
             .GetType("BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService")!;
@@ -116,7 +192,9 @@ public sealed class BrowserAutomationDiagnosticRunTests
             logger,
             (Func<bool>)(() => isLocalWorkstation),
             profile ?? Profile,
-            ControlUrl)!;
+            ControlUrl,
+            FastTiming,
+            (Func<BrowserAutomationDiagnosticRequest, string?>)(_ => marker))!;
     }
 
     /// <summary>Playwright's .NET binding does not expose TargetClosedException, so this is what a caller actually sees.</summary>
@@ -242,8 +320,8 @@ public sealed class BrowserAutomationDiagnosticRunTests
     [Fact]
     public async Task ATargetPageThatClosesAfterNavigatingIsRestricted_NotAvailable()
     {
-        // Checks per mode: 0 blank, 1 control, 2 target — only the target check fails.
-        var factory = new FakeFactory { Configure = b => b.OnIsControllable = (_, index) => Task.FromResult(index < 2) };
+        // The first target probe finds the page already gone.
+        var factory = new FakeFactory { Configure = b => b.ProbeFindsPageClosed = (_, index) => index == 0 };
 
         var report = await Service(factory).RunAsync(Request());
 
@@ -252,7 +330,8 @@ public sealed class BrowserAutomationDiagnosticRunTests
             State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Passed,
                 "navigation itself succeeded — which is exactly why navigation alone is not the check");
             State(mode, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
-            mode.TargetControlAvailable.Should().BeFalse();
+            mode.BrowserControlRetained.Should().BeFalse();
+            mode.TargetApplicationIdentified.Should().BeFalse();
         }
     }
 
@@ -282,7 +361,7 @@ public sealed class BrowserAutomationDiagnosticRunTests
         foreach (var mode in report.Modes)
         {
             mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.Available);
-            mode.TargetControlAvailable.Should().BeTrue();
+            mode.TargetApplicationIdentified.Should().BeTrue();
             foreach (var stage in Enum.GetValues<BrowserAutomationDiagnosticStage>())
                 State(mode, stage).Should().Be(BrowserAutomationDiagnosticStageState.Passed, $"{mode.Mode}/{stage}");
         }
@@ -369,7 +448,7 @@ public sealed class BrowserAutomationDiagnosticRunTests
         var report = await Service(new FakeFactory()).RunAsync(Request());
 
         report.Result.Should().Be(BrowserAutomationDiagnosticComparison.AutomationAvailable);
-        report.HeadlessTargetControlAvailable.Should().BeTrue();
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeTrue();
     }
 
     // 22. The case the spike suggests: blocked in both modes.
@@ -382,7 +461,7 @@ public sealed class BrowserAutomationDiagnosticRunTests
 
         report.Result.Should().Be(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
         report.ResultLabel.Should().Be("Target-specific automation restriction detected in both modes");
-        report.HeadlessTargetControlAvailable.Should().BeFalse();
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeFalse();
     }
 
     // 23. The case that matters most for unattended CI, and the reason both modes are run.
@@ -397,10 +476,10 @@ public sealed class BrowserAutomationDiagnosticRunTests
         var report = await Service(factory).RunAsync(Request());
 
         report.Result.Should().Be(BrowserAutomationDiagnosticComparison.HeadlessOnlyRestricted);
-        report.Headed!.TargetControlAvailable.Should().BeTrue();
-        report.Headless!.TargetControlAvailable.Should().BeFalse();
+        report.Headed!.BrowserControlRetained.Should().BeTrue();
+        report.Headless!.BrowserControlRetained.Should().BeFalse();
         // 28. Headed success alone never satisfies the headless prerequisite.
-        report.HeadlessTargetControlAvailable.Should().BeFalse();
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeFalse();
         report.Interpretation.Should().Contain("unattended CI");
     }
 
@@ -417,7 +496,7 @@ public sealed class BrowserAutomationDiagnosticRunTests
 
         report.Result.Should().Be(BrowserAutomationDiagnosticComparison.HeadedOnlyRestricted);
         // 21 (gating). Headless is what the authentication diagnostic depends on, and headless worked.
-        report.HeadlessTargetControlAvailable.Should().BeTrue();
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeTrue();
     }
 
     // 25. One mode concluded and the other did not get far enough to agree. That is not a two-mode finding.
@@ -442,7 +521,7 @@ public sealed class BrowserAutomationDiagnosticRunTests
 
         report.Result.Should().Be(BrowserAutomationDiagnosticComparison.MixedOrInconclusive);
         report.Result.Should().NotBe(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
-        report.HeadlessTargetControlAvailable.Should().BeFalse();
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeFalse();
     }
 
     // ── §39. Wording ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -554,5 +633,367 @@ public sealed class BrowserAutomationDiagnosticRunTests
 
         first.DiagnosticId.Should().NotBeNullOrWhiteSpace();
         second.DiagnosticId.Should().NotBe(first.DiagnosticId);
+    }
+
+    // ══ Target PASS audit: what the page Playwright controls actually IS ══════════════════════════════════════════
+
+    private const string EntraAuthorize =
+        "https://login.microsoftonline.com/25609970-3b75-45b9-9899-036bb1693ff3/oauth2/v2.0/authorize"
+        + "?client_id=23be8783-a768-47c0-804e-2740c6216272&state=STATE-SECRET&nonce=NONCE-SECRET"
+        + "&code_challenge=CHALLENGE-SECRET&login_hint=someone%40bufdir.no&session_state=SESSION-SECRET";
+
+    private static Func<BrowserAutomationDiagnosticMode, Uri, string?> RedirectsTargetTo(string final) =>
+        (_, url) => url.Host == TargetHost ? final : null;
+
+    // §30. THE false positive. M2LB redirects a fresh profile to Entra; Playwright can still read that page. The
+    // navigation passed and browser control passed — but the target application was NOT reached, and must not be PASS.
+    [Fact]
+    public async Task ARedirectToEntraIsNeverTargetApplicationPass()
+    {
+        var factory = new FakeFactory { Configure = b => b.RedirectTo = RedirectsTargetTo(EntraAuthorize) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            State(mode, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            State(mode, BrowserAutomationDiagnosticStage.TargetStability).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            State(mode, BrowserAutomationDiagnosticStage.TargetApplication).Should().Be(BrowserAutomationDiagnosticStageState.NotReached);
+            State(mode, BrowserAutomationDiagnosticStage.TargetApplication).Should().NotBe(BrowserAutomationDiagnosticStageState.Passed);
+
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.AvailableAtAuthenticationBoundary);
+            mode.BrowserControlRetained.Should().BeTrue();
+            mode.TargetApplicationIdentified.Should().BeFalse();
+
+            var target = mode.Target!;
+            target.RequestedUrl.Should().Be(TargetUrl);
+            target.FinalHost.Should().Be("login.microsoftonline.com");
+            target.FinalOrigin.Should().Be("https://login.microsoftonline.com");
+            target.FinalScheme.Should().Be("https");
+            target.FinalLocation.Should().Be(BrowserAutomationFinalLocation.AuthenticationAuthority);
+            target.ExpectedOriginReached.Should().Be(BrowserAutomationEvidenceAnswer.No);
+            target.AuthenticationRedirect.Should().Be(BrowserAutomationEvidenceAnswer.Yes);
+            target.AuthenticationHost.Should().Be("login.microsoftonline.com");
+            target.TargetApplicationIdentified.Should().Be(BrowserAutomationEvidenceAnswer.No);
+            target.FailurePhase.Should().Be(BrowserAutomationFailurePhase.None);
+        }
+
+        // Automation is available through the handoff, and the gate the authentication diagnostic needs is open.
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.AutomationAvailable);
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeTrue();
+        report.Interpretation.Should().Contain("redirected to authentication (login.microsoftonline.com)")
+            .And.Contain("does NOT prove that the authenticated target application is controllable")
+            .And.Contain("not yet reached");
+        report.Interpretation.Should().NotContain("retained control of the target application");
+    }
+
+    // §17, §34. The redirect trace is recorded, and nothing sensitive in it survives.
+    [Fact]
+    public async Task TheRedirectTraceIsRecordedAndSanitized()
+    {
+        var factory = new FakeFactory { Configure = b => b.RedirectTo = RedirectsTargetTo(EntraAuthorize) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        var trace = report.Headless!.Target!.NavigationTrace;
+        trace.Select(s => s.Url).Should().Equal(
+            "https://m2lbdev.example.test/",
+            "https://login.microsoftonline.com/[tenant]/oauth2/v2.0/authorize?[redacted]");
+        trace.Select(s => s.Location).Should().Equal(
+            BrowserAutomationFinalLocation.TargetOrigin, BrowserAutomationFinalLocation.AuthenticationAuthority);
+        report.Headless.Target.FinalUrl.Should().Be("https://login.microsoftonline.com/[tenant]/oauth2/v2.0/authorize?[redacted]");
+
+        var serialized = System.Text.Json.JsonSerializer.Serialize(report);
+        serialized.Should().NotContainAny(
+            "STATE-SECRET", "NONCE-SECRET", "CHALLENGE-SECRET", "SESSION-SECRET", "someone", "bufdir.no",
+            "state=", "nonce=", "login_hint", "session_state", "client_id", "code_challenge",
+            "25609970-3b75-45b9-9899-036bb1693ff3", "23be8783");
+    }
+
+    // §31. The real PASS: same origin, the configured application marker found, stable.
+    [Fact]
+    public async Task SameOriginWithTheConfiguredMarkerAndStableControlIsTargetApplicationPass()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b =>
+            {
+                b.RedirectTo = RedirectsTargetTo("https://m2lbdev.example.test/oversikt?tab=1");
+                b.MarkerFound = true;
+            },
+        };
+
+        var report = await Service(factory, marker: "[data-app-shell]").RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.TargetApplication).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.Available);
+            mode.TargetApplicationIdentified.Should().BeTrue();
+            mode.Target!.ExpectedOriginReached.Should().Be(BrowserAutomationEvidenceAnswer.Yes);
+            mode.Target.AuthenticationRedirect.Should().Be(BrowserAutomationEvidenceAnswer.No);
+            mode.Target.ApplicationMarkerConfigured.Should().BeTrue();
+            mode.Target.ApplicationMarkerFound.Should().BeTrue();
+            mode.Target.IdentificationEvidence.Should().Contain("configured application marker");
+            mode.Target.FinalUrl.Should().Be("https://m2lbdev.example.test/oversikt?[redacted]");
+        }
+        // The configured marker is what was asked for, at both probes, in both modes.
+        factory.Browsers.Values.SelectMany(b => b.MarkerSelectors).Should().OnlyContain(m => m == "[data-app-shell]");
+        report.Interpretation.Should().Contain("identified as the target application");
+    }
+
+    // A configured marker that is absent means "not identified", never PASS — the origin alone is not allowed to
+    // override a contract someone deliberately configured.
+    [Fact]
+    public async Task AConfiguredMarkerThatIsMissingIsNotAPass()
+    {
+        var factory = new FakeFactory { Configure = b => b.MarkerFound = false };
+
+        var report = await Service(factory, marker: "[data-app-shell]").RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.TargetApplication).Should().Be(BrowserAutomationDiagnosticStageState.Unknown);
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.AvailableTargetUnconfirmed);
+            mode.Target!.ExpectedOriginReached.Should().Be(BrowserAutomationEvidenceAnswer.Yes);
+            mode.Target.TargetApplicationIdentified.Should().Be(BrowserAutomationEvidenceAnswer.Unknown);
+        }
+        // Still the target's path, so the authentication diagnostic may run.
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeTrue();
+    }
+
+    // Without a configured marker the origin is the only evidence — and the report says exactly that.
+    [Fact]
+    public async Task WithoutAMarkerTheOriginIsTheStatedEvidence()
+    {
+        var report = await Service(new FakeFactory()).RunAsync(Request());
+
+        report.Headless!.Target!.IdentificationEvidence.Should().Contain("No application marker is configured");
+        report.Headless.Target.ApplicationMarkerConfigured.Should().BeFalse();
+        report.Headless.Target.ApplicationMarkerFound.Should().BeNull();
+    }
+
+    // An unrelated final origin: automation survived, but this is neither the target nor its handoff.
+    [Fact]
+    public async Task AnUnrelatedFinalOriginIsNotTheTargetAndDoesNotOpenTheGate()
+    {
+        var factory = new FakeFactory { Configure = b => b.RedirectTo = RedirectsTargetTo("https://m2lbdev.example.test.evil.test/") };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.AvailableTargetUnconfirmed);
+            mode.Target!.FinalLocation.Should().Be(BrowserAutomationFinalLocation.OtherOrigin);
+            mode.Target.ExpectedOriginReached.Should().Be(BrowserAutomationEvidenceAnswer.No);
+            State(mode, BrowserAutomationDiagnosticStage.TargetApplication).Should().Be(BrowserAutomationDiagnosticStageState.NotReached);
+        }
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeFalse();
+    }
+
+    // The configured Target Environment authority is recognised as an authentication redirect too.
+    [Fact]
+    public async Task TheConfiguredAuthorityIsRecognisedAsAnAuthenticationRedirect()
+    {
+        var factory = new FakeFactory { Configure = b => b.RedirectTo = RedirectsTargetTo("https://idp.example.test/connect/authorize?state=x") };
+
+        var report = await Service(factory).RunAsync(Request() with { Authority = "https://idp.example.test/" });
+
+        report.Headless!.Target!.FinalLocation.Should().Be(BrowserAutomationFinalLocation.AuthenticationAuthority);
+        report.Headless.Result.Should().Be(BrowserAutomationDiagnosticModeResult.AvailableAtAuthenticationBoundary);
+    }
+
+    // §32, §21. Navigation returns, the first probe works, then the page closes during the stability window.
+    // Control is NOT retained, and nobody gets to call it PASS because the early probe happened to succeed.
+    [Fact]
+    public async Task APageThatClosesDuringTheStabilityWindowIsBlocked_NotPass()
+    {
+        var factory = new FakeFactory { Configure = b => b.ClosesDuringStability = _ => true };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            State(mode, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.Passed,
+                "the first probe did succeed — which is exactly why one probe is not enough");
+            State(mode, BrowserAutomationDiagnosticStage.TargetStability).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
+            State(mode, BrowserAutomationDiagnosticStage.TargetApplication).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.TargetRestricted);
+            mode.BrowserControlRetained.Should().BeFalse();
+
+            mode.Target!.FailurePhase.Should().Be(BrowserAutomationFailurePhase.DuringStabilityWindow);
+            mode.Target.LifecycleEvents.Should().ContainSingle(e => e.Kind == BrowserAutomationLifecycleEventKind.PageClosed)
+                .Which.Phase.Should().Be(BrowserAutomationFailurePhase.DuringStabilityWindow);
+            // Page.Close was observed; no exception was thrown, so none is claimed.
+            mode.ObservedExceptionType.Should().BeNull();
+            mode.Stage(BrowserAutomationDiagnosticStage.TargetStability)!.Detail
+                .Should().Contain("PageClosed").And.Contain("Control was lost late, after an initial success");
+        }
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeFalse();
+    }
+
+    // §33, §16. TargetClosedException from the first safe operation after Goto: a target-CONTROL restriction, with
+    // the exception kept as first-class evidence — not a navigation success.
+    [Fact]
+    public async Task TargetClosedOnTheFirstProbeAfterNavigationIsATargetControlRestriction()
+    {
+        var factory = new FakeFactory { Configure = b => b.OnProbe = (_, index) => index == 0 ? throw TargetClosed() : Task.CompletedTask };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            State(mode, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
+            mode.Stage(BrowserAutomationDiagnosticStage.TargetControl)!.ExceptionType.Should().Be("TargetClosedException");
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.TargetRestricted);
+            mode.ObservedExceptionType.Should().Be("TargetClosedException");
+            mode.Target!.ExceptionType.Should().Be("TargetClosedException");
+            mode.Target.FailurePhase.Should().Be(BrowserAutomationFailurePhase.AfterTargetNavigation);
+            mode.Stage(BrowserAutomationDiagnosticStage.TargetControl)!.Detail.Should().Contain("Target-control restriction");
+        }
+        report.Result.Should().NotBe(BrowserAutomationDiagnosticComparison.AutomationAvailable);
+    }
+
+    // The same exception on the SECOND probe is a late loss, reported as one.
+    [Fact]
+    public async Task TargetClosedOnTheClosingProbeIsALateLoss()
+    {
+        var factory = new FakeFactory { Configure = b => b.OnProbe = (_, index) => index == 1 ? throw TargetClosed() : Task.CompletedTask };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Headless!.Target!.FailurePhase.Should().Be(BrowserAutomationFailurePhase.DuringStabilityWindow);
+        State(report.Headless, BrowserAutomationDiagnosticStage.TargetStability).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
+        report.Headless.Result.Should().Be(BrowserAutomationDiagnosticModeResult.TargetRestricted);
+    }
+
+    // §16. During navigation, the same exception is a navigation restriction — and is recorded with that phase.
+    [Fact]
+    public async Task TargetClosedDuringNavigationIsRecordedAsANavigationRestriction()
+    {
+        var factory = new FakeFactory { Configure = b => b.OnNavigate = ClosesTargetIn(b.Mode) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Headless!.Target!.FailurePhase.Should().Be(BrowserAutomationFailurePhase.DuringTargetNavigation);
+        report.Headless.Target.ExceptionType.Should().Be("TargetClosedException");
+        report.Headless.Stage(BrowserAutomationDiagnosticStage.TargetNavigation)!.Detail.Should().Contain("Target-navigation restriction");
+    }
+
+    // A close reported while waiting for navigation to settle is a control restriction, not a pass.
+    [Fact]
+    public async Task ATerminationWhileSettlingIsBlocked()
+    {
+        var factory = new FakeFactory { Configure = b => b.SettleOutcome = (_, index) => index == 0 ? DiagnosticSettleOutcome.Terminated : DiagnosticSettleOutcome.Settled };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        State(report.Headless!, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
+        report.Headless!.Target!.FailurePhase.Should().Be(BrowserAutomationFailurePhase.AfterTargetNavigation);
+    }
+
+    // §13, §14. Navigation that never goes quiet is recorded as such, and observation continues rather than failing.
+    [Fact]
+    public async Task NavigationThatDoesNotSettleIsRecordedAndStillObserved()
+    {
+        var factory = new FakeFactory { Configure = b => b.SettleOutcome = (_, _) => DiagnosticSettleOutcome.BoundReached };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Headless!.Target!.NavigationSettled.Should().BeFalse();
+        report.Headless.Result.Should().Be(BrowserAutomationDiagnosticModeResult.Available);
+        // And the stability window is the configured one, not a number invented at the call site.
+        factory.Headless.StabilityWindows.Should().Equal(FastTiming.StabilityWindow);
+        report.Headless.Target.StabilityWindowMs.Should().Be((long)FastTiming.StabilityWindow.TotalMilliseconds);
+    }
+
+    // §22. Headed and headless are held to identical rules, so the two results are directly comparable.
+    [Fact]
+    public async Task HeadedAndHeadlessApplyTheSameStrictRules()
+    {
+        var factory = new FakeFactory { Configure = b => b.RedirectTo = RedirectsTargetTo(EntraAuthorize) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Headed!.Result.Should().Be(report.Headless!.Result);
+        report.Headed.Stages.Select(s => (s.Stage, s.State)).Should().Equal(report.Headless.Stages.Select(s => (s.Stage, s.State)));
+        report.Headed.Target!.FinalLocation.Should().Be(report.Headless.Target!.FinalLocation);
+    }
+
+    // §23, §24, §36. Three controls reported apart. A Playwright PASS never says DevTools is enabled, a restriction
+    // never says DevTools is disabled, and nothing claims a security policy blocked the target.
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PlaywrightResultsNeverClaimADevToolsOrPolicyState(bool restricted)
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b =>
+            {
+                if (restricted) b.OnNavigate = ClosesTargetIn(b.Mode);
+                else b.RedirectTo = RedirectsTargetTo(EntraAuthorize);
+            },
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.ControlDimensions.Select(d => d.Name).Should().Equal(
+            "Corporate Edge DevTools UI (F12 / Inspect)", "Playwright-owned browser automation", "CDP attach to an existing or protected Edge");
+        report.ControlDimensions[0].State.Should().Be("Unknown");
+        report.ControlDimensions[2].State.Should().Be("Not tested");
+        report.ControlDimensions[1].State.Should().Be(restricted ? "Blocked on this target" : "Available");
+
+        var everything = string.Join(" ", new[] { report.Interpretation, report.ResultLabel }
+            .Concat(report.ControlDimensions.SelectMany(d => new[] { d.State, d.Basis }))
+            .Concat(report.Modes.SelectMany(m => m.Stages).Select(s => s.Detail ?? "")));
+        everything.Should().NotContainAny(
+            "DevTools enabled", "DevTools is enabled", "DevTools disabled", "DevTools is disabled",
+            "security policy blocked", "policy blocked the target", "Security policy blocked target");
+    }
+
+    // The M2LB shape observed for real (2026-09-23): the main page stays on the app's own /authentication/login route
+    // while MSAL opens a SECOND page that goes to Entra and then through a Defender for Cloud Apps session-control host.
+    // The handoff must be reported even though it is not in the diagnostic's own page — and it must not move the
+    // final location off the page Playwright actually controls.
+    [Fact]
+    public async Task AnAuthenticationHandoffInAPopupIsDetectedAndReportedAsSuch()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b =>
+            {
+                b.RedirectTo = RedirectsTargetTo("https://m2lbdev.example.test/authentication/login?returnUrl=x");
+                b.PopupNavigates = (_, url) => url.Host == TargetHost
+                    ? [EntraAuthorize, "https://m2lbdev-example-test.access.mcas.ms/aad_login"]
+                    : null;
+            },
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            var target = mode.Target!;
+            target.FinalLocation.Should().Be(BrowserAutomationFinalLocation.TargetOrigin, "the main page never left the target origin");
+            target.FinalUrl.Should().Be("https://m2lbdev.example.test/authentication/login?[redacted]");
+            target.AuthenticationRedirect.Should().Be(BrowserAutomationEvidenceAnswer.Yes);
+            target.AuthenticationHost.Should().Be("login.microsoftonline.com");
+            target.AuthenticationInSecondaryPage.Should().BeTrue();
+            target.SessionControlHost.Should().Be("m2lbdev-example-test.access.mcas.ms");
+            target.NavigationTrace.Where(s => s.SecondaryPage).Select(s => s.Location).Should().Equal(
+                BrowserAutomationFinalLocation.AuthenticationAuthority, BrowserAutomationFinalLocation.SessionControlProxy);
+            target.LifecycleEvents.Should().Contain(e => e.Kind == BrowserAutomationLifecycleEventKind.PageOpened);
+            mode.Stage(BrowserAutomationDiagnosticStage.TargetApplication)!.Detail
+                .Should().Contain("in a second page the target opened").And.Contain("the authenticated application is not");
+        }
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeTrue();
+        report.Interpretation.Should().Contain("in a second page it opened")
+            .And.Contain("This does NOT prove that the authenticated target application is controllable");
+        System.Text.Json.JsonSerializer.Serialize(report).Should().NotContainAny("STATE-SECRET", "NONCE-SECRET", "returnUrl");
     }
 }

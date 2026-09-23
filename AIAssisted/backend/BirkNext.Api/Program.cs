@@ -235,7 +235,12 @@ builder.Services.AddSingleton<BirkNext.Api.Services.BrowserAutomationDiagnostic.
         sp.GetRequiredService<BirkNext.Api.Services.BrowserAutomationDiagnostic.IDiagnosticBrowserFactory>(),
         sp.GetRequiredService<IEdgeInstallationLocator>(),
         sp.GetRequiredService<ILogger<BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService>>(),
-        isLocalWorkstation: () => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value.IsLocalWorkstation));
+        isLocalWorkstation: () => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value.IsLocalWorkstation,
+        // The pre-authentication application marker comes from the same per-Target-Environment verification
+        // contract the authentication diagnostic reads, so a target is identified by one configuration, not two.
+        applicationMarker: request => BirkNext.Api.Services.HeadlessAuthDiagnostic.HeadlessVerificationContract.ApplicationMarkerFor(
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.HeadlessAuthDiagnostic.HeadlessDiagnosticOptions>>().Value,
+            request.TargetEnvironmentId, request.TargetUrl)));
 // It reports whether automation survives in HEADED and HEADLESS Edge separately, because headless is what unattended
 // CI would use and "it worked when I watched it" is not an answer for CI.
 
