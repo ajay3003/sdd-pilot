@@ -40,6 +40,6 @@ public static class EndpointDiscoveryPresentation
     /// The observed auth mechanism on a row. A bearer token being present is an observation about a request;
     /// it is not a statement that the application requires sign-in — that is Authentication's to say.
     /// </summary>
-    public static string ObservedAuthLabel(bool authObserved) => authObserved ? "Bearer" : "—";
+    public static string ObservedAuthLabel(bool authObserved) => authObserved ? "Bearer observed" : "—";
 
 }

@@ -10,9 +10,9 @@
 
     <h4>Live discovery</h4>
     <div class="ed-overview" data-testid="discovery-overview">
-        <div class="ed-ov-item"><span class="ed-ov-label">Observation</span><span class="ed-ov-value" data-testid="discovery-active">@(Live.ObservationActive ? "Active" : "Inactive")</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Authenticated traffic</span><span class="ed-ov-value" data-testid="discovery-auth-context">@Live.AuthenticatedTrafficState</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Page correlation</span><span class="ed-ov-value" data-testid="discovery-network">@Live.PageCorrelationState</span></div>
+        <div class="ed-ov-item" title="@ObservationHelp"><span class="ed-ov-label">Observation</span><span class="ed-ov-value" data-testid="discovery-active">@(Live.ObservationActive ? "Active" : "Inactive")</span></div>
+        <div class="ed-ov-item" title="@AuthenticatedTrafficHelp"><span class="ed-ov-label">Authenticated traffic</span><span class="ed-ov-value" data-testid="discovery-auth-context">@Live.AuthenticatedTrafficState</span></div>
+        <div class="ed-ov-item" title="@PageCorrelationHelp"><span class="ed-ov-label">Page correlation</span><span class="ed-ov-value" data-testid="discovery-network">@Live.PageCorrelationState</span></div>
         <div class="ed-ov-item"><span class="ed-ov-label">Last traffic</span><span class="ed-ov-value" data-testid="discovery-last-traffic">@(Live.LastTrafficAt is { } at ? Time(at) : "Unavailable")</span></div>
         <div class="ed-ov-item" title="Recent means traffic captured within the last two minutes of the current running listener."><span class="ed-ov-label">Freshness</span><span class="ed-ov-value">@Live.TrafficFreshness</span></div>
     </div>
@@ -20,7 +20,12 @@
     {
         <p role="status">Network observation inactive. New traffic is not currently being captured. Historical evidence remains available.</p>
     }
-    else if (!ProxyStatus.AuthenticatedCredentialAvailable)
+    else if (Live.TrafficFreshness != "Recent")
+    {
+        @* Active is about the observation path, not about traffic: both states are valid together. *@
+        <p role="status" data-testid="discovery-no-recent-traffic">Observation is active, but no traffic has arrived in the last two minutes. Use the application to generate traffic.</p>
+    }
+    @if (Live.ObservationActive && !ProxyStatus.AuthenticatedCredentialAvailable)
     {
         <p role="status">Authenticated traffic not currently available for review execution. Public/background discovery can continue.</p>
     }
@@ -32,12 +37,12 @@
     <div class="ed-overview" data-testid="discovery-evidence-summary">
         <div class="ed-ov-item"><span class="ed-ov-label">Application pages observed</span><span class="ed-ov-value" data-testid="discovery-pages-count">@Evidence.ApplicationPageCount</span></div>
         <div class="ed-ov-item" title="Distinct hostnames, case-insensitive; eligible observed application traffic only. Ports do not create additional hosts."><span class="ed-ov-label">Backend hosts observed</span><span class="ed-ov-value" data-testid="discovery-hosts-count">@Evidence.BackendHostCount</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Application requests</span><span class="ed-ov-value">@Evidence.TotalObservedRequestCount</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Shared / background requests</span><span class="ed-ov-value">@Evidence.SharedBackgroundCount</span></div>
-        <div class="ed-ov-item"><span class="ed-ov-label">Discovery probes</span><span class="ed-ov-value">@Evidence.ProbeCount</span></div>
+        <div class="ed-ov-item" title="Calls classified as application communication (REST, GraphQL, WebSocket, authentication or other application traffic) from application or browser-observed traffic. The Calls column of Observed backend communication adds up to this number."><span class="ed-ov-label">Application requests</span><span class="ed-ov-value" data-testid="discovery-app-requests">@Evidence.TotalObservedRequestCount</span></div>
+        <div class="ed-ov-item" title="Calls not correlated to a single page — background polling, shared configuration, global authentication, static and telemetry. Probes and BirkNext diagnostics are not counted here."><span class="ed-ov-label">Shared / background requests</span><span class="ed-ov-value" data-testid="discovery-shared-requests">@Evidence.SharedBackgroundCount</span></div>
+        <div class="ed-ov-item" title="Requests BirkNext itself sent to probe the target. A separate source from browser-observed traffic."><span class="ed-ov-label">Discovery probes</span><span class="ed-ov-value" data-testid="discovery-probe-count">@Evidence.ProbeCount</span></div>
         <div class="ed-ov-item"><span class="ed-ov-label">Last captured evidence</span><span class="ed-ov-value">@(Evidence.LastCapturedEvidenceAt is { } captured ? captured.ToLocalTime().ToString("g") : "None retained")</span></div>
     </div>
-    <p class="ed-note">Counts describe retained evidence, not lifetime traffic. Unknown historical provenance is inspectable below and excluded from application totals.</p>
+    <p class="ed-note" data-testid="discovery-evidence-help">Counts describe retained evidence, not lifetime traffic. Application requests are application-classified communication; static, configuration, authentication-callback, probe and unknown-provenance evidence is excluded from them. Shared / background counts requests not correlated to a single page, so an uncorrelated application call can appear in both.</p>
 
     <nav class="ed-nav" role="tablist" aria-label="Observed network evidence">
         @for (var i = 0; i < Views.Length; i++)
@@ -65,16 +70,25 @@
             {
                 <div class="ed-tablewrap">
                     <table class="ed-table" data-testid="discovery-overview-table">
-                        <thead><tr><th>Service / Host</th><th>Type</th><th>Pages</th><th>Auth</th><th>Calls</th><th>Last seen</th><th>Transport</th><th>Provenance</th></tr></thead>
+                        <thead><tr><th scope="col">Service / Host</th><th scope="col">Type</th><th scope="col">Pages</th><th scope="col">Auth</th><th scope="col">Calls</th><th scope="col">Last seen</th><th scope="col">Transport</th><th scope="col">Provenance</th></tr></thead>
                         <tbody>
                             @foreach (var svc in OverviewRows)
                             {
-                                <tr>
+                                <tr data-testid="discovery-overview-row">
                                     <td class="ed-mono">@svc.Host</td>
                                     <td>@CategoryBadge(svc.Category)</td>
-                                    <td>@svc.PageCount</td>
+                                    @* The Pages tab owns page-level detail; the count only takes the reader there, filtered. *@
+                                    <td>
+                                        @if (svc.PageCount > 0)
+                                        {
+                                            <button type="button" class="ed-link ed-count-link" data-testid="discovery-overview-pages"
+                                                    aria-label="@($"Show the {svc.PageCount} page{(svc.PageCount == 1 ? "" : "s")} with {CategoryLabel(svc.Category)} traffic to {svc.Host}")"
+                                                    @onclick="() => OpenPagesFor(svc.Host, svc.Category)">@svc.PageCount</button>
+                                        }
+                                        else { <span title="Not correlated to an application page">0</span> }
+                                    </td>
                                     @* Observed auth mechanism on the request. Not a statement about the application's sign-in policy. *@
-                                    <td>@EndpointDiscoveryPresentation.ObservedAuthLabel(svc.AuthObserved)</td>
+                                    <td title="@(svc.AuthObserved ? AuthenticatedTrafficHelp : null)">@EndpointDiscoveryPresentation.ObservedAuthLabel(svc.AuthObserved)</td>
                                     <td>@svc.Calls</td>
                                     <td class="ed-mono">@Time(svc.LastSeen)</td>
                                     <td>@svc.Transport</td><td>@svc.Provenance</td>
@@ -83,12 +97,50 @@
                         </tbody>
                     </table>
                 </div>
-
+                <p class="ed-note" data-testid="discovery-overview-help">Application communication only: the Calls column adds up to Application requests (@Evidence.TotalObservedRequestCount). Static, configuration, authentication-callback and probe evidence is summarised below. Select a page count to see those pages.</p>
             }
+            <div class="ed-crosslinks" data-testid="discovery-overview-links">
+                <button type="button" class="ed-link" data-testid="discovery-view-pages" @onclick="() => OpenPagesFor(null, null)">View Pages</button>
+                <button type="button" class="ed-link" data-testid="discovery-view-shared" @onclick="OpenShared">View Shared / background</button>
+            </div>
+
+            @*
+                A summary, not a second explorer. The raw technical evidence is explored in Shared / background, which already
+                owns it, so the two tabs never render the same hundreds of rows twice.
+            *@
+            <section class="ed-technical-summary" data-testid="discovery-technical-summary" aria-labelledby="discovery-technical-summary-heading">
+                <h4 id="discovery-technical-summary-heading">@TechnicalHeading</h4>
+                @if (TechnicalEndpoints.Count == 0)
+                {
+                    <p class="ed-empty" data-testid="discovery-technical-empty">No technical or background evidence retained.</p>
+                }
+                else
+                {
+                    <p class="ed-note"><span data-testid="discovery-technical-total">@TechnicalEndpoints.Sum(e => e.Count)</span> retained requests, by classification:</p>
+                    <ul class="ed-breakdown" data-testid="discovery-technical-breakdown">
+                        @foreach (var (reason, calls) in TechnicalBreakdown)
+                        {
+                            <li><span>@reason</span> <strong>@calls</strong></li>
+                        }
+                    </ul>
+                    <button type="button" class="ed-link" data-testid="discovery-show-technical" @onclick="() => OpenTechnical(null)">Show technical evidence</button>
+                    @if (Evidence.ProbeCount > 0)
+                    {
+                        <button type="button" class="ed-link" data-testid="discovery-show-probes" @onclick='() => OpenTechnical("probe")'>Show discovery probes only</button>
+                    }
+                }
+            </section>
         </div>
     }
     else if (_view == "pages")
     {
+        @if (_pageFilter is { } filter)
+        {
+            <p class="ed-filter-chip" role="status" data-testid="discovery-page-filter">
+                Showing pages with @CategoryLabel(filter.Category) traffic to <span class="ed-mono">@filter.Host</span>.
+                <button type="button" class="ed-link" data-testid="discovery-page-filter-clear" @onclick="() => _pageFilter = null">Show all pages</button>
+            </p>
+        }
         <div class="ed-panel ed-split">
             <aside class="ed-pagelist">
                 @if (Snapshot.Pages.Count == 0)
@@ -97,7 +149,7 @@
                 }
                 else
                 {
-                    @foreach (var pg in OrderedPages)
+                    @foreach (var pg in PageListPages)
                     {
                         <button type="button" class="ed-pagelink @(SelectedPage?.Identity == pg.Identity ? "ed-pagelink-active" : "")" aria-current="@(SelectedPage?.Identity == pg.Identity ? "page" : null)" data-testid="discovery-page-link" @onclick="() => _selectedPage = pg.Identity">
                             <span class="ed-pagetitle">@pg.PagePath</span>
@@ -130,7 +182,7 @@
                         <p class="ed-note" data-testid="discovery-page-state">Waiting for fresh traffic. Use this page in the target application to collect fresh endpoint traffic.</p>
                     }
                     <h5 class="ed-section-title">Page-correlated application communication</h5>
-                    @RenderEndpointTable(VisibleEndpoints(sel.Endpoints.Where(NetworkEvidencePolicy.IsApplicationTraffic).ToList()), "discovery-page-table", "No page-correlated application communication observed for this page.")
+                    @RenderEndpointTable(VisibleEndpoints(sel.Endpoints.Where(NetworkEvidencePolicy.IsApplicationTraffic).Where(MatchesPageFilter).ToList()), "discovery-page-table", "No page-correlated application communication observed for this page.")
                 }
                 else
                 {
@@ -149,9 +201,25 @@
         <div class="ed-panel">
             <p class="ed-note">Requests that could not be confidently correlated to a single page: background polling, shared configuration, global authentication and telemetry.</p>
             @RenderEndpointTable(VisibleEndpoints(Snapshot.Shared.Where(e => NetworkEvidencePolicy.ProvenanceOf(e) is not (RequestProvenance.DiscoveryProbe or RequestProvenance.BirkNextDiagnostic)).ToList()), "discovery-shared-table", "No shared or background traffic observed yet.")
-            <details data-testid="discovery-technical"><summary>Technical / discovery probe activity (@TechnicalEndpoints.Sum(e => e.Count) requests)</summary>
-                @RenderEndpointTable(VisibleEndpoints(TechnicalEndpoints), "discovery-technical-table", "No technical or discovery probe requests match these filters.")
-            </details>
+            @*
+                Classification-based, not correlation-based: static, configuration, authentication-callback, API-description,
+                technical, probe and diagnostic resources from any page or none, plus evidence whose provenance is unknown.
+                Discovery probes are one provenance among several here — hence not "probe activity". Collapsed by default.
+            *@
+            <div class="ed-disclosure" data-testid="discovery-technical">
+                <button type="button" class="ed-disclosure-toggle" data-testid="discovery-technical-toggle" aria-expanded="@(_technicalOpen ? "true" : "false")"
+                        aria-controls="discovery-technical-region" @onclick="() => _technicalOpen = !_technicalOpen">
+                    <span aria-hidden="true">@(_technicalOpen ? "▾" : "▸")</span> @TechnicalHeading (@TechnicalEndpoints.Sum(e => e.Count) requests)
+                </button>
+                @* Rows are rendered only while expanded: a collapsed section must not cost hundreds of hidden rows. *@
+                @if (_technicalOpen)
+                {
+                    <div id="discovery-technical-region">
+                        <p class="ed-note">Category says what kind of request it is; Provenance says where the evidence came from. Filter Provenance to Discovery probe to see only BirkNext's own probes.</p>
+                        @RenderEndpointTable(VisibleEndpoints(TechnicalEndpoints), "discovery-technical-table", "No technical or background evidence matches these filters.")
+                    </div>
+                }
+            </div>
         </div>
     }
     </div>
@@ -166,7 +234,7 @@
     *@
     @if (_view == "overview" && (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0 || Snapshot.ExcludedPageHistory.Count > 0))
     {
-        <details class="ed-manage" data-testid="discovery-manage"><summary>Analysis history / maintenance</summary>
+        <details class="ed-manage" data-testid="discovery-manage"><summary>Maintenance: retained evidence (@History.RetainedPageAnalyses page analyses)</summary>
             @foreach (var sel in OrderedPages)
             {
                 <details class="ed-page-actions"><summary>@sel.PagePath captures and actions</summary>
@@ -205,7 +273,8 @@
             }
             else
             {
-                <button type="button" class="ed-danger-link" data-testid="discovery-delete-all" @onclick="() => _confirmDeleteAll = true">Delete all analyses</button>
+                @* Named for what it removes: every retained page, shared, technical and probe record — not only "analyses". *@
+                <button type="button" class="btn-secondary fa-btn-sm" data-testid="discovery-delete-all" @onclick="() => _confirmDeleteAll = true">Delete all retained evidence…</button>
             }
             @foreach (var old in Snapshot.ExcludedPageHistory)
             {
@@ -251,7 +320,7 @@
     private ObservedNetworkEvidenceSummary Evidence => ObservedNetworkEvidenceSummary.From(Snapshot);
     private HistoricalAnalysisState History => HistoricalAnalysisState.From(Snapshot);
     private IReadOnlyList<ObservedNetworkEndpoint> TechnicalEndpoints => AllEndpoints.Where(e => NetworkEvidencePolicy.ResourceOf(e) != NetworkResourceKind.Unknown || NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.Unknown).ToList();
-    private PageAnalysis? SelectedPage => Snapshot.Pages.FirstOrDefault(p => p.Identity == _selectedPage) ?? OrderedPages.FirstOrDefault();
+    private PageAnalysis? SelectedPage => PageListPages.FirstOrDefault(p => p.Identity == _selectedPage) ?? PageListPages.FirstOrDefault();
     private IReadOnlyList<PageAnalysis> OrderedPages => Snapshot.Pages.Where(p => NetworkEvidencePolicy.IsApplicationPage(p.PagePath)).OrderByDescending(p => p.LastObservedAt).ToList();
 
     private IReadOnlyList<ObservedNetworkEndpoint> AllEndpoints =>
@@ -354,6 +423,62 @@
     }
 
     private void Toggle(string key) { if (!_expanded.Remove(key)) _expanded.Add(key); }
+
+    // ── Overview summary, drill-down and help ────────────────────────────────
+
+    private const string ObservationHelp = "Active means the observation path is running. It does not mean traffic is flowing right now — Freshness says that.";
+    private const string AuthenticatedTrafficHelp = "Bearer authentication was observed in captured traffic. This does not independently verify the browser authentication state.";
+    private const string PageCorrelationHelp = "Observed requests can be correlated to application pages. Not every retained request is page-correlated.";
+
+    /// <summary>
+    /// The technical section's name. Its rows are classified as technical kinds (static, configuration, authentication
+    /// callback, API description, technical, probe, diagnostic) or have unknown provenance; most are browser-observed, so
+    /// "discovery probe activity" described only one provenance among several.
+    /// </summary>
+    private const string TechnicalHeading = "Technical / background evidence";
+
+    private bool _technicalOpen;
+    /// <summary>A drill-down from an Overview row: pages with this type of application traffic to this host.</summary>
+    private (string Host, ObservedTrafficCategory Category)? _pageFilter;
+
+    /// <summary>Counts by the existing classification (<see cref="NetworkEvidencePolicy.Reason"/>) — no client heuristic of its own.</summary>
+    private IReadOnlyList<(string Reason, int Calls)> TechnicalBreakdown => TechnicalEndpoints
+        .GroupBy(e => NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.Unknown && NetworkEvidencePolicy.ResourceOf(e) == NetworkResourceKind.Unknown
+            ? "Unknown / historical provenance" : NetworkEvidencePolicy.Reason(e))
+        .Select(g => (g.Key, g.Sum(e => e.Count)))
+        .OrderByDescending(x => x.Item2).ThenBy(x => x.Key, StringComparer.Ordinal)
+        .ToList();
+
+    private IReadOnlyList<PageAnalysis> PageListPages => _pageFilter is null
+        ? OrderedPages
+        : OrderedPages.Where(p => p.Endpoints.Any(e => NetworkEvidencePolicy.IsApplicationTraffic(e) && MatchesPageFilter(e))).ToList();
+
+    private bool MatchesPageFilter(ObservedNetworkEndpoint e) => _pageFilter is not { } f
+        || (e.Category == f.Category && string.Equals(e.Host, f.Host, StringComparison.OrdinalIgnoreCase));
+
+    private async Task OpenPagesFor(string? host, ObservedTrafficCategory? category)
+    {
+        _pageFilter = host is not null && category is { } c ? (host, c) : null;
+        _selectedPage = PageListPages.FirstOrDefault()?.Identity;
+        _view = "pages";
+        await _tabButtons[1].FocusAsync();
+    }
+
+    private async Task OpenTechnical(string? provenance)
+    {
+        await OpenShared();
+        _provenanceFilter = provenance ?? "all";
+        _technicalOpen = true;
+    }
+
+    private static string CategoryLabel(ObservedTrafficCategory category) => category switch
+    {
+        ObservedTrafficCategory.Rest => "REST",
+        ObservedTrafficCategory.GraphQl => "GraphQL",
+        ObservedTrafficCategory.WebSocket => "WebSocket",
+        ObservedTrafficCategory.Authentication => "Auth",
+        _ => "Other",
+    };
 
     /// <summary>Safe navigation reference: the API review target id (type + origin + base path digest), never a query string or credential.</summary>
     private static string AnalyzeHref(ObservedNetworkEndpoint e) => e.Category == ObservedTrafficCategory.GraphQl

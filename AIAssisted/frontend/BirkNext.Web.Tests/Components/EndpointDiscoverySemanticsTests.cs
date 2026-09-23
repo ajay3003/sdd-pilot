@@ -303,7 +303,8 @@ public sealed class EndpointDiscoverySemanticsTests : BunitContext
 
         cut.Find(".ed-nav").GetAttribute("role").Should().Be("tablist");
         cut.Find("[data-testid='discovery-overview-table']").QuerySelectorAll("thead th").Should().NotBeEmpty();
-        cut.Find("[data-testid='discovery-delete-all']").TextContent.Trim().Should().Be("Delete all analyses");
+        // Named for what it deletes: all retained discovery evidence, not only "analyses".
+        cut.Find("[data-testid='discovery-delete-all']").TextContent.Trim().Should().Be("Delete all retained evidence…");
         // Every summary value is text; none of them depends on colour alone.
         cut.Find("[data-testid='discovery-overview']").QuerySelectorAll(".ed-ov-value")
             .Should().OnlyContain(v => v.TextContent.Trim().Length > 0);
