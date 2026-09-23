@@ -886,4 +886,181 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
         cleanup.QuerySelector("[data-testid=bad-stage-state]")!.TextContent.Trim().Should().Be("WARNING");
         ModePanel(card, "Headless").GetAttribute("data-mode-result").Should().Be("TargetRestricted");
     }
+
+    // ── Target navigation failure evidence ────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The QA run's shape: control page fine, the target navigation itself failed. The failure evidence is what the
+    /// backend classifier sends — type and code observed, category and interpretation derived — and nothing else.
+    /// </summary>
+    private static BrowserAutomationDiagnosticModeReport NavigationFailedMode(
+        BrowserAutomationDiagnosticMode mode, string? code = "net::ERR_NAME_NOT_RESOLVED",
+        BrowserNavigationFailureCategory category = BrowserNavigationFailureCategory.Dns, string label = "DNS",
+        string interpretation = "The browser could not resolve the target hostname.", string exceptionType = "PlaywrightException") => new()
+    {
+        Mode = mode,
+        Headless = mode == BrowserAutomationDiagnosticMode.Headless,
+        Result = BrowserAutomationDiagnosticModeResult.Failed,
+        EdgeVersion = "153.0.3456.78",
+        ProfileDescription = string.Format(ProfileNote, mode),
+        ObservedExceptionType = exceptionType,
+        Stages =
+        [
+            .. SetupStagesPassed(),
+            Stage(BrowserAutomationDiagnosticStage.TargetNavigation, BrowserAutomationDiagnosticStageState.Failed,
+                "Navigation to the target application failed before automation control could be tested.",
+                "https://m2lbdev.example.test/", exceptionType),
+            Stage(BrowserAutomationDiagnosticStage.TargetControl, BrowserAutomationDiagnosticStageState.NotRun),
+            Stage(BrowserAutomationDiagnosticStage.TargetStability, BrowserAutomationDiagnosticStageState.NotRun),
+            Stage(BrowserAutomationDiagnosticStage.TargetApplication, BrowserAutomationDiagnosticStageState.NotRun),
+            Cleanup(),
+        ],
+        Target = new()
+        {
+            RequestedUrl = "https://m2lbdev.example.test/", ExpectedOrigin = "https://m2lbdev.example.test",
+            ExceptionType = exceptionType, FailurePhase = BrowserAutomationFailurePhase.DuringTargetNavigation,
+            NavigationFailure = new()
+            {
+                ExceptionType = exceptionType, BrowserErrorCode = code, Category = category, CategoryLabel = label,
+                Interpretation = interpretation, NavigationTimeoutMs = 25000,
+            },
+        },
+    };
+
+    private static BrowserAutomationDiagnosticReport NavigationFailedInBothModes(
+        Func<BrowserAutomationDiagnosticMode, BrowserAutomationDiagnosticModeReport>? mode = null)
+    {
+        mode ??= m => NavigationFailedMode(m);
+        return Report(
+            BrowserAutomationDiagnosticComparison.MixedOrInconclusive, "Inconclusive",
+            "The two modes did not produce comparable evidence. In both modes, target navigation failed before browser "
+            + "control could be established: the browser reported net::ERR_NAME_NOT_RESOLVED (DNS). Authentication was "
+            + "not reached, so MFA, Conditional Access and session control were not assessed.",
+            mode(BrowserAutomationDiagnosticMode.Headed), mode(BrowserAutomationDiagnosticMode.Headless));
+    }
+
+    private static string Provenance(IElement panel, string key) => panel
+        .QuerySelectorAll("[data-testid=bad-fact]").Single(f => f.GetAttribute("data-fact") == key)
+        .QuerySelector("[data-testid=bad-fact-provenance]")!.TextContent.Trim();
+
+    private static bool HasFact(IElement panel, string key) =>
+        panel.QuerySelectorAll("[data-testid=bad-fact]").Any(f => f.GetAttribute("data-fact") == key);
+
+    // §14 / §13 / §38 Both mode cards show the browser error, its category and interpretation, with provenance.
+    [Fact]
+    public void ANavigationFailureShowsTheBrowserErrorCategoryAndInterpretation_InBothModes()
+    {
+        var card = Ran(NavigationFailedInBothModes());
+
+        foreach (var mode in new[] { "Headed", "Headless" })
+        {
+            var panel = ModePanel(card, mode);
+            Fact(panel, "navigation").Should().Be("FAIL");
+            Fact(panel, "final-location").Should().Be("Not observed");
+            Fact(panel, "final-host").Should().Be("Not observed");
+            Fact(panel, "expected-origin").Should().Be("UNKNOWN");
+            Fact(panel, "auth-redirect").Should().Be("UNKNOWN");
+            Fact(panel, "session-control").Should().Be("NOT OBSERVED");
+            Fact(panel, "control").Should().Be("Not run");
+            Fact(panel, "stability").Should().Be("Not run");
+            Fact(panel, "application").Should().Be("Not run");
+            Fact(panel, "authenticated-application").Should().StartWith("NOT ASSESSED");
+
+            Fact(panel, "exception").Should().Be("PlaywrightException (during target navigation)");
+            Provenance(panel, "exception").Should().Be("Observed");
+            Fact(panel, "browser-error").Should().Be("net::ERR_NAME_NOT_RESOLVED");
+            Provenance(panel, "browser-error").Should().Be("Observed");
+            Fact(panel, "failure-category").Should().Be("DNS");
+            Provenance(panel, "failure-category").Should().Be("Derived");
+            Fact(panel, "failure-interpretation").Should().Be("The browser could not resolve the target hostname.");
+            Provenance(panel, "failure-interpretation").Should().Be("Derived");
+            // §25 Authentication is said to be not reached — never shown as assessed, never a bare "UNKNOWN".
+            Fact(panel, "authentication-assessment").Should().Be("NOT REACHED — MFA, Conditional Access and session control not assessed");
+        }
+    }
+
+    // §38 The browser-error rows exist only when there is navigation-failure evidence.
+    [Fact]
+    public void NoNavigationFailure_NoBrowserErrorRows()
+    {
+        var card = Ran(AvailableThroughAuthRedirect());
+        var keys = new[] { "browser-error", "failure-category", "failure-interpretation", "authentication-assessment" };
+        foreach (var mode in new[] { "Headed", "Headless" })
+            keys.Should().NotContain(k => HasFact(ModePanel(card, mode), k));
+
+        foreach (var mode in RestrictedInBothModes().Modes)
+            BrowserAutomationTargetFacts.For(mode).Select(f => f.Key).Should().NotIntersectWith(keys);
+    }
+
+    // §33 / §9 No code: "Not available", Unknown — never invented, never filled from a message.
+    [Fact]
+    public void ANavigationFailureWithoutACode_SaysNotAvailable()
+    {
+        var card = Ran(NavigationFailedInBothModes(m => NavigationFailedMode(m, code: null, category: BrowserNavigationFailureCategory.Unknown,
+            label: "Unknown", interpretation: "Target navigation failed before browser control could be established. The browser did not expose a recognised network/navigation error code.")));
+
+        var panel = ModePanel(card, "Headless");
+        Fact(panel, "browser-error").Should().Be("Not available");
+        Provenance(panel, "browser-error").Should().Be("Unknown");
+        Fact(panel, "failure-category").Should().Be("Unknown");
+        card.Find("[data-testid=bad-prerequisite-explanation]").TextContent.Should().Contain("Observed browser error: not available (Unknown).");
+    }
+
+    // §24 / §37 The prerequisite stays blocked and names the first blocker safely.
+    [Fact]
+    public void AHeadlessNavigationFailure_BlocksTheAuthDiagnostic_AndNamesTheBrowserError()
+    {
+        var card = Ran(NavigationFailedInBothModes());
+
+        card.Find("[data-testid=bad-prerequisite-headline]").TextContent.Trim().Should().Be("Headless authentication diagnostic cannot run yet");
+        Normalise(card.Find("[data-testid=bad-prerequisite-explanation]").TextContent).Should().Be(
+            "Headless browser navigation failed before authentication could be observed. Observed browser error: "
+            + "net::ERR_NAME_NOT_RESOLVED (DNS). MFA, Conditional Access and session control were not assessed.");
+    }
+
+    // A close during navigation keeps the restriction wording; it is not relabelled as a navigation error.
+    [Fact]
+    public void ATargetCloseDuringNavigation_KeepsTheRestrictionExplanation()
+    {
+        var closed = RestrictedMode(BrowserAutomationDiagnosticMode.Headless) with
+        {
+            Target = RestrictedMode(BrowserAutomationDiagnosticMode.Headless).Target! with
+            {
+                NavigationFailure = new()
+                {
+                    ExceptionType = "TargetClosedException", Category = BrowserNavigationFailureCategory.TargetClosed,
+                    CategoryLabel = "Target closed", Interpretation = "The browser page or context closed while the target navigation was in progress.",
+                },
+            },
+        };
+        var report = RestrictedInBothModes() with { Modes = [RestrictedMode(BrowserAutomationDiagnosticMode.Headed), closed] };
+
+        BrowserAutomationDiagnosticPrerequisite.Explanation(report).Should().NotContain("navigation failed before authentication")
+            .And.Contain("did not keep control through the target navigation");
+        BrowserAutomationTargetFacts.For(closed).Single(f => f.Key == "failure-category").Value.Should().Be("Target closed");
+        BrowserAutomationTargetFacts.For(closed).Single(f => f.Key == "browser-error").Value.Should().Be("Not available");
+    }
+
+    // §16 / §39 The IT report carries the safe evidence, says authentication was not reached, and nothing raw.
+    [Fact]
+    public void TheCopiedReportCarriesTheNavigationFailureEvidence()
+    {
+        var text = BrowserAutomationDiagnosticReportText.Build(NavigationFailedInBothModes());
+
+        var headless = text[text.IndexOf("HEADLESS MODE", StringComparison.Ordinal)..];
+        headless.Should().Contain("Requested target: https://m2lbdev.example.test/ [Configured]")
+            .And.Contain("Initial navigation: FAIL [Observed]")
+            .And.Contain("Exception: PlaywrightException (during target navigation) [Observed]")
+            .And.Contain("Browser error: net::ERR_NAME_NOT_RESOLVED [Observed]")
+            .And.Contain("Failure category: DNS [Derived]")
+            .And.Contain("Interpretation: The browser could not resolve the target hostname. [Derived]")
+            .And.Contain("Final location: Not observed [Unknown]")
+            .And.Contain("Browser control after navigation: Not run")
+            .And.Contain("Authentication assessment: NOT REACHED — MFA, Conditional Access and session control not assessed [Derived]")
+            .And.Contain("Technical details: stage Initial navigation; exception type PlaywrightException; browser error net::ERR_NAME_NOT_RESOLVED; navigation timeout 25000 ms");
+        text.Should().Contain("HEADLESS AUTHENTICATION DIAGNOSTIC\n".Replace("\n", Environment.NewLine)
+            + "Headless browser navigation failed before authentication could be observed. Observed browser error: net::ERR_NAME_NOT_RESOLVED (DNS).");
+
+        text.Should().NotContainAny("page.goto", "Call log", "navigating to", "?code=", "state=", "access_token", "Cookie:", "   at ");
+    }
 }

@@ -21,7 +21,7 @@ public sealed class BrowserAutomationEvidenceStore(TimeProvider? clock = null)
 {
     public static readonly TimeSpan Validity = TimeSpan.FromMinutes(30);
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
-    private readonly ConcurrentDictionary<string, (bool Passed, string Id, DateTimeOffset Time, string Where)> _results = new();
+    private readonly ConcurrentDictionary<string, (bool Passed, string Id, DateTimeOffset Time, string Where, string? Blocker)> _results = new();
     private static string Key(string id, string url, string type) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{id}\n{url}\n{type}")));
     public void Record(BrowserAutomationDiagnosticReport report)
     {
@@ -31,13 +31,29 @@ public sealed class BrowserAutomationEvidenceStore(TimeProvider? clock = null)
         if (_results.Count > 1000) _results.Clear();
         var url = report.CorrelationTargetUrl is { Length: > 0 } exact ? exact : report.TargetUrl;
         _results[Key(report.TargetEnvironmentId, url, report.TargetEnvironmentType)] =
-            (report.HeadlessAutomationControlAfterTargetNavigation, report.DiagnosticId, now, Where(report));
+            (report.HeadlessAutomationControlAfterTargetNavigation, report.DiagnosticId, now, Where(report), FirstBlocker(report));
     }
-    public HeadlessPrerequisite Check(HeadlessDiagnosticRequest request) =>
-        _results.TryGetValue(Key(request.TargetEnvironmentId, request.TargetUrl, request.EnvironmentType), out var result)
-        && result.Passed && result.Time >= _clock.GetUtcNow() - Validity
-            ? new(true, $"Headless browser automation remained controllable through target navigation ({result.Where}), as demonstrated by the Browser Automation Diagnostic (valid for 30 minutes).", result.Id)
-            : new(false, "Headless browser automation cannot yet be confirmed to stay controllable through navigation to this target. Run Browser Automation Diagnostic successfully for this exact target first.");
+    public HeadlessPrerequisite Check(HeadlessDiagnosticRequest request)
+    {
+        var found = _results.TryGetValue(Key(request.TargetEnvironmentId, request.TargetUrl, request.EnvironmentType), out var result)
+                    && result.Time >= _clock.GetUtcNow() - Validity;
+        if (found && result.Passed)
+            return new(true, $"Headless browser automation remained controllable through target navigation ({result.Where}), as demonstrated by the Browser Automation Diagnostic (valid for 30 minutes).", result.Id);
+        const string notConfirmed = "Headless browser automation cannot yet be confirmed to stay controllable through navigation to this target. Run Browser Automation Diagnostic successfully for this exact target first.";
+        // The first blocker the last run for this exact target saw, when it is a safe, specific observation.
+        return found && result.Blocker is { } blocker ? new(false, $"{notConfirmed} {blocker}") : new(false, notConfirmed);
+    }
+
+    /// <summary>
+    /// The headless navigation failure, as the browser reported it: the safe error code and its derived category only.
+    /// A closed target is the restriction finding, reported as such, so it adds no navigation-failure sentence.
+    /// </summary>
+    private static string? FirstBlocker(BrowserAutomationDiagnosticReport report) =>
+        report.Headless?.Target?.NavigationFailure is { Category: not BrowserNavigationFailureCategory.TargetClosed } failure
+            ? "Headless browser navigation failed before authentication could be observed. Observed browser error: "
+              + (failure.BrowserErrorCode is { } code ? $"{code} ({failure.CategoryLabel})." : $"not available ({failure.CategoryLabel}).")
+              + " MFA, Conditional Access and session control were not assessed."
+            : null;
 
     private static string Where(BrowserAutomationDiagnosticReport report) => report.Headless?.Target?.FinalLocation switch
     {

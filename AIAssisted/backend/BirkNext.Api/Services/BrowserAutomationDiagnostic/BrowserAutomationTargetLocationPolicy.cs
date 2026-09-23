@@ -77,10 +77,18 @@ public static class BrowserAutomationTargetLocationPolicy
         candidate.Scheme == Uri.UriSchemeHttps &&
         SessionControlHostSuffixes.Any(s => candidate.IdnHost.EndsWith(s, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// The browser's own error document (<c>chrome-error://chromewebdata/</c>), which Edge commits in place of a page it
+    /// could not load. It is where the browser shows a failure, never somewhere the target sent it.
+    /// </summary>
+    public static bool IsBrowserErrorPage(string? url) =>
+        url is not null && url.StartsWith("chrome-error:", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>Classifies one observed URL. The target origin wins over everything: it is the answer the run is looking for.</summary>
     public static BrowserAutomationFinalLocation Classify(string? url, Uri target, string? configuredAuthority)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return BrowserAutomationFinalLocation.Unknown;
+        // A browser error page is not a location: it says nothing about where the target is or where it redirects.
+        if (IsBrowserErrorPage(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri)) return BrowserAutomationFinalLocation.Unknown;
         if (IsExpectedOrigin(uri, target)) return BrowserAutomationFinalLocation.TargetOrigin;
         if (IsAuthenticationAuthority(uri, configuredAuthority)) return BrowserAutomationFinalLocation.AuthenticationAuthority;
         if (IsSessionControlProxy(uri)) return BrowserAutomationFinalLocation.SessionControlProxy;

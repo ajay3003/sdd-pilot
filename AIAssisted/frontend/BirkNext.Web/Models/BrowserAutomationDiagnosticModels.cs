@@ -72,6 +72,29 @@ public sealed record BrowserAutomationNavigationStep(
 
 public sealed record BrowserAutomationLifecycleEvent(BrowserAutomationLifecycleEventKind Kind, long AtMs, BrowserAutomationFailurePhase Phase);
 
+/// <summary>Mirrors the backend category: what the browser observed, never an infrastructure cause.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum BrowserNavigationFailureCategory
+{
+    Unknown, Dns, TlsCertificate, ConnectionRefused, ConnectionTimeout, ConnectionReset, NetworkUnavailable,
+    Proxy, Tunnel, AddressUnreachable, Protocol, BrowserPolicyOrRestriction, TargetClosed, NavigationTimeout,
+}
+
+/// <summary>
+/// A failed target navigation, as the backend classified it: exception type and browser error code (observed), category
+/// and interpretation (derived). The exception message is never part of it.
+/// </summary>
+public sealed record BrowserNavigationFailureEvidence
+{
+    public BrowserAutomationDiagnosticStage ObservedAtStage { get; init; } = BrowserAutomationDiagnosticStage.TargetNavigation;
+    public string ExceptionType { get; init; } = "";
+    public string? BrowserErrorCode { get; init; }
+    public BrowserNavigationFailureCategory Category { get; init; }
+    public string CategoryLabel { get; init; } = "";
+    public string Interpretation { get; init; } = "";
+    public long NavigationTimeoutMs { get; init; }
+}
+
 /// <summary>What one mode observed at the target, as separate facts. Mirrors the backend record.</summary>
 public sealed record BrowserAutomationTargetEvidence
 {
@@ -98,6 +121,8 @@ public sealed record BrowserAutomationTargetEvidence
     public List<BrowserAutomationLifecycleEvent> LifecycleEvents { get; init; } = [];
     public string? ExceptionType { get; init; }
     public BrowserAutomationFailurePhase FailurePhase { get; init; }
+    /// <summary>Present only when the target navigation itself failed.</summary>
+    public BrowserNavigationFailureEvidence? NavigationFailure { get; init; }
 }
 
 /// <summary>One of three independent controls. Mirrors the backend record; never derived on the frontend.</summary>
@@ -357,6 +382,17 @@ public static class BrowserAutomationTargetFacts
         };
         if (target.ExceptionType is { Length: > 0 } exception)
             facts.Add(new("exception", "Exception", $"{exception} ({PhaseLabel(target.FailurePhase)})", "warning", "Observed"));
+        if (target.NavigationFailure is { } failure)
+        {
+            // Observed when the browser exposed a code, otherwise said to be unavailable — never filled from the message.
+            facts.Add(new("browser-error", "Browser error", failure.BrowserErrorCode ?? "Not available", "warning",
+                failure.BrowserErrorCode is null ? "Unknown" : "Observed"));
+            facts.Add(new("failure-category", "Failure category", failure.CategoryLabel, "warning", "Derived"));
+            facts.Add(new("failure-interpretation", "Interpretation", failure.Interpretation, "muted", "Derived"));
+            // The first question after a failed navigation: was sign-in looked at? No — it was never reached.
+            facts.Add(new("authentication-assessment", "Authentication assessment",
+                "NOT REACHED — MFA, Conditional Access and session control not assessed", "muted", "Derived"));
+        }
         return facts;
     }
 
@@ -426,6 +462,11 @@ public static class BrowserAutomationDiagnosticPrerequisite
             return $"Headless automation stayed in control, but the browser ended at {elsewhere.Target?.FinalHost ?? "an unrecognised location"}, "
                 + "which is neither the target origin nor a recognised authentication handoff. MFA, Conditional Access "
                 + "and session control cannot be assessed yet.";
+
+        if (report.Headless?.Target?.NavigationFailure is { Category: not BrowserNavigationFailureCategory.TargetClosed } failure)
+            return "Headless browser navigation failed before authentication could be observed. Observed browser error: "
+                + (failure.BrowserErrorCode is { } code ? $"{code} ({failure.CategoryLabel}). " : $"not available ({failure.CategoryLabel}). ")
+                + "MFA, Conditional Access and session control were not assessed.";
 
         // The headed-only case is the one that misleads: the reader has just watched automation drive the target,
         // so "cannot run" reads as a contradiction unless the sentence says which mode was asked about.
@@ -521,6 +562,10 @@ public static class BrowserAutomationDiagnosticReportText
             text.AppendLine("  At the target:");
             foreach (var fact in BrowserAutomationTargetFacts.For(mode))
                 text.AppendLine($"    {fact.Label}: {fact.Value} [{fact.Provenance}]");
+            if (target.NavigationFailure is { } failure)
+                text.AppendLine($"    Technical details: stage {BrowserAutomationDiagnosticStages.Label(failure.ObservedAtStage)}; "
+                    + $"exception type {failure.ExceptionType}; browser error {failure.BrowserErrorCode ?? "not available"}; "
+                    + $"navigation timeout {failure.NavigationTimeoutMs} ms");
             if (mode.Stage(BrowserAutomationDiagnosticStage.TargetApplication) is { Detail.Length: > 0 } application)
                 text.AppendLine($"    Target application evidence: {application.Detail}");
             if (target.NavigationTrace.Count > 0)

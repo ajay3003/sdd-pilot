@@ -254,7 +254,11 @@ public static class BrowserAutomationDiagnosticPolicy
     {
         var text = new System.Text.StringBuilder(Interpretation(result));
         var retained = new[] { headed, headless }.Where(m => m is { BrowserControlRetained: true }).Select(m => m!).ToList();
-        if (retained.Count == 0) return text.ToString();
+        if (retained.Count == 0)
+        {
+            if (NavigationFailureSentence(headed, headless) is { } failed) text.Append(' ').Append(failed);
+            return text.ToString();
+        }
 
         text.Append(' ');
         if (retained.All(m => m.Result == BrowserAutomationDiagnosticModeResult.AvailableAtAuthenticationBoundary))
@@ -286,6 +290,33 @@ public static class BrowserAutomationDiagnosticPolicy
 
         static string Modes(List<BrowserAutomationDiagnosticModeReport> modes) =>
             modes.Count == 2 ? "In both modes" : modes[0].Headless ? "In headless mode" : "In headed mode";
+    }
+
+    /// <summary>
+    /// What the browser reported when the target navigation itself failed, per mode — or once, when both modes saw the
+    /// same thing. The observation only: authentication was never reached, so nothing about it is said beyond that.
+    /// </summary>
+    private static string? NavigationFailureSentence(
+        BrowserAutomationDiagnosticModeReport? headed, BrowserAutomationDiagnosticModeReport? headless)
+    {
+        var failed = new[] { headed, headless }
+            // A target that closed the page is the restriction finding, already explained by the comparison itself.
+            .Where(m => m?.Target?.NavigationFailure is { Category: not BrowserNavigationFailureCategory.TargetClosed })
+            .Select(m => (Mode: m!.Headless ? "headless" : "headed", Failure: m.Target!.NavigationFailure!))
+            .ToList();
+        if (failed.Count == 0) return null;
+
+        static string Observed(BrowserNavigationFailureEvidence f) =>
+            f.BrowserErrorCode is { } code ? $"the browser reported {code} ({f.CategoryLabel})"
+            : $"{f.ExceptionType}, with no recognised browser error code ({f.CategoryLabel})";
+
+        var same = failed.Count == 2 && failed[0].Failure.BrowserErrorCode == failed[1].Failure.BrowserErrorCode
+                   && failed[0].Failure.Category == failed[1].Failure.Category;
+        var observed = same
+            ? $"In both modes, target navigation failed before browser control could be established: {Observed(failed[0].Failure)}."
+            : string.Join(' ', failed.Select(f =>
+                $"In {f.Mode} mode, target navigation failed before browser control could be established: {Observed(f.Failure)}."));
+        return observed + " Authentication was not reached, so MFA, Conditional Access and session control were not assessed.";
     }
 
     /// <summary>One mode's final location, in a sentence.</summary>

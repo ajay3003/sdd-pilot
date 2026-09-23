@@ -78,6 +78,8 @@ internal interface IHeadlessBrowser : IAsyncDisposable
     Task<HeadlessObservation> ObserveAsync(CancellationToken ct);
     List<NavigationSignal> DrainNavigation() => [];
 }
+/// <summary>The headless target navigation timeout, shared with the failure evidence that reports it.</summary>
+internal static class HeadlessBrowserNavigation { public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20); }
 internal interface IHeadlessBrowserFactory { IHeadlessBrowser Create(HeadlessDiagnosticRequest request); }
 internal sealed class PlaywrightHeadlessBrowserFactory(Microsoft.Extensions.Options.IOptions<HeadlessDiagnosticOptions> options) : IHeadlessBrowserFactory
 {
@@ -178,7 +180,7 @@ internal sealed class PlaywrightHeadlessBrowser(HeadlessDiagnosticRequest reques
     }
     public async Task NavigateAsync(CancellationToken ct)
     {
-        await _page!.GotoAsync(request.TargetUrl, new() { WaitUntil = WaitUntilState.Commit, Timeout = 20000 }).WaitAsync(ct);
+        await _page!.GotoAsync(request.TargetUrl, new() { WaitUntil = WaitUntilState.Commit, Timeout = (float)HeadlessBrowserNavigation.Timeout.TotalMilliseconds }).WaitAsync(ct);
     }
     public async Task<HeadlessObservation> ObserveAsync(CancellationToken ct)
     {

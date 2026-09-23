@@ -25,6 +25,17 @@ internal sealed class HeadlessEvidenceRun(HeadlessDiagnosticReport report, ILogg
     {
         report.Stages[(int)stage] = new(stage, state, detail, duration ?? _observationDurationMs, exception, DateTimeOffset.UtcNow);
     }
+    /// <summary>
+    /// The target navigation failed before anything about authentication could be seen: these were not reached, and
+    /// they say so rather than "Unknown", which would read as if they had been looked at.
+    /// </summary>
+    public void NotAssessedAfterNavigationFailure()
+    {
+        if (Terminal) return;
+        const string notAssessed = "Not assessed — target navigation failed first";
+        report.InteractiveAuthentication = report.NonInteractiveAuthentication = notAssessed;
+        report.Mfa = report.ConditionalAccess = report.SessionControl = notAssessed;
+    }
     public void Block(HeadlessBlocker blocker, HeadlessStage stage, string reason, bool uncertain = false)
     {
         if (Terminal) return;
@@ -175,6 +186,7 @@ internal sealed class HeadlessEvidenceRun(HeadlessDiagnosticReport report, ILogg
     {
         static HeadlessEvidenceProvenance Of(string value, params string[] observedPrefixes) =>
             value.StartsWith("Unknown", StringComparison.OrdinalIgnoreCase) || value.StartsWith("Not tested", StringComparison.OrdinalIgnoreCase)
+                || value.StartsWith("Not assessed", StringComparison.OrdinalIgnoreCase)
                 ? HeadlessEvidenceProvenance.Unknown
                 : observedPrefixes.Any(p => value.StartsWith(p, StringComparison.OrdinalIgnoreCase))
                     ? HeadlessEvidenceProvenance.Observed : HeadlessEvidenceProvenance.Derived;
@@ -319,9 +331,20 @@ internal sealed class HeadlessDiagnosticService(IHeadlessBrowserFactory factory,
                 run.Observe(new() { Navigations = browser.DrainNavigation() });
             if (kind == BrowserAutomationFailureKind.Timeout)
                 run.Block(HeadlessBlocker.Unknown, current, $"Timeout at {current}; no policy or authentication cause can be concluded.", true);
+            else if (current == HeadlessStage.TargetNavigation && kind != BrowserAutomationFailureKind.TargetClosed)
+            {
+                // Same classifier as the Browser Automation Diagnostic: the safe browser code and category, never the message.
+                var failure = BrowserNavigationFailureClassifier.Describe(ex, BrowserAutomationDiagnosticStage.TargetNavigation, HeadlessBrowserNavigation.Timeout);
+                logger.LogWarning("HeadlessTargetNavigationFailed {DiagnosticId} {Stage} {ExceptionType} {BrowserErrorCode} {FailureCategory}",
+                    report.DiagnosticId, current, failure.ExceptionType, failure.BrowserErrorCode ?? "none", failure.Category);
+                run.NotAssessedAfterNavigationFailure();
+                run.Block(HeadlessBlocker.TargetNavigationBlocked, current,
+                    "Headless browser navigation failed before authentication could be observed. Observed browser error: "
+                    + (failure.BrowserErrorCode is { } code ? $"{code} ({failure.CategoryLabel}). " : $"not available ({failure.CategoryLabel}). ")
+                    + failure.Interpretation + " MFA, Conditional Access and session control were not assessed.");
+            }
             else if (current <= HeadlessStage.TargetNavigation)
-                run.Block(current == HeadlessStage.TargetNavigation && kind != BrowserAutomationFailureKind.TargetClosed ? HeadlessBlocker.TargetNavigationBlocked : HeadlessBlocker.BrowserAutomationBlocked,
-                    current, "Browser launch, navigation or control stopped before authentication could be assessed.");
+                run.Block(HeadlessBlocker.BrowserAutomationBlocked, current, "Browser launch, navigation or control stopped before authentication could be assessed.");
             else if (kind == BrowserAutomationFailureKind.TargetClosed) run.ControlLost();
             else run.Block(HeadlessBlocker.Unknown, current, "An unexpected browser operation stopped observation. Only the exception type is retained.", true);
             var stage = report.Stage(current);

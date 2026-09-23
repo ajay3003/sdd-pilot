@@ -47,6 +47,8 @@ public sealed class BrowserAutomationDiagnosticRunTests
         public Func<BrowserAutomationDiagnosticMode, int, DiagnosticSettleOutcome>? SettleOutcome;
         public bool? MarkerFound;
         public bool PersistentContext = true;
+        /// <summary>Real Edge: a failed navigation may commit chrome-error://chromewebdata/ before GotoAsync throws.</summary>
+        public bool FailedNavigationCommitsErrorPage;
 
         private readonly List<DiagnosticNavigationObservation> _trace = [];
         private readonly List<DiagnosticLifecycleObservation> _events = [];
@@ -78,7 +80,15 @@ public sealed class BrowserAutomationDiagnosticRunTests
         {
             ct.ThrowIfCancellationRequested();
             Navigations.Add(url);
-            if (OnNavigate is not null) await OnNavigate(Mode, url);
+            if (OnNavigate is not null)
+            {
+                try { await OnNavigate(Mode, url); }
+                catch when (FailedNavigationCommitsErrorPage)
+                {
+                    _trace.Add(new(_clock += 10, "chrome-error://chromewebdata/"));
+                    throw;
+                }
+            }
             _url = url.AbsoluteUri;
             _trace.Add(new(_clock += 10, _url));
             if (RedirectTo?.Invoke(Mode, url) is { } final)
@@ -202,11 +212,13 @@ public sealed class BrowserAutomationDiagnosticRunTests
     private static IBrowserAutomationDiagnosticService Service(
         FakeFactory factory, bool isLocalWorkstation = true, bool edgeFound = true,
         Func<BrowserAutomationDiagnosticRequest, BrowserAutomationDiagnosticMode, string>? profile = null, string? marker = null,
-        IEdgePolicyReader? policies = null)
+        IEdgePolicyReader? policies = null, List<string>? logLines = null)
     {
         var type = typeof(BrowserAutomationDiagnosticPolicy).Assembly
             .GetType("BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService")!;
-        var logger = typeof(NullLogger<>).MakeGenericType(type).GetField("Instance", BindingFlags.Public | BindingFlags.Static)!.GetValue(null);
+        var logger = logLines is not null
+            ? Activator.CreateInstance(typeof(CapturingLogger<>).MakeGenericType(type), logLines)
+            : typeof(NullLogger<>).MakeGenericType(type).GetField("Instance", BindingFlags.Public | BindingFlags.Static)!.GetValue(null);
         return (IBrowserAutomationDiagnosticService)Activator.CreateInstance(type,
             factory,
             new FakeEdgeLocator(edgeFound ? new EdgeInstallation(@"C:\Program Files\Edge\msedge.exe", "153.0.0.0") : null),
@@ -1222,4 +1234,194 @@ public sealed class BrowserAutomationDiagnosticRunTests
     [InlineData(-1, EdgeDeveloperToolsPolicyStatus.Unknown)]
     public void DeveloperToolsAvailabilityValuesMapOnlyToTheDocumentedMeanings(int value, EdgeDeveloperToolsPolicyStatus expected) =>
         BrowserAutomationTargetLocationPolicy.DeveloperToolsPolicy(value).Should().Be(expected);
+
+    // ── Target navigation failure evidence ────────────────────────────────────────────────────────────────────────
+
+    /// <summary>Records each log line, rendered, and every structured value — so a test can prove what never reaches a log.</summary>
+    private sealed class CapturingLogger<T>(List<string> lines) : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var values = state is IEnumerable<KeyValuePair<string, object?>> pairs ? string.Join(" | ", pairs.Select(p => $"{p.Key}={p.Value}")) : "";
+            lock (lines) lines.Add($"{formatter(state, exception)} || {values} || {exception?.Message}");
+        }
+    }
+
+    /// <summary>The shape Playwright produces against Edge: the code, then the full URL (query included), then a call log.</summary>
+    private const string SensitiveTarget = "https://m2lbdev.example.test/callback?code=0.AAAA-secret-code&state=s3cr3t-state&token=eyJhbGciOi";
+    private static PlaywrightException NavigationError(string code) =>
+        new($"page.goto: {code} at {SensitiveTarget}\nCall log:\n  - navigating to \"{SensitiveTarget}\", waiting until \"commit\"\n");
+
+    private static Func<BrowserAutomationDiagnosticMode, Uri, Task> TargetThrows(Func<BrowserAutomationDiagnosticMode, Exception?> error) =>
+        (mode, url) => url.Host == TargetHost && error(mode) is { } ex ? throw ex : Task.CompletedTask;
+
+    // §2 / §27 / §40 The QA run's shape, both modes: the code is now surfaced, and every later-stage fact is unchanged.
+    [Fact]
+    public async Task ADnsFailureAtTheTarget_SurfacesTheBrowserCode_AndKeepsEveryOtherSemantic()
+    {
+        var factory = new FakeFactory { Configure = b => b.OnNavigate = TargetThrows(_ => NavigationError("net::ERR_NAME_NOT_RESOLVED")) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.Failed);
+            mode.ObservedExceptionType.Should().Be("PlaywrightException");
+            State(mode, BrowserAutomationDiagnosticStage.ControlPage).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Failed);
+            State(mode, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
+            State(mode, BrowserAutomationDiagnosticStage.TargetStability).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
+            State(mode, BrowserAutomationDiagnosticStage.TargetApplication).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
+            State(mode, BrowserAutomationDiagnosticStage.Cleanup).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+
+            var target = mode.Target!;
+            target.FinalUrl.Should().BeNull();
+            target.FinalHost.Should().BeNull();
+            target.ExpectedOriginReached.Should().Be(BrowserAutomationEvidenceAnswer.Unknown);
+            target.AuthenticationRedirect.Should().Be(BrowserAutomationEvidenceAnswer.Unknown);
+            target.SessionControlHost.Should().BeNull();
+            target.TargetApplicationIdentified.Should().Be(BrowserAutomationEvidenceAnswer.Unknown);
+            target.ExceptionType.Should().Be("PlaywrightException");
+            target.FailurePhase.Should().Be(BrowserAutomationFailurePhase.DuringTargetNavigation);
+
+            var failure = target.NavigationFailure!;
+            failure.ExceptionType.Should().Be("PlaywrightException");
+            failure.BrowserErrorCode.Should().Be("net::ERR_NAME_NOT_RESOLVED");
+            failure.Category.Should().Be(BrowserNavigationFailureCategory.Dns);
+            failure.Interpretation.Should().Be("The browser could not resolve the target hostname.");
+            failure.ObservedAtStage.Should().Be(BrowserAutomationDiagnosticStage.TargetNavigation);
+        }
+
+        // Same comparison as before; the interpretation now says what the browser saw, once, for both modes.
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.MixedOrInconclusive);
+        report.ResultLabel.Should().Be("Inconclusive");
+        report.Interpretation.Should().Contain("In both modes, target navigation failed before browser control could be established: "
+            + "the browser reported net::ERR_NAME_NOT_RESOLVED (DNS).")
+            .And.Contain("MFA, Conditional Access and session control were not assessed");
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeFalse();
+    }
+
+    // §34 / §4 / §17 Nothing from the message but the code reaches the report or the log.
+    [Fact]
+    public async Task ASensitiveNavigationMessage_ReachesNeitherTheReportNorTheLog()
+    {
+        var logs = new List<string>();
+        var factory = new FakeFactory { Configure = b => b.OnNavigate = TargetThrows(_ => NavigationError("net::ERR_NAME_NOT_RESOLVED")) };
+
+        var report = await Service(factory, logLines: logs).RunAsync(Request());
+
+        var json = System.Text.Json.JsonSerializer.Serialize(report);
+        json.Should().Contain("net::ERR_NAME_NOT_RESOLVED");
+        foreach (var leak in new[] { "secret-code", "s3cr3t-state", "eyJhbGciOi", "callback", "Call log", "navigating to", "page.goto" })
+        {
+            json.Should().NotContain(leak);
+            logs.Should().NotContain(l => l.Contains(leak, StringComparison.Ordinal));
+        }
+
+        logs.Should().Contain(l => l.StartsWith("HeadlessTargetNavigationFailed") && l.Contains("BrowserErrorCode=net::ERR_NAME_NOT_RESOLVED")
+            && l.Contains("FailureCategory=Dns") && l.Contains("ExceptionType=PlaywrightException") && l.Contains("TargetEnvironmentId=dev"));
+        logs.Should().Contain(l => l.StartsWith("HeadedTargetNavigationFailed"));
+    }
+
+    // §30 A Playwright navigation timeout is not a browser connection timeout.
+    [Fact]
+    public async Task APlaywrightTimeoutAtTheTarget_IsANavigationTimeout_NotAConnectionTimeout()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b => b.OnNavigate = TargetThrows(_ => new System.TimeoutException("Timeout 25000ms exceeded.")),
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Failed);
+            mode.Target!.NavigationFailure!.Category.Should().Be(BrowserNavigationFailureCategory.NavigationTimeout);
+            mode.Target.NavigationFailure.BrowserErrorCode.Should().BeNull();
+        }
+    }
+
+    // §32 / §8 A close during the navigation stays the restriction finding — no network category, no fabricated code.
+    [Fact]
+    public async Task ATargetCloseDuringNavigation_StaysTargetRestricted_WithTargetClosedEvidence()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b => b.OnNavigate = ClosesTargetIn(BrowserAutomationDiagnosticMode.Headed, BrowserAutomationDiagnosticMode.Headless),
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
+        foreach (var mode in report.Modes)
+        {
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.TargetRestricted);
+            var failure = mode.Target!.NavigationFailure!;
+            failure.Category.Should().Be(BrowserNavigationFailureCategory.TargetClosed);
+            failure.ExceptionType.Should().Be("TargetClosedException");
+            failure.BrowserErrorCode.Should().BeNull();
+        }
+        report.Interpretation.Should().NotContain("target navigation failed before browser control");
+    }
+
+    // §12 Headed and headless are classified by the same classifier, independently.
+    [Fact]
+    public async Task EachModeReportsItsOwnBrowserError()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b => b.OnNavigate = TargetThrows(mode => NavigationError(mode == BrowserAutomationDiagnosticMode.Headed
+                ? "net::ERR_CERT_AUTHORITY_INVALID" : "net::ERR_PROXY_CONNECTION_FAILED")),
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Headed!.Target!.NavigationFailure!.Category.Should().Be(BrowserNavigationFailureCategory.TlsCertificate);
+        report.Headless!.Target!.NavigationFailure!.Category.Should().Be(BrowserNavigationFailureCategory.Proxy);
+        report.Interpretation.Should().Contain("In headed mode, target navigation failed").And.Contain("net::ERR_CERT_AUTHORITY_INVALID (TLS / certificate)")
+            .And.Contain("In headless mode, target navigation failed").And.Contain("net::ERR_PROXY_CONNECTION_FAILED (Proxy)");
+    }
+
+    // The live QA run: headed Edge committed its error page before the navigation threw. That page must not become
+    // the "final location", or a failed navigation reads as "reached another origin, no auth redirect".
+    [Fact]
+    public async Task TheBrowsersErrorPageAfterAFailedNavigation_IsNotAFinalLocation()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b =>
+            {
+                b.FailedNavigationCommitsErrorPage = true;
+                b.OnNavigate = TargetThrows(_ => NavigationError("net::ERR_NAME_NOT_RESOLVED"));
+            },
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            var target = mode.Target!;
+            target.FinalUrl.Should().BeNull();
+            target.FinalHost.Should().BeNull();
+            target.FinalScheme.Should().BeNull();
+            target.FinalLocation.Should().Be(BrowserAutomationFinalLocation.Unknown);
+            target.ExpectedOriginReached.Should().Be(BrowserAutomationEvidenceAnswer.Unknown);
+            target.AuthenticationRedirect.Should().Be(BrowserAutomationEvidenceAnswer.Unknown);
+            target.NavigationTrace.Should().ContainSingle().Which.Should().Match<BrowserAutomationNavigationStep>(s =>
+                s.Url == "[non-web URL]" && s.Location == BrowserAutomationFinalLocation.Unknown);
+            target.NavigationFailure!.BrowserErrorCode.Should().Be("net::ERR_NAME_NOT_RESOLVED");
+        }
+    }
+
+    // A navigation that succeeds carries no failure evidence at all.
+    [Fact]
+    public async Task ASuccessfulNavigation_HasNoNavigationFailure()
+    {
+        var report = await Service(new FakeFactory()).RunAsync(Request());
+        report.Modes.Should().OnlyContain(m => m.Target != null && m.Target.NavigationFailure == null);
+    }
 }

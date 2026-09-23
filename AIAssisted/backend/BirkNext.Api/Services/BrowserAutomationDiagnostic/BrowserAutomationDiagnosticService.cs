@@ -261,7 +261,16 @@ internal sealed class BrowserAutomationDiagnosticService(
         catch (Exception ex)
         {
             var type = BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex);
-            modeRun.Target = target.Build(browser, BrowserAutomationFailurePhase.DuringTargetNavigation, type);
+            // The message is read once, here, by the classifier — and only its anchored browser error code leaves.
+            var failure = BrowserNavigationFailureClassifier.Describe(ex, BrowserAutomationDiagnosticStage.TargetNavigation,
+                BrowserAutomationDiagnosticPolicy.TargetNavigationTimeout);
+            modeRun.Target = target.Build(browser, BrowserAutomationFailurePhase.DuringTargetNavigation, type) with
+            {
+                NavigationFailure = failure,
+            };
+            logger.LogWarning("{Mode}TargetNavigationFailed {DiagnosticId} {TargetEnvironmentId} {Stage} {ExceptionType} {BrowserErrorCode} {FailureCategory}",
+                mode, run.DiagnosticId, run.Request.TargetEnvironmentId, failure.ObservedAtStage, failure.ExceptionType,
+                failure.BrowserErrorCode ?? "none", failure.Category);
             switch (BrowserAutomationDiagnosticExceptionClassifier.Classify(ex))
             {
                 case BrowserAutomationFailureKind.TargetClosed:
@@ -399,7 +408,10 @@ internal sealed class BrowserAutomationDiagnosticService(
             // could be read, the last navigation the browser reported is the best available answer — and it is
             // labelled as such by FinalLocation being taken from the trace, never from the requested URL.
             // The final location is always the diagnostic's OWN page; a popup is reported in the trace, not as "final".
-            var finalRaw = _last?.Url ?? raw.LastOrDefault(n => !n.SecondaryPage)?.Url;
+            // The browser's own error page is not a final location either: after a failed navigation Edge may commit
+            // it before the navigation call throws, and reading it as "final" would report an origin nobody reached.
+            var finalRaw = _last?.Url ?? raw.LastOrDefault(n => !n.SecondaryPage
+                && !BrowserAutomationTargetLocationPolicy.IsBrowserErrorPage(n.Url))?.Url;
             Uri.TryCreate(finalRaw, UriKind.Absolute, out var final);
             var location = Classify(finalRaw);
             var observed = location != BrowserAutomationFinalLocation.Unknown;

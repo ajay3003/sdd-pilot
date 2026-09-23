@@ -185,6 +185,13 @@ public sealed record BrowserAutomationTargetEvidence
     /// <summary>The exception TYPE at the target, if any, and when it happened relative to the navigation.</summary>
     public string? ExceptionType { get; init; }
     public BrowserAutomationFailurePhase FailurePhase { get; init; } = BrowserAutomationFailurePhase.None;
+
+    /// <summary>
+    /// When the target navigation itself failed: the exception type, the browser error code (if the browser exposed
+    /// one), and the category and interpretation derived from them. Null when the navigation was accepted. Never the
+    /// exception message.
+    /// </summary>
+    public BrowserNavigationFailureEvidence? NavigationFailure { get; init; }
 }
 
 /// <summary>

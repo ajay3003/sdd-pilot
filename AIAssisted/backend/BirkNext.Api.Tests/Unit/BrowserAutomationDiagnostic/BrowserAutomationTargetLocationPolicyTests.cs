@@ -92,4 +92,15 @@ public sealed class BrowserAutomationTargetLocationPolicyTests
         (timing.SettleBound * 2 + timing.StabilityWindow).Should().BeLessThan(TimeSpan.FromMinutes(1),
             "the whole target observation per mode is bounded well under a minute");
     }
+
+    // Edge commits its own error document when a navigation fails. It is not a location the target sent the browser to.
+    [Theory]
+    [InlineData("chrome-error://chromewebdata/")]
+    [InlineData("CHROME-ERROR://chromewebdata/")]
+    public void TheBrowsersOwnErrorPage_IsNotALocation(string url)
+    {
+        BrowserAutomationTargetLocationPolicy.IsBrowserErrorPage(url).Should().BeTrue();
+        BrowserAutomationTargetLocationPolicy.Classify(url, Target, null).Should().Be(BrowserAutomationFinalLocation.Unknown);
+        BrowserAutomationTargetLocationPolicy.Sanitize(url).Should().Be("[non-web URL]");
+    }
 }

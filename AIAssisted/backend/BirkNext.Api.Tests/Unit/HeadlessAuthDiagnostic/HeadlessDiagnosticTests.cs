@@ -143,6 +143,30 @@ public sealed class HeadlessDiagnosticTests
     }
     [Fact] public async Task NavigationErrorClassifiedSeparately()
     { var b = new Browser { NavigationError = new PlaywrightException("net::ERR_CONNECTION_REFUSED") }; Assert.Equal(HeadlessBlocker.TargetNavigationBlocked, (await Service(b).RunAsync(Request)).PrimaryBlocker); }
+    // A navigation failure names the browser's safe error code as the first blocker, and nothing about authentication
+    // is presented as if it had been looked at.
+    [Fact] public async Task NavigationFailureNamesTheBrowserErrorAndAssessesNoAuthentication()
+    {
+        var b = new Browser { NavigationError = new PlaywrightException("page.goto: net::ERR_NAME_NOT_RESOLVED at https://app.qa.example/?code=leak-me&state=s3cr3t\nCall log:\n  - navigating to \"https://app.qa.example/?code=leak-me\"") };
+        var r = await Service(b).RunAsync(Request);
+        Assert.Equal(HeadlessBlocker.TargetNavigationBlocked, r.PrimaryBlocker);
+        Assert.Contains("Headless browser navigation failed before authentication could be observed", r.Interpretation);
+        Assert.Contains("Observed browser error: net::ERR_NAME_NOT_RESOLVED (DNS)", r.Interpretation);
+        Assert.Contains("MFA, Conditional Access and session control were not assessed", r.Interpretation);
+        Assert.Equal(HeadlessStageState.NotRun, r.Stage(HeadlessStage.AuthenticationDetection).State);
+        foreach (var value in new[] { r.Mfa, r.ConditionalAccess, r.SessionControl, r.InteractiveAuthentication, r.NonInteractiveAuthentication })
+            Assert.StartsWith("Not assessed", value);
+        var json = System.Text.Json.JsonSerializer.Serialize(r);
+        Assert.DoesNotContain("leak-me", json); Assert.DoesNotContain("s3cr3t", json); Assert.DoesNotContain("Call log", json);
+        Assert.All(r.Evidence.Where(e => e.Name is "MFA" or "Conditional Access" or "MCAS / session control"), e => Assert.Equal(HeadlessEvidenceProvenance.Unknown, e.Provenance));
+    }
+    [Fact] public async Task NavigationFailureWithoutACodeSaysSo()
+    {
+        var r = await Service(new Browser { NavigationError = new PlaywrightException("Navigation failed because page crashed!") }).RunAsync(Request);
+        Assert.Equal(HeadlessBlocker.TargetNavigationBlocked, r.PrimaryBlocker);
+        Assert.Contains("Observed browser error: not available (Unknown)", r.Interpretation);
+        Assert.DoesNotContain("crashed", r.Interpretation);
+    }
     [Fact] public async Task TimeoutIsUnknown()
     { var b = new Browser { NavigationError = new TimeoutException() }; var r = await Service(b).RunAsync(Request); Assert.Equal(HeadlessReadiness.Unknown, r.Readiness); Assert.Equal(HeadlessBlocker.Unknown, r.PrimaryBlocker); }
     [Fact] public async Task CancellationIsNotFailureAndCleanupRuns()
