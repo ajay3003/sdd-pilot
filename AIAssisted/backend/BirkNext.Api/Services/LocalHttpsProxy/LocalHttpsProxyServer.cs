@@ -96,6 +96,8 @@ internal interface IProxyTrafficObserver
     void OnInterceptedConnection(string host);
     void OnTlsHandshakeFailed(string host);
     void OnExchange(ProxyExchange exchange);
+    /// <summary>A loopback client connected. Used only to attribute the connection to the owned dedicated browser.</summary>
+    void OnClientConnected(IPEndPoint client, int proxyPort) { }
 }
 
 /// <summary>
@@ -177,6 +179,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             using var owned = client;
             client.NoDelay = true;
             if (client.Client.RemoteEndPoint is IPEndPoint peer && !IPAddress.IsLoopback(peer.Address)) return;
+            if (client.Client.RemoteEndPoint is IPEndPoint loopbackPeer && Endpoint is { } local) observer.OnClientConnected(loopbackPeer, local.Port);
             var stream = client.GetStream();
             using var reader = new BufferedNetworkReader(stream);
             var raw = await reader.ReadHeadAsync(65536, ct);

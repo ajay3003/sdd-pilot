@@ -254,6 +254,8 @@ builder.Services.AddSingleton<ITransientAuthenticatedApiContextStore>(sp => sp.G
 builder.Services.AddSingleton<IUpstreamConnector>(sp => new DirectUpstreamConnector(sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<LocalHttpsProxyOptions>>().Value.UpstreamProxy));
 builder.Services.AddSingleton<LocalHttpsProxyService>();
 builder.Services.AddSingleton<IProxyEdgeLauncher, ProxyEdgeLauncher>();
+// Runtime evidence about the one Edge process the proxy launched: its own arguments and the owner of each proxy connection.
+builder.Services.AddSingleton<IOwnedEdgeProcessInspector, WindowsOwnedEdgeProcessInspector>();
 builder.Services.AddSingleton<ILocalHttpsProxyService>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<ILocalHttpsProxySessionAccess>(sp => sp.GetRequiredService<LocalHttpsProxyService>());
 builder.Services.AddSingleton<ILocalHttpsProxyStatusQuery>(sp => sp.GetRequiredService<LocalHttpsProxyService>());

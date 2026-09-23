@@ -44,6 +44,8 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
         RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, Port = 8888, ProxyListening = true,
         ExpectedProxyPort = 8888, EdgeProxyPort = 8888, ProxyArgumentConfigured = true, EdgeProcessId = 14520,
         EdgeVerification = DedicatedBrowserVerification.Confirmed, EdgeRunning = true,
+        EdgeProxyArgument = DedicatedBrowserProxyArgument.Verified, ObservedEdgeProxyEndpoint = "127.0.0.1:8888", EdgeProfileVerified = true,
+        EdgeProxyTraffic = DedicatedBrowserProxyTraffic.NotObserved,
         EdgeProfileDirectory = @"C:\Users\x\AppData\Local\BirkNext\LocalHttpsProxyEdgeProfile",
         LocalIntegrationAvailable = true, EnvironmentAllowed = true, PortAvailable = true, CanStart = true,
         ApprovedHosts = ["m2lbdev.example.com:443"], TargetOrigin = "https://m2lbdev.example.com",
@@ -286,7 +288,7 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
 
         Row(cut, "auth-status-certificate").Should().Be("Trusted");
         Row(cut, "auth-status-proxy").Should().Be("Running");
-        Row(cut, "auth-status-browser").Should().Be("Proxy active");
+        Row(cut, "auth-status-browser").Should().Be("Ready to capture");
         Row(cut, "auth-readiness-state").Should().Be("Ready");
 
         // A certificate nobody could look at is Unknown, which is neither Trusted nor Missing.
@@ -298,23 +300,28 @@ public sealed class AuthenticationPaneSemanticsTests : BunitContext
     }
 
     /// <summary>
-    /// "Proxy active" is a claim about a process BirkNext launched with a recorded --proxy-server argument for the port
-    /// it is listening on now. A running browser on its own never earns it.
+    /// "Proxy in use" is a claim about traffic from the process BirkNext launched; a configuration verified on that
+    /// running process is "Ready to capture"; BirkNext's launch record alone is only "Launched with proxy configuration".
+    /// A running browser on its own earns none of them, and nothing ever says "Proxy active".
     /// </summary>
     [Fact]
-    public void EdgeProxyActiveIsOnlyClaimedForAConfirmedLaunchOnTheCurrentPort()
+    public void EachProxyClaimNeedsItsOwnEvidence()
     {
         Runtime(Prepared);
-        Row(Open(Configured), "auth-status-browser").Should().Be("Proxy active");
+        Row(Open(Configured), "auth-status-browser").Should().Be("Ready to capture");
 
         static string Browser(LocalHttpsProxyStatus status) => AuthenticationReadinessPresentation
             .Summarize(AuthConfigurationState.Configured, AuthenticatedTestingMethod.LocalHttpsProxy, status,
                 status.Certificate, loaded: true)
             .Prerequisites.Single(p => p.Id == "browser").StatusLabel;
 
-        Browser(Prepared with { EdgeVerification = DedicatedBrowserVerification.Mismatch, EdgeProxyPort = 9999 })
-            .Should().Be("Proxy not active");
-        Browser(Prepared with { EdgeVerification = DedicatedBrowserVerification.NotConfirmed, EdgeProxyPort = null })
+        Browser(Prepared with { EdgeProxyTraffic = DedicatedBrowserProxyTraffic.Observed })
+            .Should().Be("Proxy in use");
+        Browser(Prepared with { EdgeVerification = DedicatedBrowserVerification.Mismatch, EdgeProxyArgument = DedicatedBrowserProxyArgument.Mismatch, ObservedEdgeProxyEndpoint = "127.0.0.1:9999" })
+            .Should().Be("Proxy configuration mismatch");
+        Browser(Prepared with { EdgeVerification = DedicatedBrowserVerification.NotConfirmed, EdgeProxyArgument = DedicatedBrowserProxyArgument.Unknown, EdgeProxyTraffic = DedicatedBrowserProxyTraffic.Unknown })
+            .Should().Be("Launched with proxy configuration");
+        Browser(Prepared with { EdgeVerification = DedicatedBrowserVerification.NotConfirmed, EdgeProxyPort = null, ProxyArgumentConfigured = false })
             .Should().Be("Proxy not confirmed");
         Browser(Prepared with { EdgeVerification = DedicatedBrowserVerification.NotRunning, EdgeRunning = false })
             .Should().Be("Not running");

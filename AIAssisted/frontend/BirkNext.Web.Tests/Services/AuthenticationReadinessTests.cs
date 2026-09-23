@@ -20,8 +20,18 @@ public sealed class AuthenticationReadinessTests
         LocalHttpsProxyState state = LocalHttpsProxyState.Ready,
         LocalHttpsProxyRuntimePhase phase = LocalHttpsProxyRuntimePhase.Running,
         DedicatedBrowserVerification edge = DedicatedBrowserVerification.Confirmed,
-        int port = 12345, int? edgePort = 12345) => new()
+        int port = 12345, int? edgePort = 12345,
+        DedicatedBrowserProxyTraffic traffic = DedicatedBrowserProxyTraffic.NotObserved, string? observedEndpoint = null) => new()
         {
+            EdgeProxyTraffic = traffic,
+            ObservedEdgeProxyEndpoint = observedEndpoint ?? (edge == DedicatedBrowserVerification.Confirmed ? $"127.0.0.1:{port}" : null),
+            EdgeProxyArgument = edge switch
+            {
+                DedicatedBrowserVerification.Confirmed => DedicatedBrowserProxyArgument.Verified,
+                DedicatedBrowserVerification.Mismatch => DedicatedBrowserProxyArgument.Mismatch,
+                DedicatedBrowserVerification.Missing => DedicatedBrowserProxyArgument.Missing,
+                _ => DedicatedBrowserProxyArgument.Unknown,
+            },
             State = state, RuntimeStatus = phase, Port = port, ProxyListening = true,
             ExpectedProxyPort = port, EdgeProxyPort = edgePort, ProxyArgumentConfigured = edgePort is not null,
             EdgeVerification = edge, EdgeRunning = edge is not DedicatedBrowserVerification.NotRunning,
@@ -48,7 +58,86 @@ public sealed class AuthenticationReadinessTests
         summary.Label.Should().Be("Ready");
         summary.Attention.Should().Be(0);
         summary.CanVerify.Should().BeTrue();
-        Item(summary, "browser").StatusLabel.Should().Be("Proxy active");
+        // A verified configuration with no traffic yet is ready to capture — not "in use", and never "active".
+        Item(summary, "browser").StatusLabel.Should().Be("Ready to capture");
+        summary.Detail.Should().Contain("Ready to capture; no traffic from the dedicated browser has been observed yet");
+    }
+
+    // ── What each proxy status is allowed to claim ────────────────────────────────────────────
+
+    [Fact]
+    public void ProxyInUseRequiresTrafficFromTheDedicatedBrowser()
+    {
+        var summary = Summarize(Proxy(traffic: DedicatedBrowserProxyTraffic.Observed));
+        var browser = Item(summary, "browser");
+        browser.StatusLabel.Should().Be("Proxy in use");
+        browser.Facts.Should().Contain(("Proxy configuration", "Verified")).And.Contain(("Proxy traffic", "Observed"));
+        summary.State.Should().Be(AuthenticationReadiness.Ready);
+        summary.Detail.Should().NotContain("Ready to capture");
+    }
+
+    [Fact]
+    public void AVerifiedConfigurationIsNotTrafficAndSaysSo()
+    {
+        var browser = Item(Summarize(Proxy(traffic: DedicatedBrowserProxyTraffic.NotObserved)), "browser");
+        browser.Facts.Should().Contain(("Proxy configuration", "Verified")).And.Contain(("Proxy traffic", "Not yet observed"));
+        browser.Explanation.Should().Contain("No traffic from it has reached the proxy yet");
+
+        var unknown = Item(Summarize(Proxy(traffic: DedicatedBrowserProxyTraffic.Unknown)), "browser");
+        unknown.StatusLabel.Should().Be("Ready to capture");
+        unknown.Facts.Should().Contain(("Proxy traffic", "Unknown"));
+    }
+
+    // The old false positive: BirkNext's own launch record, with nothing read back, was shown as "Proxy active".
+    [Fact]
+    public void ALaunchRecordWithoutRuntimeEvidenceIsConfiguredNotActive()
+    {
+        var summary = Summarize(Proxy(edge: DedicatedBrowserVerification.NotConfirmed, edgePort: 12345, traffic: DedicatedBrowserProxyTraffic.Unknown));
+        var browser = Item(summary, "browser");
+        browser.StatusLabel.Should().Be("Launched with proxy configuration");
+        browser.State.Should().Be(AuthPrerequisiteState.Unknown);
+        browser.Facts.Should().Contain(("Proxy configuration", "Configured (not verified)"));
+        // Unknown is not failure, and it is not Ready either.
+        summary.State.Should().Be(AuthenticationReadiness.Limited);
+    }
+
+    [Fact]
+    public void TrafficFromTheOwnedBrowserOutweighsAnUnreadableCommandLine()
+    {
+        var browser = Item(Summarize(Proxy(edge: DedicatedBrowserVerification.NotConfirmed, traffic: DedicatedBrowserProxyTraffic.Observed)), "browser");
+        browser.StatusLabel.Should().Be("Proxy in use");
+        browser.State.Should().Be(AuthPrerequisiteState.Ok);
+    }
+
+    [Fact]
+    public void AProcessWithoutAProxyArgumentIsMissing_NotReady()
+    {
+        var summary = Summarize(Proxy(edge: DedicatedBrowserVerification.Missing));
+        Item(summary, "browser").StatusLabel.Should().Be("Proxy configuration missing");
+        Item(summary, "browser").Facts.Should().Contain(("Proxy configuration", "Missing"));
+        summary.State.Should().Be(AuthenticationReadiness.ActionRequired);
+    }
+
+    [Fact]
+    public void ABrowserOutlivingAFaultedProxyIsRunningButCapturesNothing()
+    {
+        var summary = Summarize(Proxy(LocalHttpsProxyState.Failed, LocalHttpsProxyRuntimePhase.Failed) with { ProxyListening = false });
+        var browser = Item(summary, "browser");
+        browser.StatusLabel.Should().Be("Running; proxy not available");
+        browser.Facts.Should().Contain(("Proxy traffic", "Unavailable"));
+        summary.State.Should().NotBe(AuthenticationReadiness.Ready);
+    }
+
+    [Fact]
+    public void NoStatusEverSaysActive()
+    {
+        foreach (var edge in Enum.GetValues<DedicatedBrowserVerification>())
+        foreach (var traffic in Enum.GetValues<DedicatedBrowserProxyTraffic>())
+        {
+            var browser = Item(Summarize(Proxy(edge: edge, traffic: traffic)), "browser");
+            browser.StatusLabel.Should().NotContainEquivalentOf("active");
+            browser.Facts?.Select(f => f.Value).Should().NotContain(v => v.Contains("Active", StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     [Fact]
@@ -136,10 +225,10 @@ public sealed class AuthenticationReadinessTests
     public void ABrowserFromAnEarlierRuntimeIsNeverReportedAsProxyActive()
     {
         // Running, ours, but launched against a port this runtime no longer listens on.
-        var summary = Summarize(Proxy(edge: DedicatedBrowserVerification.Mismatch, port: 12345, edgePort: 12000));
+        var summary = Summarize(Proxy(edge: DedicatedBrowserVerification.Mismatch, port: 12345, edgePort: 12000, observedEndpoint: "127.0.0.1:12000"));
         summary.State.Should().Be(AuthenticationReadiness.ActionRequired);
         var browser = Item(summary, "browser");
-        browser.StatusLabel.Should().Be("Proxy not active");
+        browser.StatusLabel.Should().Be("Proxy configuration mismatch");
         browser.ActionLabel.Should().Be("Restart browser with proxy");
         browser.Facts.Should().Contain(f => f.Value == "127.0.0.1:12345");
         browser.Facts.Should().Contain(f => f.Value == "127.0.0.1:12000");

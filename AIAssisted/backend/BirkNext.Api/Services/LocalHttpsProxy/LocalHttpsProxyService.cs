@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using BirkNext.Api.Services.AuthenticatedReview;
 using BirkNext.Api.Services.ManagedEdge;
@@ -48,12 +49,14 @@ public interface ILocalHttpsProxyStatusQuery
 /// </summary>
 public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> options, IOptions<AuthenticatedReviewOptions> runtime, IProxyCertificateAuthority authority,
     TransientAuthenticatedApiContextStore store, IUpstreamConnector upstream, IEdgeInstallationLocator edgeLocator, IProxyEdgeLauncher edgeLauncher,
-    ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
+    ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null, IOwnedEdgeProcessInspector? edgeInspector = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
 {
     public const string PortsOccupiedReason = "The configured loopback proxy ports are all occupied. BirkNext never stops the occupying process; free a port or configure LocalHttpsProxy:Port.";
     public const string EdgeMissingReason = "Microsoft Edge was not found in the standard installation locations. Install Edge to open the dedicated proxy browser.";
 
     private readonly Func<DateTimeOffset> _clock = clock ?? (() => DateTimeOffset.UtcNow);
+    /// <summary>Reads runtime evidence from the owned Edge process only. Absent means every runtime answer is "unknown".</summary>
+    private readonly IOwnedEdgeProcessInspector _inspector = edgeInspector ?? new UnavailableOwnedEdgeProcessInspector();
     private readonly SemaphoreSlim _gate = new(1);
     private Session? _session;
     private volatile LocalHttpsProxyStatus _last = new() { State = LocalHttpsProxyState.Stopped };
@@ -102,7 +105,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             var status = Describe(scope, null);
             if (!status.CanStart) return status with { State = LocalHttpsProxyState.Failed, FailureReason = status.FailureReason ?? PortsOccupiedReason };
             var hosts = ApprovedHostSet.Create(scope.TargetUrl, scope.ApprovedHosts);
-            var session = new Session(scope, hosts, store, options.Value, _clock, logger);
+            var session = new Session(scope, hosts, store, options.Value, _clock, logger, _inspector);
             _last = status with { RuntimeId = session.Id, ProfileId = scope.ProfileId, ContextFingerprint = scope.ContextFingerprint, RuntimeStatus = LocalHttpsProxyRuntimePhase.Starting, State = LocalHttpsProxyState.Starting, CanStart = false };
             try { authority.EnsureAuthority(); }
             catch (Exception ex) when (ex is CryptographicException or System.Security.SecurityException or PlatformNotSupportedException)
@@ -190,7 +193,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             {
                 try { await owned.StopAsync().ConfigureAwait(false); }
                 catch (Exception) { /* a browser that will not close is reported by the relaunch, not by throwing here */ }
-                finally { owned.Dispose(); session.Edge = null; session.EdgeProxyPort = null; session.EdgeProxyArgument = null; }
+                finally { owned.Dispose(); session.Edge = null; session.EdgeProxyPort = null; session.EdgeProxyArgument = null; session.ResetEdgeEvidence(); }
             }
         }
         finally { _gate.Release(); }
@@ -229,30 +232,92 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
                 session.EdgeProxyPort = session.Edge is null ? null : session.Port;
                 session.EdgeProxyArgument = session.Edge is null ? null : arguments[0];
                 session.EdgeExitLogged = false;
+                // Evidence belongs to one launched process. A new launch starts with none, so nothing carries over.
+                session.ResetEdgeEvidence();
             }
             catch (Exception) { session.Edge = null; session.EdgeProxyPort = null; session.EdgeProxyArgument = null; }
             if (session.Edge is { } launched) logger?.LogInformation("ProxyEdgeStarted {RuntimeId} {ProfileId} {Port} {EdgeProcessId}", session.Id, session.Scope.ProfileId, session.Port, launched.Id);
             return session.Edge is not null
-                ? Describe(session.Scope, session) with { Evidence = $"Dedicated Microsoft Edge started with --proxy-server=127.0.0.1:{session.Port}. Sign in manually there." }
+                ? Describe(session.Scope, session) with { Evidence = $"Dedicated Microsoft Edge launched with --proxy-server=127.0.0.1:{session.Port}. Whether its traffic reaches the proxy is shown once a connection from it is observed. Sign in manually there." }
                 : status with { FailureReason = "Microsoft Edge did not start. No existing browser or proxy setting was changed." };
         }
         finally { _gate.Release(); }
     }
 
+    /// <summary>What the running dedicated browser's configuration is, as far as BirkNext can prove it.</summary>
+    private sealed record EdgeConfigurationEvidence(
+        DedicatedBrowserVerification Verification, DedicatedBrowserProxyArgument Argument, string? ObservedEndpoint, bool? ProfileVerified, DateTimeOffset? ReadAt);
+
     /// <summary>
-    /// What BirkNext can prove about the dedicated browser, and nothing more.
+    /// What BirkNext can prove about the dedicated browser's configuration, and nothing more.
     ///
-    /// The strongest evidence available is its own launch record: a process handle it owns, belonging to this runtime,
-    /// recorded as started with this runtime's port. A browser it did not start is invisible here, which is correct —
-    /// the alternative would be inspecting the user's Edge settings, which BirkNext does not do.
+    /// The evidence is the owned process's OWN arguments, read back from its process id: the launch record says what
+    /// BirkNext intended, the process says what it is running with. When the process cannot be read, the launch record
+    /// is reported as exactly that — configured, not verified. A browser BirkNext did not start is invisible here, and
+    /// Edge settings, Edge policy and the Windows proxy are never read.
     /// </summary>
-    private static DedicatedBrowserVerification VerifyEdge(Session session)
+    private EdgeConfigurationEvidence VerifyEdge(Session session)
     {
-        if (session.Edge is not { Running: true }) return DedicatedBrowserVerification.NotRunning;
-        if (session.EdgeProxyPort is not { } launchedWith || session.EdgeProxyArgument is null)
-            return DedicatedBrowserVerification.NotConfirmed;
-        return launchedWith == session.Port ? DedicatedBrowserVerification.Confirmed : DedicatedBrowserVerification.Mismatch;
+        if (session.Edge is not { Running: true } edge)
+            return new(DedicatedBrowserVerification.NotRunning, DedicatedBrowserProxyArgument.Unknown, null, null, null);
+
+        var (launch, readAt) = session.LaunchEvidence(edge.Id, _inspector);
+        if (launch is null)
+        {
+            session.LogArgumentOnce(edge.Id, () => logger?.LogInformation("DedicatedEdgeProxyArgumentUnverifiable {RuntimeId} {EdgeProcessId}", session.Id, edge.Id));
+            return new(DedicatedBrowserVerification.NotConfirmed, DedicatedBrowserProxyArgument.Unknown, null, null, null);
+        }
+
+        var profileVerified = launch.UserDataDirectory is { Length: > 0 } actual && session.EdgeProfileDirectory is { Length: > 0 } expected
+            && SamePath(actual, expected);
+        var observed = ProxyEndpoint(launch.ProxyServer);
+        var argument = launch.ProxyServer is null ? DedicatedBrowserProxyArgument.Missing
+            : observed == $"127.0.0.1:{session.Port}" ? DedicatedBrowserProxyArgument.Verified
+            : DedicatedBrowserProxyArgument.Mismatch;
+        var verification = argument switch
+        {
+            DedicatedBrowserProxyArgument.Missing => DedicatedBrowserVerification.Missing,
+            DedicatedBrowserProxyArgument.Verified when profileVerified => DedicatedBrowserVerification.Confirmed,
+            _ => DedicatedBrowserVerification.Mismatch,
+        };
+        session.LogArgumentOnce(edge.Id, () =>
+        {
+            if (verification == DedicatedBrowserVerification.Confirmed)
+                logger?.LogInformation("DedicatedEdgeProxyArgumentVerified {RuntimeId} {EdgeProcessId} {Endpoint}", session.Id, edge.Id, observed);
+            else
+                logger?.LogWarning("DedicatedEdgeProxyMismatch {RuntimeId} {EdgeProcessId} {Argument} {ObservedEndpoint} {ExpectedPort} {ProfileVerified}",
+                    session.Id, edge.Id, argument, observed ?? "none", session.Port, profileVerified);
+        });
+        return new(verification, argument, observed, profileVerified, readAt);
     }
+
+    /// <summary>
+    /// The host:port of a Chromium <c>--proxy-server</c> value, for comparison and display only. Accepts the plain form
+    /// BirkNext passes and an explicit <c>http://</c> scheme; anything else (a per-scheme list, another host) is returned
+    /// as-is, bounded, so it compares unequal and is shown as what it is.
+    /// </summary>
+    internal static string? ProxyEndpoint(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var trimmed = value.Trim();
+        if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) trimmed = trimmed[7..];
+        trimmed = trimmed.TrimEnd('/');
+        return trimmed.Length > 120 ? trimmed[..120] : trimmed;
+    }
+
+    private static bool SamePath(string a, string b)
+    {
+        try { return string.Equals(System.IO.Path.GetFullPath(a).TrimEnd('\\', '/'), System.IO.Path.GetFullPath(b).TrimEnd('\\', '/'), StringComparison.OrdinalIgnoreCase); }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or System.IO.PathTooLongException) { return false; }
+    }
+
+    /// <summary>Traffic from the dedicated browser, only while that browser is the one running.</summary>
+    private DedicatedBrowserProxyTraffic EdgeTraffic(Session session) =>
+        session.Edge is not { Running: true } ? DedicatedBrowserProxyTraffic.Unknown
+        : session.EdgeTrafficObservedAt is not null ? DedicatedBrowserProxyTraffic.Observed
+        // Without a way to tell who owns a connection, "not observed" would be a guess.
+        : !_inspector.CanAttributeConnections || session.AttributionUnavailable ? DedicatedBrowserProxyTraffic.Unknown
+        : DedicatedBrowserProxyTraffic.NotObserved;
 
     public static string DefaultEdgeProfileDirectory() => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext", "LocalHttpsProxyEdgeProfile");
 
@@ -359,6 +424,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         var available = descriptor is not null;
         var expired = !available && session.CredentialExpiresAt is { } expiresAt && expiresAt <= now;
         var trusted = status.Certificate.State == ProxyCertificateTrustState.Trusted;
+        var edgeEvidence = VerifyEdge(session);
         var state = session.Stopped ? LocalHttpsProxyState.Stopped
             : session.Server?.Listening != true ? LocalHttpsProxyState.Failed
             : available ? LocalHttpsProxyState.Ready
@@ -395,7 +461,12 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             EdgeStartedAt = session.Edge?.StartedAt, EdgeProfileDirectory = session.EdgeProfileDirectory,
             ExpectedProxyPort = session.Port, EdgeProxyPort = session.EdgeProxyPort,
             ProxyArgumentConfigured = session.EdgeProxyArgument is not null,
-            EdgeVerification = VerifyEdge(session),
+            EdgeVerification = edgeEvidence.Verification,
+            EdgeProxyArgument = edgeEvidence.Argument, ObservedEdgeProxyEndpoint = edgeEvidence.ObservedEndpoint,
+            EdgeProfileVerified = edgeEvidence.ProfileVerified, EdgeLaunchVerifiedAt = edgeEvidence.ReadAt,
+            EdgeProxyTraffic = EdgeTraffic(session),
+            EdgeProxyTrafficObservedAt = session.Edge is { Running: true } ? session.EdgeTrafficObservedAt : null,
+            UnattributedProxyConnections = session.UnattributedConnections,
             SessionId = session.Id, State = state, Port = session.Port, CanStart = false,
             InterceptedRequests = session.Intercepted, PassThroughConnections = session.PassThrough, TlsHandshakeFailures = session.TlsFailures,
             AuthenticatedRequestsObserved = session.BearerObserved, LastInterceptedHost = session.LastHost,
@@ -465,8 +536,15 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
     }
 
     /// <summary>Per-session counters and the traffic observer that decides whether an observed credential is promoted. Holds no credential itself.</summary>
-    private sealed class Session(LocalHttpsProxyScopeRequest scope, ApprovedHostSet hosts, TransientAuthenticatedApiContextStore store, LocalHttpsProxyOptions options, Func<DateTimeOffset> clock, ILogger? logger) : IProxyTrafficObserver
+    private sealed class Session(LocalHttpsProxyScopeRequest scope, ApprovedHostSet hosts, TransientAuthenticatedApiContextStore store, LocalHttpsProxyOptions options, Func<DateTimeOffset> clock, ILogger? logger, IOwnedEdgeProcessInspector inspector) : IProxyTrafficObserver
     {
+        // Evidence about the currently owned Edge process. Reset whenever a different process is launched.
+        private long _edgeTrafficObservedTicks;
+        private int _unattributed, _attributionAnswers, _attributionUnknown;
+        private OwnedEdgeLaunchEvidence? _launchEvidence;
+        private int? _launchEvidencePid, _argumentLoggedPid;
+        private DateTimeOffset? _launchEvidenceReadAt;
+
         private int _intercepted, _passThrough, _tlsFailures, _bearerObserved;
         private volatile string? _lastHost;
         private volatile string? _lastRejection;
@@ -502,6 +580,67 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         public DateTimeOffset? CredentialExpiresAt { get { var ticks = Interlocked.Read(ref _credentialExpiresAtTicks); return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero); } }
 
         public void Attach(LocalHttpsProxyServer server, int port) { Server = server; Port = port; }
+
+        public DateTimeOffset? EdgeTrafficObservedAt { get { var ticks = Interlocked.Read(ref _edgeTrafficObservedTicks); return ticks == 0 ? null : new DateTimeOffset(ticks, TimeSpan.Zero); } }
+        public int UnattributedConnections => _unattributed;
+        /// <summary>Connections arrived but none of their owners could be determined, so absence of evidence means nothing.</summary>
+        public bool AttributionUnavailable => _attributionUnknown > 0 && _attributionAnswers == 0;
+
+        public void ResetEdgeEvidence()
+        {
+            Interlocked.Exchange(ref _edgeTrafficObservedTicks, 0);
+            Interlocked.Exchange(ref _unattributed, 0);
+            Interlocked.Exchange(ref _attributionAnswers, 0);
+            Interlocked.Exchange(ref _attributionUnknown, 0);
+            _launchEvidence = null; _launchEvidencePid = null; _launchEvidenceReadAt = null; _argumentLoggedPid = null;
+        }
+
+        /// <summary>
+        /// The owned process's arguments, read once per process id: a running process's command line does not change,
+        /// but a read that failed is retried on the next status query.
+        /// </summary>
+        public (OwnedEdgeLaunchEvidence? Evidence, DateTimeOffset? ReadAt) LaunchEvidence(int processId, IOwnedEdgeProcessInspector reader)
+        {
+            if (_launchEvidencePid != processId || _launchEvidence is null)
+            {
+                _launchEvidence = reader.ReadLaunchEvidence(processId);
+                _launchEvidencePid = processId;
+                _launchEvidenceReadAt = _launchEvidence is null ? null : clock();
+            }
+            return (_launchEvidence, _launchEvidenceReadAt);
+        }
+
+        public void LogArgumentOnce(int processId, Action log)
+        {
+            if (_argumentLoggedPid == processId) return;
+            _argumentLoggedPid = processId;
+            log();
+        }
+
+        /// <summary>
+        /// Attributes one accepted proxy connection. Only while the owned browser is running and nothing from it has been
+        /// seen yet — once observed, there is nothing more to prove for this launch and no further lookups are made.
+        /// </summary>
+        public void OnClientConnected(IPEndPoint client, int proxyPort)
+        {
+            if (Stopped || Interlocked.Read(ref _edgeTrafficObservedTicks) != 0 || Edge is not { Running: true } edge) return;
+            switch (inspector.ConnectionBelongsTo(client, proxyPort, edge.Id, edge.StartedAt))
+            {
+                case true:
+                    Interlocked.Increment(ref _attributionAnswers);
+                    if (Interlocked.CompareExchange(ref _edgeTrafficObservedTicks, clock().UtcTicks, 0) == 0)
+                        logger?.LogInformation("ProxyTrafficObserved {RuntimeId} {EdgeProcessId} {Port}", Id, edge.Id, proxyPort);
+                    break;
+                case false:
+                    Interlocked.Increment(ref _attributionAnswers);
+                    Interlocked.Increment(ref _unattributed);
+                    break;
+                default:
+                    if (Interlocked.Increment(ref _attributionUnknown) == 1)
+                        logger?.LogInformation("ProxyTrafficVerificationUnknown {RuntimeId} {EdgeProcessId}", Id, edge.Id);
+                    break;
+            }
+        }
 
         public void OnPassThrough(string host, int port) => Interlocked.Increment(ref _passThrough);
         public void OnInterceptedConnection(string host) => _lastHost = host;

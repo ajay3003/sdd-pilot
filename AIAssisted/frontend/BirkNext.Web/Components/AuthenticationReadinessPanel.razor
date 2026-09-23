@@ -144,9 +144,18 @@
                 <dl class="ar-facts ar-facts-technical" data-testid="auth-technical-facts">
                     <div><dt>Runtime id</dt><dd>@(runtime.RuntimeId ?? "—")</dd></div>
                     <div><dt>Proxy endpoint</dt><dd>@(runtime.ExpectedProxyPort is { } p ? $"127.0.0.1:{p}" : "—")</dd></div>
-                    <div><dt>Edge process id</dt><dd>@(runtime.EdgeProcessId?.ToString() ?? "—")</dd></div>
-                    <div><dt>Edge launched with</dt><dd>@(runtime.EdgeProxyPort is { } e ? $"--proxy-server=127.0.0.1:{e}" : "—")</dd></div>
-                    <div><dt>Profile path</dt><dd>@(runtime.EdgeProfileDirectory ?? "—")</dd></div>
+                    <div><dt>Owned Edge process id</dt><dd>@(runtime.EdgeRunning ? runtime.EdgeProcessId?.ToString() ?? "—" : "—")</dd></div>
+                    <div><dt>Edge launched</dt><dd>@(runtime.EdgeRunning ? runtime.EdgeStartedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—" : "—")</dd></div>
+                    @* Intent and evidence, side by side and never merged: what BirkNext passed, and what the running process carries. *@
+                    <div><dt>Launch argument (BirkNext record)</dt><dd data-testid="auth-tech-launch-record">@(runtime.EdgeProxyPort is { } e ? $"--proxy-server=127.0.0.1:{e}" : "—")</dd></div>
+                    <div><dt>Proxy argument on running process</dt><dd data-testid="auth-tech-process-argument">@ProcessArgument(runtime)</dd></div>
+                    <div><dt>Expected profile</dt><dd>@(runtime.EdgeProfileDirectory ?? "—")</dd></div>
+                    <div><dt>Profile on running process</dt><dd>@(runtime.EdgeProfileVerified switch { true => "Matches", false => "Different profile", _ => "Not read" })</dd></div>
+                    <div><dt>Configuration verified at</dt><dd>@(runtime.EdgeLaunchVerifiedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</dd></div>
+                    <div><dt>Proxy traffic from this browser</dt><dd data-testid="auth-tech-traffic">@AuthenticationReadinessPresentation.TrafficLabel(runtime)@(runtime.EdgeProxyTrafficObservedAt is { } seen ? $" (first at {seen.ToLocalTime():HH:mm:ss})" : "")</dd></div>
+                    <div><dt>Proxy connections from other processes</dt><dd>@runtime.UnattributedProxyConnections</dd></div>
+                    <div><dt>Verification method</dt><dd data-testid="auth-tech-method">Owned Edge process arguments (read by process id); connection owner matched to that process or its child processes</dd></div>
+                    <div><dt>Edge proxy source</dt><dd data-testid="auth-tech-source">BirkNext launch argument (process-scoped). Edge Settings, Edge policy and the Windows proxy are not read or changed.</dd></div>
                     <div><dt>Proxy started</dt><dd>@(runtime.StartedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")</dd></div>
                     <div><dt>Certificate thumbprint</dt><dd>@(string.IsNullOrWhiteSpace(runtime.Certificate.Thumbprint) ? "—" : runtime.Certificate.Thumbprint)</dd></div>
                     <div><dt>Certificate expires</dt><dd>@(runtime.Certificate.NotAfter?.ToLocalTime().ToString("d MMM yyyy") ?? "—")</dd></div>
@@ -188,6 +197,13 @@
     [Parameter] public RenderFragment? Capabilities { get; set; }
 
     private AuthenticationReadinessSummary Summary => State.Readiness;
+
+    private static string ProcessArgument(LocalHttpsProxyStatus runtime) => runtime.EdgeProxyArgument switch
+    {
+        DedicatedBrowserProxyArgument.Verified or DedicatedBrowserProxyArgument.Mismatch => $"--proxy-server={runtime.ObservedEdgeProxyEndpoint}",
+        DedicatedBrowserProxyArgument.Missing => "None",
+        _ => runtime.EdgeRunning ? "Not read" : "—",
+    };
 
     private (string Status, string Tone, string? Note) Discovery => EndpointDiscoveryCta.Status(Summary, KnownEndpoints);
     private string DiscoveryStatus => Discovery.Status;

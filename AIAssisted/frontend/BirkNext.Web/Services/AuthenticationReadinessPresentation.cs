@@ -144,6 +144,9 @@ public static class AuthenticationReadinessPresentation
         var attention = prerequisites.Count(p => p.Blocks);
         return new(state, Label(state), state switch
         {
+            // Ready to capture is not capture verified: say which one this is, rather than letting Ready imply traffic.
+            AuthenticationReadiness.Ready when proxy?.EdgeProxyTraffic != DedicatedBrowserProxyTraffic.Observed =>
+                "Authentication configuration and proxy prerequisites are available. Ready to capture; no traffic from the dedicated browser has been observed yet.",
             AuthenticationReadiness.Ready => "Authentication configuration and proxy prerequisites are available.",
             AuthenticationReadiness.NotConfigured => "No authentication provider is configured for this Target Environment.",
             AuthenticationReadiness.ActionRequired => $"{attention} prerequisite{(attention == 1 ? "" : "s")} need{(attention == 1 ? "s" : "")} attention.",
@@ -235,43 +238,104 @@ public static class AuthenticationReadinessPresentation
             Facts(("Endpoint", proxy.Port > 0 ? $"127.0.0.1:{proxy.Port}" : "—"), ("Started", proxy.StartedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")));
     }
 
+    /// <summary>
+    /// The dedicated browser, told as three separate facts: is it running, is its proxy CONFIGURATION verified on the
+    /// running process, and has TRAFFIC from it reached the proxy. "Proxy in use" is said only when traffic from that
+    /// browser was actually observed; a verified configuration alone is "Ready to capture", and BirkNext's launch record
+    /// alone is "Launched with proxy configuration". Edge settings and the Windows proxy are never the source.
+    /// </summary>
     private static AuthenticationPrerequisite Browser(LocalHttpsProxyStatus? proxy)
     {
+        const string title = "Dedicated Edge browser";
         if (proxy is null)
-            return new(BrowserId, "Dedicated Edge browser", "Unknown", AuthPrerequisiteState.Unknown, "The browser state could not be read.");
-        // A browser cannot be pointed at a proxy that is not there, so this is not the user's next problem to solve.
-        if (!AuthenticatedTestingStates.ProxyServerRunning(proxy))
-            return new(BrowserId, "Dedicated Edge browser", "Waiting for the proxy", AuthPrerequisiteState.NotRequired,
-                "Start the local proxy first; the browser is opened with its port.");
+            return new(BrowserId, title, "Unknown", AuthPrerequisiteState.Unknown, "The browser state could not be read.");
 
         var endpoint = proxy.ExpectedProxyPort is { } expected ? $"127.0.0.1:{expected}" : "—";
         var profile = string.IsNullOrWhiteSpace(proxy.EdgeProfileDirectory) ? "LocalHttpsProxyEdgeProfile" : System.IO.Path.GetFileName(proxy.EdgeProfileDirectory!);
 
+        if (!AuthenticatedTestingStates.ProxyServerRunning(proxy))
+        {
+            // The service and the browser are separate facts: a browser can outlive a proxy that faulted. It is still not
+            // the next thing to fix — the proxy card is — and nothing about its traffic can be current.
+            return proxy.EdgeRunning
+                ? new(BrowserId, title, "Running; proxy not available", AuthPrerequisiteState.NotRequired,
+                    "The dedicated browser is still open, but the proxy it was pointed at is not listening, so no traffic can be captured.",
+                    Facts: Facts(("Browser", "Running"), ("Proxy traffic", "Unavailable"), ("Profile", profile)))
+                : new(BrowserId, title, "Waiting for the proxy", AuthPrerequisiteState.NotRequired,
+                    "Start the local proxy first; the browser is opened with its port.");
+        }
+
+        var configuration = ConfigurationLabel(proxy);
+        var traffic = TrafficLabel(proxy);
+        var trafficObserved = proxy.EdgeProxyTraffic == DedicatedBrowserProxyTraffic.Observed;
+        IReadOnlyList<(string, string)> RunningFacts(params (string, string)[] extra) =>
+            [("Browser", "Running"), ("Proxy configuration", configuration), .. extra, ("Proxy traffic", traffic), ("Profile", profile)];
+
         return proxy.EdgeVerification switch
         {
-            DedicatedBrowserVerification.Confirmed => new(BrowserId, "Dedicated Edge browser", "Proxy active", AuthPrerequisiteState.Ok,
-                "The dedicated browser is running and using this proxy.", "Open browser", "edge-open",
-                Facts(("Browser", "Running"), ("Proxy", "Active"), ("Proxy endpoint", endpoint), ("Profile", profile))),
+            // Traffic from the owned browser is the strongest evidence there is: it went through the proxy.
+            DedicatedBrowserVerification.Confirmed or DedicatedBrowserVerification.NotConfirmed when trafficObserved =>
+                new(BrowserId, title, "Proxy in use", AuthPrerequisiteState.Ok,
+                    "Traffic from the dedicated browser has reached this proxy.", "Open browser", "edge-open",
+                    RunningFacts(("Proxy endpoint", endpoint))),
 
-            DedicatedBrowserVerification.Mismatch => new(BrowserId, "Dedicated Edge browser", "Proxy not active", AuthPrerequisiteState.NeedsAttention,
-                "The browser is running, but it was started with a different proxy than the one running now.",
+            DedicatedBrowserVerification.Confirmed => new(BrowserId, title, "Ready to capture", AuthPrerequisiteState.Ok,
+                proxy.EdgeProxyTraffic == DedicatedBrowserProxyTraffic.NotObserved
+                    ? "The running browser's own arguments carry this proxy. No traffic from it has reached the proxy yet."
+                    : "The running browser's own arguments carry this proxy. Whether its traffic reaches the proxy cannot be determined here.",
+                "Open browser", "edge-open",
+                RunningFacts(("Proxy endpoint", endpoint))),
+
+            // No launch record at all: nothing to vouch for, so the browser is restarted with the proxy.
+            DedicatedBrowserVerification.NotConfirmed when !proxy.ProxyArgumentConfigured => new(BrowserId, title, "Proxy not confirmed", AuthPrerequisiteState.NeedsAttention,
+                "The browser is running, but BirkNext has no record of it being started with the current local proxy.",
                 "Restart browser with proxy", "edge-restart",
-                Facts(("Browser", "Running"), ("Expected proxy", endpoint),
-                      ("Started with", proxy.EdgeProxyPort is { } was ? $"127.0.0.1:{was}" : "Unknown"), ("Profile", profile))),
+                RunningFacts(("Expected proxy", endpoint))),
 
-            DedicatedBrowserVerification.NotConfirmed => new(BrowserId, "Dedicated Edge browser", "Proxy not confirmed", AuthPrerequisiteState.NeedsAttention,
-                "The browser is running, but BirkNext cannot confirm that it is using the current local proxy.",
+            // BirkNext's launch record is intent, not evidence. Not a failure either — a reason not to promise Ready.
+            DedicatedBrowserVerification.NotConfirmed => new(BrowserId, title, "Launched with proxy configuration", AuthPrerequisiteState.Unknown,
+                "BirkNext started this browser with the proxy argument, but could not read the running process back, so the configuration is not verified.",
                 "Restart browser with proxy", "edge-restart",
-                Facts(("Browser", "Running"), ("Expected proxy", endpoint), ("Profile", profile))),
+                RunningFacts(("Expected proxy", endpoint))),
 
-            DedicatedBrowserVerification.NotRunning => new(BrowserId, "Dedicated Edge browser", "Not running", AuthPrerequisiteState.NeedsAttention,
+            DedicatedBrowserVerification.Mismatch => new(BrowserId, title, "Proxy configuration mismatch", AuthPrerequisiteState.NeedsAttention,
+                proxy.EdgeProfileVerified == false && proxy.EdgeProxyArgument == DedicatedBrowserProxyArgument.Verified
+                    ? "The running browser is not using the dedicated BirkNext profile."
+                    : "The running browser carries a different proxy than the one running now.",
+                "Restart browser with proxy", "edge-restart",
+                RunningFacts(("Expected proxy", endpoint), ("Running with", proxy.ObservedEdgeProxyEndpoint ?? "Unknown"))),
+
+            DedicatedBrowserVerification.Missing => new(BrowserId, title, "Proxy configuration missing", AuthPrerequisiteState.NeedsAttention,
+                "The running browser has no proxy argument, so its traffic does not go through this proxy.",
+                "Restart browser with proxy", "edge-restart",
+                RunningFacts(("Expected proxy", endpoint))),
+
+            DedicatedBrowserVerification.NotRunning => new(BrowserId, title, "Not running", AuthPrerequisiteState.NeedsAttention,
                 "The proxy is running, but the dedicated Edge session is not open.", "Open browser", "edge-open",
                 Facts(("Expected proxy", endpoint), ("Profile", profile))),
 
-            _ => new(BrowserId, "Dedicated Edge browser", "Unknown", AuthPrerequisiteState.Unknown,
+            _ => new(BrowserId, title, "Unknown", AuthPrerequisiteState.Unknown,
                 "BirkNext cannot determine the dedicated browser's state."),
         };
     }
+
+    /// <summary>The proxy configuration of the running dedicated browser, in the words the evidence supports.</summary>
+    public static string ConfigurationLabel(LocalHttpsProxyStatus proxy) => proxy.EdgeVerification switch
+    {
+        DedicatedBrowserVerification.Confirmed => "Verified",
+        DedicatedBrowserVerification.NotConfirmed => proxy.ProxyArgumentConfigured ? "Configured (not verified)" : "Unknown",
+        DedicatedBrowserVerification.Mismatch => "Mismatch",
+        DedicatedBrowserVerification.Missing => "Missing",
+        _ => "Unknown",
+    };
+
+    /// <summary>Traffic from the dedicated browser through the proxy. Never inferred from traffic in general.</summary>
+    public static string TrafficLabel(LocalHttpsProxyStatus proxy) => proxy.EdgeProxyTraffic switch
+    {
+        DedicatedBrowserProxyTraffic.Observed => "Observed",
+        DedicatedBrowserProxyTraffic.NotObserved => "Not yet observed",
+        _ => "Unknown",
+    };
 
     private static IReadOnlyList<(string, string)> Facts(params (string, string)[] facts) => facts;
 

@@ -33,6 +33,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     private readonly CapturingLogger<LocalHttpsProxyService> _log = new();
     private readonly Mock<IEdgeInstallationLocator> _edge = new();
     private readonly Mock<IProxyEdgeLauncher> _ownedLauncher = new();
+    private readonly FakeEdgeInspector _inspector = new();
     private ProxyCertificateAuthority _authority = null!;
     private TransientAuthenticatedApiContextStore _store = null!;
     private FakeUpstream _upstream = null!;
@@ -75,7 +76,33 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
 
     private LocalHttpsProxyService Create(AuthenticatedReviewOptions runtime) => new(
         Options.Create(new LocalHttpsProxyOptions { Port = 0, CredentialLifetimeMinutes = 30 }), Options.Create(runtime), _authority, _store,
-        new TestConnector(_upstream), _edge.Object, _ownedLauncher.Object, _log, () => _now);
+        new TestConnector(_upstream), _edge.Object, _ownedLauncher.Object, _log, () => _now, _inspector);
+
+    /// <summary>
+    /// Stands in for reading the owned process back. By default the process carries exactly what it was launched with —
+    /// the real behaviour — so a test changes <see cref="Evidence"/> only to model a process that does not.
+    /// </summary>
+    private sealed class FakeEdgeInspector : IOwnedEdgeProcessInspector
+    {
+        public bool CanAttributeConnections { get; set; } = true;
+        public OwnedEdgeLaunchEvidence? Evidence { get; set; }
+        public bool Readable { get; set; } = true;
+        public Func<IPEndPoint, bool?> Belongs { get; set; } = _ => false;
+        public List<int> ProcessesRead { get; } = [];
+        public List<int> ProcessesAskedAbout { get; } = [];
+
+        public void LaunchedWith(IReadOnlyList<string> arguments) => Evidence = new(
+            arguments.FirstOrDefault(a => a.StartsWith("--proxy-server=", StringComparison.Ordinal))?["--proxy-server=".Length..],
+            arguments.FirstOrDefault(a => a.StartsWith("--user-data-dir=", StringComparison.Ordinal))?["--user-data-dir=".Length..]);
+
+        public OwnedEdgeLaunchEvidence? ReadLaunchEvidence(int processId) { lock (ProcessesRead) ProcessesRead.Add(processId); return Readable ? Evidence : null; }
+
+        public bool? ConnectionBelongsTo(IPEndPoint client, int proxyPort, int ownedProcessId, DateTimeOffset ownedStartedAt)
+        {
+            lock (ProcessesAskedAbout) ProcessesAskedAbout.Add(ownedProcessId);
+            return Belongs(client);
+        }
+    }
 
     private static LocalHttpsProxyScopeRequest Scope(string profile = "dev", string fingerprint = null!, string environment = "Development", string target = Target, string? tenant = null) =>
         new(profile, fingerprint ?? Fp, environment, target, [ApiHost], tenant);
@@ -663,7 +690,8 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         process.SetupGet(p => p.Id).Returns(pid);
         process.SetupGet(p => p.Running).Returns(true);
         process.Setup(p => p.StopAsync()).Returns(Task.CompletedTask);
-        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>())).Returns(process.Object);
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
+            .Callback<string, IReadOnlyList<string>>((_, a) => _inspector.LaunchedWith(a)).Returns(process.Object);
         return process;
     }
 
@@ -674,11 +702,16 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         var port = await StartAsync(Scope());
         IReadOnlyList<string>? launchedWith = null;
         _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
-            .Callback<string, IReadOnlyList<string>>((_, a) => launchedWith = a).Returns(process.Object);
+            .Callback<string, IReadOnlyList<string>>((_, a) => { launchedWith = a; _inspector.LaunchedWith(a); }).Returns(process.Object);
 
         var status = await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
 
         Assert.Equal(DedicatedBrowserVerification.Confirmed, status.EdgeVerification);
+        Assert.Equal(DedicatedBrowserProxyArgument.Verified, status.EdgeProxyArgument);
+        Assert.Equal($"127.0.0.1:{port}", status.ObservedEdgeProxyEndpoint);
+        Assert.True(status.EdgeProfileVerified);
+        // Configuration verified is not traffic observed: nothing has connected yet.
+        Assert.Equal(DedicatedBrowserProxyTraffic.NotObserved, status.EdgeProxyTraffic);
         Assert.Equal(port, status.ExpectedProxyPort);
         Assert.Equal(port, status.EdgeProxyPort);
         Assert.True(status.ProxyArgumentConfigured);
@@ -740,7 +773,7 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         second.SetupGet(p => p.Running).Returns(true);
         IReadOnlyList<string>? relaunchedWith = null;
         _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
-            .Callback<string, IReadOnlyList<string>>((_, a) => relaunchedWith = a).Returns(second.Object);
+            .Callback<string, IReadOnlyList<string>>((_, a) => { relaunchedWith = a; _inspector.LaunchedWith(a); }).Returns(second.Object);
 
         var status = await _service.RestartEdgeAsync(request);
 
@@ -762,6 +795,229 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         var status = await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
         Assert.NotEqual(DedicatedBrowserVerification.Confirmed, status.EdgeVerification);
         Assert.False(status.ProxyArgumentConfigured);
+    }
+
+    // ── Runtime evidence: configuration read back from the owned process, traffic attributed to it ────────────────
+
+    // The old false positive: BirkNext's own launch record was reported as "Proxy active". A launch record whose
+    // process cannot be read back is configured, not verified.
+    [Fact]
+    public async Task TheLaunchRecordAloneIsNeverConfirmed()
+    {
+        OwnedBrowser();
+        _inspector.Readable = false;
+        await StartAsync(Scope());
+
+        var status = await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+
+        Assert.True(status.ProxyArgumentConfigured);
+        Assert.Equal(DedicatedBrowserVerification.NotConfirmed, status.EdgeVerification);
+        Assert.Equal(DedicatedBrowserProxyArgument.Unknown, status.EdgeProxyArgument);
+        Assert.Null(status.ObservedEdgeProxyEndpoint);
+        Assert.Null(status.EdgeLaunchVerifiedAt);
+        Assert.Contains(_log.Messages, m => m.Contains("DedicatedEdgeProxyArgumentUnverifiable"));
+    }
+
+    [Fact]
+    public async Task AProcessCarryingADifferentEndpointIsAMismatch()
+    {
+        var port = await StartAsync(Scope());
+        LaunchesProcessCarrying(e => e with { ProxyServer = "127.0.0.1:9999" });
+
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        var status = await _service.GetRuntimeAsync();
+
+        Assert.NotEqual(9999, port);
+        Assert.Equal(DedicatedBrowserVerification.Mismatch, status.EdgeVerification);
+        Assert.Equal(DedicatedBrowserProxyArgument.Mismatch, status.EdgeProxyArgument);
+        Assert.Equal("127.0.0.1:9999", status.ObservedEdgeProxyEndpoint);
+        Assert.Contains(_log.Messages, m => m.Contains("DedicatedEdgeProxyMismatch"));
+    }
+
+    [Fact]
+    public async Task AProcessWithoutAProxyArgumentIsMissing()
+    {
+        await StartAsync(Scope());
+        LaunchesProcessCarrying(e => e with { ProxyServer = null });
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        var status = await _service.GetRuntimeAsync();
+
+        Assert.Equal(DedicatedBrowserVerification.Missing, status.EdgeVerification);
+        Assert.Equal(DedicatedBrowserProxyArgument.Missing, status.EdgeProxyArgument);
+        Assert.Null(status.ObservedEdgeProxyEndpoint);
+    }
+
+    [Fact]
+    public async Task TheRightEndpointOnTheWrongProfileIsNotConfirmed()
+    {
+        await StartAsync(Scope());
+        LaunchesProcessCarrying(e => e with { UserDataDirectory = @"C:\Users\someone\AppData\Local\Microsoft\Edge\User Data" });
+
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        var status = await _service.GetRuntimeAsync();
+
+        Assert.Equal(DedicatedBrowserProxyArgument.Verified, status.EdgeProxyArgument);
+        Assert.False(status.EdgeProfileVerified);
+        Assert.Equal(DedicatedBrowserVerification.Mismatch, status.EdgeVerification);
+    }
+
+    // Only the process BirkNext launched is ever read or asked about.
+    [Fact]
+    public async Task OnlyTheOwnedProcessIsInspected()
+    {
+        OwnedBrowser(4242);
+        var port = await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        _inspector.Belongs = _ => false;
+        await ConnectAsync(port);
+        await WaitForAsync(() => _inspector.ProcessesAskedAbout.Count > 0);
+        await _service.GetRuntimeAsync();
+
+        Assert.All(_inspector.ProcessesRead, pid => Assert.Equal(4242, pid));
+        Assert.All(_inspector.ProcessesAskedAbout, pid => Assert.Equal(4242, pid));
+    }
+
+    [Fact]
+    public async Task TrafficOwnedByTheDedicatedBrowserIsObserved()
+    {
+        OwnedBrowser();
+        var port = await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        _inspector.Belongs = _ => true;
+
+        await ConnectAsync(port);
+        var status = await WaitForStatusAsync(s => s.EdgeProxyTraffic == DedicatedBrowserProxyTraffic.Observed);
+
+        Assert.Equal(DedicatedBrowserProxyTraffic.Observed, status.EdgeProxyTraffic);
+        Assert.Equal(_now, status.EdgeProxyTrafficObservedAt);
+        Assert.Contains(_log.Messages, m => m.Contains("ProxyTrafficObserved"));
+    }
+
+    // Traffic the proxy received from some other process says nothing about the dedicated browser.
+    [Fact]
+    public async Task TrafficFromAnotherProcessNeverVerifiesTheDedicatedBrowser()
+    {
+        OwnedBrowser();
+        var port = await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        _inspector.Belongs = _ => false;
+
+        await ConnectAsync(port);
+        var status = await WaitForStatusAsync(s => s.UnattributedProxyConnections > 0);
+
+        Assert.Equal(DedicatedBrowserProxyTraffic.NotObserved, status.EdgeProxyTraffic);
+        Assert.Null(status.EdgeProxyTrafficObservedAt);
+        Assert.Equal(1, status.UnattributedProxyConnections);
+    }
+
+    [Fact]
+    public async Task WhenConnectionOwnershipCannotBeDeterminedTrafficIsUnknown()
+    {
+        OwnedBrowser();
+        var port = await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        _inspector.Belongs = _ => null;
+
+        await ConnectAsync(port);
+        var status = await WaitForStatusAsync(s => s.EdgeProxyTraffic == DedicatedBrowserProxyTraffic.Unknown);
+        Assert.Equal(DedicatedBrowserProxyTraffic.Unknown, status.EdgeProxyTraffic);
+
+        _inspector.CanAttributeConnections = false;
+        Assert.Equal(DedicatedBrowserProxyTraffic.Unknown, (await _service.GetRuntimeAsync()).EdgeProxyTraffic);
+    }
+
+    // A closed browser leaves no stale "in use": its evidence goes with it.
+    [Fact]
+    public async Task ABrowserThatExitsTakesItsTrafficEvidenceWithIt()
+    {
+        var process = OwnedBrowser();
+        var port = await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        _inspector.Belongs = _ => true;
+        await ConnectAsync(port);
+        await WaitForStatusAsync(s => s.EdgeProxyTraffic == DedicatedBrowserProxyTraffic.Observed);
+
+        process.SetupGet(p => p.Running).Returns(false);
+        var status = await _service.GetRuntimeAsync();
+
+        Assert.Equal(DedicatedBrowserVerification.NotRunning, status.EdgeVerification);
+        Assert.Equal(DedicatedBrowserProxyTraffic.Unknown, status.EdgeProxyTraffic);
+        Assert.Null(status.EdgeProxyTrafficObservedAt);
+        Assert.Equal(DedicatedBrowserProxyArgument.Unknown, status.EdgeProxyArgument);
+        // The proxy service is a separate fact and is still running.
+        Assert.True(status.ProxyListening);
+    }
+
+    [Fact]
+    public async Task ARelaunchStartsWithNoTrafficEvidence()
+    {
+        OwnedBrowser(1111);
+        var port = await StartAsync(Scope());
+        var request = new LocalHttpsProxyEdgeLaunchRequest(_sessionId, "dev", Fp);
+        await _service.LaunchEdgeAsync(request);
+        _inspector.Belongs = _ => true;
+        await ConnectAsync(port);
+        await WaitForStatusAsync(s => s.EdgeProxyTraffic == DedicatedBrowserProxyTraffic.Observed);
+
+        OwnedBrowser(2222);
+        _inspector.Belongs = _ => false;
+        var status = await _service.RestartEdgeAsync(request);
+
+        Assert.Equal(2222, status.EdgeProcessId);
+        Assert.Equal(DedicatedBrowserProxyTraffic.NotObserved, status.EdgeProxyTraffic);
+        Assert.Null(status.EdgeProxyTrafficObservedAt);
+    }
+
+    // The proxy service running is not a browser, and not traffic.
+    [Fact]
+    public async Task AProxyWithNoBrowserClaimsNothingAboutOne()
+    {
+        var port = await StartAsync(Scope());
+        _inspector.Belongs = _ => true;
+        await ConnectAsync(port);
+        await Task.Delay(100);
+
+        var status = await _service.GetRuntimeAsync();
+        Assert.True(status.ProxyListening);
+        Assert.Equal(DedicatedBrowserVerification.NotRunning, status.EdgeVerification);
+        Assert.Equal(DedicatedBrowserProxyTraffic.Unknown, status.EdgeProxyTraffic);
+        Assert.Empty(_inspector.ProcessesAskedAbout);
+    }
+
+    // Logs carry the endpoint and the process id, never the command line.
+    [Fact]
+    public async Task VerificationLogsNeverContainTheCommandLine()
+    {
+        OwnedBrowser();
+        await StartAsync(Scope());
+        await _service.LaunchEdgeAsync(new(_sessionId, "dev", Fp));
+        await _service.GetRuntimeAsync();
+
+        Assert.Contains(_log.Messages, m => m.Contains("DedicatedEdgeProxyArgumentVerified"));
+        Assert.DoesNotContain(_log.Messages, m => m.Contains("--user-data-dir") || m.Contains("LocalHttpsProxyEdgeProfile") || m.Contains(Target));
+    }
+
+    /// <summary>A launched process whose own arguments differ from what BirkNext passed — modelled by altering the read-back.</summary>
+    private void LaunchesProcessCarrying(Func<OwnedEdgeLaunchEvidence, OwnedEdgeLaunchEvidence> actual)
+    {
+        var process = OwnedBrowser();
+        _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
+            .Callback<string, IReadOnlyList<string>>((_, a) => { _inspector.LaunchedWith(a); _inspector.Evidence = actual(_inspector.Evidence!); })
+            .Returns(process.Object);
+    }
+
+    private static async Task ConnectAsync(int port)
+    {
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, port);
+        await Task.Delay(50);
+    }
+
+    private async Task<LocalHttpsProxyStatus> WaitForStatusAsync(Func<LocalHttpsProxyStatus, bool> condition)
+    {
+        var status = await _service.GetRuntimeAsync();
+        for (var i = 0; i < 100 && !condition(status); i++) { await Task.Delay(20); status = await _service.GetRuntimeAsync(); }
+        return status;
     }
 
     /// <summary>

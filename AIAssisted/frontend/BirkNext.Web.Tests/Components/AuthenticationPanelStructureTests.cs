@@ -27,6 +27,10 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
             State = state, RuntimeStatus = LocalHttpsProxyRuntimePhase.Running, Port = port, ProxyListening = true,
             RuntimeId = "runtime-abc123", ExpectedProxyPort = port, EdgeProxyPort = edgePort,
             ProxyArgumentConfigured = edgePort is not null, EdgeVerification = edge, EdgeProcessId = pid,
+            EdgeProxyArgument = edge == DedicatedBrowserVerification.Confirmed ? DedicatedBrowserProxyArgument.Verified : DedicatedBrowserProxyArgument.Unknown,
+            ObservedEdgeProxyEndpoint = edge == DedicatedBrowserVerification.Confirmed ? $"127.0.0.1:{port}" : null,
+            EdgeProfileVerified = edge == DedicatedBrowserVerification.Confirmed ? true : null,
+            EdgeProxyTraffic = edge == DedicatedBrowserVerification.Confirmed ? DedicatedBrowserProxyTraffic.NotObserved : DedicatedBrowserProxyTraffic.Unknown,
             EdgeRunning = edge is not DedicatedBrowserVerification.NotRunning,
             EdgeProfileDirectory = @"C:\Users\x\AppData\Local\BirkNext\LocalHttpsProxyEdgeProfile",
             Certificate = Certificate(),
@@ -84,9 +88,25 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
         var cut = Render();
         // The visible surface says the state in words. None of it requires reading a pid or an argument.
         Text(cut, "auth-readiness-state").Should().Be("Ready");
-        Text(cut, "auth-status-browser").Should().Be("Proxy active");
+        Text(cut, "auth-status-browser").Should().Be("Ready to capture");
         cut.Find("[data-testid=auth-readiness-hero]").TextContent.Should().NotContain("--proxy-server");
         cut.Find("[data-testid=auth-readiness-hero]").TextContent.Should().NotContain("14520");
+    }
+
+    // Technical details keep BirkNext's launch record and the running process's own argument apart, and name the
+    // source: never Edge Settings, never the Windows proxy.
+    [Fact]
+    public void TechnicalDetailsSeparateIntentFromEvidenceAndNameTheSource()
+    {
+        var cut = Render();
+        Text(cut, "auth-tech-launch-record").Should().Be("--proxy-server=127.0.0.1:12345");
+        Text(cut, "auth-tech-process-argument").Should().Be("--proxy-server=127.0.0.1:12345");
+        Text(cut, "auth-tech-traffic").Should().Be("Not yet observed");
+        Text(cut, "auth-tech-source").Should().Contain("Edge Settings, Edge policy and the Windows proxy are not read or changed");
+
+        var unread = Render(Proxy(DedicatedBrowserVerification.NotConfirmed));
+        Text(unread, "auth-tech-process-argument").Should().Be("Not read");
+        Text(unread, "auth-tech-launch-record").Should().Be("--proxy-server=127.0.0.1:12345");
     }
 
     [Fact]

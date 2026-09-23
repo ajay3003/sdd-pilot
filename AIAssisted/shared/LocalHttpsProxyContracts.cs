@@ -390,28 +390,61 @@ public static class ObservedNetworkPerformanceLimits
 public enum LocalHttpsProxyRuntimePhase { Stopped, Starting, Running, Stopping, Failed }
 
 /// <summary>
-/// Whether the dedicated browser is provably using the current proxy runtime.
+/// Whether the dedicated browser's proxy CONFIGURATION is verified on the running process. Configuration only — whether
+/// traffic actually went through the proxy is <see cref="DedicatedBrowserProxyTraffic"/>, a separate fact.
 ///
 /// A running msedge.exe proves nothing on its own: it may be a browser this runtime never launched, or one left over
 /// from a previous runtime whose port no longer exists. Only a process BirkNext started itself, still owned by the
-/// current runtime, and recorded at launch as carrying that runtime's proxy port earns <see cref="Confirmed"/>.
+/// current runtime, whose OWN command line — read back from that process id — carries this runtime's proxy endpoint and
+/// the dedicated profile earns <see cref="Confirmed"/>. BirkNext's launch record alone is <see cref="NotConfirmed"/>.
 ///
-/// Nothing here reads the user's Edge settings or the Windows proxy. The evidence is BirkNext's own launch record,
-/// which is the only thing it can honestly claim to know.
+/// Nothing here reads the user's Edge settings, Edge policy or the Windows proxy, and nothing changes them.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum DedicatedBrowserVerification
 {
     /// <summary>No dedicated browser is running for this runtime.</summary>
     NotRunning,
-    /// <summary>Launched by this runtime, still alive, carrying this runtime's proxy port.</summary>
+    /// <summary>The owned, running process's own arguments carry this runtime's proxy endpoint and the dedicated profile.</summary>
     Confirmed,
-    /// <summary>A browser is running but BirkNext did not record which proxy it was given. Never reported as active.</summary>
+    /// <summary>Running and launched with the proxy argument, but the running process's arguments could not be read back.</summary>
     NotConfirmed,
-    /// <summary>Running with a different proxy port than this runtime listens on — left over from an earlier run.</summary>
+    /// <summary>The running process carries a different proxy endpoint (or profile) than this runtime expects.</summary>
     Mismatch,
     /// <summary>There is no runtime to compare against yet.</summary>
     Unknown,
+    /// <summary>The running process carries no proxy argument at all.</summary>
+    Missing,
+}
+
+/// <summary>The proxy argument as read back from the running owned process.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DedicatedBrowserProxyArgument
+{
+    /// <summary>Not read: no owned browser is running, or its arguments could not be read.</summary>
+    Unknown,
+    /// <summary>Present and equal to this runtime's endpoint.</summary>
+    Verified,
+    /// <summary>The process has no <c>--proxy-server</c> argument.</summary>
+    Missing,
+    /// <summary>Present, but a different endpoint.</summary>
+    Mismatch,
+}
+
+/// <summary>
+/// Whether the proxy has seen traffic FROM the owned dedicated browser since it was launched. A connection counts only
+/// when its client socket is owned by that browser process or one of its child processes; traffic from anything else
+/// on the workstation never counts, however much of it there is.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum DedicatedBrowserProxyTraffic
+{
+    /// <summary>No owned browser is running, or connection ownership cannot be determined on this system.</summary>
+    Unknown,
+    /// <summary>The owned browser is running and no connection from it has reached the proxy yet.</summary>
+    NotObserved,
+    /// <summary>At least one proxy connection was owned by the dedicated browser.</summary>
+    Observed,
 }
 
 public sealed record LocalHttpsProxyStatus
@@ -430,9 +463,22 @@ public sealed record LocalHttpsProxyStatus
     public int? ExpectedProxyPort { get; init; }
     /// <summary>The port the running dedicated Edge was actually launched with, recorded at launch. Null when nothing was launched.</summary>
     public int? EdgeProxyPort { get; init; }
-    /// <summary>BirkNext recorded a <c>--proxy-server</c> argument for this browser. Absent means we cannot claim anything about it.</summary>
+    /// <summary>BirkNext launched this browser WITH a <c>--proxy-server</c> argument (its launch record). Intent, not runtime evidence.</summary>
     public bool ProxyArgumentConfigured { get; init; }
     public DedicatedBrowserVerification EdgeVerification { get; init; }
+    /// <summary>The proxy argument as read back from the running owned process.</summary>
+    public DedicatedBrowserProxyArgument EdgeProxyArgument { get; init; }
+    /// <summary>The proxy endpoint the running process actually carries (host:port only). Null when not read or absent.</summary>
+    public string? ObservedEdgeProxyEndpoint { get; init; }
+    /// <summary>Whether the running process uses the dedicated profile directory. Null when its arguments were not read.</summary>
+    public bool? EdgeProfileVerified { get; init; }
+    /// <summary>When the running process's arguments were read back.</summary>
+    public DateTimeOffset? EdgeLaunchVerifiedAt { get; init; }
+    public DedicatedBrowserProxyTraffic EdgeProxyTraffic { get; init; }
+    /// <summary>First proxy connection owned by the dedicated browser since it was launched.</summary>
+    public DateTimeOffset? EdgeProxyTrafficObservedAt { get; init; }
+    /// <summary>Proxy connections since launch whose owner was some OTHER process. Never evidence about the dedicated browser.</summary>
+    public int UnattributedProxyConnections { get; init; }
     public string? StopReason { get; init; }
     public DateTimeOffset? LastHealthCheckAt { get; init; }
     public string? SessionId { get; init; }
