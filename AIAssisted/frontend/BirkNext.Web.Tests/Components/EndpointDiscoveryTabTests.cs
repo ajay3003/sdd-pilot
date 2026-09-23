@@ -75,7 +75,8 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         Assert.Contains("GraphQL", table);
         Assert.Contains("REST", table);
         Assert.Contains("/internal/gql", table);
-        Assert.Contains("api-dev.bufetat.no", table);
+        cut.Find("[data-testid=discovery-page-table] .ed-expand").Click();
+        Assert.Contains("api-dev.bufetat.no", Row(cut, "discovery-page-table"));
     }
 
     [Fact]
@@ -127,8 +128,10 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
             Ep(ObservedTrafficCategory.GraphQl, "/gql", "POST", pagePath: "/b", op: GraphQlOperationType.Query)));
         cut.Find("[data-testid='discovery-nav-pages']").Click();
         cut.FindAll("[data-testid='discovery-page-link']").Single(l => l.TextContent.Contains("/a")).Click();
-        cut.Find("[data-testid='discovery-delete-page']").Click();
+        cut.Find("[data-testid=discovery-nav-overview]").Click();
+        cut.FindAll(".ed-page-actions").Single(e => e.TextContent.Contains("/a captures")).QuerySelector("[data-testid=discovery-delete-page]")!.Click();
         cut.Find("[data-testid='discovery-delete-page-confirm']").Click();
+        cut.Find("[data-testid=discovery-nav-pages]").Click();
         // Page A gone, page B (and its /gql) remains.
         Assert.Equal("1", Row(cut, "discovery-pages-count"));
         Assert.Single(cut.FindAll("[data-testid='discovery-page-link']"));
@@ -143,9 +146,12 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         cut.Find("[data-testid='discovery-page-link']").Click();
         // The only refresh action is "Refresh analysis"; there is no "Clear endpoints" or bulk re-analyze.
         Assert.Empty(cut.FindAll("[data-testid='discovery-clear']"));
+        cut.Find("[data-testid=discovery-nav-overview]").Click();
         Assert.Equal("Refresh analysis", cut.Find("[data-testid='discovery-refresh']").TextContent.Trim());
 
+        cut.Find("[data-testid=discovery-nav-overview]").Click();
         cut.Find("[data-testid='discovery-refresh']").Click();
+        cut.Find("[data-testid=discovery-nav-pages]").Click();
         Assert.Equal("1", Row(cut, "discovery-pages-count"));   // page kept, not deleted
         Assert.Contains("Waiting for fresh traffic", cut.Find("[data-testid='discovery-page-link']").TextContent);
         Assert.Contains("Waiting for fresh traffic", Row(cut, "discovery-page-state"));
@@ -159,7 +165,9 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         var cut = Render(Dev(), oldTraffic);
         cut.Find("[data-testid='discovery-nav-pages']").Click();
         cut.Find("[data-testid='discovery-page-link']").Click();
+        cut.Find("[data-testid=discovery-nav-overview]").Click();
         cut.Find("[data-testid='discovery-refresh']").Click();
+        cut.Find("[data-testid=discovery-nav-pages]").Click();
         Assert.Contains("Waiting for fresh traffic", Row(cut, "discovery-page-state"));
 
         // A re-render re-runs the merge with the SAME old live traffic; the refreshed page must remain empty.
@@ -174,13 +182,15 @@ public sealed class EndpointDiscoveryTabTests : BunitContext
         var cut = Render(Dev(), Traffic(Ep(ObservedTrafficCategory.Rest, "/api/children", pagePath: "/children", at: DateTimeOffset.UtcNow.AddMinutes(-10))));
         cut.Find("[data-testid='discovery-nav-pages']").Click();
         cut.Find("[data-testid='discovery-page-link']").Click();
+        cut.Find("[data-testid=discovery-nav-overview]").Click();
         cut.Find("[data-testid='discovery-refresh']").Click();
+        cut.Find("[data-testid=discovery-nav-pages]").Click();
 
         // Fresh traffic for the same page arrives after the refresh boundary.
         cut.Render(p => p.Add(x => x.Profile, Dev())
             .Add(x => x.ProxyStatus, Traffic(Ep(ObservedTrafficCategory.Rest, "/api/children", pagePath: "/children", at: DateTimeOffset.UtcNow.AddMinutes(5)))));
         cut.Find("[data-testid='discovery-nav-pages']").Click();
-        Assert.Contains("1 endpoints", cut.Find("[data-testid='discovery-page-link']").TextContent);
+        Assert.Contains("1 correlated request group", cut.Find("[data-testid='discovery-page-link']").TextContent);
     }
 
     [Fact]

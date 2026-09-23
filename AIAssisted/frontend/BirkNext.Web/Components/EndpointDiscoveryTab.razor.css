@@ -145,3 +145,32 @@
 @media (max-width: 760px) {
     .ed-manage { flex-direction: column; align-items: flex-start; }
 }
+/* Page communication gives paths the available width; technical tables retain their layout. */
+.ed-page-table { table-layout: fixed; }
+.ed-page-table th, .ed-page-table td { overflow-wrap: anywhere; padding: .45rem; }
+.ed-page-table th:has(+ th:last-child) { width: 3.5rem; }
+.ed-page-table .ed-path { max-width: none; white-space: normal; overflow: visible; }
+.ed-page-table th:has(+ th + th + th + th:last-child) { width: 32%; }
+.ed-page-summary { margin: .8rem 0; }
+.ed-page-sub, .ed-detail dd { overflow-wrap: anywhere; }
+.ed-operation { display: block; font-family: inherit; color: var(--clr-text-muted); }
+.ed-shared-pointer { border-top: 1px solid var(--clr-border); padding-top: .8rem; margin-top: 1rem; }
+.ed-pagelink-active { background: var(--clr-surface-selected); border-color: var(--clr-border); border-left: 3px solid var(--clr-accent); }
+@container page-communication (max-width: 700px) {
+    .ed-page-table, .ed-page-table tbody { display: block; }
+    .ed-page-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .ed-page-table tr { display: block; border-bottom: 1px solid var(--clr-border); padding: .5rem; }
+    .ed-page-table td { display: block; border: 0; }
+    .ed-page-table td[data-label]::before { content: attr(data-label) ': '; font-weight: 600; font-family: sans-serif; }
+}
+@media (max-width: 720px) {
+    .ed-split { grid-template-columns: minmax(0, 1fr); }
+    .ed-pagelist { border-right: 0; padding-right: 0; }
+    .ed-toolbar label { flex-wrap: wrap; max-width: 100%; }
+    .ed-search { min-width: 0; max-width: 100%; }
+}
+
+.ed-pagedetail { container: page-communication / inline-size; }
+.ed-page-head > div { width: 100%; }
+.ed-page-summary { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }
+.ed-count-help summary { font-size: .78rem; color: var(--clr-text-muted); }

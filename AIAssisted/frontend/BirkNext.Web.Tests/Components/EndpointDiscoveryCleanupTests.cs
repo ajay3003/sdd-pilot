@@ -44,6 +44,7 @@ public class EndpointDiscoveryCleanupTests : BunitContext
     {
         var cut = Page(Ep("/api/autorisasjon/graphql"), Ep("/graphql", provenance: RequestProvenance.DiscoveryProbe));
         Assert.DoesNotContain("Discovery probe", cut.Find("[data-testid=discovery-overview-table]").TextContent);
+        cut.Find("[data-testid=discovery-nav-shared]").Click();
         var technical = cut.Find("[data-testid=discovery-technical]");
         Assert.False(technical.HasAttribute("open"));
         Assert.Contains("Discovery probe", technical.TextContent);
@@ -72,6 +73,8 @@ public class EndpointDiscoveryCleanupTests : BunitContext
     {
         var cut = Page(Ep("/api/a"));
         cut.Find("[data-testid=discovery-nav-pages]").Click();
+        Assert.Empty(cut.FindAll("[data-testid=discovery-manage]"));
+        cut.Find("[data-testid=discovery-nav-overview]").Click();
         Assert.NotNull(cut.Find("[data-testid=discovery-delete-page]").Closest("details"));
         Assert.Empty(cut.FindAll("[data-testid=discovery-delete-page-confirm]"));
         cut.Find("[data-testid=discovery-refresh]").Click();

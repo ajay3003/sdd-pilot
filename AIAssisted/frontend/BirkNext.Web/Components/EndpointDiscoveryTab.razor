@@ -99,10 +99,12 @@
                 {
                     @foreach (var pg in OrderedPages)
                     {
-                        <button type="button" class="ed-pagelink @(SelectedPage?.Identity == pg.Identity ? "ed-pagelink-active" : "")" data-testid="discovery-page-link" @onclick="() => _selectedPage = pg.Identity">
+                        <button type="button" class="ed-pagelink @(SelectedPage?.Identity == pg.Identity ? "ed-pagelink-active" : "")" aria-current="@(SelectedPage?.Identity == pg.Identity ? "page" : null)" data-testid="discovery-page-link" @onclick="() => _selectedPage = pg.Identity">
                             <span class="ed-pagetitle">@pg.PagePath</span>
-                            <span>@pg.DisplayName</span><span>@(pg.NetworkHistory.Count + 1) captures ? Last observed @Time(pg.LastObservedAt)</span>
-                            <span class="ed-pagecount">@(pg.IsWaitingForFreshTraffic ? "Waiting for fresh traffic" : $"{AppEndpointCount(pg)} endpoints{(pg.HasBrowserEvidence ? " · browser" : "")}")</span>
+                            @if (ShowPageTitles && !string.IsNullOrWhiteSpace(pg.DisplayName)) { <span class="ed-pagecount">@pg.DisplayName</span> }
+                            @if (ShowPageOrigins) { <span class="ed-pagecount">@pg.PageOrigin</span> }
+                            <span class="ed-pagecount">@(pg.IsWaitingForFreshTraffic ? "Waiting for fresh traffic" : $"Last observed {Time(pg.LastObservedAt)}")</span>
+                            <span class="ed-pagecount" title="@CaptureHelp">@CaptureLabel(pg) &middot; @GroupLabel(pg)</span>
                         </button>
                     }
                 }
@@ -113,45 +115,32 @@
                     <div class="ed-page-head">
                         <div>
                             <h4 class="ed-page-title" data-testid="discovery-selected-page">@sel.PagePath</h4>
-                            <p class="ed-page-sub ed-mono">@sel.Identity · last @Time(sel.LastObservedAt)</p>
+                            <p class="ed-page-sub ed-mono">@sel.Identity</p>
+                            <dl class="ed-detail ed-page-summary" data-testid="discovery-page-summary">
+                                <div><dt>Last observed</dt><dd>@Time(sel.LastObservedAt)</dd></div>
+                                <div><dt>Captures</dt><dd>@CaptureLabel(sel)</dd></div>
+                                <div><dt>Current communication</dt><dd>@GroupLabel(sel)</dd></div>
+                                <div><dt>Authenticated traffic</dt><dd>@(sel.Endpoints.Any(e => NetworkEvidencePolicy.IsApplicationTraffic(e) && e.AuthObserved) ? "Bearer observed" : "None observed")</dd></div>
+                            </dl>
+                            <details class="ed-count-help"><summary>About these counts</summary><p class="ed-note">@CaptureHelp Current communication shows the current generation. Groups distinguish method, origin, path, protocol, GraphQL operation, transport and provenance. Calls are retained cumulative counts; Result is the latest observed status. Archived evidence is available in Overview maintenance.</p></details>
                         </div>
-                        <details class="ed-page-actions"><summary>Analysis history / maintenance</summary>
-                            <p>@(sel.NetworkHistory.Count + 1) retained captures. Refresh archives current evidence and waits for new traffic.</p>
-                            @foreach (var capture in sel.NetworkHistory.OrderByDescending(c => c.LastObservedAt))
-                            {
-                                <details><summary>Generation @capture.Generation - @capture.LastObservedAt.ToLocalTime().ToString("g")</summary>
-                                    @RenderEndpointTable(VisibleEndpoints(capture.Endpoints), "discovery-capture-table", "No network requests in this capture.")
-                                </details>
-                            }
-                            <button type="button" class="btn-secondary fa-btn-sm" data-testid="discovery-refresh" disabled="@(_refreshing is not null)"
-                                    title="Archive this page's current observations and collect fresh endpoint traffic as you use the page again."
-                                    @onclick="() => RefreshPage(sel.Identity)">Refresh analysis</button>
-                            @if (_confirmDeletePage == sel.Identity)
-                            {
-                                <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-page-confirm" @onclick="() => DeletePage(sel.Identity)">Confirm delete</button>
-                                <button type="button" class="btn-secondary fa-btn-sm" @onclick="() => _confirmDeletePage = null">Cancel</button>
-                            }
-                            else
-                            {
-                                <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-page" @onclick="() => _confirmDeletePage = sel.Identity">Delete analysis</button>
-                            }
-                        </details>
                     </div>
-                    @if (_confirmDeletePage == sel.Identity)
-                    {
-                        <p class="ed-warn" data-testid="discovery-delete-page-note">Delete analysis for "@sel.PagePath"? This removes discovered endpoint history for this page only. Target Environment configuration is not changed.</p>
-                    }
                     @if (sel.IsWaitingForFreshTraffic)
                     {
                         <p class="ed-note" data-testid="discovery-page-state">Waiting for fresh traffic. Use this page in the target application to collect fresh endpoint traffic.</p>
                     }
-                    <h5 class="ed-section-title">Network</h5>
-                    @RenderEndpointTable(VisibleEndpoints(sel.Endpoints.Where(NetworkEvidencePolicy.IsApplicationTraffic).ToList()), "discovery-page-table", "No endpoints observed for this page yet.")
+                    <h5 class="ed-section-title">Page-correlated application communication</h5>
+                    @RenderEndpointTable(VisibleEndpoints(sel.Endpoints.Where(NetworkEvidencePolicy.IsApplicationTraffic).ToList()), "discovery-page-table", "No page-correlated application communication observed for this page.")
                 }
                 else
                 {
                     <p class="ed-empty">Select a page to see the endpoints it communicates with.</p>
                 }
+                <div class="ed-shared-pointer" data-testid="discovery-shared-pointer">
+                    <strong>Shared / background evidence</strong>
+                    <p class="ed-note">Technical and background evidence is available separately.</p>
+                    <button type="button" class="ed-link" data-testid="discovery-open-shared" @onclick="OpenShared">Open Shared / background</button>
+                </div>
             </div>
         </div>
     }
@@ -160,23 +149,52 @@
         <div class="ed-panel">
             <p class="ed-note">Requests that could not be confidently correlated to a single page: background polling, shared configuration, global authentication and telemetry.</p>
             @RenderEndpointTable(VisibleEndpoints(Snapshot.Shared.Where(e => NetworkEvidencePolicy.ProvenanceOf(e) is not (RequestProvenance.DiscoveryProbe or RequestProvenance.BirkNextDiagnostic)).ToList()), "discovery-shared-table", "No shared or background traffic observed yet.")
+            <details data-testid="discovery-technical"><summary>Technical / discovery probe activity (@TechnicalEndpoints.Sum(e => e.Count) requests)</summary>
+                @RenderEndpointTable(VisibleEndpoints(TechnicalEndpoints), "discovery-technical-table", "No technical or discovery probe requests match these filters.")
+            </details>
         </div>
     }
     </div>
     <p class="ed-note" data-testid="discovery-configured-pointer">Configured integrations are managed in Integrations.
         <a href="@EndpointDiscoveryPresentation.IntegrationsHref" data-testid="discovery-open-integrations">Open Integrations</a>
     </p>
-    <details data-testid="discovery-technical"><summary>Technical / discovery probe activity (@TechnicalEndpoints.Sum(e => e.Count) requests)</summary>
-        @RenderEndpointTable(VisibleEndpoints(TechnicalEndpoints), "discovery-technical-table", "No technical or discovery probe requests match these filters.")
-    </details>
+
 
     @*
         Secondary management, below the evidence and away from the view navigation. Deleting every saved
         analysis is not a way to move around the page, so it does not sit beside the things that are.
     *@
-    @if (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0 || Snapshot.ExcludedPageHistory.Count > 0)
+    @if (_view == "overview" && (Snapshot.Pages.Count > 0 || Snapshot.Shared.Count > 0 || Snapshot.ExcludedPageHistory.Count > 0))
     {
-        <details class="ed-manage" data-testid="discovery-manage"><summary>Analysis history</summary>
+        <details class="ed-manage" data-testid="discovery-manage"><summary>Analysis history / maintenance</summary>
+            @foreach (var sel in OrderedPages)
+            {
+                <details class="ed-page-actions"><summary>@sel.PagePath captures and actions</summary>
+                    <p>@CaptureLabel(sel) (analysis generations). Refresh archives current evidence and waits for new traffic.</p>
+                    @foreach (var capture in sel.NetworkHistory.OrderByDescending(c => c.LastObservedAt))
+                    {
+                        <details><summary>Generation @capture.Generation - @capture.LastObservedAt.ToLocalTime().ToString("g")</summary>
+                            @RenderEndpointTable(VisibleEndpoints(capture.Endpoints), "discovery-capture-table", "No network requests in this capture.")
+                        </details>
+                    }
+                    <button type="button" class="btn-secondary fa-btn-sm" data-testid="discovery-refresh" disabled="@(_refreshing is not null)"
+                            title="Archive this page's current observations and collect fresh endpoint traffic as you use the page again."
+                            @onclick="() => RefreshPage(sel.Identity)">Refresh analysis</button>
+                    @if (_confirmDeletePage == sel.Identity)
+                    {
+                        <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-page-confirm" @onclick="() => DeletePage(sel.Identity)">Confirm delete</button>
+                        <button type="button" class="btn-secondary fa-btn-sm" @onclick="() => _confirmDeletePage = null">Cancel</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn-danger fa-btn-sm" data-testid="discovery-delete-page" @onclick="() => _confirmDeletePage = sel.Identity">Delete analysis</button>
+                    }
+                </details>
+                @if (_confirmDeletePage == sel.Identity)
+                {
+                    <p class="ed-warn" data-testid="discovery-delete-page-note">Delete analysis for "@sel.PagePath"? This removes discovered endpoint history for this page only. Target Environment configuration is not changed.</p>
+                }
+            }
             <span class="ed-manage-label">Retained page analyses: @History.RetainedPageAnalyses; technical analyses: @History.ExcludedTechnicalAnalyses</span>
             @if (_confirmDeleteAll)
             {
@@ -253,8 +271,10 @@
 
     private RenderFragment RenderEndpointTable(IReadOnlyList<ObservedNetworkEndpoint> endpoints, string testId, string emptyMessage) => __builder =>
     {
+        var pageTable = testId == "discovery-page-table";
+        var showHost = !pageTable || endpoints.Select(e => e.Origin).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any();
         <div class="ed-toolbar">
-            <label>Search <input class="ed-search" placeholder="Search host or path" data-testid="discovery-search" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" /></label>
+            <label>Search <input class="ed-search" placeholder="Search path or host" data-testid="discovery-search" value="@_search" @oninput="e => _search = e.Value?.ToString() ?? string.Empty" /></label>
             <label>Type <select @bind="_categoryFilter" data-testid="discovery-type-filter">@foreach (var (key, label) in Filters) { <option value="@key">@label</option> }</select></label>
             <label>Provenance <select @bind="_provenanceFilter" data-testid="discovery-provenance-filter">
                 <option value="all">All provenance</option><option value="app">Application / browser traffic</option><option value="shared">Background / shared</option><option value="probe">Discovery probe</option><option value="diagnostic">BirkNext diagnostic</option><option value="unknown">Unknown / historical</option>
@@ -268,28 +288,34 @@
         else
         {
             <div class="ed-tablewrap">
-                <table class="ed-table" data-testid="@testId">
-                    <thead><tr><th></th><th>Type</th><th>Category / reason</th><th>Method</th><th>Host</th><th>Path</th><th>Auth</th><th>Result</th><th>Calls</th><th>Last seen</th><th>Transport</th><th>Provenance</th></tr></thead>
+                <table class="ed-table @(pageTable ? "ed-page-table" : "")" data-testid="@testId">
+                    <thead><tr><th scope="col">Details</th><th scope="col">Type</th>@if (!pageTable) { <th scope="col">Category / reason</th> }<th scope="col">Method</th>@if (showHost) { <th scope="col">Host</th> }<th scope="col">Path</th><th scope="col">Auth</th><th scope="col">Result</th><th scope="col">Calls</th><th scope="col">Last seen</th>@if (!pageTable) { <th scope="col">Transport</th><th scope="col">Provenance</th> }</tr></thead>
                     <tbody>
                         @foreach (var e in endpoints)
                         {
                             var key = EndpointDiscoveryMerge.Key(e);
                             <tr class="ed-row" data-testid="discovery-endpoint-row">
-                                <td><button type="button" class="ed-expand" @onclick="() => Toggle(key)" aria-label="Toggle details">@(_expanded.Contains(key) ? "▾" : "▸")</button></td>
-                                <td>@CategoryBadge(e.Category)</td>
-                                <td>@NetworkEvidencePolicy.Reason(e)</td><td class="ed-mono">@e.Method</td>
-                                <td class="ed-mono">@e.Host</td>
-                                <td class="ed-mono ed-path">@e.Path</td>
-                                <td>@(e.AuthObserved ? "Bearer" : "—")</td>
-                                <td>@ResultLabel(e)</td>
-                                <td>@e.Count</td>
-                                <td class="ed-mono">@Time(e.LastObservedAt)</td>
-                                <td>@NetworkEvidencePolicy.TransportLabel(e)</td><td>@NetworkEvidencePolicy.ProvenanceLabel(e)</td>
+                                <td><button type="button" class="ed-expand" @onclick="() => Toggle(key)" aria-expanded="@(_expanded.Contains(key) ? "true" : "false")" aria-label="@($"Toggle details for {e.Method} {e.Path}")">@(_expanded.Contains(key) ? "▾" : "▸")</button></td>
+                                <td data-label="Type">@CategoryBadge(e.Category)</td>
+                                @if (!pageTable) { <td>@NetworkEvidencePolicy.Reason(e)</td> }<td data-label="Method" class="ed-mono">@e.Method</td>
+                                @if (showHost) { <td data-label="Host" class="ed-mono">@e.Host</td> }
+                                <td data-label="Path" class="ed-mono ed-path" title="@e.Path">@e.Path @if (!string.IsNullOrWhiteSpace(e.OperationName)) { <small class="ed-operation">@e.OperationType @e.OperationName</small> }</td>
+                                <td data-label="Auth">@(e.AuthObserved ? "Bearer observed" : "—")</td>
+                                <td data-label="Result">@ResultLabel(e)</td>
+                                <td data-label="Calls">@e.Count</td>
+                                <td data-label="Last seen" class="ed-mono">@Time(e.LastObservedAt)</td>
+                                @if (!pageTable) { <td>@NetworkEvidencePolicy.TransportLabel(e)</td><td>@NetworkEvidencePolicy.ProvenanceLabel(e)</td> }
                             </tr>
                             @if (_expanded.Contains(key))
                             {
-                                <tr class="ed-detailrow"><td></td><td colspan="11">
+                                <tr class="ed-detailrow"><td></td><td colspan="@(pageTable ? (showHost ? 8 : 7) : 11)">
                                     <dl class="ed-detail">
+                                        <div><dt>Host</dt><dd>@e.Host</dd></div>
+                                        <div><dt>Path</dt><dd class="ed-mono">@e.Path</dd></div>
+                                        <div><dt>Category / reason</dt><dd>@NetworkEvidencePolicy.Reason(e)</dd></div>
+                                        <div><dt>Transport</dt><dd>@NetworkEvidencePolicy.TransportLabel(e)</dd></div>
+                                        <div><dt>Provenance</dt><dd>@NetworkEvidencePolicy.ProvenanceLabel(e)</dd></div>
+                                        @if (e.Category is ObservedTrafficCategory.OtherHttp or ObservedTrafficCategory.Unknown) { <div><dt>Other</dt><dd>Observed communication not classified as REST, GraphQL or WebSocket; may include page navigation.</dd></div> }
                                         <div><dt>Origin</dt><dd class="ed-mono">@e.Origin</dd></div>
                                         <div><dt>Classification</dt><dd>@e.Category (@e.Confidence)</dd></div>
                                         @if (e.Category == ObservedTrafficCategory.GraphQl)
@@ -314,6 +340,18 @@
             </div>
         }
     };
+
+    private const string CaptureHelp = "A capture is an analysis generation: archived generations plus the current generation, which may be waiting for traffic. It is not a browser visit.";
+    private static string CaptureLabel(PageAnalysis page) => $"{page.NetworkHistory.Count + 1} capture{(page.NetworkHistory.Count == 0 ? "" : "s")}";
+    private static string GroupLabel(PageAnalysis page) => $"{AppEndpointCount(page)} correlated request group{(AppEndpointCount(page) == 1 ? "" : "s")}";
+    private bool ShowPageTitles => OrderedPages.Select(p => p.DisplayName).Where(n => !string.IsNullOrWhiteSpace(n)).Distinct().Skip(1).Any();
+    private bool ShowPageOrigins => OrderedPages.Select(p => p.PageOrigin).Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any();
+    private async Task OpenShared()
+    {
+        _search = ""; _categoryFilter = "all"; _provenanceFilter = "all"; _authenticatedOnly = false;
+        _view = "shared";
+        await _tabButtons[2].FocusAsync();
+    }
 
     private void Toggle(string key) { if (!_expanded.Remove(key)) _expanded.Add(key); }
 
@@ -421,6 +459,6 @@
             ObservedTrafficCategory.Telemetry => ("ed-badge-static", "Telemetry"),
             _ => ("ed-badge-other", "Other")
         };
-        <span class="ed-badge @cls">@label</span>
+        <span class="ed-badge @cls" title="@(label == "Other" ? "Observed communication not classified as REST, GraphQL or WebSocket; may include page navigation. Expand details for explanation." : null)">@label</span>
     };
 }
