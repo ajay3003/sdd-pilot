@@ -458,14 +458,14 @@
     @*
         Browser Companion stays in Browser Discovery: it is what produces this evidence. But a second large "Connected"
         card under a Live session strip that already says Connected is duplication, so what is left is setup and
-        control — pairing, the recovery actions, and the developer extension install. It opens itself when the session
-        needs something and stays shut when it does not, so a healthy connection offers no prominent pairing action.
+        control — pairing, the recovery actions, and the developer extension install. The initial recovery situation
+        sets its default; after that, expansion belongs to the user and never follows live status refreshes.
     *@
     @if (_view == "overview")
     {
         <ReviewDisclosure TestId="browser-discovery-companion-setup" Class="disclosure-inline disclosure-small"
                           Text="Browser Companion setup" CollapseText="Hide Browser Companion setup"
-                          Expanded="@(Situation == BrowserCompanionSituation.PairedNotConnected)">
+                          @bind-Expanded="BrowserCompanionSetupExpanded">
             <BrowserCompanionPanel Profile="Profile" Runtime="Runtime" Compact="true" Setup="true"
                                    ShowPairAction="@(!BrowserDiscoveryStates.ShowsPairAction(DiscoveryState))" />
         </ReviewDisclosure>
@@ -483,6 +483,15 @@
 
     private string _view = "overview";
     private string? _selected;
+    private string? _setupProfileId;
+    // Null only until the target's initial status is available. A user choice, including one made while
+    // that request is in flight, takes precedence over the initial recovery default.
+    private bool? _browserCompanionSetupExpanded;
+    private bool BrowserCompanionSetupExpanded
+    {
+        get => _browserCompanionSetupExpanded ?? false;
+        set => _browserCompanionSetupExpanded = value;
+    }
 
     private EndpointDiscoverySnapshot Snapshot => Discovery.GetSnapshot(Profile?.Id ?? "");
     private IReadOnlyList<BrowserPageRow> Rows => BrowserDiscoveryPresentation.Rows(Snapshot);
@@ -513,6 +522,12 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        var profileId = Profile?.Id;
+        if (_setupProfileId != profileId)
+        {
+            _setupProfileId = profileId;
+            _browserCompanionSetupExpanded = null;
+        }
         if (!ReferenceEquals(_subscribed, Runtime))
         {
             if (_subscribed is not null) _subscribed.Changed -= OnRuntimeChanged;
@@ -520,6 +535,8 @@
             if (_subscribed is not null) _subscribed.Changed += OnRuntimeChanged;
         }
         if (Runtime is not null && Profile is not null) await Runtime.FollowAsync(Profile);
+        if (_setupProfileId == profileId)
+            _browserCompanionSetupExpanded ??= Situation == BrowserCompanionSituation.PairedNotConnected;
     }
 
     private void OnRuntimeChanged() => _ = InvokeAsync(StateHasChanged);
