@@ -1322,3 +1322,10 @@
     ::deep .fqr-a11y-counts { grid-template-columns: 1fr; }
     ::deep .fqr-a11y-counts > div { text-align: left; }
 }
+
+/* Narrow widths: the export actions drop below the title instead of widening the page (found at 420px). */
+@media (max-width: 640px) {
+    /* PageHeader is its own component, so ::deep from this page's root reaches it without touching other pages. */
+    .fqr-page ::deep .page-header { flex-wrap: wrap; }
+    .fqr-page ::deep .page-header-actions { flex-shrink: 1; min-width: 0; }
+}

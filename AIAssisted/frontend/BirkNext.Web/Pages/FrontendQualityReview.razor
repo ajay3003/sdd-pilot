@@ -290,7 +290,7 @@
                 <h2 id="fqr-key-issues-heading">Key logical issues</h2>
                 <p class="fqr-section-note">The most severe distinct problems this review found. Every issue is listed further down.</p>
             </div>
-            <FrontendQualityLogicalIssues Issues="keyIssues" />
+            <FrontendQualityLogicalIssues Issues="keyIssues" Compact="true" />
             @if (actionableIssues.Count > keyIssues.Count)
             {
                 <p class="fqr-section-note" data-testid="fqr-key-issues-more">
@@ -344,9 +344,13 @@
                             <ul class="fqr-domain-finding-list" data-testid="fqr-domain-finding-list">
                                 @foreach (var finding in DomainFindings(report, domain.Category))
                                 {
-                                    <li class="fqr-domain-finding" data-testid="fqr-domain-finding" data-severity="@finding.Severity">
+                                    <li class="fqr-domain-finding" data-testid="fqr-domain-finding" data-severity="@finding.Severity" data-origin="@finding.Origin">
                                         <span class="fqr-severity fqr-severity-@finding.Severity.ToString().ToLowerInvariant()">@finding.Severity</span>
                                         <span class="fqr-domain-finding-title">@finding.Title</span>
+                                        @if (finding.Origin == FrontendQualityFindingOrigin.Derived && !domain.Derived)
+                                        {
+                                            <span class="fqr-pill fqr-pill-muted">Derived indicator</span>
+                                        }
                                         <span class="fqr-domain-finding-desc">@finding.Description</span>
                                     </li>
                                 }
@@ -416,14 +420,18 @@
                 <p class="fqr-section-note">Every issue, every source observation, and how this review was executed.</p>
             </div>
 
-            <ReviewDisclosure Text="Logical issues" CollapseText="Hide logical issues"
-                              Hint="@($"{actionableIssues.Count} actionable{(result.InformationalIssueCount > 0 ? $" · {result.InformationalIssueCount} informational" : "")}")"
+            @* Informational observations and derived indicators are listed here too, and are not logical issues: the label
+               counts each kind by its own name, so "28 logical issues" means the same thing here as in the metric. *@
+            <ReviewDisclosure Text="Review items" CollapseText="Hide review items"
+                              Hint="@ReviewItemsHint(report, actionableIssues.Count, result.InformationalIssueCount)"
                               TestId="fqr-all-logical-issues" Class="fqr-detail-disclosure">
                 <FrontendQualityLogicalIssues Issues="report.LogicalIssues" />
             </ReviewDisclosure>
 
+            @* 44 source findings plus 4 derived indicators are 48 recorded rows, and the hint says exactly that. It used to
+               call all 48 "observations from every engine" beside a metric reading 44. *@
             <ReviewDisclosure Text="Source findings" CollapseText="Hide source findings"
-                              Hint="@($"{report.Findings.Count} observation{(report.Findings.Count == 1 ? "" : "s")} from every engine")"
+                              Hint="@SourceFindingsHint(result)"
                               TestId="fqr-all-findings" Class="fqr-detail-disclosure">
                 <div class="fqr-findings-toolbar" role="group" aria-label="Filter source findings">
                     <input type="search"
@@ -606,19 +614,28 @@
 
                     @* One block per distinct evidence record. The same three payload records were repeated for every
                        finding that cited them, so the same lines appeared several times in one list. *@
+                    @* Raw evidence is one level further in, and is not rendered until asked for: it can run to hundreds of
+                       lines, and opening Technical details to read the execution facts should not build them. *@
                     @if (evidenceRecords.Count > 0)
                     {
-                        <section class="fqr-technical-block" aria-labelledby="fqr-tech-evidence">
+                        <section class="fqr-technical-block" aria-labelledby="fqr-tech-evidence" data-testid="fqr-technical-raw">
                             <h3 id="fqr-tech-evidence">Raw evidence</h3>
-                            <ul class="fqr-technical-evidence-list" data-testid="fqr-technical-evidence">
-                                @foreach (var record in evidenceRecords)
-                                {
-                                    <li>
-                                        <code>@record.Value</code>
-                                        <span class="fqr-muted">@record.Sources</span>
-                                    </li>
-                                }
-                            </ul>
+                            <p class="fqr-muted" data-testid="fqr-technical-raw-count">@evidenceRecords.Count distinct evidence record@(evidenceRecords.Count == 1 ? "" : "s")</p>
+                            <button type="button" class="btn-secondary fqr-raw-toggle" data-testid="fqr-technical-raw-toggle"
+                                    aria-expanded="@(_rawEvidenceOpen ? "true" : "false")" aria-controls="fqr-technical-evidence-list"
+                                    @onclick="() => _rawEvidenceOpen = !_rawEvidenceOpen">@(_rawEvidenceOpen ? "Hide raw evidence" : "View raw evidence")</button>
+                            @if (_rawEvidenceOpen)
+                            {
+                                <ul class="fqr-technical-evidence-list" id="fqr-technical-evidence-list" data-testid="fqr-technical-evidence">
+                                    @foreach (var record in evidenceRecords)
+                                    {
+                                        <li>
+                                            <code>@record.Value</code>
+                                            <span class="fqr-muted">@record.Sources</span>
+                                        </li>
+                                    }
+                                </ul>
+                            }
                         </section>
                     }
                 </div>
@@ -764,12 +781,36 @@
     private const int KeyIssueCount = 5;
 
     /// <summary>Names what opening the disclosure shows: source observations, and how many of them.</summary>
+    /// <summary>
+    /// A derived domain lists indicators, never "source findings": QA Readiness showed "Derived · 4 indicators" above a
+    /// button reading "View 4 source findings".
+    /// </summary>
     private static string DomainDetailsText(FrontendQualityDomainResult domain) => domain.FindingCount switch
     {
         null or 0 => $"View {domain.Title.ToLowerInvariant()} detail",
+        var count when domain.Derived => $"View {count} indicator{(count == 1 ? "" : "s")}",
         1 => "View 1 source finding",
         var count => $"View {count} source findings",
     };
+
+    /// <summary>Source findings and derived indicators by their own names; the total only as "recorded".</summary>
+    private static string SourceFindingsHint(FrontendQualityResultView result) =>
+        $"{result.SourceFindingCount} source finding{(result.SourceFindingCount == 1 ? "" : "s")}"
+        + (result.DerivedIndicatorCount > 0
+            ? $" · {result.DerivedIndicatorCount} derived indicator{(result.DerivedIndicatorCount == 1 ? "" : "s")} · {result.SourceFindingCount + result.DerivedIndicatorCount} recorded"
+            : "");
+
+    /// <summary>Each kind of review item counted by its own name.</summary>
+    private static string ReviewItemsHint(FrontendQualityReviewReport report, int actionable, int informational)
+    {
+        var derived = report.LogicalIssues.Count(i => !i.IsActionable && !i.Informational);
+        return $"{actionable} actionable logical issue{(actionable == 1 ? "" : "s")}"
+            + (informational > 0 ? $" · {informational} informational observation{(informational == 1 ? "" : "s")}" : "")
+            + (derived > 0 ? $" · {derived} derived indicator{(derived == 1 ? "" : "s")}" : "");
+    }
+
+    /// <summary>Local UI state: raw evidence is built only after the reader asks for it.</summary>
+    private bool _rawEvidenceOpen;
 
     private static string EngineCoverageHint(FrontendQualityResultView result) =>
         result.Completeness is not { } completeness ? "Engine outcomes for this run"

@@ -197,7 +197,7 @@ public static class FrontendQualityResultPresentation
 
         var scale = actionable == 0
             ? "No logical issue was identified in the evidence reviewed"
-            : $"{actionable} logical issue{(actionable == 1 ? "" : "s")} from {observations} source observation{(observations == 1 ? "" : "s")}, across {reviewed} of {domains.Count} review domains";
+            : $"{actionable} logical issue{(actionable == 1 ? "" : "s")} from {observations} source finding{(observations == 1 ? "" : "s")}, across {reviewed} of {domains.Count} review domains";
 
         return state switch
         {
@@ -242,6 +242,14 @@ public static class FrontendQualityResultPresentation
         // CSP, HSTS, X-Content-Type-Options, Permissions-Policy and Referrer-Policy findings under that very category.
         // Suppressing the count because the engine outcome said so made the card contradict the findings table.
         var categoryFindings = report.Findings.Count(f => f.Category == category);
+        // Source and derived, apart: a derived indicator filed under a domain is not one of its source findings.
+        var categorySource = report.Findings.Count(f => f.Category == category && f.Origin == FrontendQualityFindingOrigin.Source);
+        var categoryDerived = categoryFindings - categorySource;
+        // Source findings of THIS domain that belong to logical issues owned by another primary domain (a missing
+        // response header observed by a standards check, owned by Security). From the grouping itself, never a title match.
+        var contributed = issues.Where(issue => issue.Category != category)
+            .SelectMany(issue => issue.FindingInstances.Where(i => i.Category == category).Select(_ => issue.Category))
+            .ToList();
         // QA Readiness draws its items from evidence the other domains already reported. They are indicators, not new
         // observations, and the domain says so rather than presenting them as findings of its own.
         var derived = categoryFindings > 0 && report.Findings.Where(f => f.Category == category)
@@ -261,7 +269,9 @@ public static class FrontendQualityResultPresentation
             : active.Count > 0 ? FrontendQualityDomainResultState.NoEvidence
             : FrontendQualityDomainResultState.NotAssessed;
 
-        int? findingCount = FrontendQualityDomainResultStates.CarriesFindings(state) ? categoryFindings : null;
+        var carries = FrontendQualityDomainResultStates.CarriesFindings(state);
+        // A derived domain counts its indicators; every other domain counts its SOURCE findings only.
+        int? findingCount = carries ? (derived ? categoryDerived : categorySource) : null;
 
         return new FrontendQualityDomainResult(
             category,
@@ -272,7 +282,10 @@ public static class FrontendQualityResultPresentation
             findingCount,
             LogicalIssueCount: findingCount is null || derived ? null : categoryIssues,
             Derived: derived,
-            ManualAssessmentRequired: category == FrontendQualityCategory.Accessibility && accessibility is { RequireManualAssessment: > 0 });
+            ManualAssessmentRequired: category == FrontendQualityCategory.Accessibility && accessibility is { RequireManualAssessment: > 0 },
+            DerivedIndicatorCount: carries && !derived ? categoryDerived : 0,
+            ContributedToOtherDomains: carries ? contributed.Count : 0,
+            ContributedDomainLabels: contributed.Distinct().Select(FrontendQualityCategoryEngines.Label).ToList());
     }
 
     /// <summary>

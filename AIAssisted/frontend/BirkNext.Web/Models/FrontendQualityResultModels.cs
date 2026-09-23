@@ -107,12 +107,12 @@ public sealed record FrontendQualityRecommendationTheme(
     IReadOnlyList<string> AffectedPages,
     int SourceFindingCount)
 {
-    /// <summary>"2 logical issues · 4 affected pages · 8 source observations" — only the parts that say something.</summary>
+    /// <summary>"2 logical issues · 4 affected pages · 8 source findings" — only the parts that say something.</summary>
     public string ScaleLabel => string.Join(" · ", new[]
     {
         Issues.Count > 1 ? $"{Issues.Count} logical issues" : "1 logical issue",
         AffectedPages.Count > 1 ? $"{AffectedPages.Count} affected pages" : null,
-        $"{SourceFindingCount} source observation{(SourceFindingCount == 1 ? "" : "s")}",
+        $"{SourceFindingCount} source finding{(SourceFindingCount == 1 ? "" : "s")}",
     }.Where(part => part is not null));
 
     public string PriorityLabel => Priority switch
@@ -209,7 +209,10 @@ public sealed record FrontendQualityDomainResult(
     int? FindingCount,
     int? LogicalIssueCount = null,
     bool Derived = false,
-    bool ManualAssessmentRequired = false)
+    bool ManualAssessmentRequired = false,
+    int DerivedIndicatorCount = 0,
+    int ContributedToOtherDomains = 0,
+    IReadOnlyList<string>? ContributedDomainLabels = null)
 {
     /// <summary>The state label, or "Derived" for a domain that draws conclusions rather than making observations.</summary>
     public string StateLabel => Derived ? "Derived" : FrontendQualityDomainResultStates.Label(State);
@@ -217,9 +220,18 @@ public sealed record FrontendQualityDomainResult(
     /// <summary>"3 logical issues · 30 source findings", or "3 indicators" for a derived domain.</summary>
     public string? CountLabel => FindingCount is not { } findings ? null
         : Derived ? $"{findings} indicator{(findings == 1 ? "" : "s")}"
-        : LogicalIssueCount is { } issues
+        : (LogicalIssueCount is { } issues
             ? $"{issues} logical issue{(issues == 1 ? "" : "s")} · {findings} source finding{(findings == 1 ? "" : "s")}"
-            : $"{findings} source finding{(findings == 1 ? "" : "s")}";
+            : $"{findings} source finding{(findings == 1 ? "" : "s")}")
+          + (DerivedIndicatorCount > 0 ? $" · {DerivedIndicatorCount} derived indicator{(DerivedIndicatorCount == 1 ? "" : "s")}" : "");
+
+    /// <summary>
+    /// Why a domain can show source findings and few or no logical issues: its findings were grouped into issues owned by
+    /// another primary domain. Only from the grouping; null when nothing was contributed.
+    /// </summary>
+    public string? ContributionNote => ContributedToOtherDomains <= 0 ? null
+        : $"{ContributedToOtherDomains} source finding{(ContributedToOtherDomains == 1 ? "" : "s")} contributed to logical issues grouped under "
+          + $"{string.Join(", ", ContributedDomainLabels ?? [])}, where {(ContributedToOtherDomains == 1 ? "it is" : "they are")} counted once.";
 }
 
 /// <summary>
@@ -273,7 +285,8 @@ public sealed record FrontendQualityAccessibilityResult(
     /// </summary>
     public string Statement => Failed == 0
         ? "No automated WCAG violations were detected in the available evidence. Manual assessment is still required."
-        : $"{Failed} of {CriteriaInScope} criteria in scope are recorded as failed. Manual assessment is still required.";
+        // Automated failure EVIDENCE, not "failed": partial automation does not establish a criterion-level outcome.
+        : $"{Failed} {(Failed == 1 ? "criterion has" : "criteria have")} automated failure evidence. Manual assessment is still required.";
 
     /// <summary>Said wherever the counts are. An absence of detected violations establishes nothing about conformance.</summary>
     public const string ConformanceCaveat =

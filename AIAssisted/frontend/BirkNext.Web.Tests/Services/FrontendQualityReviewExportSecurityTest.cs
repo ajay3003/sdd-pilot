@@ -71,8 +71,9 @@ public sealed class FrontendQualityReviewExportSecurityTest
         html.Should().Contain("Assessment Summary", "Assessment Summary section should be present");
         html.Should().Contain("Target URL:", "Target URL label should be present");
         html.Should().Contain("https://example.com", "Target URL value should be present");
-        html.Should().Contain("Completeness:", "Completeness label should be present");
-        html.Should().Contain("Full Assessment", "Full Assessment completeness should be rendered");
+        // Four completeness dimensions, never the legacy single "Full Assessment".
+        html.Should().Contain("Execution:").And.Contain("Required coverage:").And.Contain("Optional coverage:").And.Contain("Manual assessment:");
+        html.Should().NotContain("Full Assessment");
 
         // Verify engine status
         html.Should().Contain("Assessed:", "Assessed engines label should be present");
@@ -157,7 +158,7 @@ public sealed class FrontendQualityReviewExportSecurityTest
         var service = new ReportExportService();
         var html = service.ExportFrontendQualityReview(report, null);
 
-        html.Should().Contain("Partial Assessment", "Partial completeness should be rendered");
+        html.Should().Contain("Required coverage:").And.NotContain("Partial Assessment", "completeness is reported on its dimensions");
         html.Should().Contain("Assessed:", "Assessed engines should be shown");
         html.Should().Contain("Performance", "Assessed engine should be listed");
         html.Should().Contain("Failed:", "Failed engines should be shown");
@@ -387,7 +388,7 @@ public sealed class FrontendQualityReviewExportSecurityTest
         html.Should().Contain("Frontend Quality Review Report", "Report title should be present");
         html.Should().Contain("Assessment Summary", "Assessment Summary section should be present");
         html.Should().Contain("https://example.com", "Target URL should be in export");
-        html.Should().Contain("Full Assessment", "Completeness state should be in export");
+        html.Should().Contain("Required coverage:", "completeness dimensions should be in export");
         html.Should().Contain("Assessed:", "Assessed engines section should be present");
         html.Should().Contain("Security", "Security engine should be listed");
         html.Should().Contain("Performance", "Performance engine should be listed");

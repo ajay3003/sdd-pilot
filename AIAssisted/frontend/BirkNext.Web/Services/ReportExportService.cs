@@ -275,14 +275,15 @@ public sealed class ReportExportService : IReportExportService
         if (report.DurationMs.HasValue)
             sb.Append($"<dt><strong>Duration:</strong></dt><dd>{report.DurationMs:N0} ms</dd>\n");
 
-        var completenessLabel = report.Completeness switch
+        // Four dimensions, never one "Full": required coverage alone used to call a review with outstanding manual
+        // assessment and missing optional engines complete.
+        if (FrontendQualityResultPresentation.Build(report).Completeness is { } completeness)
         {
-            AssessmentCompleteness.Full => "Full Assessment",
-            AssessmentCompleteness.Partial => "Partial Assessment",
-            AssessmentCompleteness.Failed => "Assessment Failed",
-            _ => "Unknown"
-        };
-        sb.Append($"<dt><strong>Completeness:</strong></dt><dd>{completenessLabel}</dd>\n");
+            sb.Append($"<dt><strong>Execution:</strong></dt><dd>{Esc(completeness.ExecutionLabel)}</dd>\n");
+            sb.Append($"<dt><strong>Required coverage:</strong></dt><dd>{Esc(completeness.RequiredCoverageLabel)} ({completeness.RequiredAssessed} of {completeness.RequiredTotal})</dd>\n");
+            sb.Append($"<dt><strong>Optional coverage:</strong></dt><dd>{Esc(completeness.OptionalCoverageLabel)} ({completeness.OptionalAssessed} of {completeness.OptionalTotal})</dd>\n");
+            sb.Append($"<dt><strong>Manual assessment:</strong></dt><dd>{Esc(completeness.ManualAssessmentLabel)}</dd>\n");
+        }
 
         sb.Append("</dl>\n");
 
@@ -621,7 +622,14 @@ public sealed class ReportExportService : IReportExportService
 
         sb.Append("<section class=\"block\">\n<h2>Release disposition</h2>\n");
         sb.Append($"<p><strong>{Esc(disposition.ToString())}</strong> — {Esc(dispositionText)}</p>\n");
-        sb.Append($"<p><strong>Critical/high logical issues:</strong> {report.LogicalIssues.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)} &nbsp; <strong>Logical issues:</strong> {report.LogicalIssues.Count} &nbsp; <strong>Source findings:</strong> {report.Findings.Count}</p>\n</section>\n");
+        // The page's count model, not raw list lengths: informational and derived items are neither logical issues nor
+        // source findings, and are listed by their own names.
+        var view = FrontendQualityResultPresentation.Build(report);
+        var actionable = report.LogicalIssues.Where(i => i.IsActionable).ToList();
+        sb.Append($"<p><strong>Critical/high logical issues:</strong> {actionable.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)} &nbsp; "
+            + $"<strong>Logical issues:</strong> {view.LogicalIssueCount} &nbsp; <strong>Source findings:</strong> {view.SourceFindingCount} &nbsp; "
+            + $"<strong>Derived indicators:</strong> {view.DerivedIndicatorCount} &nbsp; <strong>Informational observations:</strong> {view.InformationalIssueCount}</p>\n");
+        sb.Append("<p>Logical issues are grouped actionable problems; source findings are individual engine observations and may map to the same logical issue.</p>\n</section>\n");
 
         if (report.TargetAccess is { } access)
         {

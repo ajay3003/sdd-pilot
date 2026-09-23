@@ -60,7 +60,7 @@ public sealed class FrontendQualityResultSemanticGroupingTests
         issue.CanonicalTitle.Should().Be("Contrast (Minimum)", "the route is where it was seen, not what it is");
         issue.AffectedPages.Should().HaveCount(5);
         issue.SourceFindingCount.Should().Be(5, "every occurrence is kept and inspectable");
-        issue.ScaleLabel.Should().Be("5 affected pages · 5 source observations");
+        issue.ScaleLabel.Should().Be("5 affected pages · 5 source findings");
         // 65. And one job, not five.
         FrontendQualityRecommendationGrouper.Build([issue]).Should().ContainSingle();
     }
@@ -201,7 +201,7 @@ public sealed class FrontendQualityResultSemanticGroupingTests
         var theme = themes.Should().ContainSingle().Subject;
         theme.AffectedPages.Should().HaveCount(5);
         theme.SourceFindingCount.Should().Be(5);
-        theme.ScaleLabel.Should().Be("1 logical issue · 5 affected pages · 5 source observations");
+        theme.ScaleLabel.Should().Be("1 logical issue · 5 affected pages · 5 source findings");
     }
 
     // ── §29. The whole point, on a realistic mixture ──────────────────────────────────────────────────────────────

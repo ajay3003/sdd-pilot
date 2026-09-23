@@ -238,7 +238,13 @@ public static class FrontendQualityTargetAccess
         _ => mode.ToString(),
     };
 
-    public static string ApiContextLabel(FrontendQualityTargetAccessContext access) => access.Method switch
+    public static string ApiContextLabel(FrontendQualityTargetAccessContext access) =>
+        // "Not available" beside "Authentication: Not required" read as a problem; for a public target it is simply not needed.
+        !access.RequiresAuthentication && access.ApiContextStatus != AuthenticatedApiContextStatus.Available
+            ? "Not needed — target does not require authentication"
+            : ApiContextLabelCore(access);
+
+    private static string ApiContextLabelCore(FrontendQualityTargetAccessContext access) => access.Method switch
     {
         AuthenticatedTestingMethod.LocalHttpsProxy => access.ApiContextStatus switch
         {

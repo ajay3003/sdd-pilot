@@ -71,8 +71,8 @@ public sealed record FrontendQualityLogicalIssue
     /// <summary>Counted against a release decision: an actionable problem this review actually observed.</summary>
     public bool IsActionable => !Informational && !Derived;
 
-    /// <summary>"5 affected pages · 7 source observations", or just the observation count when no page was recorded.</summary>
+    /// <summary>"5 affected pages · 7 source findings", or just the source-finding count when no page was recorded.</summary>
     public string ScaleLabel =>
         (AffectedPages.Count > 1 ? $"{AffectedPages.Count} affected pages · " : "")
-        + $"{SourceFindingCount} source observation{(SourceFindingCount == 1 ? "" : "s")}";
+        + $"{SourceFindingCount} source finding{(SourceFindingCount == 1 ? "" : "s")}";
 }

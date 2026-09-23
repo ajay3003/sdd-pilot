@@ -44,6 +44,44 @@
                         <p class="fqr-issue-manual" data-testid="fqr-issue-manual">Automated evidence cannot settle this; a person has to verify it.</p>
                     }
 
+                    @if (Compact)
+                    {
+                        @* Top of the page: summary and action only. Pages, provenance and observations open on request and are
+                           not rendered until then; selectors and raw evidence stay in Review details. *@
+                        var open = _open.Contains(issue.LogicalId);
+                        <button type="button" class="btn-secondary fa-btn-sm fqr-issue-details-toggle" data-testid="fqr-issue-details-toggle"
+                                aria-expanded="@(open ? "true" : "false")" aria-controls="@($"fqr-issue-details-{issue.LogicalId}")"
+                                @onclick="() => Toggle(issue.LogicalId)">@(open ? "Hide issue details" : "View issue details")</button>
+                        @if (open)
+                        {
+                            <div class="fqr-issue-details" id="@($"fqr-issue-details-{issue.LogicalId}")" data-testid="fqr-issue-details">
+                                <dl class="fqr-issue-details-list">
+                                    <div><dt>Primary domain</dt><dd>@FrontendQualityCategoryEngines.Label(issue.Category)</dd></div>
+                                    @if (issue.RelatedCategories.Count > 0)
+                                    {
+                                        <div><dt>Related domains</dt><dd>@string.Join(", ", issue.RelatedCategories.Select(FrontendQualityCategoryEngines.Label))</dd></div>
+                                    }
+                                    <div><dt>Observed by</dt><dd>@string.Join(", ", issue.Sources.Select(FrontendQualityDecisionSupportService.SourceLabel))</dd></div>
+                                    @if (issue.Confidence is { } confidence) { <div><dt>Confidence</dt><dd>@confidence</dd></div> }
+                                    @if (issue.GroupingReason is { Length: > 0 } reason) { <div><dt>Grouped because</dt><dd>@reason (@issue.SourceFindingCount source finding@(issue.SourceFindingCount == 1 ? "" : "s") in one logical issue)</dd></div> }
+                                </dl>
+                                @if (issue.AffectedPages.Count > 0)
+                                {
+                                    <p class="fqr-issue-details-label">Affected pages</p>
+                                    <ul class="fqr-issue-pages" data-testid="fqr-issue-page-list">@foreach (var route in issue.AffectedPages) { <li><code>@route</code></li> }</ul>
+                                }
+                                <p class="fqr-issue-details-label">Source findings</p>
+                                <ul class="fqr-issue-sources" data-testid="fqr-issue-source-list">
+                                    @foreach (var instance in issue.FindingInstances)
+                                    {
+                                        <li>@FrontendQualityDecisionSupportService.SourceLabel(instance.EngineId): @instance.Title (@instance.Severity)</li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    }
+                    else
+                    {
                     @if (issue.AffectedPages.Count > 0)
                     {
                         <ReviewDisclosure Text="@($"Affected pages ({issue.AffectedPages.Count})")" CollapseText="Hide affected pages"
@@ -85,6 +123,7 @@
                             </div>
                         }
                     </ReviewDisclosure>
+                    }
                 </li>
             }
         </ul>
@@ -93,4 +132,9 @@
 
 @code {
     [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityLogicalIssue> Issues { get; set; } = [];
+    /// <summary>Summary cards with one details toggle — the Key logical issues surface. The full list keeps every disclosure.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private readonly HashSet<string> _open = new(StringComparer.Ordinal);
+    private void Toggle(string id) { if (!_open.Remove(id)) _open.Add(id); }
 }

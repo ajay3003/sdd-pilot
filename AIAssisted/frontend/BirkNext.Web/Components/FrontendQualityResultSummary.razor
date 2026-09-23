@@ -48,11 +48,11 @@
     @* ── What there is to act on. Three different things, never one number. ────────────────────────────────────── *@
     <dl class="fqr-result-metrics" data-testid="fqr-result-metrics">
         @* What there is to FIX. Deduplicated, so one defect seen on five routes is one item here. *@
-        <div><dt>Logical issues</dt><dd data-testid="fqr-metric-logical">@Result.LogicalIssueCount</dd></div>
+        <div title="Distinct actionable problems, grouped from source findings."><dt>Logical issues</dt><dd data-testid="fqr-metric-logical">@Result.LogicalIssueCount</dd></div>
         @* What the review SAW. Always larger, and never a count of problems. *@
-        <div><dt>Source findings</dt><dd data-testid="fqr-metric-source">@Result.SourceFindingCount</dd></div>
-        <div>
-            <dt>Critical/high source observations</dt>
+        <div title="Individual engine observations. Several can belong to the same logical issue."><dt>Source findings</dt><dd data-testid="fqr-metric-source">@Result.SourceFindingCount</dd></div>
+        <div title="Source findings with Critical or High severity. Counted per observation, so it can exceed the critical/high logical issues in the release decision.">
+            <dt>Critical/high source findings</dt>
             <dd data-testid="fqr-metric-critical-high">@Result.CriticalHighSourceCount</dd>
         </div>
         @if (Result.DerivedIndicatorCount > 0)
@@ -66,6 +66,10 @@
         }
     </dl>
 
+    @* The counts measure different things on purpose; one sentence stops a reader expecting them to match. *@
+    <p class="fqr-result-metrics-note" data-testid="fqr-result-metrics-note">
+        Logical issues are grouped actionable problems. Source findings are individual engine observations and may map to the same logical issue, so the counts are not expected to match.
+    </p>
     <dl class="fqr-target-list fqr-result-meta" data-testid="fqr-result-meta">
         <div>
             <dt>Target</dt>

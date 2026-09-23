@@ -275,7 +275,7 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
         page.Find("[data-testid=fqr-result-details]")
             .QuerySelectorAll(":scope > .disclosure > .disclosure-toggle .disclosure-text")
             .Select(t => t.TextContent.Trim())
-            .Should().Equal("Logical issues", "Source findings", "Engine coverage",
+            .Should().Equal("Review items", "Source findings", "Engine coverage",
                 "Target access at review start", "Engine scores", "Technical details");
     }
 
@@ -292,7 +292,7 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
 
         var contrast = cards.Single(c => c.TextContent.Contains("Contrast", StringComparison.OrdinalIgnoreCase));
         contrast.QuerySelector("[data-testid=fqr-recommendation-scale]")!.TextContent
-            .Should().Contain("5 affected pages").And.Contain("5 source observations");
+            .Should().Contain("5 affected pages").And.Contain("5 source findings");
     }
 
     // ── §16, §53, §70, §79. The accessibility summary ─────────────────────────────────────────────────────────────
@@ -412,6 +412,9 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
 
         var page = Result(withShared);
         page.Find("[data-testid=fqr-result-diagnostics-toggle]").Click();
+        // Raw evidence is nested one level further and rendered only on request.
+        page.FindAll("[data-testid=fqr-technical-evidence]").Should().BeEmpty();
+        page.Find("[data-testid=fqr-technical-raw-toggle]").Click();
 
         var rows = page.Find("[data-testid=fqr-technical-evidence]").QuerySelectorAll("li")
             .Where(li => li.TextContent.Contains(shared)).ToList();
@@ -419,5 +422,172 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
         // Three findings cited the same record; it is printed once, naming all three.
         rows.Should().ContainSingle();
         rows[0].TextContent.Should().Contain("Large application JavaScript payload").And.Contain("Large CSS payload");
+    }
+
+    // ── Post-run cleanup: counts, derived indicators, compact key issues, contribution, overlap ────────────────────
+
+    // §59 / §8 A derived domain's button names indicators, never source findings.
+    [Fact]
+    public void QaReadinessOffersIndicatorsNotSourceFindings()
+    {
+        var page = Result(RealisticReport());
+        var readiness = page.FindAll("[data-testid=fqr-domain-result]").Single(d => d.GetAttribute("data-category") == "Readiness");
+
+        readiness.QuerySelector("[data-testid=fqr-domain-result-count]")!.TextContent.Should().Be("3 indicators");
+        var toggle = readiness.QuerySelector(".disclosure-toggle")!.TextContent;
+        toggle.Should().Contain("View 3 indicators").And.NotContain("source finding");
+    }
+
+    // §60 / §7 Source findings and derived indicators counted apart; the total only as "recorded".
+    [Fact]
+    public void SourceFindingsAndDerivedIndicatorsAreCountedApart()
+    {
+        var report = RealisticReport();
+        var page = Result(report);
+        var source = report.Findings.Count(f => f.Origin == FrontendQualityFindingOrigin.Source);
+        var derived = report.Findings.Count(f => f.Origin == FrontendQualityFindingOrigin.Derived);
+
+        page.Find("[data-testid=fqr-metric-source]").TextContent.Trim().Should().Be(source.ToString());
+        page.Find("[data-testid=fqr-metric-derived]").TextContent.Trim().Should().Be(derived.ToString());
+        var hint = page.Find("[data-testid=fqr-all-findings] .disclosure-hint").TextContent.Trim();
+        hint.Should().Be($"{source} source findings · {derived} derived indicators · {source + derived} recorded");
+        hint.Should().NotContain($"{source + derived} source findings").And.NotContain("observations from every engine");
+    }
+
+    // §61 / §49 Review items name each kind; the logical-issue metric stays the actionable count.
+    [Fact]
+    public void ReviewItemsCountEachKindByItsOwnName()
+    {
+        var report = RealisticReport();
+        var page = Result(report);
+        var actionable = report.LogicalIssues.Count(i => i.IsActionable);
+
+        page.Find("[data-testid=fqr-metric-logical]").TextContent.Trim().Should().Be(actionable.ToString());
+        page.Find("[data-testid=fqr-all-logical-issues-toggle]").TextContent.Should().Contain("Review items");
+        var hint = page.Find("[data-testid=fqr-all-logical-issues] .disclosure-hint").TextContent.Trim();
+        hint.Should().StartWith($"{actionable} actionable logical issue").And.Contain("derived indicator");
+    }
+
+    // §5 The metric note says the two critical/high counts measure different things.
+    [Fact]
+    public void MetricsExplainWhyLogicalAndSourceCountsDiffer()
+    {
+        var page = Result(RealisticReport());
+        page.Find("[data-testid=fqr-result-metrics-note]").TextContent.Should().Contain("may map to the same logical issue")
+            .And.Contain("not expected to match");
+        page.Find("[data-testid=fqr-metric-critical-high]").ParentElement!.QuerySelector("dt")!.TextContent.Should().Be("Critical/high source findings");
+    }
+
+    // §62 / §10 Key issue cards are compact; details render only on request, without raw evidence.
+    [Fact]
+    public void KeyIssueCardsAreCompactUntilOpened()
+    {
+        var page = Result(RealisticReport());
+        var key = page.Find("[data-testid=fqr-key-issues]");
+
+        key.QuerySelectorAll("[data-testid=fqr-logical-issue]").Should().NotBeEmpty();
+        key.QuerySelectorAll(".disclosure").Should().BeEmpty("no evidence disclosures are built into the key issue cards");
+        key.QuerySelectorAll("[data-testid=fqr-issue-details], [data-testid=fqr-issue-page-list], code").Should().BeEmpty();
+        key.QuerySelectorAll("[data-testid=fqr-issue-action]").Should().NotBeEmpty();
+
+        var contrast = key.QuerySelectorAll("[data-testid=fqr-logical-issue]").First(i => i.TextContent.Contains("Contrast (Minimum)"));
+        var toggle = contrast.QuerySelector("[data-testid=fqr-issue-details-toggle]")!;
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.Click();
+
+        var details = page.Find("[data-testid=fqr-key-issues] [data-testid=fqr-issue-details]");
+        details.TextContent.Should().Contain("Primary domain").And.Contain("Observed by").And.Contain("Affected pages").And.Contain("/admin/operations");
+        page.Find("[data-testid=fqr-key-issues] [data-testid=fqr-issue-details-toggle][aria-expanded=true]").TextContent.Should().Be("Hide issue details");
+        details.QuerySelectorAll("[data-testid=fqr-issue-source-list] code").Should().BeEmpty("sanitized raw evidence stays in Review details");
+    }
+
+    // §63 / §14 CSP: one logical issue owned by Security; Standards says where its source finding went.
+    [Fact]
+    public void StandardsExplainsFindingsGroupedUnderSecurity()
+    {
+        var report = RealisticReport();
+        var csp = report.LogicalIssues.Where(i => i.FindingInstances.Any(f => f.SourceFindingId is "sec-csp" or "std-csp")).ToList();
+        csp.Should().ContainSingle("the CSP observations of two domains are one logical issue");
+        csp[0].Category.Should().Be(FrontendQualityCategory.Security);
+        csp[0].RelatedCategories.Should().Contain(FrontendQualityCategory.Standards);
+        csp[0].FindingInstances.Should().HaveCount(2, "source evidence of both observations is preserved");
+
+        var page = Result(report);
+        var standards = page.FindAll("[data-testid=fqr-domain-result]").Single(d => d.GetAttribute("data-category") == "Standards");
+        standards.QuerySelector("[data-testid=fqr-domain-result-count]")!.TextContent.Should().Be("0 logical issues · 1 source finding");
+        standards.QuerySelector("[data-testid=fqr-domain-result-contribution]")!.TextContent.Trim()
+            .Should().Be("1 source finding contributed to logical issues grouped under Security, where it is counted once.");
+    }
+
+    // A derived finding filed under a non-derived domain is not one of its source findings.
+    [Fact]
+    public void DomainSourceCountsExcludeDerivedFindings()
+    {
+        var report = RealisticReport();
+        report.Findings.Add(Finding("api-r001", "OpenAPI description not published", FrontendQualityCategory.Standards,
+            FrontendQualitySeverity.Low, engine: FrontendQualityEngineId.StaticSecurity, ruleId: "API-R001", origin: FrontendQualityFindingOrigin.Derived));
+        var regrouped = FrontendQualityLogicalIssueGrouper.Group(report.Findings);
+        report.LogicalIssues.Clear();
+        report.LogicalIssues.AddRange(regrouped);
+
+        var standards = FrontendQualityResultPresentation.Build(report).Domains.Single(d => d.Category == FrontendQualityCategory.Standards);
+        standards.FindingCount.Should().Be(1, "only the CSP source finding");
+        standards.CountLabel.Should().EndWith("· 1 derived indicator");
+    }
+
+    // §64 / §18 The accessibility overlap is stated where the numbers are, not only in a disclosure.
+    [Fact]
+    public void AccessibilityOverlapIsVisibleBesideTheCounts()
+    {
+        var page = Result(RealisticReport());
+        var note = page.Find("[data-testid=fqr-a11y-overlap-note]");
+        note.HasAttribute("hidden").Should().BeFalse();
+        note.TextContent.Should().Contain("a criterion may have automated evidence and still require human assessment");
+        page.Find("[data-testid=fqr-accessibility-summary]").TextContent.Should().NotContainAny("criteria failed", "of 48 failed");
+        // §20 Automated failure EVIDENCE, never "recorded as failed": partial automation is not a criterion outcome.
+        var accessibility = page.FindAll("[data-testid=fqr-domain-result]").Single(d => d.GetAttribute("data-category") == "Accessibility");
+        accessibility.QuerySelector("[data-testid=fqr-domain-result-summary]")!.TextContent.Should()
+            .Be("1 criterion has automated failure evidence. Manual assessment is still required.");
+    }
+
+    // §67 Every Review details disclosure starts collapsed.
+    [Fact]
+    public void ReviewDetailsStartCollapsed()
+    {
+        var page = Result(RealisticReport());
+        page.Find("[data-testid=fqr-result-details]").QuerySelectorAll(":scope > .disclosure > .disclosure-toggle")
+            .Should().OnlyContain(t => t.GetAttribute("aria-expanded") == "false");
+    }
+
+    // §73 The export uses the page's count model and the four completeness dimensions.
+    [Fact]
+    public void ExportCountsLogicalSourceDerivedAndInformationalApart()
+    {
+        var report = RealisticReport();
+        var html = new ReportExportService().ExportFrontendQualityReview(report, "Test");
+        var view = FrontendQualityResultPresentation.Build(report);
+
+        html.Should().Contain($"<strong>Logical issues:</strong> {view.LogicalIssueCount}")
+            .And.Contain($"<strong>Source findings:</strong> {view.SourceFindingCount}")
+            .And.Contain($"<strong>Derived indicators:</strong> {view.DerivedIndicatorCount}")
+            .And.Contain("may map to the same logical issue")
+            .And.Contain("Required coverage:").And.Contain("Manual assessment:");
+        html.Should().NotContain($"<strong>Source findings:</strong> {report.Findings.Count}<",
+            "derived indicators are not source findings");
+    }
+
+    // §42 A public target does not need an authenticated context; "Not available" beside "Not required" read as a problem.
+    [Fact]
+    public void PublicTargetsSayTheAuthenticatedContextIsNotNeeded()
+    {
+        FrontendQualityTargetAccess.ApiContextLabel(new FrontendQualityTargetAccessContext
+            { RequiresAuthentication = false, Method = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy })
+            .Should().Be("Not needed — target does not require authentication");
+        FrontendQualityTargetAccess.ApiContextLabel(new FrontendQualityTargetAccessContext
+            { RequiresAuthentication = true, Method = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy })
+            .Should().Be("Not available", "an authenticated target without a context is still reported as missing");
+        FrontendQualityTargetAccess.ApiContextLabel(new FrontendQualityTargetAccessContext
+            { RequiresAuthentication = false, Method = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy, ApiContextStatus = BirkNext.LocalHttpsProxy.AuthenticatedApiContextStatus.Available })
+            .Should().Be("Available — memory only", "an available context is reported as it is");
     }
 }

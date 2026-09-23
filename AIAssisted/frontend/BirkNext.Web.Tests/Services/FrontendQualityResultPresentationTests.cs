@@ -267,7 +267,7 @@ public sealed class FrontendQualityResultPresentationTests
         // Manual-only is a property of the criterion, so it overlaps the others rather than adding to them.
         (accessibility.Failed + accessibility.RequireManualReview + accessibility.NotAssessed)
             .Should().BeLessThanOrEqualTo(accessibility.CriteriaInScope);
-        accessibility.Statement.Should().StartWith("1 of");
+        accessibility.Statement.Should().Be("1 criterion has automated failure evidence. Manual assessment is still required.");
     }
 
     [Fact]

@@ -32,6 +32,12 @@
 
     <p class="fqr-domain-result-summary" data-testid="fqr-domain-result-summary">@Result.Summary</p>
 
+    @* Standards can hold source findings and no logical issue of its own: say where they went instead of leaving "0". *@
+    @if (Result.ContributionNote is { Length: > 0 } contribution)
+    {
+        <p class="fqr-domain-result-contribution" data-testid="fqr-domain-result-contribution">@contribution</p>
+    }
+
     @if (Result.Limitation is { Length: > 0 } limitation)
     {
         <p class="fqr-domain-result-limitation" data-testid="fqr-domain-result-limitation">@limitation</p>
