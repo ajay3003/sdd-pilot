@@ -8,7 +8,12 @@ public enum HeadlessStage { Runtime, HeadlessEdgeLaunch, HeadlessBrowserControl,
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum HeadlessStageState { NotRun, Running, Passed, Blocked, Failed, Unknown, NotApplicable }
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum HeadlessBlocker { None, BrowserAutomationBlocked, TargetNavigationBlocked, InteractiveAuthenticationRequired, InteractiveMfaRequired, ConditionalAccessBlocked, SessionControlHeadlessRestriction, AuthenticationSessionNotEstablished, AutomationControlLostAfterAuthentication, IdentityNotAvailableForAutomation, Unknown }
+public enum HeadlessBlocker { None, BrowserAutomationBlocked, TargetNavigationBlocked, InteractiveAuthenticationRequired, InteractiveMfaRequired, ConditionalAccessBlocked, SessionControlHeadlessRestriction, AuthenticationSessionNotEstablished, AutomationControlLostAfterAuthentication, IdentityNotAvailableForAutomation, Unknown,
+    /// <summary>Control was lost AFTER a session-control signal was observed. Sequence only — never a statement that session control caused it.</summary>
+    AutomationControlLostAfterObservedSessionControl }
+/// <summary>Where a reported value comes from. An IT reader weighs "observed" and "derived" differently, and should.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum HeadlessEvidenceProvenance { Observed, Derived, Configured, Unknown }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum HeadlessReadiness { Ready, NotReady, Unknown }
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -26,7 +31,9 @@ public sealed record HeadlessDiagnosticRequest
 }
 public sealed record HeadlessStageResult(HeadlessStage Stage, HeadlessStageState State = HeadlessStageState.NotRun,
     string? Detail = null, long DurationMs = 0, string? ExceptionType = null, DateTimeOffset? ObservedAt = null);
-public sealed record HeadlessNavigation(DateTimeOffset Timestamp, string Url);
+/// <summary>One sanitized main-frame navigation. <paramref name="SecondaryPage"/> marks a page the target opened (an MSAL sign-in popup).</summary>
+public sealed record HeadlessNavigation(DateTimeOffset Timestamp, string Url, bool SecondaryPage = false);
+public sealed record HeadlessEvidenceItem(string Name, string Value, HeadlessEvidenceProvenance Provenance);
 public sealed record HeadlessPrerequisite(bool Available, string Reason, string? DiagnosticId = null);
 
 public sealed class HeadlessDiagnosticReport
@@ -56,6 +63,17 @@ public sealed class HeadlessDiagnosticReport
     public string AuthenticatedSession { get; set; } = "Unknown / not verified";
     public string PostAuthenticationControl { get; set; } = "Not tested";
     public string? ConditionalAccessErrorCode { get; set; }
+    /// <summary>
+    /// Safe identifiers from a Microsoft Entra error page, only when one was shown on a Microsoft Entra host: the
+    /// AADSTS code, and the correlation/request ids and timestamp IT uses to find the sign-in log entry. Nothing else
+    /// from the page is kept. Null when not shown or not recognisable.
+    /// </summary>
+    public string? EntraErrorCode { get; set; }
+    public string? EntraCorrelationId { get; set; }
+    public string? EntraRequestId { get; set; }
+    public string? EntraErrorTimestamp { get; set; }
+    /// <summary>Each headline value with its provenance, so observed facts and derived readings are never confused.</summary>
+    public List<HeadlessEvidenceItem> Evidence { get; set; } = [];
     public string? EdgeVersion { get; set; }
     public string? PlaywrightVersion { get; set; }
     public string IdentityContext { get; set; } = "Current diagnostic context (fresh dedicated profile; no credentials supplied)";
@@ -91,7 +109,8 @@ public static class HeadlessItReport
         HeadlessBlocker.InteractiveAuthenticationRequired => "Interactive authentication required",
         HeadlessBlocker.InteractiveMfaRequired => "Interactive MFA required",
         HeadlessBlocker.ConditionalAccessBlocked => "Conditional Access blocked",
-        HeadlessBlocker.SessionControlHeadlessRestriction => "Session-control headless restriction",
+        HeadlessBlocker.SessionControlHeadlessRestriction => "Explicit session-control headless restriction observed",
+        HeadlessBlocker.AutomationControlLostAfterObservedSessionControl => "Automation control lost after an observed session-control signal (sequence, not cause)",
         HeadlessBlocker.AuthenticationSessionNotEstablished => "Authentication session not established",
         HeadlessBlocker.AutomationControlLostAfterAuthentication => "Automation control lost after authentication",
         HeadlessBlocker.IdentityNotAvailableForAutomation => "Identity not available for automation",
@@ -113,8 +132,15 @@ public static class HeadlessItReport
             ("Authenticated application session", r.AuthenticatedSession), ("Automation after authentication", r.PostAuthenticationControl),
             ("HEADLESS READINESS", r.Readiness == HeadlessReadiness.NotReady ? "NOT READY" : r.Readiness.ToString().ToUpperInvariant()),
             ("PRIMARY HEADLESS BLOCKER", $"{BlockerLabel(r.PrimaryBlocker)} ({r.PrimaryBlocker})"), ("Interpretation", r.Interpretation),
-            ("Safe CA error code", r.ConditionalAccessErrorCode ?? "Not observed") })
+            ("Safe CA error code", r.ConditionalAccessErrorCode ?? "Not observed"),
+            ("Entra error code", r.EntraErrorCode ?? "Not observed"), ("Entra correlation ID", r.EntraCorrelationId ?? "Not observed"),
+            ("Entra request ID", r.EntraRequestId ?? "Not observed"), ("Entra error timestamp", r.EntraErrorTimestamp ?? "Not observed") })
             text.AppendLine($"{label}: {value}");
+        if (r.Evidence.Count > 0)
+        {
+            text.AppendLine().AppendLine("Evidence provenance (Observed = seen in this run; Derived = inferred from observations; Configured = from settings):");
+            foreach (var item in r.Evidence) text.AppendLine($"  {item.Name}: {item.Value} [{item.Provenance}]");
+        }
         foreach (var observation in r.Observations) text.AppendLine($"Additional observation: {observation}");
         text.AppendLine().AppendLine("Questions for IT/security:");
         if (r.PrimaryBlocker == HeadlessBlocker.BrowserAutomationBlocked)
@@ -127,6 +153,10 @@ public static class HeadlessItReport
                 text.AppendLine("Can IT correlate the observed Conditional Access signal with Entra sign-in logs?");
             if (r.SessionControl.Contains("signal", StringComparison.OrdinalIgnoreCase) || r.SessionControl.Contains("restriction", StringComparison.OrdinalIgnoreCase))
                 text.AppendLine("Does the observed session-control path support headless Edge? Confirm an approved DEV/QA automation policy if needed.");
+            if (r.PrimaryBlocker == HeadlessBlocker.AutomationControlLostAfterObservedSessionControl)
+                text.AppendLine("Control was lost after a session-control signal was observed. This establishes sequence, not causality: can IT confirm whether session control affected the automated browser?");
+            if (r.EntraCorrelationId is not null || r.EntraRequestId is not null)
+                text.AppendLine("Can IT look up the Entra sign-in log entry for the correlation/request ID above?");
         }
         text.AppendLine("A future dedicated QA automation identity may behave differently from the current diagnostic context.");
         text.AppendLine("No MFA bypass was attempted. No credentials or tokens were captured. No security settings were modified.");

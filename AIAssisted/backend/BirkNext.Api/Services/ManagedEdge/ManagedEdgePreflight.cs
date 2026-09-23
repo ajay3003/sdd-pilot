@@ -20,6 +20,10 @@ public interface IEdgeInstallationLocator
 public interface IEdgePolicyReader
 {
     EdgeRemoteDebuggingPolicyStatus ReadRemoteDebuggingPolicy();
+
+    /// <summary>The Edge DeveloperToolsAvailability policy. Default: Unknown, so a reader that does not read it never guesses.</summary>
+    BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus ReadDeveloperToolsPolicy() =>
+        BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus.Unknown;
 }
 
 public interface IManagedEdgeLauncher
@@ -81,6 +85,37 @@ public sealed class WindowsEdgePolicyReader : IEdgePolicyReader
     {
         if (!OperatingSystem.IsWindows()) return EdgeRemoteDebuggingPolicyStatus.Unknown;
         return Read();
+    }
+
+    /// <summary>
+    /// DeveloperToolsAvailability, the documented Edge policy for DevTools: 0 = allowed except on force-installed
+    /// extension pages, 1 = allowed, 2 = not allowed. Machine policy wins over user policy. Read-only; absent means
+    /// NotConfigured, and any other value is Unknown rather than a guess.
+    /// </summary>
+    public BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus ReadDeveloperToolsPolicy()
+    {
+        if (!OperatingSystem.IsWindows()) return BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus.Unknown;
+        return ReadDeveloperTools();
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus ReadDeveloperTools()
+    {
+        try
+        {
+            foreach (var hive in new[] { Registry.LocalMachine, Registry.CurrentUser })
+            {
+                using var key = hive.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Edge", false);
+                var value = key?.GetValue("DeveloperToolsAvailability");
+                if (value is int i) return BrowserAutomationDiagnostic.BrowserAutomationTargetLocationPolicy.DeveloperToolsPolicy(i);
+                if (value is not null) return BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus.Unknown;
+            }
+            return BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus.NotConfigured;
+        }
+        catch (Exception ex) when (ex is System.Security.SecurityException or IOException or UnauthorizedAccessException)
+        {
+            return BrowserAutomationDiagnostic.EdgeDeveloperToolsPolicyStatus.Unknown;
+        }
     }
 
     [SupportedOSPlatform("windows")]

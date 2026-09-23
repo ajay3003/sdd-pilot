@@ -20,7 +20,7 @@ public enum BrowserAutomationDiagnosticStage
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum BrowserAutomationDiagnosticStageState { NotRun, Running, Passed, Failed, Blocked, Cancelled, NotReached, Unknown }
+public enum BrowserAutomationDiagnosticStageState { NotRun, Running, Passed, Failed, Blocked, Cancelled, NotReached, Unknown, Warning }
 
 /// <summary>The outcome of ONE mode. Every value describes behaviour; none of them names a cause.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -164,6 +164,7 @@ public sealed record BrowserAutomationDiagnosticReport
     public string TargetEnvironmentId { get; init; } = "";
     public string TargetEnvironmentName { get; init; } = "";
     public string TargetEnvironmentType { get; init; } = "";
+    /// <summary>The configured target URL, already sanitized by the backend.</summary>
     public string TargetUrl { get; init; } = "";
     public string ControlUrl { get; init; } = "";
 
@@ -232,6 +233,7 @@ public static class BrowserAutomationDiagnosticStages
         BrowserAutomationDiagnosticStageState.Cancelled => "Cancelled",
         BrowserAutomationDiagnosticStageState.NotReached => "NOT YET REACHED",
         BrowserAutomationDiagnosticStageState.Unknown => "UNKNOWN",
+        BrowserAutomationDiagnosticStageState.Warning => "WARNING",
         _ => "Not run",
     };
 
@@ -244,7 +246,7 @@ public static class BrowserAutomationDiagnosticStages
     {
         BrowserAutomationDiagnosticStageState.Passed => "ready",
         BrowserAutomationDiagnosticStageState.Blocked => "warning",
-        BrowserAutomationDiagnosticStageState.Failed => "attention",
+        BrowserAutomationDiagnosticStageState.Failed or BrowserAutomationDiagnosticStageState.Warning => "attention",
         BrowserAutomationDiagnosticStageState.Running => "pending",
         BrowserAutomationDiagnosticStageState.NotReached or BrowserAutomationDiagnosticStageState.Unknown => "info",
         _ => "muted",
@@ -298,8 +300,11 @@ public static class BrowserAutomationDiagnosticStages
     };
 }
 
-/// <summary>One labelled fact about what a mode saw at the target.</summary>
-public sealed record BrowserAutomationTargetFact(string Key, string Label, string Value, string Tone);
+/// <summary>
+/// One labelled fact about what a mode saw at the target, with where it comes from: Configured (settings), Observed
+/// (seen in this run), Derived (read from observations) or Unknown.
+/// </summary>
+public sealed record BrowserAutomationTargetFact(string Key, string Label, string Value, string Tone, string Provenance = "Observed");
 
 /// <summary>
 /// The target evidence as a reader needs it — visible without opening anything. Each fact is its own row because
@@ -317,17 +322,20 @@ public static class BrowserAutomationTargetFacts
         {
             var state = mode.Stage(stage)?.State ?? BrowserAutomationDiagnosticStageState.NotRun;
             return new(key, BrowserAutomationDiagnosticStages.Label(stage),
-                BrowserAutomationDiagnosticStages.StateLabel(state), BrowserAutomationDiagnosticStages.Tone(state));
+                BrowserAutomationDiagnosticStages.StateLabel(state), BrowserAutomationDiagnosticStages.Tone(state),
+                stage == BrowserAutomationDiagnosticStage.TargetApplication ? "Derived"
+                : state is BrowserAutomationDiagnosticStageState.NotRun ? "Unknown" : "Observed");
         }
 
         var facts = new List<BrowserAutomationTargetFact>
         {
-            new("requested", "Requested target", target.RequestedUrl, "muted"),
+            new("requested", "Requested target", target.RequestedUrl, "muted", "Configured"),
             Stage("navigation", BrowserAutomationDiagnosticStage.TargetNavigation),
-            new("final-location", "Final location", target.FinalUrl ?? "Not observed", "muted"),
-            new("final-host", "Final host", target.FinalHost ?? "Not observed", "muted"),
+            new("final-location", "Final location", target.FinalUrl ?? "Not observed", "muted", target.FinalUrl is null ? "Unknown" : "Observed"),
+            new("final-host", "Final host", target.FinalHost ?? "Not observed", "muted", target.FinalHost is null ? "Unknown" : "Observed"),
             new("expected-origin", "Expected target origin", Answer(target.ExpectedOriginReached),
-                target.ExpectedOriginReached == BrowserAutomationEvidenceAnswer.Yes ? "ready" : "info"),
+                target.ExpectedOriginReached == BrowserAutomationEvidenceAnswer.Yes ? "ready" : "info",
+                target.ExpectedOriginReached == BrowserAutomationEvidenceAnswer.Unknown ? "Unknown" : "Derived"),
             // An authentication redirect is the expected boundary before sign-in, not a failure: informational.
             new("auth-redirect", "Authentication redirect", target.AuthenticationRedirect switch
             {
@@ -336,17 +344,19 @@ public static class BrowserAutomationTargetFacts
                 BrowserAutomationEvidenceAnswer.Yes => "DETECTED",
                 BrowserAutomationEvidenceAnswer.No => "NOT DETECTED",
                 _ => "UNKNOWN",
-            }, "info"),
+            }, "info", target.AuthenticationRedirect == BrowserAutomationEvidenceAnswer.Unknown ? "Unknown" : "Observed"),
             // Observed only — a session-control hop names no policy and no cause.
-            new("session-control", "Session-control proxy", target.SessionControlHost is { } session ? $"OBSERVED ({session})" : "NOT OBSERVED", "info"),
+            // A session-control HOST was seen; that is a host signal, never a cause.
+            new("session-control", "Session-control proxy", target.SessionControlHost is { } session ? $"OBSERVED ({session})" : "NOT OBSERVED", "info",
+                target.SessionControlHost is null ? "Derived" : "Observed"),
             Stage("control", BrowserAutomationDiagnosticStage.TargetControl),
             Stage("stability", BrowserAutomationDiagnosticStage.TargetStability),
             Stage("application", BrowserAutomationDiagnosticStage.TargetApplication),
             // Said explicitly on every run, because "Target application PASS" is the line most easily over-read.
-            new("authenticated-application", "Authenticated application", "NOT ASSESSED — no sign-in is attempted", "muted"),
+            new("authenticated-application", "Authenticated application", "NOT ASSESSED — no sign-in is attempted", "muted", "Unknown"),
         };
         if (target.ExceptionType is { Length: > 0 } exception)
-            facts.Add(new("exception", "Exception", $"{exception} ({PhaseLabel(target.FailurePhase)})", "warning"));
+            facts.Add(new("exception", "Exception", $"{exception} ({PhaseLabel(target.FailurePhase)})", "warning", "Observed"));
         return facts;
     }
 
@@ -392,6 +402,15 @@ public static class BrowserAutomationDiagnosticPrerequisite
 
     public static string Tone(BrowserAutomationDiagnosticReport report) =>
         report.HeadlessAutomationControlAfterTargetNavigation ? "ready" : "warning";
+
+    /// <summary>
+    /// Where the Headless Authentication &amp; Session Control Diagnostic lives for this target: the Target
+    /// Environment's Authentication tab, with the diagnostics panel open. The run button stays there — this is a way
+    /// to get to it, not a second copy of it.
+    /// </summary>
+    public static string AuthenticationDiagnosticHref(BrowserAutomationDiagnosticReport report) =>
+        "admin/system-settings?section=target-environments&tab=auth&open=headless-auth&profile="
+        + Uri.EscapeDataString(report.TargetEnvironmentId);
 
     public static string Explanation(BrowserAutomationDiagnosticReport report)
     {
@@ -501,7 +520,7 @@ public static class BrowserAutomationDiagnosticReportText
         {
             text.AppendLine("  At the target:");
             foreach (var fact in BrowserAutomationTargetFacts.For(mode))
-                text.AppendLine($"    {fact.Label}: {fact.Value}");
+                text.AppendLine($"    {fact.Label}: {fact.Value} [{fact.Provenance}]");
             if (mode.Stage(BrowserAutomationDiagnosticStage.TargetApplication) is { Detail.Length: > 0 } application)
                 text.AppendLine($"    Target application evidence: {application.Detail}");
             if (target.NavigationTrace.Count > 0)

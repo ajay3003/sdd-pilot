@@ -119,6 +119,15 @@ public static class BrowserAutomationTargetLocationPolicy
             + (uri.Fragment.Length > 1 ? "#[redacted]" : "");
     }
 
+    /// <summary>Maps a DeveloperToolsAvailability DWORD. Values outside the documented set are Unknown.</summary>
+    public static EdgeDeveloperToolsPolicyStatus DeveloperToolsPolicy(int value) => value switch
+    {
+        0 => EdgeDeveloperToolsPolicyStatus.AllowedExceptForceInstalledExtensions,
+        1 => EdgeDeveloperToolsPolicyStatus.Allowed,
+        2 => EdgeDeveloperToolsPolicyStatus.Disallowed,
+        _ => EdgeDeveloperToolsPolicyStatus.Unknown,
+    };
+
     /// <summary>Long digit runs and long mixed alphanumerics are ids or tokens, not route names.</summary>
     private static bool LooksLikeAnIdentifier(string segment) =>
         segment.Count(char.IsDigit) >= 6 ||

@@ -65,6 +65,24 @@ public enum BrowserAutomationDiagnosticStageState
     NotReached,
     /// <summary>The evidence needed to decide this stage was not available, so no answer is given either way.</summary>
     Unknown,
+    /// <summary>Completed with a problem that does not change the diagnostic's finding (a cleanup error, say).</summary>
+    Warning,
+}
+
+/// <summary>
+/// The Edge <c>DeveloperToolsAvailability</c> policy (HKLM/HKCU\SOFTWARE\Policies\Microsoft\Edge): 0 = allowed except
+/// on force-installed extension pages, 1 = allowed, 2 = not allowed. Read-only. Absent means NotConfigured, which is
+/// not the same as allowed: DevTools can be restricted by other means this value does not show.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EdgeDeveloperToolsPolicyStatus { Unknown, NotConfigured, AllowedExceptForceInstalledExtensions, Allowed, Disallowed }
+
+/// <summary>Edge policy values read once at the start of a run. Evidence about policy, never about Playwright.</summary>
+public sealed record BrowserAutomationPolicySnapshot(
+    BirkNext.ManagedEdge.EdgeRemoteDebuggingPolicyStatus RemoteDebugging, EdgeDeveloperToolsPolicyStatus DeveloperTools)
+{
+    public static readonly BrowserAutomationPolicySnapshot Unknown =
+        new(BirkNext.ManagedEdge.EdgeRemoteDebuggingPolicyStatus.Unknown, EdgeDeveloperToolsPolicyStatus.Unknown);
 }
 
 /// <summary>A yes/no fact that may also be honestly unanswered. Never collapsed into a bool, because "not checked" is not "no".</summary>
@@ -328,8 +346,14 @@ public sealed record BrowserAutomationDiagnosticReport
     public string TargetEnvironmentId { get; init; } = "";
     public string TargetEnvironmentName { get; init; } = "";
     public string TargetEnvironmentType { get; init; } = "";
+    /// <summary>The configured target URL, SANITIZED for display and reports.</summary>
     public string TargetUrl { get; init; } = "";
     public string ControlUrl { get; init; } = "";
+    /// <summary>
+    /// The exact configured URL, used only server-side to bind evidence to the target it was gathered for. Never
+    /// serialized: it may carry values the sanitized <see cref="TargetUrl"/> deliberately removes.
+    /// </summary>
+    [JsonIgnore] public string CorrelationTargetUrl { get; init; } = "";
 
     public string? EdgeVersion { get; init; }
     public string? PlaywrightVersion { get; init; }

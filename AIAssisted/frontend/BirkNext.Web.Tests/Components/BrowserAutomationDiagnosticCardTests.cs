@@ -823,4 +823,67 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
             .And.Contain("Authenticated application: NOT ASSESSED")
             .And.Contain("authentication authority, second page");
     }
+
+    // §36, §52. When the prerequisite is met, the card offers a way to the authentication diagnostic — a link, not a
+    // second run button. The diagnostic still runs from its own card only.
+    [Fact]
+    public void WhenThePrerequisiteIsMetTheCardLinksToTheAuthenticationDiagnostic_WithoutRunningIt()
+    {
+        var card = Ran(AvailableThroughAuthRedirect());
+
+        var link = card.Find("[data-testid=bad-go-to-auth-diagnostic]");
+        link.TagName.Should().Be("A");
+        link.TextContent.Trim().Should().Be("Go to Headless Authentication Diagnostic");
+        link.GetAttribute("href").Should().Be(
+            "admin/system-settings?section=target-environments&tab=auth&open=headless-auth&profile=dev");
+        card.FindAll("[data-testid=had-run]").Should().BeEmpty("the run button lives on the authentication card only");
+        card.FindAll("button").Select(b => b.TextContent).Should().NotContain(t => t.Contains("headless authentication", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void WhenThePrerequisiteIsNotMetThereIsNoLink()
+    {
+        var card = Ran(RestrictedInBothModes());
+
+        card.FindAll("[data-testid=bad-go-to-auth-diagnostic]").Should().BeEmpty();
+    }
+
+    // §38. Each target fact states where it comes from.
+    [Fact]
+    public void EveryTargetFactStatesItsProvenance()
+    {
+        var headless = ModePanel(Ran(AvailableThroughAuthRedirect()), "Headless");
+
+        string Provenance(string key) => headless.QuerySelectorAll("[data-testid=bad-fact]")
+            .Single(f => f.GetAttribute("data-fact") == key).QuerySelector("[data-testid=bad-fact-provenance]")!.TextContent.Trim();
+
+        Provenance("requested").Should().Be("Configured");
+        Provenance("final-location").Should().Be("Observed");
+        Provenance("auth-redirect").Should().Be("Observed");
+        Provenance("expected-origin").Should().Be("Derived");
+        Provenance("application").Should().Be("Derived");
+        Provenance("authenticated-application").Should().Be("Unknown");
+        BrowserAutomationDiagnosticReportText.Build(AvailableThroughAuthRedirect())
+            .Should().Contain("Final location: https://login.microsoftonline.com/[tenant]/oauth2/v2.0/authorize?[redacted] [Observed]");
+    }
+
+    // §15. A cleanup warning is shown as a warning, beside a finding it does not replace.
+    [Fact]
+    public void ACleanupWarningIsShownAsAWarning()
+    {
+        var mode = RestrictedMode(BrowserAutomationDiagnosticMode.Headless);
+        mode = mode with
+        {
+            Stages = [.. mode.Stages.Select(s => s.Stage == BrowserAutomationDiagnosticStage.Cleanup
+                ? Stage(BrowserAutomationDiagnosticStage.Cleanup, BrowserAutomationDiagnosticStageState.Warning,
+                    "Cleanup warning: closing the diagnostic browser reported an error. The result above is unaffected.", exceptionType: "PlaywrightException")
+                : s)],
+        };
+        var card = Ran(Report(BrowserAutomationDiagnosticComparison.MixedOrInconclusive, "Inconclusive", "…",
+            RestrictedMode(BrowserAutomationDiagnosticMode.Headed), mode));
+
+        var cleanup = ModePanel(card, "Headless").QuerySelectorAll("[data-testid=bad-stage]").Single(s => s.GetAttribute("data-stage") == "Cleanup");
+        cleanup.QuerySelector("[data-testid=bad-stage-state]")!.TextContent.Trim().Should().Be("WARNING");
+        ModePanel(card, "Headless").GetAttribute("data-mode-result").Should().Be("TargetRestricted");
+    }
 }

@@ -862,7 +862,7 @@
                                                TrafficVerified="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)" />
                 </Capabilities>
                 </AuthenticationReadinessPanel>
-                <details class="fa-auth-diagnostics" data-testid="authentication-diagnostics">
+                <details class="fa-auth-diagnostics" data-testid="authentication-diagnostics" open="@OpenHeadlessAuthDiagnostic">
                     <summary>Authentication diagnostics</summary>
                     <HeadlessAuthDiagnosticCard Profile="CurrentProfile" />
                 </details>
@@ -1666,6 +1666,13 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     /// </summary>
     [Parameter] public string? InitialTab { get; set; }
 
+    /// <summary>Target Environment to select initially ("profile=" key). Ignored when no such profile exists.</summary>
+    [Parameter] public string? InitialProfileId { get; set; }
+
+    /// <summary>Expands the Authentication diagnostics panel (deep link from the Browser Automation Diagnostic).</summary>
+    [Parameter] public bool OpenHeadlessAuthDiagnostic { get; set; }
+    private string? _appliedInitialProfileId;
+
     private string                   _activeTab = "general";
     private string?                  _appliedInitialTab;
 
@@ -1975,6 +1982,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
         _selectedProfileId = FaSettings.Settings.ActiveProfileId
             ?? FaSettings.Settings.Profiles.FirstOrDefault()?.Id;
+        ApplyInitialProfile();
         if (_proxyRuntime is not null) await _proxyRuntime.SynchronizeAsync(CurrentProfile);
         // Restore the persisted public detection snapshot so a restart shows "Previously detected" (revalidated to Current/Stale)
         // instead of forcing a fresh Detect. No credential is restored — only safe discovery evidence.
@@ -1982,8 +1990,20 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     }
 
     /// <summary>Applies a deep-linked tab once per distinct value, so navigating here again re-selects it.</summary>
+    /// <summary>Selects the deep-linked profile once per distinct value — only a profile that exists, and before the tab.</summary>
+    private void ApplyInitialProfile()
+    {
+        if (InitialProfileId is not { Length: > 0 } requested || _appliedInitialProfileId == requested) return;
+        if (FaSettings.Settings.Profiles.All(p => p.Id != requested)) return;
+        _appliedInitialProfileId = requested;
+        if (_selectedProfileId != requested) SelectProfile(requested);
+        _appliedInitialTab = null;   // SelectProfile resets the tab; re-apply the requested one.
+        if (InitialTab is { Length: > 0 } tab && Tabs.Any(t => t.Key == tab)) { _activeTab = tab; _appliedInitialTab = tab; }
+    }
+
     protected override void OnParametersSet()
     {
+        ApplyInitialProfile();
         if (InitialTab is { Length: > 0 } requested && _appliedInitialTab != requested)
         {
             _appliedInitialTab = requested;

@@ -1,6 +1,7 @@
 using System.Reflection;
 using BirkNext.Api.Services.BrowserAutomationDiagnostic;
 using BirkNext.Api.Services.ManagedEdge;
+using BirkNext.ManagedEdge;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Playwright;
@@ -38,6 +39,11 @@ public sealed class BrowserAutomationDiagnosticRunTests
         public Func<BrowserAutomationDiagnosticMode, int, bool>? ProbeFindsPageClosed;
         /// <summary>Whether the page closes during the stability window (Page.Close is then reported, with no exception).</summary>
         public Func<BrowserAutomationDiagnosticMode, bool>? ClosesDuringStability;
+        /// <summary>Which termination the stability window reports when it ends early. Page close by default.</summary>
+        public BrowserAutomationLifecycleEventKind StabilityTermination = BrowserAutomationLifecycleEventKind.PageClosed;
+        /// <summary>What closing the browser reports: null = clean, otherwise the exception type.</summary>
+        public Func<string?>? OnClose;
+        public bool Closed { get; private set; }
         public Func<BrowserAutomationDiagnosticMode, int, DiagnosticSettleOutcome>? SettleOutcome;
         public bool? MarkerFound;
         public bool PersistentContext = true;
@@ -115,7 +121,7 @@ public sealed class BrowserAutomationDiagnosticRunTests
             StabilityWindows.Add(window);
             _clock += 100;
             if (ClosesDuringStability?.Invoke(Mode) != true) return Task.FromResult(true);
-            _events.Add(new(BrowserAutomationLifecycleEventKind.PageClosed, _clock += 1500));
+            _events.Add(new(StabilityTermination, _clock += 1500));
             return Task.FromResult(false);
         }
 
@@ -130,11 +136,23 @@ public sealed class BrowserAutomationDiagnosticRunTests
             return new(_url, PageClosed: false, markerSelector is null ? null : MarkerFound);
         }
 
+        public Task<string?> CloseAsync()
+        {
+            Closed = true;
+            return Task.FromResult(OnClose?.Invoke());
+        }
+
         public ValueTask DisposeAsync()
         {
             Disposed = true;
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class FakePolicyReader(EdgeRemoteDebuggingPolicyStatus remote, EdgeDeveloperToolsPolicyStatus devTools) : IEdgePolicyReader
+    {
+        public EdgeRemoteDebuggingPolicyStatus ReadRemoteDebuggingPolicy() => remote;
+        public EdgeDeveloperToolsPolicyStatus ReadDeveloperToolsPolicy() => devTools;
     }
 
     /// <summary>Hands out one fake per mode and keeps them, so a test can assert on each mode's browser separately.</summary>
@@ -165,8 +183,10 @@ public sealed class BrowserAutomationDiagnosticRunTests
     private const string TargetUrl = "https://m2lbdev.example.test/";
     private const string TargetHost = "m2lbdev.example.test";
 
-    private static string Profile(BrowserAutomationDiagnosticMode mode) =>
-        System.IO.Path.Combine(ProfileRoot, mode == BrowserAutomationDiagnosticMode.Headless ? "Headless" : "Headed");
+    /// <summary>The real per-target layout under a fake root: …\&lt;target key&gt;\Headed|Headless.</summary>
+    private static string Profile(BrowserAutomationDiagnosticRequest request, BrowserAutomationDiagnosticMode mode) =>
+        System.IO.Path.Combine(ProfileRoot, BrowserAutomationDiagnosticPolicy.TargetProfileKey(request),
+            mode == BrowserAutomationDiagnosticMode.Headless ? "Headless" : "Headed");
 
     private static BrowserAutomationDiagnosticRequest Request(
         string environmentType = "Development", string id = "dev") => new()
@@ -181,7 +201,8 @@ public sealed class BrowserAutomationDiagnosticRunTests
 
     private static IBrowserAutomationDiagnosticService Service(
         FakeFactory factory, bool isLocalWorkstation = true, bool edgeFound = true,
-        Func<BrowserAutomationDiagnosticMode, string>? profile = null, string? marker = null)
+        Func<BrowserAutomationDiagnosticRequest, BrowserAutomationDiagnosticMode, string>? profile = null, string? marker = null,
+        IEdgePolicyReader? policies = null)
     {
         var type = typeof(BrowserAutomationDiagnosticPolicy).Assembly
             .GetType("BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService")!;
@@ -194,7 +215,8 @@ public sealed class BrowserAutomationDiagnosticRunTests
             profile ?? Profile,
             ControlUrl,
             FastTiming,
-            (Func<BrowserAutomationDiagnosticRequest, string?>)(_ => marker))!;
+            (Func<BrowserAutomationDiagnosticRequest, string?>)(_ => marker),
+            policies ?? new FakePolicyReader(EdgeRemoteDebuggingPolicyStatus.NotConfigured, EdgeDeveloperToolsPolicyStatus.NotConfigured))!;
     }
 
     /// <summary>Playwright's .NET binding does not expose TargetClosedException, so this is what a caller actually sees.</summary>
@@ -239,8 +261,8 @@ public sealed class BrowserAutomationDiagnosticRunTests
         var factory = new FakeFactory();
 
         // Only the HEADLESS profile is unsafe; the run must still refuse, rather than doing the headed half.
-        var report = await Service(factory, profile: mode =>
-            mode == BrowserAutomationDiagnosticMode.Headless ? normal : Profile(mode)).RunAsync(Request());
+        var report = await Service(factory, profile: (request, mode) =>
+            mode == BrowserAutomationDiagnosticMode.Headless ? normal : Profile(request, mode)).RunAsync(Request());
 
         report.Result.Should().Be(BrowserAutomationDiagnosticComparison.Blocked);
         report.BlockedReason.Should().Be(BrowserAutomationDiagnosticPolicy.NormalProfileBlockedReason);
@@ -943,10 +965,13 @@ public sealed class BrowserAutomationDiagnosticRunTests
         var report = await Service(factory).RunAsync(Request());
 
         report.ControlDimensions.Select(d => d.Name).Should().Equal(
-            "Corporate Edge DevTools UI (F12 / Inspect)", "Playwright-owned browser automation", "CDP attach to an existing or protected Edge");
-        report.ControlDimensions[0].State.Should().Be("Unknown");
-        report.ControlDimensions[2].State.Should().Be("Not tested");
-        report.ControlDimensions[1].State.Should().Be(restricted ? "Blocked on this target" : "Available");
+            "Visible DevTools policy (F12 / Inspect)", "Remote debugging policy (RemoteDebuggingAllowed)",
+            "Playwright-owned browser automation", "CDP attach to an existing or protected Edge");
+        // Policy rows come from the policy reader, never from the Playwright result — whichever way it went.
+        report.ControlDimensions[0].State.Should().Be("Not configured in Edge policy");
+        report.ControlDimensions[1].State.Should().Be("Not configured");
+        report.ControlDimensions[3].State.Should().Be("Not tested");
+        report.ControlDimensions[2].State.Should().Be(restricted ? "Blocked on this target" : "Available");
 
         var everything = string.Join(" ", new[] { report.Interpretation, report.ResultLabel }
             .Concat(report.ControlDimensions.SelectMany(d => new[] { d.State, d.Basis }))
@@ -996,4 +1021,205 @@ public sealed class BrowserAutomationDiagnosticRunTests
             .And.Contain("This does NOT prove that the authenticated target application is controllable");
         System.Text.Json.JsonSerializer.Serialize(report).Should().NotContainAny("STATE-SECRET", "NONCE-SECRET", "returnUrl");
     }
+
+    // ══ P1: correctness and reliability ══════════════════════════════════════════════════════════════════════════
+
+    // §14, §44. A probe that finds the page gone, with no exception, is reported as what it was — never dressed up as
+    // a TargetClosedException nobody threw.
+    [Fact]
+    public async Task ControlUnavailableWithoutAnExceptionNeverReportsTargetClosedException()
+    {
+        var factory = new FakeFactory { Configure = b => b.ProbeFindsPageClosed = (_, index) => index == 0 };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            mode.ObservedExceptionType.Should().BeNull();
+            mode.Target!.ExceptionType.Should().BeNull();
+            mode.Stage(BrowserAutomationDiagnosticStage.TargetControl)!.ExceptionType.Should().BeNull();
+            mode.Stage(BrowserAutomationDiagnosticStage.TargetControl)!.Detail.Should().Contain("the page was no longer available")
+                .And.NotContain("TargetClosedException");
+        }
+        System.Text.Json.JsonSerializer.Serialize(report).Should().NotContain("TargetClosedException");
+    }
+
+    // §42. A browser disconnect after the first successful probe invalidates it.
+    [Fact]
+    public async Task ABrowserDisconnectDuringTheStabilityWindowBlocksControl()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b =>
+            {
+                b.ClosesDuringStability = mode => mode == BrowserAutomationDiagnosticMode.Headless;
+                b.StabilityTermination = BrowserAutomationLifecycleEventKind.BrowserDisconnected;
+            },
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Headless!.Result.Should().Be(BrowserAutomationDiagnosticModeResult.TargetRestricted);
+        State(report.Headless, BrowserAutomationDiagnosticStage.TargetStability).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
+        report.Headless.Target!.LifecycleEvents.Should().ContainSingle(e => e.Kind == BrowserAutomationLifecycleEventKind.BrowserDisconnected);
+        report.Headless.Stage(BrowserAutomationDiagnosticStage.TargetStability)!.Detail.Should().Contain("BrowserDisconnected");
+        report.Headed!.BrowserControlRetained.Should().BeTrue("the disconnect happened in the headless mode only");
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.HeadlessOnlyRestricted);
+        report.HeadlessAutomationControlAfterTargetNavigation.Should().BeFalse();
+    }
+
+    // §15, §48. Cleanup is reported as it happened — and a cleanup problem is a warning beside the finding, not a
+    // replacement for it.
+    [Fact]
+    public async Task ACleanupFailureIsAWarningThatNeverOverwritesTheFinding()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b =>
+            {
+                b.OnNavigate = ClosesTargetIn(b.Mode);
+                b.OnClose = () => "PlaywrightException";
+            },
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.Cleanup).Should().Be(BrowserAutomationDiagnosticStageState.Warning);
+            mode.Stage(BrowserAutomationDiagnosticStage.Cleanup)!.ExceptionType.Should().Be("PlaywrightException");
+            mode.Stage(BrowserAutomationDiagnosticStage.Cleanup)!.Detail.Should().Contain("The result above is unaffected")
+                .And.Contain("no other Edge process was touched");
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.TargetRestricted, "the main cause is preserved");
+            mode.ObservedExceptionType.Should().Be("TargetClosedException", "the cleanup exception does not replace the finding's");
+        }
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
+        factory.Browsers.Values.Should().OnlyContain(b => b.Closed && b.Disposed);
+    }
+
+    [Fact]
+    public async Task ACleanCloseIsReportedAsPassed()
+    {
+        var factory = new FakeFactory();
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Modes.Should().OnlyContain(m => m.Stage(BrowserAutomationDiagnosticStage.Cleanup)!.State == BrowserAutomationDiagnosticStageState.Passed);
+        factory.Browsers.Values.Should().OnlyContain(b => b.Closed);
+    }
+
+    // §16, §48. Profiles belong to one target and one mode. Two targets never share a user-data directory, and the
+    // run lock is per profile set, so one target's run never blocks another's.
+    [Fact]
+    public async Task ProfilesArePerTargetAndPerMode()
+    {
+        var dev = Request(id: "dev");
+        var qa = Request(id: "qa") with { TargetUrl = "https://m2lbqa.example.test/", EnvironmentType = "QA" };
+
+        BrowserAutomationDiagnosticPolicy.ProfileDirectory(dev, BrowserAutomationDiagnosticMode.Headed)
+            .Should().NotBe(BrowserAutomationDiagnosticPolicy.ProfileDirectory(qa, BrowserAutomationDiagnosticMode.Headed));
+        BrowserAutomationDiagnosticPolicy.ProfileDirectory(dev, BrowserAutomationDiagnosticMode.Headed)
+            .Should().NotBe(BrowserAutomationDiagnosticPolicy.ProfileDirectory(dev, BrowserAutomationDiagnosticMode.Headless));
+        // Same target, different path under the same origin: same profile (it is the same application).
+        BrowserAutomationDiagnosticPolicy.TargetProfileKey(dev with { TargetUrl = "https://m2lbdev.example.test/admin" })
+            .Should().Be(BrowserAutomationDiagnosticPolicy.TargetProfileKey(dev));
+        // The folder name leaks neither the host nor the id.
+        var key = BrowserAutomationDiagnosticPolicy.TargetProfileKey(dev);
+        key.Should().MatchRegex("^[0-9a-f]{16}$");
+        BrowserAutomationDiagnosticPolicy.ProfileDirectory(dev, BrowserAutomationDiagnosticMode.Headed).Should().NotContain("m2lbdev");
+
+        // Two different targets can run at the same time; neither is refused as "already running".
+        var gate = new TaskCompletionSource();
+        var slow = new FakeFactory { Configure = b => b.OnLaunch = _ => gate.Task };
+        var service = Service(slow);
+        var first = service.RunAsync(dev);
+        await Task.Delay(50);
+        var second = await Service(new FakeFactory()).RunAsync(qa);
+        second.Result.Should().NotBe(BrowserAutomationDiagnosticComparison.Blocked);
+        gate.SetResult();
+        (await first).Result.Should().NotBe(BrowserAutomationDiagnosticComparison.Blocked);
+    }
+
+    // §17. An explicit non-production allow-list, and the hostname is checked as well as the type.
+    [Theory]
+    [InlineData("Development", "https://m2lbdev.example.test/", null)]
+    [InlineData("QA", "https://m2lbqa.example.test/", null)]
+    [InlineData("Test", "https://m2lbtest.example.test/", null)]
+    [InlineData("Local", "http://localhost:5173/", null)]
+    [InlineData("RC", "https://m2lbrc.example.test/", null)]
+    [InlineData("Production", "https://m2lb.example.test/", BrowserAutomationDiagnosticPolicy.ProductionBlockedReason)]
+    [InlineData("Custom", "https://m2lbdev.example.test/", BrowserAutomationDiagnosticPolicy.UnrecognisedEnvironmentBlockedReason)]
+    [InlineData("", "https://m2lbdev.example.test/", BrowserAutomationDiagnosticPolicy.UnrecognisedEnvironmentBlockedReason)]
+    [InlineData("Staging", "https://m2lbdev.example.test/", BrowserAutomationDiagnosticPolicy.UnrecognisedEnvironmentBlockedReason)]
+    [InlineData("QA", "https://m2lb-prod.example.test/", BrowserAutomationDiagnosticPolicy.ProductionHostBlockedReason)]
+    public void OnlyExplicitlyNonProductionTargetsAreEligible(string type, string url, string? expected)
+    {
+        var request = Request(type) with { TargetUrl = url };
+
+        BrowserAutomationDiagnosticPolicy.BlockedReason(request,
+                [Profile(request, BrowserAutomationDiagnosticMode.Headed), Profile(request, BrowserAutomationDiagnosticMode.Headless)], true)
+            .Should().Be(expected);
+    }
+
+    // §4, §18. The configured URL is sanitized for display and reports, while the evidence store still binds to the
+    // exact configured URL.
+    [Fact]
+    public async Task TheConfiguredTargetUrlIsSanitizedInTheReportButStillCorrelatesExactly()
+    {
+        var configured = "https://m2lbdev.example.test/?code=CODE-SECRET&state=STATE-SECRET&login_hint=someone%40bufdir.no";
+        var request = Request() with { TargetUrl = configured };
+
+        var report = await Service(new FakeFactory()).RunAsync(request);
+
+        report.TargetUrl.Should().Be("https://m2lbdev.example.test/?[redacted]");
+        report.Headless!.Target!.RequestedUrl.Should().Be("https://m2lbdev.example.test/?[redacted]");
+        var json = System.Text.Json.JsonSerializer.Serialize(report);
+        json.Should().NotContainAny("CODE-SECRET", "STATE-SECRET", "someone", "code=", "login_hint");
+
+        var store = new BirkNext.Api.Services.HeadlessAuthDiagnostic.BrowserAutomationEvidenceStore();
+        store.Record(report);
+        store.Check(new BirkNext.HeadlessAuthDiagnostic.HeadlessDiagnosticRequest
+        {
+            TargetEnvironmentId = "dev", TargetUrl = configured, EnvironmentType = "Development",
+        }).Available.Should().BeTrue("the gate binds to the exact configured URL, not the sanitized display value");
+    }
+
+    // §32, §33. The visible DevTools policy and the remote debugging policy are READ, separately, and never inferred.
+    [Fact]
+    public async Task PolicyDimensionsComeFromThePolicyReaderAndNothingElse()
+    {
+        var reader = new FakePolicyReader(EdgeRemoteDebuggingPolicyStatus.Blocked, EdgeDeveloperToolsPolicyStatus.Disallowed);
+
+        var report = await Service(new FakeFactory(), policies: reader).RunAsync(Request());
+
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.AutomationAvailable);
+        report.ControlDimensions[0].State.Should().Be("Disallowed by Edge policy",
+            "a working Playwright run does not make DevTools 'enabled'");
+        report.ControlDimensions[1].State.Should().Be("Blocked");
+        report.ControlDimensions[2].State.Should().Be("Available", "Playwright owning its own Edge is a separate path");
+    }
+
+    [Fact]
+    public async Task AFailingPolicyReaderIsUnknown_NotAGuess()
+    {
+        var report = await Service(new FakeFactory(), policies: new ThrowingPolicyReader()).RunAsync(Request());
+
+        report.ControlDimensions[0].State.Should().Be("Unknown");
+        report.ControlDimensions[1].State.Should().Be("Unknown");
+    }
+
+    private sealed class ThrowingPolicyReader : IEdgePolicyReader
+    {
+        public EdgeRemoteDebuggingPolicyStatus ReadRemoteDebuggingPolicy() => throw new UnauthorizedAccessException();
+        public EdgeDeveloperToolsPolicyStatus ReadDeveloperToolsPolicy() => throw new UnauthorizedAccessException();
+    }
+
+    [Theory]
+    [InlineData(0, EdgeDeveloperToolsPolicyStatus.AllowedExceptForceInstalledExtensions)]
+    [InlineData(1, EdgeDeveloperToolsPolicyStatus.Allowed)]
+    [InlineData(2, EdgeDeveloperToolsPolicyStatus.Disallowed)]
+    [InlineData(3, EdgeDeveloperToolsPolicyStatus.Unknown)]
+    [InlineData(-1, EdgeDeveloperToolsPolicyStatus.Unknown)]
+    public void DeveloperToolsAvailabilityValuesMapOnlyToTheDocumentedMeanings(int value, EdgeDeveloperToolsPolicyStatus expected) =>
+        BrowserAutomationTargetLocationPolicy.DeveloperToolsPolicy(value).Should().Be(expected);
 }

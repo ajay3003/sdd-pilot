@@ -263,4 +263,42 @@ public sealed class FrontendReviewEnginesDeepLinkTests : BunitContext
         cut.Find("#target-tab-general").GetAttribute("aria-selected").Should().Be("true");
         cut.FindAll("[data-testid=frontend-review-engines]").Should().BeEmpty();
     }
+
+/// <summary>The Browser Automation Diagnostic's link opens the DIAGNOSED Target Environment, on Authentication, with the diagnostics panel expanded.</summary>
+public sealed class HeadlessAuthDiagnosticDeepLinkTests : BunitContext
+{
+    private IRenderedComponent<BirkNext.Web.Components.FrontendAnalysisSettings> Render(string? profile, bool open)
+    {
+        Services.AddSingleton<IFrontendAnalysisSettingsService>(new FrontendAnalysisSettingsService());
+        Services.AddSingleton(Mock.Of<ITargetEnvironmentDetectionApiService>());
+        Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult("""
+            {"activeProfileId":"dev","profiles":[
+              {"id":"dev","name":"Dev target","environmentType":"Development","targetUrl":"https://dev.example.test"},
+              {"id":"qa","name":"QA target","environmentType":"QA","targetUrl":"https://qa.example.test"}]}
+            """);
+        return Render<BirkNext.Web.Components.FrontendAnalysisSettings>(p => p
+            .Add(c => c.InitialTab, "auth").Add(c => c.InitialProfileId, profile).Add(c => c.OpenHeadlessAuthDiagnostic, open));
+    }
+
+    [Fact]
+    public void TheLinkSelectsTheDiagnosedProfileAndOpensTheAuthenticationDiagnostics()
+    {
+        var cut = Render("qa", open: true);
+
+        cut.Find("#target-tab-auth").GetAttribute("aria-selected").Should().Be("true");
+        cut.Find("[data-testid=authentication-diagnostics]").HasAttribute("open").Should().BeTrue();
+        cut.Find("[data-testid=headless-auth-diagnostic]").TextContent.Should().Contain("QA target");
+    }
+
+    [Fact]
+    public void AnUnknownProfileIsIgnoredAndThePanelStaysCollapsedWithoutTheOpenKey()
+    {
+        var cut = Render("does-not-exist", open: false);
+
+        cut.Find("[data-testid=authentication-diagnostics]").HasAttribute("open").Should().BeFalse();
+        cut.Find("[data-testid=headless-auth-diagnostic]").TextContent.Should().Contain("Dev target");
+    }
+}
 }

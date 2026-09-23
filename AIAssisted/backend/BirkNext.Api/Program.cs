@@ -240,7 +240,8 @@ builder.Services.AddSingleton<BirkNext.Api.Services.BrowserAutomationDiagnostic.
         // contract the authentication diagnostic reads, so a target is identified by one configuration, not two.
         applicationMarker: request => BirkNext.Api.Services.HeadlessAuthDiagnostic.HeadlessVerificationContract.ApplicationMarkerFor(
             sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<BirkNext.Api.Services.HeadlessAuthDiagnostic.HeadlessDiagnosticOptions>>().Value,
-            request.TargetEnvironmentId, request.TargetUrl)));
+            request.TargetEnvironmentId, request.TargetUrl),
+        policyReader: sp.GetRequiredService<IEdgePolicyReader>()));
 // It reports whether automation survives in HEADED and HEADLESS Edge separately, because headless is what unattended
 // CI would use and "it worked when I watched it" is not an answer for CI.
 

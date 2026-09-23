@@ -81,8 +81,8 @@ public sealed class BrowserAutomationDiagnosticPolicyTests
     [Fact]
     public void EachModeHasItsOwnDedicatedBirkNextProfile()
     {
-        var headed = BrowserAutomationDiagnosticPolicy.ProfileDirectory(BrowserAutomationDiagnosticMode.Headed);
-        var headless = BrowserAutomationDiagnosticPolicy.ProfileDirectory(BrowserAutomationDiagnosticMode.Headless);
+        var headed = BrowserAutomationDiagnosticPolicy.ProfileDirectory(Request(), BrowserAutomationDiagnosticMode.Headed);
+        var headless = BrowserAutomationDiagnosticPolicy.ProfileDirectory(Request(), BrowserAutomationDiagnosticMode.Headless);
 
         headed.Should().Contain("BirkNext").And.Contain("BrowserAutomationDiagnostic").And.EndWith("Headed");
         headless.Should().EndWith("Headless");

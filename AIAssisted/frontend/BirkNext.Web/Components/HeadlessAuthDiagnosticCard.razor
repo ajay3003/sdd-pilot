@@ -36,6 +36,25 @@
                 <div><dt>Primary headless blocker</dt><dd data-testid="had-blocker" data-blocker="@r.PrimaryBlocker"><strong>@HeadlessItReport.BlockerLabel(r.PrimaryBlocker)</strong></dd></div>
             </dl>
             <p data-testid="had-interpretation"><strong>Interpretation:</strong> @r.Interpretation</p>
+            @if (r.EntraErrorCode is not null || r.EntraCorrelationId is not null || r.EntraRequestId is not null)
+            {
+                @* Safe identifiers IT uses to find the sign-in log entry. Nothing else from the page is kept. *@
+                <dl class="had-summary" data-testid="had-entra-error">
+                    <div><dt>Entra error code</dt><dd>@(r.EntraErrorCode ?? "Not observed")</dd></div>
+                    <div><dt>Correlation ID</dt><dd>@(r.EntraCorrelationId ?? "Not observed")</dd></div>
+                    <div><dt>Request ID</dt><dd>@(r.EntraRequestId ?? "Not observed")</dd></div>
+                    <div><dt>Timestamp</dt><dd>@(r.EntraErrorTimestamp ?? "Not observed")</dd></div>
+                </dl>
+            }
+            @if (r.Evidence.Count > 0)
+            {
+                <ul class="had-provenance" data-testid="had-provenance" aria-label="Evidence provenance">
+                    @foreach (var item in r.Evidence)
+                    {
+                        <li data-testid="had-provenance-item" data-provenance="@item.Provenance"><strong>@item.Name:</strong> @item.Value <em>(@item.Provenance)</em></li>
+                    }
+                </ul>
+            }
             @foreach (var observation in r.Observations) { <p>Additional observation: @observation</p> }
             <p>Identity context: @r.IdentityContext. Dedicated QA automation identity: @r.AutomationIdentity. Automation authentication strategy: Not configured.</p>
             <p>A dedicated QA automation identity with an approved non-interactive authentication design may behave differently.</p>
@@ -59,7 +78,7 @@
                 </ol>
                 <h5>Sanitized navigation trace</h5>
                 @if (r.Navigation.Count == 0) { <p>No navigation evidence collected.</p> }
-                <ol>@foreach (var nav in r.Navigation) { <li>@nav.Timestamp.ToString("HH:mm:ss.fff 'UTC'") — <code>@nav.Url</code></li> }</ol>
+                <ol>@foreach (var nav in r.Navigation) { <li>@nav.Timestamp.ToString("HH:mm:ss.fff 'UTC'") — <code>@nav.Url</code>@(nav.SecondaryPage ? " (sign-in popup)" : "")</li> }</ol>
             </details>
         </div>
     }

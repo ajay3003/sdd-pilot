@@ -151,7 +151,8 @@
                                         {
                                             <div class="bad-fact" data-testid="bad-fact" data-fact="@fact.Key">
                                                 <dt>@fact.Label</dt>
-                                                <dd><span class="bad-fact-value fqr-pill-@fact.Tone" data-testid="bad-fact-value">@fact.Value</span></dd>
+                                                <dd><span class="bad-fact-value fqr-pill-@fact.Tone" data-testid="bad-fact-value">@fact.Value</span>
+                                                    <span class="bad-fact-provenance" data-testid="bad-fact-provenance">@fact.Provenance</span></dd>
                                             </div>
                                         }
                                     </dl>
@@ -239,6 +240,14 @@
                 <p class="bad-prerequisite-body" data-testid="bad-prerequisite-explanation">
                     @BrowserAutomationDiagnosticPrerequisite.Explanation(report)
                 </p>
+                @if (report.HeadlessAutomationControlAfterTargetNavigation)
+                {
+                    @* Navigation only. The authentication diagnostic runs from its own card, never from here. *@
+                    <a class="btn-primary bad-prerequisite-link" data-testid="bad-go-to-auth-diagnostic"
+                       href="@BrowserAutomationDiagnosticPrerequisite.AuthenticationDiagnosticHref(report)">
+                        Go to Headless Authentication Diagnostic
+                    </a>
+                }
             </div>
 
             <dl class="bad-meta" data-testid="bad-meta">

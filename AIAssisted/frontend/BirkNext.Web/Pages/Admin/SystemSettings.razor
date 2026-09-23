@@ -813,7 +813,8 @@ else if (_settings is not null)
                     <p class="settings-card-note">
                         Configure the environments used for reviews. The active environment is used when a review runs. Select an environment below to inspect or edit it.
                     </p>
-                    <FrontendAnalysisSettings InitialTab="@_initialTab" />
+                    <FrontendAnalysisSettings InitialTab="@_initialTab" InitialProfileId="@_initialProfileId"
+                                              OpenHeadlessAuthDiagnostic="@(_openPanel == "headless-auth")" />
                 </div>
             }
 
@@ -1440,6 +1441,10 @@ else if (_settings is not null)
     private string _activeSection = "general";
     /// <summary>Inner tab requested by the "tab=" query key, handed to the hosted settings component.</summary>
     private string? _initialTab;
+    /// <summary>Optional "profile=" key: the Target Environment to open (e.g. from the Browser Automation Diagnostic).</summary>
+    private string? _initialProfileId;
+    /// <summary>Optional "open=" key: a panel to expand inside the hosted section ("headless-auth").</summary>
+    private string? _openPanel;
     private string _navSearch     = "";
     private IDisposable? _locationChangedSubscription;
     private string _lastParsedUrl = "";
@@ -2009,6 +2014,16 @@ else if (_settings is not null)
                     {
                         var value = part.Substring("tab=".Length);
                         _initialTab = string.IsNullOrWhiteSpace(value) ? null : Uri.UnescapeDataString(value);
+                    }
+                    else if (part.StartsWith("profile="))
+                    {
+                        var value = part.Substring("profile=".Length);
+                        _initialProfileId = string.IsNullOrWhiteSpace(value) ? null : Uri.UnescapeDataString(value);
+                    }
+                    else if (part.StartsWith("open="))
+                    {
+                        var value = part.Substring("open=".Length);
+                        _openPanel = string.IsNullOrWhiteSpace(value) ? null : Uri.UnescapeDataString(value);
                     }
                 }
             }

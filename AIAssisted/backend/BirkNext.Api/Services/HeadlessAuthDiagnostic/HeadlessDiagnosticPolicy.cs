@@ -29,7 +29,8 @@ public sealed class BrowserAutomationEvidenceStore(TimeProvider? clock = null)
         foreach (var entry in _results.Where(e => e.Value.Time < now - Validity)) _results.TryRemove(entry.Key, out _);
         // Bound memory even if many distinct targets are submitted.
         if (_results.Count > 1000) _results.Clear();
-        _results[Key(report.TargetEnvironmentId, report.TargetUrl, report.TargetEnvironmentType)] =
+        var url = report.CorrelationTargetUrl is { Length: > 0 } exact ? exact : report.TargetUrl;
+        _results[Key(report.TargetEnvironmentId, url, report.TargetEnvironmentType)] =
             (report.HeadlessAutomationControlAfterTargetNavigation, report.DiagnosticId, now, Where(report));
     }
     public HeadlessPrerequisite Check(HeadlessDiagnosticRequest request) =>
@@ -52,6 +53,12 @@ public sealed class HeadlessDiagnosticOptions
     // Explicit, non-secret application shell contracts, keyed by Target Environment ID. Never a generic body/cookie check.
     public Dictionary<string, HeadlessVerificationContract> Verification { get; set; } = [];
     public string[] AdditionalNonProductionTypes { get; set; } = [];
+    /// <summary>
+    /// How long the unattended continuation is observed after the target navigation, in seconds. Default 15; clamped
+    /// to 5–120 so a typo can neither skip observation nor hold a browser open indefinitely.
+    /// </summary>
+    public int ObservationTimeoutSeconds { get; set; } = 15;
+    public TimeSpan ObservationTimeout => TimeSpan.FromSeconds(Math.Clamp(ObservationTimeoutSeconds, 5, 120));
 }
 public sealed class HeadlessVerificationContract
 {

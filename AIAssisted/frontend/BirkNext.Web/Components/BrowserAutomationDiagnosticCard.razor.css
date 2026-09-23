@@ -117,6 +117,8 @@
 .bad-fact dt { color: var(--clr-text-muted); }
 .bad-fact dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .bad-fact-value { display: inline-block; padding: 0 .35rem; border: 1px solid transparent; border-radius: var(--radius-sm, 4px); font-weight: 600; font-size: .8rem; }
+.bad-fact-provenance { margin-left: .4rem; font-size: .72rem; color: var(--clr-text-subtle); text-transform: uppercase; letter-spacing: .03em; }
+.bad-prerequisite-link { display: inline-block; margin-top: .5rem; text-decoration: none; }
 .bad-target-note { margin: .45rem 0 0; font-size: .82rem; color: var(--clr-text-muted); max-width: 78ch; }
 .bad-trace { margin: .5rem 0 0; font-size: .8rem; }
 .bad-trace summary { cursor: pointer; color: var(--clr-text-subtle); }

@@ -1,4 +1,7 @@
+using System.Security.Cryptography;
+using System.Text;
 using BirkNext.Api.Services.ManagedEdge;
+using BirkNext.ManagedEdge;
 
 namespace BirkNext.Api.Services.BrowserAutomationDiagnostic;
 
@@ -27,12 +30,24 @@ public static class BrowserAutomationDiagnosticPolicy
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "BirkNext", "BrowserAutomationDiagnostic");
 
-    public static string ProfileDirectory(BrowserAutomationDiagnosticMode mode) =>
-        System.IO.Path.Combine(ProfileRoot(), mode == BrowserAutomationDiagnosticMode.Headless ? "Headless" : "Headed");
+    /// <summary>
+    /// One profile per TARGET and per mode: <c>…\BrowserAutomationDiagnostic\&lt;target key&gt;\Headed|Headless</c>. The key
+    /// is a hash of the Target Environment id and the target's canonical origin, so two targets never share a
+    /// user-data directory (and the run lock, keyed by the directories, never makes one target wait on another).
+    /// </summary>
+    public static string ProfileDirectory(BrowserAutomationDiagnosticRequest request, BrowserAutomationDiagnosticMode mode) =>
+        System.IO.Path.Combine(ProfileRoot(), TargetProfileKey(request),
+            mode == BrowserAutomationDiagnosticMode.Headless ? "Headless" : "Headed");
+
+    /// <summary>Stable, non-reversible folder name for a target. Contains neither the URL nor the id.</summary>
+    public static string TargetProfileKey(BrowserAutomationDiagnosticRequest request) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{request.TargetEnvironmentId}\n{BrowserAutomationTargetLocationPolicy.CanonicalOrigin(request.TargetUrl) ?? request.TargetUrl}")))[..16]
+            .ToLowerInvariant();
 
     /// <summary>How a profile is described in a report that may be pasted into a ticket: what it is, not where it is.</summary>
     public static string ProfileDescription(BrowserAutomationDiagnosticMode mode) =>
-        $"Dedicated BirkNext diagnostic Edge profile (%LOCALAPPDATA%\\BirkNext\\BrowserAutomationDiagnostic\\"
+        $"Dedicated BirkNext diagnostic Edge profile for this target (%LOCALAPPDATA%\\BirkNext\\BrowserAutomationDiagnostic\\<target>\\"
         + $"{(mode == BrowserAutomationDiagnosticMode.Headless ? "Headless" : "Headed")}). "
         + "Never signed in, never the normal Edge profile.";
 
@@ -46,6 +61,12 @@ public static class BrowserAutomationDiagnosticPolicy
     /// <summary>The post-navigation controllability probe is a single read; it should answer fast or not at all.</summary>
     public static readonly TimeSpan ControlCheckTimeout = TimeSpan.FromSeconds(10);
 
+    public const string UnrecognisedEnvironmentBlockedReason =
+        "The browser automation diagnostic runs only against Target Environments explicitly typed as non-production "
+        + "(Local, Development, QA, Test or RC). Set the Target Environment type; an unknown or custom type is not assumed safe.";
+    public const string ProductionHostBlockedReason =
+        "The target's hostname indicates a Production environment, so the diagnostic does not run against it, whatever "
+        + "the Target Environment type says.";
     public const string ProductionBlockedReason =
         "The browser automation diagnostic does not run against Production. It drives a real browser at the target "
         + "application, and that is limited to Development and QA environments.";
@@ -62,21 +83,32 @@ public static class BrowserAutomationDiagnosticPolicy
         "A browser automation diagnostic is already running for this Target Environment. Wait for it to finish; two "
         + "runs would share a browser profile and report each other's contention rather than the target's behaviour.";
 
-    /// <summary>An environment the diagnostic may drive a browser at. Production is excluded, and so is anything unnamed.</summary>
+    /// <summary>The environment types that are explicitly non-production. Anything else — Production, Custom, blank — is refused.</summary>
+    public static readonly IReadOnlyList<string> NonProductionEnvironmentTypes = ["Local", "Development", "QA", "Test", "RC"];
+
+    /// <summary>An environment the diagnostic may drive a browser at: an explicit allow-list, never "anything but Production".</summary>
     public static bool IsEligibleEnvironmentType(string? environmentType) =>
         !string.IsNullOrWhiteSpace(environmentType) &&
-        !string.Equals(environmentType.Trim(), "Production", StringComparison.OrdinalIgnoreCase);
+        NonProductionEnvironmentTypes.Contains(environmentType.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsProductionType(string? environmentType) =>
+        environmentType?.Trim() is { } t &&
+        (t.Equals("Production", StringComparison.OrdinalIgnoreCase) || t.Equals("Prod", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Whether the diagnostic may start, and if not, why — in the same words the UI shows. Null when it may.</summary>
     public static string? BlockedReason(
         BrowserAutomationDiagnosticRequest request, IReadOnlyList<string> profileDirectories, bool isLocalWorkstation)
     {
         if (!isLocalWorkstation) return RemoteRuntimeBlockedReason;
-        if (!IsEligibleEnvironmentType(request.EnvironmentType)) return ProductionBlockedReason;
+        if (IsProductionType(request.EnvironmentType)) return ProductionBlockedReason;
+        if (!IsEligibleEnvironmentType(request.EnvironmentType)) return UnrecognisedEnvironmentBlockedReason;
         if (string.IsNullOrWhiteSpace(request.TargetUrl)) return NoTargetBlockedReason;
         if (!Uri.TryCreate(request.TargetUrl, UriKind.Absolute, out var target) ||
             (target.Scheme != Uri.UriSchemeHttp && target.Scheme != Uri.UriSchemeHttps))
             return InvalidTargetBlockedReason;
+        // The type is what someone typed; the hostname is what the browser will actually visit.
+        if (TargetEnvironmentDetection.TargetEnvironmentTypeClassifier.Infer(target.IdnHost) == Models.FrontendEnvironmentType.Production)
+            return ProductionHostBlockedReason;
         // The one guard that must never be bypassed, reusing the check the managed-Edge and proxy launchers already
         // use — and applied to EVERY mode's profile, not just the first.
         foreach (var directory in profileDirectories)
@@ -335,8 +367,10 @@ public static class BrowserAutomationDiagnosticPolicy
     public static List<BrowserAutomationControlDimension> ControlDimensions(
         BrowserAutomationDiagnosticComparison result,
         BrowserAutomationDiagnosticModeReport? headed,
-        BrowserAutomationDiagnosticModeReport? headless)
+        BrowserAutomationDiagnosticModeReport? headless,
+        BrowserAutomationPolicySnapshot? policies = null)
     {
+        policies ??= BrowserAutomationPolicySnapshot.Unknown;
         static string ModeState(BrowserAutomationDiagnosticModeReport? mode) => mode switch
         {
             { BrowserControlRetained: true } => "available",
@@ -355,9 +389,26 @@ public static class BrowserAutomationDiagnosticPolicy
 
         return
         [
-            new("Corporate Edge DevTools UI (F12 / Inspect)", "Unknown",
-                "Not observed by this diagnostic. A Playwright result, pass or fail, does not show whether people can "
-                + "open DevTools in Edge."),
+            new("Visible DevTools policy (F12 / Inspect)", policies.DeveloperTools switch
+                {
+                    EdgeDeveloperToolsPolicyStatus.Disallowed => "Disallowed by Edge policy",
+                    EdgeDeveloperToolsPolicyStatus.Allowed => "Allowed by Edge policy",
+                    EdgeDeveloperToolsPolicyStatus.AllowedExceptForceInstalledExtensions => "Allowed except on force-installed extensions",
+                    EdgeDeveloperToolsPolicyStatus.NotConfigured => "Not configured in Edge policy",
+                    _ => "Unknown",
+                },
+                "Read-only from the Edge DeveloperToolsAvailability policy value. It is not inferred from the Playwright "
+                + "result, and a Playwright result, pass or fail, says nothing about it. Not configured does not rule out "
+                + "other restrictions."),
+            new("Remote debugging policy (RemoteDebuggingAllowed)", policies.RemoteDebugging switch
+                {
+                    EdgeRemoteDebuggingPolicyStatus.Allowed => "Allowed",
+                    EdgeRemoteDebuggingPolicyStatus.Blocked => "Blocked",
+                    EdgeRemoteDebuggingPolicyStatus.NotConfigured => "Not configured",
+                    _ => "Unknown",
+                },
+                "Read-only from the Edge RemoteDebuggingAllowed policy value. It governs attaching to an Edge started "
+                + "with remote debugging; Playwright launching its own Edge is observed separately below."),
             new("Playwright-owned browser automation", playwright,
                 $"Observed in this run: headed {ModeState(headed)}, headless {ModeState(headless)}. Playwright launched "
                 + "its own Edge against a dedicated profile."),

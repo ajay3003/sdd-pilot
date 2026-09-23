@@ -70,15 +70,31 @@ internal sealed class HeadlessEvidenceRun(HeadlessDiagnosticReport report, ILogg
             Block(HeadlessBlocker.TargetNavigationBlocked, HeadlessStage.TargetNavigation, "Navigation to a hostname indicating Production was blocked by the diagnostic guard.");
             return;
         }
+        // Entra error identifiers count only when the page was actually Microsoft Entra: "53003" on some other page
+        // is just a number. The code is kept for every Entra error; only 53003 is an explicit CA block.
+        var entraError = o.Entra ? o.EntraError : null;
+        if (entraError is not null)
+        {
+            report.EntraErrorCode ??= entraError.Code;
+            report.EntraCorrelationId ??= entraError.CorrelationId;
+            report.EntraRequestId ??= entraError.RequestId;
+            report.EntraErrorTimestamp ??= entraError.Timestamp;
+        }
+        var caBlock = o.Entra && (o.ConditionalAccessBlock || entraError?.Code == "AADSTS53003");
+        var caCodeSignal = entraError?.Code is { } code && code.StartsWith("AADSTS530", StringComparison.Ordinal) && code != "AADSTS53003";
         // Stronger explicit CA evidence takes precedence over ordinary login controls on the SAME error page.
         // Across pages, the first terminal observation wins, without observing later pages.
-        report.ConditionalAccess = o.ConditionalAccessBlock ? "Explicit block observed" : o.ConditionalAccessSignal || report.ConditionalAccess == "Signal observed" ? "Signal observed" : "No observable signal";
-        Stage(HeadlessStage.ConditionalAccessObservation, o.ConditionalAccessBlock ? HeadlessStageState.Blocked : o.ConditionalAccessSignal ? HeadlessStageState.Passed : HeadlessStageState.Unknown, report.ConditionalAccess);
-        if (o.ConditionalAccessSignal || o.ConditionalAccessBlock) Event("ConditionalAccessSignalDetected");
+        report.ConditionalAccess = caBlock ? "Explicit block observed"
+            : caCodeSignal ? $"Conditional Access error observed ({entraError!.Code})"
+            : o.ConditionalAccessSignal || report.ConditionalAccess == "Signal observed" ? "Signal observed"
+            : report.ConditionalAccess.StartsWith("Conditional Access error observed", StringComparison.Ordinal) ? report.ConditionalAccess
+            : "No observable signal";
+        Stage(HeadlessStage.ConditionalAccessObservation, caBlock ? HeadlessStageState.Blocked : o.ConditionalAccessSignal || caCodeSignal ? HeadlessStageState.Passed : HeadlessStageState.Unknown, report.ConditionalAccess);
+        if (o.ConditionalAccessSignal || caBlock || caCodeSignal) Event("ConditionalAccessSignalDetected");
         report.SessionControl = o.ExplicitHeadlessRestriction ? "Explicit session-control restriction observed" : SessionControlObserved ? "Session-control signal observed" : o.PossibleSessionControl || report.SessionControl == "Possible session-control signal" ? "Possible session-control signal" : "No observable signal";
         Stage(HeadlessStage.SessionControlObservation, SessionControlObserved ? HeadlessStageState.Passed : HeadlessStageState.Unknown, report.SessionControl);
         if (SessionControlObserved || o.PossibleSessionControl) Event("SessionControlSignalDetected");
-        if (o.ConditionalAccessBlock)
+        if (caBlock)
         {
             report.ConditionalAccessErrorCode = "AADSTS53003";
             report.AuthenticatedSession = "Not established";
@@ -141,14 +157,43 @@ internal sealed class HeadlessEvidenceRun(HeadlessDiagnosticReport report, ILogg
         report.PostAuthenticationControl = ReturnObserved || SessionVerified || SessionControlObserved ? "Lost" : "Not tested";
         if (SessionControlObserved)
         {
-            report.SessionControlCompatibility = "Automation lost after observed session-control stage; requires IT confirmation";
-            Block(HeadlessBlocker.SessionControlHeadlessRestriction, HeadlessStage.PostAuthenticationAutomationControl,
-                "Automation control was lost after an observed session-control stage. This sequence does not establish MCAS as the cause; IT/security investigation is required.");
+            report.SessionControlCompatibility = "Automation lost after observed session-control signal; requires IT confirmation";
+            // Sequence, not cause: the blocker says what happened in what order, and nothing about why.
+            Block(HeadlessBlocker.AutomationControlLostAfterObservedSessionControl, HeadlessStage.PostAuthenticationAutomationControl,
+                "Control was lost after a session-control signal was observed. This establishes sequence, not causality: it "
+                + "does not establish MCAS as the cause, and IT/security investigation is required.");
         }
         else if (ReturnObserved || SessionVerified)
             Block(HeadlessBlocker.AutomationControlLostAfterAuthentication, HeadlessStage.PostAuthenticationAutomationControl, "Playwright control was lost after authentication return or session verification.");
         else Block(HeadlessBlocker.Unknown, HeadlessStage.NonInteractiveContinuation, "Browser control was lost during authentication before an authenticated session could be verified. Cause unknown.", true);
     }
+    /// <summary>
+    /// Each headline value with where it came from. Observed: seen on a page in this run. Derived: read from what was
+    /// seen (including "nothing was seen"). Configured: from settings. Unknown: not reached.
+    /// </summary>
+    public static List<HeadlessEvidenceItem> Provenance(HeadlessDiagnosticReport r, HeadlessDiagnosticRequest request)
+    {
+        static HeadlessEvidenceProvenance Of(string value, params string[] observedPrefixes) =>
+            value.StartsWith("Unknown", StringComparison.OrdinalIgnoreCase) || value.StartsWith("Not tested", StringComparison.OrdinalIgnoreCase)
+                ? HeadlessEvidenceProvenance.Unknown
+                : observedPrefixes.Any(p => value.StartsWith(p, StringComparison.OrdinalIgnoreCase))
+                    ? HeadlessEvidenceProvenance.Observed : HeadlessEvidenceProvenance.Derived;
+        return
+        [
+            new("Target URL", r.TargetUrl, HeadlessEvidenceProvenance.Configured),
+            new("Configured authority", string.IsNullOrWhiteSpace(request.Authority) ? "Not configured" : HeadlessEvidenceSanitizer.Url(request.Authority),
+                string.IsNullOrWhiteSpace(request.Authority) ? HeadlessEvidenceProvenance.Unknown : HeadlessEvidenceProvenance.Configured),
+            new("Identity provider", r.IdentityProvider, r.IdentityProvider == "Unknown" ? HeadlessEvidenceProvenance.Unknown : HeadlessEvidenceProvenance.Observed),
+            new("Interactive authentication", r.InteractiveAuthentication, Of(r.InteractiveAuthentication, "Required", "No interaction")),
+            new("MFA", r.Mfa, Of(r.Mfa, "Required")),
+            new("Conditional Access", r.ConditionalAccess, Of(r.ConditionalAccess, "Explicit", "Signal", "Conditional Access error")),
+            new("MCAS / session control", r.SessionControl, Of(r.SessionControl, "Explicit", "Session-control signal observed")),
+            new("Authenticated session", r.AuthenticatedSession, Of(r.AuthenticatedSession, "Established")),
+            new("Post-authentication browser control", r.PostAuthenticationControl, Of(r.PostAuthenticationControl, "Available", "Lost")),
+            new("Primary blocker", HeadlessItReport.BlockerLabel(r.PrimaryBlocker), HeadlessEvidenceProvenance.Derived),
+        ];
+    }
+
     public void Ready()
     {
         if (Terminal || !SessionVerified) return;
@@ -170,7 +215,13 @@ internal sealed class HeadlessDiagnosticService(IHeadlessBrowserFactory factory,
     IOptions<HeadlessDiagnosticOptions> options, ILogger<HeadlessDiagnosticService> logger) : IHeadlessDiagnosticService
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    internal TimeSpan ObservationTimeout { get; init; } = TimeSpan.FromSeconds(15);
+    /// <summary>Configured observation window (HeadlessAuthDiagnostic:ObservationTimeoutSeconds); tests may override it.</summary>
+    internal TimeSpan? ObservationTimeoutOverride { get; init; }
+    internal TimeSpan ObservationTimeout
+    {
+        get => ObservationTimeoutOverride ?? options.Value.ObservationTimeout;
+        init => ObservationTimeoutOverride = value;
+    }
     public async Task<HeadlessDiagnosticReport> RunAsync(HeadlessDiagnosticRequest request, CancellationToken ct = default)
     {
         var report = new HeadlessDiagnosticReport { TargetEnvironmentName = HeadlessEvidenceSanitizer.Label(request.TargetEnvironmentName),
@@ -241,7 +292,10 @@ internal sealed class HeadlessDiagnosticService(IHeadlessBrowserFactory factory,
             if (!run.Terminal && report.Readiness != HeadlessReadiness.Ready)
             {
                 run.Stage(HeadlessStage.AuthenticatedSessionVerification, HeadlessStageState.Unknown, "No explicit authenticated application evidence was verified; cookies or an application return alone are insufficient.");
-                run.Block(HeadlessBlocker.Unknown, current, "Observation timed out before unattended authentication and a usable session could be established. Configure an explicit authenticated application shell contract if needed; no authentication failure or policy cause is inferred.", true);
+                run.Block(HeadlessBlocker.Unknown, current, $"Observation timed out after {ObservationTimeout.TotalSeconds:0} s before unattended authentication and a usable session could be established. Configure an explicit authenticated application shell contract if needed; no authentication failure or policy cause is inferred.", true);
+                // Where the flow was when observation stopped: a sanitized location, not a cause.
+                if (report.Navigation.LastOrDefault() is { } last)
+                    report.Observations.Add($"Last observed page when observation stopped: {last.Url}{(last.SecondaryPage ? " (sign-in popup)" : "")}. No interaction was performed there.");
             }
             // Finished reports never leave an observational stage marked Running.
             if (report.Stage(HeadlessStage.NonInteractiveContinuation).State == HeadlessStageState.Running)
@@ -300,6 +354,7 @@ internal sealed class HeadlessDiagnosticService(IHeadlessBrowserFactory factory,
             foreach (var pending in report.Stages.Where(s => s.State == HeadlessStageState.Running).ToList())
                 run.Stage(pending.Stage, HeadlessStageState.Unknown, "Observation stopped before this stage completed.", pending.DurationMs, pending.ExceptionType);
             run.Stage(HeadlessStage.HeadlessReadiness, report.Readiness == HeadlessReadiness.Ready ? HeadlessStageState.Passed : report.Readiness == HeadlessReadiness.NotReady ? HeadlessStageState.Blocked : HeadlessStageState.Unknown, report.Interpretation);
+            report.Evidence = HeadlessEvidenceRun.Provenance(report, request);
             logger.LogInformation("HeadlessAuthDiagnosticCleanupCompleted {DiagnosticId} {State}", report.DiagnosticId, report.Stage(HeadlessStage.Cleanup).State);
             logger.LogInformation("HeadlessAuthDiagnosticCompleted {DiagnosticId} {Readiness} {Blocker}", report.DiagnosticId, report.Readiness, report.PrimaryBlocker);
         }

@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using BirkNext.Api.Services.ManagedEdge;
+using BirkNext.ManagedEdge;
 using Microsoft.Playwright;
 
 namespace BirkNext.Api.Services.BrowserAutomationDiagnostic;
@@ -27,10 +28,11 @@ internal sealed class BrowserAutomationDiagnosticService(
     IEdgeInstallationLocator edgeLocator,
     ILogger<BrowserAutomationDiagnosticService> logger,
     Func<bool>? isLocalWorkstation = null,
-    Func<BrowserAutomationDiagnosticMode, string>? profileDirectory = null,
+    Func<BrowserAutomationDiagnosticRequest, BrowserAutomationDiagnosticMode, string>? profileDirectory = null,
     string controlUrl = BrowserAutomationDiagnosticPolicy.DefaultControlUrl,
     BrowserAutomationTargetObservationTiming? observationTiming = null,
-    Func<BrowserAutomationDiagnosticRequest, string?>? applicationMarker = null)
+    Func<BrowserAutomationDiagnosticRequest, string?>? applicationMarker = null,
+    IEdgePolicyReader? policyReader = null)
     : IBrowserAutomationDiagnosticService
 {
     private readonly BrowserAutomationTargetObservationTiming timing =
@@ -38,12 +40,13 @@ internal sealed class BrowserAutomationDiagnosticService(
     /// <summary>The structural application marker configured for a Target Environment, if any. Never guessed.</summary>
     private readonly Func<BrowserAutomationDiagnosticRequest, string?> _applicationMarker = applicationMarker ?? (_ => null);
     private readonly Func<bool> _isLocalWorkstation = isLocalWorkstation ?? (() => true);
-    private readonly Func<BrowserAutomationDiagnosticMode, string> _profileDirectory =
+    private readonly Func<BrowserAutomationDiagnosticRequest, BrowserAutomationDiagnosticMode, string> _profileDirectory =
         profileDirectory ?? BrowserAutomationDiagnosticPolicy.ProfileDirectory;
 
     /// <summary>
-    /// One run at a time per Target Environment. Two concurrent runs would share the two mode profiles and spend their
-    /// time reporting a profile lock to each other instead of the target's behaviour.
+    /// One run at a time per PHYSICAL PROFILE SET. Profiles are per target (see
+    /// <see cref="BrowserAutomationDiagnosticPolicy.ProfileDirectory"/>), so two different targets run independently,
+    /// while two runs that would share a user-data directory can never overlap and report each other's lock.
     /// </summary>
     private static readonly ConcurrentDictionary<string, byte> Running = new(StringComparer.Ordinal);
 
@@ -54,15 +57,15 @@ internal sealed class BrowserAutomationDiagnosticService(
     public async Task<BrowserAutomationDiagnosticReport> RunAsync(
         BrowserAutomationDiagnosticRequest request, CancellationToken ct = default)
     {
-        var run = new Run(request, controlUrl);
+        var run = new Run(request, controlUrl, ReadPolicies());
         logger.LogInformation("BrowserAutomationDiagnosticStarted {DiagnosticId} {TargetEnvironmentId}",
             run.DiagnosticId, request.TargetEnvironmentId);
 
-        var profiles = ModeOrder.Select(_profileDirectory).ToList();
+        var profiles = ModeOrder.Select(mode => _profileDirectory(request, mode)).ToList();
         if (BrowserAutomationDiagnosticPolicy.BlockedReason(request, profiles, _isLocalWorkstation()) is { } blocked)
             return Publish(run.Blocked(blocked));
 
-        var lockKey = request.TargetEnvironmentId;
+        var lockKey = string.Join("|", profiles.Select(p => p.ToUpperInvariant()));
         if (!Running.TryAdd(lockKey, 0))
             return Publish(run.Blocked(BrowserAutomationDiagnosticPolicy.AlreadyRunningReason));
 
@@ -102,7 +105,7 @@ internal sealed class BrowserAutomationDiagnosticService(
     private async Task<BrowserAutomationDiagnosticModeReport> RunModeAsync(
         Run run, BrowserAutomationDiagnosticMode mode, EdgeInstallation? edge, CancellationToken ct)
     {
-        var modeRun = new ModeRun(mode, _profileDirectory(mode));
+        var modeRun = new ModeRun(mode, _profileDirectory(run.Request, mode));
         logger.LogInformation("{Mode}DiagnosticStarted {DiagnosticId}", mode, run.DiagnosticId);
 
         if (edge is null)
@@ -134,9 +137,20 @@ internal sealed class BrowserAutomationDiagnosticService(
         finally
         {
             // The one thing that must happen on every path, including the one where the target kills the page. The
-            // mode report is built after disposal, so Cleanup reflects what happened rather than an intention.
+            // mode report is built after closing, so Cleanup reflects what happened rather than an intention — and a
+            // cleanup problem is a WARNING beside the result, never a replacement for it.
+            var cleanupFailure = await SafeCloseAsync(browser);
             await browser.DisposeAsync();
-            modeRun.Pass(BrowserAutomationDiagnosticStage.Cleanup, "Diagnostic browser closed.");
+            if (cleanupFailure is null)
+                modeRun.Pass(BrowserAutomationDiagnosticStage.Cleanup, "Diagnostic browser closed.");
+            else
+            {
+                modeRun.Record(BrowserAutomationDiagnosticStage.Cleanup, BrowserAutomationDiagnosticStageState.Warning,
+                    "Cleanup warning: closing the diagnostic browser reported an error. The result above is unaffected; "
+                    + "only this diagnostic's own browser was closed, and no other Edge process was touched.",
+                    null, cleanupFailure);
+                logger.LogWarning("{Mode}DiagnosticCleanupWarning {DiagnosticId} {ExceptionType}", mode, run.DiagnosticId, cleanupFailure);
+            }
         }
 
         modeRun.EdgeVersion ??= edge.Version;
@@ -471,6 +485,24 @@ internal sealed class BrowserAutomationDiagnosticService(
             BrowserAutomationTargetLocationPolicy.Sanitize(url, Classify(url) == BrowserAutomationFinalLocation.AuthenticationAuthority);
     }
 
+    /// <summary>Closes the browser and reports the exception TYPE if closing failed. Never throws.</summary>
+    private static async Task<string?> SafeCloseAsync(IDiagnosticBrowser browser)
+    {
+        try { return await browser.CloseAsync(); }
+        catch (Exception ex) { return BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex); }
+    }
+
+    /// <summary>Read-only Edge policy values, read once per run. A reader failure is "Unknown", never a guess.</summary>
+    private BrowserAutomationPolicySnapshot ReadPolicies()
+    {
+        if (policyReader is null) return BrowserAutomationPolicySnapshot.Unknown;
+        EdgeRemoteDebuggingPolicyStatus remote;
+        EdgeDeveloperToolsPolicyStatus devTools;
+        try { remote = policyReader.ReadRemoteDebuggingPolicy(); } catch { remote = EdgeRemoteDebuggingPolicyStatus.Unknown; }
+        try { devTools = policyReader.ReadDeveloperToolsPolicy(); } catch { devTools = EdgeDeveloperToolsPolicyStatus.Unknown; }
+        return new(remote, devTools);
+    }
+
     private EdgeInstallation? SafeLocateEdge()
     {
         try { return edgeLocator.Locate(); }
@@ -574,7 +606,7 @@ internal sealed class BrowserAutomationDiagnosticService(
     }
 
     /// <summary>Accumulates the whole run: both modes, and the comparison they produce.</summary>
-    private sealed class Run(BrowserAutomationDiagnosticRequest request, string controlUrl)
+    private sealed class Run(BrowserAutomationDiagnosticRequest request, string controlUrl, BrowserAutomationPolicySnapshot policies)
     {
         private readonly List<BrowserAutomationDiagnosticModeReport> _modes = [];
 
@@ -626,13 +658,15 @@ internal sealed class BrowserAutomationDiagnosticService(
             TargetEnvironmentId = Request.TargetEnvironmentId,
             TargetEnvironmentName = Request.TargetEnvironmentName,
             TargetEnvironmentType = Request.EnvironmentType,
-            TargetUrl = Request.TargetUrl,
+            // Sanitized: a configured URL is not assumed to be free of query parameters worth protecting.
+            TargetUrl = BrowserAutomationTargetLocationPolicy.Sanitize(Request.TargetUrl),
             ControlUrl = ControlUrl,
             EdgeVersion = EdgeVersion ?? _modes.Select(m => m.EdgeVersion).FirstOrDefault(v => v is not null),
             PlaywrightVersion = typeof(IPlaywright).Assembly.GetName().Version?.ToString(),
             OperatingSystem = RuntimeInformation.OSDescription,
             Modes = modes,
-            ControlDimensions = BrowserAutomationDiagnosticPolicy.ControlDimensions(result, headed, headless),
+            ControlDimensions = BrowserAutomationDiagnosticPolicy.ControlDimensions(result, headed, headless, policies),
+            CorrelationTargetUrl = Request.TargetUrl,
         };
         }
     }

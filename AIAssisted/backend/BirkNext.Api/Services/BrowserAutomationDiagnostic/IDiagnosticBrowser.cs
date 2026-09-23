@@ -99,6 +99,12 @@ internal interface IDiagnosticBrowser : IAsyncDisposable
     /// the page is returned except its URL and whether the marker exists.
     /// </summary>
     Task<DiagnosticPageProbe> ProbeAsync(string? markerSelector, TimeSpan timeout, CancellationToken ct);
+
+    /// <summary>
+    /// Closes what this diagnostic created, and only that. Returns null when it closed cleanly, or the exception TYPE
+    /// when closing failed — so cleanup is reported as it happened instead of being swallowed into a PASS.
+    /// </summary>
+    Task<string?> CloseAsync();
 }
 
 /// <summary>Creates the browser one mode drives. One per mode, per run; never shared, never pooled.</summary>

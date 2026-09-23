@@ -265,6 +265,41 @@ internal sealed class PlaywrightDiagnosticBrowser : IDiagnosticBrowser
     /// <c>msedge.exe</c> sweep would take the user's own browser, the Local HTTPS proxy's Edge, the Browser
     /// Companion's session and the other mode's browser with it.
     /// </summary>
+    public async Task<string?> CloseAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return null;
+        Unsubscribe();
+        string? failure = null;
+        try { if (_page is { IsClosed: false }) await _page.CloseAsync(); }
+        catch (Exception ex) { failure ??= BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex); }
+        try { if (_context is not null) await _context.CloseAsync(); }
+        catch (Exception ex) { failure ??= BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex); }
+        try { _playwright?.Dispose(); }
+        catch (Exception ex) { failure ??= BrowserAutomationDiagnosticExceptionClassifier.TypeName(ex); }
+        _page = null;
+        _context = null;
+        _playwright = null;
+        return failure;
+    }
+
+    private void Unsubscribe()
+    {
+        if (_page is not null)
+        {
+            _page.FrameNavigated -= OnFrameNavigated;
+            _page.Close -= OnPageClose;
+            _page.Crash -= OnPageCrash;
+        }
+        if (_context is not null)
+        {
+            _context.Close -= OnContextClose;
+            _context.Page -= OnPageOpened;
+            lock (_gate) foreach (var secondary in _secondaryPages) secondary.FrameNavigated -= OnSecondaryFrameNavigated;
+            if (_context.Browser is { } browser) browser.Disconnected -= OnBrowserDisconnected;
+        }
+    }
+
+    /// <summary>A safety net for paths that never reached <see cref="CloseAsync"/>. Cleanup is reported by CloseAsync.</summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
