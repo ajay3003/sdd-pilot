@@ -49,8 +49,8 @@ public sealed record BrowserObservation(
     /// </summary>
     public string StateDetail => State switch
     {
-        BrowserObservationState.Flagged => FlaggedCount > 0 ? $"{FlaggedCount} source flag{(FlaggedCount == 1 ? "" : "s")}" : "source flag",
-        BrowserObservationState.Uncertain => UncertainCount > 0 ? $"{UncertainCount} source uncertaint{(UncertainCount == 1 ? "y" : "ies")}" : "source uncertainty",
+        BrowserObservationState.Flagged => FlaggedCount > 0 ? $"{FlaggedCount} source-reported flag{(FlaggedCount == 1 ? "" : "s")}" : "source-reported flag",
+        BrowserObservationState.Uncertain => UncertainCount > 0 ? $"{UncertainCount} source-reported uncertaint{(UncertainCount == 1 ? "y" : "ies")}" : "source-reported uncertainty",
         _ => Elements > 0 ? $"{Elements} observed" : "evaluated",
     };
 }
@@ -222,10 +222,39 @@ public static class BrowserDiscoveryPresentation
         _ => "Observed",
     };
 
-    /// <summary>"22 source flags · 29 source uncertainties", or empty when the collector reported neither.</summary>
-    public static string RawOutcomeLine(int flags, int uncertainties) => Join(
-        flags > 0 ? $"{flags} source flag{(flags == 1 ? "" : "s")}" : null,
-        uncertainties > 0 ? $"{uncertainties} source uncertaint{(uncertainties == 1 ? "y" : "ies")}" : null);
+    /// <summary>"22 source-reported flags · 29 source-reported uncertainties", or empty when the collector reported neither.</summary>
+    public static string RawOutcomeLine(int flags, int uncertainties) => Join(FlagCount(flags), UncertaintyCount(uncertainties));
+
+    /// <summary>"7 source-reported flags", or null when there are none.</summary>
+    public static string? FlagCount(int flags) =>
+        flags > 0 ? $"{flags} source-reported flag{(flags == 1 ? "" : "s")}" : null;
+
+    /// <summary>"8 source-reported uncertainties", or null when there are none.</summary>
+    public static string? UncertaintyCount(int uncertainties) =>
+        uncertainties > 0 ? $"{uncertainties} source-reported uncertaint{(uncertainties == 1 ? "y" : "ies")}" : null;
+
+    /// <summary>Help for a source flag: whose observation it is, and whose it is not.</summary>
+    public const string FlagHelp = "Source-reported flag: an observation flagged by the evidence source. It is not a BirkNext finding.";
+
+    /// <summary>Help for a source uncertainty. An inconclusive check is not a review obligation.</summary>
+    public const string UncertaintyHelp =
+        "Source-reported uncertainty: the evidence source could not determine the observation conclusively. It does not automatically require manual review.";
+
+    /// <summary>Stated above the accessibility evidence, visible without opening anything.</summary>
+    public const string AccessibilityIntro =
+        "Raw accessibility observations from Browser Companion. These are evidence only and are not WCAG findings or compliance results.";
+
+    /// <summary>What an uncertainty means — and what it does not create.</summary>
+    public const string UncertaintyNote =
+        "Uncertainty means the source could not conclude automatically. It does not automatically create a manual-review requirement.";
+
+    /// <summary>The DOM table's boundary sentence.</summary>
+    public const string DomDisclaimer =
+        "Structural observations per page. These counts are evidence only; they are not findings or pass/fail results.";
+
+    public const string DepthHelp = "Maximum observed DOM depth: the deepest element nesting the collector reported.";
+    public const string HiddenFocusableHelp =
+        "Elements the collector found focusable while hidden. An observed count only; Frontend Quality Review interprets it.";
 
     public static string PrincipleLabel(WcagPrinciple principle) => principle switch
     {
@@ -335,8 +364,8 @@ public static class BrowserDiscoveryPresentation
             var observation = new BrowserObservation(
                 $"check:{check.CheckId}", check.CheckId, $"Check · {check.CheckId}",
                 Join($"{check.Tested} element(s) examined",
-                     check.Failed > 0 ? $"{check.Failed} source flag(s)" : null,
-                     check.Uncertain > 0 ? $"{check.Uncertain} source uncertaint(ies)" : null),
+                     FlagCount(check.Failed),
+                     UncertaintyCount(check.Uncertain)),
                 null,
                 check.Failed > 0 ? BrowserObservationState.Flagged
                     : check.Uncertain > 0 ? BrowserObservationState.Uncertain : BrowserObservationState.Observed,
@@ -831,11 +860,24 @@ public static class BrowserDiscoveryLive
         [
             new("Pages with evidence", totals.Pages.ToString(), "bd-pages-count"),
             new("Last evidence", totals.LastCapturedAt is { } at ? at.ToLocalTime().ToString("HH:mm:ss") : "None", "bd-last-evidence", totals.LastCapturedAt is null),
-            new("DOM evidence", Captured(totals.DomPages), "bd-evidence-dom"),
-            new("Accessibility evidence", Captured(totals.AccessibilityPages), "bd-evidence-accessibility"),
-            new("Performance evidence", Captured(totals.PerformancePages), "bd-evidence-performance"),
+            // The group is headed "Historical evidence", so "captured" three times over said nothing new.
+            new("DOM", PageCount(totals.DomPages), "bd-evidence-dom"),
+            new("Accessibility", PageCount(totals.AccessibilityPages), "bd-evidence-accessibility"),
+            new("Performance", PageCount(totals.PerformancePages), "bd-evidence-performance"),
         ];
     }
+
+    /// <summary>A historical page count under the "Historical evidence" heading. Zero stays "None captured".</summary>
+    public static string PageCount(int pages) => pages == 0 ? "None captured" : $"{pages} page{(pages == 1 ? "" : "s")}";
+
+    /// <summary>
+    /// The compact disconnected read-out. When nothing is connected, the five live facts are all None / Not available,
+    /// which is correct and says one thing five times: live capture is unavailable.
+    /// </summary>
+    public static bool IsCompact(BrowserCompanionSituation situation) =>
+        situation is BrowserCompanionSituation.NotPaired or BrowserCompanionSituation.PairedNotConnected;
+
+    public const string CompactLiveNote = "No approved live page is currently available.";
 
     /// <summary>"Available" alone reads as "available now". These counts are all about captures that already happened.</summary>
     public static string Captured(int pages) => pages == 0 ? "None captured" : $"{pages} page{(pages == 1 ? "" : "s")} captured";
@@ -908,8 +950,7 @@ public static class BrowserCompanionSituations
     public static BrowserCompanionAlert? Alert(BrowserCompanionSituation situation, int pagesWithEvidence = 0) => situation switch
     {
         BrowserCompanionSituation.NotPaired => new(
-            "link-off", "Browser Companion not paired",
-            "Pair the Browser Companion extension with this Target Environment before live browser evidence can be collected.",
+            "link-off", "Browser Companion not paired", "Live capture unavailable.",
             "Pair Browser Companion", "needs-action"),
 
         // "Open or refresh a page" is only true while nothing has arrived. Once evidence exists, a page clearly was
@@ -917,8 +958,8 @@ public static class BrowserCompanionSituations
         BrowserCompanionSituation.PairedNotConnected => new(
             "signal-off", "Browser Companion paired but not connected",
             pagesWithEvidence > 0
-                ? "The pairing exists, but the extension is not currently reporting."
-                : "The pairing exists, but the extension is not currently reporting. Open or refresh an approved application page in the paired browser.",
+                ? "Live capture unavailable: the pairing exists, but the extension is not currently reporting."
+                : "Live capture unavailable: the pairing exists, but the extension is not currently reporting. Open or refresh an approved application page in the paired browser.",
             "Recheck", "needs-action"),
 
         _ => null,
@@ -938,5 +979,5 @@ public static class BrowserCompanionSituations
     /// </summary>
     public static string HistoryReassurance(int pagesWithEvidence) => pagesWithEvidence == 0
         ? ""
-        : $"Historical evidence from previous sessions is still available ({pagesWithEvidence} page{(pagesWithEvidence == 1 ? "" : "s")}).";
+        : $"{pagesWithEvidence} page{(pagesWithEvidence == 1 ? "" : "s")} of historical evidence remain{(pagesWithEvidence == 1 ? "s" : "")} available.";
 }

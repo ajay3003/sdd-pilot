@@ -178,18 +178,19 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
 
         var roles = rows.First(r => r.TextContent.Contains("/admin/child-specific-roles"));
         Cell(roles, 1).Should().Be("85");     // Nodes
-        Cell(roles, 2).Should().Be("14");     // Depth
-        Cell(roles, 3).Should().Be("17");     // Interactive
-        Cell(roles, 4).Should().Be("3");      // Forms
-        Cell(roles, 5).Should().Be("1");      // Images
-        Cell(roles, 6).Should().Be("0");      // iFrames
-        Cell(roles, 7).Should().Be("0");      // Dialogs
-        Cell(roles, 8).Should().Be("1");      // Hidden focusable
+        Cell(roles, 2).Should().Be("17");     // Interactive
+        Cell(roles, 3).Should().Be("3");      // Forms
+        Cell(roles, 4).Should().Be("1");      // Images
+        Cell(roles, 5).Should().Be("1");      // Hidden focusable elements
+        // Depth, iFrames and Dialogs are not dropped: they sit on one line under their page.
+        var extra = cut.Find("[data-testid=browser-discovery-evidence-dom-extra-row]").TextContent;
+        extra.Should().Contain("Depth").And.Contain("14").And.Contain("iFrames").And.Contain("Dialogs");
 
         var operations = rows.First(r => r.TextContent.Contains("/admin/operations"));
         Cell(operations, 1).Should().Be("624");
-        Cell(operations, 3).Should().Be("80");
-        Cell(operations, 6).Should().Be("1");
+        Cell(operations, 2).Should().Be("80");
+        cut.FindAll("[data-testid=browser-discovery-evidence-dom-extra-row]")
+            .Should().Contain(r => r.TextContent.Replace(" ", "").Contains("iFrames1"), "the iframe count stays visible under its page");
     }
 
     // 13.
@@ -228,10 +229,10 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
         var counts = Text(cut, "browser-discovery-evidence-a11y-counts");
         counts.Should().Contain("2 pages captured");
         // 7 distinct observations on the roles page + 1 on the clean page.
-        counts.Should().Contain("8 raw observation(s)");
+        counts.Should().Contain("8 raw observations");
         // The collector's own outcomes, named as the collector's. Unqualified "flagged" read as a WCAG result.
-        counts.Should().Contain("2 source flag(s)");
-        counts.Should().Contain("1 source uncertaint(ies)");
+        counts.Should().Contain("2 source-reported flags");
+        counts.Should().Contain("1 source-reported uncertainty");
 
         var areas = Text(cut, "browser-discovery-evidence-a11y-areas");
         areas.Should().Contain("Perceivable").And.Contain("Operable").And.Contain("Understandable").And.Contain("Robust");
@@ -264,11 +265,11 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
         SelectType(cut, "accessibility");
 
         // Evidence exists…
-        Text(cut, "browser-discovery-evidence-a11y-counts").Should().Contain("1 raw observation(s)");
+        Text(cut, "browser-discovery-evidence-a11y-counts").Should().Contain("1 raw observation");
         cut.FindAll("[data-testid=browser-discovery-evidence-accessibility-empty]").Should().BeEmpty();
         // …and the default view says what the collector reported, not what a reviewer must do.
         Text(cut, "browser-discovery-evidence-a11y-none")
-            .Should().Be("The collector reported no source flags or uncertainties in the current browser evidence.");
+            .Should().Be("The source reported no flags or uncertainties in the current browser evidence.");
         foreach (var verdict in new[] { "No accessibility issues", "Passed", "Compliant", "Conformant" })
             cut.Markup.Should().NotContain(verdict);
         // The full catalogue is still one click away.
@@ -296,8 +297,8 @@ public sealed class BrowserDiscoveryEvidenceInventoryTests : BunitContext
             .And.Contain(t => t.Contains("language-parts"));
         nonNeutral.Should().NotContain(t => t.Contains("aria-meter-name"));
         // Source flags first, then source uncertainties.
-        nonNeutral[0].Should().Contain("source flag");
-        nonNeutral[^1].Should().Contain("source uncertaint");
+        nonNeutral[0].Should().Contain("source-reported flag");
+        nonNeutral[^1].Should().Contain("source-reported uncertaint");
 
         Choose(cut, "browser-discovery-filter-state", "flagged");
         Rows(cut, "browser-discovery-evidence-a11y-row").Should().HaveCount(2);

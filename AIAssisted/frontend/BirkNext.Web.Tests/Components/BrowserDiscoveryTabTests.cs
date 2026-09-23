@@ -133,7 +133,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         // Presence of each evidence type, not what any of it says. WCAG-area mapping is evidence metadata and
         // belongs to Evidence → Accessibility; on nearly every row here it read as assessment coverage.
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page / Route", "State", "DOM evidence", "Accessibility evidence", "Performance evidence", "Last seen", "Source");
+            .Should().Equal("Page / Route", "State", "DOM evidence", "Accessibility evidence", "Performance evidence", "Last observed", "Source");
         table.QuerySelectorAll("[data-testid=browser-discovery-area-badge]").Should().BeEmpty();
 
         var rows = cut.FindAll("[data-testid=browser-discovery-page-row]");
@@ -270,7 +270,7 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         cut.Find("[data-testid=browser-discovery-evidence-nav-accessibility]").Click();
         var accessibility = cut.Find("[data-testid=browser-discovery-evidence-accessibility-table]");
         accessibility.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page", "WCAG area", "Criterion mapping", "Evidence item", "Raw observation", "Observed at");
+            .Should().Equal("Page", "WCAG area", "Related WCAG reference", "Evidence item", "Raw observation", "Observed at");
         accessibility.TextContent.Should().Contain("Perceivable").And.Contain("1.1.1");
         cut.FindAll("[data-testid=browser-discovery-evidence-dom-table]").Should().BeEmpty();
 
@@ -471,9 +471,9 @@ public sealed class BrowserDiscoveryTabTests : BunitContext
         var handoff = cut.Find("[data-testid=browser-discovery-handoff]").TextContent;
         handoff.Should().Contain("Frontend Quality Review").And.Contain("Interpret captured browser evidence");
         handoff.Should().NotContain("evidence available for");
-        Text(cut, "bd-evidence-dom").Should().Be("2 pages captured");
-        Text(cut, "bd-evidence-accessibility").Should().Be("1 page captured");
-        Text(cut, "bd-evidence-performance").Should().Be("1 page captured");
+        Text(cut, "bd-evidence-dom").Should().Be("2 pages");
+        Text(cut, "bd-evidence-accessibility").Should().Be("1 page");
+        Text(cut, "bd-evidence-performance").Should().Be("1 page");
 
         // One destination, stated once: the same link repeated per evidence type read as three different places to go.
         cut.Find("[data-testid=browser-discovery-open-review]").GetAttribute("href")

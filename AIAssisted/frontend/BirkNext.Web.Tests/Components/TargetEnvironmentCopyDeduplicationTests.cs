@@ -147,7 +147,8 @@ public sealed class TargetEnvironmentCopyDeduplicationTests : BunitContext
         live.Should().Equal("Target", "Browser Companion", "Live approved pages", "Current page", "Content script", "Live DOM");
 
         var evidence = cut.FindAll("[data-testid=browser-discovery-summary] .bd-ov-label").Select(l => l.TextContent.Trim()).ToList();
-        evidence.Should().Equal("Pages with evidence", "Last evidence", "DOM evidence", "Accessibility evidence", "Performance evidence");
+        // The group heading is "Historical evidence", so each value no longer repeats "evidence" or "captured".
+        evidence.Should().Equal("Pages with evidence", "Last evidence", "DOM", "Accessibility", "Performance");
 
         foreach (var id in new[] { "bd-target", "bd-session", "bd-live-pages", "bd-current-page", "bd-pages-count", "bd-last-evidence" })
             cut.FindAll($"[data-testid={id}]").Should().ContainSingle(id);

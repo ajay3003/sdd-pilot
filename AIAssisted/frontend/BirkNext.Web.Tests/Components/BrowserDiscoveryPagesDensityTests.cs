@@ -191,7 +191,7 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         // One compact line per type: raw counts in the collector's own terms, no verdict and no rule list.
         Text(cut, "browser-discovery-page-dom-line").Should().Be("85 nodes · 17 interactive elements · 3 form controls");
         Text(cut, "browser-discovery-page-accessibility-line")
-            .Should().Contain("11 raw checks observed").And.Contain("4 source flags").And.Contain("2 source uncertainties");
+            .Should().Contain("11 raw checks observed").And.Contain("4 source-reported flags").And.Contain("2 source-reported uncertainties");
         Text(cut, "browser-discovery-page-performance-line").Should().Be("SPA navigation · 813 ms page stabilization");
     }
 
@@ -221,9 +221,9 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
         var line = Text(cut, "browser-discovery-page-accessibility-line");
         line.Should().Contain("11 raw checks observed");
         // a11y-image-alt, text-contrast, a11y-hidden-focusable, axe color-contrast.
-        line.Should().Contain("4 source flags");
+        line.Should().Contain("4 source-reported flags");
         // language-parts, navigation-structure.
-        line.Should().Contain("2 source uncertainties");
+        line.Should().Contain("2 source-reported uncertainties");
         // The WCAG-area count is mapping metadata and belongs to the explorer, not to a page summary.
         line.Should().NotContain("WCAG area");
     }
@@ -345,7 +345,7 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
             markup.Should().NotContain(assessment);
 
         Text(cut, "browser-discovery-evidence-a11y-counts")
-            .Should().Contain("source flag(s)").And.Contain("source uncertaint(ies)");
+            .Should().Contain("source-reported flags").And.Contain("source-reported uncertainties");
         Text(cut, "browser-discovery-raw-outcome-disclaimer")
             .Should().Be("These are raw Browser Companion check outcomes, not WCAG assessment results. Frontend Quality Review interprets them.");
     }
@@ -385,13 +385,14 @@ public sealed class BrowserDiscoveryPagesDensityTests : BunitContext
 
         cut.Find("[data-testid=browser-discovery-page-raw]").Click();
         var row = cut.Find("[data-testid=browser-discovery-evidence-dom-row]").TextContent;
-        row.Should().Contain("85").And.Contain("14").And.Contain("17");
+        row.Should().Contain("85").And.Contain("17");
+        cut.Find("[data-testid=browser-discovery-evidence-dom-extra-row]").TextContent.Should().Contain("14", "depth stays visible under its page");
         // A structural count is a structural count: nothing here is styled or worded as a defect.
         var table = cut.Find("[data-testid=browser-discovery-evidence-dom-table]");
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Contain("Hidden focusable observed");
+            .Should().Contain("Hidden focusable elements");
         table.QuerySelector("tbody")!.TextContent.Should().NotContainAny("Passed", "Failed", "defect", "issue");
-        table.QuerySelector("caption")!.TextContent.Should().Contain("none of them is a defect");
+        table.QuerySelector("caption")!.TextContent.Should().Contain("they are not findings or pass/fail results");
     }
 
     /// <summary>Compact must not mean lossy: everything the cross-page Evidence tab reports is still reachable.</summary>

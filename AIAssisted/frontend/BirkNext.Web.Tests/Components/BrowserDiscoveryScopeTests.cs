@@ -116,7 +116,7 @@ public sealed class BrowserDiscoveryScopeTests : BunitContext
 
         // Historical: what was captured before. Two pages have evidence; only one of them is open.
         Text(cut, "bd-pages-count").Should().Be("2");
-        Text(cut, "bd-evidence-dom").Should().Be("2 pages captured");
+        Text(cut, "bd-evidence-dom").Should().Be("2 pages");
 
         Nav(cut, "pages");
         var states = All(cut, "browser-discovery-page-liveness").Select(e => e.TextContent.Trim()).ToList();
@@ -135,7 +135,7 @@ public sealed class BrowserDiscoveryScopeTests : BunitContext
         Text(cut, "bd-content-script").Should().Be("Not available");
         // …and the evidence that was captured earlier is still there, unaffected.
         Text(cut, "bd-pages-count").Should().Be("1");
-        Text(cut, "bd-evidence-dom").Should().Be("1 page captured");
+        Text(cut, "bd-evidence-dom").Should().Be("1 page");
     }
 
     // ── §43. Overview stays a summary ───────────────────────────────────────────────────────
@@ -191,7 +191,7 @@ public sealed class BrowserDiscoveryScopeTests : BunitContext
         // 5 raw observations: 1 finding, 3 checks, 1 axe rule. The collector's own outcomes are named as its own.
         var accessibility = Text(cut, "browser-discovery-page-accessibility-line");
         accessibility.Should().Contain("5 raw checks observed");
-        accessibility.Should().Contain("2 source flags").And.Contain("1 source uncertainty");
+        accessibility.Should().Contain("2 source-reported flags").And.Contain("1 source-reported uncertainty");
         accessibility.Should().NotContain("flagged").And.NotContain("uncertain ");
 
         // A source flag is not a failed criterion, and a source uncertainty is not a review obligation.
@@ -235,19 +235,19 @@ public sealed class BrowserDiscoveryScopeTests : BunitContext
         // Every column the raw evidence carries, including the mapping it was grouped by.
         var table = cut.Find("[data-testid=browser-discovery-evidence-accessibility-table]");
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Page", "WCAG area", "Criterion mapping", "Evidence item", "Raw observation", "Observed at");
+            .Should().Equal("Page", "WCAG area", "Related WCAG reference", "Evidence item", "Raw observation", "Observed at");
         table.TextContent.Should().Contain("1.1.1").And.Contain("Perceivable");
 
         // The outcome filter narrows by what the collector reported, and says so.
         cut.Find("[data-testid=browser-discovery-filter-state]").GetAttribute("value").Should().Be("non-neutral");
         cut.Find("[data-testid=browser-discovery-filter-state]").QuerySelectorAll("option")
             .Select(o => o.TextContent.Trim()).Should().Equal(
-                "Source flags and uncertainties", "All observations", "Source flags", "Source uncertainties", "Other observations");
+                "Source-reported flags and uncertainties", "All observations", "Source-reported flags", "Source-reported uncertainties", "Other observations");
 
         cut.Find("[data-testid=browser-discovery-filter-state]").Change("flagged");
         All(cut, "browser-discovery-evidence-a11y-row").Should().NotBeEmpty();
         foreach (var row in All(cut, "browser-discovery-evidence-a11y-row"))
-            row.TextContent.Should().Contain("source flag");
+            row.TextContent.Should().Contain("source-reported flag");
 
         // The page filter narrows to one page, and the area filter to one principle.
         cut.Find("[data-testid=browser-discovery-filter-state]").Change("all");

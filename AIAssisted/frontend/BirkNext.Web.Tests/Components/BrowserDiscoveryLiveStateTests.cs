@@ -97,7 +97,8 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         // The evidence is still there and still says so — in its own section, in past tense.
         Text(cut, "bd-pages-count").Should().Be("1");
         Text(cut, "bd-last-evidence").Should().Be(Captured.ToLocalTime().ToString("HH:mm:ss"));
-        Text(cut, "bd-evidence-dom").Should().Contain("captured");
+        Text(cut, "bd-evidence-dom").Should().Be("1 page");
+        cut.Find("[data-testid=browser-discovery-summary]").TextContent.Should().Contain("Historical evidence");
     }
 
     [Fact]
@@ -109,12 +110,13 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         foreach (var testId in new[] { "bd-evidence-dom", "bd-evidence-accessibility", "bd-evidence-performance" })
         {
             var value = Text(cut, testId);
-            value.Should().Contain("captured");
+            // A count of past captures under the "Historical evidence" heading — never a bare "Available".
+            value.Should().MatchRegex(@"^\d+ pages?$|^None captured$");
             value.Should().NotBe("Available", "\"Available\" on its own reads as available now");
         }
         // And the labels themselves say evidence, so a reader skimming the column never sees a bare "DOM".
         cut.Find("[data-testid=browser-discovery-summary]").TextContent
-            .Should().Contain("DOM evidence").And.Contain("Historical evidence");
+            .Should().Contain("DOM").And.Contain("Historical evidence");
     }
 
     [Fact]
@@ -196,7 +198,7 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         Text(cut, "bd-companion-alert-title").Should().Be("Browser Companion not paired");
         Text(cut, "bd-session").Should().Be("Not connected");
         // The warning must not read as data loss: captured evidence is untouched by a missing pairing.
-        Text(cut, "bd-companion-alert-history").Should().Contain("still available");
+        Text(cut, "bd-companion-alert-history").Should().Contain("of historical evidence remain");
         Text(cut, "bd-pages-count").Should().Be("1");
     }
 

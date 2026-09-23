@@ -29,18 +29,51 @@
             {
                 <button type="button" class="btn-secondary" data-testid="bd-companion-alert-action" @onclick="OnPair">@action</button>
             }
+            else if (!BrowserDiscoveryStates.ShowsPairAction(DiscoveryState))
+            {
+                @* The Pair control lives in the setup disclosure. This opens it rather than duplicating it. *@
+                <button type="button" class="btn-secondary fa-btn-sm" data-testid="bd-companion-alert-setup"
+                        @onclick="OpenSetup">Open Browser Companion setup</button>
+            }
         </div>
     }
 
     @* Two questions, never one row: what is live in the browser right now, and what we captured before. *@
-    <div class="bd-overview bd-overview-live" data-testid="browser-discovery-live" aria-label="Live browser session">
-        <span class="bd-ov-group">Live session</span>
-        <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
-        @foreach (var fact in BrowserDiscoveryLive.Facts(Status))
-        {
-            <div class="bd-ov-item"><span class="bd-ov-label">@fact.Label</span><span class="bd-ov-value bd-mono @(fact.Muted ? "bd-ov-muted" : "")" data-testid="@fact.TestId">@fact.Value</span></div>
-        }
-    </div>
+    @if (BrowserDiscoveryLive.IsCompact(Situation))
+    {
+        @*
+            Nothing is connected, so every live fact would read None / Not available. One status and one sentence say
+            the same thing; the individual facts stay one click away and still say exactly what they said before.
+        *@
+        <div class="bd-overview bd-overview-live bd-overview-compact" data-testid="browser-discovery-live" aria-label="Live browser session">
+            <span class="bd-ov-group">Live session</span>
+            <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
+            <div class="bd-ov-item"><span class="bd-ov-label">Status</span><span class="bd-ov-value" data-testid="bd-session">@BrowserDiscoveryStates.SessionLabel(Status.State)</span></div>
+            <div class="bd-ov-item"><span class="bd-ov-label">Live capture</span><span class="bd-ov-value bd-ov-muted" data-testid="bd-live-capture">Unavailable</span></div>
+        </div>
+        <p class="bd-live-note" data-testid="bd-live-note">@BrowserDiscoveryLive.CompactLiveNote</p>
+        <ReviewDisclosure TestId="browser-discovery-live-details" Class="disclosure-inline disclosure-small"
+                          Text="Show live-session details" CollapseText="Hide live-session details" @bind-Expanded="_liveDetailsExpanded">
+            <dl class="bd-items" data-testid="browser-discovery-live-detail-facts">
+                @foreach (var fact in BrowserDiscoveryLive.Facts(Status).Skip(1))
+                {
+                    <div><dt>@fact.Label</dt><dd class="bd-mono" data-testid="@fact.TestId">@fact.Value</dd></div>
+                }
+            </dl>
+        </ReviewDisclosure>
+    }
+    else
+    {
+        @* Connected: every liveness fact matters, because connected is not a page, and a page is not a live DOM. *@
+        <div class="bd-overview bd-overview-live" data-testid="browser-discovery-live" aria-label="Live browser session">
+            <span class="bd-ov-group">Live session</span>
+            <div class="bd-ov-item"><span class="bd-ov-label">Target</span><span class="bd-ov-value" data-testid="bd-target">@(Profile?.Name ?? "—")</span></div>
+            @foreach (var fact in BrowserDiscoveryLive.Facts(Status))
+            {
+                <div class="bd-ov-item"><span class="bd-ov-label">@fact.Label</span><span class="bd-ov-value bd-mono @(fact.Muted ? "bd-ov-muted" : "")" data-testid="@fact.TestId">@fact.Value</span></div>
+            }
+        </div>
+    }
     @if (BrowserCompanionSituations.LivePageNote(Situation) is { } note)
     {
         <p class="bd-live-note" data-testid="bd-live-note">@note</p>
@@ -90,7 +123,7 @@
                                 <th scope="col">DOM evidence</th>
                                 <th scope="col">Accessibility evidence</th>
                                 <th scope="col">Performance evidence</th>
-                                <th scope="col">Last seen</th>
+                                <th scope="col">Last observed</th>
                                 <th scope="col">Source</th>
                             </tr>
                         </thead>
@@ -160,6 +193,10 @@
             </aside>
             @* Keyed on the selected page so its disclosures start collapsed rather than inheriting the previous page's. *@
             <div class="bd-pagedetail" @key="SelectedRow?.Identity">
+                @if (SelectionLost)
+                {
+                    <p class="bd-note" role="status" data-testid="browser-discovery-selection-lost">The page you selected is no longer in the captured evidence; showing the most recently observed page.</p>
+                }
                 @if (SelectedRow is { } sel && SelectedEvidence is { } evidence)
                 {
                     @*
@@ -190,7 +227,21 @@
                             <dt>Accessibility evidence</dt>
                             <dd>
                                 <span data-testid="browser-discovery-page-accessibility-state">@StateBadge(Selected11yState)</span>
-                                <span class="bd-evidenceline" data-testid="browser-discovery-page-accessibility-line">@AccessibilityLine</span>
+                                @* One line per count, each saying whose observation it is. Never findings, never review obligations. *@
+                                <ul class="bd-evidencelines-stack" data-testid="browser-discovery-page-accessibility-line">
+                                    @if (BrowserDiscoveryPresentation.AccessibilitySummaryLine(Selected11y) is { Length: > 0 } checks)
+                                    {
+                                        <li class="bd-evidenceline">@checks</li>
+                                    }
+                                    @if (BrowserDiscoveryPresentation.FlagCount(Selected11y.Flagged) is { } flags)
+                                    {
+                                        <li class="bd-evidenceline" title="@BrowserDiscoveryPresentation.FlagHelp" data-testid="browser-discovery-page-flags">@flags</li>
+                                    }
+                                    @if (BrowserDiscoveryPresentation.UncertaintyCount(Selected11y.Uncertain) is { } uncertain)
+                                    {
+                                        <li class="bd-evidenceline" title="@BrowserDiscoveryPresentation.UncertaintyHelp" data-testid="browser-discovery-page-uncertainties">@uncertain</li>
+                                    }
+                                </ul>
                             </dd>
                         </div>
                         <div>
@@ -204,8 +255,9 @@
 
                     @* Where the raw detail is, and where it gets interpreted. Two destinations, stated once. *@
                     <div class="bd-pageactions">
-                        <SecondaryButton Class="fa-btn-sm" data-testid="browser-discovery-page-raw" OnClick="() => OpenRawEvidence(sel.Identity)">View raw evidence</SecondaryButton>
-                        <a class="bd-link" href="/frontend-quality-review" data-testid="browser-discovery-open-review-page">@BrowserDiscoveryPresentation.HandoffAction</a>
+                        <PrimaryButton Class="fa-btn-sm" data-testid="browser-discovery-page-raw" OnClick="() => OpenRawEvidence(sel.Identity)">View raw evidence</PrimaryButton>
+                        <a class="bd-link bd-link-secondary" href="/frontend-quality-review" data-testid="browser-discovery-open-review-page"
+                           aria-label="Open Frontend Quality Review to interpret this page's browser evidence">@BrowserDiscoveryPresentation.HandoffAction</a>
                     </div>
 
                 }
@@ -265,45 +317,48 @@
                         {
                             <div class="bd-tablewrap">
                                 <table class="bd-table" data-testid="browser-discovery-evidence-dom-table">
-                                    <caption class="bd-caption">Structural counts per page. Observations only — no count here is good or bad, and none of them is a defect.</caption>
+                                    <caption class="bd-caption" data-testid="browser-discovery-evidence-dom-disclaimer">@BrowserDiscoveryPresentation.DomDisclaimer</caption>
                                     <thead>
                                         <tr>
-                                            <th scope="col">Page</th><th scope="col">Nodes</th><th scope="col">Depth</th>
+                                            <th scope="col">Page</th><th scope="col">Nodes</th>
                                             <th scope="col">Interactive</th><th scope="col">Forms</th><th scope="col">Images</th>
-                                            <th scope="col">iFrames</th><th scope="col">Dialogs</th>
                                             @* Structural, like every other column here: elements the collector found focusable
                                                while hidden. Whether that matters is Frontend Quality Review's question. *@
-                                            <th scope="col">Hidden focusable observed</th>
+                                            <th scope="col" title="@BrowserDiscoveryPresentation.HiddenFocusableHelp">Hidden focusable elements</th>
                                             <th scope="col">Observed at</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @foreach (var row in Inventory.Dom)
                                         {
-                                            <tr data-testid="browser-discovery-evidence-dom-row">
+                                            @* Keyed by page, so a poll that reorders rows never moves an open disclosure to another page. *@
+                                            <tr @key="@($"row:{row.Identity}")" data-testid="browser-discovery-evidence-dom-row">
                                                 <th scope="row" class="bd-mono bd-route">@PageLink(row.Identity, row.Route)</th>
                                                 <td class="bd-mono">@row.Nodes</td>
-                                                <td class="bd-mono">@row.Depth</td>
                                                 <td class="bd-mono">@row.Interactive</td>
                                                 <td class="bd-mono">@row.FormControls</td>
                                                 <td class="bd-mono">@row.Images</td>
-                                                <td class="bd-mono">@row.Iframes</td>
-                                                <td class="bd-mono">@row.Dialogs</td>
                                                 <td class="bd-mono">@row.HiddenFocusable</td>
                                                 <td class="bd-mono">@Time(row.ObservedAt)</td>
                                             </tr>
-                                            @if (row.Detail.Count > 0)
-                                            {
-                                                <tr class="bd-detailrow">
-                                                    <td colspan="10">
+                                            @* The lower-traffic counts stay visible, one line under their page, instead of three more columns. *@
+                                            <tr @key="@($"detail:{row.Identity}")" class="bd-detailrow" data-testid="browser-discovery-evidence-dom-extra-row">
+                                                <td colspan="7">
+                                                    <span class="bd-dom-extra" data-testid="@($"browser-discovery-evidence-dom-extra-{Slug(row.Identity)}")">
+                                                        <span title="@BrowserDiscoveryPresentation.DepthHelp">Depth <span class="bd-mono">@row.Depth</span></span>
+                                                        <span>iFrames <span class="bd-mono">@row.Iframes</span></span>
+                                                        <span>Dialogs <span class="bd-mono">@row.Dialogs</span></span>
+                                                    </span>
+                                                    @if (row.Detail.Count > 0)
+                                                    {
                                                         <ReviewDisclosure TestId="@($"browser-discovery-evidence-dom-detail-{Slug(row.Identity)}")"
                                                                           Text="Landmarks and headings" CollapseText="Hide landmarks and headings"
                                                                           Class="disclosure-inline disclosure-small">
                                                             @ItemList(row.Detail, $"browser-discovery-evidence-dom-structure-{Slug(row.Identity)}")
                                                         </ReviewDisclosure>
-                                                    </td>
-                                                </tr>
-                                            }
+                                                    }
+                                                </td>
+                                            </tr>
                                         }
                                     </tbody>
                                 </table>
@@ -325,12 +380,17 @@
                             @* The collector's own outcomes, in the collector's own terms. "Flagged" was the Browser
                                Companion marking something for a human; calling it that unqualified let a raw check
                                outcome read as a WCAG result. *@
+                            <p class="bd-note bd-intro" data-testid="browser-discovery-evidence-a11y-intro">@BrowserDiscoveryPresentation.AccessibilityIntro</p>
                             <p class="bd-counts" data-testid="browser-discovery-evidence-a11y-counts">
                                 <span>@Pluralize(Inventory.AccessibilityPages, "page") captured</span>
-                                <span>@Inventory.Observations raw observation(s)</span>
-                                @if (Inventory.Flagged > 0) { <span class="bd-count-flagged">@Inventory.Flagged source flag(s)</span> }
-                                @if (Inventory.Uncertain > 0) { <span class="bd-count-uncertain">@Inventory.Uncertain source uncertaint(ies)</span> }
+                                <span>@Pluralize(Inventory.Observations, "raw observation")</span>
+                                @if (BrowserDiscoveryPresentation.FlagCount(Inventory.Flagged) is { } flags) { <span class="bd-count-flagged" title="@BrowserDiscoveryPresentation.FlagHelp">@flags</span> }
+                                @if (BrowserDiscoveryPresentation.UncertaintyCount(Inventory.Uncertain) is { } uncertain) { <span class="bd-count-uncertain" title="@BrowserDiscoveryPresentation.UncertaintyHelp">@uncertain</span> }
                             </p>
+                            @if (Inventory.Uncertain > 0)
+                            {
+                                <p class="bd-note" data-testid="browser-discovery-uncertainty-note">@BrowserDiscoveryPresentation.UncertaintyNote</p>
+                            }
                             <p class="bd-areas-line" data-testid="browser-discovery-evidence-a11y-areas">
                                 @foreach (var area in Inventory.Areas)
                                 {
@@ -367,10 +427,10 @@
                                     @* The collector's own outcomes. "Needs attention" read as a review obligation, which is
                                        a conclusion Browser Discovery does not draw. *@
                                     <select @bind="_filterState" data-testid="browser-discovery-filter-state">
-                                        <option value="non-neutral">Source flags and uncertainties</option>
+                                        <option value="non-neutral">Source-reported flags and uncertainties</option>
                                         <option value="all">All observations</option>
-                                        <option value="flagged">Source flags</option>
-                                        <option value="uncertain">Source uncertainties</option>
+                                        <option value="flagged">Source-reported flags</option>
+                                        <option value="uncertain">Source-reported uncertainties</option>
                                         <option value="evaluated">Other observations</option>
                                     </select>
                                 </label>
@@ -380,7 +440,7 @@
                             {
                                 <p class="bd-empty-help" data-testid="browser-discovery-evidence-a11y-none">
                                     @(_filterState == "non-neutral"
-                                        ? "The collector reported no source flags or uncertainties in the current browser evidence."
+                                        ? "The source reported no flags or uncertainties in the current browser evidence."
                                         : "No observations match the current filters.")
                                 </p>
                             }
@@ -483,6 +543,8 @@
 
     private string _view = "overview";
     private string? _selected;
+    /// <summary>Local UI state: whether the disconnected read-out's detailed live facts are open. Never follows polling.</summary>
+    private bool _liveDetailsExpanded;
     private string? _setupProfileId;
     // Null only until the target's initial status is available. A user choice, including one made while
     // that request is in flight, takes precedence over the initial recovery default.
@@ -513,6 +575,16 @@
         [("overview", "Overview", null), ("pages", "Pages", Rows.Count), ("evidence", "Evidence", null)];
 
     private BrowserPageRow? SelectedRow => Rows.FirstOrDefault(r => r.Identity == _selected) ?? Rows.FirstOrDefault();
+
+    /// <summary>The reader chose a page that a refresh no longer contains. The fallback is said, not silently swapped in.</summary>
+    private bool SelectionLost => _selected is not null && Rows.Count > 0 && Rows.All(r => r.Identity != _selected);
+
+    /// <summary>The banner's one action: open the setup disclosure where the Pair control already is.</summary>
+    private void OpenSetup()
+    {
+        _view = "overview";
+        BrowserCompanionSetupExpanded = true;
+    }
     private BrowserPageEvidence? SelectedEvidence =>
         Snapshot.Pages.FirstOrDefault(p => p.Identity == SelectedRow?.Identity)?.BrowserEvidence;
 
@@ -658,7 +730,7 @@
             <table class="bd-table" data-testid="@tableTestId">
                 <thead>
                     <tr>
-                        <th scope="col">Page</th><th scope="col">WCAG area</th><th scope="col">Criterion mapping</th>
+                        <th scope="col">Page</th><th scope="col">WCAG area</th><th scope="col" title="How this evidence item is mapped to WCAG. A reference, not a result.">Related WCAG reference</th>
                         <th scope="col">Evidence item</th><th scope="col">Raw observation</th><th scope="col">Observed at</th>
                     </tr>
                 </thead>
@@ -716,10 +788,6 @@
     /// <summary>Raw structural counts for the selected page. Three of them; the rest live in Evidence → DOM.</summary>
     private static string DomLine(BrowserPageEvidence evidence) => BrowserDiscoveryPresentation.DomSummaryLine(evidence.Dom);
 
-    /// <summary>How much raw accessibility evidence exists, plus the collector's own non-neutral outcomes if any.</summary>
-    private string AccessibilityLine => BrowserDiscoveryPresentation.Line(
-        BrowserDiscoveryPresentation.AccessibilitySummaryLine(Selected11y),
-        BrowserDiscoveryPresentation.RawOutcomeLine(Selected11y.Flagged, Selected11y.Uncertain));
 
     /// <summary>How the page was observed and how long it took to settle. No threshold, no rating.</summary>
     private static string PerformanceLine(BrowserPageEvidence evidence) => BrowserDiscoveryPresentation.PerformanceSummaryLine(evidence.Performance);
