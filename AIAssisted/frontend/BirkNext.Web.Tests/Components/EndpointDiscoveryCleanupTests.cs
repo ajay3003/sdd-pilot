@@ -45,18 +45,15 @@ public class EndpointDiscoveryCleanupTests : BunitContext
         var cut = Page(Ep("/api/autorisasjon/graphql"), Ep("/graphql", provenance: RequestProvenance.DiscoveryProbe));
         Assert.DoesNotContain("Discovery probe", cut.Find("[data-testid=discovery-overview-table]").TextContent);
         cut.Find("[data-testid=discovery-nav-shared]").Click();
-        // Collapsed by default: a real button with aria-expanded, and no rows rendered until it is opened.
-        Assert.Equal("false", cut.Find("[data-testid=discovery-technical-toggle]").GetAttribute("aria-expanded"));
-        Assert.Empty(cut.FindAll("[data-testid=discovery-technical-table]"));
-        cut.Find("[data-testid=discovery-technical-toggle]").Click();
-        Assert.Equal("true", cut.Find("[data-testid=discovery-technical-toggle]").GetAttribute("aria-expanded"));
-        var technical = cut.Find("[data-testid=discovery-technical]");
-        Assert.Contains("Discovery probe", technical.TextContent);
-        Assert.Contains("Proxy", technical.TextContent);
-        cut.Find("[data-testid=discovery-technical] [data-testid=discovery-provenance-filter]").Change("probe");
-        Assert.Single(cut.FindAll("[data-testid=discovery-technical-table] [data-testid=discovery-endpoint-row]"));
-        cut.Find("[data-testid=discovery-technical] [data-testid=discovery-provenance-filter]").Change("app");
-        Assert.Empty(cut.FindAll("[data-testid=discovery-technical-table]"));
+        // One explorer: probes are rows in it, isolated by the provenance filter rather than by a second table.
+        Assert.Empty(cut.FindAll("[data-testid=discovery-technical-table], [data-testid=discovery-technical-toggle]"));
+        var shared = cut.Find("[data-testid=discovery-shared-table]");
+        Assert.Contains("Discovery probe", shared.TextContent);
+        Assert.Contains("Proxy", shared.TextContent);
+        cut.Find("[data-testid=discovery-shared-panel] [data-testid=discovery-provenance-filter]").Change("probe");
+        Assert.Single(cut.FindAll("[data-testid=discovery-shared-table] [data-testid=discovery-endpoint-row]"));
+        cut.Find("[data-testid=discovery-shared-panel] [data-testid=discovery-provenance-filter]").Change("app");
+        Assert.Empty(cut.FindAll("[data-testid=discovery-shared-table]"));
     }
 
     [Fact]

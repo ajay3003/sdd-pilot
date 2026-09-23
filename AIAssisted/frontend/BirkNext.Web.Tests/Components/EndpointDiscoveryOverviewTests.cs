@@ -97,7 +97,7 @@ public sealed class EndpointDiscoveryOverviewTests : BunitContext
         cut.FindAll("[data-testid=discovery-show-probes]").Should().BeEmpty("there are no probes to show");
 
         cut.Find("[data-testid=discovery-nav-shared]").Click();
-        cut.Find("[data-testid=discovery-technical-toggle]").TextContent.Should().Contain("Technical / background evidence");
+        cut.Find("[data-testid=discovery-shared-panel]").TextContent.Should().NotContainAny("discovery probe activity", "Discovery probe activity");
     }
 
     // §17 / §19 / §20 Opening from Overview lands on the Shared explorer, expanded, with its filters; probes one click away.
@@ -109,11 +109,11 @@ public sealed class EndpointDiscoveryOverviewTests : BunitContext
         cut.Find("[data-testid=discovery-show-probes]").Click();
 
         cut.Find("[data-testid=discovery-nav-shared]").GetAttribute("aria-selected").Should().Be("true");
-        cut.Find("[data-testid=discovery-technical-toggle]").GetAttribute("aria-expanded").Should().Be("true");
-        var rows = cut.FindAll("[data-testid=discovery-technical-table] [data-testid=discovery-endpoint-row]");
+        cut.Find("[data-testid=discovery-provenance-filter]").GetAttribute("value").Should().Be("probe");
+        var rows = cut.FindAll("[data-testid=discovery-shared-table] [data-testid=discovery-endpoint-row]");
         rows.Should().ContainSingle().Which.TextContent.Should().Contain("Discovery probe");
         foreach (var column in new[] { "Type", "Category / reason", "Method", "Host", "Path", "Auth", "Result", "Calls", "Last seen", "Transport", "Provenance" })
-            cut.Find("[data-testid=discovery-technical-table] thead").TextContent.Should().Contain(column);
+            cut.Find("[data-testid=discovery-shared-table] thead").TextContent.Should().Contain(column);
     }
 
     // §44 / §45 / §46 / §47 Backend communication is application traffic only, and its calls add up to Application requests.
@@ -242,7 +242,7 @@ public sealed class EndpointDiscoveryOverviewTests : BunitContext
     {
         var cut = Tab(Sample(probe: true));
         cut.Find("[data-testid=discovery-show-technical]").Click();
-        var rows = cut.FindAll("[data-testid=discovery-technical-table] [data-testid=discovery-endpoint-row]");
+        var rows = cut.FindAll("[data-testid=discovery-shared-table] [data-testid=discovery-endpoint-row]");
         rows.Single(r => r.TextContent.Contains("/_framework/HotChocolate.dll")).TextContent.Should().Contain("Browser observed traffic").And.Contain("Static resource");
         rows.Single(r => r.TextContent.Contains("/appsettings.json")).TextContent.Should().Contain("Configuration").And.Contain("Browser observed traffic");
         rows.Single(r => r.TextContent.Contains("/api/graphql")).TextContent.Should().Contain("Discovery probe");

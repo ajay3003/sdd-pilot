@@ -198,28 +198,32 @@
     }
     else if (_view == "shared")
     {
-        <div class="ed-panel">
-            <p class="ed-note">Requests that could not be confidently correlated to a single page: background polling, shared configuration, global authentication and telemetry.</p>
-            @RenderEndpointTable(VisibleEndpoints(Snapshot.Shared.Where(e => NetworkEvidencePolicy.ProvenanceOf(e) is not (RequestProvenance.DiscoveryProbe or RequestProvenance.BirkNextDiagnostic)).ToList()), "discovery-shared-table", "No shared or background traffic observed yet.")
-            @*
-                Classification-based, not correlation-based: static, configuration, authentication-callback, API-description,
-                technical, probe and diagnostic resources from any page or none, plus evidence whose provenance is unknown.
-                Discovery probes are one provenance among several here — hence not "probe activity". Collapsed by default.
-            *@
-            <div class="ed-disclosure" data-testid="discovery-technical">
-                <button type="button" class="ed-disclosure-toggle" data-testid="discovery-technical-toggle" aria-expanded="@(_technicalOpen ? "true" : "false")"
-                        aria-controls="discovery-technical-region" @onclick="() => _technicalOpen = !_technicalOpen">
-                    <span aria-hidden="true">@(_technicalOpen ? "▾" : "▸")</span> @TechnicalHeading (@TechnicalEndpoints.Sum(e => e.Count) requests)
-                </button>
-                @* Rows are rendered only while expanded: a collapsed section must not cost hundreds of hidden rows. *@
-                @if (_technicalOpen)
+        @*
+            ONE explorer. This tab owns two overlapping sets that used to be two tables: requests not correlated to a single
+            page (correlation-based) and technical, probe, diagnostic and unknown-provenance evidence from any page or none
+            (classification-based). Static, configuration and callback rows sat in both. The explorer shows their union,
+            each retained record once; Category / Reason says why a row is here and Provenance says where it came from.
+        *@
+        <div class="ed-panel" data-testid="discovery-shared-panel">
+            <p class="ed-note">Requests that could not be confidently attributed to one application page — static resources, shared configuration, authentication callbacks, polling and telemetry — together with technical evidence seen on pages, BirkNext's own probes and diagnostics, and historical evidence of unknown provenance.</p>
+            @if (SharedEvidence.Count > 0)
+            {
+                <div class="ed-shared-summary" data-testid="discovery-shared-summary">
+                    <strong><span data-testid="discovery-shared-total">@SharedEvidence.Sum(e => e.Count)</span> retained requests</strong>
+                    <ul class="ed-breakdown" data-testid="discovery-shared-breakdown">
+                        @foreach (var (reason, calls) in Breakdown(SharedEvidence))
+                        {
+                            <li><span>@reason</span> <strong>@calls</strong></li>
+                        }
+                    </ul>
+                </div>
+                @if (SharedEvidence.Sum(e => e.Count) != Evidence.SharedBackgroundCount)
                 {
-                    <div id="discovery-technical-region">
-                        <p class="ed-note">Category says what kind of request it is; Provenance says where the evidence came from. Filter Provenance to Discovery probe to see only BirkNext's own probes.</p>
-                        @RenderEndpointTable(VisibleEndpoints(TechnicalEndpoints), "discovery-technical-table", "No technical or background evidence matches these filters.")
-                    </div>
+                    @* Two honest numbers for two sets: say why they differ rather than leave the reader to reconcile them. *@
+                    <p class="ed-note" data-testid="discovery-shared-count-note">The Overview's Shared / background count (@Evidence.SharedBackgroundCount) covers requests not correlated to a single page, excluding probes and diagnostics. This explorer also includes technical evidence seen on application pages, discovery probes, BirkNext diagnostics and unknown-provenance history.</p>
                 }
-            </div>
+            }
+            @RenderEndpointTable(VisibleEndpoints(SharedEvidence), "discovery-shared-table", SharedEvidence.Count == 0 ? "No shared, background or technical evidence retained yet." : "No shared, background or technical evidence matches these filters.")
         </div>
     }
     </div>
@@ -348,7 +352,8 @@
             <label>Provenance <select @bind="_provenanceFilter" data-testid="discovery-provenance-filter">
                 <option value="all">All provenance</option><option value="app">Application / browser traffic</option><option value="shared">Background / shared</option><option value="probe">Discovery probe</option><option value="diagnostic">BirkNext diagnostic</option><option value="unknown">Unknown / historical</option>
             </select></label>
-            <label><input type="checkbox" @bind="_authenticatedOnly" /> Authenticated only</label>
+            <label title="@AuthEvidenceHelp"><input type="checkbox" @bind="_authenticatedOnly" data-testid="discovery-auth-evidence-filter" aria-describedby="discovery-auth-evidence-help" /> Auth evidence only</label>
+            <span id="discovery-auth-evidence-help" class="ed-sr-only">@AuthEvidenceHelp</span>
         </div>
         @if (endpoints.Count == 0)
         {
@@ -358,7 +363,7 @@
         {
             <div class="ed-tablewrap">
                 <table class="ed-table @(pageTable ? "ed-page-table" : "")" data-testid="@testId">
-                    <thead><tr><th scope="col">Details</th><th scope="col">Type</th>@if (!pageTable) { <th scope="col">Category / reason</th> }<th scope="col">Method</th>@if (showHost) { <th scope="col">Host</th> }<th scope="col">Path</th><th scope="col">Auth</th><th scope="col">Result</th><th scope="col">Calls</th><th scope="col">Last seen</th>@if (!pageTable) { <th scope="col">Transport</th><th scope="col">Provenance</th> }</tr></thead>
+                    <thead><tr><th scope="col">Details</th><th scope="col" title="@TypeHelp">Type</th>@if (!pageTable) { <th scope="col" title="@ReasonHelp">Category / reason</th> }<th scope="col">Method</th>@if (showHost) { <th scope="col">Host</th> }<th scope="col">Path</th><th scope="col">Auth</th><th scope="col">Result</th><th scope="col">Calls</th><th scope="col">Last seen</th>@if (!pageTable) { <th scope="col">Transport</th><th scope="col">Provenance</th> }</tr></thead>
                     <tbody>
                         @foreach (var e in endpoints)
                         {
@@ -370,7 +375,7 @@
                                 @if (showHost) { <td data-label="Host" class="ed-mono">@e.Host</td> }
                                 <td data-label="Path" class="ed-mono ed-path" title="@e.Path">@e.Path @if (!string.IsNullOrWhiteSpace(e.OperationName)) { <small class="ed-operation">@e.OperationType @e.OperationName</small> }</td>
                                 <td data-label="Auth">@(e.AuthObserved ? "Bearer observed" : "—")</td>
-                                <td data-label="Result">@ResultLabel(e)</td>
+                                <td data-label="Result" title="@StatusHelp(e)">@ResultLabel(e)</td>
                                 <td data-label="Calls">@e.Count</td>
                                 <td data-label="Last seen" class="ed-mono">@Time(e.LastObservedAt)</td>
                                 @if (!pageTable) { <td>@NetworkEvidencePolicy.TransportLabel(e)</td><td>@NetworkEvidencePolicy.ProvenanceLabel(e)</td> }
@@ -378,24 +383,33 @@
                             @if (_expanded.Contains(key))
                             {
                                 <tr class="ed-detailrow"><td></td><td colspan="@(pageTable ? (showHost ? 8 : 7) : 11)">
-                                    <dl class="ed-detail">
-                                        <div><dt>Host</dt><dd>@e.Host</dd></div>
-                                        <div><dt>Path</dt><dd class="ed-mono">@e.Path</dd></div>
-                                        <div><dt>Category / reason</dt><dd>@NetworkEvidencePolicy.Reason(e)</dd></div>
-                                        <div><dt>Transport</dt><dd>@NetworkEvidencePolicy.TransportLabel(e)</dd></div>
-                                        <div><dt>Provenance</dt><dd>@NetworkEvidencePolicy.ProvenanceLabel(e)</dd></div>
-                                        @if (e.Category is ObservedTrafficCategory.OtherHttp or ObservedTrafficCategory.Unknown) { <div><dt>Other</dt><dd>Observed communication not classified as REST, GraphQL or WebSocket; may include page navigation.</dd></div> }
+                                    @*
+                                        Additional evidence first. Columns the row already shows are not repeated; the Pages table hides
+                                        host, reason, transport and provenance columns, so there they are listed here instead.
+                                    *@
+                                    <dl class="ed-detail" data-testid="discovery-endpoint-detail">
+                                        <div><dt>Full path</dt><dd class="ed-mono ed-fullpath" data-testid="discovery-detail-path">@e.Path</dd></div>
+                                        <div><dt>Classification</dt><dd data-testid="discovery-detail-classification">@ClassificationLabel(e.Category)</dd></div>
+                                        <div><dt>Confidence</dt><dd data-testid="discovery-detail-confidence" title="@ConfidenceHelp(e.Confidence)">@e.Confidence</dd></div>
+                                        @if (pageTable || !showHost) { <div><dt>Host</dt><dd>@e.Host</dd></div> }
+                                        @if (pageTable)
+                                        {
+                                            <div><dt>Category / reason</dt><dd>@NetworkEvidencePolicy.Reason(e)</dd></div>
+                                            <div><dt>Transport</dt><dd>@NetworkEvidencePolicy.TransportLabel(e)</dd></div>
+                                            <div><dt>Provenance</dt><dd>@NetworkEvidencePolicy.ProvenanceLabel(e)</dd></div>
+                                        }
+                                        @* The generic "Other" help only where no precise reason already explains the row. *@
+                                        @if (e.Category is ObservedTrafficCategory.OtherHttp or ObservedTrafficCategory.Unknown && NetworkEvidencePolicy.ResourceOf(e) == NetworkResourceKind.Unknown)
+                                        {
+                                            <div><dt>Other</dt><dd>Observed communication not classified as REST, GraphQL or WebSocket; may include page navigation.</dd></div>
+                                        }
                                         <div><dt>Origin</dt><dd class="ed-mono">@e.Origin</dd></div>
-                                        <div><dt>Classification</dt><dd>@e.Category (@e.Confidence)</dd></div>
                                         @if (e.Category == ObservedTrafficCategory.GraphQl)
                                         {
                                             <div><dt>GraphQL operation</dt><dd>@e.OperationType @(e.OperationName is { Length: > 0 } n ? $"· {n}" : "")</dd></div>
                                         }
-                                        <div><dt>Authentication</dt><dd>@(e.AuthObserved ? "Bearer observed" : "None observed")</dd></div>
+                                        <div><dt>Authentication evidence</dt><dd title="@AuthEvidenceHelp">@(e.AuthObserved ? "Bearer observed on this request" : "None observed")</dd></div>
                                         <div><dt>First observed</dt><dd class="ed-mono">@Time(e.FirstObservedAt)</dd></div>
-                                        <div><dt>Last observed</dt><dd class="ed-mono">@Time(e.LastObservedAt)</dd></div>
-                                        <div><dt>Calls</dt><dd>@e.Count</dd></div>
-                                        <div><dt>Last status</dt><dd>@(e.LastStatus > 0 ? e.LastStatus.ToString() : "—")</dd></div>
                                         @if (NetworkEvidencePolicy.IsApiCandidate(e))
                                         {
                                             <div><dt>API Quality Review</dt><dd><a class="ed-analyze-link" data-testid="discovery-analyze-api" href="@AnalyzeHref(e)">Analyze in API Review →</a></dd></div>
@@ -409,6 +423,38 @@
             </div>
         }
     };
+
+    private const string AuthEvidenceHelp =
+        "Shows requests where authentication evidence (a Bearer credential) was observed. This does not mean the browser session was independently verified as authenticated.";
+    private const string TypeHelp = "Type: the protocol or application classification of the request.";
+    private const string ReasonHelp = "Category / reason: what kind of evidence this is, and why it is treated as shared, background or technical.";
+
+    /// <summary>The classifier's category, in words. The enum is kept as the value; this only makes it readable.</summary>
+    private static string ClassificationLabel(ObservedTrafficCategory category) => category switch
+    {
+        ObservedTrafficCategory.Rest => "REST",
+        ObservedTrafficCategory.GraphQl => "GraphQL",
+        ObservedTrafficCategory.WebSocket => "WebSocket",
+        ObservedTrafficCategory.Authentication => "Authentication",
+        ObservedTrafficCategory.StaticAsset => "Static asset",
+        ObservedTrafficCategory.Telemetry => "Telemetry",
+        ObservedTrafficCategory.OtherHttp => "Other HTTP",
+        _ => "Unknown",
+    };
+
+    /// <summary>
+    /// What the classifier's confidence means (ObservedTrafficClassifier.Categorize). A strength of the rule match, never
+    /// a pass or fail and never proof beyond the current discovery rules.
+    /// </summary>
+    private static string ConfidenceHelp(ObservedEndpointConfidence confidence) => confidence switch
+    {
+        ObservedEndpointConfidence.Verified => "Verified: the classification rule matched a direct signal, such as the response content type, a static path or a WebSocket upgrade, under the current discovery rules.",
+        ObservedEndpointConfidence.Candidate => "Candidate: the classification is inferred from weaker signals, such as a path pattern or an HTML response, and is not fully confirmed.",
+        _ => "Rejected: the discovery rules found this is not an API request.",
+    };
+
+    /// <summary>304 is a cache revalidation, not a failure. Only statuses that are easily misread get a note.</summary>
+    private static string? StatusHelp(ObservedNetworkEndpoint e) => e.LastStatus == 304 ? "304 Not Modified — cached content was reused." : null;
 
     private const string CaptureHelp = "A capture is an analysis generation: archived generations plus the current generation, which may be waiting for traffic. It is not a browser visit.";
     private static string CaptureLabel(PageAnalysis page) => $"{page.NetworkHistory.Count + 1} capture{(page.NetworkHistory.Count == 0 ? "" : "s")}";
@@ -437,17 +483,11 @@
     /// </summary>
     private const string TechnicalHeading = "Technical / background evidence";
 
-    private bool _technicalOpen;
     /// <summary>A drill-down from an Overview row: pages with this type of application traffic to this host.</summary>
     private (string Host, ObservedTrafficCategory Category)? _pageFilter;
 
     /// <summary>Counts by the existing classification (<see cref="NetworkEvidencePolicy.Reason"/>) — no client heuristic of its own.</summary>
-    private IReadOnlyList<(string Reason, int Calls)> TechnicalBreakdown => TechnicalEndpoints
-        .GroupBy(e => NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.Unknown && NetworkEvidencePolicy.ResourceOf(e) == NetworkResourceKind.Unknown
-            ? "Unknown / historical provenance" : NetworkEvidencePolicy.Reason(e))
-        .Select(g => (g.Key, g.Sum(e => e.Count)))
-        .OrderByDescending(x => x.Item2).ThenBy(x => x.Key, StringComparer.Ordinal)
-        .ToList();
+    private IReadOnlyList<(string Reason, int Calls)> TechnicalBreakdown => Breakdown(TechnicalEndpoints);
 
     private IReadOnlyList<PageAnalysis> PageListPages => _pageFilter is null
         ? OrderedPages
@@ -468,8 +508,22 @@
     {
         await OpenShared();
         _provenanceFilter = provenance ?? "all";
-        _technicalOpen = true;
     }
+
+    /// <summary>
+    /// Everything Shared / background owns, each retained record once: uncorrelated requests plus technical, probe,
+    /// diagnostic and unknown-provenance evidence. Reference-distinct, so a record present in both sets is not doubled.
+    /// </summary>
+    private IReadOnlyList<ObservedNetworkEndpoint> SharedEvidence =>
+        Snapshot.Shared.Concat(TechnicalEndpoints).Distinct(ReferenceEqualityComparer.Instance).Cast<ObservedNetworkEndpoint>().ToList();
+
+    /// <summary>Calls per Category / Reason, from the existing classification — the same words the column shows.</summary>
+    private static IReadOnlyList<(string Reason, int Calls)> Breakdown(IEnumerable<ObservedNetworkEndpoint> endpoints) => endpoints
+        .GroupBy(e => NetworkEvidencePolicy.ProvenanceOf(e) == RequestProvenance.Unknown && NetworkEvidencePolicy.ResourceOf(e) == NetworkResourceKind.Unknown
+            ? "Unknown / historical provenance" : NetworkEvidencePolicy.Reason(e))
+        .Select(g => (g.Key, g.Sum(e => e.Count)))
+        .OrderByDescending(x => x.Item2).ThenBy(x => x.Key, StringComparer.Ordinal)
+        .ToList();
 
     private static string CategoryLabel(ObservedTrafficCategory category) => category switch
     {
