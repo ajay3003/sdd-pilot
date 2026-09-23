@@ -121,7 +121,7 @@ public static class ApiReviewPresentation
             technical.Add(new("REST", capabilities.AuthenticatedRest ? "Authenticated REST traffic observed" : "No authenticated REST traffic observed"));
             technical.Add(new("GraphQL", capabilities.AuthenticatedGraphQlQuery ? "Authenticated GraphQL query traffic observed" : "No authenticated GraphQL traffic observed"));
             if (capabilities.ObservedHost is { Length: > 0 } host) technical.Add(new("Observed host", host));
-            if (capabilities.Reason is { Length: > 0 } reason) technical.Add(new("Resolution", reason));
+            if (capabilities.Reason is { Length: > 0 } reason) technical.Add(new("Resolution", capabilities.AuthenticatedApi ? "Authenticated API access is available through the Local HTTPS Proxy. API Quality Review needs API access only; browser runtime inspection is outside this review." : reason));
         }
         technical.Add(new("Execution", "Authenticated requests are executed by the backend gateway with the memory-only proxy credential (REST GET/HEAD/OPTIONS, GraphQL queries). The review itself never receives a token."));
 
@@ -243,7 +243,7 @@ public static class ApiReviewPresentation
             target.ContractSource is not null,
             // Pre-run this is a plan, not a retrieval. "Runtime schema available" claimed a schema nobody had fetched yet;
             // whether introspection actually succeeded is reported after the run, by the contract rows.
-            target.ApiType == ApiReviewTargetType.GraphQl ? "Will be requested during review" : null,
+            target.ApiType == ApiReviewTargetType.GraphQl ? "Schema retrieval will be attempted during review." : null,
             target.Operations.Select(o => new ApiReviewOperationRowModel(
                 o.OperationType != GraphQlOperationType.None ? o.OperationType.ToString() : o.Method,
                 o.OperationType != GraphQlOperationType.None ? o.OperationName ?? "(anonymous)" : o.Path,
@@ -297,13 +297,13 @@ public static class ApiReviewPresentation
         if (gql.Count == 0) rows.Add(new("GraphQL", ApiReviewContractState.NotApplicable, "No GraphQL target selected."));
         else
         {
-            var lastGql = lastReport?.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl && t.Contract is not null).ToList() ?? [];
+            var lastGql = lastReport?.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl && selected.Contains(t.Target.TargetId) && t.Contract is not null).ToList() ?? [];
             if (lastGql.Count > 0 && lastGql.All(t => t.Contract!.IntrospectionEnabled == false))
-                rows.Add(new("GraphQL", ApiReviewContractState.IntrospectionUnavailable, "Introspection was not available in the latest review; observed operations cannot be matched to a schema."));
+                rows.Add(new("GraphQL", ApiReviewContractState.IntrospectionUnavailable, "Runtime introspection was unavailable previously; the review will attempt schema retrieval again."));
             else if (lastGql.Any(t => t.Contract!.Available))
                 rows.Add(new("GraphQL", ApiReviewContractState.RuntimeSchema, "Schema available. Retrieved through runtime introspection in the latest review."));
             else
-                rows.Add(new("GraphQL", ApiReviewContractState.RuntimeSchema, "Schema is retrieved through runtime introspection when the review runs."));
+                rows.Add(new("GraphQL", ApiReviewContractState.RuntimeSchema, "Schema retrieval will be attempted during review."));
         }
 
         var baselines = history is null ? 0 : chosen.Count(t => history.Baselines.ContainsKey(t.TargetId));
@@ -311,13 +311,14 @@ public static class ApiReviewPresentation
         var historyLabel = baselines switch { 0 => "No previous baseline", 1 => "1 previous baseline available", _ => $"{baselines} previous baselines available" };
         var latest = lastReport is null ? "Not compared yet"
             : lastReport.Findings.Any(f => f.Type == ApiReviewFindingType.Drift) ? "Drift detected in the latest review"
-            : runs >= 2 ? "No drift detected in the latest review"
+            : ApiReviewEvidencePresentation.Checks(lastReport).Any(c => c.Area == ApiReviewFindingType.Drift && c.Result == ApiReviewCheckResult.Pass) ? "No drift detected in the compared evidence"
+            : runs >= 2 ? "Not compared yet (no drift checks recorded)"
             : "Not compared yet (the first review records the baseline)";
 
         var details = new List<string>
         {
             "REST: a published OpenAPI contract enables contract validation of live responses (documented operations, response shapes). Without one the review records the observed JSON structure (paths and types, never values) and compares it with previous runs.",
-            "GraphQL: the schema is retrieved by runtime introspection with a query-only request when the review runs. Disabled introspection is recorded as a policy observation, not as a failure; observed operations are then marked for manual review.",
+            "GraphQL: schema retrieval is attempted by runtime introspection with a query-only request when the review runs. Disabled introspection is recorded as a policy observation, not as a failure; observed operations are then marked for manual review.",
             "Contract history: structural baselines from previous runs (contract hash, root fields, response shapes) are sent with the next run to detect drift. Baselines contain no values.",
         };
         details.AddRange(openApi.Select(u => $"OpenAPI source: {u}"));
@@ -346,7 +347,7 @@ public static class ApiReviewPresentation
         {
             new("REST", $"{c.RestOperationsReviewed} / {c.RestOperationsTotal} operations reviewed", null),
             new("GraphQL", $"{c.GraphQlOperationsObserved} observed operations", c.GraphQlOperationsObserved > 0 ? $"{c.GraphQlOperationsMatched} / {c.GraphQlOperationsObserved} matched to the runtime schema" : null),
-            new("Contracts", ContractCoverageLabel(restContract, gqlContract), c.ContractChecks > 0 ? $"{c.ContractChecks} contract checks executed" : null),
+            new("Contracts", ContractCoverageLabel(restContract, gqlContract), ApiReviewEvidencePresentation.ContractCheckCoverage(report)),
             new("Security", $"{c.SecurityChecks} passive, read-only checks executed", null),
             new("Access", accessUsed, accessDetail),
         };
@@ -370,7 +371,7 @@ public static class ApiReviewPresentation
     private static string ContractCoverageLabel(IReadOnlyList<ApiReviewContractSummary?> rest, IReadOnlyList<ApiReviewContractSummary?> gql)
     {
         var parts = new List<string>();
-        if (rest.Count > 0) parts.Add(rest.Any(x => x is { Available: true }) ? "REST contract validated" : "No REST contract configured");
+        if (rest.Count > 0) parts.Add(rest.Any(x => x is { Available: true }) ? "REST contract available" : "No REST contract configured");
         if (gql.Count > 0)
             parts.Add(gql.Any(x => x is { Available: true }) ? "GraphQL runtime schema available"
                 : gql.Any(x => x is { IntrospectionEnabled: false }) ? "GraphQL introspection unavailable" : "GraphQL schema not retrieved");
@@ -432,8 +433,8 @@ public static class ApiReviewPresentation
         var gqlContract = contracts.Rows.FirstOrDefault(r => r.Label == "GraphQL")?.State;
         var contractLimits = new[]
         {
-            restContract == ApiReviewContractState.NotConfigured ? "No REST contract is configured, so REST is reviewed against live responses rather than a published contract." : null,
-            gqlContract == ApiReviewContractState.IntrospectionUnavailable ? "GraphQL introspection is unavailable, so schema comparison is limited to observed operations." : null,
+            restContract == ApiReviewContractState.NotConfigured ? "No published REST contract." : null,
+            gqlContract == ApiReviewContractState.IntrospectionUnavailable ? "GraphQL introspection was previously unavailable; retrieval will be attempted again." : null,
         }.Where(l => l is not null).ToList();
 
         return
@@ -458,13 +459,13 @@ public static class ApiReviewPresentation
             new("rest", "REST", "Routes, status handling and structure of the selected REST APIs.",
                 Scoped(scope.Rest > 0, restContract == ApiReviewContractState.NotConfigured),
                 scope.Rest > 0 && restContract == ApiReviewContractState.NotConfigured
-                    ? "Reviewed structurally; no published contract is available to compare against."
+                    ? "Included with structural limitation; see Contracts."
                     : null),
 
             new("graphql", "GraphQL", "Operations, schema evidence and error behaviour of the selected GraphQL APIs.",
                 Scoped(scope.GraphQl > 0, gqlContract == ApiReviewContractState.IntrospectionUnavailable),
                 scope.GraphQl > 0 && gqlContract == ApiReviewContractState.IntrospectionUnavailable
-                    ? "Observed operations are reviewed; the schema itself could not be retrieved."
+                    ? "Included with schema limitation; see Contracts."
                     : null),
         ];
     }

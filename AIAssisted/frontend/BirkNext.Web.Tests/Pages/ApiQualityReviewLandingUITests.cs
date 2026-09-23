@@ -17,7 +17,7 @@ namespace BirkNext.Web.Tests.Pages;
 /// availability is never confused with "API requires authentication", missing contracts are not failures, technical detail is
 /// behind collapsed disclosures, severity counts carry text, and manual-review obligations stay distinct from findings.
 /// </summary>
-public sealed class ApiQualityReviewLandingUITests : BunitContext
+public sealed partial class ApiQualityReviewLandingUITests : BunitContext
 {
     private const string Origin = "https://m2lbdev.bufetat.no";
     private const string ApiHost = "api-dev.bufetat.no";
@@ -277,7 +277,7 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         groups[0].QuerySelector("[data-testid=aqr-target-operations]")!.TextContent.Should().Be("3 · 1 write (not executed)");
         groups[1].QuerySelector("[data-testid=aqr-target-name]")!.TextContent.Should().Be("Autorisasjon GraphQL");
         // Pre-run this is a plan. The schema has not been fetched yet, so the card does not say it is available.
-        groups[1].QuerySelector("[data-testid=aqr-target-schema]")!.TextContent.Should().Be("Will be requested during review");
+        groups[1].QuerySelector("[data-testid=aqr-target-schema]")!.TextContent.Should().Be("Schema retrieval will be attempted during review.");
 
         var opsToggle = page.Find($"[data-testid='aqr-ops-{RestId}-toggle']");
         opsToggle.GetAttribute("aria-expanded").Should().Be("false");
@@ -325,12 +325,14 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         Register(Context(), authenticated: true, AutorisasjonEndpoints());
         var page = await RenderAndRun();
 
+        page.Find("[data-testid=aqr-back]").Click();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-baselines]").TextContent.Should().Contain("2 previous baselines available"));
         page.Find("[data-testid=aqr-latest-comparison]").TextContent.Should().Contain("first review records the baseline");
         page.Find("[data-testid=aqr-contract-row][data-protocol='GraphQL']").TextContent.Should().Contain("Schema available");
 
         await page.InvokeAsync(() => Run(page).Click());
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-latest-comparison]").TextContent.Should().Be("No drift detected in the latest review"));
+        page.Find("[data-testid=aqr-back]").Click();
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-latest-comparison]").TextContent.Should().Be("Not compared yet (no drift checks recorded)"));
     }
 
     [Fact]
@@ -414,13 +416,13 @@ public sealed class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-coverage-row][data-coverage='Contracts']").TextContent.Should().Contain("No REST contract configured").And.Contain("GraphQL runtime schema available");
 
         // Simplified overview table with expandable service details.
-        page.FindAll("[data-testid=aqr-services-table] thead th").Select(h => h.TextContent).Should().Equal("Service", "Type", "Access", "Review status", "Contract", "Findings");
+        page.FindAll("[data-testid=aqr-services-table] thead th").Select(h => h.TextContent).Should().Equal("Service", "Type", "Access", "Review status", "Contract", "Source findings");
         var rows = page.FindAll("[data-testid=aqr-service-row]");
         rows.Should().HaveCount(2);
         // "Reviewed": the service took part in the review. Whether every domain was covered is the contract column's job.
         rows[0].QuerySelector("[data-testid=aqr-service-status]")!.TextContent.Should().Be("Reviewed");
         rows[0].QuerySelector("[data-testid=aqr-service-access]")!.TextContent.Should().Be("Authenticated");
-        rows[0].QuerySelector("[data-testid=aqr-service-contract]")!.TextContent.Should().Be("No contract");
+        rows[0].QuerySelector("[data-testid=aqr-service-contract]")!.TextContent.Should().Be("No contract configured");
         rows[1].QuerySelector("[data-testid=aqr-service-contract]")!.TextContent.Should().Be("Runtime schema");
         // The backend's raw "Completed" status never reaches the service table; it is translated to a review status.
         page.Find("[data-testid=aqr-services-table]").TextContent.Should().NotContain("Completed");

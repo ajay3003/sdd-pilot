@@ -199,7 +199,7 @@ public static class ApiReviewStatusLabels
 
     public static string Tone(ApiReviewTargetPresentationStatus status) => status switch
     {
-        ApiReviewTargetPresentationStatus.Assessed => "ready",
+        ApiReviewTargetPresentationStatus.Assessed => "muted",
         ApiReviewTargetPresentationStatus.PartiallyAssessed => "warning",
         ApiReviewTargetPresentationStatus.NotAssessed => "muted",
         _ => "attention",
@@ -229,7 +229,7 @@ public static class ApiReviewStatusLabels
 
     public static string ContractLabel(ApiReviewContractSummary? contract)
     {
-        if (contract is null) return "No contract";
+        if (contract is null) return "No contract configured";
         if (contract.Kind.StartsWith("GraphQL", StringComparison.OrdinalIgnoreCase))
             return contract.IntrospectionEnabled == false ? "Introspection unavailable" : contract.Available ? "Runtime schema" : "Schema unavailable";
         return contract.Available ? "OpenAPI" : "OpenAPI unavailable";

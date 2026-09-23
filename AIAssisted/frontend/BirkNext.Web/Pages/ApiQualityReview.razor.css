@@ -285,6 +285,7 @@
 
 .aqr-checks { margin-top: 0.75rem; font-size: 0.9rem; }
 .aqr-checks summary { cursor: pointer; font-weight: 600; color: var(--clr-text-heading); padding: 0.35rem 0; }
+.aqr-checks:not([open]) > .aqr-tablewrap { display: none; }
 .aqr-checks .aqr-tablewrap { margin-top: 0.5rem; }
 .aqr-target-result-url { font-size: 0.8rem; margin-left: 0.5rem; }
 
@@ -377,6 +378,45 @@
 
 @media (max-width: 760px) {
     .aqr-domain-grid { grid-template-columns: 1fr; }
+    .aqr-decide-cards { grid-template-columns: 1fr; }
     .aqr-result-head { flex-direction: column; }
     .aqr-run-row { align-items: stretch; }
+}
+
+/* Keep long evidence inside its region; preserve full text and keyboard scrolling. */
+.aqr-page, .aqr-results, .aqr-tabpanel, .aqr-card, .aqr-tablewrap { min-width: 0; max-width: 100%; }
+.aqr-results, .aqr-tabpanel { grid-template-columns: minmax(0, 1fr); }
+.aqr-checks { min-width: 0; }
+.aqr-tablewrap:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.aqr-table td { overflow-wrap: anywhere; }
+.aqr-table td.aqr-mono { min-width: 10rem; max-width: 28rem; }
+.aqr-state, .aqr-pill { white-space: normal; overflow-wrap: anywhere; }
+.aqr-key-findings li, .aqr-target-result h3 { min-width: 0; overflow-wrap: anywhere; }
+.aqr-coverage-list dd { min-width: 0; overflow-wrap: anywhere; }
+.aqr-details ::deep .aqr-target-list { grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); }
+.aqr-details ::deep .aqr-dl dd { overflow-wrap: anywhere; }
+
+/* These primitives are also rendered by target/authentication child components. */
+.aqr-page ::deep .aqr-tablewrap { position: relative; min-width: 0; max-width: 100%; overflow-x: auto; border: 1px solid var(--clr-border); border-radius: var(--radius-md); }
+.aqr-page ::deep .aqr-table { width: 100%; min-width: 48rem; border-collapse: collapse; }
+.aqr-page ::deep .aqr-table th,
+.aqr-page ::deep .aqr-table td { padding: 0.6rem 0.75rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; border-bottom: 1px solid var(--clr-border); }
+.aqr-page ::deep .aqr-table th { background: var(--clr-surface); font-size: 0.74rem; white-space: nowrap; }
+.aqr-page ::deep .aqr-table td { min-width: 6rem; overflow-wrap: break-word; }
+.aqr-page ::deep .aqr-table td.aqr-mono { overflow-wrap: anywhere; }
+.aqr-page ::deep .aqr-table .aqr-state { white-space: nowrap; }
+.aqr-page ::deep .aqr-table td.aqr-mono { min-width: 12rem; max-width: 28rem; }
+.aqr-page ::deep .aqr-target-text { min-width: 0; display: grid; overflow-wrap: anywhere; }
+.aqr-page ::deep .aqr-target-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; list-style: none; padding: 0; }
+.aqr-page ::deep .aqr-target { min-width: 0; padding: 0.75rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); }
+.aqr-page ::deep .aqr-target-list { display: grid; min-width: 0; gap: 0.75rem; list-style: none; padding: 0; }
+.aqr-page ::deep .aqr-mono { overflow-wrap: anywhere; }
+.aqr-page ::deep .aqr-dl { margin: 0; }
+.aqr-page ::deep .aqr-dl > div { display: grid; grid-template-columns: 12rem minmax(0, 1fr); gap: 0.5rem; padding: 0.35rem 0; }
+.aqr-page ::deep .aqr-dl dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+    .aqr-page ::deep .aqr-dl > div { grid-template-columns: 1fr; gap: 0.15rem; }
+}
+@media (max-width: 1100px) {
+    .aqr-page ::deep .page-header { flex-wrap: wrap; }
 }

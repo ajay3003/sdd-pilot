@@ -26,7 +26,7 @@
                             <div class="aqr-target-main">
                                 <input type="checkbox" id="@checkboxId" checked="@Selected.Contains(t.TargetId)"
                                        @onchange="e => Toggle.InvokeAsync((t.TargetId, (bool)e.Value!))"
-                                       data-testid="aqr-target-checkbox" aria-label="@($"Include {card.DisplayName} in the review")" />
+                                       disabled="@ReadOnly" data-testid="aqr-target-checkbox" aria-label="@($"Include {card.DisplayName} in the review")" />
                                 <div class="aqr-target-text">
                                     <label for="@checkboxId" class="aqr-target-name" data-testid="aqr-target-name">@card.DisplayName</label>
                                     <span class="aqr-mono aqr-target-path" title="@t.Url" data-testid="aqr-target-path">@card.PathLabel</span>
@@ -37,14 +37,14 @@
                                 <li><span class="aqr-meta-label">Access</span> <span class="aqr-pill @(t.AuthRequired ? "aqr-pill-attention" : "aqr-pill-ready")" data-testid="aqr-target-access">@card.AccessLabel</span></li>
                                 <li><span class="aqr-meta-label">Operations</span> <span class="aqr-pill aqr-pill-muted" data-testid="aqr-target-operations">@card.OperationCount@(card.WriteCount > 0 ? $" · {card.WriteCount} write (not executed)" : "")</span></li>
                                 @if (card.HasContract) { <li><span class="aqr-meta-label">Contract</span> <span class="aqr-pill aqr-pill-ready">OpenAPI</span></li> }
-                                @if (card.SchemaLabel is not null) { <li><span class="aqr-meta-label">Schema</span> <span class="aqr-pill aqr-pill-muted" data-testid="aqr-target-schema">@card.SchemaLabel</span></li> }
+                                @if (card.SchemaLabel is not null && !ReadOnly) { <li><span class="aqr-meta-label">Schema</span> <span class="aqr-pill aqr-pill-muted" data-testid="aqr-target-schema">@card.SchemaLabel</span></li> }
                                 @if (card.ConfidenceLabel != "Verified") { <li><span class="aqr-meta-label">Confidence</span> <span class="aqr-pill aqr-pill-attention">@card.ConfidenceLabel</span></li> }
                             </ul>
                             @if (card.Operations.Count > 0)
                             {
                                 <ReviewDisclosure Text="View operations" CollapseText="Hide operations" Hint="@($"{card.OperationCount}")" TestId="@($"aqr-ops-{t.TargetId}")" Class="disclosure-inline disclosure-small">
                                     <p class="aqr-muted aqr-target-fullurl"><span class="aqr-meta-label">Endpoint</span> <span class="aqr-mono">@t.Url</span></p>
-                                    <div class="aqr-tablewrap">
+                                    <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="API target operations">
                                         <table class="aqr-table aqr-ops-table" data-testid="aqr-ops-table">
                                             <thead><tr><th scope="col">@(type == ApiReviewTargetType.Rest ? "Method" : "Type")</th><th scope="col">@(type == ApiReviewTargetType.Rest ? "Route" : "Operation")</th><th scope="col">Access</th><th scope="col">Source</th><th scope="col">Automated review</th></tr></thead>
                                             <tbody>
@@ -77,4 +77,5 @@
     [Parameter, EditorRequired] public IReadOnlyList<ApiReviewTarget> Targets { get; set; } = [];
     [Parameter, EditorRequired] public IReadOnlyCollection<string> Selected { get; set; } = [];
     [Parameter] public EventCallback<(string TargetId, bool Include)> Toggle { get; set; }
+    [Parameter] public bool ReadOnly { get; set; }
 }

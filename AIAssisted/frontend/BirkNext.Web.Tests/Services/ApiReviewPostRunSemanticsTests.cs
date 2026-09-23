@@ -187,7 +187,7 @@ public sealed class ApiReviewPostRunSemanticsTests
     {
         var card = ApiReviewPresentation.TargetCard(Target(ApiReviewTargetType.GraphQl, "/api/autorisasjon/graphql"));
 
-        card.SchemaLabel.Should().Be("Will be requested during review");
+        card.SchemaLabel.Should().Be("Schema retrieval will be attempted during review.");
         card.SchemaLabel.Should().NotContain("available", "nothing has been retrieved before the review runs");
 
         // Post-run, the contract rows carry what actually happened.

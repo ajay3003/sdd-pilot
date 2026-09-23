@@ -361,7 +361,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var rest = page.Find("[data-testid=aqr-domain][data-domain='rest']");
         rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Trim().Should().Be("Limited");
         rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Should().NotContain("Not included");
-        rest.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Contain("Reviewed structurally");
+        rest.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Contain("Included with structural limitation");
     }
 
     // 27. GraphQL stays in the review; only its schema evidence is limited.
@@ -399,7 +399,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
             .Should().Equal("aqr-result-summary", "aqr-key-findings", "aqr-tabpanel", "aqr-result-details");
 
         // 32, 33, 34. Coverage, the read-only explanation and the configuration are all collapsed detail now.
-        foreach (var id in new[] { "aqr-coverage-disclosure", "aqr-limitations", "aqr-readonly", "aqr-targets-disclosure", "aqr-contracts-disclosure", "aqr-access-details" })
+        foreach (var id in new[] { "aqr-coverage-disclosure", "aqr-limitations", "aqr-readonly", "aqr-targets-disclosure", "aqr-access-details" })
         {
             Collapsed(page, id).Should().BeTrue($"{id} is supporting detail after a run");
             Body(page, id).Closest("[data-testid=aqr-result-details]").Should().NotBeNull();
@@ -437,7 +437,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         page.Find("[data-testid=aqr-manual-count]").TextContent.Should().StartWith("3 areas remain");
 
         // 38. The finding total counts findings only; the three obligations are not added to it.
-        page.Find("[data-testid=aqr-all-findings]").TextContent.Should().Be("All findings (2)");
+        page.Find("[data-testid=aqr-all-findings]").TextContent.Should().Be("All source findings (2)");
         var severities = page.FindAll("[data-testid=aqr-sev]").Select(s => s.TextContent.Trim()).ToList();
         severities.Should().Contain("Low 2");
         severities.Sum(s => int.Parse(s.Split(' ')[^1])).Should().Be(2, "severity counts are finding counts, nothing else");
