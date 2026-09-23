@@ -10,6 +10,10 @@ namespace BirkNext.Api.Services.BrowserAutomationDiagnostic;
 /// <c>ConnectOverCDPAsync</c>: attaching to a browser somebody else started is a different question with a different
 /// failure mode, and mixing the two would make the result unreadable.
 ///
+/// The only difference between headed and headless is <c>Headless</c>. No extra Chromium flags are invented for the
+/// headless case — the point of the run is to observe the default behaviour of an ordinary automated Edge, not to
+/// coax a particular outcome out of it.
+///
 /// Nothing here signs in, and nothing here changes a browser or system setting. It opens pages and reads from them.
 /// </summary>
 internal sealed class PlaywrightDiagnosticBrowser : IDiagnosticBrowser
@@ -20,17 +24,18 @@ internal sealed class PlaywrightDiagnosticBrowser : IDiagnosticBrowser
     private int _disposed;
 
     public string? EdgeVersion { get; private set; }
+    public bool HasPersistentContext => _context is not null;
 
-    public async Task LaunchAsync(string profileDirectory, TimeSpan timeout, CancellationToken ct)
+    public async Task LaunchAsync(BrowserAutomationDiagnosticLaunchOptions options, CancellationToken ct)
     {
-        System.IO.Directory.CreateDirectory(profileDirectory);
+        System.IO.Directory.CreateDirectory(options.ProfileDirectory);
         _playwright = await Playwright.CreateAsync();
 
-        _context = await _playwright.Chromium.LaunchPersistentContextAsync(profileDirectory, new()
+        _context = await _playwright.Chromium.LaunchPersistentContextAsync(options.ProfileDirectory, new()
         {
             Channel = "msedge",
-            Headless = false,
-            Timeout = (float)timeout.TotalMilliseconds,
+            Headless = options.Headless,
+            Timeout = (float)options.Timeout.TotalMilliseconds,
             // First-run and default-browser prompts only; nothing that weakens a browser protection.
             Args = ["--no-first-run", "--no-default-browser-check"],
         });
@@ -38,7 +43,7 @@ internal sealed class PlaywrightDiagnosticBrowser : IDiagnosticBrowser
         EdgeVersion = _context.Browser?.Version;
         // A persistent context opens with one page; use it rather than adding a second.
         _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync();
-        await _page.GotoAsync("about:blank", new() { Timeout = (float)timeout.TotalMilliseconds });
+        await _page.GotoAsync("about:blank", new() { Timeout = (float)options.Timeout.TotalMilliseconds });
         ct.ThrowIfCancellationRequested();
     }
 
@@ -59,19 +64,21 @@ internal sealed class PlaywrightDiagnosticBrowser : IDiagnosticBrowser
     /// Reads the page title. Read-only, needs no DOM contract with the application, and — the point — it goes through
     /// the automation channel, so a page or context that has been closed underneath us throws instead of lying.
     /// </summary>
-    public async Task<bool> IsControllableAsync(CancellationToken ct)
+    public async Task<bool> IsControllableAsync(TimeSpan timeout, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         var page = _page;
         if (page is null || page.IsClosed) return false;
-        await page.TitleAsync();
+        // TitleAsync takes no timeout of its own, and a probe that hangs is the failure mode this stage exists to
+        // avoid — so the wait is bounded here instead.
+        await page.TitleAsync().WaitAsync(timeout, ct);
         return !page.IsClosed;
     }
 
     /// <summary>
     /// Closes what this diagnostic created, and only that. No process is killed by name: a stray
-    /// <c>msedge.exe</c> sweep would take the user's own browser, the Local HTTPS proxy's Edge and the Browser
-    /// Companion's session with it.
+    /// <c>msedge.exe</c> sweep would take the user's own browser, the Local HTTPS proxy's Edge, the Browser
+    /// Companion's session and the other mode's browser with it.
     /// </summary>
     public async ValueTask DisposeAsync()
     {
@@ -87,5 +94,5 @@ internal sealed class PlaywrightDiagnosticBrowser : IDiagnosticBrowser
 
 internal sealed class PlaywrightDiagnosticBrowserFactory : IDiagnosticBrowserFactory
 {
-    public IDiagnosticBrowser Create() => new PlaywrightDiagnosticBrowser();
+    public IDiagnosticBrowser Create(BrowserAutomationDiagnosticMode mode) => new PlaywrightDiagnosticBrowser();
 }

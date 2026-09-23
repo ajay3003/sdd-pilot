@@ -205,5 +205,10 @@ builder.Services.AddHttpClient<IFrontendPassiveSecurityApiService, FrontendPassi
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddFrontendQualityEngineStatusApi(new Uri("http://localhost:5000/"));
 builder.Services.AddBrowserAutomationDiagnosticApi(new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<IHeadlessDiagnosticApiService, HeadlessDiagnosticApiService>(client =>
+{
+    client.BaseAddress = new Uri("http://localhost:5000/");
+    client.Timeout = TimeSpan.FromMinutes(2);
+});
 
 await builder.Build().RunAsync();

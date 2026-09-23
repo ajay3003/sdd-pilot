@@ -8,18 +8,23 @@
     Browser Automation Diagnostic — an engine/runtime diagnostic, which is why it lives with Frontend Engine
     Capabilities rather than on a review page.
 
-    It answers one question: does Playwright-controlled Microsoft Edge work in general but lose control of THIS target?
-    The contrast between the neutral control page and the target is the whole finding, so the stages are shown in the
-    order they were gathered and a target failure is never presented without the control result beside it.
+    It answers one question in two independent ways: does Playwright-controlled Microsoft Edge work in general but
+    lose control of THIS target — with a window, and without one?
+
+    The two modes are shown as PEERS. Headless is not a technical footnote: it is the mode an unattended pipeline
+    would use, so it decides what is actually possible, and burying it under a details toggle would hide the finding.
+    Within each mode the stages stay in the order they were gathered, and a target failure is never presented without
+    that mode's control-page result beside it.
 *@
 <section class="bad-card" data-testid="browser-automation-diagnostic" aria-labelledby="bad-heading">
     <div class="bad-head">
         <div>
             <h3 id="bad-heading">Browser automation diagnostic</h3>
             <p class="bad-sub" data-testid="bad-intro">
-                Starts a Playwright-controlled Microsoft Edge in a dedicated BirkNext profile, proves it can control a
-                neutral page, then checks whether it keeps control of the selected target. No sign-in is attempted, and
-                nothing about your browser or its security settings is changed.
+                Starts a Playwright-controlled Microsoft Edge in a dedicated BirkNext profile — once with a visible
+                window and once without — proves each can control a neutral page, then checks whether each keeps
+                control of the selected target. No sign-in is attempted, and nothing about your browser or its
+                security settings is changed.
             </p>
         </div>
     </div>
@@ -60,7 +65,8 @@
     @if (_running)
     {
         <p class="bad-progress" role="status" aria-live="polite" data-testid="bad-progress">
-            A BirkNext diagnostic Edge window will open and close on its own. Do not sign in to it.
+            Headed mode runs first: a BirkNext diagnostic Edge window will open and close on its own. Headless mode
+            then runs with no window at all. Do not sign in to either.
         </p>
     }
 
@@ -85,42 +91,85 @@
                 <p class="bad-blocked" role="status" data-testid="bad-blocked-reason">@blocked</p>
             }
 
-            <ul class="bad-stages" data-testid="bad-stages">
-                @foreach (var stage in report.Stages)
+            @* Both modes, side by side and at the same level. Neither is nested inside the other's disclosure. *@
+            <div class="bad-modes" data-testid="bad-modes">
+                @foreach (var (kind, mode) in ModePanels(report))
                 {
-                    <li class="bad-stage" data-testid="bad-stage" data-stage="@stage.Stage" data-state="@stage.State">
-                        <span class="bad-stage-glyph fqr-pill-@BrowserAutomationDiagnosticStages.Tone(stage.State)"
-                              aria-hidden="true">@BrowserAutomationDiagnosticStages.Glyph(stage.State)</span>
-                        <span class="bad-stage-name">@BrowserAutomationDiagnosticStages.Label(stage.Stage)</span>
-                        @* The state is always a word, never only a colour or a tick. *@
-                        <span class="bad-stage-state" data-testid="bad-stage-state">@BrowserAutomationDiagnosticStages.StateLabel(stage.State)</span>
-                        @if (!string.IsNullOrWhiteSpace(stage.Url))
-                        {
-                            <span class="bad-stage-url"><code>@stage.Url</code></span>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(stage.Detail))
-                        {
-                            <span class="bad-stage-detail">@stage.Detail</span>
-                        }
-                    </li>
-                }
-            </ul>
+                    <article class="bad-mode" data-testid="bad-mode" data-mode="@kind"
+                             data-mode-result="@(mode?.Result ?? BrowserAutomationDiagnosticModeResult.NotRun)">
+                        <header class="bad-mode-head">
+                            <h4 class="bad-mode-name" data-testid="bad-mode-name">
+                                @BrowserAutomationDiagnosticStages.ModeLabel(kind) mode
+                            </h4>
+                            <span class="fqr-pill fqr-pill-@BrowserAutomationDiagnosticStages.ModeResultTone(mode?.Result ?? BrowserAutomationDiagnosticModeResult.NotRun)"
+                                  data-testid="bad-mode-result">
+                                @BrowserAutomationDiagnosticStages.ModeResultLabel(mode?.Result ?? BrowserAutomationDiagnosticModeResult.NotRun)
+                            </span>
+                        </header>
+                        @* Why this mode matters, so "headless" is not read as a technical variant of the same test. *@
+                        <p class="bad-mode-sub" data-testid="bad-mode-description">
+                            @BrowserAutomationDiagnosticStages.ModeDescription(kind)
+                        </p>
 
-            @if (report.ObservedExceptionType is { Length: > 0 } exceptionType)
-            {
-                <p class="bad-exception" data-testid="bad-exception">
-                    <strong>Observed exception:</strong> <code>@exceptionType</code>
-                </p>
-            }
+                        @if (mode is null)
+                        {
+                            <p class="bad-mode-empty" data-testid="bad-mode-empty">This mode was not run.</p>
+                        }
+                        else
+                        {
+                            <ul class="bad-stages" data-testid="bad-stages">
+                                @foreach (var stage in mode.Stages)
+                                {
+                                    <li class="bad-stage" data-testid="bad-stage" data-stage="@stage.Stage" data-state="@stage.State">
+                                        <span class="bad-stage-glyph fqr-pill-@BrowserAutomationDiagnosticStages.Tone(stage.State)"
+                                              aria-hidden="true">@BrowserAutomationDiagnosticStages.Glyph(stage.State)</span>
+                                        <span class="bad-stage-name">@BrowserAutomationDiagnosticStages.Label(stage.Stage)</span>
+                                        @* The state is always a word, never only a colour or a tick. *@
+                                        <span class="bad-stage-state" data-testid="bad-stage-state">@BrowserAutomationDiagnosticStages.StateLabel(stage.State)</span>
+                                        @if (!string.IsNullOrWhiteSpace(stage.Url))
+                                        {
+                                            <span class="bad-stage-url"><code>@stage.Url</code></span>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(stage.Detail))
+                                        {
+                                            <span class="bad-stage-detail">@stage.Detail</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+
+                            @if (mode.ObservedExceptionType is { Length: > 0 } exceptionType)
+                            {
+                                <p class="bad-exception" data-testid="bad-exception">
+                                    <strong>Observed exception:</strong> <code>@exceptionType</code>
+                                </p>
+                            }
+
+                            <p class="bad-mode-profile" data-testid="bad-mode-profile">@mode.ProfileDescription</p>
+                        }
+                    </article>
+                }
+            </div>
 
             @* What was observed, and nothing beyond it. This text never names an organisational control as the cause. *@
             <p class="bad-interpretation" data-testid="bad-interpretation">@report.Interpretation</p>
+
+            @* The prerequisite chain, said in the order the reader has to act on it. *@
+            <div class="bad-prerequisite fqr-pill-@BrowserAutomationDiagnosticPrerequisite.Tone(report)"
+                 data-testid="bad-prerequisite"
+                 data-available="@report.HeadlessTargetControlAvailable.ToString().ToLowerInvariant()">
+                <p class="bad-prerequisite-head" data-testid="bad-prerequisite-headline">
+                    @BrowserAutomationDiagnosticPrerequisite.Headline(report)
+                </p>
+                <p class="bad-prerequisite-body" data-testid="bad-prerequisite-explanation">
+                    @BrowserAutomationDiagnosticPrerequisite.Explanation(report)
+                </p>
+            </div>
 
             <dl class="bad-meta" data-testid="bad-meta">
                 <div><dt>Target</dt><dd>@report.TargetEnvironmentName (@report.TargetEnvironmentType)</dd></div>
                 <div><dt>Edge</dt><dd>@(report.EdgeVersion ?? "unknown")</dd></div>
                 <div><dt>Playwright</dt><dd>@(report.PlaywrightVersion ?? "unknown")</dd></div>
-                <div><dt>Browser profile</dt><dd>@report.ProfileDescription</dd></div>
             </dl>
 
             <div class="bad-actions">
@@ -150,6 +199,17 @@
     private IReadOnlyList<FrontendAnalysisProfile> EligibleTargets => Targets
         .Where(t => !string.IsNullOrWhiteSpace(t.TargetUrl) && t.EnvironmentType != FrontendEnvironmentType.Production)
         .ToList();
+
+    /// <summary>
+    /// Headed then headless, always both, always in that order — the order they ran in. A mode with no report is
+    /// still shown, saying it was not run, so a missing mode can never be mistaken for a passing one.
+    /// </summary>
+    private static IEnumerable<(BrowserAutomationDiagnosticMode Kind, BrowserAutomationDiagnosticModeReport? Report)>
+        ModePanels(BrowserAutomationDiagnosticReport report) =>
+        [
+            (BrowserAutomationDiagnosticMode.Headed, report.Headed),
+            (BrowserAutomationDiagnosticMode.Headless, report.Headless),
+        ];
 
     private FrontendAnalysisProfile? Selected =>
         EligibleTargets.FirstOrDefault(t => t.Id == _selectedId) ?? EligibleTargets.FirstOrDefault();

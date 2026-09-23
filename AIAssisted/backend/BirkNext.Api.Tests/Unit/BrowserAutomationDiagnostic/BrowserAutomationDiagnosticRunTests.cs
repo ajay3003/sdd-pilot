@@ -9,49 +9,53 @@ using Xunit;
 namespace BirkNext.Api.Tests.Unit.BrowserAutomationDiagnostic;
 
 /// <summary>
-/// The stage flow, the classification and the cleanup guarantee.
+/// Two independent modes, the per-mode stage flow, the classification, the comparison and the cleanup guarantee.
 ///
-/// These are exercised against a fake browser on purpose. The failure the diagnostic exists to detect — a target that
-/// closes the page underneath the automation — cannot be summoned from a real browser on demand, and the ordering rule
-/// that makes the result meaningful ("a target conclusion requires a passing control page") is precisely the thing a
-/// manual run can never prove. The one class that touches Playwright is separated out so everything else is testable.
+/// These run against a fake browser on purpose. The failures the diagnostic exists to detect — a target that closes
+/// the page underneath the automation, and a target that behaves differently headless than headed — cannot be
+/// summoned from a real browser on demand. Nor can the ordering rule that makes a result meaningful ("a target
+/// conclusion requires a passing control page") be proven by a manual run. The one class that touches Playwright is
+/// separated out so everything else is testable.
 /// </summary>
 public sealed class BrowserAutomationDiagnosticRunTests
 {
-    // ── A fake browser that fails exactly where a test wants it to ────────────────────────────────────────────────
+    // ── A fake browser that fails exactly where, and in whichever mode, a test wants it to ────────────────────────
 
-    private sealed class FakeBrowser : IDiagnosticBrowser
+    private sealed class FakeBrowser(BrowserAutomationDiagnosticMode mode) : IDiagnosticBrowser
     {
-        public Func<string, Task>? OnLaunch;
-        /// <summary>Called for each navigation, with the URL, so a test can fail only at the target.</summary>
-        public Func<Uri, Task>? OnNavigate;
-        /// <summary>Called for each controllability check, with how many have happened before it.</summary>
-        public Func<int, Task<bool>>? OnIsControllable;
+        public Func<BrowserAutomationDiagnosticLaunchOptions, Task>? OnLaunch;
+        /// <summary>Called for each navigation, with the mode and URL, so a test can fail one mode only.</summary>
+        public Func<BrowserAutomationDiagnosticMode, Uri, Task>? OnNavigate;
+        /// <summary>Called for each controllability check, with the mode and how many have happened before it.</summary>
+        public Func<BrowserAutomationDiagnosticMode, int, Task<bool>>? OnIsControllable;
+        public bool PersistentContext = true;
 
+        public BrowserAutomationDiagnosticMode Mode { get; } = mode;
         public int ControlChecks { get; private set; }
         public List<Uri> Navigations { get; } = [];
         public bool Disposed { get; private set; }
-        public string? LaunchedProfile { get; private set; }
+        public BrowserAutomationDiagnosticLaunchOptions? LaunchOptions { get; private set; }
         public string? EdgeVersion => "153.0.0.0";
+        public bool HasPersistentContext => LaunchOptions is not null && PersistentContext;
 
-        public async Task LaunchAsync(string profileDirectory, TimeSpan timeout, CancellationToken ct)
+        public async Task LaunchAsync(BrowserAutomationDiagnosticLaunchOptions options, CancellationToken ct)
         {
-            LaunchedProfile = profileDirectory;
-            if (OnLaunch is not null) await OnLaunch(profileDirectory);
+            LaunchOptions = options;
+            if (OnLaunch is not null) await OnLaunch(options);
         }
 
         public async Task NavigateAsync(Uri url, TimeSpan timeout, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             Navigations.Add(url);
-            if (OnNavigate is not null) await OnNavigate(url);
+            if (OnNavigate is not null) await OnNavigate(Mode, url);
         }
 
-        public async Task<bool> IsControllableAsync(CancellationToken ct)
+        public async Task<bool> IsControllableAsync(TimeSpan timeout, CancellationToken ct)
         {
             ct.ThrowIfCancellationRequested();
             var index = ControlChecks++;
-            return OnIsControllable is null || await OnIsControllable(index);
+            return OnIsControllable is null || await OnIsControllable(Mode, index);
         }
 
         public ValueTask DisposeAsync()
@@ -61,9 +65,22 @@ public sealed class BrowserAutomationDiagnosticRunTests
         }
     }
 
-    private sealed class FakeFactory(FakeBrowser browser) : IDiagnosticBrowserFactory
+    /// <summary>Hands out one fake per mode and keeps them, so a test can assert on each mode's browser separately.</summary>
+    private sealed class FakeFactory : IDiagnosticBrowserFactory
     {
-        public IDiagnosticBrowser Create() => browser;
+        public readonly Dictionary<BrowserAutomationDiagnosticMode, FakeBrowser> Browsers = [];
+        public Action<FakeBrowser>? Configure;
+
+        public IDiagnosticBrowser Create(BrowserAutomationDiagnosticMode mode)
+        {
+            var browser = new FakeBrowser(mode);
+            Configure?.Invoke(browser);
+            Browsers[mode] = browser;
+            return browser;
+        }
+
+        public FakeBrowser Headed => Browsers[BrowserAutomationDiagnosticMode.Headed];
+        public FakeBrowser Headless => Browsers[BrowserAutomationDiagnosticMode.Headless];
     }
 
     private sealed class FakeEdgeLocator(EdgeInstallation? installation) : IEdgeInstallationLocator
@@ -71,345 +88,471 @@ public sealed class BrowserAutomationDiagnosticRunTests
         public EdgeInstallation? Locate() => installation;
     }
 
-    private const string Profile = @"C:\Users\someone\AppData\Local\BirkNext\BrowserAutomationDiagnosticEdgeProfile";
+    private const string ProfileRoot = @"C:\Users\someone\AppData\Local\BirkNext\BrowserAutomationDiagnostic";
     private const string ControlUrl = "https://example.com/";
     private const string TargetUrl = "https://m2lbdev.example.test/";
+    private const string TargetHost = "m2lbdev.example.test";
 
-    private static BrowserAutomationDiagnosticRequest Request(string environmentType = "Development") => new()
-    {
-        TargetEnvironmentId = "dev", TargetEnvironmentName = "M2LB DEV",
-        EnvironmentType = environmentType, TargetUrl = TargetUrl,
-    };
+    private static string Profile(BrowserAutomationDiagnosticMode mode) =>
+        System.IO.Path.Combine(ProfileRoot, mode == BrowserAutomationDiagnosticMode.Headless ? "Headless" : "Headed");
 
-    /// <summary>The service is internal; the tests drive it through its public interface via reflection-free construction.</summary>
+    private static BrowserAutomationDiagnosticRequest Request(
+        string environmentType = "Development", string id = "dev") => new()
+        {
+            TargetEnvironmentId = id, TargetEnvironmentName = "M2LB DEV",
+            EnvironmentType = environmentType, TargetUrl = TargetUrl,
+        };
+
     private static IBrowserAutomationDiagnosticService Service(
-        FakeBrowser browser, EdgeInstallation? edge = null, bool isLocalWorkstation = true, bool edgeFound = true)
+        FakeFactory factory, bool isLocalWorkstation = true, bool edgeFound = true,
+        Func<BrowserAutomationDiagnosticMode, string>? profile = null)
     {
         var type = typeof(BrowserAutomationDiagnosticPolicy).Assembly
             .GetType("BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService")!;
         var logger = typeof(NullLogger<>).MakeGenericType(type).GetField("Instance", BindingFlags.Public | BindingFlags.Static)!.GetValue(null);
         return (IBrowserAutomationDiagnosticService)Activator.CreateInstance(type,
-            new FakeFactory(browser),
-            new FakeEdgeLocator(edgeFound ? edge ?? new EdgeInstallation(@"C:\Program Files\Edge\msedge.exe", "153.0.0.0") : null),
+            factory,
+            new FakeEdgeLocator(edgeFound ? new EdgeInstallation(@"C:\Program Files\Edge\msedge.exe", "153.0.0.0") : null),
             logger,
             (Func<bool>)(() => isLocalWorkstation),
-            (Func<string>)(() => Profile),
+            profile ?? Profile,
             ControlUrl)!;
     }
 
     /// <summary>Playwright's .NET binding does not expose TargetClosedException, so this is what a caller actually sees.</summary>
-    private static PlaywrightException TargetClosed() =>
-        new("Target page, context or browser has been closed");
+    private static PlaywrightException TargetClosed() => new("Target page, context or browser has been closed");
+
+    /// <summary>Closes the target in the named mode only; every other navigation succeeds.</summary>
+    private static Func<BrowserAutomationDiagnosticMode, Uri, Task> ClosesTargetIn(params BrowserAutomationDiagnosticMode[] modes) =>
+        (mode, url) => url.Host == TargetHost && modes.Contains(mode) ? throw TargetClosed() : Task.CompletedTask;
 
     private static BrowserAutomationDiagnosticStageState State(
-        BrowserAutomationDiagnosticReport report, BrowserAutomationDiagnosticStage stage) =>
-        report.Stage(stage)!.State;
+        BrowserAutomationDiagnosticModeReport mode, BrowserAutomationDiagnosticStage stage) => mode.Stage(stage)!.State;
 
-    // ── §38. Stage flow ───────────────────────────────────────────────────────────────────────────────────────────
+    // ── §34. Mode execution ───────────────────────────────────────────────────────────────────────────────────────
 
-    // 12. Everything works: the target is reached and stays under control.
+    // 1, 2, 4. Both modes run, and each one launches the way its name says, in its own profile.
     [Fact]
-    public async Task EverythingControllable_IsPassed()
+    public async Task BothModesRunIndependently_WithTheirOwnHeadlessFlagAndProfile()
     {
-        var browser = new FakeBrowser();
+        var factory = new FakeFactory();
 
-        var report = await Service(browser).RunAsync(Request());
+        var report = await Service(factory).RunAsync(Request());
 
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.Passed);
-        foreach (var stage in Enum.GetValues<BrowserAutomationDiagnosticStage>())
-            State(report, stage).Should().Be(BrowserAutomationDiagnosticStageState.Passed, $"{stage} should have passed");
-        browser.Navigations.Should().Equal(new Uri(ControlUrl), new Uri(TargetUrl));
+        report.Modes.Select(m => m.Mode).Should().Equal(
+            BrowserAutomationDiagnosticMode.Headed, BrowserAutomationDiagnosticMode.Headless);
+
+        factory.Headed.LaunchOptions!.Headless.Should().BeFalse();
+        factory.Headless.LaunchOptions!.Headless.Should().BeTrue();
+
+        // 4. Separate profiles: one shared user-data directory is how two sequential Chromium launches end up
+        // reporting a profile lock instead of the target's behaviour.
+        factory.Headed.LaunchOptions.ProfileDirectory.Should().EndWith("Headed");
+        factory.Headless.LaunchOptions.ProfileDirectory.Should().EndWith("Headless");
+        factory.Headed.LaunchOptions.ProfileDirectory.Should().NotBe(factory.Headless.LaunchOptions.ProfileDirectory);
     }
 
-    // 8. A launch failure stops everything after it, and never reads as a statement about the target.
-    [Fact]
-    public async Task EdgeLaunchFailure_StopsLaterStages()
+    // 5. Neither mode may ever run in the employee's own Edge profile.
+    [Theory]
+    [InlineData(@"C:\Users\someone\AppData\Local\Microsoft\Edge\User Data")]
+    [InlineData(@"C:\Users\someone\AppData\Local\Microsoft\Edge Beta\User Data")]
+    public async Task ANormalEdgeProfileInEitherModeBlocksTheWholeDiagnostic(string normal)
     {
-        var browser = new FakeBrowser { OnLaunch = _ => throw new PlaywrightException("Executable doesn't exist") };
+        var factory = new FakeFactory();
 
-        var report = await Service(browser).RunAsync(Request());
+        // Only the HEADLESS profile is unsafe; the run must still refuse, rather than doing the headed half.
+        var report = await Service(factory, profile: mode =>
+            mode == BrowserAutomationDiagnosticMode.Headless ? normal : Profile(mode)).RunAsync(Request());
 
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.RuntimeUnavailable);
-        State(report, BrowserAutomationDiagnosticStage.EdgeLaunch).Should().Be(BrowserAutomationDiagnosticStageState.Failed);
-        foreach (var stage in new[]
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.Blocked);
+        report.BlockedReason.Should().Be(BrowserAutomationDiagnosticPolicy.NormalProfileBlockedReason);
+        factory.Browsers.Should().BeEmpty("no browser is created for a blocked diagnostic");
+    }
+
+    // 6, 7. The target comes from the request, and Production never reaches a browser.
+    [Fact]
+    public async Task ProductionIsBlockedBeforeAnyBrowserIsCreated()
+    {
+        var factory = new FakeFactory();
+
+        var report = await Service(factory).RunAsync(Request("Production"));
+
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.Blocked);
+        report.BlockedReason.Should().Be(BrowserAutomationDiagnosticPolicy.ProductionBlockedReason);
+        factory.Browsers.Should().BeEmpty();
+    }
+
+    // 29. Two runs for one target would share both profiles and report each other's contention.
+    [Fact]
+    public async Task ASecondConcurrentRunForTheSameTargetIsRefused()
+    {
+        var gate = new TaskCompletionSource();
+        var factory = new FakeFactory { Configure = b => b.OnLaunch = _ => gate.Task };
+        var service = Service(factory);
+
+        var first = service.RunAsync(Request(id: "dev"));
+        await Task.Delay(50);
+        var second = await service.RunAsync(Request(id: "dev"));
+
+        second.Result.Should().Be(BrowserAutomationDiagnosticComparison.Blocked);
+        second.BlockedReason.Should().Be(BrowserAutomationDiagnosticPolicy.AlreadyRunningReason);
+        gate.SetResult();
+        await first;
+    }
+
+    // ── §35. Per-mode control sequence ────────────────────────────────────────────────────────────────────────────
+
+    // 8, 9. about:blank, then the control page, then the target — in every mode.
+    [Fact]
+    public async Task EachModeProvesTheNeutralPageBeforeTouchingTheTarget()
+    {
+        var factory = new FakeFactory();
+
+        await Service(factory).RunAsync(Request());
+
+        foreach (var browser in new[] { factory.Headed, factory.Headless })
+            browser.Navigations.Should().Equal(new Uri(ControlUrl), new Uri(TargetUrl));
+    }
+
+    // 10, 20. A control page that cannot be reached stops that mode, and the target is never contacted.
+    [Fact]
+    public async Task AControlPageFailureStopsThatModeBeforeTheTarget()
+    {
+        var factory = new FakeFactory
         {
-            BrowserAutomationDiagnosticStage.BlankPage, BrowserAutomationDiagnosticStage.ControlPage,
-            BrowserAutomationDiagnosticStage.TargetNavigation, BrowserAutomationDiagnosticStage.TargetControl,
-        })
-            State(report, stage).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
-        browser.Navigations.Should().BeEmpty("the target is never contacted when the browser did not start");
-    }
-
-    // 9, 16. A page that closes on about:blank is the runtime failing. It is NOT a target-specific restriction: the
-    // target has not been contacted, so there is nothing target-specific to conclude.
-    [Fact]
-    public async Task TargetClosedOnBlankPage_IsControlFailure_NotTargetRestricted()
-    {
-        var browser = new FakeBrowser { OnIsControllable = _ => throw TargetClosed() };
-
-        var report = await Service(browser).RunAsync(Request());
-
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.ControlFailure);
-        report.Result.Should().NotBe(BrowserAutomationDiagnosticResult.TargetRestricted);
-        State(report, BrowserAutomationDiagnosticStage.BlankPage).Should().Be(BrowserAutomationDiagnosticStageState.Failed);
-        browser.Navigations.Should().BeEmpty();
-    }
-
-    // 10, 17. A control page that cannot be reached is a network problem, and the target is not attempted — a failure
-    // there would say nothing without a working control page to contrast it with.
-    [Fact]
-    public async Task ControlPageNetworkFailure_PreventsAnyTargetConclusion()
-    {
-        var browser = new FakeBrowser
-        {
-            OnNavigate = url => url.Host == "example.com"
+            Configure = b => b.OnNavigate = (_, url) => url.Host == "example.com"
                 ? throw new PlaywrightException("net::ERR_NAME_NOT_RESOLVED")
                 : Task.CompletedTask,
         };
 
-        var report = await Service(browser).RunAsync(Request());
+        var report = await Service(factory).RunAsync(Request());
 
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.ControlFailure);
-        State(report, BrowserAutomationDiagnosticStage.ControlPage).Should().Be(BrowserAutomationDiagnosticStageState.Failed);
-        State(report, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
-        browser.Navigations.Should().ContainSingle().Which.Host.Should().Be("example.com");
-        // The report says so in words, so nobody reads a network problem as a Playwright one.
-        report.Stage(BrowserAutomationDiagnosticStage.ControlPage)!.Detail
-            .Should().Contain("not evidence about the target").And.Contain("network");
-    }
-
-    // 11, 20. The target is only attempted once the control page has passed.
-    [Fact]
-    public async Task TheTargetIsAttemptedOnlyAfterTheControlPagePasses()
-    {
-        var browser = new FakeBrowser();
-
-        await Service(browser).RunAsync(Request());
-
-        browser.Navigations[0].Should().Be(new Uri(ControlUrl));
-        browser.Navigations[1].Should().Be(new Uri(TargetUrl));
-    }
-
-    // ── §39. Classification ───────────────────────────────────────────────────────────────────────────────────────
-
-    // 13, 15. The spike's exact signature: control pages fine, page closes at the target.
-    [Fact]
-    public async Task TargetClosedAtTheTarget_AfterAPassingControlPage_IsTargetRestricted()
-    {
-        var browser = new FakeBrowser
+        foreach (var mode in report.Modes)
         {
-            OnNavigate = url => url.Host == "m2lbdev.example.test" ? throw TargetClosed() : Task.CompletedTask,
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.ControlFailure);
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
+            mode.Stage(BrowserAutomationDiagnosticStage.ControlPage)!.Detail
+                .Should().Contain("not evidence about the target");
+        }
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.ControlPageFailure);
+        factory.Headed.Navigations.Should().ContainSingle();
+    }
+
+    // 11, 12. Navigation returning is not success: the page must still answer afterwards.
+    [Fact]
+    public async Task ATargetPageThatClosesAfterNavigatingIsRestricted_NotAvailable()
+    {
+        // Checks per mode: 0 blank, 1 control, 2 target — only the target check fails.
+        var factory = new FakeFactory { Configure = b => b.OnIsControllable = (_, index) => Task.FromResult(index < 2) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Passed,
+                "navigation itself succeeded — which is exactly why navigation alone is not the check");
+            State(mode, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
+            mode.TargetControlAvailable.Should().BeFalse();
+        }
+    }
+
+    // A persistent context is its own stage: a launch can return without one.
+    [Fact]
+    public async Task AMissingPersistentContextIsARuntimeFailureForThatMode()
+    {
+        var factory = new FakeFactory { Configure = b => b.PersistentContext = false };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            State(mode, BrowserAutomationDiagnosticStage.PersistentContext).Should().Be(BrowserAutomationDiagnosticStageState.Failed);
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.RuntimeUnavailable);
+        }
+    }
+
+    // ── §36, §37. Per-mode classification ─────────────────────────────────────────────────────────────────────────
+
+    // 13, 17. Everything works in a mode: that mode is available.
+    [Fact]
+    public async Task AModeThatKeepsControlOfTheTargetIsAvailable()
+    {
+        var report = await Service(new FakeFactory()).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.Available);
+            mode.TargetControlAvailable.Should().BeTrue();
+            foreach (var stage in Enum.GetValues<BrowserAutomationDiagnosticStage>())
+                State(mode, stage).Should().Be(BrowserAutomationDiagnosticStageState.Passed, $"{mode.Mode}/{stage}");
+        }
+    }
+
+    // 14, 18. The spike's signature, per mode: control pages fine, page closes at the target.
+    [Fact]
+    public async Task TargetClosedAfterAPassingControlPageIsATargetRestrictionForThatMode()
+    {
+        var factory = new FakeFactory { Configure = b => b.OnNavigate = ClosesTargetIn(b.Mode) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.TargetRestricted);
+            State(mode, BrowserAutomationDiagnosticStage.ControlPage).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
+            // Blocked, not Failed: the diagnostic worked; the target refused.
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
+            mode.ObservedExceptionType.Should().Be("TargetClosedException");
+        }
+    }
+
+    // 15, 19. A mode whose browser never started says nothing about the target.
+    [Fact]
+    public async Task ALaunchFailureIsARuntimeFailureAndNeverATargetConclusion()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b => b.OnLaunch = _ => throw new PlaywrightException("Executable doesn't exist"),
         };
 
-        var report = await Service(browser).RunAsync(Request());
+        var report = await Service(factory).RunAsync(Request());
 
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.TargetRestricted);
-        report.ResultLabel.Should().Be("Target-specific automation restriction detected");
-        State(report, BrowserAutomationDiagnosticStage.ControlPage).Should().Be(BrowserAutomationDiagnosticStageState.Passed);
-        // Blocked, not Failed: the diagnostic worked; the target refused.
-        State(report, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
-        report.ObservedExceptionType.Should().Be("TargetClosedException");
-    }
-
-    // The other half of the spike: navigation returns, and the page is gone when asked anything.
-    [Fact]
-    public async Task ATargetPageThatClosesAfterNavigating_IsAlsoTargetRestricted()
-    {
-        // Checks: 0 blank, 1 control, 2 target — only the target check fails.
-        var browser = new FakeBrowser { OnIsControllable = index => Task.FromResult(index < 2) };
-
-        var report = await Service(browser).RunAsync(Request());
-
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.TargetRestricted);
-        State(report, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.Passed,
-            "navigation itself succeeded — which is exactly why navigation alone is not the check");
-        State(report, BrowserAutomationDiagnosticStage.TargetControl).Should().Be(BrowserAutomationDiagnosticStageState.Blocked);
-    }
-
-    // 18. A target that never answers is a distinct outcome. A timeout is an absence of a response, not an
-    // observation that automation was terminated, and calling it a restriction would overstate the run.
-    [Fact]
-    public async Task TargetTimeout_IsDistinctFromATargetRestriction()
-    {
-        var browser = new FakeBrowser
+        foreach (var mode in report.Modes)
         {
-            OnNavigate = url => url.Host == "m2lbdev.example.test"
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.RuntimeUnavailable);
+            State(mode, BrowserAutomationDiagnosticStage.TargetNavigation).Should().Be(BrowserAutomationDiagnosticStageState.NotRun);
+        }
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.PlaywrightRuntimeUnavailable);
+    }
+
+    // 16, 20. A page that closes on about:blank is the runtime failing, never a target-specific restriction.
+    [Fact]
+    public async Task TargetClosedOnBlankPageIsAControlFailure_NotATargetRestriction()
+    {
+        var factory = new FakeFactory { Configure = b => b.OnIsControllable = (_, _) => throw TargetClosed() };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        foreach (var mode in report.Modes)
+        {
+            mode.Result.Should().Be(BrowserAutomationDiagnosticModeResult.ControlFailure);
+            mode.Result.Should().NotBe(BrowserAutomationDiagnosticModeResult.TargetRestricted);
+        }
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.ControlPageFailure);
+    }
+
+    // A timeout at the target is an absence of a response, not an observation about automation.
+    [Fact]
+    public async Task ATargetTimeoutIsNotATargetRestriction()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b => b.OnNavigate = (_, url) => url.Host == TargetHost
                 ? throw new PlaywrightException("Timeout 25000ms exceeded.")
                 : Task.CompletedTask,
         };
 
-        var report = await Service(browser).RunAsync(Request());
+        var report = await Service(factory).RunAsync(Request());
 
-        report.Result.Should().NotBe(BrowserAutomationDiagnosticResult.TargetRestricted);
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.Failed);
-        report.Stage(BrowserAutomationDiagnosticStage.TargetNavigation)!.Detail
+        report.Modes.Should().OnlyContain(m => m.Result == BrowserAutomationDiagnosticModeResult.Failed);
+        report.Result.Should().NotBe(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
+        report.Headed!.Stage(BrowserAutomationDiagnosticStage.TargetNavigation)!.Detail
             .Should().Contain("not evidence of an automation restriction");
     }
 
-    // 14. An unexpected exception at the target is reported by type, never collapsed into "diagnostic failed".
+    // ── §38. The comparison ───────────────────────────────────────────────────────────────────────────────────────
+
+    // 21. Both modes keep control.
     [Fact]
-    public async Task AnUnexpectedTargetException_IsReportedByTypeAndIsNotARestriction()
+    public async Task BothModesAvailable_IsAutomationAvailable()
     {
-        var browser = new FakeBrowser
-        {
-            OnNavigate = url => url.Host == "m2lbdev.example.test"
-                ? throw new InvalidOperationException("something else")
-                : Task.CompletedTask,
-        };
+        var report = await Service(new FakeFactory()).RunAsync(Request());
 
-        var report = await Service(browser).RunAsync(Request());
-
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.Failed);
-        report.ObservedExceptionType.Should().Be(nameof(InvalidOperationException));
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.AutomationAvailable);
+        report.HeadlessTargetControlAvailable.Should().BeTrue();
     }
 
-    // 19. Nothing the run produces claims a confirmed cause.
+    // 22. The case the spike suggests: blocked in both modes.
     [Fact]
-    public async Task ARestrictedResultNeverClaimsSecurityPolicyIsConfirmed()
+    public async Task BothModesRestricted_IsTargetRestrictedInBothModes()
     {
-        var browser = new FakeBrowser
+        var factory = new FakeFactory { Configure = b => b.OnNavigate = ClosesTargetIn(b.Mode) };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
+        report.ResultLabel.Should().Be("Target-specific automation restriction detected in both modes");
+        report.HeadlessTargetControlAvailable.Should().BeFalse();
+    }
+
+    // 23. The case that matters most for unattended CI, and the reason both modes are run.
+    [Fact]
+    public async Task HeadedWorksAndHeadlessBlocked_IsHeadlessOnlyRestricted()
+    {
+        var factory = new FakeFactory
         {
-            OnNavigate = url => url.Host == "m2lbdev.example.test" ? throw TargetClosed() : Task.CompletedTask,
+            Configure = b => b.OnNavigate = ClosesTargetIn(BrowserAutomationDiagnosticMode.Headless),
         };
 
-        var report = await Service(browser).RunAsync(Request());
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.HeadlessOnlyRestricted);
+        report.Headed!.TargetControlAvailable.Should().BeTrue();
+        report.Headless!.TargetControlAvailable.Should().BeFalse();
+        // 28. Headed success alone never satisfies the headless prerequisite.
+        report.HeadlessTargetControlAvailable.Should().BeFalse();
+        report.Interpretation.Should().Contain("unattended CI");
+    }
+
+    // 24. The mirror case.
+    [Fact]
+    public async Task HeadlessWorksAndHeadedBlocked_IsHeadedOnlyRestricted()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b => b.OnNavigate = ClosesTargetIn(BrowserAutomationDiagnosticMode.Headed),
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.HeadedOnlyRestricted);
+        // 21 (gating). Headless is what the authentication diagnostic depends on, and headless worked.
+        report.HeadlessTargetControlAvailable.Should().BeTrue();
+    }
+
+    // 25. One mode concluded and the other did not get far enough to agree. That is not a two-mode finding.
+    [Fact]
+    public async Task OneModeConcludingAloneIsInconclusive_NotARestriction()
+    {
+        var factory = new FakeFactory
+        {
+            Configure = b => b.OnLaunch = b.Mode == BrowserAutomationDiagnosticMode.Headless
+                ? _ => throw new PlaywrightException("Executable doesn't exist")
+                : null,
+        };
+        factory.Configure = b =>
+        {
+            if (b.Mode == BrowserAutomationDiagnosticMode.Headless)
+                b.OnLaunch = _ => throw new PlaywrightException("Executable doesn't exist");
+            else
+                b.OnNavigate = ClosesTargetIn(BrowserAutomationDiagnosticMode.Headed);
+        };
+
+        var report = await Service(factory).RunAsync(Request());
+
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.MixedOrInconclusive);
+        report.Result.Should().NotBe(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes);
+        report.HeadlessTargetControlAvailable.Should().BeFalse();
+    }
+
+    // ── §39. Wording ──────────────────────────────────────────────────────────────────────────────────────────────
+
+    // The restricted results never claim a cause, and never say developer tooling is disabled — this very run used it.
+    [Fact]
+    public async Task NoResultClaimsAConfirmedCauseOrGloballyDisabledDevTools()
+    {
+        var factory = new FakeFactory { Configure = b => b.OnNavigate = ClosesTargetIn(b.Mode) };
+
+        var report = await Service(factory).RunAsync(Request());
 
         var everything = report.Interpretation + " " + report.ResultLabel + " " +
-                         string.Join(" ", report.Stages.Select(s => s.Detail));
-        everything.Should().NotContainAny("Defender", "confirmed", "DevTools disabled");
-        report.Interpretation.Should().Contain("possible cause", Exactly.Once());
+                         string.Join(" ", report.Modes.SelectMany(m => m.Stages).Select(s => s.Detail));
+        everything.Should().NotContainAny(
+            "Defender", "MCAS", "DevTools is disabled", "DevTools disabled", "confirmed", "Conditional Access blocked");
+        report.Interpretation.Should().Contain("does not identify which organisational control is responsible");
+        report.Interpretation.Should().Contain("does not mean browser developer tooling is disabled generally");
     }
 
-    // ── Guards reaching the runner ────────────────────────────────────────────────────────────────────────────────
+    // ── §41. Cleanup ──────────────────────────────────────────────────────────────────────────────────────────────
 
-    // 2. Production never reaches a browser at all.
+    // 29–32. Both modes' browsers close on every path.
     [Fact]
-    public async Task ProductionIsBlockedBeforeAnyBrowserIsCreated()
+    public async Task EveryModesBrowserIsClosedOnEveryPath()
     {
-        var browser = new FakeBrowser();
-
-        var report = await Service(browser).RunAsync(Request("Production"));
-
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.Blocked);
-        report.BlockedReason.Should().Be(BrowserAutomationDiagnosticPolicy.ProductionBlockedReason);
-        browser.LaunchedProfile.Should().BeNull("no browser is started for a blocked diagnostic");
-        browser.Navigations.Should().BeEmpty();
-    }
-
-    // 18 (runtime). No Edge means nothing was tested — and, crucially, nothing was learned about the target.
-    [Fact]
-    public async Task AMissingEdgeInstallationIsRuntimeUnavailable_AndNeverTouchesTheTarget()
-    {
-        var browser = new FakeBrowser();
-
-        var report = await Service(browser, edgeFound: false).RunAsync(Request());
-
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.RuntimeUnavailable);
-        State(report, BrowserAutomationDiagnosticStage.Runtime).Should().Be(BrowserAutomationDiagnosticStageState.Failed);
-        browser.LaunchedProfile.Should().BeNull();
-        browser.Navigations.Should().BeEmpty();
-        report.Interpretation.Should().Contain("says nothing about the target application");
-    }
-
-    // 6. Every run is identifiable in a log and in a report.
-    [Fact]
-    public async Task EachRunHasItsOwnDiagnosticId()
-    {
-        var first = await Service(new FakeBrowser()).RunAsync(Request());
-        var second = await Service(new FakeBrowser()).RunAsync(Request());
-
-        first.DiagnosticId.Should().NotBeNullOrWhiteSpace();
-        second.DiagnosticId.Should().NotBe(first.DiagnosticId);
-    }
-
-    // ── §40. Cleanup ──────────────────────────────────────────────────────────────────────────────────────────────
-
-    // 20, 21, 22. The browser closes on every path, including the one where the target killed the page.
-    [Fact]
-    public async Task TheDiagnosticBrowserIsClosedOnEveryPath()
-    {
-        var success = new FakeBrowser();
+        var success = new FakeFactory();
         await Service(success).RunAsync(Request());
-        success.Disposed.Should().BeTrue("after a successful run");
+        success.Browsers.Values.Should().OnlyContain(b => b.Disposed, "after a successful run");
 
-        var closed = new FakeBrowser
-        {
-            OnNavigate = url => url.Host == "m2lbdev.example.test" ? throw TargetClosed() : Task.CompletedTask,
-        };
+        var closed = new FakeFactory { Configure = b => b.OnNavigate = ClosesTargetIn(b.Mode) };
         await Service(closed).RunAsync(Request());
-        closed.Disposed.Should().BeTrue("after the target closed the page");
+        closed.Browsers.Values.Should().OnlyContain(b => b.Disposed, "after the target closed the page");
 
-        var timedOut = new FakeBrowser
-        {
-            OnNavigate = url => url.Host == "m2lbdev.example.test"
-                ? throw new PlaywrightException("Timeout 25000ms exceeded.")
-                : Task.CompletedTask,
-        };
-        await Service(timedOut).RunAsync(Request());
-        timedOut.Disposed.Should().BeTrue("after a timeout");
-
-        var crashed = new FakeBrowser { OnIsControllable = _ => throw new InvalidOperationException("boom") };
+        var crashed = new FakeFactory { Configure = b => b.OnIsControllable = (_, _) => throw new InvalidOperationException("boom") };
         await Service(crashed).RunAsync(Request());
-        crashed.Disposed.Should().BeTrue("after an unexpected failure");
+        crashed.Browsers.Values.Should().OnlyContain(b => b.Disposed, "after an unexpected failure");
     }
 
-    // 7, 23. Cancellation stops the run, cleans up, and is not reported as a failure.
+    // 33. Cancellation cleans up both modes and is not reported as a failure.
     [Fact]
-    public async Task CancellationStopsTheRunCleanlyAndIsNotAFailure()
+    public async Task CancellationCleansUpAndIsNotAFailure()
     {
         using var cts = new CancellationTokenSource();
-        var browser = new FakeBrowser
+        var factory = new FakeFactory
         {
-            OnNavigate = url =>
+            Configure = b => b.OnNavigate = (_, url) =>
             {
                 if (url.Host == "example.com") cts.Cancel();
                 return Task.CompletedTask;
             },
         };
 
-        var report = await Service(browser).RunAsync(Request(), cts.Token);
+        var report = await Service(factory).RunAsync(Request(), cts.Token);
 
-        report.Result.Should().Be(BrowserAutomationDiagnosticResult.Cancelled);
-        report.Result.Should().NotBe(BrowserAutomationDiagnosticResult.Failed);
-        browser.Disposed.Should().BeTrue();
-        browser.Navigations.Should().NotContain(new Uri(TargetUrl), "the target is not contacted after cancelling");
+        report.Result.Should().Be(BrowserAutomationDiagnosticComparison.Cancelled);
+        report.Result.Should().NotBe(BrowserAutomationDiagnosticComparison.MixedOrInconclusive);
+        factory.Browsers.Values.Should().OnlyContain(b => b.Disposed);
+        factory.Browsers.Values.Should().OnlyContain(b => !b.Navigations.Contains(new Uri(TargetUrl)),
+            "the target is not contacted after cancelling");
     }
 
-    // 24, 25. The run only ever touches the profile it was given, and never a normal Edge profile.
+    // 34. Only the dedicated diagnostic profiles are ever launched.
     [Fact]
-    public async Task OnlyTheDedicatedDiagnosticProfileIsEverLaunched()
+    public async Task OnlyDedicatedDiagnosticProfilesAreLaunched()
     {
-        var browser = new FakeBrowser();
+        var factory = new FakeFactory();
 
-        await Service(browser).RunAsync(Request());
+        await Service(factory).RunAsync(Request());
 
-        browser.LaunchedProfile.Should().Be(Profile);
-        ManagedEdgePreflightService.IsNormalEdgeProfile(browser.LaunchedProfile!).Should().BeFalse();
+        foreach (var browser in factory.Browsers.Values)
+        {
+            var profile = browser.LaunchOptions!.ProfileDirectory;
+            profile.Should().Contain("BrowserAutomationDiagnostic");
+            ManagedEdgePreflightService.IsNormalEdgeProfile(profile).Should().BeFalse();
+            profile.Should().NotContainAny("LocalHttpsProxyEdgeProfile", "ManagedEdgeProfile", "HeadlessAuthDiagnostic");
+        }
     }
 
     // ── §42. Report content ───────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task TheReportCarriesTheMetadataItNeedsAndNothingSensitive()
+    public async Task TheReportCarriesBothModesAndNothingSensitive()
     {
-        var browser = new FakeBrowser
-        {
-            OnNavigate = url => url.Host == "m2lbdev.example.test" ? throw TargetClosed() : Task.CompletedTask,
-        };
+        var factory = new FakeFactory { Configure = b => b.OnNavigate = ClosesTargetIn(b.Mode) };
 
-        var report = await Service(browser).RunAsync(Request());
+        var report = await Service(factory).RunAsync(Request());
 
+        report.Modes.Should().HaveCount(2);
         report.TargetEnvironmentName.Should().Be("M2LB DEV");
         report.TargetUrl.Should().Be(TargetUrl);
         report.ControlUrl.Should().Be(ControlUrl);
         report.EdgeVersion.Should().NotBeNullOrWhiteSpace();
         report.PlaywrightVersion.Should().NotBeNullOrWhiteSpace();
-        report.OperatingSystem.Should().NotBeNullOrWhiteSpace();
-        report.ProfileDescription.Should().Contain("Never signed in");
+        report.Modes.Should().OnlyContain(m => m.ProfileDescription.Contains("Never signed in"));
 
-        // The profile is described, never handed over as a path with somebody's username in it.
+        // The profiles are described, never handed over as paths with somebody's username in them.
         var serialized = System.Text.Json.JsonSerializer.Serialize(report);
         serialized.Should().NotContain(@"C:\Users\someone");
         serialized.Should().NotContainAny("password", "token", "cookie", "Bearer ");
+    }
+
+    // 6. Each run is identifiable in a log and in a report.
+    [Fact]
+    public async Task EachRunHasItsOwnDiagnosticId()
+    {
+        var first = await Service(new FakeFactory()).RunAsync(Request(id: "a"));
+        var second = await Service(new FakeFactory()).RunAsync(Request(id: "b"));
+
+        first.DiagnosticId.Should().NotBeNullOrWhiteSpace();
+        second.DiagnosticId.Should().NotBe(first.DiagnosticId);
     }
 }

@@ -1,0 +1,12 @@
+.had-card { border: 1px solid var(--border-color, #d8dee8); border-radius: 10px; padding: 1rem; margin-block: 1rem; }
+.had-card h4 { margin-top: 0; }
+.had-card p { line-height: 1.5; }
+.had-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: .75rem 1.5rem; }
+.had-summary dt { font-size: .85rem; color: var(--text-secondary, #526075); }
+.had-summary dd { margin: .15rem 0 0; overflow-wrap: anywhere; }
+.had-readiness { font-weight: 700; }
+.had-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.had-result { border-top: 1px solid var(--border-color, #d8dee8); margin-top: 1rem; padding-top: 1rem; }
+.had-details { margin-top: 1rem; }
+.had-details summary { cursor: pointer; font-weight: 600; }
+.had-details li { margin-block: .6rem; overflow-wrap: anywhere; }

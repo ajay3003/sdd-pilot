@@ -862,6 +862,10 @@
                                                TrafficVerified="@(SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy)" />
                 </Capabilities>
                 </AuthenticationReadinessPanel>
+                <details class="fa-auth-diagnostics" data-testid="authentication-diagnostics">
+                    <summary>Authentication diagnostics</summary>
+                    <HeadlessAuthDiagnosticCard Profile="CurrentProfile" />
+                </details>
                 </div>
             }
 

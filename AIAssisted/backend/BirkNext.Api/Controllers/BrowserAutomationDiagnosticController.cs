@@ -13,7 +13,8 @@ namespace BirkNext.Api.Controllers;
 [Route("api/browser-automation-diagnostic")]
 public sealed class BrowserAutomationDiagnosticController(
     IBrowserAutomationDiagnosticService diagnostic,
-    ILogger<BrowserAutomationDiagnosticController> logger) : ControllerBase
+    ILogger<BrowserAutomationDiagnosticController> logger,
+    BirkNext.Api.Services.HeadlessAuthDiagnostic.BrowserAutomationEvidenceStore? evidence = null) : ControllerBase
 {
     [HttpPost("run")]
     [ProducesResponseType(typeof(BrowserAutomationDiagnosticReport), StatusCodes.Status200OK)]
@@ -24,6 +25,7 @@ public sealed class BrowserAutomationDiagnosticController(
         // A blocked or failed diagnostic is still a result the user needs to read, so it comes back as 200 with a
         // report rather than as an error status with nothing in it.
         var report = await diagnostic.RunAsync(request, ct);
+        evidence?.Record(report);
         return Ok(report);
     }
 }

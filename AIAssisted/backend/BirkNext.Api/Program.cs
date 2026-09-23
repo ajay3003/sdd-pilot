@@ -220,6 +220,10 @@ builder.Services.AddSingleton<IEdgeInstallationLocator, WindowsEdgeInstallationL
 builder.Services.AddSingleton<IEdgePolicyReader, WindowsEdgePolicyReader>();
 builder.Services.AddSingleton<IManagedEdgeLauncher, ProcessManagedEdgeLauncher>();
 builder.Services.AddSingleton<IManagedEdgePreflightService, ManagedEdgePreflightService>();
+builder.Services.Configure<BirkNext.Api.Services.HeadlessAuthDiagnostic.HeadlessDiagnosticOptions>(builder.Configuration.GetSection("HeadlessAuthDiagnostic"));
+builder.Services.AddSingleton<BirkNext.Api.Services.HeadlessAuthDiagnostic.BrowserAutomationEvidenceStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.HeadlessAuthDiagnostic.IHeadlessBrowserFactory, BirkNext.Api.Services.HeadlessAuthDiagnostic.PlaywrightHeadlessBrowserFactory>();
+builder.Services.AddSingleton<BirkNext.Api.Services.HeadlessAuthDiagnostic.IHeadlessDiagnosticService, BirkNext.Api.Services.HeadlessAuthDiagnostic.HeadlessDiagnosticService>();
 
 // Browser Automation Diagnostic: Playwright launches its OWN Microsoft Edge against a dedicated BirkNext profile and
 // reports whether automation control survives the configured target. It never signs in, never touches the normal Edge
@@ -232,6 +236,8 @@ builder.Services.AddSingleton<BirkNext.Api.Services.BrowserAutomationDiagnostic.
         sp.GetRequiredService<IEdgeInstallationLocator>(),
         sp.GetRequiredService<ILogger<BirkNext.Api.Services.BrowserAutomationDiagnostic.BrowserAutomationDiagnosticService>>(),
         isLocalWorkstation: () => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthenticatedReviewOptions>>().Value.IsLocalWorkstation));
+// It reports whether automation survives in HEADED and HEADLESS Edge separately, because headless is what unattended
+// CI would use and "it worked when I watched it" is not an answer for CI.
 
 // DEV-only loopback HTTPS inspection proxy: explicit opt-in per Target Environment, LocalWorkstation runtime only, credential memory-only.
 builder.Services.Configure<LocalHttpsProxyOptions>(builder.Configuration.GetSection(LocalHttpsProxyOptions.SectionName));

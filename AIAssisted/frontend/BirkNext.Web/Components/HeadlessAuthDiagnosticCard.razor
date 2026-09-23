@@ -1,0 +1,128 @@
+@using BirkNext.HeadlessAuthDiagnostic
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IServiceProvider Services
+@inject IJSRuntime JS
+@implements IDisposable
+
+<section class="had-card" aria-label="Headless authentication diagnostic" data-testid="headless-auth-diagnostic">
+    <h4>@HeadlessItReport.Title</h4>
+    <p>Can this target establish an authenticated browser session unattended in Playwright headless mode, and if not, what is the first blocker?</p>
+    <dl class="had-summary">
+        <div><dt>Target Environment</dt><dd>@Profile?.Name (@Profile?.EnvironmentType)</dd></div>
+        <div><dt>Target URL</dt><dd><code>@HeadlessEvidenceSanitizer.Url(Profile?.TargetUrl)</code></dd></div>
+        <div><dt>Browser automation</dt><dd data-testid="had-prerequisite">@(_report?.BrowserAutomation ?? (_proof is null ? "Not checked" : _proof.Available ? "Available" : "Blocked / not demonstrated"))</dd></div>
+        <div><dt>Headless authentication</dt><dd class="had-readiness" data-testid="had-readiness">@(_cancelled ? "Cancelled" : _report is null ? "Not tested" : _report.Status == HeadlessRunStatus.Cancelled ? "Cancelled" : Readiness(_report.Readiness))</dd></div>
+    </dl>
+    <p>First run <strong>Browser Automation Diagnostic</strong> in System Settings → Frontend Engine Capabilities for this target. Its successful result is required and remains valid for 30 minutes. Browser control and unattended authentication are separate findings.</p>
+    @if (!Eligible)
+    {
+        <p role="status" data-testid="had-guard">Headless authentication diagnostics are limited to explicitly non-production Target Environments with a target URL.</p>
+    }
+    @if (_proof is { Available: false }) { <p role="status">@_proof.Reason</p> }
+    <div class="had-actions">
+        <button type="button" class="btn-secondary" data-testid="had-check" disabled="@(_running || !Eligible)" @onclick="CheckAsync">Check browser automation status</button>
+        <button type="button" class="btn-primary" data-testid="had-run" disabled="@(_running || !Eligible)" @onclick="RunAsync">@(_running ? "Running headless diagnostic…" : _report is null ? "Run headless authentication diagnostic" : "Run again")</button>
+        @if (_running) { <button type="button" class="btn-secondary" data-testid="had-cancel" @onclick="Cancel">Cancel diagnostic</button> }
+    </div>
+    @if (_running) { <p role="status" aria-live="polite">Observing a dedicated headless Edge session. No credential entry or human approval is performed.</p> }
+    @if (_cancelled) { <p role="status" data-testid="had-cancelled">Cancelled. Diagnostic-owned resources are being cleaned up by the runtime.</p> }
+    @if (_error is not null) { <p role="alert" data-testid="had-error">@_error</p> }
+    @if (_report is { } r)
+    {
+        <div class="had-result" data-testid="had-result">
+            <dl class="had-summary">
+                @foreach (var row in Summary(r)) { <div><dt>@row.Label</dt><dd>@row.Value</dd></div> }
+                <div><dt>Primary headless blocker</dt><dd data-testid="had-blocker" data-blocker="@r.PrimaryBlocker"><strong>@HeadlessItReport.BlockerLabel(r.PrimaryBlocker)</strong></dd></div>
+            </dl>
+            <p data-testid="had-interpretation"><strong>Interpretation:</strong> @r.Interpretation</p>
+            @foreach (var observation in r.Observations) { <p>Additional observation: @observation</p> }
+            <p>Identity context: @r.IdentityContext. Dedicated QA automation identity: @r.AutomationIdentity. Automation authentication strategy: Not configured.</p>
+            <p>A dedicated QA automation identity with an approved non-interactive authentication design may behave differently.</p>
+            <button type="button" class="btn-secondary" data-testid="had-copy" @onclick="CopyAsync">@(_copied ? "IT report copied" : "Copy IT report")</button>
+            <details class="had-details" data-testid="had-details">
+                <summary>Technical details</summary>
+                <dl class="had-summary">
+                    <div><dt>Diagnostic ID</dt><dd>@r.DiagnosticId</dd></div>
+                    <div><dt>Browser prerequisite ID</dt><dd>@r.PrerequisiteDiagnosticId</dd></div>
+                    <div><dt>Started (UTC)</dt><dd>@r.StartedAt.ToString("O")</dd></div>
+                    <div><dt>Completed (UTC)</dt><dd>@r.CompletedAt.ToString("O")</dd></div>
+                    <div><dt>Edge / Playwright</dt><dd>@r.EdgeVersion / @r.PlaywrightVersion</dd></div>
+                    <div><dt>Profile</dt><dd>Fresh run directory under %LOCALAPPDATA%\BirkNext\HeadlessAuthDiagnosticEdgeProfile; never reused.</dd></div>
+                    @if (r.ConditionalAccessErrorCode is not null) { <div><dt>CA error code</dt><dd>@r.ConditionalAccessErrorCode</dd></div> }
+                </dl>
+                <ol aria-label="Diagnostic stages">
+                    @foreach (var stage in r.Stages)
+                    {
+                        <li data-stage="@stage.Stage" data-state="@stage.State"><strong>@stage.Stage: @stage.State</strong> — @stage.Detail (@stage.DurationMs ms) @stage.ExceptionType</li>
+                    }
+                </ol>
+                <h5>Sanitized navigation trace</h5>
+                @if (r.Navigation.Count == 0) { <p>No navigation evidence collected.</p> }
+                <ol>@foreach (var nav in r.Navigation) { <li>@nav.Timestamp.ToString("HH:mm:ss.fff 'UTC'") — <code>@nav.Url</code></li> }</ol>
+            </details>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public FrontendAnalysisProfile? Profile { get; set; }
+    private HeadlessDiagnosticReport? _report;
+    private HeadlessPrerequisite? _proof;
+    private CancellationTokenSource? _cts;
+    private string? _binding;
+    private string? _error;
+    private bool _running, _cancelled, _copied, _disposed;
+    private bool Eligible => Profile is { TargetUrl.Length: > 0 } && Profile.EnvironmentType is FrontendEnvironmentType.Local or FrontendEnvironmentType.Development or FrontendEnvironmentType.QA or FrontendEnvironmentType.Test or FrontendEnvironmentType.RC;
+    private HeadlessDiagnosticRequest Request() => new() { TargetEnvironmentId = Profile!.Id, TargetEnvironmentName = Profile.Name,
+        TargetUrl = Profile.TargetUrl ?? "", EnvironmentType = Profile.EnvironmentType.ToString(), Authority = Profile.Authentication.ExpectedAuthority,
+        AuthenticationType = Profile.Authentication.AuthenticationType.ToString(), RequiresAuthentication = Profile.Authentication.RequiresAuthentication };
+    protected override void OnParametersSet()
+    {
+        var binding = $"{Profile?.Id}|{Profile?.TargetUrl}|{Profile?.EnvironmentType}|{Profile?.Authentication.ExpectedAuthority}";
+        if (_binding == binding) return;
+        _binding = binding; _cts?.Cancel(); _report = null; _proof = null; _copied = false; _cancelled = false; _error = null;
+    }
+    private async Task CheckAsync()
+    {
+        var binding = _binding;
+        try
+        {
+            var api = Services.GetService<IHeadlessDiagnosticApiService>() ?? throw new InvalidOperationException();
+            var proof = await api.CheckAsync(Request(), CancellationToken.None);
+            if (!_disposed && binding == _binding) _proof = proof;
+        }
+        catch { _error = "Browser prerequisite status could not be retrieved from BirkNext.Api."; }
+    }
+    private async Task RunAsync()
+    {
+        if (_running || !Eligible) return;
+        _running = true; _cancelled = false; _copied = false; _error = null; _report = null;
+        var binding = _binding;
+        using var cts = new CancellationTokenSource(); _cts = cts;
+        try
+        {
+            var api = Services.GetService<IHeadlessDiagnosticApiService>() ?? throw new InvalidOperationException();
+            var result = await api.RunAsync(Request(), cts.Token);
+            if (!_disposed && binding == _binding) _report = result;
+        }
+        catch (OperationCanceledException) { if (binding == _binding) _cancelled = true; }
+        catch { if (binding == _binding) _error = "The diagnostic request did not complete. Check BirkNext.Api availability; this is not an authentication finding."; }
+        finally { _running = false; _cts = null; }
+    }
+    private void Cancel() => _cts?.Cancel();
+    private async Task CopyAsync()
+    {
+        if (_report is null) return;
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", HeadlessItReport.Build(_report)); _copied = true; }
+        catch { _error = "The IT report could not be copied. Check clipboard permissions and try again."; }
+    }
+    private static string Readiness(HeadlessReadiness value) => value == HeadlessReadiness.NotReady ? "Not Ready" : value.ToString();
+    private static IEnumerable<(string Label, string Value)> Summary(HeadlessDiagnosticReport r) => [
+        ("Headless browser", r.HeadlessBrowser), ("Target control", r.TargetControl), ("Identity provider", r.IdentityProvider),
+        ("Interactive authentication", r.InteractiveAuthentication), ("Non-interactive authentication", r.NonInteractiveAuthentication),
+        ("MFA", r.Mfa), ("Conditional Access", r.ConditionalAccess), ("Session control", r.SessionControl),
+        ("Session-control headless compatibility", r.SessionControlCompatibility), ("Authenticated return", r.AuthenticatedReturn),
+        ("Authenticated session", r.AuthenticatedSession), ("Post-auth automation", r.PostAuthenticationControl) ];
+    public void Dispose() { _disposed = true; _cts?.Cancel(); }
+}

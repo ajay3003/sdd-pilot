@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <Compile Include="../../shared/ManagedEdgeCdpContracts.cs" Link="Models/ManagedEdgeCdpContracts.cs" />
+    <Compile Include="../../shared/HeadlessAuthDiagnosticContracts.cs" Link="Models/HeadlessAuthDiagnosticContracts.cs" />
     <Compile Include="../../shared/LocalHttpsProxyContracts.cs" Link="Models/LocalHttpsProxyContracts.cs" />
     <Compile Include="../../shared/AxeRuleCatalog.cs" Link="Models/AxeRuleCatalog.cs" />
     <Compile Include="../../shared/BrowserCompanionContracts.cs" Link="Models/BrowserCompanionContracts.cs" />

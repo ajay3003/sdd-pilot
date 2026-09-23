@@ -28,7 +28,7 @@ public sealed class BrowserAutomationDiagnosticPolicyTests
     [InlineData("Local")]
     public void AnEligibleNonProductionTargetIsAccepted(string environmentType)
     {
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(environmentType), Profile, isLocalWorkstation: true)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(environmentType), [Profile], isLocalWorkstation: true)
             .Should().BeNull();
     }
 
@@ -39,7 +39,7 @@ public sealed class BrowserAutomationDiagnosticPolicyTests
     [InlineData(" Production ")]
     public void ProductionIsRejected(string environmentType)
     {
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(environmentType), Profile, isLocalWorkstation: true)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(environmentType), [Profile], isLocalWorkstation: true)
             .Should().Be(BrowserAutomationDiagnosticPolicy.ProductionBlockedReason);
         BrowserAutomationDiagnosticPolicy.IsEligibleEnvironmentType(environmentType).Should().BeFalse();
     }
@@ -48,12 +48,12 @@ public sealed class BrowserAutomationDiagnosticPolicyTests
     [Fact]
     public void AMissingOrUnusableTargetIsRejected()
     {
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(url: ""), Profile, true)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(url: ""), [Profile], true)
             .Should().Be(BrowserAutomationDiagnosticPolicy.NoTargetBlockedReason);
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(url: "not-a-url"), Profile, true)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(url: "not-a-url"), [Profile], true)
             .Should().Be(BrowserAutomationDiagnosticPolicy.InvalidTargetBlockedReason);
         // A scheme the diagnostic cannot navigate is not silently accepted either.
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(url: "file:///C:/app/index.html"), Profile, true)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(url: "file:///C:/app/index.html"), [Profile], true)
             .Should().Be(BrowserAutomationDiagnosticPolicy.InvalidTargetBlockedReason);
     }
 
@@ -66,34 +66,40 @@ public sealed class BrowserAutomationDiagnosticPolicyTests
     [InlineData(@"C:\Users\someone\AppData\Local\Microsoft\Edge SxS\User Data")]
     public void ANormalEdgeProfileIsRejected(string profileDirectory)
     {
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), profileDirectory, isLocalWorkstation: true)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), [profileDirectory], isLocalWorkstation: true)
             .Should().Be(BrowserAutomationDiagnosticPolicy.NormalProfileBlockedReason);
     }
 
     [Fact]
     public void ARelativeProfilePathIsRejected()
     {
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), @"profiles\diagnostic", isLocalWorkstation: true)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), [@"profiles\diagnostic"], isLocalWorkstation: true)
             .Should().Be(BrowserAutomationDiagnosticPolicy.NormalProfileBlockedReason);
     }
 
-    // The default profile is BirkNext's own, and is never one of the profiles above.
+    // Each mode gets BirkNext's own profile, and neither is one of the profiles above.
     [Fact]
-    public void TheDefaultProfileIsADedicatedBirkNextDirectory()
+    public void EachModeHasItsOwnDedicatedBirkNextProfile()
     {
-        var path = BrowserAutomationDiagnosticPolicy.DefaultProfileDirectory();
+        var headed = BrowserAutomationDiagnosticPolicy.ProfileDirectory(BrowserAutomationDiagnosticMode.Headed);
+        var headless = BrowserAutomationDiagnosticPolicy.ProfileDirectory(BrowserAutomationDiagnosticMode.Headless);
 
-        path.Should().Contain("BirkNext").And.Contain("BrowserAutomationDiagnosticEdgeProfile");
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), path, isLocalWorkstation: true).Should().BeNull();
-        // Not the proxy's or the managed browser's profile either: a diagnostic that reused a signed-in profile would
-        // be testing something else entirely.
-        path.Should().NotContain("LocalHttpsProxyEdgeProfile").And.NotContain("ManagedEdgeProfile");
+        headed.Should().Contain("BirkNext").And.Contain("BrowserAutomationDiagnostic").And.EndWith("Headed");
+        headless.Should().EndWith("Headless");
+        // Separate directories: two sequential Chromium launches sharing one user-data directory report a profile
+        // lock rather than the target's behaviour.
+        headed.Should().NotBe(headless);
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), [headed, headless], isLocalWorkstation: true).Should().BeNull();
+        // Not the proxy's, the managed browser's or the auth diagnostic's profile either: a diagnostic that reused a
+        // signed-in profile would be testing something else entirely.
+        foreach (var path in new[] { headed, headless })
+            path.Should().NotContainAny("LocalHttpsProxyEdgeProfile", "ManagedEdgeProfile", "HeadlessAuthDiagnostic");
     }
 
     [Fact]
     public void ARemoteRuntimeIsRejected()
     {
-        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), Profile, isLocalWorkstation: false)
+        BrowserAutomationDiagnosticPolicy.BlockedReason(Request(), [Profile], isLocalWorkstation: false)
             .Should().Be(BrowserAutomationDiagnosticPolicy.RemoteRuntimeBlockedReason);
     }
 
@@ -101,7 +107,7 @@ public sealed class BrowserAutomationDiagnosticPolicyTests
     [Fact]
     public void NoInterpretationClaimsAConfirmedCause()
     {
-        foreach (var result in Enum.GetValues<BrowserAutomationDiagnosticResult>())
+        foreach (var result in Enum.GetValues<BrowserAutomationDiagnosticComparison>())
         {
             var text = BrowserAutomationDiagnosticPolicy.Interpretation(result);
 
@@ -110,19 +116,30 @@ public sealed class BrowserAutomationDiagnosticPolicyTests
                 "blocked by Defender", "confirmed");
         }
 
-        // The one result that is about a restriction offers possibilities and says the tool cannot tell which.
-        var restricted = BrowserAutomationDiagnosticPolicy.Interpretation(BrowserAutomationDiagnosticResult.TargetRestricted);
-        restricted.Should().ContainEquivalentOf("possible cause");
-        restricted.Should().Contain("cannot determine which control is responsible");
-        restricted.Should().Contain("No sign-in was attempted");
+        // The results that are about a restriction stop at what was observed, and explicitly refuse the one claim this
+        // very run disproves: developer tooling was demonstrably usable on the control page.
+        foreach (var restricted in new[]
+        {
+            BrowserAutomationDiagnosticPolicy.Interpretation(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes),
+            BrowserAutomationDiagnosticPolicy.Interpretation(BrowserAutomationDiagnosticComparison.HeadlessOnlyRestricted),
+        })
+        {
+            restricted.Should().ContainEquivalentOf("consistent with");
+            restricted.Should().Contain("No sign-in was attempted");
+            restricted.Should().NotContainAny("DevTools", "Defender", "MCAS");
+        }
+        BrowserAutomationDiagnosticPolicy.Interpretation(BrowserAutomationDiagnosticComparison.TargetRestrictedInBothModes)
+            .Should().Contain("does not identify which organisational control is responsible");
     }
 
     // 15. The success wording does not let anyone read it as "E2E is now configured".
     [Fact]
     public void SuccessDoesNotImplyAuthenticationOrE2eIsSolved()
     {
-        var passed = BrowserAutomationDiagnosticPolicy.Interpretation(BrowserAutomationDiagnosticResult.Passed);
+        var passed = BrowserAutomationDiagnosticPolicy.Interpretation(BrowserAutomationDiagnosticComparison.AutomationAvailable);
 
-        passed.Should().Contain("does not mean").And.Contain("MFA").And.Contain("Critical E2E");
+        passed.Should().Contain("does not establish").And.Contain("MFA").And.Contain("Conditional Access");
+        passed.Should().Contain("Headless Authentication & Session Control Diagnostic",
+            "success here is a prerequisite for that diagnostic, not a substitute for it");
     }
 }
