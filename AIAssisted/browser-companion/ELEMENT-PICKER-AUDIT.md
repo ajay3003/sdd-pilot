@@ -56,8 +56,7 @@ No second DOM scanner was added.
 
 ## Open
 
-- Real M2LB smoke test: it needs your signed-in browser and a reload of the extension.
-- Whether M2LB has `data-testid`s is unknown; no evidence records it. Ask the M2LB team for them on critical-journey elements.
+- The real M2LB smoke test is done; see the section below, which supersedes this list where they differ.
 - Not implemented:
   - selector fallback lists;
   - per-step expected route (the pick knows the route and shows it, but it is not stored);
