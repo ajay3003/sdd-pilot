@@ -56,6 +56,7 @@ public sealed class CriticalE2EService(
             Flows = flows.Select(f => CriticalE2ECoverage.Summarize(f, history, request.BuildId)).ToList(),
             BrowserEngine = BrowserEngine(request, flows),
             IntegrationEngine = IntegrationEngine(request, flows),
+            Attended = AttendedReadiness(request),
             ElementPick = PickBlockedReason(request.ProfileId, request.EnvironmentType) is { } reason
                 ? new CriticalE2EEngineStatus { State = CriticalE2EEngineState.RequiresBrowserSession, Message = reason }
                 : new CriticalE2EEngineStatus { State = CriticalE2EEngineState.Ready, Message = "Select an element in the paired browser." },
@@ -133,23 +134,57 @@ public sealed class CriticalE2EService(
     /// browser run — non-production, connected, exactly one live approved page — plus a companion build that can pick.
     /// Every missing prerequisite is its own Blocked reason; stored evidence never stands in for the live page.
     /// </summary>
-    /// <summary>The one rule for whether picking can start: the overview shows it and the pick itself enforces it.</summary>
-    private string? PickBlockedReason(string? profileId, string? environmentType)
+    /// <summary>What the content script reports when nobody clicked in time (content.js).</summary>
+    public const string PickTimeoutPrefix = "No element was selected before the picker timed out";
+    private const string PickUnsupportedReason = "The paired Browser Companion does not support element picking. Reload the extension to update it.";
+
+    /// <summary>
+    /// The one rule for whether attended browser steps can reach a page right now: non-production, connected, and exactly
+    /// one approved page. Element picking and the readiness summary both read it.
+    /// </summary>
+    private string? AttendedBlockedReason(string? profileId, string? environmentType)
     {
         if (string.IsNullOrWhiteSpace(profileId)) return "No Target Environment is selected.";
         if (!CriticalE2EEnvironmentPolicy.AllowsAutomation(environmentType)) return CriticalE2EEnvironmentPolicy.BlockedReason(environmentType);
         var live = companion.Status(profileId).Live;
         if (!live.ExtensionConnected) return "The Browser Companion is not connected.";
         if (live.LiveApprovedPageCount == 0) return "No approved application page is open in the paired browser.";
-        if (live.CurrentPage is null) return $"{live.LiveApprovedPageCount} approved pages are open. Leave only the page to pick from open.";
-        if (!live.SupportsElementPick) return "The paired Browser Companion does not support element picking. Reload the extension to update it.";
+        if (live.CurrentPage is null) return $"{live.LiveApprovedPageCount} approved application pages are open. Keep exactly one approved target page open.";
         return null;
+    }
+
+    /// <summary>The one rule for whether picking can start: the overview shows it and the pick itself enforces it.</summary>
+    private string? PickBlockedReason(string? profileId, string? environmentType) =>
+        AttendedBlockedReason(profileId, environmentType)
+        ?? (companion.Status(profileId!).Live.SupportsElementPick ? null : PickUnsupportedReason);
+
+    private CriticalE2EAttendedReadiness AttendedReadiness(CriticalE2EOverviewRequest request)
+    {
+        var live = string.IsNullOrWhiteSpace(request.ProfileId) ? BrowserCompanionLiveSession.Disconnected : companion.Status(request.ProfileId).Live;
+        var reason = AttendedBlockedReason(request.ProfileId, request.EnvironmentType);
+        return new CriticalE2EAttendedReadiness
+        {
+            Status = reason is null
+                ? new CriticalE2EEngineStatus { State = CriticalE2EEngineState.Ready, Message = "Ready for attended browser steps." }
+                : new CriticalE2EEngineStatus
+                {
+                    State = CriticalE2EEnvironmentPolicy.AllowsAutomation(request.EnvironmentType) ? CriticalE2EEngineState.RequiresBrowserSession : CriticalE2EEngineState.Unavailable,
+                    Message = reason,
+                },
+            CompanionConnected = live.ExtensionConnected,
+            OpenApprovedPages = live.LiveApprovedPageCount,
+            CurrentOrigin = live.CurrentOrigin,
+            CurrentRoute = live.CurrentRoute,
+            ElementPickSupported = live.SupportsElementPick,
+        };
     }
 
     public async Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken cancellationToken)
     {
-        CriticalE2EElementPickResult Blocked(string message) => new() { Status = CriticalE2EStatus.Blocked, Message = message };
-        if (PickBlockedReason(request.ProfileId, request.EnvironmentType) is { } reason) return Blocked(reason);
+        CriticalE2EElementPickResult Blocked(string message, CriticalE2EPickOutcome outcome = CriticalE2EPickOutcome.Blocked) =>
+            new() { Status = CriticalE2EStatus.Blocked, Outcome = outcome, Message = message };
+        if (PickBlockedReason(request.ProfileId, request.EnvironmentType) is { } reason)
+            return Blocked(reason, reason == PickUnsupportedReason ? CriticalE2EPickOutcome.Unsupported : CriticalE2EPickOutcome.Blocked);
         var live = companion.Status(request.ProfileId).Live;
 
         // The companion polls quickly while this window is open, so the pick mode starts within a heartbeat or so.
@@ -173,7 +208,7 @@ public sealed class CriticalE2EService(
         catch (OperationCanceledException)
         {
             companion.CancelCommand(commandId, "Element picking was cancelled.");
-            return new CriticalE2EElementPickResult { Status = CriticalE2EStatus.Cancelled, Message = "Element picking was cancelled." };
+            return new CriticalE2EElementPickResult { Status = CriticalE2EStatus.Cancelled, Outcome = CriticalE2EPickOutcome.Cancelled, Message = "Element picking was cancelled." };
         }
 
         logger.LogInformation("Critical E2E element pick {CommandId}: {Status}", commandId, result.Status);
@@ -181,12 +216,15 @@ public sealed class CriticalE2EService(
         {
             { Status: CriticalE2EStatus.Passed, Element: { } element } => new CriticalE2EElementPickResult
             {
-                Status = CriticalE2EStatus.Passed, Element = element,
+                Status = CriticalE2EStatus.Passed, Outcome = CriticalE2EPickOutcome.Picked, Element = element,
                 Message = element.Recommended is null
                     ? "Element picked, but no selector identifies it uniquely."
                     : $"Element picked: {element.Recommended.Describe()}.",
             },
-            { Status: CriticalE2EStatus.Cancelled } => new CriticalE2EElementPickResult { Status = CriticalE2EStatus.Cancelled, Message = result.SanitizedError ?? "Selection cancelled." },
+            { Status: CriticalE2EStatus.Cancelled } => new CriticalE2EElementPickResult { Status = CriticalE2EStatus.Cancelled, Outcome = CriticalE2EPickOutcome.Cancelled, Message = result.SanitizedError ?? "Selection cancelled." },
+            // The page's own timeout wording (content.js). An expiry here means the page never answered at all.
+            { SanitizedError: { } error } when error.StartsWith(PickTimeoutPrefix, StringComparison.Ordinal) => Blocked(error, CriticalE2EPickOutcome.TimedOut),
+            { Status: CriticalE2EStatus.Failed } => Blocked(result.SanitizedError ?? "Element picking failed.", CriticalE2EPickOutcome.Failed),
             _ => Blocked(result.SanitizedError ?? "The Browser Companion did not return an element."),
         };
     }
@@ -195,7 +233,8 @@ public sealed class CriticalE2EService(
     {
         var context = request.Context;
         var selected = string.IsNullOrWhiteSpace(request.FlowId)
-            ? store.Flows(context.EnvironmentId).Where(f => f.Enabled && (request.Mode is null || f.Mode == request.Mode)).ToList()
+            // A batch runs critical flows. Diagnostic flows run one at a time, on purpose, never as part of the regression.
+            ? store.Flows(context.EnvironmentId).Where(f => f.Enabled && f.Kind == CriticalE2EFlowKind.Critical && (request.Mode is null || f.Mode == request.Mode)).ToList()
             : [.. new[] { store.Flow(request.FlowId!) }.Where(f => f is not null).Cast<CriticalE2EFlowDefinition>()];
 
         if (selected.Count == 0)

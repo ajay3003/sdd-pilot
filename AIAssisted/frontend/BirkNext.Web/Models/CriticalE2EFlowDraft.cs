@@ -15,6 +15,7 @@ public sealed class CriticalE2EFlowDraft
     public string Module { get; set; } = "";
     public string Name { get; set; } = "";
     public string Description { get; set; } = "";
+    public CriticalE2EFlowKind Kind { get; set; } = CriticalE2EFlowKind.Critical;
     public CriticalE2EExecutionMode Mode { get; set; } = CriticalE2EExecutionMode.CompanionBrowser;
     public bool Enabled { get; set; } = true;
     public bool RequiredForRelease { get; set; }
@@ -25,14 +26,14 @@ public sealed class CriticalE2EFlowDraft
 
     public static CriticalE2EFlowDraft From(CriticalE2EFlowDefinition flow) => new()
     {
-        Id = flow.Id, Module = flow.Module, Name = flow.Name, Description = flow.Description, Mode = flow.Mode,
+        Id = flow.Id, Module = flow.Module, Name = flow.Name, Description = flow.Description, Kind = flow.Kind, Mode = flow.Mode,
         Enabled = flow.Enabled, RequiredForRelease = flow.RequiredForRelease, AutomationBoundary = flow.AutomationBoundary,
         TestDataPolicy = flow.TestDataPolicy, TimeoutMs = flow.TimeoutMs, Steps = [.. flow.Steps],
     };
 
     public CriticalE2EFlowDefinition ToDefinition(string profileId, string environmentId) => new()
     {
-        Id = Id, Module = Module.Trim(), Name = Name.Trim(), Description = Description, Mode = Mode,
+        Id = Id, Module = Module.Trim(), Name = Name.Trim(), Description = Description, Kind = Kind, Mode = Mode,
         ProfileId = profileId, EnvironmentId = environmentId, Enabled = Enabled, RequiredForRelease = RequiredForRelease,
         AutomationBoundary = AutomationBoundary.Trim(), TestDataPolicy = TestDataPolicy.Trim(), TimeoutMs = TimeoutMs,
         // A companion browser flow always needs a human to sign in first; an integration flow reuses a context BirkNext

@@ -158,6 +158,32 @@ public sealed record CompanionElementDescriptor
     public CompanionSelector? Recommended { get; init; }
 }
 
+/// <summary>
+/// What a flow is for. A critical flow is a business journey that can count toward release coverage; a diagnostic flow
+/// (smoke checks, selector experiments) is useful to run but never creates or satisfies a release obligation.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CriticalE2EFlowKind
+{
+    Critical,
+    Diagnostic,
+}
+
+/// <summary>Why a pick ended the way it did. Each is its own outcome; none of them is a test result.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CriticalE2EPickOutcome
+{
+    /// <summary>An element was picked. It may still have no unique selector — see <see cref="CompanionElementDescriptor.Recommended"/>.</summary>
+    Picked,
+    Cancelled,
+    TimedOut,
+    /// <summary>A prerequisite is missing: connection, page, environment.</summary>
+    Blocked,
+    /// <summary>The paired extension build cannot pick elements.</summary>
+    Unsupported,
+    Failed,
+}
+
 /// <summary>UI → backend: ask the paired companion to let the tester pick one element on the live page.</summary>
 public sealed record CriticalE2EElementPickRequest
 {
@@ -175,6 +201,7 @@ public sealed record CriticalE2EElementPickRequest
 public sealed record CriticalE2EElementPickResult
 {
     public CriticalE2EStatus Status { get; init; } = CriticalE2EStatus.Blocked;
+    public CriticalE2EPickOutcome Outcome { get; init; } = CriticalE2EPickOutcome.Blocked;
     public string Message { get; init; } = "";
     public CompanionElementDescriptor? Element { get; init; }
 }
@@ -366,6 +393,8 @@ public sealed record CriticalE2EFlowDefinition
     public string Module { get; init; } = "";
     public string Name { get; init; } = "";
     public string Description { get; init; } = "";
+    /// <summary>Critical (default, counts toward release coverage) or Diagnostic (never does).</summary>
+    public CriticalE2EFlowKind Kind { get; init; } = CriticalE2EFlowKind.Critical;
     public CriticalE2EExecutionMode Mode { get; init; }
     public string ProfileId { get; init; } = "";
     public string EnvironmentId { get; init; } = "";
@@ -503,7 +532,7 @@ public sealed record CriticalE2EModuleCoverage
 {
     public string Module { get; init; } = "";
     public List<CriticalE2EFlowSummary> Flows { get; init; } = [];
-    public bool Covered => Flows.Any(f => f.RequiredForRelease && f.Enabled);
+    public bool Covered => Flows.Any(f => f.RequiredForRelease && f.Enabled && f.Kind == CriticalE2EFlowKind.Critical);
 }
 
 public sealed record CriticalE2EFlowSummary
@@ -511,7 +540,9 @@ public sealed record CriticalE2EFlowSummary
     public string FlowId { get; init; } = "";
     public string Name { get; init; } = "";
     public string Module { get; init; } = "";
+    public CriticalE2EFlowKind Kind { get; init; } = CriticalE2EFlowKind.Critical;
     public CriticalE2EExecutionMode Mode { get; init; }
+    public int StepCount { get; init; }
     public bool Enabled { get; init; }
     public bool RequiredForRelease { get; init; }
     public bool Configured { get; init; }
@@ -599,6 +630,22 @@ public sealed record CriticalE2EOverviewRequest
     public string? ContextFingerprint { get; init; }
 }
 
+/// <summary>
+/// The paired browser as attended execution sees it right now, read from the Companion's live session. Nothing here comes
+/// from stored evidence, and nothing here is a result.
+/// </summary>
+public sealed record CriticalE2EAttendedReadiness
+{
+    /// <summary>Ready to run attended browser steps, or why not (Unavailable for production, RequiresBrowserSession otherwise).</summary>
+    public CriticalE2EEngineStatus Status { get; init; } = new();
+    public bool CompanionConnected { get; init; }
+    public int OpenApprovedPages { get; init; }
+    /// <summary>The one live approved page, when exactly one is open.</summary>
+    public string? CurrentOrigin { get; init; }
+    public string? CurrentRoute { get; init; }
+    public bool ElementPickSupported { get; init; }
+}
+
 public sealed record CriticalE2EOverview
 {
     public string EnvironmentId { get; init; } = "";
@@ -613,6 +660,7 @@ public sealed record CriticalE2EOverview
     /// picking elements is how the first one gets written.
     /// </summary>
     public CriticalE2EEngineStatus ElementPick { get; init; } = new();
+    public CriticalE2EAttendedReadiness Attended { get; init; } = new();
     public List<CriticalE2ERunResult> History { get; init; } = [];
 }
 

@@ -1,18 +1,47 @@
-/* A form, not a canvas: every choice is typed, and the reason a flow cannot run is stated before it is saved. */
-.e2e-editor { display: flex; flex-direction: column; gap: .75rem; padding: 1rem; border: 1px solid var(--border-color, #ddd); border-radius: 6px; }
-.e2e-editor h3 { margin: 0; font-size: 1rem; }
-.e2e-editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .75rem; }
-.e2e-editor-grid label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; }
-.e2e-editor-check { flex-direction: row !important; align-items: center; gap: .4rem !important; }
+/* A form, not a canvas: header facts, then ordered steps that read like a journey. The selector is one disclosure away. */
+.e2e-editor { display: flex; flex-direction: column; gap: .75rem; padding: 1rem 1.1rem; border: 1px solid var(--clr-primary, #1d4ed8); border-radius: 8px; background: var(--clr-surface-white, #fff); min-width: 0; }
+.e2e-editor h2 { margin: 0; font-size: 1.1rem; }
+.e2e-steps-heading { margin: .25rem 0 0; font-size: .95rem; }
+.e2e-editor-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: .75rem; }
+.e2e-editor-grid label, .e2e-step-fields label, .e2e-step-head label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; font-weight: 600; min-width: 0; }
+.e2e-editor-check { flex-direction: row !important; align-items: center; gap: .4rem !important; font-weight: 500 !important; }
 .e2e-editor-wide { grid-column: 1 / -1; }
-.e2e-step-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-.e2e-step-table th { text-align: left; font-size: .72rem; text-transform: uppercase; color: var(--text-secondary, #666); padding: .3rem .4rem; }
-.e2e-step-table td { padding: .3rem .4rem; border-top: 1px solid var(--border-color, #eee); }
+.e2e-help { font-size: .78rem; font-weight: 400; color: var(--clr-text-muted, #666); }
+.e2e-muted { margin: 0; font-size: .85rem; color: var(--clr-text-muted, #555); }
+.e2e-link { color: var(--clr-primary, #1d4ed8); font-weight: 600; text-decoration: none; }
+.e2e-link:hover, .e2e-link:focus-visible { text-decoration: underline; }
+
+.e2e-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
+.e2e-step { display: grid; gap: .5rem; padding: .7rem .8rem; border: 1px solid var(--clr-border, #ddd); border-radius: 8px; background: var(--clr-surface, #f9fafb); min-width: 0; }
+.e2e-step-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; }
+.e2e-step-number { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; border-radius: 999px; background: var(--clr-primary, #1d4ed8); color: #fff; font-weight: 700; font-size: .85rem; }
+.e2e-step-remove { margin-left: auto; }
+.e2e-step-fields { display: flex; flex-wrap: wrap; gap: .5rem .75rem; }
+.e2e-step-fields input, .e2e-step-fields select { min-width: 12rem; max-width: 100%; }
+
+/* The picked target: identity first, strategy second, the button to change it beside. */
+.e2e-target { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .5rem .65rem; border-radius: 6px; background: var(--clr-surface-white, #fff); border: 1px solid var(--clr-border-subtle, #e5e7eb); }
+.e2e-target-main { min-width: 0; }
+.e2e-target-identity { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.e2e-target-meta { margin: .1rem 0 0; font-size: .8rem; color: var(--clr-text-muted, #666); }
+.e2e-fragile { margin: .25rem 0 0; font-size: .8rem; font-weight: 600; color: #8a6d00; }
+.e2e-candidates { width: 100%; margin-top: .5rem; border-collapse: collapse; font-size: .8rem; }
+.e2e-candidates caption { text-align: left; font-size: .75rem; color: var(--clr-text-muted, #666); padding-bottom: .2rem; }
+.e2e-candidates th, .e2e-candidates td { text-align: left; padding: .2rem .4rem; border-top: 1px solid var(--clr-border-subtle, #eee); overflow-wrap: anywhere; }
+
 .e2e-editor-problem { margin: 0; font-size: .85rem; color: #8a6d00; }
 .e2e-editor-actions { display: flex; gap: .5rem; }
 
 /* Select from browser: one availability line above the steps, a short note under the step it filled. */
-.e2e-pick-unavailable { margin: 0.5rem 0; font-size: 0.88rem; color: var(--clr-text-muted); }
-.e2e-pick { margin-top: 0.35rem; }
-.e2e-pick-note { margin: 0.35rem 0 0; max-width: 32rem; font-size: 0.82rem; line-height: 1.4; color: var(--clr-text-body); overflow-wrap: anywhere; }
-.e2e-pick-note-problem { color: var(--clr-warning); }
+.e2e-pick-unavailable { margin: 0; font-size: 0.88rem; color: var(--clr-text-muted, #555); }
+.e2e-pick-note { margin: 0; max-width: 40rem; font-size: 0.82rem; line-height: 1.4; color: var(--clr-text-body, #333); overflow-wrap: anywhere; }
+.e2e-pick-note-problem { color: #8a6d00; font-weight: 600; }
+
+::deep .e2e-disclosure { border: 1px solid var(--clr-border, #ddd); border-radius: 8px; padding: .15rem .75rem; }
+::deep .e2e-disclosure > .disclosure-toggle { display: flex; width: 100%; flex-wrap: wrap; text-align: left; padding: .5rem .25rem; border-color: transparent; background: transparent; }
+
+@media (max-width: 760px) {
+    .e2e-step-remove { margin-left: 0; }
+    .e2e-step-fields input, .e2e-step-fields select { min-width: 0; width: 100%; }
+    .e2e-step-fields label { width: 100%; }
+}

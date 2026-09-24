@@ -32,7 +32,9 @@ public static class CriticalE2ECoverage
             FlowId = flow.Id,
             Name = flow.Name,
             Module = flow.Module,
+            Kind = flow.Kind,
             Mode = flow.Mode,
+            StepCount = flow.Steps.Count,
             Enabled = flow.Enabled,
             RequiredForRelease = flow.RequiredForRelease,
             Configured = problem is null,
@@ -56,9 +58,16 @@ public static class CriticalE2ECoverage
         IReadOnlyList<string> knownModules, string? buildId)
     {
         var summaries = flows.Select(f => Summarize(f, history, buildId)).ToList();
+        // Release coverage is about delivery modules. A module label that only diagnostic flows carry (a smoke module) is
+        // not one, so it never becomes a coverage obligation, even when an earlier page load recorded it as known.
+        bool DiagnosticOnly(string module)
+        {
+            var carriers = flows.Where(f => string.Equals(f.Module, module, StringComparison.OrdinalIgnoreCase)).ToList();
+            return carriers.Count > 0 && carriers.All(f => f.Kind == CriticalE2EFlowKind.Diagnostic);
+        }
         var modules = knownModules
-            .Concat(flows.Select(f => f.Module))
-            .Where(m => !string.IsNullOrWhiteSpace(m))
+            .Concat(flows.Where(f => f.Kind == CriticalE2EFlowKind.Critical).Select(f => f.Module))
+            .Where(m => !string.IsNullOrWhiteSpace(m) && !DiagnosticOnly(m))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(m => m, StringComparer.CurrentCultureIgnoreCase);
 
@@ -67,7 +76,7 @@ public static class CriticalE2ECoverage
             Module = module,
             // A module is covered by having a required flow, not by having several. Counting flows would let one
             // well-tested module hide an untested one.
-            Flows = summaries.Where(s => string.Equals(s.Module, module, StringComparison.OrdinalIgnoreCase)).ToList(),
+            Flows = summaries.Where(s => s.Kind == CriticalE2EFlowKind.Critical && string.Equals(s.Module, module, StringComparison.OrdinalIgnoreCase)).ToList(),
         }).ToList();
     }
 
@@ -75,7 +84,7 @@ public static class CriticalE2ECoverage
         IReadOnlyList<string> knownModules, string environmentId, string? buildId, string? releaseId)
     {
         var modules = Modules(flows, history, knownModules, buildId);
-        var required = flows.Where(f => f.Enabled && f.RequiredForRelease).Select(f => Summarize(f, history, buildId)).ToList();
+        var required = flows.Where(f => f.Enabled && f.RequiredForRelease && f.Kind == CriticalE2EFlowKind.Critical).Select(f => Summarize(f, history, buildId)).ToList();
 
         // A result only counts toward this release when it came from this build. Otherwise the flow is pending, which is
         // "not known yet" — never "failed".
@@ -107,7 +116,7 @@ public static class CriticalE2ECoverage
             RequiredFlowsBlocked = blocked + unconfigured,
             Summary = disposition switch
             {
-                CriticalE2EReleaseDisposition.NotConfigured => "No critical flows are marked as required for release yet.",
+                CriticalE2EReleaseDisposition.NotConfigured => "No critical flow is currently marked as required for release.",
                 CriticalE2EReleaseDisposition.Blocked when failed > 0 => $"{failed} required flow(s) failed against this build.",
                 CriticalE2EReleaseDisposition.Blocked when unconfigured > 0 => $"{unconfigured} required flow(s) cannot run as configured.",
                 CriticalE2EReleaseDisposition.Blocked => $"{blocked} required flow(s) could not run.",

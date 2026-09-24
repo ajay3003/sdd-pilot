@@ -1,25 +1,33 @@
 @using BirkNext.CriticalE2E
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using BirkNext.Web.Shared.Components.Common
 @inject ICriticalE2EApiService Api
 
 @*
-    A form, not a canvas. A critical flow is a short ordered list of named actions, and the fastest way to make one
-    unreviewable is to let it become a diagram or an expression language. Everything here is a typed choice.
+    A form, not a canvas. A critical flow is a short ordered list of typed steps; each step names what it acts on the way a
+    tester would, and the selector behind that is one disclosure away. Everything here is a typed choice.
 *@
-<section class="e2e-editor" data-testid="e2e-editor" aria-label="Critical flow">
-    <h3>@(string.IsNullOrWhiteSpace(_draft.Id) ? "New critical flow" : "Edit critical flow")</h3>
+<section class="e2e-editor" data-testid="e2e-editor" aria-labelledby="e2e-editor-heading">
+    <h2 id="e2e-editor-heading">@(string.IsNullOrWhiteSpace(_draft.Id) ? "New critical flow" : "Edit critical flow")</h2>
 
     <div class="e2e-editor-grid">
-        <label>Module <input data-testid="e2e-editor-module" @bind="_draft.Module" /></label>
-        <label>Name <input data-testid="e2e-editor-name" @bind="_draft.Name" /></label>
-        <label>Mode
-            <select data-testid="e2e-editor-mode" value="@_draft.Mode" @onchange="ModeChanged">
-                @foreach (var mode in Enum.GetValues<CriticalE2EExecutionMode>())
+        <label>Module <input data-testid="e2e-editor-module" @bind="_draft.Module" placeholder="e.g. M02" /></label>
+        <label class="e2e-editor-name">Flow name <input data-testid="e2e-editor-name" @bind="_draft.Name" placeholder="e.g. Foreta plassering" /></label>
+        <label>Purpose
+            <select data-testid="e2e-editor-kind" value="@_draft.Kind" @onchange="e => _draft.Kind = Enum.Parse<CriticalE2EFlowKind>(e.Value!.ToString()!)">
+                <option value="@CriticalE2EFlowKind.Critical">Critical user flow</option>
+                <option value="@CriticalE2EFlowKind.Diagnostic">Smoke / diagnostic</option>
+            </select>
+        </label>
+        <label>Execution
+            <select data-testid="e2e-editor-mode" value="@_draft.Mode" @onchange="ModeChanged" aria-describedby="e2e-editor-mode-help">
+                @foreach (var mode in new[] { CriticalE2EExecutionMode.CompanionBrowser, CriticalE2EExecutionMode.AutomatedIntegration })
                 {
-                    <option value="@mode">@BirkNext.Web.Services.CriticalE2EPresentation.ModeLabel(mode)</option>
+                    <option value="@mode">@CriticalE2EPresentation.ExecutionLabel(mode)</option>
                 }
             </select>
+            <span class="e2e-help" id="e2e-editor-mode-help">@(_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser ? CriticalE2EPresentation.AttendedHelp : "Executed by BirkNext against configured APIs; no browser is involved.")</span>
         </label>
         <label class="e2e-editor-check">
             <input type="checkbox" data-testid="e2e-editor-required" @bind="_draft.RequiredForRelease" /> Required for release
@@ -27,50 +35,60 @@
         <label class="e2e-editor-check">
             <input type="checkbox" data-testid="e2e-editor-enabled" @bind="_draft.Enabled" /> Enabled
         </label>
-        <label class="e2e-editor-wide">Automation boundary
-            @* Where automation starts and stops, in the author's own words. It is shown with every result. *@
-            <input data-testid="e2e-editor-boundary" @bind="_draft.AutomationBoundary"
-                   placeholder="e.g. Event Hub → M2LB; BiRK → Debezium is not automated" />
-        </label>
-        <label class="e2e-editor-wide">Test data policy
-            <input data-testid="e2e-editor-testdata" @bind="_draft.TestDataPolicy" />
-        </label>
     </div>
+    @if (_draft.Kind == CriticalE2EFlowKind.Diagnostic && _draft.RequiredForRelease)
+    {
+        <p class="e2e-help" data-testid="e2e-editor-diagnostic-required">Smoke / diagnostic flows never count toward release coverage, even when marked required.</p>
+    }
 
+    <ReviewDisclosure Text="Flow details" CollapseText="Hide flow details" Hint="Automation boundary, test data, description" TestId="e2e-editor-details" Class="e2e-disclosure">
+        <div class="e2e-editor-grid">
+            <label class="e2e-editor-wide">Automation boundary
+                @* Where automation starts and stops, in the author's own words. It is shown with every result. *@
+                <input data-testid="e2e-editor-boundary" @bind="_draft.AutomationBoundary" placeholder="e.g. Event Hub → M2LB; BiRK → Debezium is not automated" />
+            </label>
+            <label class="e2e-editor-wide">Test data policy <input data-testid="e2e-editor-testdata" @bind="_draft.TestDataPolicy" /></label>
+            <label class="e2e-editor-wide">Description <input data-testid="e2e-editor-description" @bind="_draft.Description" /></label>
+        </div>
+    </ReviewDisclosure>
+
+    <h3 class="e2e-steps-heading">Steps</h3>
     @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser && !PickReady)
     {
         <p class="e2e-pick-unavailable" id="e2e-pick-unavailable" data-testid="e2e-pick-unavailable">
             Select from browser is unavailable: @(ElementPick?.Message ?? "Browser Companion status is not known yet.")
-            <button type="button" class="btn-link" data-testid="e2e-pick-recheck" @onclick="OnCheckElementPick">Check again</button>
+            <a class="e2e-link" href="@SetupHref" data-testid="e2e-pick-setup">Open Browser Companion setup</a>
+            · <button type="button" class="btn-link" data-testid="e2e-pick-recheck" @onclick="OnCheckElementPick">Check again</button>
         </p>
     }
 
-    <table class="e2e-step-table">
-        <thead>
-            <tr><th>#</th><th>Action</th><th>Selector</th><th>Value</th><th>Expected</th><th>Final assertion</th><th></th></tr>
-        </thead>
-        <tbody>
-            @for (var index = 0; index < _draft.Steps.Count; index++)
-            {
-                var i = index;
-                var step = _draft.Steps[i];
-                <tr data-testid="e2e-step-@i">
-                    <td>@(i + 1)</td>
-                    <td>
+    @if (_draft.Steps.Count == 0)
+    {
+        <p class="e2e-muted" data-testid="e2e-no-steps">No steps yet. Add the first step of the journey.</p>
+    }
+    <ol class="e2e-steps" data-testid="e2e-steps">
+        @for (var index = 0; index < _draft.Steps.Count; index++)
+        {
+            var i = index;
+            var step = _draft.Steps[i];
+            <li class="e2e-step" data-testid="e2e-step-@i">
+                <div class="e2e-step-head">
+                    <span class="e2e-step-number" aria-hidden="true">@(i + 1)</span>
+                    <label>Action
                         @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser)
                         {
-                            <select data-testid="e2e-step-action-@i" value="@step.BrowserAction"
-                                    @onchange="e => Replace(i, step with { BrowserAction = Enum.Parse<CompanionActionKind>(e.Value!.ToString()!) })">
+                            <select data-testid="e2e-step-action-@i" value="@step.BrowserAction" aria-label="@($"Step {i + 1} action")"
+                                    @onchange="e => ActionChanged(i, Enum.Parse<CompanionActionKind>(e.Value!.ToString()!))">
                                 @* Picking is how a step is authored, not something a step does. *@
                                 @foreach (var action in Enum.GetValues<CompanionActionKind>().Where(a => a != CompanionActionKind.PickElement))
                                 {
-                                    <option value="@action">@action</option>
+                                    <option value="@action">@ActionLabel(action)</option>
                                 }
                             </select>
                         }
                         else
                         {
-                            <select data-testid="e2e-step-action-@i" value="@step.IntegrationAction"
+                            <select data-testid="e2e-step-action-@i" value="@step.IntegrationAction" aria-label="@($"Step {i + 1} action")"
                                     @onchange="e => Replace(i, step with { IntegrationAction = Enum.Parse<CriticalE2EIntegrationKind>(e.Value!.ToString()!) })">
                                 @foreach (var action in Enum.GetValues<CriticalE2EIntegrationKind>())
                                 {
@@ -78,78 +96,150 @@
                                 }
                             </select>
                         }
-                    </td>
-                    <td>
-                        @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser)
-                        {
-                            <select data-testid="e2e-step-selector-kind-@i" value="@(step.Selector?.Kind ?? CompanionSelectorKind.TestId)"
-                                    @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Kind = Enum.Parse<CompanionSelectorKind>(e.Value!.ToString()!) } })">
-                                @foreach (var kind in Enum.GetValues<CompanionSelectorKind>())
-                                {
-                                    <option value="@kind">@kind</option>
-                                }
-                            </select>
-                            @if (step.Selector?.Kind == CompanionSelectorKind.Role)
-                            {
-                                @* A role selector is a role AND an accessible name; a single box could only ever hold one. *@
-                                <input data-testid="e2e-step-selector-role-@i" aria-label="@($"Step {i + 1} role")" placeholder="role (e.g. button)" value="@(step.Selector?.Role ?? "")"
-                                       @onchange="e => Replace(i, step with { Selector = step.Selector! with { Role = e.Value?.ToString() } })" />
-                                <input data-testid="e2e-step-selector-name-@i" aria-label="@($"Step {i + 1} accessible name")" placeholder="accessible name" value="@(step.Selector?.Name ?? "")"
-                                       @onchange="e => Replace(i, step with { Selector = step.Selector! with { Name = e.Value?.ToString() } })" />
-                            }
-                            else
-                            {
-                                <input data-testid="e2e-step-selector-@i" aria-label="@($"Step {i + 1} selector")" value="@(step.Selector?.Value ?? "")"
-                                       @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Value = e.Value?.ToString() ?? string.Empty } })" />
-                            }
-                            @if (TargetsElement(step))
-                            {
-                                <button type="button" class="btn-secondary e2e-pick" data-testid="e2e-step-pick-@i"
-                                        disabled="@(!PickReady || _picking is not null)"
-                                        aria-describedby="@(PickReady ? null : "e2e-pick-unavailable")"
-                                        @onclick="() => PickAsync(i)">
-                                    @(_picking == i ? "Waiting for selection in the browser…" : "Select from browser")
-                                </button>
-                            }
-                            @if (_pickNotes.TryGetValue(i, out var note))
-                            {
-                                <p class="e2e-pick-note @(note.Ok ? "" : "e2e-pick-note-problem")" data-testid="e2e-step-pick-note-@i" role="status">@note.Text</p>
-                            }
-                        }
-                        else
-                        {
-                            <input data-testid="e2e-step-target-@i" value="@(step.PathOrOperation ?? "")" placeholder="path or operation"
-                                   @onchange="e => Replace(i, step with { PathOrOperation = e.Value?.ToString() })" />
-                        }
-                    </td>
-                    <td>
-                        <input data-testid="e2e-step-value-@i" value="@(step.Value ?? "")"
-                               @onchange="e => Replace(i, step with { Value = e.Value?.ToString() })" />
-                    </td>
-                    <td>
-                        <input data-testid="e2e-step-expected-@i" value="@(step.Expected ?? "")"
-                               @onchange="e => Replace(i, step with { Expected = e.Value?.ToString() })" />
-                    </td>
-                    <td>
+                    </label>
+                    <label class="e2e-editor-check">
                         <input type="checkbox" data-testid="e2e-step-final-@i" checked="@step.IsFinalAssertion"
-                               @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" />
-                    </td>
-                    <td><button type="button" class="btn-link" data-testid="e2e-step-remove-@i" @onclick="() => RemoveStep(i)">Remove</button></td>
-                </tr>
-            }
-        </tbody>
-    </table>
+                               @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" /> Final business assertion
+                    </label>
+                    <button type="button" class="btn-link e2e-step-remove" data-testid="e2e-step-remove-@i" aria-label="@($"Remove step {i + 1}")" @onclick="() => RemoveStep(i)">Remove</button>
+                </div>
+
+                @if (_draft.Mode != CriticalE2EExecutionMode.CompanionBrowser)
+                {
+                    <div class="e2e-step-fields">
+                        <label>Path or operation <input data-testid="e2e-step-target-@i" value="@(step.PathOrOperation ?? "")" placeholder="path or operation"
+                               @onchange="e => Replace(i, step with { PathOrOperation = e.Value?.ToString() })" /></label>
+                        <label>Value <input data-testid="e2e-step-value-@i" value="@(step.Value ?? "")" @onchange="e => Replace(i, step with { Value = e.Value?.ToString() })" /></label>
+                        <label>Expected <input data-testid="e2e-step-expected-@i" value="@(step.Expected ?? "")" @onchange="e => Replace(i, step with { Expected = e.Value?.ToString() })" /></label>
+                    </div>
+                }
+                else
+                {
+                    @if (step.BrowserAction == CompanionActionKind.Navigate)
+                    {
+                        @* Navigate is a page step, not an element: a route, never a picked target. *@
+                        <div class="e2e-step-fields">
+                            <label>Route <input data-testid="e2e-step-value-@i" value="@(step.Value ?? "")" placeholder="/admin/general-roles"
+                                   @onchange="e => Replace(i, step with { Value = e.Value?.ToString() })" /></label>
+                        </div>
+                    }
+                    @if (TargetsElement(step))
+                    {
+                        var target = CriticalE2EPresentation.Target(step.Selector);
+                        _picks.TryGetValue(i, out var pick);
+                        <div class="e2e-target" data-testid="e2e-step-target-summary-@i">
+                            <div class="e2e-target-main">
+                                <p class="e2e-target-identity" data-testid="e2e-step-identity-@i">@(pick?.Element is { Recommended: not null } picked ? CriticalE2EPresentation.Identity(picked) : target.Identity)</p>
+                                @if (target.Strategy.Length > 0)
+                                {
+                                    <p class="e2e-target-meta" data-testid="e2e-step-strategy-@i">
+                                        Selector: @target.Strategy
+                                        @if (pick?.Element is { Recommended: not null } e) { <span> · Unique: Yes · Captured on @e.PageRoute</span> }
+                                    </p>
+                                }
+                                @if (target.Fragile)
+                                {
+                                    <p class="e2e-fragile" data-testid="e2e-step-fragile-@i">Selector may be fragile. No stronger unique selector was available; a re-render can break a structural path.</p>
+                                }
+                            </div>
+                            <button type="button" class="btn-secondary e2e-pick" data-testid="e2e-step-pick-@i" @ref="_pickButtons[i]"
+                                    disabled="@(!PickReady || _picking is not null)"
+                                    aria-describedby="@(PickReady ? null : "e2e-pick-unavailable")"
+                                    @onclick="() => PickAsync(i)">
+                                @(_picking == i ? "Waiting for selection in the browser…" : target.Strategy.Length > 0 ? "Change selection" : "Select from browser")
+                            </button>
+                        </div>
+                        @if (_picking == i)
+                        {
+                            <p class="e2e-pick-note" role="status" data-testid="e2e-step-pick-selecting-@i">Selecting: click the element in the application page. Esc cancels.</p>
+                        }
+                        @if (pick is { } p && p.Outcome != CriticalE2EPickOutcome.Picked || pick?.Element is { Recommended: null })
+                        {
+                            <p class="e2e-pick-note e2e-pick-note-problem" role="alert" data-testid="e2e-step-pick-note-@i">
+                                @PickProblem(pick!)
+                                @if (pick!.Outcome is CriticalE2EPickOutcome.Blocked or CriticalE2EPickOutcome.Unsupported)
+                                {
+                                    <a class="e2e-link" href="@SetupHref">Open Browser Companion setup</a>
+                                }
+                            </p>
+                        }
+                        else if (pick?.Element is { } element)
+                        {
+                            <p class="e2e-pick-note" role="status" data-testid="e2e-step-pick-note-@i">
+                                Selected @CriticalE2EPresentation.Identity(element).@(!element.Visible ? " It is currently hidden." : !element.Enabled ? " It is currently disabled." : "")
+                            </p>
+                        }
+                        <ReviewDisclosure Text="Selector details" CollapseText="Hide selector details" TestId="@($"e2e-step-selector-details-{i}")" Class="disclosure-inline disclosure-small">
+                            <div class="e2e-step-fields">
+                                <label>Strategy
+                                    <select data-testid="e2e-step-selector-kind-@i" value="@(step.Selector?.Kind ?? CompanionSelectorKind.TestId)"
+                                            @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Kind = Enum.Parse<CompanionSelectorKind>(e.Value!.ToString()!) } })">
+                                        @foreach (var kind in Enum.GetValues<CompanionSelectorKind>())
+                                        {
+                                            <option value="@kind">@CriticalE2EPresentation.StrategyLabel(kind)</option>
+                                        }
+                                    </select>
+                                </label>
+                                @if (step.Selector?.Kind == CompanionSelectorKind.Role)
+                                {
+                                    @* A role selector is a role AND an accessible name; a single box could only ever hold one. *@
+                                    <label>Role <input data-testid="e2e-step-selector-role-@i" aria-label="@($"Step {i + 1} role")" placeholder="button" value="@(step.Selector?.Role ?? "")"
+                                           @onchange="e => Replace(i, step with { Selector = step.Selector! with { Role = e.Value?.ToString() } })" /></label>
+                                    <label>Name <input data-testid="e2e-step-selector-name-@i" aria-label="@($"Step {i + 1} accessible name")" placeholder="accessible name" value="@(step.Selector?.Name ?? "")"
+                                           @onchange="e => Replace(i, step with { Selector = step.Selector! with { Name = e.Value?.ToString() } })" /></label>
+                                }
+                                else
+                                {
+                                    <label>Value <input data-testid="e2e-step-selector-@i" aria-label="@($"Step {i + 1} selector")" value="@(step.Selector?.Value ?? "")"
+                                           @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Value = e.Value?.ToString() ?? string.Empty } })" /></label>
+                                }
+                            </div>
+                            @if (pick?.Element is { } described)
+                            {
+                                <table class="e2e-candidates" data-testid="e2e-step-candidates-@i">
+                                    <caption>Candidates found on @described.PageRoute</caption>
+                                    <thead><tr><th scope="col">Strategy</th><th scope="col">Selector</th><th scope="col">Matches</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var c in described.Candidates)
+                                        {
+                                            <tr><td>@CriticalE2EPresentation.StrategyLabel(c.Selector.Kind)</td><td>@c.Selector.Describe()</td><td>@c.MatchCount@(c.Unique ? " (unique)" : "")</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                                <p class="e2e-help" data-testid="e2e-step-route-note-@i">The element was selected on @described.PageRoute. The route is not stored with the step, so it is not enforced when the flow runs.</p>
+                            }
+                        </ReviewDisclosure>
+                    }
+                    @if (NeedsValue(step))
+                    {
+                        <div class="e2e-step-fields">
+                            <label>Value <input data-testid="e2e-step-value-@i" value="@(step.Value ?? "")" placeholder="Synthetic test value"
+                                   @onchange="e => Replace(i, step with { Value = e.Value?.ToString() })" /></label>
+                        </div>
+                    }
+                    @if (NeedsExpected(step))
+                    {
+                        <div class="e2e-step-fields">
+                            <label>@(step.BrowserAction is CompanionActionKind.AssertRoute or CompanionActionKind.WaitForRoute ? "Expected route" : "Expected")
+                                <input data-testid="e2e-step-expected-@i" value="@(step.Expected ?? "")"
+                                       @onchange="e => Replace(i, step with { Expected = e.Value?.ToString() })" /></label>
+                        </div>
+                    }
+                }
+            </li>
+        }
+    </ol>
     <button type="button" class="btn-secondary" data-testid="e2e-step-add" @onclick="AddStep">Add step</button>
 
     @* Say it before the run does. A flow with no final assertion can never pass, and finding that out at run time wastes
        a signed-in browser session. *@
     @if (Problem is { Length: > 0 } problem)
     {
-        <p class="e2e-editor-problem" data-testid="e2e-editor-problem">@problem</p>
+        <p class="e2e-editor-problem" role="status" data-testid="e2e-editor-problem">@problem</p>
     }
 
     <div class="e2e-editor-actions">
-        <button type="button" class="btn-primary" data-testid="e2e-editor-save" disabled="@(Problem is not null)" @onclick="Save">Save</button>
+        <button type="button" class="btn-primary" data-testid="e2e-editor-save" disabled="@(Problem is not null)" @onclick="Save">Save flow</button>
         <button type="button" class="btn-secondary" data-testid="e2e-editor-cancel" @onclick="OnCancel">Cancel</button>
     </div>
 </section>
@@ -164,11 +254,15 @@
     /// <summary>Whether "Select from browser" can be used now (from the overview). The pick itself re-checks everything.</summary>
     [Parameter] public CriticalE2EEngineStatus? ElementPick { get; set; }
     [Parameter] public EventCallback OnCheckElementPick { get; set; }
+    /// <summary>Where Browser Companion is set up: the Target Environment, never this page.</summary>
+    [Parameter] public string SetupHref { get; set; } = "/admin/system-settings?section=target-environments&tab=browser";
 
     private CriticalE2EFlowDraft _draft = new();
     private CriticalE2EFlowDefinition? _source;
     private int? _picking;
-    private readonly Dictionary<int, (bool Ok, string Text)> _pickNotes = [];
+    private int? _focusAfterPick;
+    private readonly Dictionary<int, CriticalE2EElementPickResult> _picks = [];
+    private readonly Dictionary<int, ElementReference> _pickButtons = [];
 
     /// <summary>
     /// The draft is rebuilt only when a different flow is handed in. Rebuilding on every parameter set threw away the
@@ -179,13 +273,53 @@
         if (ReferenceEquals(_source, Flow)) return;
         _source = Flow;
         _draft = CriticalE2EFlowDraft.From(Flow);
-        _pickNotes.Clear();
+        _picks.Clear();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Focus goes back to the control that started the pick, so a keyboard user continues where they were.
+        if (_focusAfterPick is { } index && _pickButtons.TryGetValue(index, out var button))
+        {
+            _focusAfterPick = null;
+            try { await button.FocusAsync(); } catch (InvalidOperationException) { /* not rendered (e.g. prerender) */ }
+        }
     }
 
     private bool PickReady => ElementPick?.State == CriticalE2EEngineState.Ready;
 
     private static bool TargetsElement(CriticalE2EStepDefinition step) => step.BrowserAction is { } action
         && action is not (CompanionActionKind.Navigate or CompanionActionKind.AssertRoute or CompanionActionKind.WaitForRoute or CompanionActionKind.PickElement);
+
+    private static bool NeedsValue(CriticalE2EStepDefinition step) => step.BrowserAction is CompanionActionKind.Fill or CompanionActionKind.Select;
+
+    private static bool NeedsExpected(CriticalE2EStepDefinition step) => step.BrowserAction is CompanionActionKind.WaitForText or CompanionActionKind.WaitForRoute
+        or CompanionActionKind.AssertText or CompanionActionKind.AssertValue or CompanionActionKind.AssertRoute;
+
+    private static string ActionLabel(CompanionActionKind action) => action switch
+    {
+        CompanionActionKind.WaitForVisible => "Wait for visible",
+        CompanionActionKind.WaitForText => "Wait for text",
+        CompanionActionKind.WaitForRoute => "Wait for route",
+        CompanionActionKind.AssertVisible => "Assert visible",
+        CompanionActionKind.AssertHidden => "Assert hidden",
+        CompanionActionKind.AssertText => "Assert text",
+        CompanionActionKind.AssertValue => "Assert value",
+        CompanionActionKind.AssertRoute => "Assert route",
+        CompanionActionKind.ReadValue => "Read value",
+        _ => action.ToString(),
+    };
+
+    /// <summary>Why a pick did not produce a selector. Each outcome keeps its own words; none of them is "failed".</summary>
+    private static string PickProblem(CriticalE2EElementPickResult pick) => pick switch
+    {
+        { Outcome: CriticalE2EPickOutcome.Picked, Element: { } element } => $"Cannot use this selector. {CriticalE2EPresentation.NoSelectorReason(element)}",
+        { Outcome: CriticalE2EPickOutcome.Cancelled } => "Selection cancelled. Nothing was changed.",
+        { Outcome: CriticalE2EPickOutcome.TimedOut } => "No element was selected in time. Nothing was changed.",
+        { Outcome: CriticalE2EPickOutcome.Unsupported } => pick.Message,
+        { Outcome: CriticalE2EPickOutcome.Failed } => $"Element picking failed: {pick.Message}",
+        _ => pick.Message,
+    };
 
     /// <summary>
     /// Asks the paired companion to let the tester click the element in the application, then stores the strongest
@@ -196,7 +330,7 @@
     {
         if (_picking is not null) return;
         _picking = index;
-        _pickNotes.Remove(index);
+        _picks.Remove(index);
         try
         {
             var result = await Api.PickElementAsync(new CriticalE2EElementPickRequest
@@ -204,28 +338,36 @@
                 ProfileId = ProfileId, EnvironmentId = EnvironmentId, EnvironmentType = EnvironmentType,
             });
             if (index >= _draft.Steps.Count) return;
-            if (result is { Status: CriticalE2EStatus.Passed, Element: { } element })
-            {
-                if (element.Recommended is { } recommended)
-                    _draft.Steps[index] = _draft.Steps[index] with { Selector = recommended };
-                _pickNotes[index] = (element.Recommended is not null, CriticalE2EPresentation.PickSummary(element));
-            }
-            else
-            {
-                _pickNotes[index] = (false, result.Message);
-            }
+            if (result is { Status: CriticalE2EStatus.Passed, Element: { Recommended: { } recommended } })
+                _draft.Steps[index] = _draft.Steps[index] with { Selector = recommended };
+            _picks[index] = result;
         }
         catch
         {
-            _pickNotes[index] = (false, "Element picking is unavailable: the local BirkNext backend did not answer.");
+            _picks[index] = new CriticalE2EElementPickResult { Outcome = CriticalE2EPickOutcome.Failed, Message = "the local BirkNext backend did not answer." };
         }
-        finally { _picking = null; }
+        finally
+        {
+            _picking = null;
+            _focusAfterPick = index;
+        }
+    }
+
+    private void ActionChanged(int index, CompanionActionKind action)
+    {
+        var step = _draft.Steps[index];
+        // A route step carries no element; an element step starts from an empty target rather than a stale one.
+        _draft.Steps[index] = step with
+        {
+            BrowserAction = action,
+            Selector = action is CompanionActionKind.Navigate or CompanionActionKind.AssertRoute or CompanionActionKind.WaitForRoute ? null : step.Selector ?? new CompanionSelector(),
+        };
     }
 
     private void RemoveStep(int index)
     {
         _draft.Steps.RemoveAt(index);
-        _pickNotes.Clear();
+        _picks.Clear();
     }
 
     /// <summary>The same rule the backend applies, so the editor refuses what a run would refuse.</summary>
@@ -238,13 +380,14 @@
         // keeping half-populated rows is how a flow ends up unrunnable for reasons nobody can see.
         _draft.Mode = mode;
         _draft.Steps = [];
+        _picks.Clear();
     }
 
     private void Replace(int index, CriticalE2EStepDefinition step) => _draft.Steps[index] = step;
 
     private void AddStep() => _draft.Steps.Add(_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser
-        ? new CriticalE2EStepDefinition { BrowserAction = CompanionActionKind.Click, Selector = new CompanionSelector() }
-        : new CriticalE2EStepDefinition { IntegrationAction = CriticalE2EIntegrationKind.Http, Method = "GET", Expect = new CriticalE2EExpectation() });
+        ? new CriticalE2EStepDefinition { StepId = $"s{_draft.Steps.Count + 1}-{Guid.NewGuid():N}"[..12], BrowserAction = CompanionActionKind.Click, Selector = new CompanionSelector() }
+        : new CriticalE2EStepDefinition { StepId = $"s{_draft.Steps.Count + 1}-{Guid.NewGuid():N}"[..12], IntegrationAction = CriticalE2EIntegrationKind.Http, Method = "GET", Expect = new CriticalE2EExpectation() });
 
     private Task Save() => OnSave.InvokeAsync(_draft.ToDefinition(ProfileId, EnvironmentId));
 }

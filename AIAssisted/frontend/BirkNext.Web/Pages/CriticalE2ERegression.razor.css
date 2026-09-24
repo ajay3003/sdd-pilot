@@ -1,40 +1,104 @@
-/* Critical E2E Regression — the verdict first, the counts that make it up second, everything diagnostic behind a disclosure. */
-.e2e-page { display: flex; flex-direction: column; gap: 1.25rem; }
+/* Critical E2E Regression — flow-first: a compact summary, the release headline in context, the flows, then readiness and
+   everything secondary behind disclosures. Tone adds colour; words always carry the meaning. */
+.e2e-page { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
 
-.e2e-summary { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
-.e2e-verdict { display: flex; flex-direction: column; gap: .15rem; padding: .75rem 1rem; border-radius: 6px; border-left: 4px solid currentColor; min-width: 16rem; }
-.e2e-verdict-label { font-size: 1.35rem; font-weight: 600; line-height: 1.1; }
-.e2e-verdict-detail { font-size: .85rem; color: var(--text-secondary, #555); }
+.e2e-visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.e2e-muted { margin: 0; font-size: .85rem; color: var(--clr-text-muted, #555); }
+.e2e-link { color: var(--clr-primary, #1d4ed8); font-weight: 600; text-decoration: none; }
+.e2e-link:hover, .e2e-link:focus-visible { text-decoration: underline; }
+.e2e-error { margin: 0; color: #b42318; font-weight: 600; }
 
-.e2e-facts { display: flex; flex-wrap: wrap; gap: 1.5rem; margin: 0; }
-.e2e-facts div { display: flex; flex-direction: column; gap: .15rem; }
-.e2e-facts dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary, #666); }
-.e2e-facts dd { margin: 0; font-size: .9rem; }
+/* Summary: four facts, one per card. */
+.e2e-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; }
+.e2e-card { display: flex; flex-direction: column; gap: .2rem; min-width: 0; padding: .75rem .9rem; border: 1px solid var(--clr-border, #ddd); border-radius: 8px; background: var(--clr-surface-white, #fff); }
+.e2e-card-label { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted, #666); }
+.e2e-card strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+.e2e-card-help { font-size: .78rem; color: var(--clr-text-muted, #666); }
 
-.e2e-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr)); gap: 1rem; }
-.e2e-mode { display: flex; flex-direction: column; gap: .4rem; padding: 1rem; border: 1px solid var(--border-color, #ddd); border-radius: 6px; }
-.e2e-mode h3 { margin: 0; font-size: 1rem; }
-.e2e-mode-counts { margin: 0; font-size: 1.05rem; font-weight: 500; }
-.e2e-engine { margin: 0; font-size: .85rem; color: var(--text-secondary, #555); }
-.e2e-engine-requiresbrowsersession, .e2e-engine-notconfigured { color: #8a6d00; }
-.e2e-engine-unavailable { color: #777; }
-.e2e-engine-action { margin: 0; font-size: .85rem; }
+.e2e-headline { padding: .75rem 1rem; border-left: 4px solid currentColor; border-radius: 6px; background: var(--clr-surface, #f7f7f8); }
+.e2e-headline h2 { margin: 0 0 .15rem; font-size: 1.1rem; }
+.e2e-headline p { margin: 0; font-size: .88rem; color: var(--clr-text-body, #333); }
 
+.e2e-section-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; margin-bottom: .6rem; }
+.e2e-section-head h2 { margin: 0; font-size: 1.1rem; }
+.e2e-section-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.e2e-run-reason { font-size: .8rem; color: var(--clr-text-muted, #666); max-width: 22rem; }
+
+/* Critical / Smoke / All. */
+.e2e-filter { display: inline-flex; flex-wrap: wrap; gap: .25rem; padding: .2rem; margin-bottom: .6rem; border: 1px solid var(--clr-border, #ddd); border-radius: 8px; }
+.e2e-filter-option { border: 0; background: transparent; padding: .3rem .7rem; border-radius: 6px; font: inherit; font-size: .85rem; cursor: pointer; color: var(--clr-text-body, #333); }
+.e2e-filter-option.is-active { background: var(--clr-primary, #1d4ed8); color: #fff; font-weight: 600; }
+.e2e-filter-option:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: 2px; }
+
+.e2e-empty { padding: 1rem; border: 1px dashed var(--clr-border, #ccc); border-radius: 8px; font-size: .9rem; }
+.e2e-empty p { margin: 0 0 .35rem; }
+
+/* Flow table. */
+/* The table scrolls inside its own box; it never makes the page (or the app shell around it) wider than the viewport. */
+.e2e-tablewrap { width: 100%; min-width: 0; overflow-x: auto; contain: inline-size; }
 .e2e-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
-.e2e-table th { text-align: left; font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary, #666); padding: .4rem .5rem; }
-.e2e-table td { padding: .45rem .5rem; border-top: 1px solid var(--border-color, #eee); vertical-align: top; }
-.e2e-row-detail { display: block; font-size: .8rem; color: var(--text-secondary, #666); }
+.e2e-table th { text-align: left; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted, #666); padding: .45rem .5rem; border-bottom: 1px solid var(--clr-border, #ddd); }
+.e2e-table td { padding: .55rem .5rem; border-bottom: 1px solid var(--clr-border-subtle, #eee); vertical-align: top; }
+.e2e-table tbody tr:hover, .e2e-table tbody tr:focus-within { background: var(--clr-surface, #f7f7f8); }
+.e2e-table-compact td, .e2e-table-compact th { padding: .35rem .5rem; font-size: .84rem; }
+.e2e-flow-name { font-weight: 600; margin-right: .35rem; overflow-wrap: anywhere; }
+.e2e-row-detail { display: block; margin-top: .15rem; font-size: .8rem; color: var(--clr-text-muted, #666); overflow-wrap: anywhere; }
+.e2e-row-actions { white-space: nowrap; text-align: right; }
+.e2e-row-actions .btn-small { padding: .25rem .6rem; font-size: .82rem; }
 
-/* Tone carries the verdict; the words carry the meaning, so neither depends on the other. */
+.e2e-badge { display: inline-block; margin: .1rem .25rem .1rem 0; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid var(--clr-border, #ccc); color: var(--clr-text-muted, #555); background: var(--clr-surface, #f7f7f8); }
+.e2e-badge-muted { border-style: dashed; }
+
+/* Status pills: text always, tone as colour. */
+.e2e-pill { display: inline-block; padding: .1rem .55rem; border-radius: 999px; font-size: .8rem; font-weight: 600; border: 1px solid currentColor; }
 .e2e-tone-good { color: #1a7f37; }
 .e2e-tone-warning { color: #8a6d00; }
 .e2e-tone-bad { color: #b42318; }
-.e2e-tone-neutral { color: var(--text-secondary, #555); }
+.e2e-tone-neutral { color: var(--clr-text-muted, #555); }
 
-.e2e-module-list, .e2e-history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .35rem; font-size: .85rem; }
-.e2e-module-flows, .e2e-run-reason, .e2e-run-boundary { display: block; color: var(--text-secondary, #666); font-size: .8rem; }
-.e2e-note { margin: 0; font-size: .85rem; color: var(--text-secondary, #555); }
-.e2e-error { color: #b42318; }
+/* Latest run. */
+.e2e-result { padding: .9rem 1rem; border: 1px solid var(--clr-border, #ddd); border-left: 4px solid currentColor; border-radius: 8px; }
+.e2e-result .e2e-section-head h2 { color: var(--clr-text-heading, #111); }
+.e2e-result > p { color: var(--clr-text-body, #333); }
+.e2e-result-problem { margin: .4rem 0 0; font-weight: 600; }
+.e2e-step-results { list-style: none; margin: .6rem 0 0; padding: 0; display: grid; gap: .25rem; color: var(--clr-text-body, #333); }
+.e2e-step-result { display: flex; flex-wrap: wrap; gap: .25rem .5rem; font-size: .88rem; }
+.e2e-step-glyph { width: 1.1rem; font-weight: 700; text-align: center; }
+.e2e-step-passed .e2e-step-glyph { color: #1a7f37; }
+.e2e-step-failed .e2e-step-glyph { color: #b42318; }
+.e2e-step-blocked .e2e-step-glyph { color: #8a6d00; }
+.e2e-step-result .e2e-row-detail { flex-basis: 100%; margin-left: 1.6rem; }
+
+/* Readiness. */
+.e2e-readiness { padding: .9rem 1rem; border: 1px solid var(--clr-border, #ddd); border-radius: 8px; }
+.e2e-readiness-reason { margin: 0 0 .5rem; font-size: .9rem; font-weight: 600; }
+.e2e-facts { display: flex; flex-wrap: wrap; gap: .5rem 2rem; margin: 0 0 .5rem; }
+.e2e-facts div { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.e2e-facts dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted, #666); }
+.e2e-facts dd { margin: 0; font-size: .9rem; overflow-wrap: anywhere; }
+
+.e2e-secondary { display: grid; gap: .5rem; }
+::deep .e2e-disclosure { border: 1px solid var(--clr-border, #ddd); border-radius: 8px; padding: .15rem .75rem; background: var(--clr-surface-white, #fff); }
+::deep .e2e-disclosure > .disclosure-toggle { display: flex; width: 100%; flex-wrap: wrap; text-align: left; padding: .55rem .25rem; border-color: transparent; background: transparent; }
+::deep .e2e-disclosure > .disclosure-body { margin: 0 .25rem .75rem; }
 
 .e2e-build-form { display: flex; flex-wrap: wrap; gap: .75rem; align-items: flex-end; }
 .e2e-build-form label { display: flex; flex-direction: column; gap: .2rem; font-size: .8rem; }
+
+@media (max-width: 1100px) {
+    .e2e-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+    .e2e-summary { grid-template-columns: 1fr; }
+}
+
+/* Narrow: each flow becomes a card. Module and name lead; the rest follows labelled; actions stay reachable. */
+@media (max-width: 900px) {
+    .e2e-table thead { display: none; }
+    .e2e-table, .e2e-table tbody, .e2e-table tr, .e2e-table td { display: block; width: 100%; }
+    .e2e-table tr { padding: .5rem 0; border-bottom: 1px solid var(--clr-border, #ddd); }
+    .e2e-table td { border: 0; padding: .15rem 0; }
+    .e2e-table td[data-label]::before { content: attr(data-label); display: inline-block; min-width: 7rem; font-size: .72rem; text-transform: uppercase; color: var(--clr-text-muted, #666); }
+    .e2e-row-actions { text-align: left; padding-top: .35rem !important; }
+}

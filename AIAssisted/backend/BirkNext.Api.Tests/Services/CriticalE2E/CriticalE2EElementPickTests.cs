@@ -101,7 +101,7 @@ public sealed class CriticalE2EElementPickTests
         (await Pick()).Message.Should().Be("No approved application page is open in the paired browser.");
 
         Beat(Picks, "1", "2");
-        (await Pick()).Message.Should().Be("2 approved pages are open. Leave only the page to pick from open.");
+        (await Pick()).Message.Should().Be("2 approved application pages are open. Keep exactly one approved target page open.");
 
         Beat(null, "1");
         (await Pick()).Message.Should().Contain("does not support element picking");
