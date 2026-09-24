@@ -368,8 +368,12 @@
       await send({ type: 'content:page', page: { origin: v.origin, path: v.path } });
       await emit('initial');
     },
-    onNavigateAway: async previous => {
-      if (previous.stabilized && isApprovedVisit(previous)) { visit = previous; await emit('final'); }
+    // Synchronous on purpose. The tracker starts the next visit straight after this returns; awaiting the final snapshot
+    // here (it waits for the serialized axe run) let this reset land after the NEXT route had stabilized, which cleared
+    // that route's visit and dropped its evidence. emit() takes its snapshot before its first await, so it still sees
+    // the previous visit, and its own visit check keeps anything late from being reported as the new route.
+    onNavigateAway: previous => {
+      if (previous.stabilized && isApprovedVisit(previous)) { visit = previous; emit('final'); }
       resetVisitState();
       visit = null;
     },

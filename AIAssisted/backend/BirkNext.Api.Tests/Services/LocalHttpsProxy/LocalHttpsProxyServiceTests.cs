@@ -686,10 +686,12 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     private Mock<IProxyEdgeProcess> OwnedBrowser(int pid = 4242)
     {
         _edge.Setup(e => e.Locate()).Returns(new EdgeInstallation("msedge.exe", null));
+        // Like the real OwnedProcess: running until StopAsync completes, which closes (or kills) and awaits exit.
+        var running = true;
         var process = new Mock<IProxyEdgeProcess>();
         process.SetupGet(p => p.Id).Returns(pid);
-        process.SetupGet(p => p.Running).Returns(true);
-        process.Setup(p => p.StopAsync()).Returns(Task.CompletedTask);
+        process.SetupGet(p => p.Running).Returns(() => running);
+        process.Setup(p => p.StopAsync()).Callback(() => running = false).Returns(Task.CompletedTask);
         _ownedLauncher.Setup(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()))
             .Callback<string, IReadOnlyList<string>>((_, a) => _inspector.LaunchedWith(a)).Returns(process.Object);
         return process;
@@ -946,6 +948,26 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
         Assert.Equal(DedicatedBrowserProxyArgument.Unknown, status.EdgeProxyArgument);
         // The proxy service is a separate fact and is still running.
         Assert.True(status.ProxyListening);
+    }
+
+    // A browser that is still running after the stop attempt is never joined by a second one: the restart is refused,
+    // the owned handle and its evidence are kept, and no launch happens.
+    [Fact]
+    public async Task ARestartIsRefusedWhileTheOwnedBrowserWillNotClose()
+    {
+        var stubborn = OwnedBrowser(1111);
+        stubborn.SetupGet(p => p.Running).Returns(true);
+        stubborn.Setup(p => p.StopAsync()).Returns(Task.CompletedTask);
+        await StartAsync(Scope());
+        var request = new LocalHttpsProxyEdgeLaunchRequest(_sessionId, "dev", Fp);
+        await _service.LaunchEdgeAsync(request);
+
+        var status = await _service.RestartEdgeAsync(request);
+
+        Assert.Equal(1111, status.EdgeProcessId);
+        Assert.Contains("could not be closed", status.FailureReason);
+        _ownedLauncher.Verify(l => l.Launch(It.IsAny<string>(), It.IsAny<IReadOnlyList<string>>()), Times.Once);
+        stubborn.Verify(p => p.Dispose(), Times.Never);
     }
 
     [Fact]
