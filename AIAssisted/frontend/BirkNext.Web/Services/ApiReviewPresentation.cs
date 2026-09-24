@@ -63,10 +63,20 @@ public static class ApiReviewPresentation
         return context.ActiveProfile.Authentication.AuthenticatedTestingMethod switch
         {
             AuthenticatedTestingMethod.ManualOnly => ApiReviewAccessAvailability.ManualOnly,
-            AuthenticatedTestingMethod.LocalHttpsProxy => capabilities.ContextStatus == AuthenticatedApiContextStatus.Expired ? ApiReviewAccessAvailability.Expired : ApiReviewAccessAvailability.NotConnected,
+            // The backend reports Waiting (or Stale) for a proxy environment it could evaluate; NotApplicable under the
+            // proxy method only comes from the client-side fallback when the capability request itself failed.
+            AuthenticatedTestingMethod.LocalHttpsProxy => capabilities.ContextStatus switch
+            {
+                AuthenticatedApiContextStatus.Expired => ApiReviewAccessAvailability.Expired,
+                AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic or AuthenticatedApiContextStatus.Stale => ApiReviewAccessAvailability.WaitingForAuthenticatedTraffic,
+                _ => ApiReviewAccessAvailability.StatusUnavailable,
+            },
             _ => ApiReviewAccessAvailability.NotSupportedByMethod,
         };
     }
+
+    /// <summary>Target Environment → Authentication for the active environment: where authenticated access is set up.</summary>
+    public static string AuthenticationHref(FrontendAnalysisContext? context) => ApiReviewRunEligibility.AuthenticationHref(context?.ActiveProfile.Id);
 
     public static string ApiAccessLabel(ApiReviewAccessAvailability availability, bool anyTargetRequiresAuth) => availability switch
     {
@@ -117,7 +127,8 @@ public static class ApiReviewPresentation
             technical.Add(new("Authenticated testing method", AuthenticatedTestingMethodLabels.Option(context.ActiveProfile.Authentication.AuthenticatedTestingMethod)));
         if (capabilities is not null)
         {
-            technical.Add(new("Authenticated API context", ContextStatusLabel(capabilities.ContextStatus)));
+            technical.Add(new("Authenticated API context", availability == ApiReviewAccessAvailability.StatusUnavailable
+                ? ApiReviewAccessAvailabilities.Label(availability) : ContextStatusLabel(capabilities.ContextStatus)));
             technical.Add(new("REST", capabilities.AuthenticatedRest ? "Authenticated REST traffic observed" : "No authenticated REST traffic observed"));
             technical.Add(new("GraphQL", capabilities.AuthenticatedGraphQlQuery ? "Authenticated GraphQL query traffic observed" : "No authenticated GraphQL traffic observed"));
             if (capabilities.ObservedHost is { Length: > 0 } host) technical.Add(new("Observed host", host));
@@ -125,30 +136,32 @@ public static class ApiReviewPresentation
         }
         technical.Add(new("Execution", "Authenticated requests are executed by the backend gateway with the memory-only proxy credential (REST GET/HEAD/OPTIONS, GraphQL queries). The review itself never receives a token."));
 
+        var authHref = AuthenticationHref(context);
         return availability switch
         {
-            ApiReviewAccessAvailability.Loading => new(availability, needed, "Resolving whether authenticated API requests can be included…", [], null, TargetEnvironmentsHref, technical),
+            ApiReviewAccessAvailability.Loading => new(availability, needed, "Resolving whether authenticated API requests can be included…", [], null, authHref, technical),
             ApiReviewAccessAvailability.Available => new(availability, needed,
                 "Authenticated REST and GraphQL requests can be included. They are executed read-only through the existing secure gateway session.",
-                [], "Manage authenticated session", TargetEnvironmentsHref, technical),
+                [], "Manage authentication", authHref, technical),
             ApiReviewAccessAvailability.ManualOnly => new(availability, needed,
                 "This environment is manual-verification only. The review can inspect public API behaviour; authenticated APIs must be verified manually.",
-                [], "Change authenticated testing method", TargetEnvironmentsHref, technical),
+                [], "Change authenticated testing method", authHref, technical),
             ApiReviewAccessAvailability.NotSupportedByMethod => new(availability, needed,
                 "The Managed Edge browser method provides no authenticated API execution. The review can inspect public API behaviour only.",
-                ["Switch the Target Environment's authenticated testing method to the Local HTTPS proxy.", "Start the proxy, sign in to the target application and use it.", "Return here when the authenticated API context is available."],
-                "Change authenticated testing method", TargetEnvironmentsHref, technical),
+                ["Open Target Environment → Authentication and switch the authenticated testing method to the Local HTTPS Proxy.", "Start the proxy, open the dedicated Edge browser, sign in and use the target application.", "Return to API Quality Review once authenticated traffic is observed."],
+                "Change authenticated testing method", authHref, technical),
             _ => new(availability, needed,
                 availability == ApiReviewAccessAvailability.Expired
                     ? "The authenticated session expired. The review can currently inspect public API behaviour only."
                     : "The review can currently inspect public API behaviour only.",
                 [
-                    "Start the Local HTTPS Proxy from the Target Environment page.",
-                    "Sign in to the target application in the proxy-configured browser.",
-                    "Use the application so authenticated API traffic is observed.",
-                    "Return here when the authenticated API context is available.",
+                    "Open Target Environment → Authentication.",
+                    "Start the Local HTTPS Proxy.",
+                    "Open the dedicated Edge browser.",
+                    "Sign in and perform an authenticated action against the target.",
+                    "Return to API Quality Review once authenticated traffic is observed.",
                 ],
-                "Manage authenticated session", TargetEnvironmentsHref, technical),
+                "Open Authentication setup", authHref, technical),
         };
     }
 
@@ -177,8 +190,28 @@ public static class ApiReviewPresentation
     {
         var chosen = targets.Where(t => selected.Contains(t.TargetId)).ToList();
         if (context is null) return new(ApiReviewReadinessLevel.Loading, "Loading target environment", eligibility.Reason, chosen.Count, [], null, null);
+        var availability = Availability(context, capabilities);
         if (!eligibility.Enabled)
-            return new(ApiReviewReadinessLevel.Blocked, "Review cannot start", eligibility.Reason, chosen.Count, [], eligibility.ActionText, eligibility.ActionHref ?? (eligibility.ActionText is null ? null : TargetEnvironmentsHref));
+        {
+            var href = eligibility.ActionHref ?? (eligibility.ActionText is null ? null : TargetEnvironmentsHref);
+            // Blocked only by missing authenticated context: say which scope needs it and what is missing, then one action.
+            if (eligibility.Reason == ApiReviewRunEligibility.NoAuthContextReason && chosen.Count > 0)
+            {
+                var scope = chosen.Count switch { 1 => "the selected target", 2 => "both selected targets", var n => $"all {n} selected targets" };
+                var (missing, help) = availability switch
+                {
+                    ApiReviewAccessAvailability.Expired => ("the authenticated API session has expired",
+                        "Continue using the target application in the dedicated Edge browser to refresh the session."),
+                    ApiReviewAccessAvailability.StatusUnavailable => ("the authenticated API status could not be resolved",
+                        "The backend did not report authenticated capability; confirm it is running, then return here."),
+                    _ => ("no authenticated API context is currently available",
+                        "Start the Local HTTPS Proxy, open the dedicated Edge browser and perform an authenticated action against the target."),
+                };
+                return new(ApiReviewReadinessLevel.Blocked, "Review cannot start",
+                    $"Authenticated API access is required for {scope}, but {missing}.", chosen.Count, [], eligibility.ActionText, href, help);
+            }
+            return new(ApiReviewReadinessLevel.Blocked, "Review cannot start", eligibility.Reason, chosen.Count, [], eligibility.ActionText, href);
+        }
 
         var authenticated = capabilities?.AuthenticatedApi == true;
         var rest = chosen.Count(t => t.ApiType == ApiReviewTargetType.Rest);
@@ -201,34 +234,43 @@ public static class ApiReviewPresentation
         var limitations = new List<string>();
         if (authTargets > 0 && !authenticated)
             limitations.Add($"Authenticated requests cannot be sent to {authTargets} selected {(authTargets == 1 ? "target" : "targets")}");
+        // Only the limiting facts, one short clause each; the domain cards and Review details carry the explanation.
         if (restContract == ApiReviewContractState.NotConfigured)
         {
-            limitations.Add("No published REST contract to validate responses against");
+            limitations.Add("No published REST contract");
             items.Add(new("REST contract validation unavailable — responses are reviewed structurally", ApiReviewReadinessItemState.Warning));
         }
         if (gqlContract == ApiReviewContractState.IntrospectionUnavailable)
         {
-            limitations.Add("GraphQL introspection unavailable, so schema-dependent checks cannot run");
-            items.Add(new("GraphQL schema unavailable — observed operations are marked for manual review", ApiReviewReadinessItemState.Warning));
+            limitations.Add("GraphQL schema was unavailable previously");
+            items.Add(new("GraphQL schema unavailable previously — retrieval will be attempted again; unmatched operations are marked for manual review", ApiReviewReadinessItemState.Warning));
         }
         // Listed, never counted: see the rule above.
         if (contracts is { BaselineCount: 0 } && chosen.Count > 0)
             items.Add(new("No previous baseline — this review records the first one, so there is nothing to compare yet", ApiReviewReadinessItemState.Missing));
 
+        var authMissing = authTargets > 0 && !authenticated;
         return limitations.Count > 0
             ? new(ApiReviewReadinessLevel.Limited, "Review can run with limitations",
                 $"{eligibility.Reason} {string.Join(". ", limitations)}.".Trim(), chosen.Count, items,
-                authTargets > 0 && !authenticated ? "Manage authenticated session" : null,
-                authTargets > 0 && !authenticated ? TargetEnvironmentsHref : null)
+                authMissing ? ApiReviewRunEligibility.NoAuthContextAction : null,
+                authMissing ? AuthenticationHref(context) : null)
             : new(ApiReviewReadinessLevel.Ready, "Ready to review", eligibility.Reason, chosen.Count, items, null, null);
     }
 
     // ── Targets ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public static IReadOnlyList<ApiReviewTargetCardModel> TargetCards(IReadOnlyList<ApiReviewTarget> targets, ApiReviewTargetType type) =>
-        targets.Where(t => t.ApiType == type).Select(TargetCard).ToList();
+    public static IReadOnlyList<ApiReviewTargetCardModel> TargetCards(IReadOnlyList<ApiReviewTarget> targets, ApiReviewTargetType type, ApiReviewReport? lastReport = null) =>
+        targets.Where(t => t.ApiType == type).Select(t => TargetCard(t, SchemaUnavailablePreviously(t, lastReport))).ToList();
 
-    public static ApiReviewTargetCardModel TargetCard(ApiReviewTarget target)
+    /// <summary>The latest review recorded this GraphQL target's introspection as rejected (a policy observation, not a failure).</summary>
+    public static bool SchemaUnavailablePreviously(ApiReviewTarget target, ApiReviewReport? lastReport) =>
+        target.ApiType == ApiReviewTargetType.GraphQl
+        && lastReport?.Targets.FirstOrDefault(r => r.Target.TargetId == target.TargetId)?.Contract is { IntrospectionEnabled: false };
+
+    public static ApiReviewTargetCardModel TargetCard(ApiReviewTarget target) => TargetCard(target, schemaUnavailablePreviously: false);
+
+    public static ApiReviewTargetCardModel TargetCard(ApiReviewTarget target, bool schemaUnavailablePreviously)
     {
         var writes = target.Operations.Count(o => !o.IsSafe);
         return new(
@@ -242,8 +284,11 @@ public static class ApiReviewPresentation
             writes,
             target.ContractSource is not null,
             // Pre-run this is a plan, not a retrieval. "Runtime schema available" claimed a schema nobody had fetched yet;
-            // whether introspection actually succeeded is reported after the run, by the contract rows.
-            target.ApiType == ApiReviewTargetType.GraphQl ? "Schema retrieval will be attempted during review." : null,
+            // whether introspection actually succeeded is reported after the run, by the contract rows. Rendered under a
+            // "Schema" label, so the value does not repeat the word.
+            target.ApiType != ApiReviewTargetType.GraphQl ? null
+                : schemaUnavailablePreviously ? "Unavailable previously; retrieval will be attempted again"
+                : "Retrieval will be attempted during review",
             target.Operations.Select(o => new ApiReviewOperationRowModel(
                 o.OperationType != GraphQlOperationType.None ? o.OperationType.ToString() : o.Method,
                 o.OperationType != GraphQlOperationType.None ? o.OperationName ?? "(anonymous)" : o.Path,
@@ -308,7 +353,7 @@ public static class ApiReviewPresentation
 
         var baselines = history is null ? 0 : chosen.Count(t => history.Baselines.ContainsKey(t.TargetId));
         var runs = history?.Runs.Count ?? 0;
-        var historyLabel = baselines switch { 0 => "No previous baseline", 1 => "1 previous baseline available", _ => $"{baselines} previous baselines available" };
+        var historyLabel = baselines switch { 0 => "No previous baseline", 1 => "1 previous baseline", _ => $"{baselines} previous baselines" };
         var latest = lastReport is null ? "Not compared yet"
             : lastReport.Findings.Any(f => f.Type == ApiReviewFindingType.Drift) ? "Drift detected in the latest review"
             : ApiReviewEvidencePresentation.Checks(lastReport).Any(c => c.Area == ApiReviewFindingType.Drift && c.Result == ApiReviewCheckResult.Pass) ? "No drift detected in the compared evidence"
@@ -418,10 +463,12 @@ public static class ApiReviewPresentation
         ApiReviewContractPanelModel contracts,
         ApiReviewAccessAvailability availability)
     {
+        // Each card says its own limitation once, briefly. The scope counts live in Review scope, the contract and schema
+        // explanation lives in Contracts (and in Review details), so REST and GraphQL do not repeat either.
         var nothingSelected = scope.Selected == 0;
         var authLimited = scope.AuthRequired > 0 && availability != ApiReviewAccessAvailability.Available;
         var authLimitation = authLimited
-            ? $"{scope.AuthRequired} selected target{(scope.AuthRequired == 1 ? "" : "s")} require authenticated access, which is unavailable; those endpoints are reported as authentication required."
+            ? "Authenticated checks cannot run until authenticated API access is available."
             : null;
 
         ApiReviewDomainState Scoped(bool present, bool limited) =>
@@ -431,41 +478,46 @@ public static class ApiReviewPresentation
 
         var restContract = contracts.Rows.FirstOrDefault(r => r.Label == "REST")?.State;
         var gqlContract = contracts.Rows.FirstOrDefault(r => r.Label == "GraphQL")?.State;
-        var contractLimits = new[]
-        {
-            restContract == ApiReviewContractState.NotConfigured ? "No published REST contract." : null,
-            gqlContract == ApiReviewContractState.IntrospectionUnavailable ? "GraphQL introspection was previously unavailable; retrieval will be attempted again." : null,
-        }.Where(l => l is not null).ToList();
+        var restLimited = restContract == ApiReviewContractState.NotConfigured;
+        var gqlLimited = gqlContract == ApiReviewContractState.IntrospectionUnavailable;
+        var contractLimits = restLimited || gqlLimited
+            ? new[]
+            {
+                restLimited ? "REST: no published contract." : null,
+                gqlLimited ? "GraphQL: introspection was unavailable previously; schema retrieval will be attempted again."
+                    : gqlContract == ApiReviewContractState.RuntimeSchema ? "GraphQL: runtime schema retrieval will be attempted during review." : null,
+            }.Where(l => l is not null).ToList()
+            : [];
 
         return
         [
-            new("security", "Security", "Passive, read-only security review of responses, headers and exposure.",
+            new("security", "Security", "Passive, read-only response and header review.",
                 Scoped(true, authLimited), authLimitation),
 
-            new("contracts", "Contracts", "Published contracts and schemas, compared against previous baselines.",
+            new("contracts", "Contracts", "Published contracts and schemas, compared with previous baselines.",
                 nothingSelected ? ApiReviewDomainState.NotIncluded
                     : contractLimits.Count > 0 ? ApiReviewDomainState.Limited
                     : ApiReviewDomainState.Included,
                 contractLimits.Count > 0 ? string.Join(" ", contractLimits) : null),
 
-            new("errors", "Error handling", "How the API answers safe, read-only requests it cannot satisfy.",
+            new("errors", "Error handling", "Safe, read-only error behaviour is reviewed.",
                 Scoped(true, false),
-                nothingSelected ? null : "Robustness is judged from safe requests only; no write or destructive request is ever sent."),
+                nothingSelected ? null : "Write or destructive behaviour is never executed."),
 
-            new("performance", "Performance", "Response timing observed by the review's own read-only requests.",
+            new("performance", "Performance", "Response timing of the review's own read-only requests.",
                 Scoped(true, false),
-                nothingSelected ? null : "Timing is measured from the backend gateway, not from an end user."),
+                nothingSelected ? null : "Timing is measured from the backend gateway to the API, not from an end user."),
 
-            new("rest", "REST", "Routes, status handling and structure of the selected REST APIs.",
-                Scoped(scope.Rest > 0, restContract == ApiReviewContractState.NotConfigured),
-                scope.Rest > 0 && restContract == ApiReviewContractState.NotConfigured
-                    ? "Included with structural limitation; see Contracts."
+            new("rest", "REST", "Routes, status handling and response structure.",
+                Scoped(scope.Rest > 0, restLimited),
+                scope.Rest > 0 && restLimited
+                    ? "Structural review is available. Published contract comparison is unavailable."
                     : null),
 
-            new("graphql", "GraphQL", "Operations, schema evidence and error behaviour of the selected GraphQL APIs.",
-                Scoped(scope.GraphQl > 0, gqlContract == ApiReviewContractState.IntrospectionUnavailable),
-                scope.GraphQl > 0 && gqlContract == ApiReviewContractState.IntrospectionUnavailable
-                    ? "Included with schema limitation; see Contracts."
+            new("graphql", "GraphQL", "Observed operations, schema evidence and error behaviour.",
+                Scoped(scope.GraphQl > 0, gqlLimited),
+                scope.GraphQl > 0 && gqlLimited
+                    ? "Observed operations can be reviewed. Schema-dependent checks are limited until runtime schema retrieval succeeds."
                     : null),
         ];
     }

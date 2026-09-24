@@ -166,8 +166,17 @@ public sealed record ApiReviewRunEligibility(bool Enabled, string Reason, string
 {
     public const string NoTargetsReason = "No REST or GraphQL API target is available for review.";
     public const string NoAuthContextReason = "Authenticated API context not available.";
-    public const string NoAuthContextAction = "Start the Local HTTPS Proxy and sign in through your normal managed Edge.";
+    public const string NoAuthContextAction = "Open Authentication setup";
     public const string TargetEnvironmentsHref = "/admin/system-settings?section=target-environments";
+
+    /// <summary>
+    /// The Authentication tab of one Target Environment. Target Environment → Authentication owns the proxy, the dedicated
+    /// Edge and the authenticated context; API Quality Review only links there. Opening it selects the profile for viewing
+    /// (it does not make it active, start anything or change configuration).
+    /// </summary>
+    public static string AuthenticationHref(string? profileId) => string.IsNullOrWhiteSpace(profileId)
+        ? TargetEnvironmentsHref + "&tab=auth"
+        : TargetEnvironmentsHref + "&tab=auth&profile=" + Uri.EscapeDataString(profileId);
 
     public static ApiReviewRunEligibility Evaluate(FrontendAnalysisContext? context, IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selectedIds, AuthenticatedReviewCapabilities? capabilities)
     {
@@ -178,13 +187,16 @@ public sealed record ApiReviewRunEligibility(bool Enabled, string Reason, string
         if (selected.Count == 0) return new(false, "Select at least one API target.", null, null);
         var authenticatedAvailable = capabilities?.AuthenticatedApi == true;
         var runnable = selected.Where(t => !t.AuthRequired || authenticatedAvailable).ToList();
-        if (runnable.Count > 0) return new(true, runnable.Count == selected.Count ? $"{selected.Count} target(s) ready." : $"{runnable.Count} of {selected.Count} target(s) runnable; authenticated targets will be reported as blocked (no timeout).", null, null);
+        if (runnable.Count > 0) return new(true, runnable.Count == selected.Count ? $"{Targets(selected.Count)} ready." : $"{runnable.Count} of {Targets(selected.Count)} runnable; authenticated targets will be reported as blocked (no timeout).", null, null);
         var method = context.ActiveProfile.Authentication.AuthenticatedTestingMethod;
+        var authHref = AuthenticationHref(context.ActiveProfile.Id);
         return method switch
         {
-            AuthenticatedTestingMethod.ManualOnly => new(false, "Authenticated automated API review is unavailable: the environment is manual-verification only.", "Change the authenticated testing method", TargetEnvironmentsHref),
-            AuthenticatedTestingMethod.LocalHttpsProxy => new(false, NoAuthContextReason, NoAuthContextAction, TargetEnvironmentsHref),
-            _ => new(false, "The Managed Edge (CDP) method provides no authenticated API execution.", "Switch the environment to the Local HTTPS proxy method", TargetEnvironmentsHref),
+            AuthenticatedTestingMethod.ManualOnly => new(false, "Authenticated automated API review is unavailable: the environment is manual-verification only.", "Change the authenticated testing method", authHref),
+            AuthenticatedTestingMethod.LocalHttpsProxy => new(false, NoAuthContextReason, NoAuthContextAction, authHref),
+            _ => new(false, "The Managed Edge (CDP) method provides no authenticated API execution.", "Switch the environment to the Local HTTPS Proxy method", authHref),
         };
     }
+
+    private static string Targets(int count) => count == 1 ? "1 target" : $"{count} targets";
 }

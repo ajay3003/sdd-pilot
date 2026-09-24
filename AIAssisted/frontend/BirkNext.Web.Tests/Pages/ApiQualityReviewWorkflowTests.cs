@@ -197,7 +197,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("2 API targets selected");
         page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL");
-        page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("1 requires authentication");
+        page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("1 requires authenticated access");
 
         // Derived, not hard-coded: the counts follow the selected targets.
         var targets = page.FindAll("[data-testid=aqr-target]");
@@ -245,13 +245,17 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing(authenticated: false);
 
         var accessCard = page.Find("[data-testid=aqr-access]");
-        accessCard.TextContent.Should().Contain("Public access").And.Contain("Authenticated access");
+        accessCard.TextContent.Should().Contain("Public access").And.Contain("Authenticated API context");
         page.Find("[data-testid=aqr-public-access]").TextContent.Should().Contain("Available");
-        page.Find("[data-testid=aqr-access-action]").TextContent.Should().Be("Manage authenticated session");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
+        accessCard.TextContent.Should().NotContain("Not connected", "there is no connection concept behind this state");
+        // The readiness card owns the one action toward Authentication; the access card does not repeat it.
+        page.FindAll("[data-testid=aqr-access-action]").Should().BeEmpty();
+        page.FindAll("[data-testid=aqr-access-text]").Should().BeEmpty("how many targets need authentication is Review scope's fact");
 
         // 15. The unavailability is stated once where a reader can act on it, not repeated across the decision area.
         var visible = VisibleText(page.Find("[data-testid=aqr-decide]"));
-        Occurrences(visible, "authenticated access").Should().BeLessThanOrEqualTo(2, "the access row and the one sentence under it");
+        Occurrences(visible, "authenticated access").Should().BeLessThanOrEqualTo(2, "the scope count and the frontend sign-in help");
         visible.Should().NotContain("Start the Local HTTPS Proxy", "the procedure belongs in the details");
         visible.Should().NotContain("backend gateway");
     }
@@ -269,8 +273,13 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var body = Body(page, "aqr-access-details");
         body.HasAttribute("hidden").Should().BeFalse();
         var steps = body.QuerySelector("[data-testid=aqr-auth-missing]")!;
-        steps.QuerySelectorAll("li").Should().HaveCount(4);
-        steps.TextContent.Should().Contain("Start the Local HTTPS Proxy").And.Contain("Sign in to the target application");
+        steps.QuerySelectorAll("li").Select(li => li.TextContent).Should().Equal(
+            "Open Target Environment → Authentication.",
+            "Start the Local HTTPS Proxy.",
+            "Open the dedicated Edge browser.",
+            "Sign in and perform an authenticated action against the target.",
+            "Return to API Quality Review once authenticated traffic is observed.");
+        steps.QuerySelector("[data-testid=aqr-access-details-action]")!.GetAttribute("href").Should().Contain("tab=auth");
         body.TextContent.Should().Contain("backend gateway").And.Contain("never receives a token");
     }
 
@@ -297,7 +306,9 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         Toggle(page, "aqr-readiness-limitations").Click();
         var body = Body(page, "aqr-readiness-limitations");
         body.TextContent.Should().Contain("Authenticated API context unavailable");
-        body.QuerySelector("[data-testid=aqr-run-action]")!.TextContent.Should().Be("Manage authenticated session");
+        // The action stays visible outside the collapsed list: collapsing the detail must not hide the way forward.
+        body.QuerySelector("[data-testid=aqr-run-action]").Should().BeNull();
+        page.Find("[data-testid=aqr-run-action]").TextContent.Should().Be("Open Authentication setup");
     }
 
     // ── §46. Contracts ────────────────────────────────────────────────────────────────────────────────────────────
@@ -348,7 +359,8 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         var security = page.Find("[data-testid=aqr-domain][data-domain='security']");
         security.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Trim().Should().Be("Limited");
-        security.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Contain("reported as authentication required");
+        security.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Be("Authenticated checks cannot run until authenticated API access is available.");
+        security.TextContent.Should().NotContain("selected target", "scope counts belong to Review scope, not to every card");
     }
 
     // 26. A missing REST contract limits Contracts; REST itself is still reviewed.
@@ -361,7 +373,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var rest = page.Find("[data-testid=aqr-domain][data-domain='rest']");
         rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Trim().Should().Be("Limited");
         rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Should().NotContain("Not included");
-        rest.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Contain("Included with structural limitation");
+        rest.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Be("Structural review is available. Published contract comparison is unavailable.");
     }
 
     // 27. GraphQL stays in the review; only its schema evidence is limited.
@@ -382,8 +394,9 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing();
 
         var errors = page.Find("[data-testid=aqr-domain][data-domain='errors']");
+        errors.QuerySelector(".aqr-domain-purpose")!.TextContent.Should().Be("Safe, read-only error behaviour is reviewed.");
         errors.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent
-            .Should().Contain("safe requests only").And.Contain("no write or destructive request is ever sent");
+            .Should().Be("Write or destructive behaviour is never executed.");
     }
 
     // ── §48. Post-run order ───────────────────────────────────────────────────────────────────────────────────────

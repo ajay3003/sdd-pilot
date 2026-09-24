@@ -12,8 +12,15 @@ public enum ApiReviewAccessAvailability
     Loading,
     /// <summary>Authenticated API context is available (Local HTTPS proxy, memory-only credential used by the backend gateway).</summary>
     Available,
-    /// <summary>Proxy method selected, but no authenticated API context has been captured yet.</summary>
-    NotConnected,
+    /// <summary>
+    /// Proxy method selected, but the backend holds no authenticated API context for this environment yet
+    /// (<see cref="BirkNext.LocalHttpsProxy.AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic"/>, or Stale after
+    /// a configuration change). The backend does not distinguish "proxy not started" from "no authenticated request seen",
+    /// so neither is claimed: this is not a connection state and not an authentication failure.
+    /// </summary>
+    WaitingForAuthenticatedTraffic,
+    /// <summary>Proxy method selected, but the backend capability status could not be resolved (request failed).</summary>
+    StatusUnavailable,
     /// <summary>A context existed and expired.</summary>
     Expired,
     /// <summary>The environment is manual-verification only; no automated authenticated API review exists.</summary>
@@ -28,7 +35,8 @@ public static class ApiReviewAccessAvailabilities
     {
         ApiReviewAccessAvailability.Loading => "Resolving…",
         ApiReviewAccessAvailability.Available => "Available",
-        ApiReviewAccessAvailability.NotConnected => "Not connected",
+        ApiReviewAccessAvailability.WaitingForAuthenticatedTraffic => "Waiting for authenticated traffic",
+        ApiReviewAccessAvailability.StatusUnavailable => "Status unavailable",
         ApiReviewAccessAvailability.Expired => "Session expired",
         ApiReviewAccessAvailability.ManualOnly => "Manual verification only",
         ApiReviewAccessAvailability.NotSupportedByMethod => "Not supported by the selected method",
@@ -78,7 +86,9 @@ public sealed record ApiReviewReadinessModel(
     int SelectedCount,
     IReadOnlyList<ApiReviewReadinessItem> Items,
     string? ActionText,
-    string? ActionHref)
+    string? ActionHref,
+    /// <summary>One short line under the action saying what the action leads to; never a second action.</summary>
+    string? Help = null)
 {
     public bool CanRun => Level is ApiReviewReadinessLevel.Ready or ApiReviewReadinessLevel.Limited;
 }
@@ -114,7 +124,7 @@ public static class ApiReviewContractStates
         ApiReviewContractState.Available => "Contract available",
         ApiReviewContractState.NotConfigured => "No contract configured",
         ApiReviewContractState.RuntimeSchema => "Runtime schema",
-        ApiReviewContractState.IntrospectionUnavailable => "Introspection unavailable",
+        ApiReviewContractState.IntrospectionUnavailable => "Introspection unavailable previously",
         ApiReviewContractState.NotApplicable => "No target",
         _ => state.ToString(),
     };
@@ -282,7 +292,7 @@ public sealed record ApiReviewScopeSummary(int Selected, int Rest, int GraphQl, 
     /// <summary>Stated only when it is true; an all-public scope says nothing about authentication.</summary>
     public string? AuthNote => AuthRequired == 0
         ? null
-        : $"{AuthRequired} require{(AuthRequired == 1 ? "s" : "")} authentication";
+        : $"{AuthRequired} require{(AuthRequired == 1 ? "s" : "")} authenticated access";
 }
 
 /// <summary>

@@ -46,7 +46,8 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         if (endpoints.Length > 0) discovery.MergeObservedAsync(new Mock<IJSRuntime>().Object, context.ActiveProfile.Id, endpoints).GetAwaiter().GetResult();
         var caps = new Mock<IAuthenticatedReviewCapabilitiesService>();
         caps.Setup(c => c.ResolveAsync(It.IsAny<AuthenticatedReviewIdentity>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AuthenticatedReviewCapabilities { Method = context.ReviewIdentity!.Method, PublicApi = true, AuthenticatedApi = authenticated, AuthenticatedRest = authenticated, AuthenticatedGraphQlQuery = authenticated, Reason = authenticated ? "Authenticated via Local HTTPS Proxy" : "Start the local proxy" });
+            .ReturnsAsync(new AuthenticatedReviewCapabilities { Method = context.ReviewIdentity!.Method, PublicApi = true, AuthenticatedApi = authenticated,
+                ContextStatus = context.ReviewIdentity!.Method != AuthenticatedTestingMethod.LocalHttpsProxy ? AuthenticatedApiContextStatus.NotApplicable : authenticated ? AuthenticatedApiContextStatus.Available : AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic, AuthenticatedRest = authenticated, AuthenticatedGraphQlQuery = authenticated, Reason = authenticated ? "Authenticated via Local HTTPS Proxy" : "Start the local proxy" });
         var review = new Mock<IApiReviewService>();
         review.Setup(r => r.RunAsync(It.IsAny<ApiReviewRunRequest>(), It.IsAny<CancellationToken>()))
             .Returns((ApiReviewRunRequest request, CancellationToken _) => Task.FromResult<(ApiReviewReport?, string?)>((new ApiReviewReport
@@ -90,7 +91,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         page.WaitForAssertion(() => page.FindAll("[data-testid=aqr-target]").Should().ContainSingle());
         context.HasRestBaseUrl.Should().BeFalse();
         page.WaitForAssertion(() => RunButton(page).HasAttribute("disabled").Should().BeFalse());
-        page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Contain("1 target(s) ready");
+        page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Contain("1 target ready");
         page.Find("[data-testid=aqr-target-checkbox]").HasAttribute("checked").Should().BeTrue("verified targets are selected by default");
     }
 
@@ -99,14 +100,30 @@ public sealed class ApiQualityReviewPageTests : BunitContext
     {
         Register(Context(), authenticated: false, Ep("/api/children", auth: true), Ep("/api/graphql-v2", auth: true, ObservedTrafficCategory.GraphQl, GraphQlOperationType.Query, "GetChildren"));
         var page = Render<ApiQualityReview>();
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(ApiReviewRunEligibility.NoAuthContextReason));
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked"));
+        page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot start");
+        page.Find("[data-testid=aqr-readiness]").TextContent.Should().NotContain("can run with limitations");
+        page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(
+            "Authenticated API access is required for both selected targets, but no authenticated API context is currently available.");
         RunButton(page).HasAttribute("disabled").Should().BeTrue();
-        page.Find("[data-testid=aqr-run-action]").TextContent.Should().Be(ApiReviewRunEligibility.NoAuthContextAction);
+        RunButton(page).GetAttribute("aria-describedby").Should().Be("aqr-run-reason", "a disabled Run carries its reason programmatically");
+        page.Find("#aqr-run-reason").Should().NotBeNull();
+
+        // One action, toward the owner of authenticated access, for the environment under review.
+        var action = page.Find("[data-testid=aqr-run-action]");
+        action.TagName.Should().Be("A");
+        action.TextContent.Should().Be("Open Authentication setup");
+        action.GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=auth&profile=dev");
+        action.HasAttribute("disabled").Should().BeFalse();
+        page.Find("[data-testid=aqr-readiness-help]").TextContent.Should().Be(
+            "Start the Local HTTPS Proxy, open the dedicated Edge browser and perform an authenticated action against the target.");
+        page.FindAll("[data-testid=aqr-access-action]").Should().BeEmpty("the blocker owns the action; no second, disabled-looking control");
+
         page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Local HTTPS Proxy");
         page.FindAll("[data-testid=aqr-target]").Should().HaveCount(2).And.OnlyContain(t => t.GetAttribute("data-auth") == "true");
-        page.Find("[data-testid=aqr-access-mode]").GetAttribute("data-availability").Should().Be("NotConnected");
-        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Not connected");
-        page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked");
+        page.Find("[data-testid=aqr-access-mode]").GetAttribute("data-availability").Should().Be("WaitingForAuthenticatedTraffic");
+        page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
+        page.Find("[data-testid=aqr-decide]").TextContent.Should().NotContain("Not connected");
     }
 
     [Fact]

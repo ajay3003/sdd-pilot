@@ -65,10 +65,19 @@
                         var summary = ApiReviewPresentation.TargetSummary(_context, _capabilities, _targets);
                         @* Review status belongs to Readiness and access to API access; repeating either here said the
                            same thing in slightly different words. *@
-                        <dl class="aqr-dl">
+                        @* Label above value: a quarter-width card cannot hold a fixed label column and still show the value. *@
+                        <dl class="aqr-dl aqr-dl-stacked">
                             <div><dt>Environment</dt><dd><strong data-testid="aqr-env-name">@summary.Environment</strong> <span class="aqr-pill aqr-pill-muted">@summary.EnvironmentType</span></dd></div>
                             <div><dt>Frontend</dt><dd class="aqr-mono" data-testid="aqr-env-url">@summary.FrontendUrl</dd></div>
-                            <div><dt>Frontend sign-in</dt><dd data-testid="aqr-env-auth">@summary.Authentication</dd></div>
+                            <div>
+                                <dt>Frontend sign-in</dt>
+                                <dd data-testid="aqr-env-auth" aria-describedby="@(scope.AuthRequired > 0 ? "aqr-frontend-signin-help" : null)">@summary.Authentication</dd>
+                                @if (scope.AuthRequired > 0)
+                                {
+                                    @* Frontend sign-in and API authentication are separate facts; say so where both are visible. *@
+                                    <dd class="aqr-help" id="aqr-frontend-signin-help" data-testid="aqr-frontend-signin-help">Applies to the frontend only. Selected APIs may still require authenticated access independently.</dd>
+                                }
+                            </div>
                         </dl>
                         <ReviewDisclosure Text="View target details" CollapseText="Hide target details" TestId="aqr-target-details" Class="disclosure-inline">
                             <dl class="aqr-dl aqr-dl-technical">
@@ -103,19 +112,17 @@
                             <span class="aqr-pill aqr-pill-ready" data-testid="aqr-public-access"><span aria-hidden="true">✓</span> Available</span>
                         </li>
                         <li class="aqr-access-row">
-                            <span class="aqr-access-label">Authenticated access</span>
+                            <span class="aqr-access-label">Authenticated API context</span>
                             <span class="aqr-pill aqr-pill-@ApiReviewAccessAvailabilities.Tone(access.Availability)" data-testid="aqr-access-mode" data-availability="@access.Availability">@ApiReviewAccessAvailabilities.Label(access.Availability)</span>
                         </li>
                     </ul>
-                    @if (scope.AuthNote is not null)
+                    @* How many targets need it is Review scope's fact, and while the readiness card offers the way to
+                       Authentication, this card does not offer it a second time. *@
+                    @if (access.ActionText is not null && readiness.ActionHref is null)
                     {
-                        <p class="aqr-access-summary" data-testid="aqr-access-text">@scope.AuthRequired selected @(scope.AuthRequired == 1 ? "target requires" : "targets require") authenticated access.</p>
-                    }
-                    @if (access.ActionText is not null)
-                    {
-                        <div class="aqr-card-actions">
-                            <a class="btn-secondary" href="@access.ActionHref" data-testid="aqr-access-action">@access.ActionText</a>
-                        </div>
+                        <p class="aqr-card-actions">
+                            <a class="aqr-link" href="@access.ActionHref" data-testid="aqr-access-action">@access.ActionText</a>
+                        </p>
                     }
                 </section>
 
@@ -123,7 +130,7 @@
                     <div class="aqr-card-head">
                         <h2 id="aqr-readiness-heading"><span class="aqr-readiness-icon" aria-hidden="true">@ReadinessIcon(readiness.Level)</span> @readiness.Title</h2>
                     </div>
-                    <p class="aqr-readiness-message" data-testid="aqr-run-reason">@readiness.Message</p>
+                    <p class="aqr-readiness-message" id="aqr-run-reason" data-testid="aqr-run-reason">@readiness.Message</p>
                     @if (readiness.Items.Count > 0 && readiness.Level != ApiReviewReadinessLevel.Blocked)
                     {
                         @* While the review can still run, the individual limitations are what the reader opens. *@
@@ -134,11 +141,11 @@
                                     <li class="aqr-readiness-item aqr-readiness-item-@item.State.ToString().ToLowerInvariant()"><span aria-hidden="true">@ApiReviewReadinessItemStates.Glyph(item.State)</span> @item.Label</li>
                                 }
                             </ul>
-                            @if (readiness.ActionText is not null && readiness.ActionHref is not null)
-                            {
-                                <a class="aqr-link" data-testid="aqr-run-action" href="@readiness.ActionHref">@readiness.ActionText</a>
-                            }
                         </ReviewDisclosure>
+                        @if (readiness.ActionText is not null && readiness.ActionHref is not null)
+                        {
+                            <p class="aqr-card-actions"><a class="aqr-link" data-testid="aqr-run-action" href="@readiness.ActionHref">@readiness.ActionText</a></p>
+                        }
                     }
                     @if (readiness.Level == ApiReviewReadinessLevel.Blocked)
                     {
@@ -154,14 +161,24 @@
                         }
                         @if (readiness.ActionText is not null && readiness.ActionHref is not null)
                         {
-                            <a class="aqr-link" data-testid="aqr-run-action" href="@readiness.ActionHref">@readiness.ActionText</a>
+                            @* The one action that unblocks the run: a button-styled link, never a disabled control. *@
+                            <p class="aqr-card-actions">
+                                <a class="aqr-cta" data-testid="aqr-run-action" href="@readiness.ActionHref"
+                                   aria-describedby="@(readiness.Help is not null ? "aqr-readiness-help" : null)">@readiness.ActionText</a>
+                            </p>
+                        }
+                        @if (readiness.Help is not null)
+                        {
+                            <p class="aqr-help" id="aqr-readiness-help" data-testid="aqr-readiness-help">@readiness.Help</p>
                         }
                     }
                 </section>
             </div>
 
             <div class="aqr-run-row" data-testid="aqr-run-row">
-                <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run">
+                @* Disabled Run carries its reason programmatically: the readiness message is its description. *@
+                <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run"
+                               aria-describedby="@(!Eligibility.Enabled ? "aqr-run-reason" : null)">
                     @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
                     @(_running ? "Reviewing…" : "Run API Quality Review")
                 </PrimaryButton>
@@ -204,7 +221,7 @@
             <div class="aqr-card-head"><h2 id="aqr-details-heading">Review details</h2></div>
 
             <ReviewDisclosure Text="API targets" CollapseText="Hide API targets" Hint="@ScopeHint(scope)" TestId="aqr-targets-disclosure" Class="aqr-detail-disclosure">
-                <ApiReviewTargetPicker Targets="_targets" Selected="_selected" Toggle="OnToggleTarget" />
+                <ApiReviewTargetPicker Targets="_targets" Selected="_selected" Toggle="OnToggleTarget" LastReport="_history?.LastReport" />
             </ReviewDisclosure>
 
             <ReviewDisclosure Text="Contracts" CollapseText="Hide contracts" Hint="@ContractHint(contracts)" TestId="aqr-contracts-disclosure" Class="aqr-detail-disclosure">

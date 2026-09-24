@@ -6,13 +6,17 @@
     @if (Access.Steps.Count > 0)
     {
         <div class="aqr-access-steps @(Access.AuthenticationNeeded ? "aqr-access-steps-needed" : "")" data-testid="@(Access.AuthenticationNeeded ? "aqr-auth-missing" : "aqr-auth-steps")">
-            <p class="aqr-access-steps-title">To include authenticated API requests:</p>
+            <p class="aqr-access-steps-title">To enable authenticated API review:</p>
             <ol>
                 @foreach (var step in Access.Steps)
                 {
                     <li>@step</li>
                 }
             </ol>
+            @if (Access.ActionText is not null)
+            {
+                <p class="aqr-access-steps-link"><a class="aqr-link" href="@Access.ActionHref" data-testid="aqr-access-details-action">@Access.ActionText</a></p>
+            }
         </div>
     }
     <p class="aqr-muted" data-testid="aqr-memory-only-help">@BirkNext.Web.Services.ApiReviewEvidencePresentation.MemoryOnlyHelp</p>

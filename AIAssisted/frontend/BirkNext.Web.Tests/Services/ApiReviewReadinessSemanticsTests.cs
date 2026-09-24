@@ -130,7 +130,8 @@ public sealed class ApiReviewReadinessSemanticsTests
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
         readiness.Title.Should().Be("Review can run with limitations");
         readiness.Message.Should().Contain("Authenticated requests cannot be sent");
-        readiness.ActionText.Should().Be("Manage authenticated session");
+        readiness.ActionText.Should().Be("Open Authentication setup");
+        readiness.ActionHref.Should().Be("/admin/system-settings?section=target-environments&tab=auth&profile=dev");
         readiness.CanRun.Should().BeTrue();
     }
 
