@@ -3,14 +3,16 @@
 // 2. Syntax-checks every script.
 // 3. Runs the unit tests (unless --skip-tests).
 // 4. Packages the extension into dist/birknext-browser-companion-<version>.zip (source stays in the repository).
-import { readFileSync, mkdirSync, rmSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, mkdirSync, rmSync, existsSync, readdirSync, statSync, copyFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const manifest = JSON.parse(readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-const skipTests = process.argv.includes('--skip-tests');
+const prepareOnly = process.argv.includes('--prepare-only');
+const skipTests = prepareOnly || process.argv.includes('--skip-tests');
 const forbiddenPermissions = ['cookies', 'history', 'webRequest', 'webRequestBlocking', 'tabs', 'downloads', 'debugger', 'management', 'privacy', 'proxy'];
 
 function fail(message) { console.error(`BUILD FAILED: ${message}`); process.exit(1); }
@@ -51,6 +53,18 @@ rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 const zipName = `birknext-browser-companion-${manifest.version}.zip`;
 const include = ['manifest.json', 'icon128.png', 'popup.html', 'vendor/LICENSE.txt', 'vendor/NOTICE.txt', ...files];
+include.push('dedicated.js');
+execFileSync(process.execPath, ['--check', path.join(root, 'dedicated.js')], { stdio: 'inherit' });
+const current = path.join(dist, 'current');
+const hash = createHash('sha256');
+for (const f of [...include].sort()) {
+  const bytes = readFileSync(path.join(root, f));
+  hash.update(f); hash.update(bytes);
+  mkdirSync(path.dirname(path.join(current, f)), { recursive: true });
+  copyFileSync(path.join(root, f), path.join(current, f));
+}
+writeFileSync(path.join(current, 'build-info.json'), JSON.stringify({ version: manifest.version, buildId: hash.digest('hex') }));
+if (prepareOnly) process.exit(0);
 // Windows ships bsdtar which writes zip archives with -a; fall back to PowerShell Compress-Archive.
 let packaged = false;
 try {

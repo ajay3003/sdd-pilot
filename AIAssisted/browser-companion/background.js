@@ -252,6 +252,7 @@ async function heartbeat() {
       currentPageOrigin: only ? only.origin : null, currentPagePath: only ? only.route : null,
       livePages: live,
       capabilities: CAPABILITIES,
+      buildId: globalThis.birkNextBuildId ?? null,
     });
     if (result.ok && result.json && result.json.accepted && lastStatus.state !== 'connected') lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
     if (result.status === 403) { await revokeSession(result.json && result.json.message); return; }
@@ -369,7 +370,10 @@ chrome.tabs.onRemoved.addListener(async tabId => {
 let wcagTab = null;
 // Environments an interactive probe may drive. Production is deliberately absent and must stay absent.
 const PROBE_ENVIRONMENTS = ['Local', 'Development', 'QA', 'Test', 'RC'];
-chrome.alarms.onAlarm.addListener(alarm => { if (alarm.name === HEARTBEAT_ALARM) heartbeat(); });
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === HEARTBEAT_ALARM) heartbeat();
+  if (alarm.name === 'birknext-dedicated') dedicatedBootstrap();
+});
 
 // ── Messages from popup and content scripts ────────────────────────────────
 
@@ -472,3 +476,5 @@ chrome.runtime.onInstalled.addListener(restoreReporting);
 chrome.runtime.onStartup.addListener(restoreReporting);
 // MV3 wakes a fresh worker for messages/alarms too, without firing onStartup.
 getSession().then(ensureHeartbeatAlarm).catch(() => {});
+// Optional managed bootstrap; absent configuration leaves normal Edge pairing unchanged.
+importScripts('dedicated.js');

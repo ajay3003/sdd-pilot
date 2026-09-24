@@ -43,9 +43,15 @@ public sealed class BrowserCompanionController(IBrowserCompanionService companio
 [ApiController]
 [Route("api/browser-companion/extension")]
 [ServiceFilter(typeof(BrowserCompanionExtensionCallerFilter))]
-public sealed class BrowserCompanionExtensionController(IBrowserCompanionService companion) : ControllerBase
+public sealed class BrowserCompanionExtensionController(IBrowserCompanionService companion,
+    BirkNext.Api.Services.LocalHttpsProxy.DedicatedCompanionProvisioner? dedicated = null) : ControllerBase
 {
     private string ExtensionOrigin => Request.Headers.Origin.ToString().Trim();
+
+    [HttpPost("dedicated")]
+    [RequestSizeLimit(8 * 1024)]
+    public IActionResult Dedicated(BirkNext.Api.Services.LocalHttpsProxy.DedicatedBootstrapRequest request) =>
+        Run(() => Ok(dedicated?.Observe(request, ExtensionOrigin) ?? new BrowserCompanionPairResult { Message = "Dedicated provisioning unavailable." }));
 
     [HttpPost("pair")]
     [RequestSizeLimit(8 * 1024)]

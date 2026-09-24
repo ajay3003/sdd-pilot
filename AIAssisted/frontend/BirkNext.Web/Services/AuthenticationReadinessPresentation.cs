@@ -246,6 +246,38 @@ public static class AuthenticationReadinessPresentation
     /// </summary>
     private static AuthenticationPrerequisite Browser(LocalHttpsProxyStatus? proxy)
     {
+        var browser = BrowserProxy(proxy);
+        if (proxy?.EdgeRunning != true) return browser;
+        var companion = proxy.Companion;
+        var label = companion.State switch
+        {
+            "Connected" when companion.Connected && companion.VersionCompatible => "Connected",
+            "PolicyBlocked" => "Unavailable: Edge policy",
+            "BuildMissing" or "BuildUnavailable" => "Build not available",
+            "SessionConflict" => "Another browser is paired",
+            "VersionMismatch" => "Incompatible build",
+            "AwaitingHeartbeat" => "Loaded; awaiting heartbeat",
+            "AwaitingCompanion" => "Load requested; not observed yet",
+            _ => "Not observed in dedicated profile",
+        };
+        // The same edge-restart relaunches with the Companion loaded. Name the Companion only when the proxy side is
+        // otherwise fine; a proxy mismatch stays the stated problem and keeps its own "Restart browser with proxy".
+        var restart = browser.State == AuthPrerequisiteState.Ok && companion.State is "NotRequested" or "NotObserved" or "VersionMismatch";
+        return browser with
+        {
+            Explanation = browser.Explanation + " " + companion.Message +
+                (companion.BrowserDiscoveryReady ? " Browser Discovery has an approved live page." :
+                    " Browser Discovery and attended automation are not ready in this browser. Proxy-based API testing remains independent."),
+            ActionLabel = restart ? "Restart with Browser Companion" : browser.ActionLabel,
+            ActionId = restart ? "edge-restart" : browser.ActionId,
+            Facts = [.. browser.Facts ?? [], ("Browser Companion", label),
+                ("Approved target page", companion.ApprovedPageAvailable ? "Detected" : "Not detected yet"),
+                ("Element picking", companion.ElementPickAvailable ? "Available" : "Unavailable")],
+        };
+    }
+
+    private static AuthenticationPrerequisite BrowserProxy(LocalHttpsProxyStatus? proxy)
+    {
         const string title = "Dedicated Edge browser";
         if (proxy is null)
             return new(BrowserId, title, "Unknown", AuthPrerequisiteState.Unknown, "The browser state could not be read.");

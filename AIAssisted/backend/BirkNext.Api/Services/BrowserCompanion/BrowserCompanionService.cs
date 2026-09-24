@@ -74,6 +74,9 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         public string ExtensionVersion { get; set; } = "";
         /// <summary>Capabilities the extension build reported on its latest heartbeat. Empty for older builds.</summary>
         public List<string> Capabilities { get; set; } = [];
+        public string? DedicatedLaunchId { get; set; }
+        public string? BuildId { get; set; }
+        public DateTimeOffset? LastHeartbeatAt { get; set; }
         /// <summary>Approved pages with a live content script, keyed by PageId. Only the heartbeat writes this.</summary>
         public Dictionary<string, BrowserCompanionLivePage> LivePages { get; } = new(StringComparer.Ordinal);
         public DateTimeOffset? LastContentScriptSeenAt { get; set; }
@@ -163,6 +166,8 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
             session.LastSeenAt = heartbeatAt;
             session.ExtensionVersion = Safe(heartbeat.ExtensionVersion, 40);
             session.Capabilities = SafeCapabilities(heartbeat.Capabilities);
+            session.LastHeartbeatAt = heartbeatAt;
+            session.BuildId = Safe(heartbeat.BuildId, 64);
             ReconcileLivePages(session, heartbeat, heartbeatAt);
             // A queued command rides back on this response. It is only handed out when a live page is actually there to
             // receive it — a command aimed at a page that is no longer open is a stale click, not a pending one.

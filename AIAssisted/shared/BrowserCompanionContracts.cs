@@ -106,7 +106,8 @@ public sealed record BrowserCompanionHeartbeat(
     string SessionId, string ProfileId, string? CurrentPageOrigin, string? CurrentPagePath, string ExtensionVersion,
     List<BrowserCompanionLivePageReport>? LivePages = null,
     // Named capabilities of this extension build (see CompanionCapabilities). Absent from older builds, which have none.
-    List<string>? Capabilities = null);
+    List<string>? Capabilities = null,
+    string? BuildId = null);
 
 /// <summary>One live page as the extension reports it. Small on purpose: this rides on every heartbeat.</summary>
 public sealed record BrowserCompanionLivePageReport(string PageId, string Origin, string Route, string ContentScriptInstanceId);

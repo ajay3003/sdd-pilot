@@ -47,4 +47,14 @@
     <Compile Include="../../shared/ApiReviewContracts.cs" Link="Models/ApiReviewContracts.cs" />
     <Compile Include="../../shared/CriticalE2EContracts.cs" Link="Models/CriticalE2EContracts.cs" />
   </ItemGroup>
+  <Target Name="PackageBrowserCompanion" BeforeTargets="AssignTargetPaths">
+    <Exec Command="node build.mjs --prepare-only" WorkingDirectory="$(MSBuildProjectDirectory)/../../browser-companion" />
+    <!-- Collected into their own item type first: an unqualified %(RecursiveDir) inside a target batches over every
+         existing Content item, which copied the backend's own content (appsettings, Playwright driver) into
+         BrowserCompanion/ and never the Companion itself. -->
+    <ItemGroup>
+      <_BirkNextCompanionFile Include="../../browser-companion/dist/current/**/*" />
+      <Content Include="@(_BirkNextCompanionFile)" Link="BrowserCompanion/%(_BirkNextCompanionFile.RecursiveDir)%(_BirkNextCompanionFile.Filename)%(_BirkNextCompanionFile.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
 </Project>

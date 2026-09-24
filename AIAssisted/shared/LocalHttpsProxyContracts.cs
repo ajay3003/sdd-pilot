@@ -447,8 +447,24 @@ public enum DedicatedBrowserProxyTraffic
     Observed,
 }
 
+public sealed record DedicatedCompanionReadiness
+{
+    public string State { get; init; } = "NotRequested";
+    public string Message { get; init; } = "Companion has not been requested for this browser.";
+    public bool LoadRequested { get; init; }
+    public bool LoadedObserved { get; init; }
+    public bool Connected { get; init; }
+    public bool VersionCompatible { get; init; }
+    public bool ApprovedPageAvailable { get; init; }
+    public bool ElementPickAvailable { get; init; }
+    public string? ExpectedVersion { get; init; }
+    public string? ObservedVersion { get; init; }
+    public bool BrowserDiscoveryReady => Connected && VersionCompatible && ApprovedPageAvailable;
+}
+
 public sealed record LocalHttpsProxyStatus
 {
+    public DedicatedCompanionReadiness Companion { get; init; } = new();
     public string? RuntimeId { get; init; }
     public string? ProfileId { get; init; }
     public string? ContextFingerprint { get; init; }

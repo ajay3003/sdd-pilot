@@ -49,7 +49,8 @@ public interface ILocalHttpsProxyStatusQuery
 /// </summary>
 public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> options, IOptions<AuthenticatedReviewOptions> runtime, IProxyCertificateAuthority authority,
     TransientAuthenticatedApiContextStore store, IUpstreamConnector upstream, IEdgeInstallationLocator edgeLocator, IProxyEdgeLauncher edgeLauncher,
-    ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null, IOwnedEdgeProcessInspector? edgeInspector = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
+    ILogger<LocalHttpsProxyService>? logger = null, Func<DateTimeOffset>? clock = null, IOwnedEdgeProcessInspector? edgeInspector = null,
+    DedicatedCompanionProvisioner? companion = null) : BackgroundService, ILocalHttpsProxyService, ILocalHttpsProxySessionAccess, ILocalHttpsProxyStatusQuery
 {
     public const string PortsOccupiedReason = "The configured loopback proxy ports are all occupied. BirkNext never stops the occupying process; free a port or configure LocalHttpsProxy:Port.";
     public const string EdgeMissingReason = "Microsoft Edge was not found in the standard installation locations. Install Edge to open the dedicated proxy browser.";
@@ -192,8 +193,10 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             if (session.Edge is { } owned)
             {
                 try { await owned.StopAsync().ConfigureAwait(false); }
-                catch (Exception) { /* a browser that will not close is reported by the relaunch, not by throwing here */ }
-                finally { owned.Dispose(); session.Edge = null; session.EdgeProxyPort = null; session.EdgeProxyArgument = null; session.ResetEdgeEvidence(); }
+                catch (Exception) { /* Check the owned process before allowing another launch. */ }
+                if (owned.Running) return Describe(session.Scope, session) with { FailureReason = "Dedicated Edge could not be closed. Close it before restarting; a second process will not be launched." };
+                owned.Dispose(); session.Edge = null; session.EdgeProxyPort = null; session.EdgeProxyArgument = null; session.ResetEdgeEvidence();
+                companion?.Retire();
             }
         }
         finally { _gate.Release(); }
@@ -216,7 +219,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             IReadOnlyList<string> arguments;
             try
             {
-                arguments = BuildEdgeArguments(session.Port, profileDirectory, session.Scope.TargetUrl);
+                arguments = BuildEdgeArguments(session.Port, profileDirectory, session.Scope.TargetUrl, companion?.Prepare(session.Scope));
                 Directory.CreateDirectory(profileDirectory);
             }
             catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
@@ -322,13 +325,15 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
     public static string DefaultEdgeProfileDirectory() => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext", "LocalHttpsProxyEdgeProfile");
 
     /// <summary>Only the loopback proxy, a loopback bypass, a dedicated profile, first-run suppression and the validated target URL.</summary>
-    public static IReadOnlyList<string> BuildEdgeArguments(int port, string profileDirectory, string targetUrl)
+    public static IReadOnlyList<string> BuildEdgeArguments(int port, string profileDirectory, string targetUrl, string? companionDirectory = null)
     {
         if (port is < 1 or > 65535) throw new ArgumentException("A bound loopback proxy port is required.");
         if (!System.IO.Path.IsPathFullyQualified(profileDirectory) || ManagedEdgePreflightService.IsNormalEdgeProfile(profileDirectory))
             throw new ArgumentException("A dedicated BirkNext profile directory is required; the normal Edge profile is never reused.");
         ManagedEdgePolicy.Origin(targetUrl);
-        return [$"--proxy-server=127.0.0.1:{port}", "--proxy-bypass-list=<-loopback>", $"--user-data-dir={profileDirectory}", "--no-first-run", "--no-default-browser-check", new Uri(targetUrl, UriKind.Absolute).AbsoluteUri];
+        if (companionDirectory is not null) DedicatedCompanionProvisioner.ValidateManagedPath(companionDirectory);
+        return [$"--proxy-server=127.0.0.1:{port}", "--proxy-bypass-list=<-loopback>", $"--user-data-dir={profileDirectory}", "--no-first-run", "--no-default-browser-check",
+            .. companionDirectory is null ? Array.Empty<string>() : [$"--load-extension={companionDirectory}"], new Uri(targetUrl, UriKind.Absolute).AbsoluteUri];
     }
 
     ApprovedHostSet ILocalHttpsProxySessionAccess.GetScope(LocalHttpsProxySessionRequest session) => Get(session).Hosts;
@@ -458,6 +463,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             RuntimeStatus = session.Stopped ? LocalHttpsProxyRuntimePhase.Stopped : session.Server?.Listening == true ? LocalHttpsProxyRuntimePhase.Running : LocalHttpsProxyRuntimePhase.Failed,
             ProxyListening = session.Server?.Listening == true, StartedAt = session.CreatedAt, LastHealthCheckAt = now,
             EdgeProcessId = session.Edge?.Id, EdgeRunning = session.Edge?.Running == true,
+            Companion = companion?.Status(session.Edge?.Running == true) ?? new(),
             EdgeStartedAt = session.Edge?.StartedAt, EdgeProfileDirectory = session.EdgeProfileDirectory,
             ExpectedProxyPort = session.Port, EdgeProxyPort = session.EdgeProxyPort,
             ProxyArgumentConfigured = session.EdgeProxyArgument is not null,
@@ -482,6 +488,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         logger?.LogInformation("ProxyStopRequested {RuntimeId} {ProfileId} {Port} {Reason}", session.Id, session.Scope.ProfileId, session.Port, reason);
         _last = Describe(session.Scope, session) with { RuntimeStatus = LocalHttpsProxyRuntimePhase.Stopping, StopReason = reason };
         session.Stopped = true;
+        companion?.Retire();
         if (session.Server is { } server) await server.DisposeAsync().ConfigureAwait(false);
         if (session.Edge is { } edge)
         {
