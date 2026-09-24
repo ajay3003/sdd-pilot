@@ -12,9 +12,9 @@
 .e2e-link:hover, .e2e-link:focus-visible { text-decoration: underline; }
 
 .e2e-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
-.e2e-step { display: grid; gap: .5rem; padding: .7rem .8rem; border: 1px solid var(--clr-border, #ddd); border-radius: 8px; background: var(--clr-surface, #f9fafb); min-width: 0; }
+.e2e-step { display: grid; gap: .6rem; padding: .85rem 1rem; border: 1px solid var(--clr-border-subtle, #e5e7eb); border-radius: 10px; background: var(--clr-surface, #f9fafb); min-width: 0; }
 .e2e-step-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
-.e2e-step-title { margin: 0; font-size: .95rem; color: var(--clr-text-heading, #111); }
+.e2e-step-title { margin: 0; font-size: 1rem; font-weight: 700; color: var(--clr-text-heading, #111); }
 .e2e-step-final { font-size: .85rem; }
 .e2e-step-number { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; border-radius: 999px; background: var(--clr-primary, #1d4ed8); color: #fff; font-weight: 700; font-size: .85rem; }
 .e2e-step-remove { margin-left: auto; }
@@ -22,7 +22,7 @@
 .e2e-step-fields input, .e2e-step-fields select { min-width: 12rem; max-width: 100%; }
 
 /* The picked target: identity first, strategy second, the button to change it beside. */
-.e2e-target { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .5rem .65rem; border-radius: 6px; background: var(--clr-surface-white, #fff); border: 1px solid var(--clr-border-subtle, #e5e7eb); }
+.e2e-target { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; padding: .6rem .75rem; border-radius: 6px; background: var(--clr-surface-white, #fff); }
 .e2e-target-main { min-width: 0; }
 .e2e-target-identity { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .e2e-target-meta { margin: .1rem 0 0; font-size: .8rem; color: var(--clr-text-muted, #666); }
@@ -63,3 +63,8 @@
 .e2e-cta:hover, .e2e-cta:focus-visible { text-decoration: underline; }
 .e2e-editor h2:focus { outline: none; }
 .e2e-editor h2:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: 2px; }
+
+/* Text actions inside the editor: link-like, never the boxed legacy link style. */
+.e2e-step-remove { border: 0; background: transparent; padding: .2rem .4rem; font-size: .82rem; color: var(--clr-text-muted, #555); text-decoration: none; }
+.e2e-step-remove:hover, .e2e-step-remove:focus-visible { color: #b42318; text-decoration: underline; }
+.e2e-editor .btn-link { border: 0; background: transparent; }

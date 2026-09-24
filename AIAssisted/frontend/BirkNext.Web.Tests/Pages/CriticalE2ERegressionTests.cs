@@ -127,7 +127,10 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         var page = Render(Overview([], CriticalE2EReleaseDisposition.NotConfigured, total: 0, covered: 0), out _);
         // The flow list's empty state says it once; no separate headline repeats it.
         page.FindAll("[data-testid=e2e-verdict]").Should().BeEmpty();
-        page.Find("[data-testid=e2e-no-flows]").TextContent.Should().Contain("No critical flows configured").And.Contain("Create a critical user journey");
+        page.Find("[data-testid=e2e-no-flows]").TextContent.Should().Contain("No critical flows yet").And.Contain("Create your first attended user journey for this target.");
+        // One primary action, inside the empty state; none in the header.
+        page.FindAll("[data-testid=e2e-add-flow]").Should().ContainSingle();
+        page.Find("[data-testid=e2e-no-flows] [data-testid=e2e-add-flow]").ClassList.Should().Contain("btn-primary");
         page.FindAll("[data-testid=e2e-show-diagnostic]").Should().BeEmpty("there is nothing to reveal");
         page.FindAll("[data-testid=e2e-run-browser]").Should().BeEmpty("no disabled run button with nothing behind it");
         Text(page, "e2e-coverage").Should().Be("No delivery modules yet");
@@ -143,7 +146,10 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         page.FindAll("[data-testid=e2e-verdict]").Should().BeEmpty();
         page.FindAll("[data-testid^=e2e-filter]").Should().BeEmpty("there are no Critical / Smoke / All tabs");
         var empty = page.Find("[data-testid=e2e-no-flows]").TextContent;
-        empty.Should().Contain("No release-critical flows configured.").And.Contain("15 smoke/diagnostic flows are hidden.");
+        empty.Should().Contain("No release-critical flows yet").And.Contain("Create your first attended user journey for this target.")
+            .And.Contain("15 smoke/diagnostic flows are hidden.");
+        page.FindAll("[data-testid=e2e-add-flow]").Should().ContainSingle("the empty state owns the one Add action");
+        page.FindAll("[data-testid=e2e-no-flows] [data-testid=e2e-show-diagnostic]").Should().ContainSingle("the smoke switch sits with the empty state");
         page.FindAll("[data-testid^=e2e-flow-smoke-]").Should().BeEmpty();
         var toggle = page.Find("[data-testid=e2e-show-diagnostic]");
         toggle.HasAttribute("checked").Should().BeFalse("smoke flows are opt-in");
@@ -187,6 +193,10 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     public void SmokeToggleAddsDiagnosticRowsAfterCriticalOnes_AndSurvivesARefresh()
     {
         var page = Render(Overview([Flow("m02"), Flow("smoke", "SMOKE", kind: CriticalE2EFlowKind.Diagnostic)]), out _);
+        // With flows to show, the one Add action is in the section header and there is no empty-state card.
+        page.FindAll("[data-testid=e2e-add-flow]").Should().ContainSingle();
+        page.Find(".e2e-flows-head [data-testid=e2e-add-flow]").Should().NotBeNull();
+        page.FindAll("[data-testid=e2e-no-flows]").Should().BeEmpty();
         page.FindAll("tr[data-testid^=e2e-flow-]").Should().ContainSingle("critical flows only by default");
         Text(page, "e2e-hidden-diagnostic").Should().Be("1 smoke/diagnostic flow is hidden.");
 
@@ -273,6 +283,9 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         var page = Render(Overview(), out _);
         Text(page, "e2e-readiness-state").Should().Be("Ready");
         Text(page, "e2e-attended-state").Should().Be("Ready");
+        Text(page, "e2e-attended-detail").Should().Be("Companion connected");
+        page.Find("#e2e-readiness-heading").TextContent.Should().Contain("Ready for attended automation");
+        page.Find("[data-testid=e2e-readiness-refresh]").ClassList.Should().Contain("btn-secondary");
         Text(page, "e2e-readiness-companion").Should().Be("Connected");
         Text(page, "e2e-readiness-page").Should().Be("m2lbdev.bufetat.no/admin/general-roles");
         Text(page, "e2e-readiness-picking").Should().Be("Available");
@@ -288,6 +301,8 @@ public sealed class CriticalE2ERegressionTests : BunitContext
             Status = new CriticalE2EEngineStatus { State = CriticalE2EEngineState.NotConfigured, Message = "Browser Companion is not connected." },
         }), out _);
         Text(page, "e2e-readiness-state").Should().Be("Not ready");
+        page.Find("#e2e-readiness-heading").TextContent.Should().Contain("Attended automation not ready");
+        Text(page, "e2e-attended-detail").Should().Be("Companion not connected");
         Text(page, "e2e-readiness-reason").Should().Be("Browser Companion is not connected.");
         var setup = page.Find("[data-testid=e2e-companion-setup]");
         setup.ClassList.Should().Contain("e2e-cta");

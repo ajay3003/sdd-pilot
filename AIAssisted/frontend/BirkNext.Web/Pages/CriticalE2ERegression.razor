@@ -33,21 +33,26 @@
         var hiddenRuns = overview.History.Count - history.Count;
         var smokeRuns = CriticalE2EPresentation.History(overview, _buildId, true).Count(h => h.Kind == CriticalE2EHistoryKind.Smoke);
 
-        @* ── Where, what build, how much is covered, can a browser flow run. One fact per card. ── *@
+        @* ── Where, what build, how much is covered, can a browser flow run. One fact per card: quiet label, large value,
+               at most one short line under it. ── *@
         <section class="e2e-summary" data-testid="e2e-summary" aria-label="Regression summary">
-            <div class="e2e-card"><span class="e2e-card-label">Target</span><strong data-testid="e2e-environment">@overview.EnvironmentName</strong></div>
+            <div class="e2e-card"><span class="e2e-card-label">Target</span><strong class="e2e-card-value" data-testid="e2e-environment">@overview.EnvironmentName</strong></div>
             <div class="e2e-card">
                 <span class="e2e-card-label">Build</span>
-                <strong data-testid="e2e-build">@CriticalE2EPresentation.BuildLabel(_buildId)</strong>
+                <strong class="e2e-card-value" data-testid="e2e-build">@CriticalE2EPresentation.BuildLabel(_buildId)</strong>
                 <span class="e2e-card-help" data-testid="e2e-build-help">@CriticalE2EPresentation.BuildHelp(_buildId)</span>
             </div>
             <div class="e2e-card">
                 <span class="e2e-card-label">Required flow coverage</span>
-                <strong data-testid="e2e-coverage">@CriticalE2EPresentation.Coverage(overview.Release)</strong>
+                <strong class="e2e-card-value" data-testid="e2e-coverage">@CriticalE2EPresentation.Coverage(overview.Release)</strong>
             </div>
             <div class="e2e-card">
                 <span class="e2e-card-label">Attended browser</span>
-                <strong class="e2e-pill e2e-tone-@readiness.Tone.ToString().ToLowerInvariant()" data-testid="e2e-attended-state">@readiness.Label</strong>
+                <strong class="e2e-card-value e2e-tone-@readiness.Tone.ToString().ToLowerInvariant()" data-testid="e2e-attended-state">@readiness.Label</strong>
+                @if (readiness.CardDetail is { Length: > 0 } cardDetail)
+                {
+                    <span class="e2e-card-help" data-testid="e2e-attended-detail">@cardDetail</span>
+                }
             </div>
         </section>
 
@@ -60,34 +65,40 @@
             </section>
         }
 
-        @* ── Attended readiness: the prerequisite for picking and replay, so it sits above the flows. Consumed from the
+        @* ── Attended readiness: one compact strip that says WHY the card above reads as it does. Consumed from the
                overview's one Companion snapshot; setup lives with the Target Environment. ── *@
         <section class="e2e-readiness e2e-readiness-@readiness.Tone.ToString().ToLowerInvariant()" data-testid="e2e-readiness" aria-labelledby="e2e-readiness-heading">
-            <div class="e2e-section-head">
-                <h2 id="e2e-readiness-heading">Attended browser readiness</h2>
-                <span class="e2e-pill e2e-tone-@readiness.Tone.ToString().ToLowerInvariant()" data-testid="e2e-readiness-state">@readiness.Label</span>
+            <div class="e2e-readiness-main">
+                <h2 id="e2e-readiness-heading" class="e2e-readiness-title">
+                    <span class="e2e-readiness-glyph" aria-hidden="true">@(readiness.Tone == CriticalE2ETone.Good ? "✓" : readiness.Tone == CriticalE2ETone.Neutral ? "○" : "!")</span>
+                    @readiness.Headline
+                    @* The short state as a stable hook; the headline already says it, so assistive tech is not told twice. *@
+                    <span class="e2e-visually-hidden" aria-hidden="true" data-testid="e2e-readiness-state">@readiness.Label</span>
+                </h2>
+                @if (readiness.Reason is { Length: > 0 } reason)
+                {
+                    <p class="e2e-readiness-reason" role="status" data-testid="e2e-readiness-reason">@reason</p>
+                }
+                <dl class="e2e-facts">
+                    <div><dt>Browser Companion</dt><dd data-testid="e2e-readiness-companion">@readiness.Companion</dd></div>
+                    <div><dt>Approved page</dt><dd data-testid="e2e-readiness-page">@readiness.Page</dd></div>
+                    <div><dt>Element picking</dt><dd data-testid="e2e-readiness-picking">@readiness.ElementPicking</dd></div>
+                </dl>
             </div>
-            @if (readiness.Reason is { Length: > 0 } reason)
-            {
-                <p class="e2e-readiness-reason" role="status" data-testid="e2e-readiness-reason">@reason</p>
-            }
-            <dl class="e2e-facts">
-                <div><dt>Browser Companion</dt><dd data-testid="e2e-readiness-companion">@readiness.Companion</dd></div>
-                <div><dt>Approved page</dt><dd data-testid="e2e-readiness-page">@readiness.Page</dd></div>
-                <div><dt>Element picking</dt><dd data-testid="e2e-readiness-picking">@readiness.ElementPicking</dd></div>
-            </dl>
-            <p class="e2e-readiness-actions">
+            <div class="e2e-readiness-actions">
                 @if (readiness.Tone != CriticalE2ETone.Good)
                 {
                     <a class="e2e-cta" href="@CriticalE2EPresentation.BrowserCompanionSetupHref(_profileId)" data-testid="e2e-companion-setup">Open Browser Companion setup</a>
                 }
-                <button type="button" class="btn-link" data-testid="e2e-readiness-refresh" @onclick="RefreshAsync">Check again</button>
-            </p>
+                <button type="button" class="btn-secondary btn-small" data-testid="e2e-readiness-refresh" @onclick="RefreshAsync">Check again</button>
+            </div>
         </section>
 
-        @* ── The flows are the page. Smoke / diagnostic flows are hidden unless the reader asks for them. ── *@
+        @* ── The flows are the page. Smoke / diagnostic flows are hidden unless the reader asks for them. With no flow
+               to show, the empty state owns the one Add action and the smoke switch; otherwise the header does. ── *@
+        var showEmpty = rows.Count == 0;
         <section class="e2e-flows" data-testid="e2e-flows" aria-labelledby="e2e-flows-heading">
-            <div class="e2e-section-head">
+            <div class="e2e-section-head e2e-flows-head">
                 <h2 id="e2e-flows-heading">Critical flows</h2>
                 <div class="e2e-section-actions">
                     @foreach (var action in actions)
@@ -107,27 +118,39 @@
                     {
                         <button type="button" class="btn-secondary" data-testid="e2e-cancel" @onclick="Cancel">Stop</button>
                     }
-                    <button type="button" class="btn-primary" data-testid="e2e-add-flow" @ref="_addButton" @onclick="AddFlow">Add critical flow</button>
-                    @if (diagnosticCount > 0)
+                    @if (!showEmpty)
                     {
-                        <label class="e2e-toggle" data-testid="e2e-show-diagnostic-label">
-                            <input type="checkbox" data-testid="e2e-show-diagnostic" @bind="_showDiagnostic" /> Show smoke / diagnostic flows
-                        </label>
+                        <button type="button" class="btn-primary" data-testid="e2e-add-flow" @ref="_addButton" @onclick="AddFlow">Add critical flow</button>
                     }
                 </div>
             </div>
+            @if (!showEmpty && diagnosticCount > 0)
+            {
+                <div class="e2e-flows-subhead">
+                    <label class="e2e-toggle" data-testid="e2e-show-diagnostic-label">
+                        <input type="checkbox" data-testid="e2e-show-diagnostic" @bind="_showDiagnostic" /> Show smoke / diagnostic flows
+                    </label>
+                    @if (!_showDiagnostic)
+                    {
+                        <span class="e2e-toggle-count" data-testid="e2e-hidden-diagnostic">@diagnosticCount smoke/diagnostic @(diagnosticCount == 1 ? "flow is" : "flows are") hidden.</span>
+                    }
+                </div>
+            }
 
-            @if (rows.Count == 0)
+            @if (showEmpty)
             {
                 <div class="e2e-empty" data-testid="e2e-no-flows">
-                    @if (overview.Flows.Count == 0)
+                    <h3 class="e2e-empty-title">@(overview.Flows.Count == 0 ? "No critical flows yet" : "No release-critical flows yet")</h3>
+                    <p class="e2e-empty-text">Create your first attended user journey for this target.</p>
+                    <button type="button" class="btn-primary" data-testid="e2e-add-flow" @ref="_addButton" @onclick="AddFlow">Add critical flow</button>
+                    @if (diagnosticCount > 0)
                     {
-                        <p><strong>No critical flows configured.</strong> Create a critical user journey to start attended regression testing.</p>
-                    }
-                    else
-                    {
-                        <p><strong>No release-critical flows configured.</strong></p>
-                        <p class="e2e-muted" data-testid="e2e-hidden-diagnostic">@diagnosticCount smoke/diagnostic @(diagnosticCount == 1 ? "flow is" : "flows are") hidden.</p>
+                        <div class="e2e-empty-foot">
+                            <span data-testid="e2e-hidden-diagnostic">@diagnosticCount smoke/diagnostic @(diagnosticCount == 1 ? "flow is" : "flows are") hidden.</span>
+                            <label class="e2e-toggle" data-testid="e2e-show-diagnostic-label">
+                                <input type="checkbox" data-testid="e2e-show-diagnostic" @bind="_showDiagnostic" /> Show smoke / diagnostic flows
+                            </label>
+                        </div>
                     }
                 </div>
             }
@@ -135,11 +158,7 @@
             {
                 @if (criticalCount == 0)
                 {
-                    <p class="e2e-muted" data-testid="e2e-no-critical-note">No release-critical flows configured. Showing smoke / diagnostic flows only; they never count toward release coverage.</p>
-                }
-                else if (!_showDiagnostic && diagnosticCount > 0)
-                {
-                    <p class="e2e-muted" data-testid="e2e-hidden-diagnostic">@diagnosticCount smoke/diagnostic @(diagnosticCount == 1 ? "flow is" : "flows are") hidden.</p>
+                    <p class="e2e-muted" data-testid="e2e-no-critical-note">No release-critical flows yet. Showing smoke / diagnostic flows only; they never count toward release coverage.</p>
                 }
                 <div class="e2e-tablewrap">
                     <table class="e2e-table" data-testid="e2e-flow-table">

@@ -29,7 +29,10 @@ public sealed record CriticalE2EFlowRow(
 public sealed record CriticalE2ERunAction(CriticalE2EExecutionMode Mode, string Label, int FlowCount, bool Enabled, string? Reason);
 
 /// <summary>How the paired browser reads as attended execution. Straight from the overview's live snapshot.</summary>
-public sealed record CriticalE2EReadinessView(string Label, CriticalE2ETone Tone, string? Reason, string Companion, string Page, string ElementPicking);
+/// <param name="Headline">The readiness strip's one line ("Ready for attended automation"), so the state is said once there.</param>
+/// <param name="CardDetail">The summary card's short secondary line; the strip carries the rest.</param>
+public sealed record CriticalE2EReadinessView(string Label, CriticalE2ETone Tone, string? Reason, string Companion, string Page, string ElementPicking,
+    string Headline = "", string? CardDetail = null);
 
 /// <summary>A selector as a person reads it: what the element is, and which strategy identifies it.</summary>
 public sealed record CriticalE2ETargetView(string Identity, string Strategy, bool Fragile);
@@ -110,13 +113,14 @@ public static class CriticalE2EPresentation
             : a.OpenApprovedPages > 1 ? $"{a.OpenApprovedPages} approved pages open"
             : $"{HostOf(a.CurrentOrigin)}{a.CurrentRoute}";
         var picking = !a.CompanionConnected ? "—" : a.ElementPickSupported ? "Available" : "Not supported by this extension build";
+        var card = a.CompanionConnected ? "Companion connected" : "Companion not connected";
         return a.Status.State switch
         {
-            CriticalE2EEngineState.Ready => new("Ready", CriticalE2ETone.Good, null, companion, page, picking),
-            CriticalE2EEngineState.Unavailable => new("Out of scope", CriticalE2ETone.Neutral, a.Status.Message, companion, page, picking),
+            CriticalE2EEngineState.Ready => new("Ready", CriticalE2ETone.Good, null, companion, page, picking, "Ready for attended automation", card),
+            CriticalE2EEngineState.Unavailable => new("Out of scope", CriticalE2ETone.Neutral, a.Status.Message, companion, page, picking, "Attended automation is out of scope here", null),
             // Two pages open is a precise blocker, not a vague "unavailable": the fix is to close one.
-            _ when a.CompanionConnected && a.OpenApprovedPages > 1 => new("Blocked", CriticalE2ETone.Warning, a.Status.Message, companion, page, picking),
-            _ => new("Not ready", CriticalE2ETone.Warning, a.Status.Message, companion, page, picking),
+            _ when a.CompanionConnected && a.OpenApprovedPages > 1 => new("Blocked", CriticalE2ETone.Warning, a.Status.Message, companion, page, picking, "Attended automation blocked", $"{a.OpenApprovedPages} approved pages open"),
+            _ => new("Not ready", CriticalE2ETone.Warning, a.Status.Message, companion, page, picking, "Attended automation not ready", card),
         };
     }
 
