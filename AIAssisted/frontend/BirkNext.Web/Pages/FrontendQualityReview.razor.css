@@ -378,7 +378,7 @@
 /* ── Review capabilities ── */
 ::deep .fqr-capability-groups {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
     gap: 1rem;
     align-items: start;
 }
@@ -410,6 +410,8 @@
 ::deep .fqr-capability-glyph { width: 1.1rem; text-align: center; color: var(--clr-text-subtle); }
 ::deep .fqr-capability-ready .fqr-capability-glyph { color: var(--clr-success); }
 ::deep .fqr-capability-name { font-weight: 600; color: var(--clr-text-heading); font-size: 0.95rem; }
+::deep .fqr-capability-name { min-width: 0; overflow-wrap: anywhere; }
+::deep .fqr-detail-disclosure .disclosure-hint { min-width: 0; overflow-wrap: anywhere; }
 
 ::deep .fqr-capability-include {
     margin-left: auto;

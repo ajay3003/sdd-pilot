@@ -28,14 +28,14 @@
             <dl class="fqr-target-access-list">
                 <div><dt>Browser DOM</dt><dd data-testid="fqr-access-dom">@FrontendQualityTargetAccess.BrowserDomLabel(Access)</dd></div>
                 <div><dt>Authenticated context</dt><dd data-testid="fqr-access-context">@FrontendQualityTargetAccess.ApiContextLabel(Access)</dd></div>
-                <div><dt>Testing method</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)</dd></div>
+                <div><dt>@(ShowActions ? "Authenticated testing method" : "Testing method")</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)@(ShowActions && !Access.RequiresAuthentication ? " — not needed for this target" : "")</dd></div>
                 @if (Access.ManagedEdgeState is { } edge && Access.Method == AuthenticatedTestingMethod.ManagedEdgeCdp)
                 {
                     <div><dt>Managed Edge (CDP)</dt><dd data-testid="fqr-access-cdp">@AuthenticatedTestingMethodLabels.Connection(edge)</dd></div>
                 }
                 @if (Access.ProxyState is { } proxy && Access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
                 {
-                    <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@AuthenticatedTestingMethodLabels.ProxyState(proxy)</dd></div>
+                    <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@(ShowActions && !Access.RequiresAuthentication ? "Not needed for this run" : AuthenticatedTestingMethodLabels.ProxyState(proxy))</dd></div>
                 }
                 @* Kept next to, never merged with, automated access: a person can sign in where an engine cannot. *@
                 <div><dt>Manual verification</dt><dd data-testid="fqr-access-manual">@FrontendQualityTargetAccess.ManualVerificationLabel(Access.ManualVerificationStatus)</dd></div>

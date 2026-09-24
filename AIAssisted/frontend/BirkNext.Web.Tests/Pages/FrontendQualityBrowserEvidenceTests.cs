@@ -25,6 +25,43 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class FrontendQualityBrowserEvidenceTests : BunitContext
 {
+    [Fact]
+    public async Task DirectNavigationReadsCompanionAndUpdatesWithoutResettingDisclosure()
+    {
+        SeedCapturedPages(3);
+        _session = BrowserCompanionState.Connected;
+        var page = Render<FrontendQualityReview>();
+        page.WaitForAssertion(() => Hint(page).Should().Be("Live: Connected · Historical: 3 pages captured"));
+        page.Find("[data-testid=fqr-companion-toggle]").Click();
+        _session = BrowserCompanionState.Disconnected;
+        await page.InvokeAsync(() => _runtime.RefreshAsync());
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-capability][data-engine-id=BrowserQuality]")
+            .GetAttribute("data-state").Should().Be("RequiresBrowserSession"));
+        page.Find("[data-testid=fqr-companion-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        Value(page, "fqr-evidence-pages").Should().Be("3");
+    }
+
+    [Fact]
+    public async Task AllDetailsStartCollapsedAndExpandedStateSurvivesCompanionRefresh()
+    {
+        SeedCapturedPages(3);
+        var page = await PageAsync(BrowserCompanionState.NotPaired);
+        var ids = new[] { "fqr-coverage-disclosure", "fqr-checks-disclosure", "fqr-capabilities-disclosure",
+            "fqr-companion", "fqr-not-assessed-disclosure", "fqr-technical-disclosure" };
+        foreach (var id in ids)
+        {
+            page.Find($"[data-testid={id}-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+            page.Find($"[data-testid={id}-body]").HasAttribute("hidden").Should().BeTrue();
+            page.Find($"[data-testid={id}-toggle] .disclosure-hint").TextContent.Should().NotBeNullOrWhiteSpace();
+        }
+        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").Click();
+        await page.InvokeAsync(() => _runtime.RefreshAsync());
+        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        page.Find("[data-testid=fqr-capability][data-engine-id=BrowserQuality]").GetAttribute("data-state").Should().Be("NotConfigured");
+        Hint(page).Should().Be("Live: Not connected · Historical: 3 pages captured");
+        page.Find("#fqr-technical-engines-heading").TextContent.Should().Be("Active runtime-dependent engine capabilities");
+    }
+
     private const string Origin = "https://m2lbdev.example.test";
     private static readonly DateTimeOffset Captured = new(2026, 9, 22, 8, 6, 10, TimeSpan.Zero);
 
@@ -163,7 +200,7 @@ public sealed class FrontendQualityBrowserEvidenceTests : BunitContext
         var page = await PageAsync(BrowserCompanionState.Connected, "/admin/user-access");
 
         Evidence(page).TextContent.Should().NotContain("Approved origins");
-        page.Find("[data-testid=fqr-technical-evidence]").TextContent.Should().Contain("Approved origins").And.Contain(Origin);
+        page.Find("[data-testid=fqr-technical-evidence]").TextContent.Should().Contain("Current pairing/session approved origins").And.Contain(Origin);
     }
 
     // 51. One statement of the connection, not a badge and two sentences repeating it.
@@ -192,7 +229,7 @@ public sealed class FrontendQualityBrowserEvidenceTests : BunitContext
         // 27. The route identifies the page to a reviewer; the full URL is technical detail.
         Value(page, "fqr-evidence-current-page").Should().Be("/admin/user-access");
         Value(page, "fqr-evidence-pages").Should().Be("5");
-        Hint(page).Should().Be("Connected · 5 pages captured");
+        Hint(page).Should().Be("Live: Connected · Historical: 5 pages captured");
     }
 
     // Case B: disconnected, with history. The history must NOT disappear — it is what the next run will read.

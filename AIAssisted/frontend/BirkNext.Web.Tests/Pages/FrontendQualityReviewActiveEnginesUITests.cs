@@ -76,7 +76,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
         // 15, 45. ONE engine list. The "Active review engines" strip listed the same engines again, in a second
         // vocabulary, directly below this one.
         page.FindAll("[data-testid=fqr-active-engines]").Should().BeEmpty();
-        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Be("2 enabled · 2 available · 6 disabled");
+        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Be("2 required available · 6 optional disabled");
         Row(page, FrontendQualityEngineId.StaticSecurity).GetAttribute("data-state").Should().Be("Enabled");
         Row(page, FrontendQualityEngineId.PassivePerformance).GetAttribute("data-state").Should().Be("Enabled");
         // 3, 17. Switched off is its own state, never "unavailable".
@@ -113,7 +113,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
 
-        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().StartWith("3 enabled");
+        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Contain("2 required available").And.Contain("1 optional checking");
         page.Find("[data-testid=fqr-engine-status-pending]").TextContent.Should().Be("Checking 1 active engine…");
         RunButton(page).TextContent.Trim().Should().Be("Checking 1 active engine…");
         RunButton(page).HasAttribute("disabled").Should().BeTrue("Layer 1–2 status for the active backend engine feeds the execution snapshot");
@@ -165,7 +165,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
 
         var page = Render<FrontendQualityReview>();
 
-        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Be("5 enabled · 5 available · 3 disabled");
+        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Be("2 required available · 3 optional available · 3 optional disabled");
         // Required first, then Optional: the ROLE axis, carried by the grouping rather than by a per-row status word.
         page.FindAll("[data-testid=fqr-capability-group]").Select(g => g.GetAttribute("data-policy")).Should().Equal("Required", "Optional");
         foreach (var off in new[] { FrontendQualityEngineId.BrowserRuntime, FrontendQualityEngineId.BrowserQuality })

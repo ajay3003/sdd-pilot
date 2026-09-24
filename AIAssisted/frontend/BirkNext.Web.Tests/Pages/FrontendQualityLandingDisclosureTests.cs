@@ -22,6 +22,20 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class FrontendQualityLandingDisclosureTests : BunitContext
 {
+    [Fact]
+    public void OptionalSelectionAndDisclosureSurviveOrdinaryRerender()
+    {
+        var page = Page(Context(), [Engine(FrontendQualityEngineIdDto.Accessibility)]);
+        page.WaitForAssertion(() => page.Find("[data-testid=fqr-run]").HasAttribute("disabled").Should().BeFalse());
+        Toggle(page, "fqr-capabilities-disclosure").Click();
+        var selector = "[data-engine-id=Accessibility] [data-testid=fqr-capability-include]";
+        page.Find(selector).Change(false);
+        Toggle(page, "fqr-checks-disclosure").Click();
+        page.Find(selector).HasAttribute("checked").Should().BeFalse();
+        page.Find("[data-testid=fqr-capability][data-engine-id=Accessibility]").GetAttribute("data-state").Should().Be("NotSelected");
+        Toggle(page, "fqr-capabilities-disclosure").GetAttribute("aria-expanded").Should().Be("true");
+    }
+
     private const string Url = "https://m2lbdev.example.test/";
 
     private static FrontendAnalysisContext Context(Action<FrontendAnalysisFeatureToggles>? toggles = null, bool requiresAuth = false, string? url = Url)
@@ -363,7 +377,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         summary.DisabledCount.Should().Be(1, "Passive Performance is switched off");
         // 16, 27. Three axes on the collapsed row — configuration, capability, and what is switched off — plus the
         // Required engine somebody switched off, which is a configuration inconsistency worth seeing without expanding.
-        summary.Collapsed.Should().Be("3 enabled · 1 available · 1 disabled · 1 required engine disabled");
+        summary.Collapsed.Should().Be("1 required ready · 1 optional unavailable · 1 optional not configured · 1 required disabled");
     }
 
     // 23. The RequiredButDisabled warning itself survives inside the expanded detail.
@@ -374,7 +388,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var page = Page(context, [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)]);
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-capabilities-disclosure-toggle]"));
 
-        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").TextContent.Should().Contain("required engine");
+        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").TextContent.Should().Contain("required disabled");
 
         Toggle(page, "fqr-capabilities-disclosure").Click();
 
@@ -598,7 +612,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
             .Should().OnlyContain(s => s == "Included" || s == "Limited" || s == "Partial evidence" || s == "Not included");
 
         var dimensions = page.Find("[data-testid=fqr-dimensions]").TextContent;
-        foreach (var engine in new[] { "Static Security", "Passive Security", "Passive Performance", "Lighthouse", "Browser Runtime", "Browser Quality", "Accessibility engine", "Performance Quality" })
+        foreach (var engine in new[] { "Static Security", "Passive Security", "Passive Performance", "Lighthouse", "Browser Runtime", "Browser Quality", "Performance Quality" })
             dimensions.Should().NotContain(engine);
     }
 
@@ -623,7 +637,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         page.WaitForAssertion(() =>
             page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Limited"));
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent
-            .Should().Be("Lighthouse evidence is unavailable.");
+            .Should().Be("Passive Performance is included. Lighthouse is unavailable.");
     }
 
     // 40, 41. Accessibility stays scoped by the selected profile, which is shown on both the card and the domain.

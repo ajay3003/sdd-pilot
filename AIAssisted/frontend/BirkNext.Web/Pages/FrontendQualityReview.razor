@@ -1,4 +1,5 @@
 @page "/frontend-quality-review"
+@implements IDisposable
 @using BirkNext.BrowserCompanion
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
@@ -166,7 +167,8 @@
                         @if (landing.TechnicalFields.Count > 0)
                         {
                             <section class="fqr-technical-block" aria-labelledby="fqr-technical-target-heading">
-                                <h3 id="fqr-technical-target-heading">Target environment</h3>
+                                <h3 id="fqr-technical-target-heading">Target environment and configured engine state</h3>
+                                <p class="fqr-section-note">Enabled and Disabled below are saved configuration, not runtime availability.</p>
                                 <dl class="fqr-technical-list-grid" data-testid="fqr-technical-target">
                                     @foreach (var field in landing.TechnicalFields)
                                     {
@@ -177,7 +179,8 @@
                         }
 
                         <section class="fqr-technical-block" aria-labelledby="fqr-technical-engines-heading">
-                            <h3 id="fqr-technical-engines-heading">Engine capability</h3>
+                            <h3 id="fqr-technical-engines-heading">Active runtime-dependent engine capabilities</h3>
+                            <p class="fqr-section-note">Only active backend engines are shown. Runtime installation and capability are managed in <a href="@FrontendQualityLandingPresentation.SystemSettingsHref">System Settings — Frontend Engine Capabilities</a>.</p>
                             @if (_readinessPending)
                             {
                                 <p class="fqr-muted fqr-engine-progress" aria-live="polite" data-testid="fqr-readiness-pending">Checking runtime readiness of @ActiveBackendEngineIds.Count active engine@(ActiveBackendEngineIds.Count == 1 ? "" : "s")… The review can start meanwhile; readiness is re-validated at execution.</p>
@@ -221,7 +224,7 @@
                                 <dl class="fqr-technical-list-grid" data-testid="fqr-technical-evidence">
                                     @* Administered in Browser Discovery; shown here because it explains which pages can
                                        ever produce evidence, not because this page can change it. *@
-                                    <div><dt>Approved origins</dt><dd class="fqr-mono">@(technicalEvidence.ApprovedOrigins.Count == 0 ? "None" : string.Join(", ", technicalEvidence.ApprovedOrigins))</dd></div>
+                                    <div><dt>Current pairing/session approved origins</dt><dd class="fqr-mono">@(technicalEvidence.ApprovedOrigins.Count == 0 ? "None" : string.Join(", ", technicalEvidence.ApprovedOrigins))</dd></div>
                                     @* The live page's full identity (origin + route); the evidence block reads out the route. *@
                                     <div><dt>Current page identity</dt><dd class="fqr-mono">@technicalEvidence.CurrentPageIdentity</dd></div>
                                     <div><dt>Last captured evidence</dt><dd>@technicalEvidence.LastCapturedLabel</dd></div>
@@ -854,6 +857,25 @@
         // Expensive Layer 3 readiness is fetched for the ACTIVE backend engines only and never blocks the first render.
         // With no active backend engine (e.g. only Static Security + Passive Performance) nothing is fetched at all.
         StartEngineStatusFetch();
+        if (_report is null && _companionRuntime is not null && _context.ActiveTargetError is null)
+        {
+            // Read the existing owner's status and captured history even when FQR is opened directly.
+            // Pairing and configuration remain exclusively in Browser Discovery.
+            await _companionRuntime.FollowAsync(_context.ActiveProfile);
+            _companionRuntime.Changed += OnCompanionChanged;
+        }
+    }
+
+    private bool _disposed;
+    private void OnCompanionChanged()
+    {
+        if (!_disposed && _report is null) _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        if (_companionRuntime is not null) _companionRuntime.Changed -= OnCompanionChanged;
     }
 
     /// <summary>Saved configuration → active engine set. Never inferred from capability or readiness.</summary>

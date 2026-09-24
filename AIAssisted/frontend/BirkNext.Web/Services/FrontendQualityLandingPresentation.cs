@@ -39,7 +39,8 @@ public static class FrontendQualityLandingPresentation
             FrontendQualityCapabilityState.RequiresAuthenticatedContext),
         // Switched off, by whichever of the three switches. Never added to the unavailable count: the engine is doing
         // exactly what it was configured to do, and counting it as unavailable asks someone to fix their own decision.
-        DisabledCount: rows.Count(r => FrontendQualityCapabilityStates.IsDisabled(r.State)));
+        DisabledCount: rows.Count(r => FrontendQualityCapabilityStates.IsDisabled(r.State)))
+        { StateSummary = new FrontendQualityPreRunEngineSummary(rows).Counts };
 
     /// <summary>Counts behind the collapsed "Review access" row; derived from the same rows the expanded list renders.</summary>
     public static FrontendQualityCoverageSummaryModel CoverageSummary(IReadOnlyList<FrontendQualityCoverageRow> rows) => new(
@@ -144,7 +145,8 @@ public static class FrontendQualityLandingPresentation
                 $"Checking {checking} active engine{(checking == 1 ? "" : "s")}… The review can start as soon as the check completes.", []);
         }
 
-        var unavailable = capabilities.Where(c => c.IsActive && !c.IsAvailable).ToList();
+        var stateSummary = new FrontendQualityPreRunEngineSummary(capabilities);
+        var unavailable = stateSummary.Limitations;
         var details = unavailable.Select(c => $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}").ToList();
         details.AddRange(context.ValidationWarnings);
         if (details.Count > 0)
@@ -154,25 +156,22 @@ public static class FrontendQualityLandingPresentation
             // asking them to undo their own decision.
             details.AddRange(capabilities
                 .Where(c => c.Policy == FrontendQualityEngineRequirement.Optional && FrontendQualityCapabilityStates.IsDisabled(c.State))
-                .Select(c => $"{c.DisplayName}: disabled by configuration"));
+                .Select(c => $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}"));
             var requiredUnavailable = unavailable.Where(c => c.Policy == FrontendQualityEngineRequirement.Required).Select(c => c.DisplayName).ToList();
-            var optionalUnavailable = unavailable.Where(c => c.Policy == FrontendQualityEngineRequirement.Optional).Select(c => c.DisplayName).ToList();
             // An engine somebody switched off is reported as switched off, in its own sentence. Merged into the
             // unavailable count it read as a fault, and sent the reader to fix something that is working as configured.
             //
             // The capability is NAMED here, in the one line the reader sees before deciding to run. "1 enabled optional
             // capability is currently unavailable" is true and useless: it says a limitation exists and makes finding out
             // which one an expand-and-scroll exercise, on the surface whose whole job is that decision.
-            var message = unavailable.Count switch
-            {
-                0 => "The configuration has warnings. Target reachability is verified when the review starts.",
-                _ when requiredUnavailable.Count == unavailable.Count && unavailable.Count == 1 =>
-                    $"{requiredUnavailable[0]} is unavailable and is required; required coverage will stay incomplete.",
-                _ when requiredUnavailable.Count > 0 =>
-                    $"{unavailable.Count} capabilities are unavailable, including required {Join(requiredUnavailable)}; required coverage will stay incomplete.",
-                1 => $"{optionalUnavailable[0]} is unavailable. The review runs without it, with less depth in the areas it contributes to.",
-                _ => $"{optionalUnavailable.Count} optional capabilities are unavailable: {Join(optionalUnavailable)}. The review runs without them, with less depth in the areas they contribute to.",
-            };
+            var message = unavailable.Count == 0
+                ? "The configuration has warnings. Target reachability is verified when the review starts."
+                : unavailable.Count == 1 ? stateSummary.LimitationSentences
+                : $"{unavailable.Count} {(requiredUnavailable.Count == 0 ? "optional " : "")}capability limitations: {stateSummary.LimitationCounts}.";
+            if (stateSummary.AllRequiredAvailable)
+                message += " All required capabilities are available; the review can run.";
+            else if (requiredUnavailable.Count > 0)
+                message += $" Required coverage will stay incomplete: {Join(requiredUnavailable)}.";
 
             // The action follows the cause: capability limitations are fixed where engines are configured; a configuration
             // warning with nothing unavailable belongs to the Target Environment itself.
@@ -181,7 +180,8 @@ public static class FrontendQualityLandingPresentation
                 : new(FrontendQualityReviewReadinessLevel.Limited, LimitedTitle, message, details, "Open Target Environment", TargetEnvironmentsHref);
         }
 
-        return new(FrontendQualityReviewReadinessLevel.Ready, ReadyTitle, ReadyMessage, []);
+        return new(FrontendQualityReviewReadinessLevel.Ready, ReadyTitle,
+            (stateSummary.AllRequiredAvailable ? "All required capabilities are available. " : "") + ReadyMessage, []);
     }
 
     // ── Capabilities (engines) ────────────────────────────────────────────────────────────────────────────────────────
@@ -236,7 +236,10 @@ public static class FrontendQualityLandingPresentation
                 BrowserCompanionState.Connected => Build(FrontendQualityCapabilityState.Ready, "Browser Companion connected."),
                 BrowserCompanionState.Disconnected => Build(FrontendQualityCapabilityState.RequiresBrowserSession, "Browser Companion is paired but not reporting. Open the application in your managed Edge."),
                 BrowserCompanionState.Expired => Build(FrontendQualityCapabilityState.RequiresBrowserSession, "The Browser Companion session expired. Pair it again."),
-                BrowserCompanionState.NotPaired or BrowserCompanionState.PairingPending => Build(FrontendQualityCapabilityState.NotConfigured, "Pair the Browser Companion for this Target Environment."),
+                BrowserCompanionState.NotPaired or BrowserCompanionState.PairingPending => Build(FrontendQualityCapabilityState.NotConfigured,
+                    "Pair the Browser Companion for this Target Environment." + (engine.EngineId == FrontendQualityEngineId.PerformanceQuality
+                        ? " Recorded performance evidence can still contribute." : ""),
+                    actionText: "Open Browser Discovery", actionHref: FrontendQualityBrowserEvidencePresentation.BrowserDiscoveryHref),
                 _ => Build(FrontendQualityCapabilityState.Enabled, "Evidence comes from the Browser Companion in your managed Edge."),
             };
         }
@@ -354,6 +357,9 @@ public static class FrontendQualityLandingPresentation
                     : FrontendQualityDimensionState.NotIncluded;
 
             var limitation = Limitation(category, state, optionalMissing);
+            if (accessibility && byId.TryGetValue(FrontendQualityEngineId.Accessibility, out var accessibilityEngine)
+                && accessibilityEngine.State is FrontendQualityCapabilityState.Ready or FrontendQualityCapabilityState.Enabled)
+                limitation = $"The dedicated Accessibility engine is {FrontendQualityCapabilityStates.Label(accessibilityEngine.State).ToLowerInvariant()}. " + limitation;
             var scopeNote = accessibility ? (accessibilityProfile ?? WcagProfiles.Norwegian).Label : null;
 
             return new FrontendQualityDimensionCard(
@@ -379,7 +385,7 @@ public static class FrontendQualityLandingPresentation
         FrontendQualityDimensionState.NotIncluded => "Nothing in this review contributes to this area.",
 
         FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Accessibility =>
-            "No automated accessibility evidence is available. The profile's criteria are still in scope and require manual assessment.",
+            "Automated accessibility evidence is limited. " + new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
         FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Readiness =>
             "Derived from partial review evidence.",
         FrontendQualityDimensionState.PartialEvidence =>
@@ -388,20 +394,21 @@ public static class FrontendQualityLandingPresentation
         // Security names its own baseline, because "Passive Security evidence is unavailable" beside the word Limited
         // read as "security cannot be reviewed". The static security review is unaffected and says so first.
         FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Security && optionalMissing.Count > 0 =>
-            $"Static security review is included. {Names(optionalMissing)} {(optionalMissing.Count == 1 ? "is" : "are")} unavailable, so passive security coverage is limited.",
+            "Static Security is included. " + new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
 
         FrontendQualityDimensionState.Limited when category == FrontendQualityCategory.Accessibility && optionalMissing.Count > 0 =>
-            $"{Names(optionalMissing)} evidence is unavailable, so automated accessibility coverage is reduced.",
+            new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
 
         FrontendQualityDimensionState.Limited when optionalMissing.Count > 0 =>
-            $"{Names(optionalMissing)} evidence is unavailable.",
+            (category == FrontendQualityCategory.Performance ? "Passive Performance is included. " : "")
+                + new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
         FrontendQualityDimensionState.Limited =>
             "Some optional evidence for this area is unavailable.",
 
         // Not a shortfall in the automation. Manual assessment is what these criteria require, and it would still be
         // required if every automated source were available — so this sentence never blames the engines for it.
         FrontendQualityDimensionState.Included when category == FrontendQualityCategory.Accessibility =>
-            "Automated accessibility evidence is included. Some WCAG criteria require manual assessment regardless of automated coverage.",
+            "Automated accessibility evidence is included.",
         _ => null,
     };
 
@@ -416,8 +423,6 @@ public static class FrontendQualityLandingPresentation
             _ => string.Join(" and ", string.Join(", ", list.Take(list.Count - 1)), list[^1]),
         };
     }
-
-    private static string Names(IReadOnlyList<FrontendQualityCapabilityRow> rows) => Join(rows.Select(r => r.DisplayName));
 
     public static string Purpose(FrontendQualityCategory category) => category switch
     {
@@ -467,7 +472,7 @@ public static class FrontendQualityLandingPresentation
     {
         var rows = new List<FrontendQualityCoverageRow>
         {
-            new("Public frontend", FrontendQualityCoverageState.Available, "Public pages and static assets are reviewed over HTTP."),
+            new("Public frontend", FrontendQualityCoverageState.Available, "Public pages and static assets are reviewed over HTTP(S)."),
         };
 
         if (!access.RequiresAuthentication)
@@ -475,7 +480,7 @@ public static class FrontendQualityLandingPresentation
             rows.Add(new("Authenticated application", FrontendQualityCoverageState.NotRequired, "This target does not require sign-in."));
             rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Available for public pages."));
             rows.Add(new("Authenticated API traffic", FrontendQualityCoverageState.NotRequired, "This target does not require sign-in."));
-            rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available, "Public target supported."));
+            rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available, "Public target access is supported. Individual engine capability is shown under Engines."));
             return rows;
         }
 

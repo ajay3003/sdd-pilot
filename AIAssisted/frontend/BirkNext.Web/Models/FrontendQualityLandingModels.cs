@@ -355,8 +355,9 @@ public sealed record FrontendQualityCapabilitySummary(
     int NeedsPairingCount,
     int DisabledCount = 0)
 {
+    public string? StateSummary { get; init; }
     /// <summary>The full line shown with the expanded list: what is configured, then what can actually run right now.</summary>
-    public string Headline => $"{EnabledCount} of {TotalCount} engines enabled · {AvailableNowCount} available right now";
+    public string Headline => StateSummary ?? $"{EnabledCount} of {TotalCount} engines enabled · {AvailableNowCount} available right now";
 
     /// <summary>
     /// The collapsed row: the three axes, each with its own count and none of them merged. A Required engine switched
@@ -366,6 +367,7 @@ public sealed record FrontendQualityCapabilitySummary(
     {
         get
         {
+            if (StateSummary is not null) return StateSummary;
             var line = $"{EnabledCount} enabled · {AvailableNowCount} available";
             if (DisabledCount > 0) line += $" · {DisabledCount} disabled";
             if (RequiredButDisabledCount > 0)

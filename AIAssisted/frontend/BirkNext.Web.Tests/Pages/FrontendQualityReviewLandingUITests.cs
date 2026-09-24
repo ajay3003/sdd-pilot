@@ -188,7 +188,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         card.QuerySelector("[data-testid=fqr-dimension-state]")!.TextContent.Should().Be("Included");
         card.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Should().Be("Manual assessment required");
         card.QuerySelector("[data-testid=fqr-dimension-scope]")!.TextContent.Should().Be("Norwegian public-sector requirements — WCAG 2.1");
-        card.QuerySelector("[data-testid=fqr-dimension-limitation]")!.TextContent.Should().Contain("require manual assessment");
+        card.QuerySelector("[data-testid=fqr-manual-assessment-reason]")!.TextContent.Should().Contain("requires manual assessment regardless");
     }
 
     // 4. Review scope is collapsed by default and names its areas rather than counting checks.
@@ -411,10 +411,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         // The domain reports the impact in evidence words; the engine name stays in Review capabilities above.
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-state]").TextContent.Should().Be("Limited");
         page.Find("[data-testid=fqr-dimension][data-category='Performance'] [data-testid=fqr-dimension-limitation]").TextContent
-            .Should().Be("Lighthouse evidence is unavailable.");
+            .Should().Be("Passive Performance is included. Lighthouse is unavailable.");
         // The domain card names what is missing. It still carries no engine inventory: engines that are available
         // are never listed there.
-        page.Find("[data-testid=fqr-dimensions]").TextContent.Should().Contain("Lighthouse evidence is unavailable.")
+        page.Find("[data-testid=fqr-dimensions]").TextContent.Should().Contain("Passive Performance is included. Lighthouse is unavailable.")
             .And.NotContain("Static Security").And.NotContain("Browser Quality");
     }
 

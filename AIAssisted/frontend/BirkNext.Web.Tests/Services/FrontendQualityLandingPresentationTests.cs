@@ -122,7 +122,7 @@ public sealed class FrontendQualityLandingPresentationTests
         readiness.Message.Should().NotContainAny("cannot run", "cannot start");
         // What cannot run, then what is switched off — listed apart, never counted together.
         readiness.Details.Should().Contain("Lighthouse: Unavailable");
-        readiness.Details.Should().OnlyContain(d => d.Contains("Unavailable") || d.Contains("disabled by configuration"));
+        readiness.Details.Should().OnlyContain(d => d.Contains("Unavailable") || d.Contains("Disabled"));
         readiness.CanRun.Should().BeTrue();
     }
 
@@ -141,7 +141,7 @@ public sealed class FrontendQualityLandingPresentationTests
         readiness.Message.Should().NotContain("Browser Runtime");
         readiness.Message.Should().NotContain("2 optional capabilities");
         // It is still listed, as what it is: switched off, not broken.
-        readiness.Details.Should().Contain("Browser Runtime: disabled by configuration");
+        readiness.Details.Should().Contain("Browser Runtime: Disabled");
         readiness.CanRun.Should().BeTrue();
     }
 
@@ -156,17 +156,17 @@ public sealed class FrontendQualityLandingPresentationTests
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
         // 2. Several unavailable: a count AND the names, so the reader still learns which ones without expanding.
-        readiness.Message.Should().StartWith("2 optional capabilities are unavailable: ");
+        readiness.Message.Should().StartWith("2 optional capability limitations: ");
         readiness.Message.Should().Contain("Accessibility").And.Contain("Lighthouse");
         readiness.Details.Should().Contain(["Accessibility: Unavailable", "Lighthouse: Not supported for this target"]);
-        readiness.Details.Where(d => !d.Contains("disabled by configuration")).Should().HaveCount(2);
+        readiness.Details.Where(d => !d.Contains("Disabled")).Should().HaveCount(2);
         Row(rows, FrontendQualityEngineId.StaticSecurity).IsAvailable.Should().BeTrue();
         Row(rows, FrontendQualityEngineId.PassivePerformance).IsAvailable.Should().BeTrue();
         Row(rows, FrontendQualityEngineId.PassiveSecurity).State.Should().Be(FrontendQualityCapabilityState.Ready, "ZAP passively scans the public shell");
 
         var requiredBlocked = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context),
             rows.Select(r => r.EngineId == FrontendQualityEngineId.StaticSecurity ? r with { State = FrontendQualityCapabilityState.Unavailable } : r).ToList(), false);
-        requiredBlocked.Message.Should().Be("3 capabilities are unavailable, including required Static Security; required coverage will stay incomplete.");
+        requiredBlocked.Message.Should().Be("3 capability limitations: 2 unavailable: Static Security and Accessibility; 1 not supported for this target: Lighthouse. Required coverage will stay incomplete: Static Security.");
     }
 
     [Fact]
@@ -353,12 +353,12 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var performance = cards.Single(c => c.Category == FrontendQualityCategory.Performance);
         performance.State.Should().Be(FrontendQualityDimensionState.Limited);
-        performance.Limitation.Should().Be("Lighthouse evidence is unavailable.");
+        performance.Limitation.Should().Be("Passive Performance is included. Lighthouse is unavailable.");
         // 5, 12, 36. Limited, and the baseline that still runs is named FIRST — the old line led with what was
         // missing, which beside the word "Limited" read as "security cannot be reviewed".
         var security = cards.Single(c => c.Category == FrontendQualityCategory.Security);
         security.State.Should().Be(FrontendQualityDimensionState.Limited);
-        security.Limitation.Should().StartWith("Static security review is included.");
+        security.Limitation.Should().StartWith("Static Security is included.");
         security.Limitation.Should().Contain("Passive Security is unavailable");
         security.Limitation.Should().NotContainAny("cannot be reviewed", "Unavailable.", "Failed");
 
@@ -367,7 +367,7 @@ public sealed class FrontendQualityLandingPresentationTests
         accessibility.State.Should().Be(FrontendQualityDimensionState.Included);
         accessibility.ManualAssessmentRequired.Should().BeTrue();
         accessibility.Limitation.Should().Be(
-            "Automated accessibility evidence is included. Some WCAG criteria require manual assessment regardless of automated coverage.");
+            "The dedicated Accessibility engine is ready. Automated accessibility evidence is included.");
         accessibility.Limitation.Should().NotContain("partial");
     }
 
@@ -381,7 +381,7 @@ public sealed class FrontendQualityLandingPresentationTests
         var accessibility = FrontendQualityLandingPresentation.Dimensions(rows).Single(c => c.Category == FrontendQualityCategory.Accessibility);
         accessibility.State.Should().Be(FrontendQualityDimensionState.PartialEvidence);
         accessibility.ManualAssessmentRequired.Should().BeTrue();
-        accessibility.Limitation.Should().Contain("require manual assessment");
+        accessibility.ManualAssessmentRequired.Should().BeTrue();
         accessibility.Limitation.Should().NotContain("Accessibility unavailable");
     }
 

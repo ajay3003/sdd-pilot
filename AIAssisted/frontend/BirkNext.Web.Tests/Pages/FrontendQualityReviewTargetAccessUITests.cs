@@ -16,6 +16,19 @@ namespace BirkNext.Web.Tests.Pages;
 /// </summary>
 public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
 {
+    [Fact]
+    public void PublicTargetDoesNotRequireItsSavedProxyMethod()
+    {
+        var access = new FrontendQualityTargetAccessContext { RequiresAuthentication = false,
+            Method = AuthenticatedTestingMethod.LocalHttpsProxy, ProxyState = LocalHttpsProxyState.NotStarted };
+        var cut = Render<FrontendQualityTargetAccessPanel>(p => p.Add(c => c.Access, access));
+        cut.Find("[data-testid=fqr-access-method]").TextContent.Should().Contain("not needed for this target");
+        cut.Find("[data-testid=fqr-access-proxy]").TextContent.Should().Be("Not needed for this run");
+        var coverage = FrontendQualityLandingPresentation.Coverage(access, null);
+        coverage.Single(r => r.Label == "Public frontend").Detail.Should().Contain("HTTP(S)");
+        coverage.Single(r => r.Label == "Automatic engines").Detail.Should().Contain("Individual engine capability");
+    }
+
     private static FrontendAnalysisContext Context(AuthenticatedTestingMethod method, bool requiresAuth = true)
     {
         var profile = new FrontendAnalysisProfile { Id = "dev", Name = "M2LB DEV", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.example.test/" };

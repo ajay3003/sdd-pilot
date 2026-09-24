@@ -54,5 +54,5 @@ public static class FrontendQualityBrowserEvidencePresentation
     /// nothing is connected — evidence captured yesterday is still the evidence this review will read.
     /// </summary>
     public static string Collapsed(FrontendQualityBrowserEvidenceModel model) =>
-        $"{model.LiveStatus} · {(model.PagesCaptured == 0 ? "no pages captured" : $"{model.PagesCaptured} page{(model.PagesCaptured == 1 ? "" : "s")} captured")}";
+        $"Live: {model.LiveStatus} · Historical: {(model.PagesCaptured == 0 ? "no pages captured" : $"{model.PagesCaptured} page{(model.PagesCaptured == 1 ? "" : "s")} captured")}";
 }
