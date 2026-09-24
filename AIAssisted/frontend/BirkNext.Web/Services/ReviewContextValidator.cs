@@ -35,7 +35,9 @@ public sealed class ReviewContextValidator : IReviewContextValidator
             var traceabilityService = new ArtifactTraceabilityService();
             var traceabilityReport = traceabilityService.Analyze(constitution, spec, plan, tasks, reviewContext);
 
-            return ValidateContext(reviewContext, traceabilityReport, projectName);
+            var report = ValidateContext(reviewContext, traceabilityReport, projectName,
+                hasConstitution: constitution is not null, hasSpecification: spec is not null, hasPlan: plan is not null);
+            return report;
         }
         catch
         {
@@ -46,22 +48,31 @@ public sealed class ReviewContextValidator : IReviewContextValidator
     public ReviewContextValidationReport ValidateContext(
         ReviewContext reviewContext,
         ArtifactTraceabilityReport? traceabilityReport,
-        string projectName = "Current Project")
+        string projectName = "Current Project",
+        bool hasConstitution = true,
+        bool hasSpecification = true,
+        bool hasPlan = true)
     {
         if (reviewContext == null)
             return CreateEmptyStateReport(projectName);
 
         var findings = new List<ReviewContextValidationFinding>();
         var comparisons = new List<ReviewContextSourceComparison>();
-        var metrics = ExtractCanonicalMetrics(reviewContext);
+        var metrics = ExtractCanonicalMetrics(reviewContext, hasConstitution, hasSpecification, hasPlan);
+        var hasSources = hasConstitution || hasSpecification || hasPlan;
 
-        CompareMetrics(reviewContext, traceabilityReport, findings, comparisons);
+        // Derived coverage is only a finding when there is a specification to derive it from.
+        if (hasSpecification)
+            CompareMetrics(reviewContext, traceabilityReport, findings, comparisons);
 
-        var overallStatus = findings.Count == 0
-            ? ReviewContextValidationStatus.Pass
-            : findings.Any(f => f.Severity == ReviewContextValidationStatus.Fail)
-                ? ReviewContextValidationStatus.Fail
-                : ReviewContextValidationStatus.Warning;
+        // A Pass finding is a confirmation, not a problem: only Warning and Fail findings, and metrics read from a
+        // present-but-empty document, lower the verdict.
+        var overallStatus =
+            findings.Any(f => f.Severity == ReviewContextValidationStatus.Fail) ? ReviewContextValidationStatus.Fail
+            : findings.Any(f => f.Severity == ReviewContextValidationStatus.Warning)
+              || metrics.Any(m => m.State == ReviewContextMetricState.EmptySource) || !hasSources
+                ? ReviewContextValidationStatus.Warning
+                : ReviewContextValidationStatus.Pass;
 
         return new ReviewContextValidationReport
         {
@@ -70,23 +81,34 @@ public sealed class ReviewContextValidator : IReviewContextValidator
             OverallStatus = overallStatus,
             CanonicalMetrics = metrics,
             SourceComparisons = comparisons,
-            Findings = findings
+            Findings = findings,
+            HasSourceDocuments = hasSources,
         };
     }
 
-    private List<ReviewContextValidationMetric> ExtractCanonicalMetrics(ReviewContext context)
+    private static ReviewContextMetricState StateOf(bool sourcePresent, bool yieldedSomething) =>
+        !sourcePresent ? ReviewContextMetricState.NotEvaluated
+        : yieldedSomething ? ReviewContextMetricState.Evaluated
+        : ReviewContextMetricState.EmptySource;
+
+    private List<ReviewContextValidationMetric> ExtractCanonicalMetrics(ReviewContext context, bool hasConstitution, bool hasSpecification, bool hasPlan)
     {
+        var rules = context.Constitution.Rules.Count;
+        var requirements = context.Specification.Requirements.Count;
+        var planContent = context.Plan.Phases.Count > 0 || context.Plan.ArchitectureDecisions.Count > 0;
+        // Counts derived from the specification are observations once it is present, including a genuine zero.
+        var specDerived = hasSpecification ? ReviewContextMetricState.Evaluated : ReviewContextMetricState.NotEvaluated;
         return new()
         {
-            new() { Name = "Constitution Loaded", Value = context.Constitution.Rules.Count > 0, Source = "ReviewContext" },
-            new() { Name = "Specification Loaded", Value = context.Specification.Requirements.Count > 0, Source = "ReviewContext" },
-            new() { Name = "Plan Loaded", Value = context.Plan.Phases.Count > 0 || context.Plan.ArchitectureDecisions.Count > 0, Source = "ReviewContext" },
-            new() { Name = "Requirements", Value = context.Specification.Requirements.Count, Source = "ReviewContext" },
-            new() { Name = "Tests", Value = context.Specification.AcceptanceScenarios.Count, Source = "ReviewContext" },
-            new() { Name = "Constitution Rules", Value = context.Constitution.Rules.Count, Source = "ReviewContext" },
-            new() { Name = "Requirements With Tests", Value = context.RequirementsWithTests, Source = "ReviewContext" },
-            new() { Name = "Missing Tests", Value = context.MissingTests, Source = "ReviewContext" },
-            new() { Name = "Coverage %", Value = context.Coverage.SpecificationCompleteness, Source = "ReviewContext" },
+            new() { Name = "Constitution Loaded", Value = rules > 0, Source = "ReviewContext", State = StateOf(hasConstitution, rules > 0) },
+            new() { Name = "Specification Loaded", Value = requirements > 0, Source = "ReviewContext", State = StateOf(hasSpecification, requirements > 0) },
+            new() { Name = "Plan Loaded", Value = planContent, Source = "ReviewContext", State = StateOf(hasPlan, planContent) },
+            new() { Name = "Requirements", Value = requirements, Source = "ReviewContext", State = specDerived },
+            new() { Name = "Tests", Value = context.Specification.AcceptanceScenarios.Count, Source = "ReviewContext", State = specDerived },
+            new() { Name = "Constitution Rules", Value = rules, Source = "ReviewContext", State = hasConstitution ? ReviewContextMetricState.Evaluated : ReviewContextMetricState.NotEvaluated },
+            new() { Name = "Requirements With Tests", Value = context.RequirementsWithTests, Source = "ReviewContext", State = specDerived },
+            new() { Name = "Missing Tests", Value = context.MissingTests, Source = "ReviewContext", State = specDerived },
+            new() { Name = "Coverage %", Value = context.Coverage.SpecificationCompleteness, Source = "ReviewContext", State = specDerived },
         };
     }
 

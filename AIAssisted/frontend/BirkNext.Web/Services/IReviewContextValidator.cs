@@ -24,5 +24,8 @@ public interface IReviewContextValidator
     ReviewContextValidationReport ValidateContext(
         ReviewContext reviewContext,
         ArtifactTraceabilityReport? traceabilityReport,
-        string projectName = "Current Project");
+        string projectName = "Current Project",
+        bool hasConstitution = true,
+        bool hasSpecification = true,
+        bool hasPlan = true);
 }

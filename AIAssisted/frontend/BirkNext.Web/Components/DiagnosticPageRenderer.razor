@@ -89,6 +89,14 @@
                         <span class="ss-status-label">Unavailable</span>
                         <span class="ss-status-value">@Summary.UnavailableCount</span>
                     </span>
+                    @if (Summary.InfoCount > 0)
+                    {
+                        @* Not loaded / not evaluated / not run: facts, not checks, and never a warning. *@
+                        <span class="ss-status-pill" data-testid="diag-info-count">
+                            <span class="ss-status-label">Not loaded / not evaluated</span>
+                            <span class="ss-status-value">@Summary.InfoCount</span>
+                        </span>
+                    }
                 </div>
             }
         </div>
@@ -185,6 +193,7 @@
         SystemSettingsStatus.Pass => "Pass",
         SystemSettingsStatus.Warning => "Warning",
         SystemSettingsStatus.Fail => "Fail",
+        SystemSettingsStatus.Info => "Not evaluated",
         _ => "Unavailable"
     };
 }

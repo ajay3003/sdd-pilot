@@ -13,11 +13,25 @@ public enum ReviewContextValidationStatus
 /// <summary>
 /// Single metric captured from ReviewContext.
 /// </summary>
+/// <summary>
+/// What a metric's value means. A value read from a missing document is not a healthy zero: it was not evaluated.
+/// </summary>
+public enum ReviewContextMetricState
+{
+    /// <summary>Its source document was present and the value was read from it.</summary>
+    Evaluated,
+    /// <summary>Its source document was present, but it yielded nothing (e.g. a constitution with no parsable rules).</summary>
+    EmptySource,
+    /// <summary>Its source document is not present for the current project, so the value means nothing.</summary>
+    NotEvaluated,
+}
+
 public sealed class ReviewContextValidationMetric
 {
     public required string Name { get; init; }
     public required object? Value { get; init; }
     public required string Source { get; init; } = "ReviewContext";
+    public ReviewContextMetricState State { get; init; } = ReviewContextMetricState.Evaluated;
 }
 
 /// <summary>
@@ -56,6 +70,8 @@ public sealed class ReviewContextValidationReport
     public required List<ReviewContextValidationMetric> CanonicalMetrics { get; init; } = [];
     public required List<ReviewContextSourceComparison> SourceComparisons { get; init; } = [];
     public required List<ReviewContextValidationFinding> Findings { get; init; } = [];
+    /// <summary>False when no source document was available, so nothing could be evaluated.</summary>
+    public bool HasSourceDocuments { get; init; } = true;
 
     public string Summary
     {

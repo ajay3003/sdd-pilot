@@ -10,7 +10,12 @@ public enum SystemSettingsStatus
     Pass,
     Warning,
     Fail,
-    Unavailable
+    Unavailable,
+    /// <summary>
+    /// A neutral lifecycle fact — not loaded, not evaluated, not run, not configured. Shown, counted apart, and never a
+    /// reason for an overall Warning. Frontend-only: the backend never sends it.
+    /// </summary>
+    Info
 }
 
 public class AdminApiService
@@ -419,6 +424,8 @@ public class StatusSummaryDto
     [JsonPropertyName("warningCount")] public int WarningCount { get; set; }
     [JsonPropertyName("failCount")] public int FailCount { get; set; }
     [JsonPropertyName("unavailableCount")] public int UnavailableCount { get; set; }
+    /// <summary>Neutral rows (not loaded / not evaluated / not run). Not checks, so not in <see cref="TotalCount"/>.</summary>
+    [JsonPropertyName("infoCount")] public int InfoCount { get; set; }
     [JsonPropertyName("overallStatus")] public SystemSettingsStatus OverallStatus { get; set; } = SystemSettingsStatus.Unavailable;
 
     public int TotalCount => PassCount + WarningCount + FailCount + UnavailableCount;

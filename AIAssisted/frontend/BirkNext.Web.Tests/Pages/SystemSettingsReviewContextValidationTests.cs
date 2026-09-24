@@ -66,7 +66,7 @@ public class SystemSettingsReviewContextValidationTests : BunitContext
             .First(button => button.TextContent.Contains("Run Validation"))
             .Click();
 
-        cut.WaitForAssertion(() => cut.Markup.Should().Contain("No workspace artifacts are loaded"));
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("No current project is selected and no artifacts are imported"));
         cut.Markup.Should().Contain("Loaded Artifacts");
         cut.Markup.Should().Contain("Canonical Metrics");
         cut.Markup.Should().Contain("Source Comparisons");

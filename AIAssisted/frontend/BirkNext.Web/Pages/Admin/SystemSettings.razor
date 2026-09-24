@@ -23,6 +23,7 @@
 @inject IBlazorWasmPerformanceReviewService PerformanceApi
 @inject Microsoft.AspNetCore.Components.WebAssembly.Hosting.IWebAssemblyHostEnvironment HostEnvironment
 @inject NavigationManager Navigation
+@inject IServiceProvider ServiceProvider
 
 <PageTitle>System Settings — QA Review Studio</PageTitle>
 
@@ -1142,7 +1143,8 @@ else if (_settings is not null)
 
                             <!-- Project Documents -->
                             <div class="dev-diag-section">
-                                <div class="dev-diag-section-title">Project Documents</div>
+                                <div class="dev-diag-section-title">Stored Project Documents (backend store)</div>
+                                <p class="dev-diag-note" style="color:var(--clr-text-muted);margin:0 0 .5rem">Not project-scoped and not read by the current reviews; the current project's documents are shown in ReviewContext Validation.</p>
                                 <table class="settings-table">
                                     @if (!_diagDocLoaded)
                                     {
@@ -1209,7 +1211,7 @@ else if (_settings is not null)
                         <div class="runtime-action-grid">
                             <div class="runtime-action-card">
                                 <strong>Reset Workspace</strong>
-                                <span>Clears only browser/session workspace state. Does not delete saved workspaces or modify database schema.</span>
+                                <span>Clears artifacts imported into this browser session. The selected project, saved workspaces and database schema are kept.</span>
                                 <DangerButton OnClick="ResetWorkspaceDiagnosticsAsync">Reset Workspace</DangerButton>
                             </div>
                             <div class="runtime-action-card">
@@ -1286,7 +1288,7 @@ else if (_settings is not null)
             {
                 <DiagnosticPageRenderer
                     Title="ReviewContext Validation"
-                    Description="Developer-only diagnostic for validating ReviewContext as the canonical source of truth against downstream review models."
+                    Description="Developer-only diagnostic that builds a ReviewContext from the current project's documents and validates its canonical metrics. ReviewContext feeds the analysis Flow and Traceability views and Implementation Review; other reviews read their own sources."
                     Message="@_reviewContextValidationMessage"
                     HasRun="@(_reviewContextReport is not null)"
                     RunAreaTitle="Run Validation"
@@ -1414,6 +1416,56 @@ else if (_settings is not null)
     // ReviewContext Validation
     private ReviewContextValidationReport? _reviewContextReport;
     private string? _reviewContextValidationMessage;
+
+    /// <summary>
+    /// The current project's documents as the reviews read them. Three layers that were reported as one:
+    /// the selected project (persisted identity), Sample Project documents (resolved on demand from SampleData, never
+    /// copied into the session), and artifacts imported into this browser session.
+    /// </summary>
+    private sealed record ProjectDocuments(string Source, bool IsSampleProject,
+        IReadOnlyDictionary<WorkspaceArtifactKind, (string? Text, DateTime? LoadedAt)> Documents);
+    private ProjectDocuments? _projectDocuments;
+
+    private static readonly (WorkspaceArtifactKind Kind, ExplorerDocumentType Type)[] ProjectDocumentKinds =
+    [
+        (WorkspaceArtifactKind.Constitution, ExplorerDocumentType.Constitution),
+        (WorkspaceArtifactKind.Specification, ExplorerDocumentType.Specification),
+        (WorkspaceArtifactKind.Plan, ExplorerDocumentType.Plan),
+        (WorkspaceArtifactKind.Tasks, ExplorerDocumentType.Tasks),
+        (WorkspaceArtifactKind.DataModel, ExplorerDocumentType.DataModel),
+    ];
+
+    /// <summary>
+    /// A selected Sample Project resolves its documents the way the Explorers and Quality Review do; otherwise the
+    /// session's imported artifacts are the documents. Null when there is neither a project nor an imported artifact.
+    /// </summary>
+    private async Task<ProjectDocuments?> ResolveProjectDocumentsAsync()
+    {
+        var slug = Workspace.CurrentProject;
+        if (!string.IsNullOrWhiteSpace(slug) && ServiceProvider.GetService(typeof(ISampleProjectDocumentResolver)) is ISampleProjectDocumentResolver resolver)
+        {
+            var projects = await resolver.GetAvailableProjectsAsync();
+            if (projects.Any(project => project.Slug == slug))
+            {
+                var documents = new Dictionary<WorkspaceArtifactKind, (string? Text, DateTime? LoadedAt)>();
+                foreach (var (kind, type) in ProjectDocumentKinds)
+                {
+                    var result = await resolver.ResolveAsync(slug, type);
+                    documents[kind] = (result.IsSuccess ? result.Content : null, result.IsSuccess ? DateTime.UtcNow : null);
+                }
+                return new ProjectDocuments($"Sample project '{slug}' (SampleData, resolved on demand)", true, documents);
+            }
+        }
+
+        if (WorkspaceArtifacts.Count > 0)
+            return new ProjectDocuments("Artifacts imported into this browser session", false,
+                ProjectDocumentKinds.ToDictionary(k => k.Kind, k => (Workspace.Get(k.Kind)?.Text, Workspace.Get(k.Kind)?.LoadedAt)));
+
+        return string.IsNullOrWhiteSpace(slug)
+            ? null
+            : new ProjectDocuments($"Selected project '{slug}' (documents not available)", false,
+                ProjectDocumentKinds.ToDictionary(k => k.Kind, k => ((string?)null, (DateTime?)null)));
+    }
 
     // Configuration Health
     private ConfigurationHealthReport? _configHealthReport;
@@ -1613,11 +1665,20 @@ else if (_settings is not null)
     private const string StatusFail = "FAIL";
     private const string StatusNotAvailable = "NOT AVAILABLE";
     private const string StatusNotRun = "NOT RUN";
+    /// <summary>Neutral lifecycle fact (not loaded / not evaluated). Never a warning.</summary>
+    private const string StatusInfo = "INFO";
 
     private sealed record RuntimeSummaryRow(string Label, string Value, string Status, string Detail);
     private sealed record RuntimeDiagnosticRow(string Name, string Status, string Value, string Reason);
     private sealed record RuntimeServiceDiagnosticRow(string Name, string Status, string Reason, DateTimeOffset? LastUpdated);
     private sealed record AnalysisSessionDiagnosticRow(string Name, string Status, string Reason, string Prerequisites, DateTimeOffset? LastRun);
+
+    private static string OrNone(string? value) => string.IsNullOrWhiteSpace(value) ? "None selected" : value;
+
+    private string SessionArtifactsDetail =>
+        WorkspaceArtifacts.Count > 0 ? ArtifactNamesText
+        : _projectDocuments is { IsSampleProject: true } docs ? $"None imported — expected: {docs.Source}."
+        : "Nothing is imported into this browser session.";
 
     private string ArtifactNamesText =>
         ArtifactStatus.GetStatus().ArtifactCount == 0
@@ -1630,15 +1691,11 @@ else if (_settings is not null)
             : WorkspaceArtifacts.Max(item => item.Artifact.LoadedAt);
 
     private IEnumerable<(string Label, bool Loaded, DateTime? LoadedAt)> ReviewContextArtifactRows =>
-        Enum.GetValues<WorkspaceArtifactKind>()
-            .Where(kind => kind != WorkspaceArtifactKind.Research)
-            .Select(kind =>
-            {
-                var status = ArtifactStatus.GetStatus();
-                var isLoaded = status.Availability.GetValueOrDefault(kind, false);
-                var artifact = Workspace.Get(kind);
-                return (ArtifactLabel(kind), isLoaded, artifact?.LoadedAt);
-            });
+        ProjectDocumentKinds.Select(k =>
+        {
+            var document = _projectDocuments?.Documents.GetValueOrDefault(k.Kind);
+            return (ArtifactLabel(k.Kind), !string.IsNullOrWhiteSpace(document?.Text), document?.LoadedAt);
+        });
 
     private string FeatureFlagSummary =>
         AllEditableFeatures.Any()
@@ -1665,8 +1722,8 @@ else if (_settings is not null)
             DiagnosticItem("Name", OrUnknown(_settings.Application.ApplicationName), SystemSettingsStatus.Pass, "Configured application name.", ""),
             DiagnosticItem("Environment", OrUnknown(_settings.Application.Environment), SystemSettingsStatus.Pass, "Configured application environment.", ""),
             DiagnosticItem("Version", OrUnknown(_settings.Application.Version), SystemSettingsStatus.Pass, "Application version.", ""),
-            DiagnosticItem("Build", OrUnknown(_settings.Application.BuildNumber), string.IsNullOrWhiteSpace(_settings.Application.BuildNumber) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Build number.", ""),
-            DiagnosticItem("Commit", OrUnknown(_settings.Application.CommitSha), string.IsNullOrWhiteSpace(_settings.Application.CommitSha) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Source commit SHA.", ""),
+            DiagnosticItem("Build", OrUnknown(_settings.Application.BuildNumber), string.IsNullOrWhiteSpace(_settings.Application.BuildNumber) ? UnconfiguredMetadataStatus : SystemSettingsStatus.Pass, "Build number.", ""),
+            DiagnosticItem("Commit", OrUnknown(_settings.Application.CommitSha), string.IsNullOrWhiteSpace(_settings.Application.CommitSha) ? UnconfiguredMetadataStatus : SystemSettingsStatus.Pass, "Source commit SHA.", ""),
             DiagnosticItem("Package Mode", OrUnknown(_settings.Application.PackageMode), SystemSettingsStatus.Pass, "Application package mode.", "")
         ]),
         DiagnosticSection("Frontend", "Frontend endpoint and hosting configuration",
@@ -1701,14 +1758,22 @@ else if (_settings is not null)
             DiagnosticItem("Compose Project", OrUnknown(_settings.Runtime.ComposeProjectName), string.IsNullOrWhiteSpace(_settings.Runtime.ComposeProjectName) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Docker Compose project name.", ""),
             DiagnosticItem("Expected Volume", OrUnknown(_settings.Runtime.ExpectedDatabaseVolume), string.IsNullOrWhiteSpace(_settings.Runtime.ExpectedDatabaseVolume) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Expected database volume.", ""),
             DiagnosticItem("Package Mode", OrUnknown(_settings.Runtime.PackageMode), SystemSettingsStatus.Pass, "Runtime package mode.", ""),
-            DiagnosticItem("Package Root", OrUnknown(_settings.Runtime.LocalPackageRoot), string.IsNullOrWhiteSpace(_settings.Runtime.LocalPackageRoot) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Local package root.", ""),
+            DiagnosticItem("Package Root", OrUnknown(_settings.Runtime.LocalPackageRoot), string.IsNullOrWhiteSpace(_settings.Runtime.LocalPackageRoot) ? UnconfiguredMetadataStatus : SystemSettingsStatus.Pass, "Local package root.", ""),
             DiagnosticItem("Published", _settings.Runtime.RunningFromPublishedArtifact ? "Yes" : "No", SystemSettingsStatus.Pass, "Whether the app is running from a published artifact.", "")
         ]),
-        DiagnosticSection("Project Documents", "Stored project document availability",
+        DiagnosticSection("Stored Project Documents (backend store)",
+            "Backend document store for constitution, plan and tasks. It is not project-scoped and is not read by the current reviews; the current project's documents are shown in ReviewContext Validation.",
             BuildProjectDocumentDiagnosticItems())
     ];
 
     private StatusSummaryDto SystemDiagnosticSummary => SummarizeDiagnosticSections(SystemDiagnosticSections);
+
+    /// <summary>
+    /// Build, commit and package-root metadata are stamped by packaging. A local, unpublished run has none, which is
+    /// expected (Info); a published artifact without them is a real gap (Unavailable).
+    /// </summary>
+    private SystemSettingsStatus UnconfiguredMetadataStatus =>
+        _settings?.Runtime.RunningFromPublishedArtifact == true ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Info;
 
     private IReadOnlyList<SettingsSectionDto> DocumentationHealthSections =>
         _docHealthFindings.Count == 0
@@ -1765,23 +1830,31 @@ else if (_settings is not null)
         {
             var sections = new List<SettingsSectionDto>
             {
-                DiagnosticSection("Loaded Artifacts", "Artifacts available to ReviewContext validation",
+                DiagnosticSection("Loaded Artifacts",
+                    _projectDocuments is { } docs ? $"Source: {docs.Source}" : "Run validation to resolve the current project's documents",
                     ReviewContextArtifactRows.Select(row => DiagnosticItem(
                         row.Label,
-                        row.Loaded ? FormatTimestamp(row.LoadedAt) : "Not loaded",
-                        row.Loaded ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable,
-                        row.Loaded ? "Artifact is loaded in the current browser/session workspace." : "Artifact is not loaded.",
+                        row.Loaded ? "Loaded" : _projectDocuments is null ? "Not resolved" : "Not in this project",
+                        row.Loaded ? SystemSettingsStatus.Pass : SystemSettingsStatus.Info,
+                        row.Loaded ? $"Read from {_projectDocuments!.Source}." : _projectDocuments is null ? "No current project or imported artifact to read." : "The current project has no such document.",
                         "")))
             };
 
             if (_reviewContextReport is not null)
             {
+                // A metric is an observation of a document. Read from a present document it is Pass; from a present but
+                // empty one it is a Warning; with no source document it was not evaluated — never a healthy zero.
                 sections.Add(DiagnosticSection("Canonical Metrics", "Canonical ReviewContext metrics",
                     _reviewContextReport.CanonicalMetrics.Select(metric => DiagnosticItem(
                         metric.Name,
-                        DisplayValue(metric.Value),
-                        SystemSettingsStatus.Pass,
-                        $"Source: {metric.Source}",
+                        metric.State == ReviewContextMetricState.NotEvaluated ? "Not evaluated" : DisplayValue(metric.Value),
+                        metric.State switch
+                        {
+                            ReviewContextMetricState.Evaluated => SystemSettingsStatus.Pass,
+                            ReviewContextMetricState.EmptySource => SystemSettingsStatus.Warning,
+                            _ => SystemSettingsStatus.Info,
+                        },
+                        metric.State == ReviewContextMetricState.NotEvaluated ? "Source document not present for the current project." : $"Source: {metric.Source}",
                         ""))));
 
                 sections.Add(DiagnosticSection("Source Comparisons", "ReviewContext source comparison checks",
@@ -1794,11 +1867,18 @@ else if (_settings is not null)
 
                 sections.Add(DiagnosticSection("Findings", "ReviewContext validation findings",
                     _reviewContextReport.Findings.Count == 0
-                        ? [DiagnosticItem("Findings", "No findings", SystemSettingsStatus.Pass, "No ReviewContext validation findings.", "")]
+                        ? [_reviewContextReport.HasSourceDocuments
+                            ? DiagnosticItem("Findings", "No findings", SystemSettingsStatus.Pass, "No ReviewContext validation findings.", "")
+                            : DiagnosticItem("Findings", "Not evaluated", SystemSettingsStatus.Info, "No source document was available to validate.", "")]
                         : _reviewContextReport.Findings.Select(finding => DiagnosticItem(
                             finding.MetricName,
                             finding.Message,
-                            finding.Severity == ReviewContextValidationStatus.Fail ? SystemSettingsStatus.Fail : SystemSettingsStatus.Warning,
+                            finding.Severity switch
+                            {
+                                ReviewContextValidationStatus.Fail => SystemSettingsStatus.Fail,
+                                ReviewContextValidationStatus.Warning => SystemSettingsStatus.Warning,
+                                _ => SystemSettingsStatus.Pass,
+                            },
                             finding.Source,
                             finding.Message))));
             }
@@ -1823,8 +1903,8 @@ else if (_settings is not null)
     private IReadOnlyList<RuntimeSummaryRow> RuntimeSummaryRows =>
     [
         new("Runtime status", OverallRuntimeStatus, OverallRuntimeStatus, RuntimeFailureCount > 0 ? "One or more runtime checks failed." : "No blocking runtime failures detected."),
-        new("Workspace loaded", WorkspaceArtifacts.Count > 0 ? "Yes" : "No", WorkspaceArtifacts.Count > 0 ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count > 0 ? OrUnavailable(Workspace.CurrentProject) : "No active browser/session workspace."),
-        new("Artifacts loaded", WorkspaceArtifacts.Count.ToString(), WorkspaceArtifacts.Count > 0 ? StatusPass : StatusNotAvailable, ArtifactNamesText),
+        new("Selected project", OrNone(Workspace.CurrentProject), string.IsNullOrWhiteSpace(Workspace.CurrentProject) ? StatusInfo : StatusPass, "Persisted project identity (slug). Selecting a project does not copy its documents into the session."),
+        new("Session artifacts", WorkspaceArtifacts.Count.ToString(), WorkspaceArtifacts.Count > 0 ? StatusPass : StatusInfo, SessionArtifactsDetail),
         new("Services ready", $"{RuntimeServiceRows.Count(row => row.Status == StatusPass)} / {RuntimeServiceRows.Count()}", RuntimeServiceRows.Any(row => row.Status == StatusFail) ? StatusFail : StatusPass, "Runtime services are grouped by severity below."),
         new("Sessions completed", CompletedAnalysisCount.ToString(), CompletedAnalysisCount > 0 ? StatusPass : StatusNotRun, CompletedAnalysisCount > 0 ? "At least one analysis has completed." : "No analysis session has completed in this browser session."),
         new("Warnings", RuntimeWarningCount.ToString(), RuntimeWarningCount > 0 ? StatusWarning : StatusPass, RuntimeWarningCount > 0 ? "Review warning rows below." : "No warnings reported."),
@@ -1835,12 +1915,22 @@ else if (_settings is not null)
     {
         get
         {
-            var hasWorkspace = WorkspaceArtifacts.Count > 0;
-            yield return new("Project", hasWorkspace ? StatusPass : StatusNotAvailable, OrUnavailable(Workspace.CurrentProject), hasWorkspace ? "Active project is available in browser/session state." : "No active workspace is loaded in this browser session.");
-            yield return new("Workspace status", hasWorkspace ? StatusPass : StatusNotAvailable, hasWorkspace ? "Loaded" : "No workspace loaded", hasWorkspace ? "Workspace artifacts are available to frontend diagnostics." : "This is not a failure; load or resume a workspace to run workspace-specific checks.");
-            yield return new("Loaded artifacts count", hasWorkspace ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count.ToString(), hasWorkspace ? "Artifacts are available to the current session." : "No artifact set exists in the current runtime session.");
-            yield return new("Artifact names", hasWorkspace ? StatusPass : StatusNotAvailable, ArtifactNamesText, hasWorkspace ? "Names are from the current browser/session artifact repository." : "No artifacts are loaded.");
-            yield return new("Last loaded timestamp", LastWorkspaceLoad.HasValue ? StatusPass : StatusNotAvailable, FormatTimestamp(LastWorkspaceLoad), LastWorkspaceLoad.HasValue ? "Most recent artifact load in the current session." : "No artifact load timestamp is available.");
+            // Three layers, three rows: the selected project (persisted), where its documents come from, and what was
+            // imported into this browser session. "No workspace loaded" beside a selected project read as a contradiction.
+            var hasImported = WorkspaceArtifacts.Count > 0;
+            var hasProject = !string.IsNullOrWhiteSpace(Workspace.CurrentProject);
+            yield return new("Selected project", hasProject ? StatusPass : StatusInfo, OrNone(Workspace.CurrentProject),
+                hasProject ? "Persisted project identity (slug), restored on startup." : "No project is selected.");
+            yield return new("Document source", _projectDocuments is null ? StatusInfo : StatusPass,
+                _projectDocuments?.Source ?? "Not resolved",
+                _projectDocuments is null ? "Resolved when ReviewContext Validation runs or this page refreshes." : "Where the reviews read this project's documents.");
+            yield return new("Session artifacts", hasImported ? StatusPass : StatusInfo, hasImported ? "Imported" : "None imported", SessionArtifactsDetail);
+            yield return new("Imported artifact count", hasImported ? StatusPass : StatusInfo, WorkspaceArtifacts.Count.ToString(),
+                hasImported ? "Artifacts imported into the current browser session." : "Nothing is imported into this session.");
+            yield return new("Imported artifact names", hasImported ? StatusPass : StatusInfo, ArtifactNamesText,
+                hasImported ? "Names are from the current browser/session artifact repository." : "Nothing is imported into this session.");
+            yield return new("Last import timestamp", LastWorkspaceLoad.HasValue ? StatusPass : StatusInfo, FormatTimestamp(LastWorkspaceLoad),
+                LastWorkspaceLoad.HasValue ? "Most recent artifact import in the current session." : "Nothing has been imported in this session.");
         }
     }
 
@@ -1849,8 +1939,8 @@ else if (_settings is not null)
         get
         {
             yield return new("Engine initialized", MarkdownEngine is not null ? StatusPass : StatusFail, MarkdownEngine is not null ? "Ready" : "Service missing", MarkdownEngine is not null ? "Markdown parser service is registered." : "Required markdown parser service is not available.");
-            yield return new("Parsed documents", WorkspaceArtifacts.Count > 0 ? StatusPass : StatusNotAvailable, WorkspaceArtifacts.Count.ToString(), WorkspaceArtifacts.Count > 0 ? "Loaded artifacts can be parsed on demand." : "No workspace artifacts are loaded.");
-            yield return new("Cache status", StatusNotAvailable, "Not exposed", "Cache status is not exposed by Markdown Engine.");
+            yield return new("Parsed documents", WorkspaceArtifacts.Count > 0 ? StatusPass : StatusInfo, WorkspaceArtifacts.Count.ToString(), WorkspaceArtifacts.Count > 0 ? "Imported artifacts can be parsed on demand." : "Nothing is imported into this session; Sample Project documents are parsed by the pages that read them.");
+            yield return new("Cache status", StatusInfo, "Not exposed", "Cache status is not exposed by Markdown Engine.");
         }
     }
 
@@ -2094,8 +2184,7 @@ else if (_settings is not null)
         if (_activeSection == "ui-migration" && !_runtimeDiagnosticsLoaded)
         {
             _runtimeDiagnosticsLoaded = true;
-            _extractionSnapshot = await ExtractionSession.LoadAsync();
-            StateHasChanged();
+            await RefreshRuntimeDiagnosticsAsync();
         }
     }
 
@@ -2257,14 +2346,16 @@ else if (_settings is not null)
     {
         if (!await ConfirmRuntimeActionAsync(
             "Reset Workspace",
-            "This clears only browser/session workspace state. It does not delete saved workspaces or modify database schema. Continue?"))
+            "This clears artifacts imported into this browser session. The selected project, saved workspaces and database schema are kept. Continue?"))
             return;
 
         foreach (var kind in Enum.GetValues<WorkspaceArtifactKind>())
             Workspace.Clear(kind);
 
-        Workspace.CurrentProject = null;
-        _runtimeActionMessage = "Workspace session state reset. Saved workspaces and database schema were not modified.";
+        // The selected project is persisted identity (auto-saved on change): clearing it here used to wipe the saved
+        // selection, contradicting "does not delete saved workspaces". It is cleared on Sample Projects instead.
+        _projectDocuments = null;
+        _runtimeActionMessage = "Imported session artifacts cleared. The selected project, saved workspaces and database schema were not modified.";
         await RefreshRuntimeDiagnosticsAsync();
     }
 
@@ -2323,6 +2414,7 @@ else if (_settings is not null)
     private async Task RefreshRuntimeDiagnosticsAsync()
     {
         _extractionSnapshot = await ExtractionSession.LoadAsync();
+        try { _projectDocuments = await ResolveProjectDocumentsAsync(); } catch { _projectDocuments = null; }
         StateHasChanged();
     }
 
@@ -2368,21 +2460,26 @@ else if (_settings is not null)
         return sb.ToString();
     }
 
-    private Task RunReviewContextValidationAsync()
+    private async Task RunReviewContextValidationAsync()
     {
-        if (WorkspaceArtifacts.Count == 0)
+        _projectDocuments = await ResolveProjectDocumentsAsync();
+        string? Text(WorkspaceArtifactKind kind) => _projectDocuments?.Documents.GetValueOrDefault(kind).Text;
+
+        if (_projectDocuments is null || ProjectDocumentKinds.All(k => string.IsNullOrWhiteSpace(Text(k.Kind))))
         {
             _reviewContextReport = ReviewContextValidator.Validate(null, null, null, null, OrUnavailable(Workspace.CurrentProject));
-            _reviewContextValidationMessage = "No workspace artifacts are loaded.";
+            _reviewContextValidationMessage = _projectDocuments is null
+                ? "No current project is selected and no artifacts are imported, so nothing was evaluated."
+                : $"No documents found for {_projectDocuments.Source}, so nothing was evaluated.";
             StateHasChanged();
-            return Task.CompletedTask;
+            return;
         }
 
         var parsed = MarkdownEngine.Parse(
-            Workspace.Constitution?.Text,
-            Workspace.Specification?.Text,
-            Workspace.Plan?.Text,
-            Workspace.Tasks?.Text);
+            Text(WorkspaceArtifactKind.Constitution),
+            Text(WorkspaceArtifactKind.Specification),
+            Text(WorkspaceArtifactKind.Plan),
+            Text(WorkspaceArtifactKind.Tasks));
 
         _reviewContextReport = ReviewContextValidator.Validate(
             parsed.Constitution,
@@ -2391,9 +2488,8 @@ else if (_settings is not null)
             parsed.Tasks,
             OrUnavailable(Workspace.CurrentProject));
 
-        _reviewContextValidationMessage = $"Validation complete: {_reviewContextReport.Summary}.";
+        _reviewContextValidationMessage = $"Validation complete for {_projectDocuments.Source}: {_reviewContextReport.Summary}.";
         StateHasChanged();
-        return Task.CompletedTask;
     }
 
     private async Task ExportReviewContextValidationJsonAsync()
@@ -2425,9 +2521,9 @@ else if (_settings is not null)
         sb.AppendLine("<!doctype html><html><head><meta charset=\"utf-8\"><title>ReviewContext Validation</title>");
         sb.AppendLine("<style>body{font-family:system-ui,sans-serif;margin:2rem;color:#1f2937}table{border-collapse:collapse;width:100%;margin:1rem 0}th,td{border:1px solid #d1d5db;padding:.5rem;text-align:left}th{background:#f3f4f6}.finding{border:1px solid #d1d5db;padding:.75rem;margin:.5rem 0}</style></head><body>");
         sb.AppendLine($"<h1>ReviewContext Validation</h1><p>Project: {E(report.ProjectName)}<br>Status: {E(report.OverallStatus)}<br>Generated: {E(report.GeneratedAt.ToString("u"))}</p>");
-        sb.AppendLine("<h2>Canonical Metrics</h2><table><thead><tr><th>Name</th><th>Value</th><th>Source</th></tr></thead><tbody>");
+        sb.AppendLine("<h2>Canonical Metrics</h2><table><thead><tr><th>Name</th><th>Value</th><th>State</th><th>Source</th></tr></thead><tbody>");
         foreach (var metric in report.CanonicalMetrics)
-            sb.AppendLine($"<tr><td>{E(metric.Name)}</td><td>{E(metric.Value)}</td><td>{E(metric.Source)}</td></tr>");
+            sb.AppendLine($"<tr><td>{E(metric.Name)}</td><td>{E(metric.Value)}</td><td>{E(metric.State)}</td><td>{E(metric.Source)}</td></tr>");
         sb.AppendLine("</tbody></table><h2>Source Comparisons</h2><table><thead><tr><th>Metric</th><th>ReviewContext</th><th>All Match</th></tr></thead><tbody>");
         foreach (var comparison in report.SourceComparisons)
             sb.AppendLine($"<tr><td>{E(comparison.Metric)}</td><td>{E(comparison.ReviewContextValue)}</td><td>{E(comparison.AllMatch)}</td></tr>");
@@ -2568,6 +2664,7 @@ else if (_settings is not null)
         SystemSettingsStatus.Warning => "ss-health-sev-warn",
         SystemSettingsStatus.Fail => "ss-health-sev-error",
         SystemSettingsStatus.Unavailable => "ss-health-sev-warn",
+        SystemSettingsStatus.Info => "ss-health-sev-na",
         _ => "ss-health-sev-warn"
     };
 
@@ -2577,6 +2674,7 @@ else if (_settings is not null)
         SystemSettingsStatus.Warning => "ss-health-sev-warn",
         SystemSettingsStatus.Fail => "ss-health-sev-error",
         SystemSettingsStatus.Unavailable => "ss-health-sev-warn",
+        SystemSettingsStatus.Info => "ss-health-sev-na",
         _ => "ss-health-sev-warn"
     };
 
@@ -2585,6 +2683,7 @@ else if (_settings is not null)
         SystemSettingsStatus.Pass => "Pass",
         SystemSettingsStatus.Warning => "Warning",
         SystemSettingsStatus.Fail => "Fail",
+        SystemSettingsStatus.Info => "Not evaluated",
         _ => "Unavailable"
     };
 
@@ -2643,7 +2742,8 @@ else if (_settings is not null)
             items.Add(DiagnosticItem(
                 $"Log File: {logFile.Label}",
                 logFile.Path,
-                logFile.Exists ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable,
+                // Not created yet is a lifecycle fact (nothing has written to it), not a missing capability.
+                logFile.Exists ? SystemSettingsStatus.Pass : SystemSettingsStatus.Info,
                 "Known log file path.",
                 logFile.Exists ? "" : "The log file has not been created yet."));
         }
@@ -2657,7 +2757,7 @@ else if (_settings is not null)
         {
             return
             [
-                DiagnosticItem("Project documents", "Loading", SystemSettingsStatus.Unavailable, "Project document diagnostics have not loaded yet.", "")
+                DiagnosticItem("Project documents", "Loading", SystemSettingsStatus.Info, "Project document diagnostics have not loaded yet.", "")
             ];
         }
 
@@ -2668,9 +2768,9 @@ else if (_settings is not null)
                 return DiagnosticItem(
                     kind,
                     doc is not null ? $"{doc.ContentLengthChars:N0} chars" : "Empty",
-                    doc is not null ? SystemSettingsStatus.Pass : SystemSettingsStatus.Unavailable,
-                    "Stored project document availability.",
-                    doc is null ? "Load or save this project document if it is required for the current workflow." : "");
+                    doc is not null ? SystemSettingsStatus.Pass : SystemSettingsStatus.Info,
+                    "Backend store entry (not project-scoped).",
+                    "");
             })
             .ToList();
     }
@@ -2694,6 +2794,9 @@ else if (_settings is not null)
                 case SystemSettingsStatus.Unavailable:
                     summary.UnavailableCount++;
                     break;
+                case SystemSettingsStatus.Info:
+                    summary.InfoCount++;
+                    break;
             }
         }
 
@@ -2706,7 +2809,10 @@ else if (_settings is not null)
         var statusList = statuses.ToList();
         if (statusList.Any(status => status == SystemSettingsStatus.Fail)) return SystemSettingsStatus.Fail;
         if (statusList.Any(status => status is SystemSettingsStatus.Warning or SystemSettingsStatus.Unavailable)) return SystemSettingsStatus.Warning;
-        return statusList.Count == 0 ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass;
+        var checks = statusList.Where(status => status != SystemSettingsStatus.Info).ToList();
+        // Only neutral facts (nothing evaluated): say so rather than claiming Pass.
+        if (checks.Count == 0) return statusList.Count == 0 ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Info;
+        return SystemSettingsStatus.Pass;
     }
 
     private static SystemSettingsStatus ToSystemSettingsStatus(string status) => status switch
@@ -2714,6 +2820,8 @@ else if (_settings is not null)
         StatusPass => SystemSettingsStatus.Pass,
         StatusWarning => SystemSettingsStatus.Warning,
         StatusFail => SystemSettingsStatus.Fail,
+        // Not run and not loaded are lifecycle states, not missing capabilities.
+        StatusNotRun or StatusInfo => SystemSettingsStatus.Info,
         _ => SystemSettingsStatus.Unavailable
     };
 
@@ -2808,6 +2916,7 @@ else if (_settings is not null)
         StatusFail => "ss-health-sev-error",
         StatusNotAvailable => "ss-health-sev-na",
         StatusNotRun => "ss-health-sev-notrun",
+        StatusInfo => "ss-health-sev-na",
         _ => "ss-health-sev-na"
     };
 
