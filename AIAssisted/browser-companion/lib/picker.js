@@ -18,7 +18,7 @@
   /** What a click inside an element means: its nearest control, test-id carrier or heading — not the <span> under the pointer. */
   const TARGET = 'a[href], button, input:not([type=hidden]), select, textarea, summary, [role=button], [role=link], [role=checkbox], '
     + '[role=radio], [role=tab], [role=menuitem], [role=switch], [role=combobox], [role=textbox], [contenteditable=true], '
-    + '[data-testid], h1, h2, h3, h4, h5, h6, [role=heading], [role=status], output';
+    + '[data-testid], h1, h2, h3, h4, h5, h6, [role=heading], [role=status], output, [role=listitem]';
   const MARKER = 'data-birknext-picker';
   const DEFAULT_TIMEOUT_MS = 45000;
   const NAME_MAX = 80;
@@ -88,8 +88,9 @@
 
     if (name && name.length <= NAME_MAX && !el.matches('input, select, textarea')) offer({ kind: 'Text', value: name });
 
+    // selectorFor caps its output; a capped path is not a selector any more (it matched nothing on real M2LB).
     const css = sanitize.selectorFor(el);
-    if (css) offer({ kind: 'Css', value: css });
+    if (css && !css.endsWith('…')) offer({ kind: 'Css', value: css });
     return out;
   }
 

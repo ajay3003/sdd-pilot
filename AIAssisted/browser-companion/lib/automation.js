@@ -66,6 +66,9 @@
     combobox: 'select, [role=combobox]',
     checkbox: 'input[type=checkbox], [role=checkbox]',
     row: 'tr, [role=row]',
+    // M2LB renders selectable list rows as div[role=listitem] with an aria-label ("Velg rolle …"); that name survives a
+    // Blazor re-render where a structural CSS path does not.
+    listitem: 'li, [role=listitem]',
     cell: 'td, th, [role=cell], [role=gridcell]',
     status: '[role=status], output',
   };

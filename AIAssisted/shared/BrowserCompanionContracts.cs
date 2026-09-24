@@ -547,6 +547,12 @@ public sealed record BrowserCompanionLivePage
     public DateTimeOffset RegisteredAt { get; init; }
     public DateTimeOffset LastSeenAt { get; init; }
     public string Identity => $"{Origin}{Route}";
+
+    /// <summary>
+    /// The browser tab this page lives in: the PageId without its content-script instance (<c>t&lt;tabId&gt;-&lt;instance&gt;</c>).
+    /// A reload of the same tab keeps the TabKey and changes the instance.
+    /// </summary>
+    public string TabKey => PageId.LastIndexOf('-') is > 0 and var dash ? PageId[..dash] : PageId;
 }
 
 /// <summary>

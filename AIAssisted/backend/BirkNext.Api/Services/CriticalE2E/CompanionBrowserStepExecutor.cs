@@ -30,6 +30,33 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
             page.Identity, context.TargetOrigin is null ? null : evidenceReference);
     }
 
+    /// <summary>Waits for the bound tab's reloaded page; returns why not when it does not come back.</summary>
+    private async Task<string?> RebindAfterNavigationAsync(CriticalE2ERunContext context, int timeoutMs, CancellationToken cancellationToken)
+    {
+        var before = companion.Status(context.Flow.ProfileId).Live.LivePages.FirstOrDefault(p => p.PageId == context.PageId);
+        var tab = before?.TabKey ?? (context.PageId is { } id && id.LastIndexOf('-') is > 0 and var dash ? id[..dash] : null);
+        if (tab is null) return null;
+        // Bounded by attempts, not wall-clock arithmetic, so a paused clock cannot make this wait forever.
+        var attempts = Math.Clamp(timeoutMs, 2_000, 60_000) / 250;
+        for (var i = 0; i < attempts; i++)
+        {
+            var successor = companion.Status(context.Flow.ProfileId).Live.LivePages.FirstOrDefault(p =>
+                p.TabKey == tab && p.PageId != context.PageId
+                && string.Equals(p.Origin, context.TargetOrigin, StringComparison.OrdinalIgnoreCase));
+            if (successor is not null)
+            {
+                logger.LogInformation("Critical E2E run {RunId} followed its navigation to {PageId}", context.RunId, successor.PageId);
+                context.PageId = successor.PageId;
+                return null;
+            }
+            // Still the same instance: the navigation has not unloaded the page yet, or it was same-document.
+            if (i > 0 && companion.Status(context.Flow.ProfileId).Live.LivePages.Any(p => p.PageId == context.PageId) && i >= attempts / 2)
+                return null;
+            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken).ConfigureAwait(false);
+        }
+        return "The page did not come back after navigating; the step's tab no longer has an approved page.";
+    }
+
     public async Task<CriticalE2EStepResult> ExecuteAsync(CriticalE2EStepDefinition step, CriticalE2ERunContext context, CancellationToken cancellationToken)
     {
         var startedAt = time.GetUtcNow();
@@ -75,6 +102,14 @@ public sealed class CompanionBrowserStepExecutor(IBrowserCompanionService compan
         }
 
         logger.LogInformation("Critical E2E step {StepId} of run {RunId}: {Status}", step.StepId, context.RunId, result.Status);
+
+        // Navigating by route is a full page load in the bound tab, so the page the run was bound to ends by design and
+        // the tab's next content script replaces it. Follow that tab — only after the run's own Navigate, only the same
+        // tab and origin. Any other reload still makes the next step Blocked as stale.
+        if (step.BrowserAction == CompanionActionKind.Navigate && step.Selector is null && result.Status == CriticalE2EStatus.Passed
+            && await RebindAfterNavigationAsync(context, step.TimeoutMs, cancellationToken).ConfigureAwait(false) is { } lost)
+            return CriticalE2EStepOutcome.From(step, startedAt, time.GetUtcNow(), CriticalE2EStatus.Blocked,
+                summary: result.SafeSummary, error: lost, route: result.ObservedRoute);
         if (!string.IsNullOrWhiteSpace(result.ObservedValue)) context.Outputs[step.StepId] = result.ObservedValue;
 
         return CriticalE2EStepOutcome.From(step, startedAt, time.GetUtcNow(), result.Status,

@@ -65,3 +65,38 @@ No second DOM scanner was added.
   - frame targeting;
   - shadow-DOM resolution;
   - the full accessible-name algorithm.
+
+## Real M2LB DEV smoke test (2026-09-24, attended)
+
+Run against `https://m2lbdev.bufetat.no`, on `/admin/general-roles` and `/`. One paired tab, driven through the real `pick-element` and `run` endpoints.
+
+| Element | data-testid | Recommended | Notes |
+|---|---|---|---|
+| input "Søk etter roller" | none | Role textbox + name | Label also unique. |
+| input "Nytt rollenavn" | none | Role textbox + name | CSS `input#hD-TQioy7k`: the generated id changes on every page load. |
+| input "Beskrivelse av ny rolle" | none | Role textbox + name | Generated id, as above. |
+| button "Opprett ny rolle" (picked with Enter) | none | Role button + name | Text matched 2 elements. |
+| button "Start søk" | none | Role button + name | |
+| role row `div[role=listitem]` "Velg rolle testrolle" | none | was a `nth-of-type` CSS path | That path **broke after the search re-render**. The row's aria-label survived it. |
+
+**Results:**
+- **data-testid:** 0 of 6 elements had one. 5 were identified by Role + name; the rows fell to CSS before the fix.
+- **Fill and Blazor binding:** filling the search box made Blazor filter the list ("Admin - Generell" gone) and clearing it restored the list, so the value reached Blazor's model, not just the DOM.
+- **Ambiguity:** `div[role=listitem]` was refused with "Selector matched 3 elements", and nothing was clicked.
+- **Two tabs:** picking was Blocked, and the editor status showed the same reason.
+- **SPA route change:** a user navigation from `/admin/general-roles` to `/` kept the same content-script instance, and the route was updated.
+- **Wrong page:** 3 page-specific selectors resolved to nothing on `/`. The step then reports **Failed** ("No element matched"), not Blocked.
+
+**Fixes, from evidence:**
+1. `listitem` role in the resolver, and a click inside a row resolves to the row.
+2. A CSS path cut off at the 160-character cap is no longer offered (it matched 0 on M2LB).
+3. **Navigate-by-route rebinds to the same tab's reloaded page.** Before the fix, every step after a Navigate was Blocked: "The page this step was bound to is no longer open". Only the run's own Navigate rebinds, only in the same tab and origin; any other reload is still stale.
+
+The final flow passed end to end: Navigate → WaitForVisible → Fill → AssertValue → AssertHidden, recorded in the run history.
+
+**Decisions:**
+- **Expected-route binding:** recommended as the next hardening step. It would make a wrong page a Blocked prerequisite, not an application Failed, and protect generic names such as "Lagre". It was not built, because no cross-page match was observed.
+- **data-testid:** recommended for dynamic list rows and repeated generic actions ("Lagre", "Slett") in critical journeys. Not needed for labelled inputs or uniquely named buttons.
+- **Fallback selectors:** not needed.
+- **iframes and shadow DOM:** none met on the pages tested.
+- **Still untested:** a navigation caused by clicking a link in the flow (no safe link was available), and native `<select>` / custom combobox (none found on these pages).

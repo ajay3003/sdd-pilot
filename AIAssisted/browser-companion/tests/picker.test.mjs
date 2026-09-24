@@ -156,3 +156,36 @@ test('shadow DOM: a pick inside an open shadow root identifies its host (documen
   await page.click('x-card >> button');
   assert.equal((await picked()).tag, 'x-card', 'events retarget to the host; replay cannot reach inside the shadow root');
 });
+
+// ── Shapes observed on real M2LB DEV (/admin/general-roles, 2026-09-24) ─────────
+
+const roleList = names => `<div class="admin-card role-list-card"><div role="list" class="role-list">${names.map(n =>
+  `<div role="listitem" class="role-list-row" aria-label="Velg rolle ${n}" onclick="window.__rowClicks=(window.__rowClicks||0)+1"><div class="role-list-row-info">${n}</div></div>`).join('')}</div></div>`;
+
+test('an M2LB role row is picked as the row and identified by role and name, not a structural path', async () => {
+  await load(roleList(['Admin - Generell', 'Saksbehandler', 'testrolle']));
+  const d = await describe('[aria-label="Velg rolle testrolle"] .role-list-row-info');
+  assert.equal(d.role, 'listitem');
+  assert.deepEqual(d.recommended, { kind: 'Role', value: '', role: 'listitem', name: 'Velg rolle testrolle' });
+  assert.equal(await replayResolves(d.recommended, '[aria-label="Velg rolle testrolle"]'), true);
+});
+
+test('the recommended row selector survives a Blazor-style re-render that breaks the structural path', async () => {
+  await load(roleList(['Admin - Generell', 'Saksbehandler', 'testrolle']));
+  const d = await describe('[aria-label="Velg rolle testrolle"] .role-list-row-info');
+  const css = d.candidates.find(c => c.selector.kind === 'Css');
+  // Filtering re-renders the list with only the matching row, as the real search box does.
+  await page.evaluate(html => { document.querySelector('.role-list-card').outerHTML = html; }, roleList(['testrolle']));
+  assert.equal(await replayResolves(d.recommended, '[aria-label="Velg rolle testrolle"]'), true, 'role + name still resolves');
+  if (css) {
+    const stillCss = await page.evaluate(sel => BirkNextCompanion.automation.matches(document, window, sel).pool.length, css.selector);
+    assert.notEqual(stillCss, 1, 'the structural path is exactly what a re-render breaks');
+  }
+});
+
+test('a structural path cut off at the length cap is never offered as a candidate', async () => {
+  const deep = 'abcdefghijklmnopqrstuvwxyz';
+  await load(`<div class="${deep}-one ${deep}-two"><div class="${deep}-three ${deep}-four"><div class="${deep}-five ${deep}-six"><div class="${deep}-seven x"><span class="leaf">·</span></div></div></div></div>`);
+  const d = await page.evaluate(() => BirkNextCompanion.picker.describe(document, window, document.querySelector('.leaf')).descriptor);
+  assert.ok(d.candidates.every(c => !String(c.selector.value || '').endsWith('…')), JSON.stringify(d.candidates));
+});
