@@ -104,9 +104,10 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review cannot start");
         page.Find("[data-testid=aqr-readiness]").TextContent.Should().NotContain("can run with limitations");
         page.Find("[data-testid=aqr-run-reason]").TextContent.Should().Be(
-            "Authenticated API access is required for both selected targets, but no authenticated API context is currently available.");
+            "Both selected APIs require authenticated access, but no authenticated API context is available.");
         RunButton(page).HasAttribute("disabled").Should().BeTrue();
-        RunButton(page).GetAttribute("aria-describedby").Should().Be("aqr-run-reason", "a disabled Run carries its reason programmatically");
+        RunButton(page).GetAttribute("aria-describedby").Should().Be("aqr-run-unavailable", "a disabled Run carries its reason programmatically");
+        page.Find("#aqr-run-unavailable").TextContent.Should().Be("Run unavailable — authenticated API context is required for the selected APIs.");
         page.Find("#aqr-run-reason").Should().NotBeNull();
 
         // One action, toward the owner of authenticated access, for the environment under review.
@@ -115,8 +116,9 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         action.TextContent.Should().Be("Open Authentication setup");
         action.GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=auth&profile=dev");
         action.HasAttribute("disabled").Should().BeFalse();
-        page.Find("[data-testid=aqr-readiness-help]").TextContent.Should().Be(
-            "Start the Local HTTPS Proxy, open the dedicated Edge browser and perform an authenticated action against the target.");
+        // The procedure moved to Authentication details; the blocker keeps only the reason and the action.
+        page.FindAll("[data-testid=aqr-readiness-help]").Should().BeEmpty();
+        page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Start the Local HTTPS Proxy").And.Contain("authenticated action");
         page.FindAll("[data-testid=aqr-access-action]").Should().BeEmpty("the blocker owns the action; no second, disabled-looking control");
 
         page.Find("[data-testid=aqr-auth-missing]").TextContent.Should().Contain("Local HTTPS Proxy");

@@ -17,6 +17,7 @@ public static class ApiReviewPresentation
     public const string ReadOnlyTitle = "Read-only API review";
     public const string ReadOnlySummary = "The automated review does not execute write operations. Only safe requests are sent: REST GET, HEAD and OPTIONS, and GraphQL queries. Mutations and other write operations are listed for manual review and never called.";
     public const string SecurityScopeNote = "Passive, read-only security review. An empty list means no configured issue was detected on the assessed targets; it does not establish that the API is secure.";
+    public const string TimingScopeNote = "Response timing is measured from the backend gateway to the API. It is not end-user or browser latency.";
     public const string PerformanceScopeNote = "API response timing observed by the review's own requests (backend gateway to the API). Not end-user or production performance.";
 
     /// <summary>
@@ -197,20 +198,23 @@ public static class ApiReviewPresentation
             // Blocked only by missing authenticated context: say which scope needs it and what is missing, then one action.
             if (eligibility.Reason == ApiReviewRunEligibility.NoAuthContextReason && chosen.Count > 0)
             {
-                var scope = chosen.Count switch { 1 => "the selected target", 2 => "both selected targets", var n => $"all {n} selected targets" };
+                // Run is blocked by auth only when EVERY selected target requires it (ApiReviewRunEligibility), so the
+                // subject below is always exact. The proxy/Edge procedure lives in Authentication details, not here.
+                var subject = chosen.Count switch { 1 => "The selected API requires", 2 => "Both selected APIs require", var n => $"All {n} selected APIs require" };
                 var (missing, help) = availability switch
                 {
-                    ApiReviewAccessAvailability.Expired => ("the authenticated API session has expired",
-                        "Continue using the target application in the dedicated Edge browser to refresh the session."),
+                    ApiReviewAccessAvailability.Expired => ("the authenticated API session has expired", (string?)null),
+                    // Not an authentication procedure: the status itself is missing, so say where to look.
                     ApiReviewAccessAvailability.StatusUnavailable => ("the authenticated API status could not be resolved",
                         "The backend did not report authenticated capability; confirm it is running, then return here."),
-                    _ => ("no authenticated API context is currently available",
-                        "Start the Local HTTPS Proxy, open the dedicated Edge browser and perform an authenticated action against the target."),
+                    _ => ("no authenticated API context is available", null),
                 };
                 return new(ApiReviewReadinessLevel.Blocked, "Review cannot start",
-                    $"Authenticated API access is required for {scope}, but {missing}.", chosen.Count, [], eligibility.ActionText, href, help);
+                    $"{subject} authenticated access, but {missing}.", chosen.Count, [], eligibility.ActionText, href, help,
+                    $"Run unavailable — authenticated API context is required for the selected {(chosen.Count == 1 ? "API" : "APIs")}.");
             }
-            return new(ApiReviewReadinessLevel.Blocked, "Review cannot start", eligibility.Reason, chosen.Count, [], eligibility.ActionText, href);
+            return new(ApiReviewReadinessLevel.Blocked, "Review cannot start", eligibility.Reason, chosen.Count, [], eligibility.ActionText, href,
+                RunUnavailableReason: $"Run unavailable — {eligibility.Reason}");
         }
 
         var authenticated = capabilities?.AuthenticatedApi == true;
@@ -294,7 +298,10 @@ public static class ApiReviewPresentation
                 o.OperationType != GraphQlOperationType.None ? o.OperationName ?? "(anonymous)" : o.Path,
                 o.AuthObserved ? "Authentication required" : "Public",
                 o.ObservedCount > 0 ? $"{SourceLabel(o.Source)} · {o.ObservedCount}× observed" : SourceLabel(o.Source),
-                o.IsSafe)).ToList());
+                o.IsSafe)).ToList(),
+            target.ApiType == ApiReviewTargetType.GraphQl
+                ? schemaUnavailablePreviously ? "Schema unavailable previously" : "Schema retrieval pending"
+                : target.ContractSource is not null ? "OpenAPI contract" : "No contract");
     }
 
     /// <summary>Service name without the repeated "GraphQL · host/path" prefix the resolver uses as a unique name.</summary>
@@ -484,8 +491,9 @@ public static class ApiReviewPresentation
             ? new[]
             {
                 restLimited ? "REST: no published contract." : null,
-                gqlLimited ? "GraphQL: introspection was unavailable previously; schema retrieval will be attempted again."
-                    : gqlContract == ApiReviewContractState.RuntimeSchema ? "GraphQL: runtime schema retrieval will be attempted during review." : null,
+                // Why it was unavailable (introspection policy) is Contracts details' fact, not the card's.
+                gqlLimited ? "GraphQL: schema retrieval will be retried during the review."
+                    : gqlContract == ApiReviewContractState.RuntimeSchema ? "GraphQL: schema retrieval will be attempted during the review." : null,
             }.Where(l => l is not null).ToList()
             : [];
 
@@ -502,11 +510,11 @@ public static class ApiReviewPresentation
 
             new("errors", "Error handling", "Safe, read-only error behaviour is reviewed.",
                 Scoped(true, false),
-                nothingSelected ? null : "Write or destructive behaviour is never executed."),
+                nothingSelected ? null : "Write and destructive operations are never executed."),
 
-            new("performance", "Performance", "Response timing of the review's own read-only requests.",
-                Scoped(true, false),
-                nothingSelected ? null : "Timing is measured from the backend gateway to the API, not from an end user."),
+            // Where the timing is measured (gateway → API) is in Read-only review details.
+            new("performance", "Performance", "Measures response timing of the review's own read-only API requests.",
+                Scoped(true, false), null),
 
             new("rest", "REST", "Routes, status handling and response structure.",
                 Scoped(scope.Rest > 0, restLimited),

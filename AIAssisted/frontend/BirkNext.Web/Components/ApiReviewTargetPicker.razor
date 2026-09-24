@@ -9,6 +9,51 @@
     {
         <p class="aqr-empty" data-testid="aqr-no-targets">@ApiReviewRunEligibility.NoTargetsReason Run the Local HTTPS proxy and use the application (Endpoint Discovery), or configure a REST base URL, GraphQL endpoint or OpenAPI URL on the Target Environment.</p>
     }
+    else if (!ReadOnly)
+    {
+        @* Pre-run: one compact table, one row per target. Operations stay behind a per-target disclosure. *@
+        var rows = new[] { ApiReviewTargetType.Rest, ApiReviewTargetType.GraphQl }.SelectMany(type => ApiReviewPresentation.TargetCards(Targets, type, LastReport)).ToList();
+        <div class="aqr-tablewrap aqr-targets-tablewrap">
+            <table class="aqr-table aqr-targets-table" data-testid="aqr-targets-table" aria-label="API targets in this review">
+                <thead><tr><th scope="col">API</th><th scope="col">Type</th><th scope="col">Access</th><th scope="col">Operations</th><th scope="col">Contract / schema</th></tr></thead>
+                <tbody>
+                    @foreach (var card in rows)
+                    {
+                        var t = card.Target;
+                        var checkboxId = $"aqr-target-{t.TargetId}";
+                        var rest = t.ApiType == ApiReviewTargetType.Rest;
+                        <tr class="aqr-target-row @(Selected.Contains(t.TargetId) ? "aqr-target-selected" : "")" data-testid="aqr-target" data-target-id="@t.TargetId" data-type="@t.ApiType" data-auth="@t.AuthRequired.ToString().ToLowerInvariant()">
+                            <th scope="row" class="aqr-target-cell">
+                                <div class="aqr-target-main">
+                                    <input type="checkbox" id="@checkboxId" checked="@Selected.Contains(t.TargetId)"
+                                           @onchange="e => Toggle.InvokeAsync((t.TargetId, (bool)e.Value!))"
+                                           data-testid="aqr-target-checkbox" aria-label="@($"Include {card.DisplayName} in the review")" />
+                                    <div class="aqr-target-text">
+                                        <label for="@checkboxId" class="aqr-target-name" data-testid="aqr-target-name">@card.DisplayName</label>
+                                        <span class="aqr-mono aqr-target-path" title="@t.Url" data-testid="aqr-target-path">@card.PathLabel</span>
+                                        @if (card.ConfidenceLabel != "Verified") { <span class="aqr-pill aqr-pill-attention">@card.ConfidenceLabel</span> }
+                                    </div>
+                                </div>
+                            </th>
+                            <td data-label="Type" data-testid="aqr-target-type">@(rest ? "REST" : "GraphQL")</td>
+                            <td data-label="Access"><span class="aqr-pill @(t.AuthRequired ? "aqr-pill-attention" : "aqr-pill-ready")" data-testid="aqr-target-access">@(t.AuthRequired ? "Auth required" : "Public")</span></td>
+                            <td data-label="Operations" data-testid="aqr-target-operations">@card.OperationCount@(card.WriteCount > 0 ? $" · {card.WriteCount} write (not executed)" : "")</td>
+                            <td data-label="Contract / schema" data-testid="aqr-target-contract">@card.ContractSummary</td>
+                        </tr>
+                        @if (card.Operations.Count > 0)
+                        {
+                            <tr class="aqr-target-ops-row"><td colspan="5">
+                                <ReviewDisclosure Text="View operations" CollapseText="Hide operations" Hint="@($"{card.OperationCount} · {card.SourceLabel}")" TestId="@($"aqr-ops-{t.TargetId}")" Class="disclosure-inline disclosure-small">
+                                    <p class="aqr-muted aqr-target-fullurl"><span class="aqr-meta-label">Endpoint</span> <span class="aqr-mono">@t.Url</span></p>
+                                    @OperationsTable((card, t.ApiType))
+                                </ReviewDisclosure>
+                            </td></tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
     else
     {
         @foreach (var type in new[] { ApiReviewTargetType.Rest, ApiReviewTargetType.GraphQl })
@@ -46,24 +91,7 @@
                             {
                                 <ReviewDisclosure Text="View operations" CollapseText="Hide operations" Hint="@($"{card.OperationCount}")" TestId="@($"aqr-ops-{t.TargetId}")" Class="disclosure-inline disclosure-small">
                                     <p class="aqr-muted aqr-target-fullurl"><span class="aqr-meta-label">Endpoint</span> <span class="aqr-mono">@t.Url</span></p>
-                                    <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="API target operations">
-                                        <table class="aqr-table aqr-ops-table" data-testid="aqr-ops-table">
-                                            <thead><tr><th scope="col">@(type == ApiReviewTargetType.Rest ? "Method" : "Type")</th><th scope="col">@(type == ApiReviewTargetType.Rest ? "Route" : "Operation")</th><th scope="col">Access</th><th scope="col">Source</th><th scope="col">Automated review</th></tr></thead>
-                                            <tbody>
-                                                @foreach (var o in card.Operations.Take(50))
-                                                {
-                                                    <tr data-testid="aqr-op-row">
-                                                        <td>@o.Primary</td>
-                                                        <td class="aqr-mono">@o.Secondary</td>
-                                                        <td>@o.Access</td>
-                                                        <td>@o.Source</td>
-                                                        <td>@(o.IsSafe ? "Read-only request" : "Not executed · manual review")</td>
-                                                    </tr>
-                                                }
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    @if (card.Operations.Count > 50) { <p class="aqr-muted">Showing the first 50 of @card.Operations.Count operations.</p> }
+                                    @OperationsTable((card, type))
                                 </ReviewDisclosure>
                             }
                         </li>
@@ -82,4 +110,28 @@
     [Parameter] public bool ReadOnly { get; set; }
     /// <summary>The latest review, only so a GraphQL target can say its schema was unavailable last time.</summary>
     [Parameter] public ApiReviewReport? LastReport { get; set; }
+
+    /// <summary>The per-target operations table, shared by the pre-run table and the read-only result list.</summary>
+    private RenderFragment OperationsTable((ApiReviewTargetCardModel Card, ApiReviewTargetType Type) args) => __builder =>
+    {
+        var (card, type) = args;
+        <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="API target operations">
+            <table class="aqr-table aqr-ops-table" data-testid="aqr-ops-table">
+                <thead><tr><th scope="col">@(type == ApiReviewTargetType.Rest ? "Method" : "Type")</th><th scope="col">@(type == ApiReviewTargetType.Rest ? "Route" : "Operation")</th><th scope="col">Access</th><th scope="col">Source</th><th scope="col">Automated review</th></tr></thead>
+                <tbody>
+                    @foreach (var o in card.Operations.Take(50))
+                    {
+                        <tr data-testid="aqr-op-row">
+                            <td>@o.Primary</td>
+                            <td class="aqr-mono">@o.Secondary</td>
+                            <td>@o.Access</td>
+                            <td>@o.Source</td>
+                            <td>@(o.IsSafe ? "Read-only request" : "Not executed · manual review")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (card.Operations.Count > 50) { <p class="aqr-muted">Showing the first 50 of @card.Operations.Count operations.</p> }
+    };
 }

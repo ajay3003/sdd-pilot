@@ -5,23 +5,25 @@
    keeps its own meaning: "No contract configured" is a configuration fact, "Introspection unavailable" is a server policy
    observation, and "Not compared yet" is not the same as "no drift". None of them is a failure. *@
 <div class="aqr-contracts" data-testid="aqr-contracts">
-    <ul class="aqr-contract-rows">
+    @* Compact: one line per contract source and one for history. Each row's explanation is in contract details. *@
+    <dl class="aqr-contract-rows">
         @foreach (var row in Contracts.Rows)
         {
-            <li class="aqr-contract-row" data-testid="aqr-contract-row" data-protocol="@row.Label" data-state="@row.State">
-                <span class="aqr-contract-label">@row.Label</span>
-                <span class="aqr-pill aqr-pill-@ApiReviewContractStates.Tone(row.State)" data-testid="aqr-contract-state"><span aria-hidden="true">@ApiReviewContractStates.Glyph(row.State)</span> @ApiReviewContractStates.Label(row.State)</span>
-                <span class="aqr-contract-detail">@row.Detail</span>
-            </li>
+            <div class="aqr-contract-row" data-testid="aqr-contract-row" data-protocol="@row.Label" data-state="@row.State">
+                <dt class="aqr-contract-label">@(row.Label == "REST" ? "REST contract" : "GraphQL schema")</dt>
+                <dd><span class="aqr-pill aqr-pill-@ApiReviewContractStates.Tone(row.State)" data-testid="aqr-contract-state"><span aria-hidden="true">@ApiReviewContractStates.Glyph(row.State)</span> @ApiReviewContractStates.PreRunSummary(row.State)</span></dd>
+            </div>
         }
-        <li class="aqr-contract-row" data-testid="aqr-contract-history">
-            <span class="aqr-contract-label">History</span>
-            <span class="aqr-pill aqr-pill-@(Contracts.BaselineCount > 0 ? "ready" : "muted")" data-testid="aqr-baselines"><span aria-hidden="true">@(Contracts.BaselineCount > 0 ? "✓" : "○")</span> @Contracts.HistoryLabel</span>
-            <span class="aqr-contract-detail" data-testid="aqr-latest-comparison">@Contracts.LatestComparison</span>
-        </li>
-    </ul>
+        <div class="aqr-contract-row" data-testid="aqr-contract-history">
+            <dt class="aqr-contract-label">History</dt>
+            @* Two separate facts: how many baselines exist, and what the latest comparison found. "No drift detected"
+               is about compared evidence only; it never says the contract is compatible. *@
+            <dd><span data-testid="aqr-baselines">@Contracts.HistoryLabel</span> · <span data-testid="aqr-latest-comparison">@Contracts.LatestComparison</span></dd>
+        </div>
+    </dl>
     <ReviewDisclosure Text="View contract details" CollapseText="Hide contract details" TestId="aqr-contract-details" Class="disclosure-inline">
-        <ul class="aqr-list aqr-muted">
+        <ul class="aqr-list aqr-muted" data-testid="aqr-contract-details-list">
+            @foreach (var row in Contracts.Rows) { <li>@(row.Label): @row.Detail</li> }
             @foreach (var line in Contracts.Details) { <li>@line</li> }
         </ul>
     </ReviewDisclosure>

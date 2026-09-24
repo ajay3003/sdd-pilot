@@ -119,6 +119,6 @@ public sealed partial class ApiQualityReviewLandingUITests
         var page = Render<ApiQualityReview>();
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-targets-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false"));
         page.Find("[data-testid=aqr-memory-only-help]").TextContent.Should().Contain("backend runtime").And.Contain("not exposed to the review result");
-        page.Find("[data-testid=aqr-target-schema]").TextContent.Should().Be("Retrieval will be attempted during review");
+        page.Find("[data-testid=aqr-target][data-type=GraphQl] [data-testid=aqr-target-contract]").TextContent.Should().Be("Schema retrieval pending");
     }
 }

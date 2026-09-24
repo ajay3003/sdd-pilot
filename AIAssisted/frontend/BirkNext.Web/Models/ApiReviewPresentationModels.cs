@@ -88,7 +88,9 @@ public sealed record ApiReviewReadinessModel(
     string? ActionText,
     string? ActionHref,
     /// <summary>One short line under the action saying what the action leads to; never a second action.</summary>
-    string? Help = null)
+    string? Help = null,
+    /// <summary>Programmatic reason for the disabled Run button; null while the review can run.</summary>
+    string? RunUnavailableReason = null)
 {
     public bool CanRun => Level is ApiReviewReadinessLevel.Ready or ApiReviewReadinessLevel.Limited;
 }
@@ -129,6 +131,17 @@ public static class ApiReviewContractStates
         _ => state.ToString(),
     };
 
+    /// <summary>Compact pre-run reading of a contract row. Never "failed": a missing contract or refused introspection limits checks.</summary>
+    public static string PreRunSummary(ApiReviewContractState state) => state switch
+    {
+        ApiReviewContractState.Available => "OpenAPI configured",
+        ApiReviewContractState.NotConfigured => "Not configured",
+        ApiReviewContractState.RuntimeSchema => "Retrieved during review",
+        ApiReviewContractState.IntrospectionUnavailable => "Unavailable previously · retry during review",
+        ApiReviewContractState.NotApplicable => "No target selected",
+        _ => state.ToString(),
+    };
+
     public static string Glyph(ApiReviewContractState state) => state switch
     {
         ApiReviewContractState.Available or ApiReviewContractState.RuntimeSchema => "✓",
@@ -166,7 +179,9 @@ public sealed record ApiReviewTargetCardModel(
     int WriteCount,
     bool HasContract,
     string? SchemaLabel,
-    IReadOnlyList<ApiReviewOperationRowModel> Operations);
+    IReadOnlyList<ApiReviewOperationRowModel> Operations,
+    /// <summary>Contract/schema column of the compact pre-run target table: a plan, never a retrieval result.</summary>
+    string ContractSummary = "");
 
 /// <summary>Result-view status of one target, mapped 1:1 from <see cref="ApiReviewTargetStatus"/> + <see cref="ApiReviewAccessMode"/>.</summary>
 public enum ApiReviewTargetPresentationStatus

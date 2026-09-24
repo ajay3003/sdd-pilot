@@ -229,7 +229,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var body = Body(page, "aqr-targets-disclosure");
         body.HasAttribute("hidden").Should().BeFalse();
         body.QuerySelectorAll("[data-testid=aqr-target]").Should().HaveCount(2);
-        body.QuerySelectorAll("[data-testid=aqr-target-group]").Should().HaveCount(2);
+        body.QuerySelectorAll("[data-testid=aqr-targets-table] tbody tr[data-testid=aqr-target]").Should().HaveCount(2);
 
         // 13. Deselecting still drives the scope summary above.
         page.FindAll("[data-testid=aqr-target-checkbox]")[1].Change(false);
@@ -327,8 +327,10 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         var body = Body(page, "aqr-contracts-disclosure");
         var rest = body.QuerySelector("[data-testid=aqr-contract-row][data-protocol='REST']")!;
-        rest.TextContent.Should().Contain("No contract configured").And.Contain("can still be reviewed structurally");
+        rest.TextContent.Should().Contain("REST contract").And.Contain("Not configured");
         rest.TextContent.Should().NotContainAny("failed", "error", "incompatible");
+        // The explanation is kept, one disclosure further down.
+        body.QuerySelector("[data-testid=aqr-contract-details-body]")!.TextContent.Should().Contain("can still be reviewed structurally");
         // 23. Baseline history keeps its own row, and "not compared yet" is not "no drift".
         body.QuerySelector("[data-testid=aqr-baselines]")!.TextContent.Should().Contain("No previous baseline");
         body.QuerySelector("[data-testid=aqr-latest-comparison]")!.TextContent.Should().Be("Not compared yet");
@@ -396,7 +398,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var errors = page.Find("[data-testid=aqr-domain][data-domain='errors']");
         errors.QuerySelector(".aqr-domain-purpose")!.TextContent.Should().Be("Safe, read-only error behaviour is reviewed.");
         errors.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent
-            .Should().Be("Write or destructive behaviour is never executed.");
+            .Should().Be("Write and destructive operations are never executed.");
     }
 
     // ── §48. Post-run order ───────────────────────────────────────────────────────────────────────────────────────

@@ -463,3 +463,43 @@
 @media (max-width: 760px) {
     .aqr-page ::deep dl.aqr-target-meta { margin-left: 0; }
 }
+
+/* ── Pre-run final polish ────────────────────────────────────────────────────────────────────── */
+/* Child-component markup (target table, contract rows), so every rule is ::deep. */
+/* Compact targets table: five short columns, no 48rem floor, and its min-content never widens the page. */
+.aqr-page ::deep .aqr-targets-tablewrap { contain: inline-size; }
+.aqr-page ::deep .aqr-targets-table { min-width: 0; }
+.aqr-page ::deep .aqr-targets-table th[scope=row] { font-weight: normal; font-size: inherit; white-space: normal; background: transparent; }
+.aqr-page ::deep .aqr-targets-table .aqr-target-main { display: flex; align-items: flex-start; gap: 0.6rem; }
+.aqr-page ::deep .aqr-targets-table .aqr-target-main input { margin-top: 0.3rem; flex-shrink: 0; }
+.aqr-page ::deep .aqr-targets-table .aqr-target-name { font-weight: 700; color: var(--clr-text-heading); cursor: pointer; }
+.aqr-page ::deep .aqr-targets-table .aqr-target-path { color: var(--clr-text-muted); font-size: 0.82rem; }
+.aqr-page ::deep .aqr-targets-table td { min-width: 0; }
+.aqr-page ::deep .aqr-targets-table td[data-testid=aqr-target-operations] { font-variant-numeric: tabular-nums; }
+.aqr-page ::deep .aqr-target-row > * { border-bottom-color: transparent; }
+.aqr-page ::deep .aqr-target-ops-row td { padding-top: 0; padding-left: 2.35rem; }
+.aqr-page ::deep .aqr-target-ops-row .disclosure-inline { margin: 0; }
+
+/* Contracts: label + value per line. */
+.aqr-page ::deep .aqr-contract-rows { margin: 0 0 0.5rem; padding: 0; display: grid; }
+.aqr-page ::deep .aqr-contract-row { display: grid; grid-template-columns: 9rem minmax(0, 1fr); gap: 0.6rem; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid var(--clr-border-subtle); font-size: 0.9rem; }
+.aqr-page ::deep .aqr-contract-row:last-child { border-bottom: 0; }
+.aqr-page ::deep .aqr-contract-row dt { font-weight: 600; color: var(--clr-text-heading); }
+.aqr-page ::deep .aqr-contract-row dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--clr-text-body); }
+.aqr-readonly-methods { margin: 0 0 0.5rem; }
+
+@media (max-width: 900px) {
+    /* Targets stack: each row becomes a labelled block, so access and counts stay readable without scrolling. */
+    .aqr-page ::deep .aqr-targets-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .aqr-page ::deep .aqr-targets-table,
+    .aqr-page ::deep .aqr-targets-table tbody,
+    .aqr-page ::deep .aqr-targets-table tr,
+    .aqr-page ::deep .aqr-targets-table th[scope=row],
+    .aqr-page ::deep .aqr-targets-table td { display: block; width: 100%; }
+    .aqr-page ::deep .aqr-targets-table td[data-label] { display: flex; justify-content: space-between; gap: 0.75rem; padding: 0.25rem 0.75rem 0.25rem 2.35rem; border-bottom: 0; }
+    .aqr-page ::deep .aqr-targets-table td[data-label]::before { content: attr(data-label); color: var(--clr-text-muted); font-size: 0.8rem; }
+    .aqr-page ::deep .aqr-target-ops-row td { border-bottom: 1px solid var(--clr-border); padding-bottom: 0.6rem; }
+}
+@media (max-width: 760px) {
+    .aqr-page ::deep .aqr-contract-row { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+}

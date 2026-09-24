@@ -75,7 +75,9 @@
                                 @if (scope.AuthRequired > 0)
                                 {
                                     @* Frontend sign-in and API authentication are separate facts; say so where both are visible. *@
-                                    <dd class="aqr-help" id="aqr-frontend-signin-help" data-testid="aqr-frontend-signin-help">Applies to the frontend only. Selected APIs may still require authenticated access independently.</dd>
+                                    <dd class="aqr-help" id="aqr-frontend-signin-help" data-testid="aqr-frontend-signin-help">@(_context.RequiresAuthentication
+                                        ? "Applies to the frontend only. Selected APIs may still require authenticated access independently."
+                                        : "Frontend access does not require sign-in; selected APIs may still require authenticated access.")</dd>
                                 }
                             </div>
                         </dl>
@@ -176,12 +178,16 @@
             </div>
 
             <div class="aqr-run-row" data-testid="aqr-run-row">
-                @* Disabled Run carries its reason programmatically: the readiness message is its description. *@
+                @* Disabled Run carries its reason programmatically, so it does not depend on seeing the blocker card. *@
                 <PrimaryButton OnClick="RunReview" Disabled="@(!Eligibility.Enabled || _running)" aria-label="Run API Quality Review" data-testid="aqr-run"
-                               aria-describedby="@(!Eligibility.Enabled ? "aqr-run-reason" : null)">
+                               aria-describedby="@(!Eligibility.Enabled ? (readiness.RunUnavailableReason is not null ? "aqr-run-unavailable" : "aqr-run-reason") : null)">
                     @if (_running) { <span class="aqr-spinner" aria-hidden="true">⟳</span> }
                     @(_running ? "Reviewing…" : "Run API Quality Review")
                 </PrimaryButton>
+                @if (!Eligibility.Enabled && readiness.RunUnavailableReason is { } runUnavailable)
+                {
+                    <span class="aqr-visually-hidden" id="aqr-run-unavailable" data-testid="aqr-run-unavailable">@runUnavailable</span>
+                }
                 @if (_running)
                 {
                     <p class="aqr-progress" role="status" aria-live="polite">@_progressMessage</p>
@@ -233,7 +239,13 @@
             </ReviewDisclosure>
 
             <ReviewDisclosure Text="Read-only review" CollapseText="Hide read-only review" Hint="Safe requests only" TestId="aqr-readonly-disclosure" Class="aqr-detail-disclosure">
-                <p data-testid="aqr-readonly-summary">@ApiReviewPresentation.ReadOnlySummary</p>
+                @* The safe-method allowlist is the review's, not this page's; this only states it. *@
+                <dl class="aqr-dl aqr-readonly-methods" data-testid="aqr-readonly-summary">
+                    <div><dt>REST</dt><dd>GET, HEAD, OPTIONS</dd></div>
+                    <div><dt>GraphQL</dt><dd>Queries only</dd></div>
+                    <div><dt>Never executed</dt><dd>Mutations, write operations and destructive operations. Observed ones are listed for manual review.</dd></div>
+                </dl>
+                <p class="aqr-muted" data-testid="aqr-timing-scope">@ApiReviewPresentation.TimingScopeNote</p>
             </ReviewDisclosure>
         </section>
     }
