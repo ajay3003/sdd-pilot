@@ -207,8 +207,8 @@ public sealed class IntegrationReviewScopeDomTests : BunitContext
 
         var link = cut.Find("[data-testid=iqr-manage-scope]");
 
-        link.TextContent.Should().Contain("Manage integrations");
-        link.GetAttribute("href").Should().Contain("system-settings");
+        link.TextContent.Should().Be("Open Integrations configuration");
+        link.GetAttribute("href").Should().Contain("section=target-environments&tab=integrations");
     }
 
     // ── Read-only ────────────────────────────────────────────────────────────

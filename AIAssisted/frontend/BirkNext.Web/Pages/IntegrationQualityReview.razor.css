@@ -847,3 +847,46 @@ summary:hover {
     .iqr-domain-grid { grid-template-columns: 1fr; }
     .iqr-run-row { align-items: stretch; }
 }
+
+/* ── Pre-run state model pass ─────────────────────────────────────────────────────────────────── */
+/* Target card: label above value; a 12rem label column leaves a quarter-width card no room for the value. */
+.iqr-target-card .iqr-dl-stacked > div { flex-direction: column; gap: 0.15rem; }
+.iqr-target-card .iqr-dl-stacked dt { min-width: 0; }
+
+/* "Limited" had no tone class; state stays readable as text either way. */
+.iqr-pill-attention { background: var(--clr-warning-bg-light); color: var(--clr-warning); border-color: var(--clr-warning-border); }
+
+/* The readiness card's one action, without the card-actions divider. Own class: explorers-common.css restyles
+   .btn-secondary as a faint control that reads as disabled. */
+.iqr-readiness-action { margin: 0.75rem 0 0; }
+.iqr-cta {
+    display: inline-block;
+    padding: 0.45rem 0.9rem;
+    border: 1px solid var(--clr-primary);
+    border-radius: var(--radius-md);
+    background: var(--clr-surface-white);
+    color: var(--clr-primary);
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.iqr-cta:hover { background: var(--clr-surface); text-decoration: underline; }
+.iqr-cta:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+
+/* Empty state: informational cards, no status badge. */
+.iqr-domains-empty > .iqr-muted { margin: 0 0 0.75rem; }
+.iqr-domain-neutral { background: var(--clr-surface); }
+.iqr-domain-neutral h3 { margin: 0; font-size: 0.98rem; }
+
+.iqr-details .iqr-group-title { margin: 0.75rem 0 0.4rem; }
+.iqr-details .iqr-group-title:first-child { margin-top: 0; }
+
+/* Review details stay inside the page at any width: the track may shrink, and long monospace endpoints,
+   resources and names wrap instead of setting the page's minimum width. */
+.iqr-details { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.iqr-details ::deep .disclosure-body { min-width: 0; }
+.iqr-integration-name, .iqr-integration-endpoint, .iqr-integration-meta, .iqr-integration-source, .iqr-dl dd { overflow-wrap: anywhere; min-width: 0; }
+/* Breathing room between the Run row and the sections below it; aligned label column in the evidence lists. */
+.iqr-domains, .iqr-details { margin-top: 1.5rem; }
+.iqr-details .iqr-dl dt { min-width: 14rem; }
+@media (max-width: 768px) { .iqr-details .iqr-dl dt { min-width: 0; } }

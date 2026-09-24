@@ -27,14 +27,17 @@
     @* ── Setup phase: target, evidence, readiness, run action ── *@
     @if (_report is null && !_running && _context is { } setup)
     {
+        var profileId = ReviewAuthenticationIdentity.ForContext(setup).ProfileId ?? setup.ActiveProfile.Id;
         var scope = IntegrationReviewPresentation.Scope(setup.Integrations);
-        var runtime = IntegrationReviewPresentation.RuntimeEvidence(setup.Integrations, CollectObservations(ReviewAuthenticationIdentity.ForContext(setup).ProfileId));
-        var readiness = IntegrationReviewPresentation.Readiness(scope, runtime);
-        var domains = IntegrationReviewPresentation.Domains(setup.Integrations, scope, runtime);
+        var evidence = IntegrationReviewPresentation.Evidence(setup.Integrations, CollectObservations(profileId));
+        var readiness = IntegrationReviewPresentation.Readiness(scope, evidence, setup.ActiveProfile.Id);
+        var domains = IntegrationReviewPresentation.Domains(scope, evidence, PreviousReviewInSession(setup));
+        var integrationsHref = IntegrationReviewPresentation.IntegrationsHref(setup.ActiveProfile.Id);
 
         @*
-            1. Decide: which environment, which integrations, what evidence exists, can it run —
-            then run it. Nothing diagnostic here; the inventory is one disclosure away below.
+            1. Decide: which environment, which integrations are in scope, what evidence the run will have, can it
+            run — then run it. Each card owns one fact: Target the configured total, Review scope what is enabled,
+            Runtime evidence what was observed, and the readiness card the reason and the one action.
         *@
         <section class="iqr-decide" data-testid="iqr-decide" aria-label="Review setup">
             <div class="iqr-decide-cards">
@@ -44,10 +47,9 @@
                         <h2 id="iqr-target-heading">Target</h2>
                         <a class="iqr-link" href="@IntegrationReviewPresentation.TargetEnvironmentsHref" data-testid="iqr-configure-target">Open Target Environment</a>
                     </div>
-                    @* Review readiness belongs to the Readiness card; repeating it here said the same thing twice. *@
-                    <dl class="iqr-dl">
+                    <dl class="iqr-dl iqr-dl-stacked">
                         <div><dt>Environment</dt><dd><strong data-testid="iqr-env-name">@setup.ActiveProfile.Name</strong> <span class="iqr-pill iqr-pill-muted">@setup.ActiveProfile.EnvironmentType</span></dd></div>
-                        <div><dt>Integrations</dt><dd data-testid="iqr-integration-count">@scope.Enabled of @scope.Configured enabled</dd></div>
+                        <div><dt>Configured integrations</dt><dd data-testid="iqr-integration-count">@scope.Configured</dd></div>
                     </dl>
                     <ReviewDisclosure Text="View target details" CollapseText="Hide target details" TestId="iqr-target-details" Class="disclosure-inline">
                         <dl class="iqr-dl iqr-dl-technical">
@@ -62,7 +64,10 @@
                 <section class="iqr-card iqr-scope-card" data-testid="iqr-scope" aria-labelledby="iqr-scope-heading">
                     <div class="iqr-card-head"><h2 id="iqr-scope-heading">Review scope</h2></div>
                     <p class="iqr-scope-headline" data-testid="iqr-scope-headline">@scope.Headline</p>
-                    <p class="iqr-muted" data-testid="iqr-scope-enabled">@scope.EnabledLine</p>
+                    @if (scope.NotEnabledLine is { } notEnabled)
+                    {
+                        <p class="iqr-muted" data-testid="iqr-scope-enabled">@notEnabled</p>
+                    }
                     @if (scope.Transports is { Length: > 0 } transports)
                     {
                         <p class="iqr-muted" data-testid="iqr-scope-transports">@transports</p>
@@ -75,16 +80,16 @@
 
                 <section class="iqr-card iqr-evidence-card" data-testid="iqr-evidence" aria-labelledby="iqr-evidence-heading">
                     <div class="iqr-card-head"><h2 id="iqr-evidence-heading">Runtime evidence</h2></div>
-                    @* Counted from observations only. Configuration, reachability and health checks
-                       are not evidence that an integration ran. *@
-                    <p class="iqr-evidence-headline" data-testid="iqr-runtime-headline">@runtime.Headline</p>
-                    @if (runtime.MissingLine is { } missing)
+                    @* Counted from observations only, with the backend's own correlation rule. Configuration,
+                       reachability and health checks are not evidence that an integration ran. *@
+                    <p class="iqr-evidence-headline" data-testid="iqr-runtime-headline">@evidence.Headline</p>
+                    @if (evidence.MissingLine is { } missing)
                     {
                         <p class="iqr-muted" data-testid="iqr-runtime-missing">@missing</p>
                     }
-                    @if (!runtime.MessagingTelemetryAvailable)
+                    @if (evidence.MessagingLine is { } messaging)
                     {
-                        <p class="iqr-muted" data-testid="iqr-runtime-messaging">Messaging telemetry unavailable</p>
+                        <p class="iqr-muted" data-testid="iqr-runtime-messaging">@messaging</p>
                     }
                 </section>
 
@@ -92,7 +97,7 @@
                          data-testid="iqr-readiness" data-readiness="@readiness.Level" aria-labelledby="iqr-readiness-heading"
                          role="@(readiness.Level == IntegrationReadinessLevel.Blocked ? "alert" : "status")">
                     <div class="iqr-card-head"><h2 id="iqr-readiness-heading">@readiness.Title</h2></div>
-                    <p class="iqr-readiness-message" data-testid="iqr-readiness-message">@readiness.Message</p>
+                    <p class="iqr-readiness-message" id="iqr-readiness-message" data-testid="iqr-readiness-message">@readiness.Message</p>
                     @if (readiness.Limitations.Count > 0 && readiness.Level != IntegrationReadinessLevel.Blocked)
                     {
                         @* While the review can still run, the individual limitations are what the reader opens. *@
@@ -103,70 +108,94 @@
                                     <li>@limitation</li>
                                 }
                             </ul>
-                            @if (readiness.ActionText is not null && readiness.ActionHref is not null)
-                            {
-                                <a class="iqr-link" href="@readiness.ActionHref" data-testid="iqr-readiness-action">@readiness.ActionText</a>
-                            }
                         </ReviewDisclosure>
+                        @if (readiness.ActionText is not null && readiness.ActionHref is not null)
+                        {
+                            <p class="iqr-readiness-action"><a class="iqr-link" href="@readiness.ActionHref" data-testid="iqr-readiness-action">@readiness.ActionText</a></p>
+                        }
                     }
-                    @if (readiness.Level == IntegrationReadinessLevel.Blocked)
+                    @if (readiness.Level == IntegrationReadinessLevel.Blocked && readiness.ActionHref is not null)
                     {
-                        @* While it is blocked the reasons stay visible: they are why the reader cannot proceed. *@
-                        <ul class="iqr-readiness-items" data-testid="iqr-readiness-items">
-                            @foreach (var limitation in readiness.Limitations)
-                            {
-                                <li>@limitation</li>
-                            }
-                        </ul>
-                        <a class="btn-secondary" href="@readiness.ActionHref" data-testid="iqr-go-configure">@readiness.ActionText</a>
+                        @* The one action that unblocks the run: a button-styled link, never a disabled control. *@
+                        <p class="iqr-readiness-action"><a class="iqr-cta" href="@readiness.ActionHref" data-testid="iqr-go-configure">@readiness.ActionText</a></p>
                     }
                 </section>
             </div>
 
             <div class="iqr-run-row" data-testid="iqr-run-row">
-                <button class="btn-primary" @onclick="RunReview" disabled="@(!readiness.CanRun || _running)" data-testid="iqr-run-review">
+                @* A disabled Run carries its reason programmatically: the readiness message describes it. *@
+                <button class="btn-primary" @onclick="RunReview" disabled="@(!readiness.CanRun || _running)" data-testid="iqr-run-review"
+                        aria-describedby="@(readiness.CanRun ? null : "iqr-readiness-message")">
                     @(_running ? "Analysing..." : "Run Integration Quality Review")
                 </button>
             </div>
         </section>
 
-        @* 2. Scope: what the review covers, in review words rather than configuration words. *@
-        <section class="iqr-section iqr-domains" data-testid="iqr-domains" aria-labelledby="iqr-domains-heading">
-            <h2 id="iqr-domains-heading">What will be reviewed</h2>
-            <ul class="iqr-domain-grid">
-                @foreach (var domain in domains)
-                {
-                    <li>
-                        <article class="iqr-card iqr-domain" data-testid="iqr-domain" data-domain="@domain.Key" data-state="@domain.State">
-                            <div class="iqr-domain-head">
+        @if (scope.NothingEnabled)
+        {
+            @* Nothing is enabled, so no domain is "included" or "excluded": the reader sees what the review can
+               assess once there is scope, without six identical status badges. *@
+            <section class="iqr-section iqr-domains iqr-domains-empty" data-testid="iqr-domains" aria-labelledby="iqr-domains-heading">
+                <h2 id="iqr-domains-heading">What Integration Quality Review can assess</h2>
+                <p class="iqr-muted" data-testid="iqr-domains-intro">Once an integration is configured and enabled for review, the review can assess:</p>
+                <ul class="iqr-domain-grid">
+                    @foreach (var domain in domains)
+                    {
+                        <li>
+                            <article class="iqr-card iqr-domain iqr-domain-neutral" data-testid="iqr-domain" data-domain="@domain.Key" data-state="@domain.State">
                                 <h3>@domain.Title</h3>
-                                <span class="iqr-pill iqr-pill-@IntegrationDomainStates.Tone(domain.State)" data-testid="iqr-domain-state">@IntegrationDomainStates.Label(domain.State)</span>
-                            </div>
-                            <p class="iqr-domain-purpose">@domain.Purpose</p>
-                            @if (domain.Limitation is { Length: > 0 } limitation)
-                            {
-                                <p class="iqr-domain-limitation" data-testid="iqr-domain-limitation">@limitation</p>
-                            }
-                        </article>
-                    </li>
-                }
-            </ul>
-        </section>
+                                <p class="iqr-domain-purpose">@domain.Purpose</p>
+                            </article>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
+        else
+        {
+            @* 2. Scope: each domain judged by its own prerequisite, in review words. *@
+            <section class="iqr-section iqr-domains" data-testid="iqr-domains" aria-labelledby="iqr-domains-heading">
+                <h2 id="iqr-domains-heading">What will be reviewed</h2>
+                <ul class="iqr-domain-grid">
+                    @foreach (var domain in domains)
+                    {
+                        <li>
+                            <article class="iqr-card iqr-domain" data-testid="iqr-domain" data-domain="@domain.Key" data-state="@domain.State">
+                                <div class="iqr-domain-head">
+                                    <h3>@domain.Title</h3>
+                                    <span class="iqr-pill iqr-pill-@IntegrationDomainStates.Tone(domain.State)" data-testid="iqr-domain-state">@IntegrationDomainStates.Label(domain.State)</span>
+                                </div>
+                                <p class="iqr-domain-purpose">@domain.Purpose</p>
+                                @if (domain.Limitation is { Length: > 0 } limitation)
+                                {
+                                    <p class="iqr-domain-limitation" data-testid="iqr-domain-limitation">@limitation</p>
+                                }
+                            </article>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
 
-        @* 3. Review details: the configuration behind the decision, collapsed. *@
+        @* 3. Review details: configured scope and evidence availability, collapsed. *@
         <section class="iqr-section iqr-details" data-testid="iqr-details" aria-labelledby="iqr-details-heading">
             <div class="iqr-card-head"><h2 id="iqr-details-heading">Review details</h2></div>
 
             <ReviewDisclosure Text="Configured integrations" CollapseText="Hide configured integrations"
                               Hint="@($"{scope.Configured} configured · {scope.Enabled} enabled")"
                               TestId="iqr-scope-disclosure" Class="iqr-detail-disclosure">
+                @if (scope.NothingEnabled)
+                {
+                    <p class="iqr-muted" data-testid="iqr-scope-empty">@(scope.NothingConfigured ? "No integrations are configured for this Target Environment." : "No configured integration is enabled for review.")</p>
+                }
                 @RenderIntegrationsByType(setup)
-                <p class="iqr-muted"><a class="iqr-link" href="@IntegrationReviewPresentation.TargetEnvironmentsHref" data-testid="iqr-manage-scope">Manage integrations</a></p>
+                <p class="iqr-muted"><a class="iqr-link" href="@integrationsHref" data-testid="iqr-manage-scope">@IntegrationReviewPresentation.ConfigureDetailsAction</a></p>
             </ReviewDisclosure>
 
             <ReviewDisclosure Text="Runtime observations" CollapseText="Hide runtime observations"
-                              Hint="@runtime.Headline" TestId="iqr-runtime-disclosure" Class="iqr-detail-disclosure">
-                @RenderEvidenceSummary(setup)
+                              Hint="@(scope.NothingEnabled ? "No enabled integrations to observe" : evidence.Headline)"
+                              TestId="iqr-runtime-disclosure" Class="iqr-detail-disclosure">
+                @RenderEvidenceSummary(scope, evidence)
             </ReviewDisclosure>
         </section>
     }
@@ -567,6 +596,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Load the persisted Endpoint Discovery store, as API Quality Review does. Without it, a direct visit saw runtime
+        // observations only if another page had loaded the store earlier in the session.
+        if (Discovery is not null) await Discovery.LoadAsync(JS);
         _context = await ContextFactory.GetActiveContextAsync();
         _report = RuntimeReviews.IntegrationQualityReview.Report;
     }
@@ -683,8 +715,24 @@
         WorkerUrl = source.WorkerUrl,
         MonitoringUrl = source.MonitoringUrl,
         Owner = source.Owner,
-        Enabled = source.Enabled
+        Enabled = source.Enabled,
+        // Contract and relationship metadata the backend review reads (compatibility, message-schema drift,
+        // relationships). Previously dropped here, so a run never saw the configured contract source.
+        ConfigurationSource = source.ConfigurationSource,
+        ResourceKind = source.ResourceKind,
+        LogicalProducerService = source.LogicalProducerService,
+        LogicalConsumerService = source.LogicalConsumerService,
+        ContractName = source.ContractName,
+        ContractSourceType = source.ContractSourceType,
+        ContractSourceLocation = source.ContractSourceLocation,
+        ContractMetadataReadiness = source.ContractMetadataReadiness,
     };
+
+    /// <summary>A completed review of this environment exists in this session and its snapshot was saved.</summary>
+    private bool PreviousReviewInSession(FrontendAnalysisContext context) =>
+        RuntimeReviews.IntegrationQualityReview.Report is { } previous
+        && string.Equals(previous.EnvironmentName, context.ActiveProfile.Name, StringComparison.Ordinal)
+        && previous.SnapshotPersistenceState == SnapshotPersistenceState.Saved;
 
     private IEnumerable<IntegrationFinding> FilteredFindings(IReadOnlyList<IntegrationFinding> findings)
     {
@@ -794,26 +842,32 @@
         }
     };
 
-    private RenderFragment RenderEvidenceSummary(FrontendAnalysisContext context) => __builder =>
+    /// <summary>
+    /// Configured scope and evidence availability as two separate lists: what is configured is not what was observed.
+    /// Unobserved values read "Not observed", never a measured-looking zero.
+    /// </summary>
+    private static RenderFragment RenderEvidenceSummary(IntegrationScopeSummary scope, IntegrationEvidenceSummary e) => __builder =>
     {
-        var enabled = context.Integrations.Where(i => i.Enabled).ToList();
-        var contractCount = enabled.Count(i => !string.IsNullOrWhiteSpace(i.ContractName));
-        var runtimeCount = enabled.Count; // All enabled integrations can potentially have runtime evidence
-
-        <dl class="iqr-dl">
-            <div>
-                <dt>Configured integrations</dt>
-                <dd data-testid="iqr-evidence-configured">@enabled.Count</dd>
-            </div>
-            <div>
-                <dt>Contract schemas available</dt>
-                <dd data-testid="iqr-evidence-contracts">@contractCount</dd>
-            </div>
-            <div>
-                <dt>Runtime evidence available</dt>
-                <dd data-testid="iqr-evidence-runtime">Depends on environment activity</dd>
-            </div>
+        <h4 class="iqr-group-title">Configured scope</h4>
+        <dl class="iqr-dl" data-testid="iqr-evidence-scope">
+            <div><dt>Configured integrations</dt><dd data-testid="iqr-evidence-configured">@scope.Configured</dd></div>
+            <div><dt>Enabled for review</dt><dd data-testid="iqr-evidence-enabled">@scope.Enabled</dd></div>
         </dl>
+        @if (scope.NothingEnabled)
+        {
+            <p class="iqr-muted" data-testid="iqr-evidence-empty">Evidence availability is assessed once an integration is enabled for review.</p>
+        }
+        else
+        {
+            <h4 class="iqr-group-title">Evidence availability</h4>
+            <dl class="iqr-dl" data-testid="iqr-evidence-availability">
+                <div><dt>Contract sources</dt><dd data-testid="iqr-evidence-contracts">@(e.ContractReady == 0 ? "None configured" : $"{e.ContractReady} of {e.Enabled} configured")</dd></div>
+                <div><dt>Runtime evidence</dt><dd data-testid="iqr-evidence-runtime">@(e.HttpEnabled == 0 ? "Not collected for messaging integrations" : e.Observed == 0 ? "Not observed" : $"{e.Observed} of {e.HttpEnabled} REST/GraphQL observed")</dd></div>
+                <div><dt>Timing evidence</dt><dd data-testid="iqr-evidence-timing">@(e.HttpEnabled == 0 ? "Not collected for messaging integrations" : e.Timed == 0 ? "Not observed" : $"{e.Timed} of {e.HttpEnabled} REST/GraphQL with timing")</dd></div>
+                <div><dt>History / baseline</dt><dd data-testid="iqr-evidence-history">Resolved when the review runs</dd></div>
+            </dl>
+            <p class="iqr-muted" data-testid="iqr-evidence-runtime-note">Runtime evidence is collected only when configured integrations are exercised in this environment and their REST or GraphQL traffic passes the Local HTTPS Proxy.</p>
+        }
     };
 
     private RenderFragment RenderReadinessSummary(FrontendAnalysisContext context) => __builder =>

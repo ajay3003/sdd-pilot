@@ -135,10 +135,12 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
     {
         var page = Landing(Rest(), EventHub(), ServiceBus(), EventHub(enabled: false));
 
-        page.Find("[data-testid=iqr-scope-headline]").TextContent.Should().Be("4 integrations configured");
-        page.Find("[data-testid=iqr-scope-enabled]").TextContent.Should().Be("3 enabled for review");
+        // Target owns the configured total; Review scope owns what is enabled, and counts transports of that scope only.
+        page.Find("[data-testid=iqr-integration-count]").TextContent.Should().Be("4");
+        page.Find("[data-testid=iqr-scope-headline]").TextContent.Should().Be("3 integrations enabled for review");
+        page.Find("[data-testid=iqr-scope-enabled]").TextContent.Should().Be("1 more configured but not enabled");
         page.Find("[data-testid=iqr-scope-transports]").TextContent
-            .Should().Contain("2 Event Hub").And.Contain("1 REST").And.Contain("1 Service Bus");
+            .Should().Contain("1 Event Hub").And.Contain("1 REST").And.Contain("1 Service Bus").And.NotContain("2 Event Hub");
     }
 
     // ── §7, §8, §9. Configured is not observed ───────────────────────────────────────────────
@@ -150,8 +152,9 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
 
         // Three enabled integrations are configured; none was observed running.
         page.Find("[data-testid=iqr-runtime-headline]").TextContent.Should().Be("No runtime evidence observed");
-        page.Find("[data-testid=iqr-runtime-missing]").TextContent.Should().Be("3 enabled integrations have no runtime evidence");
-        page.Find("[data-testid=iqr-runtime-messaging]").TextContent.Should().Be("Messaging telemetry unavailable");
+        // Only the REST integration can be observed; messaging runtime evidence is a build limit, stated as such.
+        page.Find("[data-testid=iqr-runtime-missing]").TextContent.Should().Be("1 REST/GraphQL integration has no runtime evidence observed");
+        page.Find("[data-testid=iqr-runtime-messaging]").TextContent.Should().Be("Messaging runtime evidence is not collected in this build (2 messaging integrations)");
 
         var evidence = VisibleText(page.Find("[data-testid=iqr-evidence]"));
         evidence.Should().NotContainAny("Connected", "Active", "Observed running");
@@ -165,7 +168,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
 
         VisibleText(page.Find("[data-testid=iqr-decide]")).Should().NotContain("Depends on environment activity");
         IntegrationReviewPresentation
-            .RuntimeEvidence([Rest()], observations: null).Observed
+            .Evidence([Rest()], observations: null).Observed
             .Should().Be(0, "a configured endpoint is intent, not evidence");
     }
 
@@ -177,13 +180,13 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         var page = Landing(Rest(), EventHub());
 
         page.Find("[data-testid=iqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited");
-        page.Find("#iqr-readiness-heading").TextContent.Should().Be("Ready with limitations");
+        page.Find("#iqr-readiness-heading").TextContent.Should().Be("Review can run with limitations");
         Collapsed(page, "iqr-readiness-limitations").Should().BeTrue();
         page.Find("[data-testid=iqr-run-review]").HasAttribute("disabled").Should().BeFalse();
 
         page.Find("[data-testid=iqr-readiness-limitations-toggle]").Click();
         var body = page.Find("[data-testid=iqr-readiness-limitations-body]");
-        body.TextContent.Should().Contain("no runtime evidence").And.Contain("Messaging runtime telemetry is unavailable");
+        body.TextContent.Should().Contain("no runtime evidence observed").And.Contain("Messaging runtime evidence is not collected");
         // None of it reads as a failure.
         body.TextContent.Should().NotContainAny("failed", "error", "broken");
     }
@@ -196,8 +199,8 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         page.Find("[data-testid=iqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked");
         page.Find("[data-testid=iqr-readiness]").GetAttribute("role").Should().Be("alert");
         page.Find("[data-testid=iqr-run-review]").HasAttribute("disabled").Should().BeTrue();
-        page.Find("[data-testid=iqr-readiness-items]").HasAttribute("hidden").Should().BeFalse();
-        page.Find("[data-testid=iqr-go-configure]").Should().NotBeNull();
+        page.Find("[data-testid=iqr-readiness-message]").TextContent.Should().Be("None of the 1 configured integration is enabled for review.");
+        page.Find("[data-testid=iqr-go-configure]").TextContent.Should().Be("Configure integrations");
     }
 
     // ── §12–§18. The six review domains ──────────────────────────────────────────────────────
@@ -212,7 +215,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         page.Find("#iqr-domains-heading").TextContent.Should().Be("What will be reviewed");
 
         page.FindAll("[data-testid=iqr-domain-state]").Select(s => s.TextContent.Trim())
-            .Should().OnlyContain(s => s == "Included" || s == "Limited" || s == "Partial evidence" || s == "Not included");
+            .Should().OnlyContain(s => s == "Included" || s == "Limited" || s == "Not assessed" || s == "Unavailable" || s == "Not included");
         // Configuration and connection words are never a domain state.
         page.FindAll("[data-testid=iqr-domain-state]").Select(s => s.TextContent.Trim())
             .Should().NotIntersectWith(["Configured", "Connected", "Enabled", "Available"]);
@@ -244,10 +247,10 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
     {
         var page = Landing(Rest(), EventHub());
 
-        DomainState(page, "runtime").Should().Be("Partial evidence");
+        DomainState(page, "runtime").Should().Be("Not assessed", "missing evidence is not an exclusion");
         var limitation = Domain(page, "runtime").QuerySelector("[data-testid=iqr-domain-limitation]")!.TextContent;
-        limitation.Should().Contain("no runtime evidence");
-        limitation.Should().Contain("no evidence is not the same as no traffic");
+        limitation.Should().Contain("No runtime evidence observed yet");
+        limitation.Should().Contain("No evidence is not the same as no traffic");
     }
 
     // §15. Transport metadata is not a schema.
@@ -258,7 +261,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
 
         DomainState(page, "contracts").Should().Be("Limited");
         Domain(page, "contracts").QuerySelector("[data-testid=iqr-domain-limitation]")!.TextContent
-            .Should().Contain("it is not a schema");
+            .Should().Contain("Transport configuration is not a schema");
     }
 
     // §16. Compatibility never claims compatibility without comparable evidence.
@@ -268,7 +271,8 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         var page = Landing(Rest(), EventHub());
 
         var compatibility = Domain(page, "compatibility").TextContent;
-        compatibility.Should().Contain("not comparable");
+        DomainState(page, "compatibility").Should().Be("Not assessed");
+        compatibility.Should().Contain("Insufficient contract evidence");
         compatibility.Should().NotContainAny("Fully compatible", "Compatible.");
     }
 
@@ -276,10 +280,15 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
     [Fact]
     public void DriftDistinguishesAFirstBaselineFromNoDrift()
     {
-        var page = Landing(Rest());
+        var schema = EventHub();
+        schema.ContractName = "PersonChanged";
+        schema.ContractSourceType = ContractSourceType.Auto;
+        var page = Landing(schema);
 
+        DomainState(page, "drift").Should().Be("Limited");
         Domain(page, "drift").QuerySelector("[data-testid=iqr-domain-limitation]")!.TextContent
             .Should().Contain("records the baseline").And.Contain("not the same as no drift");
+        Domain(page, "drift").TextContent.Should().NotContain("No drift detected");
     }
 
     // §18. Performance is derived from observation only.
@@ -288,9 +297,9 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
     {
         var page = Landing(Rest(), EventHub());
 
-        DomainState(page, "performance").Should().Be("Partial evidence");
+        DomainState(page, "performance").Should().Be("Not assessed");
         var limitation = Domain(page, "performance").QuerySelector("[data-testid=iqr-domain-limitation]")!.TextContent;
-        limitation.Should().Contain("No runtime timing was observed");
+        limitation.Should().Contain("No timing evidence");
         limitation.Should().Contain("Configured timeouts and reachability are not performance evidence");
         // No fabricated measurement anywhere in the domain cards.
         page.Find("[data-testid=iqr-domains]").TextContent.Should().NotContainAny("0 ms", "0 req/s", "0 requests");
