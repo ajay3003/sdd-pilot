@@ -73,6 +73,9 @@ public class AdminService
         _legacyInterpreter = legacyInterpreter;
     }
 
+    /// <summary>Where the backend is running from; the process base directory unless a test points it elsewhere.</summary>
+    internal string RuntimeBaseDirectory { get; init; } = AppContext.BaseDirectory;
+
     public bool IsEnabled => _config.GetValue<bool>("AdminSettings:Enabled", true);
 
     public SystemSettingsResponse BuildSettings()
@@ -84,7 +87,8 @@ public class AdminService
             ?.InformationalVersion ?? version;
 
         var configuredMode = _config["RuntimeSettings:PackageMode"] ?? "Auto";
-        var packageMode = ResolvePackageMode(configuredMode);
+        var isSourceBuild = RuntimeSourceDetector.IsSourceBuild(RuntimeBaseDirectory, $"{assembly.GetName().Name}.csproj");
+        var packageMode = ResolvePackageMode(configuredMode, isSourceBuild);
 
         var frontendOrigin = _config["FRONTEND_ORIGIN"] ?? "http://localhost:5173";
         var composeProjectName = _config["RuntimeSettings:ComposeProjectName"] ?? "birknext-studio-local";
@@ -165,7 +169,7 @@ public class AdminService
                 ComposeProjectName = composeProjectName,
                 ExpectedDatabaseVolume = expectedVolume,
                 PackageMode = packageMode,
-                RunningFromPublishedArtifact = packageMode == "Tester Package"
+                RunningFromPublishedArtifact = !isSourceBuild
             },
             Logging = new LoggingInfo
             {
@@ -455,23 +459,14 @@ public class AdminService
         }
     }
 
-    private string ResolvePackageMode(string configured)
-    {
-        if (!configured.Equals("Auto", StringComparison.OrdinalIgnoreCase))
-            return configured;
-
-        try
-        {
-            var hasCsproj = Directory
-                .GetFiles(AppContext.BaseDirectory, "*.csproj", SearchOption.AllDirectories)
-                .Length > 0;
-            return hasCsproj ? "Source" : "Tester Package";
-        }
-        catch
-        {
-            return "Unknown";
-        }
-    }
+    /// <summary>
+    /// The configured package mode names the package; Auto derives it from how the backend is running. Whether it is
+    /// running from a published artifact is always read from the runtime layout, never from the configured name.
+    /// </summary>
+    private static string ResolvePackageMode(string configured, bool isSourceBuild) =>
+        configured.Equals("Auto", StringComparison.OrdinalIgnoreCase)
+            ? isSourceBuild ? "Source" : "Tester Package"
+            : configured;
 
     private string ResolveMigrationStatus()
     {

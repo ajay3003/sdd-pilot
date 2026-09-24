@@ -40,6 +40,23 @@ public sealed class ReviewContextValidatorStateTests
             "only real warnings lower the verdict — the always-present Core Coverage confirmation used to force Warning");
     }
 
+    // Autorisasjon's 12 acceptance scenarios name no requirement id and no requirement names a scenario id, so no
+    // requirement is explicitly linked to a test. The 54 is requirement→user-story linkage (12 of 22), a separate measure.
+    [Fact]
+    public void AutorisasjonRequirementTestMetricsAreExactObservations()
+    {
+        var parsed = _parser.Parse(Sample("constitution.md"), Sample("spec.md"), Sample("plan.md"), Sample("tasks.md"));
+        var metrics = _validator.Validate(parsed.Constitution, parsed.Spec, parsed.Plan, parsed.Tasks, "autorisasjon")
+            .CanonicalMetrics.ToDictionary(m => m.Name, m => m.Value);
+
+        metrics["Requirements"].Should().Be(22);
+        metrics["Tests"].Should().Be(12);
+        metrics["Requirements With Tests"].Should().Be(0);
+        metrics["Missing Tests"].Should().Be(22, "Missing Tests is Requirements − Requirements With Tests");
+        metrics["Requirements Linked to User Stories %"].Should().Be(54, "12 × 100 / 22, integer division");
+        metrics.Should().NotContainKey("Coverage %", "the label implied test coverage");
+    }
+
     [Fact]
     public void MetricsFollowTheirOwnSourceDocument()
     {
@@ -48,7 +65,7 @@ public sealed class ReviewContextValidatorStateTests
 
         report.CanonicalMetrics.Single(m => m.Name == "Constitution Rules").State.Should().Be(ReviewContextMetricState.Evaluated);
         report.CanonicalMetrics.Single(m => m.Name == "Requirements").State.Should().Be(ReviewContextMetricState.NotEvaluated);
-        report.CanonicalMetrics.Single(m => m.Name == "Coverage %").State.Should().Be(ReviewContextMetricState.NotEvaluated);
+        report.CanonicalMetrics.Single(m => m.Name == "Requirements Linked to User Stories %").State.Should().Be(ReviewContextMetricState.NotEvaluated);
         report.CanonicalMetrics.Single(m => m.Name == "Plan Loaded").State.Should().Be(ReviewContextMetricState.NotEvaluated);
     }
 }

@@ -1990,19 +1990,19 @@ else if (_settings is not null)
                 "Requires spec.md and tasks.md",
                 null);
 
-            yield return new("Impact Analysis",
-                WorkspaceArtifacts.Count > 0 ? StatusNotRun : StatusNotAvailable,
-                WorkspaceArtifacts.Count > 0 ? "Analysis exists but has not been executed in this session." : "Prerequisites missing because no workspace is loaded.",
-                "Requires loaded workspace",
-                null);
-
-            yield return new("Spec Drift",
-                Workspace.Get(WorkspaceArtifactKind.Specification) is not null ? StatusNotRun : StatusNotAvailable,
-                Workspace.Get(WorkspaceArtifactKind.Specification) is not null ? "Analysis exists but has not been executed in this session." : "Prerequisites missing because spec.md is not loaded.",
-                "Requires spec.md",
-                null);
+            // Both pages query the backend's requirements and trace links for the selected project; neither reads a
+            // document or a session artifact slot, so the selected project is their only client-side prerequisite.
+            yield return BackendProjectAnalysisRow("Impact Analysis");
+            yield return BackendProjectAnalysisRow("Spec Drift");
         }
     }
+
+    private AnalysisSessionDiagnosticRow BackendProjectAnalysisRow(string name) =>
+        string.IsNullOrWhiteSpace(Workspace.CurrentProject)
+            ? new(name, StatusNotAvailable, "No project is selected.", "Requires a selected project", null)
+            : new(name, StatusNotRun,
+                $"Not run in this session. Reads the backend requirements and trace links for project '{Workspace.CurrentProject}'.",
+                "Requires a selected project", null);
 
     private DateTimeOffset? LastQualityReviewRun =>
         new[]

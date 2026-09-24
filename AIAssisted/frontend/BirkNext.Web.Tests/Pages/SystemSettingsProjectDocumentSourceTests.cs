@@ -18,10 +18,11 @@ namespace BirkNext.Web.Tests.Pages;
 public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
 {
     private readonly WorkspaceArtifactRepository _workspace = new();
+    private bool _published;
 
     public SystemSettingsProjectDocumentSourceTests()
     {
-        var httpClient = new HttpClient(new AdminApiHandler()) { BaseAddress = new Uri("http://localhost:5000/") };
+        var httpClient = new HttpClient(new AdminApiHandler(() => _published)) { BaseAddress = new Uri("http://localhost:5000/") };
         Services.AddSingleton(new AdminApiService(httpClient));
         Services.AddSingleton<FeatureVisibilityService>();
         Services.AddSingleton(new ImplementationTraceabilityApiService(httpClient));
@@ -102,7 +103,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
 
         Row(cut, "spec.md").Should().Contain("Not in this project");
         Row(cut, "constitution.md").Should().Contain("Loaded");
-        Row(cut, "Coverage %").Should().Contain("Not evaluated");
+        Row(cut, "Requirements Linked to User Stories %").Should().Contain("Not evaluated");
     }
 
     // No project and nothing imported: nothing is inspected, and nothing reads as a healthy PASS.
@@ -129,6 +130,65 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         Text(cut).Should().NotContain("No workspace loaded");
     }
 
+    // Impact Analysis and Spec Drift query the backend for the selected project; they read no document and no session
+    // slot. A sample project with an empty session therefore meets their prerequisite.
+    [Fact]
+    public void ImpactAnalysisAndSpecDriftFollowTheSelectedProject_NotTheEmptySession()
+    {
+        _workspace.CurrentProject = "autorisasjon";
+        Resolver("autorisasjon", "constitution.md", "spec.md", "plan.md", "tasks.md", "data-model.md");
+        var cut = Open("Runtime Diagnostics");
+
+        cut.WaitForAssertion(() => Text(cut).Should().Contain("Reads the backend requirements and trace links for project 'autorisasjon'"));
+        Text(cut).Should().NotContain("no workspace is loaded").And.NotContain("spec.md is not loaded");
+        AnalysisRow(cut, "Impact Analysis").Should().NotContain("Unavailable");
+        AnalysisRow(cut, "Spec Drift").Should().NotContain("Unavailable");
+    }
+
+    // Imported session documents with a selected project: the same project-scoped prerequisite, met.
+    [Fact]
+    public void AnImportedProjectMeetsTheSamePrerequisite()
+    {
+        _workspace.CurrentProject = "imported-project";
+        _workspace.Set(WorkspaceArtifactKind.Specification, "# Spec");
+        var cut = Open("Runtime Diagnostics");
+
+        cut.WaitForAssertion(() => Text(cut).Should().Contain("for project 'imported-project'"));
+        AnalysisRow(cut, "Spec Drift").Should().NotContain("Unavailable");
+    }
+
+    // No project: the one missing prerequisite is named, even when session artifacts exist (the pages need a slug).
+    [Fact]
+    public void WithoutAProjectTheMissingPrerequisiteIsTheProject()
+    {
+        _workspace.Set(WorkspaceArtifactKind.Specification, "# Spec");
+        var cut = Open("Runtime Diagnostics");
+
+        cut.WaitForAssertion(() => AnalysisRow(cut, "Impact Analysis").Should().Contain("No project is selected."));
+        AnalysisRow(cut, "Spec Drift").Should().Contain("No project is selected.");
+        Text(cut).Should().NotContain("spec.md is not loaded");
+    }
+
+    // A project switch is read at render time, so the rows cannot keep the previous project.
+    [Fact]
+    public void AProjectSwitchUpdatesTheRows()
+    {
+        _workspace.CurrentProject = "autorisasjon";
+        Resolver("autorisasjon", "spec.md");
+        var cut = Open("Runtime Diagnostics");
+        cut.WaitForAssertion(() => Text(cut).Should().Contain("for project 'autorisasjon'"));
+
+        _workspace.CurrentProject = "other-project";
+        cut.Render();
+
+        cut.WaitForAssertion(() => AnalysisRow(cut, "Impact Analysis").Should().Contain("for project 'other-project'"));
+        AnalysisRow(cut, "Spec Drift").Should().NotContain("autorisasjon");
+    }
+
+    private static string AnalysisRow(IRenderedComponent<SystemSettings> cut, string name) =>
+        cut.FindAll("tr, .diag-item, li, div").Where(e => e.Children.Length > 0 && e.TextContent.Contains(name) && e.TextContent.Contains("project"))
+            .OrderBy(e => e.TextContent.Length).First().TextContent;
+
     // A local, unpublished run has no build/commit/package-root metadata and an empty legacy document store: facts,
     // not missing capabilities — they are shown as not evaluated and never raise the overall status.
     [Fact]
@@ -138,8 +198,22 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         cut.WaitForAssertion(() => Text(cut).Should().Contain("Stored Project Documents (backend store)"));
 
         Row(cut, "Build").Should().Contain("Not configured").And.NotContain("Unavailable");
+        Row(cut, "Commit").Should().Contain("Not configured").And.NotContain("Unavailable");
         Row(cut, "Package Root").Should().NotContain("Unavailable");
         Text(cut).Should().Contain("Not loaded / not evaluated");
+    }
+
+    // A published artifact is expected to carry packaging metadata, so its absence there is still a real gap.
+    [Fact]
+    public void SystemDiagnosticsFlagsMissingMetadataOnAPublishedArtifact()
+    {
+        _published = true;
+        var cut = Open("System Diagnostics");
+        cut.WaitForAssertion(() => Text(cut).Should().Contain("Stored Project Documents (backend store)"));
+
+        Row(cut, "Build").Should().Contain("Unavailable");
+        Row(cut, "Commit").Should().Contain("Unavailable");
+        Row(cut, "Package Root").Should().Contain("Unavailable");
     }
 
     // Reset Workspace clears imported artifacts only; the persisted project selection survives.
@@ -188,7 +262,7 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
         public string BaseAddress { get; set; } = "http://localhost:5173/";
     }
 
-    private sealed class AdminApiHandler : HttpMessageHandler
+    private sealed class AdminApiHandler(Func<bool> published) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -200,13 +274,13 @@ public sealed class SystemSettingsProjectDocumentSourceTests : BunitContext
                       "frontend": { "frontendBaseUrl": "http://localhost:5173", "apiBaseUrl": "http://localhost:5000", "graphQlEndpoint": "http://localhost:5000/graphql", "environmentName": "Development", "staticHostingMode": true },
                       "backend": { "backendBaseUrl": "http://localhost:5000", "aspNetCoreEnvironment": "Development", "listeningUrls": "http://localhost:5000", "corsAllowedOrigins": "http://localhost:5173" },
                       "database": { "mode": "Local", "host": "localhost", "port": 5432, "databaseName": "test", "username": "test", "provider": "Postgres", "migrationStatus": "Up to date" },
-                      "runtime": { "composeProjectName": "birknext", "expectedDatabaseVolume": "birknext_pgdata", "packageMode": "Local", "runningFromPublishedArtifact": false },
+                      "runtime": { "composeProjectName": "birknext", "expectedDatabaseVolume": "birknext_pgdata", "packageMode": "Local", "runningFromPublishedArtifact": {{PUBLISHED}} },
                       "logging": { "provider": "Console", "minimumLevel": "Information" },
                       "maintenance": { "resetAllowed": true, "databaseMode": "Local", "resetNotAllowedReason": "" },
                       "featureVisibility": { "adminSystemSettings": true },
                       "azureDevOps": { "enabled": false, "patConfigured": false }
                     }
-                    """,
+                    """.Replace("{{PUBLISHED}}", published() ? "true" : "false"),
                 "/api/admin/editable-settings" => """
                     {
                       "featureVisibility": { "platform": [{ "key": "AdminSystemSettings", "label": "System Settings", "value": true, "locked": true }], "core": [], "advanced": [] },

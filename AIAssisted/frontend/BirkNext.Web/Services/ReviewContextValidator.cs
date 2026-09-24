@@ -108,7 +108,8 @@ public sealed class ReviewContextValidator : IReviewContextValidator
             new() { Name = "Constitution Rules", Value = rules, Source = "ReviewContext", State = hasConstitution ? ReviewContextMetricState.Evaluated : ReviewContextMetricState.NotEvaluated },
             new() { Name = "Requirements With Tests", Value = context.RequirementsWithTests, Source = "ReviewContext", State = specDerived },
             new() { Name = "Missing Tests", Value = context.MissingTests, Source = "ReviewContext", State = specDerived },
-            new() { Name = "Coverage %", Value = context.Coverage.SpecificationCompleteness, Source = "ReviewContext", State = specDerived },
+            // SpecificationCompleteness is requirement→user-story linkage, not test coverage; named for what it counts.
+            new() { Name = "Requirements Linked to User Stories %", Value = context.Coverage.SpecificationCompleteness, Source = "ReviewContext", State = specDerived },
         };
     }
 
