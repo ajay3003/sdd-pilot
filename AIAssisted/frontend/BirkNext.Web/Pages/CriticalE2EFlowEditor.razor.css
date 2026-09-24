@@ -13,7 +13,9 @@
 
 .e2e-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: .6rem; }
 .e2e-step { display: grid; gap: .5rem; padding: .7rem .8rem; border: 1px solid var(--clr-border, #ddd); border-radius: 8px; background: var(--clr-surface, #f9fafb); min-width: 0; }
-.e2e-step-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; }
+.e2e-step-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem 1rem; }
+.e2e-step-title { margin: 0; font-size: .95rem; color: var(--clr-text-heading, #111); }
+.e2e-step-final { font-size: .85rem; }
 .e2e-step-number { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.7rem; border-radius: 999px; background: var(--clr-primary, #1d4ed8); color: #fff; font-weight: 700; font-size: .85rem; }
 .e2e-step-remove { margin-left: auto; }
 .e2e-step-fields { display: flex; flex-wrap: wrap; gap: .5rem .75rem; }
@@ -45,3 +47,19 @@
     .e2e-step-fields input, .e2e-step-fields select { min-width: 0; width: 100%; }
     .e2e-step-fields label { width: 100%; }
 }
+
+/* Selected element: label above value, wrapping in columns. */
+.e2e-target-facts { display: flex; flex-wrap: wrap; gap: .35rem 1.5rem; margin: 0; }
+.e2e-target-facts > div { display: flex; flex-direction: column; gap: .05rem; min-width: 0; }
+.e2e-target-facts dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--clr-text-muted, #666); }
+.e2e-target-facts dd { margin: 0; font-size: .88rem; overflow-wrap: anywhere; }
+.e2e-mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: .82rem; }
+
+/* Browser selection unavailable: a title, the reason, then setup (primary) and Check again (secondary). */
+.e2e-pick-unavailable { display: grid; gap: .25rem; padding: .6rem .75rem; border: 1px solid var(--clr-border, #ddd); border-radius: 6px; background: var(--clr-surface, #f9fafb); }
+.e2e-pick-unavailable p { margin: 0; }
+.e2e-pick-unavailable-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-top: .25rem !important; }
+.e2e-cta { display: inline-block; padding: .3rem .75rem; border-radius: 6px; border: 1px solid var(--clr-primary, #1d4ed8); color: var(--clr-primary, #1d4ed8); font-weight: 600; font-size: .85rem; text-decoration: none; background: var(--clr-surface-white, #fff); }
+.e2e-cta:hover, .e2e-cta:focus-visible { text-decoration: underline; }
+.e2e-editor h2:focus { outline: none; }
+.e2e-editor h2:focus-visible { outline: 2px solid var(--clr-primary, #1d4ed8); outline-offset: 2px; }

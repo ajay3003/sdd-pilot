@@ -9,7 +9,7 @@
     tester would, and the selector behind that is one disclosure away. Everything here is a typed choice.
 *@
 <section class="e2e-editor" data-testid="e2e-editor" aria-labelledby="e2e-editor-heading">
-    <h2 id="e2e-editor-heading">@(string.IsNullOrWhiteSpace(_draft.Id) ? "New critical flow" : "Edit critical flow")</h2>
+    <h2 id="e2e-editor-heading" tabindex="-1" @ref="_heading">@(string.IsNullOrWhiteSpace(_draft.Id) ? "New critical flow" : "Edit critical flow")</h2>
 
     <div class="e2e-editor-grid">
         <label>Module <input data-testid="e2e-editor-module" @bind="_draft.Module" placeholder="e.g. M02" /></label>
@@ -55,11 +55,15 @@
     <h3 class="e2e-steps-heading">Steps</h3>
     @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser && !PickReady)
     {
-        <p class="e2e-pick-unavailable" id="e2e-pick-unavailable" data-testid="e2e-pick-unavailable">
-            Select from browser is unavailable: @(ElementPick?.Message ?? "Browser Companion status is not known yet.")
-            <a class="e2e-link" href="@SetupHref" data-testid="e2e-pick-setup">Open Browser Companion setup</a>
-            · <button type="button" class="btn-link" data-testid="e2e-pick-recheck" @onclick="OnCheckElementPick">Check again</button>
-        </p>
+        @* Said once, above the steps: every step's picker points here instead of repeating it. *@
+        <div class="e2e-pick-unavailable" id="e2e-pick-unavailable" data-testid="e2e-pick-unavailable" role="status">
+            <p class="e2e-pick-unavailable-title"><strong>Browser selection unavailable</strong></p>
+            <p>@(ElementPick?.Message ?? "Browser Companion status is not known yet.")</p>
+            <p class="e2e-pick-unavailable-actions">
+                <a class="e2e-cta" href="@SetupHref" data-testid="e2e-pick-setup">Open Browser Companion setup</a>
+                <button type="button" class="btn-link" data-testid="e2e-pick-recheck" @onclick="OnCheckElementPick">Check again</button>
+            </p>
+        </div>
     }
 
     @if (_draft.Steps.Count == 0)
@@ -71,9 +75,13 @@
         {
             var i = index;
             var step = _draft.Steps[i];
-            <li class="e2e-step" data-testid="e2e-step-@i">
+            <li class="e2e-step" data-testid="e2e-step-@i" aria-labelledby="@($"e2e-step-title-{i}")">
+                @* A step card: what it is in one line, then what it acts on, then how it is judged. *@
                 <div class="e2e-step-head">
-                    <span class="e2e-step-number" aria-hidden="true">@(i + 1)</span>
+                    <h4 class="e2e-step-title" id="@($"e2e-step-title-{i}")" data-testid="e2e-step-title-@i">Step @(i + 1) · @StepActionLabel(step)</h4>
+                    <button type="button" class="btn-link e2e-step-remove" data-testid="e2e-step-remove-@i" aria-label="@($"Remove step {i + 1}")" @onclick="() => RemoveStep(i)">Remove step</button>
+                </div>
+                <div class="e2e-step-fields">
                     <label>Action
                         @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser)
                         {
@@ -97,11 +105,6 @@
                             </select>
                         }
                     </label>
-                    <label class="e2e-editor-check">
-                        <input type="checkbox" data-testid="e2e-step-final-@i" checked="@step.IsFinalAssertion"
-                               @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" /> Final business assertion
-                    </label>
-                    <button type="button" class="btn-link e2e-step-remove" data-testid="e2e-step-remove-@i" aria-label="@($"Remove step {i + 1}")" @onclick="() => RemoveStep(i)">Remove</button>
                 </div>
 
                 @if (_draft.Mode != CriticalE2EExecutionMode.CompanionBrowser)
@@ -128,20 +131,24 @@
                         var target = CriticalE2EPresentation.Target(step.Selector);
                         _picks.TryGetValue(i, out var pick);
                         <div class="e2e-target" data-testid="e2e-step-target-summary-@i">
-                            <div class="e2e-target-main">
-                                <p class="e2e-target-identity" data-testid="e2e-step-identity-@i">@(pick?.Element is { Recommended: not null } picked ? CriticalE2EPresentation.Identity(picked) : target.Identity)</p>
+                            @* Identity first, as a person reads it; the strategy that finds it second; raw selector internals are
+                               one disclosure further down. Unique and Captured on are shown only when a pick just proved them. *@
+                            <dl class="e2e-target-main e2e-target-facts">
+                                <div><dt>Selected element</dt><dd class="e2e-target-identity" data-testid="e2e-step-identity-@i">@(pick?.Element is { Recommended: not null } picked ? CriticalE2EPresentation.Identity(picked) : target.Identity)</dd></div>
                                 @if (target.Strategy.Length > 0)
                                 {
-                                    <p class="e2e-target-meta" data-testid="e2e-step-strategy-@i">
-                                        Selector: @target.Strategy
-                                        @if (pick?.Element is { Recommended: not null } e) { <span> · Unique: Yes · Captured on @e.PageRoute</span> }
-                                    </p>
+                                    <div><dt>Selector</dt><dd data-testid="e2e-step-strategy-@i">@target.Strategy</dd></div>
                                 }
-                                @if (target.Fragile)
+                                @if (pick?.Element is { Recommended: not null } e)
                                 {
-                                    <p class="e2e-fragile" data-testid="e2e-step-fragile-@i">Selector may be fragile. No stronger unique selector was available; a re-render can break a structural path.</p>
+                                    <div><dt>Unique</dt><dd data-testid="e2e-step-unique-@i">Yes</dd></div>
+                                    <div><dt>Captured on</dt><dd class="e2e-mono" data-testid="e2e-step-captured-@i">@e.PageRoute</dd></div>
                                 }
-                            </div>
+                            </dl>
+                            @if (target.Fragile)
+                            {
+                                <p class="e2e-fragile" data-testid="e2e-step-fragile-@i">Selector may be fragile. No stronger unique selector was available.</p>
+                            }
                             <button type="button" class="btn-secondary e2e-pick" data-testid="e2e-step-pick-@i" @ref="_pickButtons[i]"
                                     disabled="@(!PickReady || _picking is not null)"
                                     aria-describedby="@(PickReady ? null : "e2e-pick-unavailable")"
@@ -226,6 +233,10 @@
                         </div>
                     }
                 }
+                <label class="e2e-editor-check e2e-step-final">
+                    <input type="checkbox" data-testid="e2e-step-final-@i" checked="@step.IsFinalAssertion"
+                           @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" /> Final business assertion
+                </label>
             </li>
         }
     </ol>
@@ -263,6 +274,7 @@
     private int? _focusAfterPick;
     private readonly Dictionary<int, CriticalE2EElementPickResult> _picks = [];
     private readonly Dictionary<int, ElementReference> _pickButtons = [];
+    private ElementReference _heading;
 
     /// <summary>
     /// The draft is rebuilt only when a different flow is handed in. Rebuilding on every parameter set threw away the
@@ -278,6 +290,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        // Opening the editor moves focus to its heading, so a keyboard user lands in it rather than on the page's list.
+        if (firstRender)
+        {
+            try { await _heading.FocusAsync(); } catch (InvalidOperationException) { /* not rendered (e.g. prerender) */ }
+        }
         // Focus goes back to the control that started the pick, so a keyboard user continues where they were.
         if (_focusAfterPick is { } index && _pickButtons.TryGetValue(index, out var button))
         {
@@ -295,6 +312,9 @@
 
     private static bool NeedsExpected(CriticalE2EStepDefinition step) => step.BrowserAction is CompanionActionKind.WaitForText or CompanionActionKind.WaitForRoute
         or CompanionActionKind.AssertText or CompanionActionKind.AssertValue or CompanionActionKind.AssertRoute;
+
+    private static string StepActionLabel(CriticalE2EStepDefinition step) =>
+        step.BrowserAction is { } browser ? ActionLabel(browser) : step.IntegrationAction?.ToString() ?? "Step";
 
     private static string ActionLabel(CompanionActionKind action) => action switch
     {

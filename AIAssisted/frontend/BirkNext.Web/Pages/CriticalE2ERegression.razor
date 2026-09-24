@@ -23,12 +23,15 @@
     }
     else
     {
-        var headline = CriticalE2EPresentation.Headline(overview);
+        var headline = CriticalE2EPresentation.Headline(overview, _buildId);
         var readiness = CriticalE2EPresentation.Readiness(overview);
         var actions = CriticalE2EPresentation.Actions(overview);
-        var rows = CriticalE2EPresentation.Rows(overview, _filter);
+        var rows = CriticalE2EPresentation.Rows(overview, _showDiagnostic);
         var criticalCount = CriticalE2EPresentation.Count(overview, CriticalE2EFlowKind.Critical);
         var diagnosticCount = CriticalE2EPresentation.Count(overview, CriticalE2EFlowKind.Diagnostic);
+        var history = CriticalE2EPresentation.History(overview, _buildId, _showDiagnosticRuns);
+        var hiddenRuns = overview.History.Count - history.Count;
+        var smokeRuns = CriticalE2EPresentation.History(overview, _buildId, true).Count(h => h.Kind == CriticalE2EHistoryKind.Smoke);
 
         @* ── Where, what build, how much is covered, can a browser flow run. One fact per card. ── *@
         <section class="e2e-summary" data-testid="e2e-summary" aria-label="Regression summary">
@@ -48,12 +51,41 @@
             </div>
         </section>
 
-        <section class="e2e-headline e2e-tone-@headline.Tone.ToString().ToLowerInvariant()" data-testid="e2e-verdict" aria-label="Release regression">
-            <h2 data-testid="e2e-verdict-label">@headline.Label</h2>
-            <p data-testid="e2e-verdict-detail">@headline.Detail</p>
+        @* The release headline belongs to critical flows. With none, the flow list's empty state says so once. *@
+        @if (criticalCount > 0)
+        {
+            <section class="e2e-headline e2e-tone-@headline.Tone.ToString().ToLowerInvariant()" data-testid="e2e-verdict" aria-label="Release regression">
+                <h2 data-testid="e2e-verdict-label">@headline.Label</h2>
+                <p data-testid="e2e-verdict-detail">@headline.Detail</p>
+            </section>
+        }
+
+        @* ── Attended readiness: the prerequisite for picking and replay, so it sits above the flows. Consumed from the
+               overview's one Companion snapshot; setup lives with the Target Environment. ── *@
+        <section class="e2e-readiness e2e-readiness-@readiness.Tone.ToString().ToLowerInvariant()" data-testid="e2e-readiness" aria-labelledby="e2e-readiness-heading">
+            <div class="e2e-section-head">
+                <h2 id="e2e-readiness-heading">Attended browser readiness</h2>
+                <span class="e2e-pill e2e-tone-@readiness.Tone.ToString().ToLowerInvariant()" data-testid="e2e-readiness-state">@readiness.Label</span>
+            </div>
+            @if (readiness.Reason is { Length: > 0 } reason)
+            {
+                <p class="e2e-readiness-reason" role="status" data-testid="e2e-readiness-reason">@reason</p>
+            }
+            <dl class="e2e-facts">
+                <div><dt>Browser Companion</dt><dd data-testid="e2e-readiness-companion">@readiness.Companion</dd></div>
+                <div><dt>Approved page</dt><dd data-testid="e2e-readiness-page">@readiness.Page</dd></div>
+                <div><dt>Element picking</dt><dd data-testid="e2e-readiness-picking">@readiness.ElementPicking</dd></div>
+            </dl>
+            <p class="e2e-readiness-actions">
+                @if (readiness.Tone != CriticalE2ETone.Good)
+                {
+                    <a class="e2e-cta" href="@CriticalE2EPresentation.BrowserCompanionSetupHref(_profileId)" data-testid="e2e-companion-setup">Open Browser Companion setup</a>
+                }
+                <button type="button" class="btn-link" data-testid="e2e-readiness-refresh" @onclick="RefreshAsync">Check again</button>
+            </p>
         </section>
 
-        @* ── The flows are the page. ── *@
+        @* ── The flows are the page. Smoke / diagnostic flows are hidden unless the reader asks for them. ── *@
         <section class="e2e-flows" data-testid="e2e-flows" aria-labelledby="e2e-flows-heading">
             <div class="e2e-section-head">
                 <h2 id="e2e-flows-heading">Critical flows</h2>
@@ -75,16 +107,14 @@
                     {
                         <button type="button" class="btn-secondary" data-testid="e2e-cancel" @onclick="Cancel">Stop</button>
                     }
-                    <button type="button" class="btn-primary" data-testid="e2e-add-flow" @onclick="AddFlow">Add critical flow</button>
+                    <button type="button" class="btn-primary" data-testid="e2e-add-flow" @ref="_addButton" @onclick="AddFlow">Add critical flow</button>
+                    @if (diagnosticCount > 0)
+                    {
+                        <label class="e2e-toggle" data-testid="e2e-show-diagnostic-label">
+                            <input type="checkbox" data-testid="e2e-show-diagnostic" @bind="_showDiagnostic" /> Show smoke / diagnostic flows
+                        </label>
+                    }
                 </div>
-            </div>
-
-            <div class="e2e-filter" role="group" aria-label="Show flows" data-testid="e2e-filter">
-                @foreach (var (filter, label) in new[] { (CriticalE2EFlowFilter.Critical, $"Critical ({criticalCount})"), (CriticalE2EFlowFilter.Diagnostic, $"Smoke / diagnostic ({diagnosticCount})"), (CriticalE2EFlowFilter.All, $"All ({overview.Flows.Count})") })
-                {
-                    <button type="button" class="e2e-filter-option @(_filter == filter ? "is-active" : "")" aria-pressed="@(_filter == filter ? "true" : "false")"
-                            data-testid="e2e-filter-@filter.ToString().ToLowerInvariant()" @onclick="() => _filter = filter">@label</button>
-                }
             </div>
 
             @if (rows.Count == 0)
@@ -94,19 +124,23 @@
                     {
                         <p><strong>No critical flows configured.</strong> Create a critical user journey to start attended regression testing.</p>
                     }
-                    else if (_filter == CriticalE2EFlowFilter.Critical)
-                    {
-                        <p><strong>No critical flows yet.</strong> @diagnosticCount smoke/diagnostic @(diagnosticCount == 1 ? "flow is" : "flows are") available.</p>
-                        <button type="button" class="btn-link" data-testid="e2e-show-diagnostic" @onclick="() => _filter = CriticalE2EFlowFilter.Diagnostic">Show smoke / diagnostic flows</button>
-                    }
                     else
                     {
-                        <p>No flows in this view.</p>
+                        <p><strong>No release-critical flows configured.</strong></p>
+                        <p class="e2e-muted" data-testid="e2e-hidden-diagnostic">@diagnosticCount smoke/diagnostic @(diagnosticCount == 1 ? "flow is" : "flows are") hidden.</p>
                     }
                 </div>
             }
             else
             {
+                @if (criticalCount == 0)
+                {
+                    <p class="e2e-muted" data-testid="e2e-no-critical-note">No release-critical flows configured. Showing smoke / diagnostic flows only; they never count toward release coverage.</p>
+                }
+                else if (!_showDiagnostic && diagnosticCount > 0)
+                {
+                    <p class="e2e-muted" data-testid="e2e-hidden-diagnostic">@diagnosticCount smoke/diagnostic @(diagnosticCount == 1 ? "flow is" : "flows are") hidden.</p>
+                }
                 <div class="e2e-tablewrap">
                     <table class="e2e-table" data-testid="e2e-flow-table">
                         <thead>
@@ -116,18 +150,19 @@
                             @foreach (var row in rows)
                             {
                                 var blockedId = $"e2e-run-blocked-{row.FlowId}";
-                                <tr data-testid="e2e-flow-@row.FlowId" data-kind="@row.Kind">
+                                var diagnostic = row.Kind == CriticalE2EFlowKind.Diagnostic;
+                                <tr class="@(diagnostic ? "e2e-row-diagnostic" : null)" data-testid="e2e-flow-@row.FlowId" data-kind="@row.Kind">
                                     <td data-label="Module">@row.Module</td>
-                                    <td data-label="Critical flow">
+                                    <th scope="row" data-label="Critical flow">
+                                        @if (diagnostic) { <span class="e2e-badge e2e-badge-smoke" data-testid="e2e-kind-@row.FlowId">Smoke</span> }
                                         <span class="e2e-flow-name">@row.Name</span>
-                                        @if (row.Kind == CriticalE2EFlowKind.Diagnostic) { <span class="e2e-badge" data-testid="e2e-kind-@row.FlowId">Smoke / diagnostic</span> }
                                         @if (!row.Enabled) { <span class="e2e-badge e2e-badge-muted" data-testid="e2e-enabled-@row.FlowId">Disabled</span> }
                                         @if (row.ConfigurationProblem is { Length: > 0 } problem) { <span class="e2e-row-detail e2e-tone-warning" data-testid="e2e-problem-@row.FlowId">Needs attention: @problem</span> }
-                                    </td>
+                                    </th>
                                     <td data-label="Steps">@row.Steps</td>
                                     <td data-label="Execution">@row.Execution</td>
-                                    <td data-label="Required" data-testid="e2e-required-@row.FlowId">@(row.RequiredForRelease ? "Required" : "Optional")</td>
-                                    <td data-label="Last run">@(row.LastRunAt is { } at ? at.ToLocalTime().ToString("d MMM HH:mm") : "—")</td>
+                                    <td data-label="Required" data-testid="e2e-required-@row.FlowId">@(diagnostic ? "No" : row.RequiredForRelease ? "Required" : "Optional")</td>
+                                    <td data-label="Last run">@(row.LastRunAt is { } at ? at.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture) : "—")</td>
                                     <td data-label="Result">
                                         <span class="e2e-pill e2e-tone-@row.ResultTone.ToString().ToLowerInvariant()" data-testid="e2e-status-@row.FlowId">@row.Result</span>
                                         @if (row.ResultDetail is { Length: > 0 } detail) { <span class="e2e-row-detail">@detail</span> }
@@ -155,7 +190,7 @@
             <CriticalE2EFlowEditor Flow="editing" EnvironmentId="@_environmentId" ProfileId="@_profileId"
                                    EnvironmentType="@_environmentType" ElementPick="@_overview?.ElementPick" OnCheckElementPick="RefreshAsync"
                                    SetupHref="@CriticalE2EPresentation.BrowserCompanionSetupHref(_profileId)"
-                                   OnSave="SaveFlowAsync" OnCancel="() => { _editing = null; }" />
+                                   OnSave="SaveFlowAsync" OnCancel="CancelEdit" />
         }
 
         @if (_lastRun is { } run)
@@ -185,28 +220,7 @@
             </section>
         }
 
-        @* ── Attended readiness: the Companion's live state, compact. Setup lives with the Target Environment. ── *@
-        <section class="e2e-readiness" data-testid="e2e-readiness" aria-labelledby="e2e-readiness-heading">
-            <div class="e2e-section-head">
-                <h2 id="e2e-readiness-heading">Attended browser readiness</h2>
-                <span class="e2e-pill e2e-tone-@readiness.Tone.ToString().ToLowerInvariant()" data-testid="e2e-readiness-state">@readiness.Label</span>
-            </div>
-            @if (readiness.Reason is { Length: > 0 } reason)
-            {
-                <p class="e2e-readiness-reason" data-testid="e2e-readiness-reason">@reason</p>
-            }
-            <dl class="e2e-facts">
-                <div><dt>Browser Companion</dt><dd data-testid="e2e-readiness-companion">@readiness.Companion</dd></div>
-                <div><dt>Approved page</dt><dd data-testid="e2e-readiness-page">@readiness.Page</dd></div>
-                <div><dt>Element picking</dt><dd data-testid="e2e-readiness-picking">@readiness.ElementPicking</dd></div>
-            </dl>
-            <p class="e2e-muted">@CriticalE2EPresentation.AttendedHelp
-                <a class="e2e-link" href="@CriticalE2EPresentation.BrowserCompanionSetupHref(_profileId)" data-testid="e2e-companion-setup">Open Browser Companion setup</a>
-                · <button type="button" class="btn-link" data-testid="e2e-readiness-refresh" @onclick="RefreshAsync">Check again</button>
-            </p>
-        </section>
-
-        @* ── Secondary: coverage detail, history, build. One disclosure each. ── *@
+        @* ── Secondary: coverage detail, history, build. One collapsed disclosure each; their state is their own. ── *@
         <section class="e2e-secondary" aria-label="Details">
             <ReviewDisclosure Text="Module coverage" CollapseText="Hide module coverage" Hint="@CriticalE2EPresentation.Coverage(overview.Release)" TestId="e2e-modules" Class="e2e-disclosure">
                 @if (overview.Modules.Count == 0)
@@ -238,28 +252,45 @@
 
             @if (overview.History.Count > 0)
             {
-                <ReviewDisclosure Text="Run history" CollapseText="Hide run history" Hint="@($"{overview.History.Count} recent runs")" TestId="e2e-history" Class="e2e-disclosure">
-                    <div class="e2e-tablewrap">
-                        <table class="e2e-table e2e-table-compact" data-testid="e2e-history-table">
-                            <thead><tr><th scope="col">Flow</th><th scope="col">Module</th><th scope="col">Build</th><th scope="col">Started</th><th scope="col">Result</th><th scope="col">Steps</th><th scope="col">Duration</th></tr></thead>
-                            <tbody>
-                                @foreach (var past in overview.History)
-                                {
-                                    <tr data-testid="e2e-run-@past.RunId">
-                                        <td data-label="Flow">@past.FlowName
-                                            @if (CriticalE2EPresentation.FirstProblem(past) is { Length: > 0 } why && past.Status != CriticalE2EStatus.Passed) { <span class="e2e-row-detail">@why</span> }
-                                        </td>
-                                        <td data-label="Module">@past.Module</td>
-                                        <td data-label="Build">@CriticalE2EPresentation.BuildLabel(past.BuildId)</td>
-                                        <td data-label="Started">@past.StartedAt.ToLocalTime().ToString("d MMM HH:mm")</td>
-                                        <td data-label="Result"><span class="e2e-pill e2e-tone-@ResultTone(past.Status)">@CriticalE2EPresentation.StatusLabel(past.Status)</span></td>
-                                        <td data-label="Steps">@past.PassedSteps / @past.TotalSteps</td>
-                                        <td data-label="Duration">@CriticalE2EPresentation.Duration(past.DurationMs)</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                <ReviewDisclosure Text="Run history" CollapseText="Hide run history" Hint="@HistoryHint(history.Count, hiddenRuns)" TestId="e2e-history" Class="e2e-disclosure">
+                    @if (smokeRuns > 0)
+                    {
+                        <label class="e2e-toggle" data-testid="e2e-show-diagnostic-runs-label">
+                            <input type="checkbox" data-testid="e2e-show-diagnostic-runs" @bind="_showDiagnosticRuns" /> Show smoke / diagnostic runs
+                        </label>
+                    }
+                    @if (history.Count == 0)
+                    {
+                        <p class="e2e-muted" data-testid="e2e-history-empty">No critical runs yet. @hiddenRuns smoke/diagnostic @(hiddenRuns == 1 ? "run is" : "runs are") hidden.</p>
+                    }
+                    else
+                    {
+                        <div class="e2e-tablewrap">
+                            <table class="e2e-table e2e-table-compact" data-testid="e2e-history-table">
+                                <thead><tr><th scope="col">Flow</th><th scope="col">Type</th><th scope="col">Module</th><th scope="col">Build</th><th scope="col">Started</th><th scope="col">Result</th><th scope="col">Steps</th><th scope="col">Duration</th></tr></thead>
+                                <tbody>
+                                    @foreach (var h in history)
+                                    {
+                                        var past = h.Run;
+                                        <tr class="@(h.Kind == CriticalE2EHistoryKind.Smoke ? "e2e-row-diagnostic" : null)" data-testid="e2e-run-@past.RunId" data-kind="@h.Kind" data-evidence="@(h.ReleaseEvidence ? "true" : "false")">
+                                            <td data-label="Flow"><span class="e2e-flow-name">@past.FlowName</span>
+                                                @if (h.Problem is { Length: > 0 } why) { <span class="e2e-row-detail e2e-clamp" title="@why" data-testid="e2e-run-problem-@past.RunId">@why</span> }
+                                            </td>
+                                            <td data-label="Type"><span class="e2e-badge @(h.Kind == CriticalE2EHistoryKind.Smoke ? "e2e-badge-smoke" : "")" data-testid="e2e-run-kind-@past.RunId">@CriticalE2EPresentation.KindLabel(h.Kind)</span></td>
+                                            <td data-label="Module">@past.Module</td>
+                                            <td data-label="Build" data-testid="e2e-run-build-@past.RunId">@CriticalE2EPresentation.BuildLabel(past.BuildId)
+                                                @if (!h.ReleaseEvidence) { <span class="e2e-row-detail" data-testid="e2e-run-not-evidence-@past.RunId">Not release evidence</span> }
+                                            </td>
+                                            <td data-label="Started">@past.StartedAt.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture)</td>
+                                            <td data-label="Result"><span class="e2e-pill e2e-tone-@ResultTone(past.Status)">@CriticalE2EPresentation.StatusLabel(past.Status)</span></td>
+                                            <td data-label="Steps">@past.PassedSteps / @past.TotalSteps</td>
+                                            <td data-label="Duration">@CriticalE2EPresentation.Duration(past.DurationMs)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
                 </ReviewDisclosure>
             }
 
@@ -279,7 +310,12 @@
     private CriticalE2EOverview? _overview;
     private CriticalE2EFlowDefinition? _editing;
     private CriticalE2ERunResult? _lastRun;
-    private CriticalE2EFlowFilter _filter = CriticalE2EFlowFilter.Critical;
+    // UI-local view state: a fresh page load starts with smoke/diagnostic flows and runs hidden; re-renders keep what the
+    // reader chose. Deliberately not persisted anywhere.
+    private bool _showDiagnostic;
+    private bool _showDiagnosticRuns;
+    private ElementReference _addButton;
+    private bool _focusAdd;
     private string? _error;
     private string? _running;
     private CancellationTokenSource? _run;
@@ -372,10 +408,28 @@
         {
             await Api.SaveFlowAsync(flow);
             _editing = null;
+            _focusAdd = true;
             await RefreshAsync();
         }
         catch { _error = "The flow could not be saved."; }
     }
+
+    private void CancelEdit()
+    {
+        _editing = null;
+        _focusAdd = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Closing the editor returns focus to the action that opened it.
+        if (!_focusAdd) return;
+        _focusAdd = false;
+        try { await _addButton.FocusAsync(); } catch (InvalidOperationException) { }
+    }
+
+    private static string HistoryHint(int shown, int hidden) =>
+        $"{shown} recent {(shown == 1 ? "run" : "runs")}" + (hidden > 0 ? $" · {hidden} smoke/diagnostic hidden" : "");
 
     private static string ResultTone(CriticalE2EStatus status) => status switch
     {

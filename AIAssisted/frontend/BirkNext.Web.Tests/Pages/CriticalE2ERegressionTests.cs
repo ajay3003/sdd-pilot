@@ -125,8 +125,10 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     public void NoFlowsAtAll()
     {
         var page = Render(Overview([], CriticalE2EReleaseDisposition.NotConfigured, total: 0, covered: 0), out _);
-        Text(page, "e2e-verdict-label").Should().Be("No critical flows configured");
-        page.Find("[data-testid=e2e-no-flows]").TextContent.Should().Contain("Create a critical user journey");
+        // The flow list's empty state says it once; no separate headline repeats it.
+        page.FindAll("[data-testid=e2e-verdict]").Should().BeEmpty();
+        page.Find("[data-testid=e2e-no-flows]").TextContent.Should().Contain("No critical flows configured").And.Contain("Create a critical user journey");
+        page.FindAll("[data-testid=e2e-show-diagnostic]").Should().BeEmpty("there is nothing to reveal");
         page.FindAll("[data-testid=e2e-run-browser]").Should().BeEmpty("no disabled run button with nothing behind it");
         Text(page, "e2e-coverage").Should().Be("No delivery modules yet");
     }
@@ -137,16 +139,22 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         var smoke = Enumerable.Range(1, 15).Select(i => Flow($"smoke-{i}", "SMOKE", required: false, enabled: false, kind: CriticalE2EFlowKind.Diagnostic)).ToList();
         var page = Render(Overview(smoke, CriticalE2EReleaseDisposition.NotConfigured, total: 0, covered: 0), out _);
 
-        Text(page, "e2e-verdict-label").Should().Be("No release-critical flows configured");
-        Text(page, "e2e-verdict-detail").Should().Be("15 smoke/diagnostic flows are available.");
-        page.Find("[data-testid=e2e-filter-critical]").GetAttribute("aria-pressed").Should().Be("true", "the default view is release-oriented");
-        page.Find("[data-testid=e2e-no-flows]").TextContent.Should().Contain("15 smoke/diagnostic flows are available");
+        // One statement, in the flow list: no headline, no tabs, no second "no critical flows yet".
+        page.FindAll("[data-testid=e2e-verdict]").Should().BeEmpty();
+        page.FindAll("[data-testid^=e2e-filter]").Should().BeEmpty("there are no Critical / Smoke / All tabs");
+        var empty = page.Find("[data-testid=e2e-no-flows]").TextContent;
+        empty.Should().Contain("No release-critical flows configured.").And.Contain("15 smoke/diagnostic flows are hidden.");
         page.FindAll("[data-testid^=e2e-flow-smoke-]").Should().BeEmpty();
+        var toggle = page.Find("[data-testid=e2e-show-diagnostic]");
+        toggle.HasAttribute("checked").Should().BeFalse("smoke flows are opt-in");
+        page.Find("[data-testid=e2e-show-diagnostic-label]").TextContent.Trim().Should().Be("Show smoke / diagnostic flows");
+        page.FindAll("[data-testid=e2e-editor]").Should().BeEmpty("the editor opens only on request");
 
-        page.Find("[data-testid=e2e-show-diagnostic]").Click();
+        toggle.Change(true);
         page.FindAll("[data-testid^=e2e-flow-smoke-]").Should().HaveCount(15);
-        page.Find("[data-testid=e2e-filter-diagnostic]").GetAttribute("aria-pressed").Should().Be("true");
-        page.Find("[data-testid=e2e-kind-smoke-1]").TextContent.Should().Be("Smoke / diagnostic");
+        page.Find("[data-testid=e2e-kind-smoke-1]").TextContent.Should().Be("Smoke");
+        page.Find("[data-testid=e2e-required-smoke-1]").TextContent.Should().Be("No");
+        Text(page, "e2e-coverage").Should().Be("No delivery modules yet", "smoke flows never add a delivery module");
     }
 
     [Fact]
@@ -176,12 +184,33 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     }
 
     [Fact]
-    public void AllFilterShowsBothKinds()
+    public void SmokeToggleAddsDiagnosticRowsAfterCriticalOnes_AndSurvivesARefresh()
     {
         var page = Render(Overview([Flow("m02"), Flow("smoke", "SMOKE", kind: CriticalE2EFlowKind.Diagnostic)]), out _);
-        page.FindAll("[data-testid^=e2e-flow-]").Where(e => e.TagName == "TR").Should().ContainSingle("Critical is the default");
-        page.Find("[data-testid=e2e-filter-all]").Click();
+        page.FindAll("tr[data-testid^=e2e-flow-]").Should().ContainSingle("critical flows only by default");
+        Text(page, "e2e-hidden-diagnostic").Should().Be("1 smoke/diagnostic flow is hidden.");
+
+        page.Find("[data-testid=e2e-show-diagnostic]").Change(true);
         page.FindAll("tr[data-testid^=e2e-flow-]").Select(r => r.GetAttribute("data-kind")).Should().Equal("Critical", "Diagnostic");
+        page.Find("[data-testid=e2e-flow-smoke]").ClassList.Should().Contain("e2e-row-diagnostic");
+
+        page.Find("[data-testid=e2e-readiness-refresh]").Click();
+        page.FindAll("tr[data-testid^=e2e-flow-]").Should().HaveCount(2, "a refresh keeps the reader's choice");
+        page.Find("[data-testid=e2e-show-diagnostic]").HasAttribute("checked").Should().BeTrue();
+
+        page.Find("[data-testid=e2e-show-diagnostic]").Change(false);
+        page.FindAll("tr[data-testid^=e2e-flow-]").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void ANewPageStartsWithSmokeHiddenAgain()
+    {
+        var overview = Overview([Flow("m02"), Flow("smoke", "SMOKE", kind: CriticalE2EFlowKind.Diagnostic)]);
+        var first = Render(overview, out _);
+        first.Find("[data-testid=e2e-show-diagnostic]").Change(true);
+        var second = base.Render<CriticalE2ERegression>();
+        second.Find("[data-testid=e2e-show-diagnostic]").HasAttribute("checked").Should().BeFalse("the choice is UI-local, never persisted");
+        second.FindAll("tr[data-testid^=e2e-flow-]").Should().ContainSingle();
     }
 
     // ── Enabled ≠ Required ≠ Result ────────────────────────────────────────────────────────────────────────────
@@ -246,7 +275,24 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         Text(page, "e2e-readiness-companion").Should().Be("Connected");
         Text(page, "e2e-readiness-page").Should().Be("m2lbdev.bufetat.no/admin/general-roles");
         Text(page, "e2e-readiness-picking").Should().Be("Available");
-        page.Find("[data-testid=e2e-companion-setup]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=browser&profile=dev");
+        page.FindAll("[data-testid=e2e-companion-setup]").Should().BeEmpty("a ready browser needs no setup action");
+        page.Find("[data-testid=e2e-readiness-refresh]").TextContent.Should().Be("Check again");
+    }
+
+    [Fact]
+    public void AttendedReadinessNotReady_OffersSetupFirst_AndSitsAboveTheFlows()
+    {
+        var page = Render(Overview(attended: new CriticalE2EAttendedReadiness
+        {
+            Status = new CriticalE2EEngineStatus { State = CriticalE2EEngineState.NotConfigured, Message = "Browser Companion is not connected." },
+        }), out _);
+        Text(page, "e2e-readiness-state").Should().Be("Not ready");
+        Text(page, "e2e-readiness-reason").Should().Be("Browser Companion is not connected.");
+        var setup = page.Find("[data-testid=e2e-companion-setup]");
+        setup.ClassList.Should().Contain("e2e-cta");
+        setup.GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments&tab=browser&profile=dev");
+        var order = page.FindAll("[data-testid=e2e-summary], [data-testid=e2e-readiness], [data-testid=e2e-flows]").Select(e => e.GetAttribute("data-testid"));
+        order.Should().Equal("e2e-summary", "e2e-readiness", "e2e-flows");
     }
 
     [Fact]
@@ -366,7 +412,10 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     {
         var page = Render(Overview(), out _);
         Text(page, "e2e-build").Should().Be("Not set");
-        Text(page, "e2e-build-help").Should().Be("Results from any build count. Set the build to record release evidence for it.");
+        Text(page, "e2e-build-help").Should().Be("Results can run, but will not count as release evidence.");
+        // The backend reads any recent pass as Ready when no build is named; the page never presents that as evidence.
+        Text(page, "e2e-verdict-label").Should().Be("Required flows passed — no build set");
+        page.Find("[data-testid=e2e-verdict]").ClassList.Should().Contain("e2e-tone-neutral");
         page.Find("[data-testid=e2e-run-browser]").HasAttribute("disabled").Should().BeFalse();
     }
 
@@ -395,5 +444,81 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         public Task DeleteFlowAsync(string flowId, CancellationToken ct = default) => throw new HttpRequestException("down");
         public Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken ct = default) => throw new HttpRequestException("down");
         public Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken ct = default) => throw new HttpRequestException("down");
+    }
+
+    // ── Final polish: history and editor ──────────────────────────────────────────────────────────────────────
+
+    private static CriticalE2ERunResult RunOf(string id, string flowId, string? build, CriticalE2EStatus status = CriticalE2EStatus.Passed, bool required = true) => new()
+    {
+        RunId = id, FlowId = flowId, FlowName = flowId, Module = "M02", Status = status, BuildId = build, RequiredForRelease = required,
+        StartedAt = new DateTimeOffset(2026, 9, 24, 8, 0, 0, TimeSpan.Zero),
+        StepResults = status == CriticalE2EStatus.Failed
+            ? [new CriticalE2EStepResult { Status = CriticalE2EStatus.Failed, Description = "Assert visible Lagre", SanitizedError = "No element matched the selector." }]
+            : [new CriticalE2EStepResult { Status = CriticalE2EStatus.Passed, Description = "Navigate" }],
+    };
+
+    [Fact]
+    public void HistoryHidesSmokeRunsByDefault_AndNeverShowsThemOrUnbuiltRunsAsEvidence()
+    {
+        var flows = new[] { Flow("m02"), Flow("smoke", "SMOKE", kind: CriticalE2EFlowKind.Diagnostic) };
+        var history = new List<CriticalE2ERunResult>
+        {
+            RunOf("r1", "m02", null, CriticalE2EStatus.Failed),
+            RunOf("r2", "smoke", null), RunOf("r3", "smoke", null),
+        };
+        var page = Render(Overview(flows, history: history), out _);
+        var toggle = page.Find("[data-testid=e2e-history-toggle]");
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.TextContent.Should().Contain("1 recent run").And.Contain("2 smoke/diagnostic hidden");
+        toggle.Click();
+
+        page.FindAll("tr[data-testid^=e2e-run-r]").Select(r => r.GetAttribute("data-testid")).Should().Equal("e2e-run-r1");
+        Text(page, "e2e-run-kind-r1").Should().Be("Critical");
+        Text(page, "e2e-run-build-r1").Should().StartWith("Not set").And.Contain("Not release evidence");
+        Text(page, "e2e-run-problem-r1").Should().Be("Step 1 · Assert visible Lagre — No element matched the selector.");
+
+        page.Find("[data-testid=e2e-show-diagnostic-runs]").Change(true);
+        page.FindAll("tr[data-testid^=e2e-run-r]").Should().HaveCount(3);
+        Text(page, "e2e-run-kind-r2").Should().Be("Smoke");
+        page.Find("[data-testid=e2e-run-r2]").GetAttribute("data-evidence").Should().Be("false");
+        page.Find("[data-testid=e2e-history-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+    }
+
+    [Fact]
+    public void OnlyARequiredCriticalRunOnTheNamedBuildIsEvidence()
+    {
+        var overview = Overview([Flow("m02"), Flow("smoke", "SMOKE", kind: CriticalE2EFlowKind.Diagnostic)], history:
+        [
+            RunOf("a", "m02", "RC-57"), RunOf("b", "m02", "RC-56"), RunOf("c", "smoke", "RC-57"), RunOf("d", "m02", "RC-57", required: false),
+        ]);
+        CriticalE2EPresentation.History(overview, "RC-57", true).Select(r => (r.Run.RunId, r.ReleaseEvidence))
+            .Should().Equal(("a", true), ("b", false), ("c", false), ("d", false));
+        CriticalE2EPresentation.History(overview, null, true).Should().OnlyContain(r => !r.ReleaseEvidence, "no build named, nothing is evidence");
+    }
+
+    [Fact]
+    public void EditorIsClosedUntilAddIsClicked_AndCancelClosesIt()
+    {
+        var page = Render(Overview(), out _);
+        page.FindAll("[data-testid=e2e-editor]").Should().BeEmpty();
+
+        page.Find("[data-testid=e2e-add-flow]").Click();
+        page.Find("#e2e-editor-heading").TextContent.Should().Be("New critical flow");
+        page.Find("[data-testid=e2e-editor-details-toggle]").GetAttribute("aria-expanded").Should().Be("false", "flow details are secondary");
+
+        page.Find("[data-testid=e2e-editor-cancel]").Click();
+        page.FindAll("[data-testid=e2e-editor]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DisabledCriticalFlowStaysVisible_CannotRun_AndKeepsItsRealResult()
+    {
+        var page = Render(Overview([Flow("m02", enabled: false, status: CriticalE2EStatus.Failed)]), out _);
+        page.Find("[data-testid=e2e-flow-m02]").Should().NotBeNull();
+        Text(page, "e2e-enabled-m02").Should().Be("Disabled");
+        Text(page, "e2e-status-m02").Should().Be("Failed");
+        var run = page.Find("[data-testid=e2e-run-flow-m02]");
+        run.HasAttribute("disabled").Should().BeTrue();
+        page.Find($"#{run.GetAttribute("aria-describedby")}").TextContent.Should().Be("Cannot run: This flow is disabled.");
     }
 }

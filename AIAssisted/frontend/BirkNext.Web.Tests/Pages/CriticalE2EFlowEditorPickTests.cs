@@ -82,7 +82,11 @@ public sealed class CriticalE2EFlowEditorPickTests : BunitContext
         cut.Find("[data-testid=e2e-step-selector-name-1]").GetAttribute("value").Should().Be("Ny plassering");
         // Human-readable identity first; the strategy, uniqueness and where it was captured beside it.
         cut.Find("[data-testid=e2e-step-identity-1]").TextContent.Should().Be("Button \u2014 Ny plassering");
-        cut.Find("[data-testid=e2e-step-strategy-1]").TextContent.Should().Contain("Selector: Role + name").And.Contain("Unique: Yes").And.Contain("Captured on /plassering");
+        cut.Find("[data-testid=e2e-step-strategy-1]").TextContent.Should().Be("Role + name");
+        cut.Find("[data-testid=e2e-step-unique-1]").TextContent.Should().Be("Yes");
+        cut.Find("[data-testid=e2e-step-captured-1]").TextContent.Should().Be("/plassering");
+        cut.Find("[data-testid=e2e-step-title-1]").TextContent.Should().StartWith("Step 2 · ");
+        cut.Find("[data-testid=e2e-step-selector-details-1-toggle]").GetAttribute("aria-expanded").Should().Be("false", "selector internals stay collapsed");
         cut.Find("[data-testid=e2e-step-pick-note-1]").TextContent.Trim().Should().Be("Selected Button \u2014 Ny plassering.");
         cut.Find("[data-testid=e2e-step-pick-1]").TextContent.Trim().Should().Be("Change selection");
         cut.FindAll("[data-testid=e2e-editor-problem]").Should().BeEmpty("the picked step is complete");
@@ -147,6 +151,9 @@ public sealed class CriticalE2EFlowEditorPickTests : BunitContext
         button.HasAttribute("disabled").Should().BeTrue();
         button.GetAttribute("aria-describedby").Should().Be("e2e-pick-unavailable");
         cut.Find("#e2e-pick-unavailable").TextContent.Should().Contain("No approved application page is open in the paired browser.");
+        cut.Find("#e2e-pick-unavailable .e2e-pick-unavailable-title").TextContent.Should().Be("Browser selection unavailable");
+        cut.Find("[data-testid=e2e-pick-setup]").ClassList.Should().Contain("e2e-cta", "setup is the primary action");
+        cut.Find("[data-testid=e2e-pick-recheck]").ClassList.Should().Contain("btn-link", "Check again is secondary");
 
         cut.Find("[data-testid=e2e-pick-recheck]").Click();
         checkedAgain.Should().Be(1);
@@ -240,7 +247,7 @@ public sealed class CriticalE2EFlowEditorPickTests : BunitContext
         cut.Find("[data-testid=e2e-step-pick-0]").Click();
 
         cut.Find("[data-testid=e2e-step-identity-0]").TextContent.Should().Be("Input \u2014 Fra dato");
-        cut.Find("[data-testid=e2e-step-strategy-0]").TextContent.Should().Contain("Selector: Label");
+        cut.Find("[data-testid=e2e-step-strategy-0]").TextContent.Should().Be("Label");
         cut.Find("[data-testid=e2e-step-value-0]").GetAttribute("value").Should().Be("2026-09-24", "Fill keeps its value field beside the target");
     }
 

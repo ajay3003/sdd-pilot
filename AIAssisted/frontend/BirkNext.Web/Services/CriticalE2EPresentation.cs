@@ -7,8 +7,13 @@ public enum CriticalE2ETone { Neutral, Good, Warning, Bad }
 
 public sealed record CriticalE2EHeadline(string Label, CriticalE2ETone Tone, string Detail);
 
-/// <summary>Which flows the table shows. Critical is the default: the page is about release journeys.</summary>
-public enum CriticalE2EFlowFilter { Critical, Diagnostic, All }
+/// <summary>
+/// One row of run history. Kind comes from the flow the run belongs to (runs do not carry it); a run whose flow no longer
+/// exists is <see cref="CriticalE2EHistoryKind.Removed"/>. ReleaseEvidence is typed, so the page never has to guess it.
+/// </summary>
+public enum CriticalE2EHistoryKind { Critical, Smoke, Removed }
+
+public sealed record CriticalE2EHistoryRow(CriticalE2ERunResult Run, CriticalE2EHistoryKind Kind, bool ReleaseEvidence, string? Problem);
 
 /// <summary>
 /// One flow row. Configuration (Enabled, Required, runnable) and outcome (Result) are separate columns, because a disabled
@@ -59,7 +64,7 @@ public static class CriticalE2EPresentation
     /// The release headline, in context. "Not configured" alone read as "no flows" while fifteen flows were on screen; each
     /// case now says which of flows / critical flows / enabled / required is missing.
     /// </summary>
-    public static CriticalE2EHeadline Headline(CriticalE2EOverview overview)
+    public static CriticalE2EHeadline Headline(CriticalE2EOverview overview, string? buildId = null)
     {
         var release = overview.Release;
         var critical = overview.Flows.Where(f => f.Kind == CriticalE2EFlowKind.Critical).ToList();
@@ -75,6 +80,10 @@ public static class CriticalE2EPresentation
         {
             CriticalE2EReleaseDisposition.NotConfigured => new("Release coverage not configured", CriticalE2ETone.Neutral,
                 $"{critical.Count} critical {Plural(critical.Count, "flow exists", "flows exist")}, but none {(critical.Count == 1 ? "is" : "are")} marked as required for release."),
+            // The backend counts any recent result when no build is named; the page never presents that as release
+            // evidence. The same passes, recorded against a named build, are.
+            CriticalE2EReleaseDisposition.Ready when string.IsNullOrWhiteSpace(buildId) => new("Required flows passed — no build set", CriticalE2ETone.Neutral,
+                $"All {release.RequiredFlowsPassed} required {Plural(release.RequiredFlowsPassed, "flow", "flows")} passed. Set the build to record them as release evidence."),
             CriticalE2EReleaseDisposition.Ready => new("Release regression ready", CriticalE2ETone.Good, release.Summary),
             // Incomplete is not a failure. Nothing is known to be wrong; nobody has looked yet.
             CriticalE2EReleaseDisposition.Incomplete => new("Release regression incomplete", CriticalE2ETone.Warning, release.Summary),
@@ -88,10 +97,10 @@ public static class CriticalE2EPresentation
 
     public static string BuildLabel(string? buildId) => string.IsNullOrWhiteSpace(buildId) ? "Not set" : buildId.Trim();
 
-    /// <summary>A build is not needed to run; it decides which results count as release evidence.</summary>
+    /// <summary>A build is not needed to run; without one, nothing the page shows is release evidence.</summary>
     public static string BuildHelp(string? buildId) => string.IsNullOrWhiteSpace(buildId)
-        ? "Results from any build count. Set the build to record release evidence for it."
-        : "Only results from this build count as release evidence.";
+        ? "Results can run, but will not count as release evidence."
+        : "Results are recorded against this build.";
 
     public static CriticalE2EReadinessView Readiness(CriticalE2EOverview overview)
     {
@@ -118,14 +127,10 @@ public static class CriticalE2EPresentation
 
     public static int Count(CriticalE2EOverview overview, CriticalE2EFlowKind kind) => overview.Flows.Count(f => f.Kind == kind);
 
-    public static List<CriticalE2EFlowRow> Rows(CriticalE2EOverview overview, CriticalE2EFlowFilter filter = CriticalE2EFlowFilter.All) =>
+    /// <summary>Critical flows, plus smoke/diagnostic ones only when the reader asked for them — always after the critical ones.</summary>
+    public static List<CriticalE2EFlowRow> Rows(CriticalE2EOverview overview, bool includeDiagnostic = true) =>
         overview.Flows
-            .Where(f => filter switch
-            {
-                CriticalE2EFlowFilter.Critical => f.Kind == CriticalE2EFlowKind.Critical,
-                CriticalE2EFlowFilter.Diagnostic => f.Kind == CriticalE2EFlowKind.Diagnostic,
-                _ => true,
-            })
+            .Where(f => includeDiagnostic || f.Kind == CriticalE2EFlowKind.Critical)
             .OrderBy(f => f.Kind).ThenBy(f => f.Module, StringComparer.CurrentCultureIgnoreCase).ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(flow =>
             {
@@ -189,6 +194,45 @@ public static class CriticalE2EPresentation
             : "";
 
     // ── Runs ──────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// History rows, newest first. A run is release evidence only when its flow is a required critical flow and it was
+    /// recorded against the build currently named — the same match the backend uses for a named build. Smoke runs,
+    /// runs without a build and runs of optional flows are never shown as evidence.
+    /// </summary>
+    public static List<CriticalE2EHistoryRow> History(CriticalE2EOverview overview, string? buildId, bool includeDiagnostic)
+    {
+        var kinds = overview.Flows.ToDictionary(f => f.FlowId, f => f.Kind, StringComparer.Ordinal);
+        return overview.History
+            .Select(run =>
+            {
+                var kind = !kinds.TryGetValue(run.FlowId, out var k) ? CriticalE2EHistoryKind.Removed
+                    : k == CriticalE2EFlowKind.Diagnostic ? CriticalE2EHistoryKind.Smoke : CriticalE2EHistoryKind.Critical;
+                var evidence = kind == CriticalE2EHistoryKind.Critical && run.RequiredForRelease
+                    && !string.IsNullOrWhiteSpace(run.BuildId) && !string.IsNullOrWhiteSpace(buildId)
+                    && string.Equals(run.BuildId.Trim(), buildId.Trim(), StringComparison.OrdinalIgnoreCase);
+                return new CriticalE2EHistoryRow(run, kind, evidence, run.Status == CriticalE2EStatus.Passed ? null : ShortProblem(run));
+            })
+            .Where(r => includeDiagnostic || r.Kind != CriticalE2EHistoryKind.Smoke)
+            .ToList();
+    }
+
+    public static string KindLabel(CriticalE2EHistoryKind kind) => kind switch
+    {
+        CriticalE2EHistoryKind.Smoke => "Smoke",
+        CriticalE2EHistoryKind.Removed => "Removed flow",
+        _ => "Critical",
+    };
+
+    /// <summary>"Step 1 · Assert visible — No element matched the selector." One line; the full run has the rest.</summary>
+    public static string? ShortProblem(CriticalE2ERunResult run)
+    {
+        var index = run.StepResults.FindIndex(s => s.Status is CriticalE2EStatus.Failed or CriticalE2EStatus.Blocked);
+        if (index < 0) return run.FailureReason;
+        var step = run.StepResults[index];
+        var why = step.SanitizedError ?? run.FailureReason;
+        return $"Step {index + 1} · {step.Description}" + (string.IsNullOrWhiteSpace(why) ? "" : $" — {why}");
+    }
 
     public static string StatusLabel(CriticalE2EStatus status) => status switch
     {
