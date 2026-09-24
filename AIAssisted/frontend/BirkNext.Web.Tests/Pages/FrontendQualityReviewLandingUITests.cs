@@ -246,11 +246,15 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-coverage]"));
         Row(page, "Public frontend").Should().Be("Available");
-        Row(page, "Authenticated application").Should().Be("Not required");
+        Row(page, "Authenticated application").Should().Be("Not required for current scope");
         Row(page, "Browser-rendered DOM").Should().Be("Available");
-        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Be("Available for public pages.");
-        Row(page, "Authenticated API traffic").Should().Be("Not required");
+        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Be("Available for the public pages in the current review scope.");
+        Row(page, "Authenticated API traffic").Should().Be("Not required for current scope");
         Row(page, "Automatic engines").Should().Be("Available");
+        // Scope-relative throughout: nothing claims the target has no signed-in areas, or that the whole application is reached.
+        var coverage = page.Find("[data-testid=fqr-coverage]").TextContent;
+        coverage.Should().NotContain("This target does not require sign-in").And.NotContain("All required access paths available");
+        page.Find("[data-testid=fqr-coverage-disclosure-toggle] .disclosure-hint").TextContent.Should().Be("Public review access available");
     }
 
     [Fact]

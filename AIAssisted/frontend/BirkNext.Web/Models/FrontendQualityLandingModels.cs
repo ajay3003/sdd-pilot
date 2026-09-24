@@ -220,7 +220,9 @@ public static class FrontendQualityCoverageStates
         FrontendQualityCoverageState.Available => "Available",
         FrontendQualityCoverageState.PublicOnly => "Public frontend only",
         FrontendQualityCoverageState.NotAvailable => "Not available",
-        FrontendQualityCoverageState.NotRequired => "Not required",
+        // Scope-relative: the review is configured for the public surface, which says nothing about whether the target
+        // uses sign-in anywhere.
+        FrontendQualityCoverageState.NotRequired => "Not required for current scope",
         _ => state.ToString(),
     };
 
@@ -394,10 +396,16 @@ public sealed record FrontendQualityCoverageSummaryModel(
     /// "can this review reach what it needs?" is a sentence, not a sum. The counts stay in the expanded rows, where each
     /// one is attached to the path it describes.
     /// </summary>
+    /// <remarks>
+    /// NotRequired rows exist only when the review is scoped to the public surface, so their presence says the access
+    /// that is available is public access — never "all" access, which read as the whole application being reachable.
+    /// </remarks>
     public string Headline =>
         NotAvailableCount > 0
             ? $"{NotAvailableCount} access path{(NotAvailableCount == 1 ? "" : "s")} not available"
             : PublicOnlyCount > 0
                 ? "Automated review limited to the public frontend"
-                : "All required access paths available";
+                : NotRequiredCount > 0
+                    ? "Public review access available"
+                    : "All required access paths available";
 }

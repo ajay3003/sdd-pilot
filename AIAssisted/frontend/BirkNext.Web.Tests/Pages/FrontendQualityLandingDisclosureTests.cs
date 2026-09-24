@@ -243,7 +243,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         // 2 not required") was correct arithmetic the reader still had to finish; an access path this target does not
         // need is not one the review is missing.
         Toggle(page, "fqr-coverage-disclosure").TextContent.Should().Contain("Review access")
-            .And.Contain("All required access paths available");
+            .And.Contain("Public review access available");
         Toggle(page, "fqr-coverage-disclosure").TextContent.Should().NotContain("Coverage");
 
         Toggle(page, "fqr-coverage-disclosure").Click();
@@ -273,7 +273,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         // The summary is a statement about the rows, derived from them and agreeing with them.
         available.Should().BePositive();
         notAvailable.Should().Be(0, "this public target can reach everything it needs");
-        hint.Should().Be("All required access paths available");
+        hint.Should().Be("Public review access available");
         // 10, 19. Not required stays its own state in the expanded rows; it is never promoted to Available.
         notRequired.Should().BePositive();
         rows.Should().NotContain(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotRequired)

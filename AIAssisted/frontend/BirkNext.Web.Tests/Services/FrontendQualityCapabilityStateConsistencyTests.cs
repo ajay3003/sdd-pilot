@@ -209,8 +209,9 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         summary.NotAvailableCount.Should().Be(0);
         // 18, 39. The exact case from the screenshot: 3 available + 2 not required. Nothing is missing, so the line
         // says so in words. "3 available · 2 not required" was arithmetic the reader had to finish themselves.
-        summary.Headline.Should().Be("All required access paths available");
-        summary.Headline.Should().NotContainAny("3 available", "2 not required", "of 5");
+        // Not-required rows mean a public-only scope, so the line says public access — never "all" access.
+        summary.Headline.Should().Be("Public review access available");
+        summary.Headline.Should().NotContainAny("3 available", "2 not required", "of 5", "All required");
     }
 
     [Fact]

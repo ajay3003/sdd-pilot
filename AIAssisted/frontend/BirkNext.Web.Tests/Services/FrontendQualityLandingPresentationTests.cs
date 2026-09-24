@@ -393,7 +393,23 @@ public sealed class FrontendQualityLandingPresentationTests
         var rows = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.FromContext(Context()), null);
         rows.Select(r => r.Label).Should().Equal("Public frontend", "Authenticated application", "Browser-rendered DOM", "Authenticated API traffic", "Automatic engines");
         rows.Select(r => r.State).Should().Equal(FrontendQualityCoverageState.Available, FrontendQualityCoverageState.NotRequired, FrontendQualityCoverageState.Available, FrontendQualityCoverageState.NotRequired, FrontendQualityCoverageState.Available);
-        rows[2].Detail.Should().Be("Available for public pages.");
+        rows[1].Detail.Should().Be("The current review runs against public pages only. Authenticated areas are not included unless authenticated access is configured.");
+        rows[2].Detail.Should().Be("Available for the public pages in the current review scope.");
+        rows[3].Detail.Should().Be("Needed only when the review includes authenticated, API-backed functionality.");
+        rows[4].Detail.Should().Be("Required engines can run against the current public review scope. Individual engine capability is shown under Engines.");
+        FrontendQualityLandingPresentation.CoverageSummary(rows).Headline.Should().Be("Public review access available");
+        FrontendQualityCoverageStates.Label(FrontendQualityCoverageState.NotRequired).Should().Be("Not required for current scope");
+    }
+
+    // Once sign-in is configured the review leaves the public-only scope: no row keeps "Not required for current scope".
+    [Fact]
+    public void Coverage_AuthenticatedTarget_DropsPublicScopeWording()
+    {
+        var context = Context(requiresAuth: true);
+        var rows = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.Build(context, null, false, null, null), null);
+        rows.Should().NotContain(r => r.State == FrontendQualityCoverageState.NotRequired);
+        rows.Select(r => r.Detail).Should().NotContain(d => d != null && (d.Contains("current review scope") || d.Contains("public pages only")));
+        FrontendQualityLandingPresentation.CoverageSummary(rows).Headline.Should().NotBe("Public review access available");
     }
 
     [Fact]

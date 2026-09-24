@@ -535,15 +535,21 @@ public static class FrontendQualityLandingPresentation
     {
         var rows = new List<FrontendQualityCoverageRow>
         {
-            new("Public frontend", FrontendQualityCoverageState.Available, "Public pages and static assets are reviewed over HTTP(S)."),
+            new("Public frontend", FrontendQualityCoverageState.Available, "Public pages and static assets can be reviewed over HTTP(S)."),
         };
 
+        // Public-only scope: the Target Environment is configured without sign-in (RequiresAuthentication = false). That
+        // scopes THIS review to the public surface; it does not establish that the target has no signed-in areas, so
+        // nothing here claims that. Configuring sign-in on the Target Environment moves the review to the branch below.
         if (!access.RequiresAuthentication)
         {
-            rows.Add(new("Authenticated application", FrontendQualityCoverageState.NotRequired, "This target does not require sign-in."));
-            rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Available for public pages."));
-            rows.Add(new("Authenticated API traffic", FrontendQualityCoverageState.NotRequired, "This target does not require sign-in."));
-            rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available, "Public target access is supported. Individual engine capability is shown under Engines."));
+            rows.Add(new("Authenticated application", FrontendQualityCoverageState.NotRequired,
+                "The current review runs against public pages only. Authenticated areas are not included unless authenticated access is configured."));
+            rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Available for the public pages in the current review scope."));
+            rows.Add(new("Authenticated API traffic", FrontendQualityCoverageState.NotRequired,
+                "Needed only when the review includes authenticated, API-backed functionality."));
+            rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available,
+                "Required engines can run against the current public review scope. Individual engine capability is shown under Engines."));
             return rows;
         }
 
