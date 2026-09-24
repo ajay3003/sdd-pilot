@@ -69,6 +69,18 @@ public enum CompanionActionKind
     AssertValue,
     AssertRoute,
     ReadValue,
+    /// <summary>
+    /// Authoring only, never a flow step: the tester clicks one element on the live page and the companion returns a
+    /// <see cref="CompanionElementDescriptor"/>. Nothing on the page is activated.
+    /// </summary>
+    PickElement,
+}
+
+/// <summary>Named companion capabilities. A BirkNext feature that needs one is offered only when the paired extension reports it.</summary>
+public static class CompanionCapabilities
+{
+    /// <summary>The extension can enter element-pick mode and return a <see cref="CompanionElementDescriptor"/>.</summary>
+    public const string ElementPick = "element-pick";
 }
 
 /// <summary>
@@ -108,6 +120,63 @@ public sealed record CompanionSelector
         CompanionSelectorKind.Role => $"role={Role}{(string.IsNullOrWhiteSpace(Name) ? "" : $" name=\"{Name}\"")}",
         _ => $"{Kind.ToString().ToLowerInvariant()}=\"{Value}\"",
     };
+}
+
+/// <summary>One way to address a picked element, with how many elements it matches on the live page right now.</summary>
+public sealed record CompanionSelectorCandidate
+{
+    public CompanionSelector Selector { get; init; } = new();
+    /// <summary>Elements the companion's own resolver matched with this selector at pick time.</summary>
+    public int MatchCount { get; init; }
+    /// <summary>The selector resolves to exactly the picked element — the only kind a step may be saved with.</summary>
+    public bool Unique { get; init; }
+}
+
+/// <summary>
+/// Extension → BirkNext, from element-pick mode: the identity of ONE element the tester clicked on the live page. It
+/// carries what a deterministic step needs and nothing else — no HTML, no field value, no page text beyond a short
+/// accessible name. Selector candidates are ranked TestId → Role+name → Label → Text → Css and validated against the
+/// live page by the same resolver replay uses.
+/// </summary>
+public sealed record CompanionElementDescriptor
+{
+    public string PageOrigin { get; init; } = "";
+    /// <summary>Normalized path the element was picked on (no query or fragment).</summary>
+    public string PageRoute { get; init; } = "";
+    public string TagName { get; init; } = "";
+    public string? Role { get; init; }
+    public string? AccessibleName { get; init; }
+    public string? Label { get; init; }
+    public string? TestId { get; init; }
+    public string? InputType { get; init; }
+    /// <summary>For links: the target's origin and path only.</summary>
+    public string? Href { get; init; }
+    public bool Visible { get; init; }
+    public bool Enabled { get; init; }
+    public List<CompanionSelectorCandidate> Candidates { get; init; } = [];
+    /// <summary>The strongest unique candidate, or null when nothing identifies the element uniquely.</summary>
+    public CompanionSelector? Recommended { get; init; }
+}
+
+/// <summary>UI → backend: ask the paired companion to let the tester pick one element on the live page.</summary>
+public sealed record CriticalE2EElementPickRequest
+{
+    public string ProfileId { get; init; } = "";
+    public string EnvironmentId { get; init; } = "";
+    public string? EnvironmentType { get; init; }
+    /// <summary>How long the tester has to click. Bounded by the command limits.</summary>
+    public int TimeoutMs { get; init; } = 45_000;
+}
+
+/// <summary>
+/// Backend → UI. Passed with an element, Cancelled when the tester pressed Esc, Blocked for every missing
+/// prerequisite or timeout — with the exact reason. Never Failed: picking tests nothing.
+/// </summary>
+public sealed record CriticalE2EElementPickResult
+{
+    public CriticalE2EStatus Status { get; init; } = CriticalE2EStatus.Blocked;
+    public string Message { get; init; } = "";
+    public CompanionElementDescriptor? Element { get; init; }
 }
 
 /// <summary>
@@ -182,6 +251,8 @@ public sealed record CompanionAutomationResult
     public string? EvidenceReference { get; init; }
     public string? SafeSummary { get; init; }
     public string? SanitizedError { get; init; }
+    /// <summary>Only for <see cref="CompanionActionKind.PickElement"/>: the element the tester picked.</summary>
+    public CompanionElementDescriptor? Element { get; init; }
 }
 
 /// <summary>Extension → backend envelope for a command outcome, carrying the same session proof as a heartbeat.</summary>
@@ -334,6 +405,8 @@ public sealed record CriticalE2EFlowDefinition
         if (Mode == CriticalE2EExecutionMode.AutomatedIntegration && Steps.Any(s => s.IsBrowserStep))
             return "An automated integration flow cannot contain browser steps.";
         if (Steps.Any(s => !s.IsBrowserStep && !s.IsIntegrationStep)) return "A step has no action.";
+        if (Steps.Any(s => s.BrowserAction == CompanionActionKind.PickElement))
+            return "Pick element is an authoring action, not a flow step.";
         if (Steps.Any(s => s.IsBrowserStep && s.BrowserAction != CompanionActionKind.Navigate
                 && s.BrowserAction != CompanionActionKind.AssertRoute && s.BrowserAction != CompanionActionKind.WaitForRoute
                 && string.IsNullOrWhiteSpace(s.Selector?.Value) && string.IsNullOrWhiteSpace(s.Selector?.Role)))
@@ -535,6 +608,11 @@ public sealed record CriticalE2EOverview
     public List<CriticalE2EFlowSummary> Flows { get; init; } = [];
     public CriticalE2EEngineStatus BrowserEngine { get; init; } = new();
     public CriticalE2EEngineStatus IntegrationEngine { get; init; } = new();
+    /// <summary>
+    /// Whether "Select from browser" can be used right now. Independent of whether any browser flow exists yet, because
+    /// picking elements is how the first one gets written.
+    /// </summary>
+    public CriticalE2EEngineStatus ElementPick { get; init; } = new();
     public List<CriticalE2ERunResult> History { get; init; } = [];
 }
 

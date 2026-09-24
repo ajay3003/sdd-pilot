@@ -82,6 +82,11 @@ public sealed partial class BrowserCompanionService
             if (!string.Equals(target.Origin, origin, StringComparison.OrdinalIgnoreCase))
                 return Refuse(command.CommandId, "The live page is not on the origin this command targets.");
 
+            // Picking needs a build that can do it; an older extension would answer "unsupported action" only after
+            // the tester had already been told to click.
+            if (command.Action == CompanionActionKind.PickElement && !session.Capabilities.Contains(CompanionCapabilities.ElementPick))
+                return Refuse(command.CommandId, "The paired Browser Companion does not support element picking. Reload the extension to update it.");
+
             // One step at a time. A flow is a sequence, and two commands in flight would make "which click produced this
             // route" unanswerable.
             ExpireCommands(session, now);
@@ -95,7 +100,11 @@ public sealed partial class BrowserCompanionService
                 // can check it is still acting on the same page rather than on whatever is open by the time it lands.
                 Command = command with { TargetOrigin = origin, TimeoutMs = timeout, PageId = target.PageId, ContentScriptInstanceId = target.ContentScriptInstanceId },
                 QueuedAt = now,
-                ExpiresAt = now + CommandLifetime,
+                // A pick waits for a person, so it lives as long as the tester is given plus delivery slack. Every other
+                // command keeps the short lifetime that stops a stale click from ever executing.
+                ExpiresAt = now + (command.Action == CompanionActionKind.PickElement
+                    ? TimeSpan.FromMilliseconds(timeout) + CommandLifetime
+                    : CommandLifetime),
             };
             session.Commands[command.CommandId] = pending;
             _commandOwners[command.CommandId] = session.ProfileId;
@@ -233,7 +242,36 @@ public sealed partial class BrowserCompanionService
         SafeSummary = Text(result.SafeSummary),
         SanitizedError = Text(result.SanitizedError),
         EvidenceReference = Text(result.EvidenceReference),
+        Element = result.Element is { } e ? SanitizeElement(e) : null,
     };
+
+    /// <summary>
+    /// The descriptor is identity, not content: short names only, capped, redacted, and never more candidates than the
+    /// five strategies produce. The page already withholds values; this is the second layer, not the only one.
+    /// </summary>
+    private CompanionElementDescriptor SanitizeElement(CompanionElementDescriptor e) => e with
+    {
+        PageOrigin = ApplicationPagePolicy.CanonicalOrigin(e.PageOrigin) ?? "",
+        PageRoute = BrowserCompanionEvidenceSanitizer.NormalizePath(e.PageRoute) ?? "/",
+        TagName = Cap(Text(e.TagName), 20) ?? "",
+        Role = Cap(Text(e.Role), 30),
+        AccessibleName = Cap(Text(e.AccessibleName), 80),
+        Label = Cap(Text(e.Label), 80),
+        TestId = Cap(Text(e.TestId), 80),
+        InputType = Cap(Text(e.InputType), 20),
+        Href = Cap(Text(e.Href), 200),
+        Candidates = e.Candidates.Take(8).Select(c => c with { Selector = SanitizeSelector(c.Selector) }).ToList(),
+        Recommended = e.Recommended is { } r ? SanitizeSelector(r) : null,
+    };
+
+    private CompanionSelector SanitizeSelector(CompanionSelector s) => s with
+    {
+        Value = Cap(Text(s.Value), 160) ?? "",
+        Role = Cap(Text(s.Role), 30),
+        Name = Cap(Text(s.Name), 80),
+    };
+
+    private static string? Cap(string? value, int max) => value is null ? null : value.Length <= max ? value : value[..max];
 
     private string? Text(string? value) => string.IsNullOrWhiteSpace(value) ? null : sanitizer.Text(value);
 }

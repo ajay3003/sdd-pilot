@@ -29,6 +29,8 @@ public sealed class CriticalE2ERegressionTests : BunitContext
             LastRun = request;
             return Task.FromResult(new CriticalE2ERunBatchResult { Overview = overview });
         }
+        public Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken ct = default) =>
+            Task.FromResult(new CriticalE2EElementPickResult { Status = CriticalE2EStatus.Blocked, Message = "Not used in these tests." });
     }
 
     private sealed class StubContextFactory : IFrontendAnalysisContextFactory
@@ -207,5 +209,6 @@ public sealed class CriticalE2ERegressionTests : BunitContext
         public Task<CriticalE2EFlowDefinition> SaveFlowAsync(CriticalE2EFlowDefinition flow, CancellationToken ct = default) => throw new HttpRequestException("down");
         public Task DeleteFlowAsync(string flowId, CancellationToken ct = default) => throw new HttpRequestException("down");
         public Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken ct = default) => throw new HttpRequestException("down");
+        public Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken ct = default) => throw new HttpRequestException("down");
     }
 }

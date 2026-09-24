@@ -107,7 +107,7 @@ async function withPairedCompanion(environmentType, body) {
       await waitFor(() => results.filter(r => r.result.commandId === command.commandId).length > before, 25000);
     };
 
-    await body({ dispatch, target, errors, results, worker, popup, redeliver });
+    await body({ dispatch, target, errors, results, worker, popup, redeliver, heartbeats });
   } finally {
     await context?.close();
     await new Promise(resolve => server.close(resolve));
@@ -216,3 +216,49 @@ async function waitFor(predicate, timeout, detail = () => '') {
   while (!value && Date.now() < end) { await new Promise(resolve => setTimeout(resolve, 100)); value = await predicate(); }
   assert.ok(value, `Timed out: ${detail()}`);
 }
+
+// ── Element picking for flow authoring ─────────────────────────────────────────
+
+test('the heartbeat reports the element-pick capability', async () => {
+  await withPairedCompanion('Development', async ({ dispatch, heartbeats }) => {
+    await dispatch({ action: 'AssertVisible', selector: { kind: 'TestId', value: 'nav-saker' } });
+    assert.ok(heartbeats.length > 0 && heartbeats.every(h => Array.isArray(h.capabilities) && h.capabilities.includes('element-pick')),
+      JSON.stringify(heartbeats.map(h => h.capabilities)));
+  });
+});
+
+test('PickElement through the real extension: the tester clicks, the application does nothing, a descriptor comes back', async () => {
+  await withPairedCompanion('Development', async ({ dispatch, target, errors }) => {
+    const pending = dispatch({ action: 'PickElement', timeoutMs: 20000 });
+    await target.waitForSelector('[data-birknext-picker=banner]', { timeout: 20000 });
+    await target.click('#nav');
+    const result = await pending;
+    assert.equal(result.status, 'Passed', JSON.stringify(result));
+    assert.equal(result.element.tagName, 'a');
+    assert.deepEqual(result.element.recommended, { kind: 'TestId', value: 'nav-saker' });
+    assert.equal(result.element.pageOrigin, origin);
+    assert.equal(result.element.pageRoute, '/');
+    assert.equal(result.element.href, `${origin}/saker`);
+    assert.equal(await target.evaluate(() => location.pathname), '/', 'the picking click did not run the application navigation');
+    assert.equal(await target.locator('[data-birknext-picker]').count(), 0, 'nothing left on the page');
+    assert.ok(!JSON.stringify(result).includes('<'), 'no markup in the result');
+    assert.deepEqual(errors, []);
+
+    // Esc cancels, as its own outcome.
+    const cancelling = dispatch({ action: 'PickElement', timeoutMs: 20000 });
+    await target.waitForSelector('[data-birknext-picker=banner]', { timeout: 20000 });
+    await target.keyboard.press('Escape');
+    const cancelled = await cancelling;
+    assert.equal(cancelled.status, 'Cancelled', JSON.stringify(cancelled));
+    assert.equal(cancelled.element ?? null, null);
+  });
+});
+
+test('PickElement on a production environment never enters pick mode', async () => {
+  await withPairedCompanion('Production', async ({ dispatch, target }) => {
+    const refused = await dispatch({ action: 'PickElement', timeoutMs: 3000 });
+    assert.equal(refused.status, 'Blocked');
+    assert.match(refused.sanitizedError, /non-production/);
+    assert.equal(await target.locator('[data-birknext-picker]').count(), 0);
+  });
+});

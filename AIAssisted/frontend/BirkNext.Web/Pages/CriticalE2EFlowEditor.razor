@@ -1,5 +1,7 @@
 @using BirkNext.CriticalE2E
 @using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject ICriticalE2EApiService Api
 
 @*
     A form, not a canvas. A critical flow is a short ordered list of named actions, and the fastest way to make one
@@ -35,6 +37,14 @@
         </label>
     </div>
 
+    @if (_draft.Mode == CriticalE2EExecutionMode.CompanionBrowser && !PickReady)
+    {
+        <p class="e2e-pick-unavailable" id="e2e-pick-unavailable" data-testid="e2e-pick-unavailable">
+            Select from browser is unavailable: @(ElementPick?.Message ?? "Browser Companion status is not known yet.")
+            <button type="button" class="btn-link" data-testid="e2e-pick-recheck" @onclick="OnCheckElementPick">Check again</button>
+        </p>
+    }
+
     <table class="e2e-step-table">
         <thead>
             <tr><th>#</th><th>Action</th><th>Selector</th><th>Value</th><th>Expected</th><th>Final assertion</th><th></th></tr>
@@ -51,7 +61,8 @@
                         {
                             <select data-testid="e2e-step-action-@i" value="@step.BrowserAction"
                                     @onchange="e => Replace(i, step with { BrowserAction = Enum.Parse<CompanionActionKind>(e.Value!.ToString()!) })">
-                                @foreach (var action in Enum.GetValues<CompanionActionKind>())
+                                @* Picking is how a step is authored, not something a step does. *@
+                                @foreach (var action in Enum.GetValues<CompanionActionKind>().Where(a => a != CompanionActionKind.PickElement))
                                 {
                                     <option value="@action">@action</option>
                                 }
@@ -78,8 +89,32 @@
                                     <option value="@kind">@kind</option>
                                 }
                             </select>
-                            <input data-testid="e2e-step-selector-@i" value="@(step.Selector?.Value ?? "")"
-                                   @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Value = e.Value?.ToString() ?? string.Empty } })" />
+                            @if (step.Selector?.Kind == CompanionSelectorKind.Role)
+                            {
+                                @* A role selector is a role AND an accessible name; a single box could only ever hold one. *@
+                                <input data-testid="e2e-step-selector-role-@i" aria-label="@($"Step {i + 1} role")" placeholder="role (e.g. button)" value="@(step.Selector?.Role ?? "")"
+                                       @onchange="e => Replace(i, step with { Selector = step.Selector! with { Role = e.Value?.ToString() } })" />
+                                <input data-testid="e2e-step-selector-name-@i" aria-label="@($"Step {i + 1} accessible name")" placeholder="accessible name" value="@(step.Selector?.Name ?? "")"
+                                       @onchange="e => Replace(i, step with { Selector = step.Selector! with { Name = e.Value?.ToString() } })" />
+                            }
+                            else
+                            {
+                                <input data-testid="e2e-step-selector-@i" aria-label="@($"Step {i + 1} selector")" value="@(step.Selector?.Value ?? "")"
+                                       @onchange="e => Replace(i, step with { Selector = (step.Selector ?? new CompanionSelector()) with { Value = e.Value?.ToString() ?? string.Empty } })" />
+                            }
+                            @if (TargetsElement(step))
+                            {
+                                <button type="button" class="btn-secondary e2e-pick" data-testid="e2e-step-pick-@i"
+                                        disabled="@(!PickReady || _picking is not null)"
+                                        aria-describedby="@(PickReady ? null : "e2e-pick-unavailable")"
+                                        @onclick="() => PickAsync(i)">
+                                    @(_picking == i ? "Waiting for selection in the browser…" : "Select from browser")
+                                </button>
+                            }
+                            @if (_pickNotes.TryGetValue(i, out var note))
+                            {
+                                <p class="e2e-pick-note @(note.Ok ? "" : "e2e-pick-note-problem")" data-testid="e2e-step-pick-note-@i" role="status">@note.Text</p>
+                            }
                         }
                         else
                         {
@@ -99,7 +134,7 @@
                         <input type="checkbox" data-testid="e2e-step-final-@i" checked="@step.IsFinalAssertion"
                                @onchange="e => Replace(i, step with { IsFinalAssertion = (bool)e.Value! })" />
                     </td>
-                    <td><button type="button" class="btn-link" data-testid="e2e-step-remove-@i" @onclick="() => _draft.Steps.RemoveAt(i)">Remove</button></td>
+                    <td><button type="button" class="btn-link" data-testid="e2e-step-remove-@i" @onclick="() => RemoveStep(i)">Remove</button></td>
                 </tr>
             }
         </tbody>
@@ -125,10 +160,73 @@
     [Parameter] public string ProfileId { get; set; } = "";
     [Parameter] public EventCallback<CriticalE2EFlowDefinition> OnSave { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public string? EnvironmentType { get; set; }
+    /// <summary>Whether "Select from browser" can be used now (from the overview). The pick itself re-checks everything.</summary>
+    [Parameter] public CriticalE2EEngineStatus? ElementPick { get; set; }
+    [Parameter] public EventCallback OnCheckElementPick { get; set; }
 
     private CriticalE2EFlowDraft _draft = new();
+    private CriticalE2EFlowDefinition? _source;
+    private int? _picking;
+    private readonly Dictionary<int, (bool Ok, string Text)> _pickNotes = [];
 
-    protected override void OnParametersSet() => _draft = CriticalE2EFlowDraft.From(Flow);
+    /// <summary>
+    /// The draft is rebuilt only when a different flow is handed in. Rebuilding on every parameter set threw away the
+    /// author's unsaved edits whenever the page re-rendered — for example after checking the companion again.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_source, Flow)) return;
+        _source = Flow;
+        _draft = CriticalE2EFlowDraft.From(Flow);
+        _pickNotes.Clear();
+    }
+
+    private bool PickReady => ElementPick?.State == CriticalE2EEngineState.Ready;
+
+    private static bool TargetsElement(CriticalE2EStepDefinition step) => step.BrowserAction is { } action
+        && action is not (CompanionActionKind.Navigate or CompanionActionKind.AssertRoute or CompanionActionKind.WaitForRoute or CompanionActionKind.PickElement);
+
+    /// <summary>
+    /// Asks the paired companion to let the tester click the element in the application, then stores the strongest
+    /// selector that identified it uniquely. Nothing is stored when no selector is unique: guessing is how a step ends up
+    /// driving the wrong control.
+    /// </summary>
+    private async Task PickAsync(int index)
+    {
+        if (_picking is not null) return;
+        _picking = index;
+        _pickNotes.Remove(index);
+        try
+        {
+            var result = await Api.PickElementAsync(new CriticalE2EElementPickRequest
+            {
+                ProfileId = ProfileId, EnvironmentId = EnvironmentId, EnvironmentType = EnvironmentType,
+            });
+            if (index >= _draft.Steps.Count) return;
+            if (result is { Status: CriticalE2EStatus.Passed, Element: { } element })
+            {
+                if (element.Recommended is { } recommended)
+                    _draft.Steps[index] = _draft.Steps[index] with { Selector = recommended };
+                _pickNotes[index] = (element.Recommended is not null, CriticalE2EPresentation.PickSummary(element));
+            }
+            else
+            {
+                _pickNotes[index] = (false, result.Message);
+            }
+        }
+        catch
+        {
+            _pickNotes[index] = (false, "Element picking is unavailable: the local BirkNext backend did not answer.");
+        }
+        finally { _picking = null; }
+    }
+
+    private void RemoveStep(int index)
+    {
+        _draft.Steps.RemoveAt(index);
+        _pickNotes.Clear();
+    }
 
     /// <summary>The same rule the backend applies, so the editor refuses what a run would refuse.</summary>
     private string? Problem => _draft.Problem(ProfileId, EnvironmentId);

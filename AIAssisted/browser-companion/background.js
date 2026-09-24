@@ -7,9 +7,11 @@ importScripts('lib/page-identity.js', 'lib/sanitize.js');
 const { pageIdentity, sanitize } = globalThis.BirkNextCompanion;
 const BACKEND_CANDIDATES = ['http://127.0.0.1:5000', 'http://localhost:5000'];
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
+/** What this build can do, reported on every heartbeat so BirkNext never offers a feature an older build lacks. */
+const CAPABILITIES = ['element-pick'];
 const CONTENT_SCRIPT_ID = 'birknext-companion-content';
 const MAIN_WORLD_SCRIPT_ID = 'birknext-companion-main';
-const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/automation.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
+const CONTENT_FILES = ['lib/sanitize.js', 'lib/page-identity.js', 'lib/automation.js', 'lib/picker.js', 'lib/dom.js', 'lib/wcag.js', 'lib/wcag-interaction.js', 'lib/wcag-keyboard.js', 'lib/a11y.js', 'vendor/axe.min.js', 'lib/axe-evidence.js', 'lib/perf.js', 'lib/navigation.js', 'content.js'];
 const HEARTBEAT_ALARM = 'birknext-heartbeat';
 const FLUSH_DELAY_MS = 1500;
 const MAX_PAGES_PER_ENVELOPE = 20;
@@ -249,6 +251,7 @@ async function heartbeat() {
       sessionId: session.sessionId, profileId: session.profileId, extensionVersion: EXTENSION_VERSION,
       currentPageOrigin: only ? only.origin : null, currentPagePath: only ? only.route : null,
       livePages: live,
+      capabilities: CAPABILITIES,
     });
     if (result.ok && result.json && result.json.accepted && lastStatus.state !== 'connected') lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
     if (result.status === 403) { await revokeSession(result.json && result.json.message); return; }
@@ -296,10 +299,14 @@ async function runCommand(session, command) {
   else if (!wcagTab || wcagTab.profileId !== session.profileId) outcome = refuse('No approved reporting page is open in this browser.');
   else if (command.pageId && ![...livePages.values()].some(p => p.pageId === command.pageId)) outcome = refuse('The page this step was bound to is no longer open.');
   else {
+    // Deliver to the tab the command is bound to. The last page that announced itself is only a fallback for a command
+    // that names no page; with two tabs open it is not necessarily the one the command was aimed at.
+    const bound = command.pageId ? [...livePages.values()].find(p => p.pageId === command.pageId) : null;
+    const tabId = bound ? bound.tabId : wcagTab.id;
     // Claim before dispatching: if the page never answers, the command is still spent, so a retry cannot click again.
     executedCommands.set(id, refuse('The page did not report a result.'));
     try {
-      outcome = await chrome.tabs.sendMessage(wcagTab.id, { type: 'e2e:command', command });
+      outcome = await chrome.tabs.sendMessage(tabId, { type: 'e2e:command', command });
     } catch {
       outcome = refuse('The approved page could not be reached; it may have been closed.');
     }

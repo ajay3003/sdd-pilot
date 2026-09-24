@@ -38,6 +38,16 @@ public sealed class CriticalE2EController(ICriticalE2EService service) : Control
         catch (Exception) { return Conflict(new { message = "Critical E2E operation unavailable." }); }
     }
 
+    /// <summary>Authoring: the tester picks one element on the live page; returns its identity and ranked selectors.</summary>
+    [HttpPost("pick-element")]
+    public async Task<IActionResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        try { return Ok(await service.PickElementAsync(request, cancellationToken)); }
+        catch (OperationCanceledException) { return StatusCode(StatusCodes.Status499ClientClosedRequest, new { message = "Element picking cancelled." }); }
+        catch (Exception) { return Conflict(new { message = "Critical E2E operation unavailable." }); }
+    }
+
     private IActionResult Run(Func<IActionResult> action)
     {
         Response.Headers.CacheControl = "no-store";

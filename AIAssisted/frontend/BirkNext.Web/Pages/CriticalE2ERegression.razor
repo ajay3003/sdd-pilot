@@ -160,6 +160,7 @@
         @if (_editing is { } editing)
         {
             <CriticalE2EFlowEditor Flow="editing" EnvironmentId="@_environmentId" ProfileId="@_profileId"
+                                   EnvironmentType="@_environmentType" ElementPick="@_overview?.ElementPick" OnCheckElementPick="RefreshAsync"
                                    OnSave="SaveFlowAsync" OnCancel="() => { _editing = null; }" />
         }
     }

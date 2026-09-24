@@ -72,6 +72,8 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         /// <summary>While this is in the future the companion polls quickly, because a Critical E2E run is expected.</summary>
         public DateTimeOffset AutomationWindowUntil { get; set; } = DateTimeOffset.MinValue;
         public string ExtensionVersion { get; set; } = "";
+        /// <summary>Capabilities the extension build reported on its latest heartbeat. Empty for older builds.</summary>
+        public List<string> Capabilities { get; set; } = [];
         /// <summary>Approved pages with a live content script, keyed by PageId. Only the heartbeat writes this.</summary>
         public Dictionary<string, BrowserCompanionLivePage> LivePages { get; } = new(StringComparer.Ordinal);
         public DateTimeOffset? LastContentScriptSeenAt { get; set; }
@@ -160,6 +162,7 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
             var heartbeatAt = time.GetUtcNow();
             session.LastSeenAt = heartbeatAt;
             session.ExtensionVersion = Safe(heartbeat.ExtensionVersion, 40);
+            session.Capabilities = SafeCapabilities(heartbeat.Capabilities);
             ReconcileLivePages(session, heartbeat, heartbeatAt);
             // A queued command rides back on this response. It is only handed out when a live page is actually there to
             // receive it — a command aimed at a page that is no longer open is a stale click, not a pending one.
@@ -376,8 +379,14 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
             LastExtensionHeartbeatAt = session.LastSeenAt,
             LastContentScriptHeartbeatAt = session.LastContentScriptSeenAt,
             LivePages = session.LivePages.Values.OrderBy(p => p.RegisteredAt).ToList(),
+            Capabilities = [.. session.Capabilities],
         };
     }
+
+    /// <summary>Capability names are short lowercase tokens; anything else is not a capability and is dropped.</summary>
+    private static List<string> SafeCapabilities(IEnumerable<string>? reported) =>
+        (reported ?? []).Where(c => c is { Length: > 0 and <= 40 } && c.All(ch => ch is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '-'))
+            .Distinct(StringComparer.Ordinal).Take(10).ToList();
 
     private static BrowserCompanionEvidenceSummary EvidenceSummary(Session session) => new()
     {

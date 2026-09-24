@@ -10,3 +10,9 @@
 .e2e-step-table td { padding: .3rem .4rem; border-top: 1px solid var(--border-color, #eee); }
 .e2e-editor-problem { margin: 0; font-size: .85rem; color: #8a6d00; }
 .e2e-editor-actions { display: flex; gap: .5rem; }
+
+/* Select from browser: one availability line above the steps, a short note under the step it filled. */
+.e2e-pick-unavailable { margin: 0.5rem 0; font-size: 0.88rem; color: var(--clr-text-muted); }
+.e2e-pick { margin-top: 0.35rem; }
+.e2e-pick-note { margin: 0.35rem 0 0; max-width: 32rem; font-size: 0.82rem; line-height: 1.4; color: var(--clr-text-body); overflow-wrap: anywhere; }
+.e2e-pick-note-problem { color: var(--clr-warning); }

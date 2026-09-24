@@ -13,6 +13,7 @@ public interface ICriticalE2EService
     CriticalE2EFlowDefinition SaveFlow(CriticalE2EFlowDefinition flow);
     bool DeleteFlow(string flowId);
     Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken cancellationToken);
+    Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -55,6 +56,9 @@ public sealed class CriticalE2EService(
             Flows = flows.Select(f => CriticalE2ECoverage.Summarize(f, history, request.BuildId)).ToList(),
             BrowserEngine = BrowserEngine(request, flows),
             IntegrationEngine = IntegrationEngine(request, flows),
+            ElementPick = PickBlockedReason(request.ProfileId, request.EnvironmentType) is { } reason
+                ? new CriticalE2EEngineStatus { State = CriticalE2EEngineState.RequiresBrowserSession, Message = reason }
+                : new CriticalE2EEngineStatus { State = CriticalE2EEngineState.Ready, Message = "Select an element in the paired browser." },
             History = history.Take(25).ToList(),
         };
     }
@@ -123,6 +127,69 @@ public sealed class CriticalE2EService(
         Enum.TryParse<AuthenticatedTestingMethod>(request.AuthenticationMethod, ignoreCase: true, out var method)
             ? new AuthenticatedReviewIdentity(method, request.ProfileId, request.ContextFingerprint)
             : null;
+
+    /// <summary>
+    /// Authoring: let the tester pick one element on the live page and return its identity. Same prerequisites as a
+    /// browser run — non-production, connected, exactly one live approved page — plus a companion build that can pick.
+    /// Every missing prerequisite is its own Blocked reason; stored evidence never stands in for the live page.
+    /// </summary>
+    /// <summary>The one rule for whether picking can start: the overview shows it and the pick itself enforces it.</summary>
+    private string? PickBlockedReason(string? profileId, string? environmentType)
+    {
+        if (string.IsNullOrWhiteSpace(profileId)) return "No Target Environment is selected.";
+        if (!CriticalE2EEnvironmentPolicy.AllowsAutomation(environmentType)) return CriticalE2EEnvironmentPolicy.BlockedReason(environmentType);
+        var live = companion.Status(profileId).Live;
+        if (!live.ExtensionConnected) return "The Browser Companion is not connected.";
+        if (live.LiveApprovedPageCount == 0) return "No approved application page is open in the paired browser.";
+        if (live.CurrentPage is null) return $"{live.LiveApprovedPageCount} approved pages are open. Leave only the page to pick from open.";
+        if (!live.SupportsElementPick) return "The paired Browser Companion does not support element picking. Reload the extension to update it.";
+        return null;
+    }
+
+    public async Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken cancellationToken)
+    {
+        CriticalE2EElementPickResult Blocked(string message) => new() { Status = CriticalE2EStatus.Blocked, Message = message };
+        if (PickBlockedReason(request.ProfileId, request.EnvironmentType) is { } reason) return Blocked(reason);
+        var live = companion.Status(request.ProfileId).Live;
+
+        // The companion polls quickly while this window is open, so the pick mode starts within a heartbeat or so.
+        companion.OpenAutomationWindow(request.ProfileId);
+        var commandId = $"pick:{Guid.NewGuid():N}";
+        var dispatch = companion.Dispatch(new CompanionAutomationCommand
+        {
+            CommandId = commandId,
+            StepId = "pick",
+            ProfileId = request.ProfileId,
+            EnvironmentId = request.EnvironmentId,
+            TargetOrigin = live.CurrentOrigin!,
+            PageId = live.CurrentPageId,
+            Action = CompanionActionKind.PickElement,
+            TimeoutMs = Math.Clamp(request.TimeoutMs, 5_000, 60_000),
+        });
+        if (!dispatch.Accepted) return Blocked(dispatch.Message);
+
+        CompanionAutomationResult result;
+        try { result = await companion.AwaitResultAsync(commandId, cancellationToken).ConfigureAwait(false); }
+        catch (OperationCanceledException)
+        {
+            companion.CancelCommand(commandId, "Element picking was cancelled.");
+            return new CriticalE2EElementPickResult { Status = CriticalE2EStatus.Cancelled, Message = "Element picking was cancelled." };
+        }
+
+        logger.LogInformation("Critical E2E element pick {CommandId}: {Status}", commandId, result.Status);
+        return result switch
+        {
+            { Status: CriticalE2EStatus.Passed, Element: { } element } => new CriticalE2EElementPickResult
+            {
+                Status = CriticalE2EStatus.Passed, Element = element,
+                Message = element.Recommended is null
+                    ? "Element picked, but no selector identifies it uniquely."
+                    : $"Element picked: {element.Recommended.Describe()}.",
+            },
+            { Status: CriticalE2EStatus.Cancelled } => new CriticalE2EElementPickResult { Status = CriticalE2EStatus.Cancelled, Message = result.SanitizedError ?? "Selection cancelled." },
+            _ => Blocked(result.SanitizedError ?? "The Browser Companion did not return an element."),
+        };
+    }
 
     public async Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken cancellationToken)
     {

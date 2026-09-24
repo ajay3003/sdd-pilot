@@ -75,6 +75,19 @@
    * matched first" is how an automated flow silently exercises the wrong control and still reports green.
    */
   function find(doc, win, selector) {
+    const resolved = matches(doc, win, selector);
+    if (resolved.error) return resolved;
+    const pool = resolved.pool;
+    if (pool.length === 0) return { error: 'No element matched the selector.' };
+    if (pool.length > 1) return { error: `Selector matched ${pool.length} elements; it must identify exactly one.` };
+    return { element: pool[0] };
+  }
+
+  /**
+   * Every element the selector matches, under the same rule replay uses: visible matches when there are any, otherwise
+   * all of them. The element picker counts uniqueness with this, so a candidate it calls unique is one `find` resolves.
+   */
+  function matches(doc, win, selector) {
     if (!selector || !SELECTORS.includes(selector.kind)) return { error: `Unsupported selector kind: ${selector && selector.kind}` };
     let candidates = [];
     try {
@@ -121,10 +134,7 @@
     }
 
     const shown = candidates.filter(el => visible(el, win));
-    const pool = shown.length > 0 ? shown : candidates;
-    if (pool.length === 0) return { error: 'No element matched the selector.' };
-    if (pool.length > 1) return { error: `Selector matched ${pool.length} elements; it must identify exactly one.` };
-    return { element: pool[0] };
+    return { pool: shown.length > 0 ? shown : candidates };
   }
 
   /** A one-line description of what was acted on. Never element text beyond a short accessible name. */
@@ -299,7 +309,7 @@
     });
   }
 
-  const api = { ACTIONS, MUTATING, SELECTORS, find, perform, waitFor, visible, enabled, writable, accessibleName, describe, valueOf, setValue };
+  const api = { ACTIONS, MUTATING, SELECTORS, ROLE_TAGS, find, matches, perform, waitFor, visible, enabled, writable, accessibleName, describe, valueOf, setValue };
   root.BirkNextCompanion = Object.assign(root.BirkNextCompanion || {}, { automation: api });
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

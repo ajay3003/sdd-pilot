@@ -34,6 +34,22 @@ public sealed record CriticalE2ERunAction(CriticalE2EExecutionMode Mode, string 
 /// </summary>
 public static class CriticalE2EPresentation
 {
+    /// <summary>
+    /// One line about a picked element: what it is, the selector stored (or why none was), and any state that would make
+    /// the step fail as written. Identity only — the descriptor never carries a field value.
+    /// </summary>
+    public static string PickSummary(CompanionElementDescriptor element)
+    {
+        var what = $"{element.TagName}{(string.IsNullOrWhiteSpace(element.AccessibleName) ? "" : $" “{element.AccessibleName}”")}"
+            + (string.IsNullOrWhiteSpace(element.Label) ? "" : $" (label “{element.Label}”)");
+        var alternatives = element.Candidates.Count(c => c.Unique) - (element.Recommended is null ? 0 : 1);
+        var selector = element.Recommended is { } r
+            ? $"Stored {r.Describe()} — unique on {element.PageRoute}" + (alternatives > 0 ? $"; {alternatives} other unique selector{(alternatives == 1 ? "" : "s")} available." : ".")
+            : $"No selector identifies it uniquely on {element.PageRoute}; nothing was stored. Ask for a data-testid on this element or pick another one.";
+        var state = !element.Visible ? " It is currently hidden." : !element.Enabled ? " It is currently disabled." : "";
+        return $"Picked {what}. {selector}{state}";
+    }
+
     public static string ModeLabel(CriticalE2EExecutionMode mode) => mode switch
     {
         // Not "manual", and not "unattended". The login is manual; the flow is not.

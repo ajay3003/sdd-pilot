@@ -104,7 +104,9 @@ public sealed record BrowserCompanionPairResult
 /// </summary>
 public sealed record BrowserCompanionHeartbeat(
     string SessionId, string ProfileId, string? CurrentPageOrigin, string? CurrentPagePath, string ExtensionVersion,
-    List<BrowserCompanionLivePageReport>? LivePages = null);
+    List<BrowserCompanionLivePageReport>? LivePages = null,
+    // Named capabilities of this extension build (see CompanionCapabilities). Absent from older builds, which have none.
+    List<string>? Capabilities = null);
 
 /// <summary>One live page as the extension reports it. Small on purpose: this rides on every heartbeat.</summary>
 public sealed record BrowserCompanionLivePageReport(string PageId, string Origin, string Route, string ContentScriptInstanceId);
@@ -558,6 +560,11 @@ public sealed record BrowserCompanionLiveSession
     public DateTimeOffset? LastExtensionHeartbeatAt { get; init; }
     public List<BrowserCompanionLivePage> LivePages { get; init; } = [];
     public DateTimeOffset? LastContentScriptHeartbeatAt { get; init; }
+    /// <summary>What the connected extension build says it can do. Empty for older builds.</summary>
+    public List<string> Capabilities { get; init; } = [];
+
+    /// <summary>The connected extension can let the tester pick an element on the live page.</summary>
+    public bool SupportsElementPick => ExtensionConnected && Capabilities.Contains(CriticalE2E.CompanionCapabilities.ElementPick);
 
     public int LiveApprovedPageCount => LivePages.Count;
     /// <summary>A content script is running somewhere we can reach. Without one there is no DOM to read or act on.</summary>

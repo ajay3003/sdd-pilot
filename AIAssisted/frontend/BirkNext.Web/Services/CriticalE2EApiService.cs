@@ -11,6 +11,8 @@ public interface ICriticalE2EApiService
     Task<CriticalE2EFlowDefinition> SaveFlowAsync(CriticalE2EFlowDefinition flow, CancellationToken cancellationToken = default);
     Task DeleteFlowAsync(string flowId, CancellationToken cancellationToken = default);
     Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken cancellationToken = default);
+    /// <summary>Authoring: waits while the tester picks one element in the paired browser.</summary>
+    Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiService
@@ -36,6 +38,9 @@ public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiServ
     /// </summary>
     public Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken ct = default) =>
         PostAsync<CriticalE2ERunBatchResult>("api/critical-e2e/run", request, ct);
+
+    public Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken ct = default) =>
+        PostAsync<CriticalE2EElementPickResult>("api/critical-e2e/pick-element", request, ct);
 
     private async Task<T> PostAsync<T>(string path, object body, CancellationToken ct)
     {

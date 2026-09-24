@@ -118,6 +118,28 @@
         if (command.targetOrigin && command.targetOrigin !== visit.origin) {
           finish({ status: 'Blocked', sanitizedError: 'The browser page changed before the step ran.' }); return;
         }
+        // Authoring: the tester picks one element. Bound to this exact content-script instance, because a reload in
+        // between would mean describing an element of a page the command was never aimed at.
+        if (command.action === 'PickElement') {
+          if (!C.picker) { finish({ status: 'Blocked', sanitizedError: 'Element picking is unavailable in this page.' }); return; }
+          if (command.contentScriptInstanceId && command.contentScriptInstanceId !== instanceId) {
+            finish({ status: 'Blocked', sanitizedError: 'The page was reloaded after picking was requested.' }); return;
+          }
+          qualityObserver.disconnect();   // the picker's overlay is not page evidence
+          let picked;
+          try { picked = await C.picker.pick(doc, win, { timeoutMs }); } finally { observeQuality(); }
+          if (picked.status === 'cancelled') { finish({ status: 'Cancelled', sanitizedError: 'Selection cancelled.' }); return; }
+          if (picked.status !== 'picked') { finish({ status: 'Blocked', sanitizedError: 'No element was selected before the picker timed out.' }); return; }
+          if (!isApprovedVisit(visit)) { finish({ status: 'Blocked', sanitizedError: 'The page changed while picking.' }); return; }
+          const described = C.picker.describe(doc, win, picked.element);
+          if (described.error) { finish({ status: 'Blocked', sanitizedError: described.error }); return; }
+          const d = described.descriptor;
+          finish({
+            status: 'Passed', element: d,
+            safeSummary: C.sanitize.text(`Picked ${d.tagName}${d.accessibleName ? ` "${d.accessibleName}"` : ''}`),
+          });
+          return;
+        }
         if (!C.automation.ACTIONS.includes(command.action)) {
           finish({ status: 'Blocked', sanitizedError: `Action not allowed: ${C.sanitize.text(String(command.action))}` }); return;
         }
