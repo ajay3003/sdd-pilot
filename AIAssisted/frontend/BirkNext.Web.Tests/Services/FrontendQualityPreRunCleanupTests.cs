@@ -44,14 +44,14 @@ public sealed class FrontendQualityPreRunCleanupTests
         summary.Limitations.Should().HaveCount(4).And.NotContain(r => r.EngineId == FrontendQualityEngineId.BrowserRuntime);
         summary.Counts.Should().Be("2 required available · 1 optional ready · 2 optional unavailable · 2 optional not configured · 1 optional disabled");
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
-        readiness.Message.Should().Be("4 optional capability limitations: 2 unavailable: Lighthouse and Passive Security; 2 not configured: Browser Quality and BirkNext Performance Quality. All required capabilities are available; the review can run.");
+        readiness.Message.Should().Be("Lighthouse and Passive Security are currently unavailable. Browser Quality and BirkNext Performance Quality are not configured. All required capabilities are available, so the review can run.");
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
     }
 
     [Theory]
     [InlineData(FrontendQualityCategory.Performance, "Passive Performance is included. Lighthouse is unavailable. Browser Quality and BirkNext Performance Quality are not configured.")]
     [InlineData(FrontendQualityCategory.Security, "Static Security is included. Passive Security is unavailable.")]
-    [InlineData(FrontendQualityCategory.Accessibility, "The dedicated Accessibility engine is ready. Browser Quality is not configured.")]
+    [InlineData(FrontendQualityCategory.Accessibility, "Browser Quality is not configured.")]
     [InlineData(FrontendQualityCategory.BlazorWasm, "Browser Quality and BirkNext Performance Quality are not configured.")]
     public void DomainsUseExactContributorStates(FrontendQualityCategory category, string expected)
     {

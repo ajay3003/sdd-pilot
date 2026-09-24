@@ -116,7 +116,7 @@ public sealed class FrontendQualityLandingPresentationTests
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
         // 2. The capability is NAMED in the one line shown before the decision to run. Finding out WHICH capability
         // is unavailable must not require expanding a disclosure and scrolling.
-        readiness.Message.Should().StartWith("Lighthouse is unavailable.");
+        readiness.Message.Should().StartWith("Lighthouse is currently unavailable.");
         readiness.Message.Should().NotContain("1 enabled optional capability");
         // 5, 35. Optional depth, not a blocked review.
         readiness.Message.Should().NotContainAny("cannot run", "cannot start");
@@ -137,7 +137,7 @@ public sealed class FrontendQualityLandingPresentationTests
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
 
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
-        readiness.Message.Should().StartWith("Lighthouse is unavailable.");
+        readiness.Message.Should().StartWith("Lighthouse is currently unavailable.");
         readiness.Message.Should().NotContain("Browser Runtime");
         readiness.Message.Should().NotContain("2 optional capabilities");
         // It is still listed, as what it is: switched off, not broken.
@@ -155,8 +155,8 @@ public sealed class FrontendQualityLandingPresentationTests
         // review the public shell; the DOM engine is blocked by browser protection and Lighthouse has no authenticated mode.
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
-        // 2. Several unavailable: a count AND the names, so the reader still learns which ones without expanding.
-        readiness.Message.Should().StartWith("2 optional capability limitations: ");
+        // 2. Several unavailable: named, grouped by state, so the reader learns which ones without expanding.
+        readiness.Message.Should().Be("Accessibility is currently unavailable. Lighthouse is not supported for this target. All required capabilities are available, so the review can run.");
         readiness.Message.Should().Contain("Accessibility").And.Contain("Lighthouse");
         readiness.Details.Should().Contain(["Accessibility: Unavailable", "Lighthouse: Not supported for this target"]);
         readiness.Details.Where(d => !d.Contains("Disabled")).Should().HaveCount(2);
@@ -166,7 +166,7 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var requiredBlocked = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context),
             rows.Select(r => r.EngineId == FrontendQualityEngineId.StaticSecurity ? r with { State = FrontendQualityCapabilityState.Unavailable } : r).ToList(), false);
-        requiredBlocked.Message.Should().Be("3 capability limitations: 2 unavailable: Static Security and Accessibility; 1 not supported for this target: Lighthouse. Required coverage will stay incomplete: Static Security.");
+        requiredBlocked.Message.Should().Be("Static Security and Accessibility are currently unavailable. Lighthouse is not supported for this target. Required coverage will stay incomplete: Static Security.");
     }
 
     [Fact]
@@ -366,8 +366,7 @@ public sealed class FrontendQualityLandingPresentationTests
         var accessibility = cards.Single(c => c.Category == FrontendQualityCategory.Accessibility);
         accessibility.State.Should().Be(FrontendQualityDimensionState.Included);
         accessibility.ManualAssessmentRequired.Should().BeTrue();
-        accessibility.Limitation.Should().Be(
-            "The dedicated Accessibility engine is ready. Automated accessibility evidence is included.");
+        accessibility.Limitation.Should().Be("Automated accessibility checks are included.");
         accessibility.Limitation.Should().NotContain("partial");
     }
 
@@ -563,7 +562,7 @@ public sealed class FrontendQualityLandingPresentationTests
             Capabilities(optional, Status(Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity, ready: false, reason: "Container runtime unavailable."))), false);
         optionalReadiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
         optionalReadiness.CanRun.Should().BeTrue("optional depth is not a prerequisite");
-        optionalReadiness.Message.Should().StartWith("Passive Security is unavailable.");
+        optionalReadiness.Message.Should().StartWith("Passive Security is currently unavailable.");
 
         // 6. A missing PREREQUISITE is what blocks, and it keeps the existing blocked semantics.
         var noUrl = Context(url: "");

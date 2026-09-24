@@ -22,8 +22,13 @@ public sealed class FrontendQualityPreRunEngineSummary(IReadOnlyList<FrontendQua
     public string LimitationSentences => string.Join(" ", Limitations.GroupBy(r => r.State)
         .Select(g => $"{Names(g)} {Predicate(g.Key, g.Count() == 1)}."));
 
-    private static string Predicate(FrontendQualityCapabilityState state, bool singular) => state switch
+    /// <summary>The banner's reading: the same sentences, stated as the current runtime condition.</summary>
+    public string BannerSentences => string.Join(" ", Limitations.GroupBy(r => r.State)
+        .Select(g => $"{Names(g)} {Predicate(g.Key, g.Count() == 1, current: true)}."));
+
+    private static string Predicate(FrontendQualityCapabilityState state, bool singular, bool current = false) => state switch
     {
+        FrontendQualityCapabilityState.Unavailable when current => $"{(singular ? "is" : "are")} currently unavailable",
         FrontendQualityCapabilityState.RequiresBrowserSession => $"{(singular ? "requires" : "require")} a browser session",
         FrontendQualityCapabilityState.RequiresAuthenticatedContext => $"{(singular ? "requires" : "require")} an authenticated session",
         _ => $"{(singular ? "is" : "are")} {FrontendQualityCapabilityStates.Label(state).ToLowerInvariant()}",

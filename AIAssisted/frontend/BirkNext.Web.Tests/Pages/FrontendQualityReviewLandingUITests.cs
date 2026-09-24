@@ -188,7 +188,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         card.QuerySelector("[data-testid=fqr-dimension-state]")!.TextContent.Should().Be("Included");
         card.QuerySelector("[data-testid=fqr-dimension-manual]")!.TextContent.Should().Be("Manual assessment required");
         card.QuerySelector("[data-testid=fqr-dimension-scope]")!.TextContent.Should().Be("Norwegian public-sector requirements — WCAG 2.1");
-        card.QuerySelector("[data-testid=fqr-manual-assessment-reason]")!.TextContent.Should().Contain("requires manual assessment regardless");
+        card.QuerySelector("[data-testid=fqr-manual-assessment-reason]")!.TextContent.Should().Be("The selected WCAG profile still requires manual assessment.");
     }
 
     // 4. Review scope is collapsed by default and names its areas rather than counting checks.
@@ -397,7 +397,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         // 2. The unavailable capability is NAMED in the message itself. "1 enabled optional capability is currently
         // unavailable" is true and useless: the reader still has to expand and scroll to learn which one.
         var message = page.Find("[data-testid=fqr-readiness-message]").TextContent;
-        message.Should().StartWith("Lighthouse is unavailable.");
+        message.Should().StartWith("Lighthouse is currently unavailable.");
         message.Should().NotContain("1 enabled optional capability");
         // 5, 34, 35. Optional depth, never a blocked review.
         message.Should().NotContainAny("cannot run", "cannot start", "Failed");

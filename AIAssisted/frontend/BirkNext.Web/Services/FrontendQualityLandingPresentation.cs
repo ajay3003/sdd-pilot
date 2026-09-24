@@ -66,6 +66,7 @@ public static class FrontendQualityLandingPresentation
     public const string ReadyTitle = "Ready to review";
     public const string ReadyMessage = "The selected target and review configuration are valid. Target reachability is verified when the review starts.";
     public const string LimitedTitle = "Review can run with limitations";
+    public const string AllRequiredAvailableSentence = "All required capabilities are available, so the review can run.";
     public const string BlockedTitle = "Review cannot start";
     public const string LoadingTitle = "Loading target environment";
 
@@ -166,10 +167,9 @@ public static class FrontendQualityLandingPresentation
             // which one an expand-and-scroll exercise, on the surface whose whole job is that decision.
             var message = unavailable.Count == 0
                 ? "The configuration has warnings. Target reachability is verified when the review starts."
-                : unavailable.Count == 1 ? stateSummary.LimitationSentences
-                : $"{unavailable.Count} {(requiredUnavailable.Count == 0 ? "optional " : "")}capability limitations: {stateSummary.LimitationCounts}.";
+                : stateSummary.BannerSentences;
             if (stateSummary.AllRequiredAvailable)
-                message += " All required capabilities are available; the review can run.";
+                message += " " + AllRequiredAvailableSentence;
             else if (requiredUnavailable.Count > 0)
                 message += $" Required coverage will stay incomplete: {Join(requiredUnavailable)}.";
 
@@ -197,12 +197,13 @@ public static class FrontendQualityLandingPresentation
         bool statusPending,
         bool readinessPending,
         FrontendQualityTargetAccessContext? access,
-        BrowserCompanionState? companion)
+        BrowserCompanionState? companion,
+        BrowserEvidenceTotals? recorded = null)
     {
         return active.Engines
             .OrderBy(e => e.Policy == FrontendQualityEngineRequirement.Required ? 0 : 1)
             .ThenBy(e => e.EngineId)
-            .Select(e => Row(e, context, status, statusPending, readinessPending, access, companion))
+            .Select(e => Row(e, context, status, statusPending, readinessPending, access, companion, recorded))
             .ToList();
     }
 
@@ -213,7 +214,8 @@ public static class FrontendQualityLandingPresentation
         bool statusPending,
         bool readinessPending,
         FrontendQualityTargetAccessContext? access,
-        BrowserCompanionState? companion)
+        BrowserCompanionState? companion,
+        BrowserEvidenceTotals? recorded)
     {
         var isBackend = FrontendQualityActiveEngines.BackendEngineIds.TryGetValue(engine.EngineId, out var dto);
         var record = isBackend ? status?.Engines.FirstOrDefault(s => s.EngineId == dto) : null;
@@ -231,6 +233,18 @@ public static class FrontendQualityLandingPresentation
         // Browser Companion engines observe the user's own signed-in browser; their availability is the companion session.
         if (engine.EngineId is FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality)
         {
+            // Ready from recorded evidence under exactly the rules the run applies (BrowserQualityReviewResult.Assessed,
+            // PerformanceQualityReviewResult.Assessed), so the reason names the source the review will actually read.
+            // Counts are the typed Browser Discovery totals, never parsed from any message.
+            var browserPages = recorded?.Pages ?? 0;
+            var performancePages = recorded?.PerformancePages ?? 0;
+            if (companion is not BrowserCompanionState.Connected and not null)
+            {
+                if (engine.EngineId == FrontendQualityEngineId.BrowserQuality && companion == BrowserCompanionState.Disconnected && browserPages > 0)
+                    return Build(FrontendQualityCapabilityState.Ready, $"Uses captured browser evidence ({Pages(browserPages)}). Browser Companion is not currently reporting.");
+                if (engine.EngineId == FrontendQualityEngineId.PerformanceQuality && performancePages > 0)
+                    return Build(FrontendQualityCapabilityState.Ready, $"Uses recorded performance evidence ({Pages(performancePages)}). Browser Companion is not connected.");
+            }
             return companion switch
             {
                 BrowserCompanionState.Connected => Build(FrontendQualityCapabilityState.Ready, "Browser Companion connected."),
@@ -299,6 +313,8 @@ public static class FrontendQualityLandingPresentation
         return Build(FrontendQualityCapabilityState.Enabled, EnabledSummary(isBackend, record, status, statusPending, readinessPending));
     }
 
+    private static string Pages(int count) => $"{count.ToString(System.Globalization.CultureInfo.InvariantCulture)} page{(count == 1 ? "" : "s")}";
+
     /// <summary>Why an active backend engine is "Enabled" rather than "Ready": status fetch failed, or readiness still being probed.</summary>
     private static string? EnabledSummary(bool isBackend, FrontendQualityEngineStatusDto? record, FrontendQualityEngineStatusReportDto? status, bool statusPending, bool readinessPending)
     {
@@ -356,10 +372,8 @@ public static class FrontendQualityLandingPresentation
                     ? FrontendQualityDimensionState.PartialEvidence
                     : FrontendQualityDimensionState.NotIncluded;
 
+            // Engine-level detail (which accessibility engine is ready) stays in Engines; the card states scope only.
             var limitation = Limitation(category, state, optionalMissing);
-            if (accessibility && byId.TryGetValue(FrontendQualityEngineId.Accessibility, out var accessibilityEngine)
-                && accessibilityEngine.State is FrontendQualityCapabilityState.Ready or FrontendQualityCapabilityState.Enabled)
-                limitation = $"The dedicated Accessibility engine is {FrontendQualityCapabilityStates.Label(accessibilityEngine.State).ToLowerInvariant()}. " + limitation;
             var scopeNote = accessibility ? (accessibilityProfile ?? WcagProfiles.Norwegian).Label : null;
 
             return new FrontendQualityDimensionCard(
@@ -408,7 +422,7 @@ public static class FrontendQualityLandingPresentation
         // Not a shortfall in the automation. Manual assessment is what these criteria require, and it would still be
         // required if every automated source were available — so this sentence never blames the engines for it.
         FrontendQualityDimensionState.Included when category == FrontendQualityCategory.Accessibility =>
-            "Automated accessibility evidence is included.",
+            "Automated accessibility checks are included.",
         _ => null,
     };
 

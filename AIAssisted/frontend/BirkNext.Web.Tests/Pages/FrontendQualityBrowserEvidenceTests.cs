@@ -35,8 +35,12 @@ public sealed class FrontendQualityBrowserEvidenceTests : BunitContext
         page.Find("[data-testid=fqr-companion-toggle]").Click();
         _session = BrowserCompanionState.Disconnected;
         await page.InvokeAsync(() => _runtime.RefreshAsync());
+        // Disconnected with captured pages: the run reads those pages, so the engine stays Ready, and the reason
+        // names the captured evidence instead of a connection that no longer exists.
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-capability][data-engine-id=BrowserQuality]")
-            .GetAttribute("data-state").Should().Be("RequiresBrowserSession"));
+            .GetAttribute("data-state").Should().Be("Ready"));
+        var row = page.Find("[data-testid=fqr-capability][data-engine-id=BrowserQuality]").TextContent;
+        row.Should().Contain("Uses captured browser evidence (3 pages)").And.NotContain("Browser Companion connected.");
         page.Find("[data-testid=fqr-companion-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         Value(page, "fqr-evidence-pages").Should().Be("3");
     }
@@ -55,8 +59,15 @@ public sealed class FrontendQualityBrowserEvidenceTests : BunitContext
             page.Find($"[data-testid={id}-toggle] .disclosure-hint").TextContent.Should().NotBeNullOrWhiteSpace();
         }
         page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").Click();
+        // Concise definitions on the surface; the longer explanation collapsed behind its own disclosure.
+        page.Find("[data-testid=fqr-engine-state-definitions]").TextContent.Should().Contain("Ready").And.Contain("Available");
+        page.Find("[data-testid=fqr-availability-help-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        page.Find("[data-testid=fqr-availability-help-body]").HasAttribute("hidden").Should().BeTrue();
+        page.Find("[data-testid=fqr-availability-help-toggle]").Click();
         await page.InvokeAsync(() => _runtime.RefreshAsync());
         page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        page.Find("[data-testid=fqr-availability-help-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        page.Find("[data-testid=fqr-availability-help-body]").TextContent.Should().Contain("captured while the Companion is paired but not reporting");
         page.Find("[data-testid=fqr-capability][data-engine-id=BrowserQuality]").GetAttribute("data-state").Should().Be("NotConfigured");
         Hint(page).Should().Be("Live: Not connected · Historical: 3 pages captured");
         page.Find("#fqr-technical-engines-heading").TextContent.Should().Be("Active runtime-dependent engine capabilities");

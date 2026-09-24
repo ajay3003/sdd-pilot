@@ -737,11 +737,25 @@
         }
     }
 
+    /// <summary>
+    /// Captured-evidence counts for the capability rows, from the same merge the Browser evidence section reads, so an
+    /// engine that will run from recorded evidence is not reported as waiting for a live session.
+    /// </summary>
+    private BrowserEvidenceTotals? RecordedEvidence
+    {
+        get
+        {
+            if (_companionRuntime is null || _context is null || _context.ActiveTargetError is not null) return null;
+            var snapshot = (ServiceProvider.GetService(typeof(IEndpointDiscoveryService)) as IEndpointDiscoveryService)?.GetSnapshot(_context.ActiveProfile.Id);
+            return BrowserDiscoveryLive.Totals(_companionRuntime.For(_context.ActiveProfile.Id), snapshot);
+        }
+    }
+
     private LandingView BuildLanding()
     {
         var capabilities = _context is null || _context.ActiveTargetError is not null || _activeEngines is null
             ? (IReadOnlyList<FrontendQualityCapabilityRow>)[]
-            : FrontendQualityLandingPresentation.Capabilities(_context, _activeEngines, _engineStatus, _engineStatusPending, _readinessPending, _access, CompanionState);
+            : FrontendQualityLandingPresentation.Capabilities(_context, _activeEngines, _engineStatus, _engineStatusPending, _readinessPending, _access, CompanionState, RecordedEvidence);
         var readiness = FrontendQualityLandingPresentation.Readiness(_context, _activeEngines, capabilities, _engineStatusPending);
         var target = _context is null
             ? new FrontendQualityTargetSummaryModel("Loading…", "—", "—", "—", "Loading", false)

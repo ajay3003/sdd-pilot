@@ -198,7 +198,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         // 2. The unavailable capability is NAMED in the message itself. "1 enabled optional capability is currently
         // unavailable" is true and useless: the reader still has to expand and scroll to learn which one.
         var message = page.Find("[data-testid=fqr-readiness-message]").TextContent;
-        message.Should().StartWith("Lighthouse is unavailable.");
+        message.Should().StartWith("Lighthouse is currently unavailable.");
         message.Should().NotContain("1 enabled optional capability");
         // 5, 34, 35. Optional depth, never a blocked review.
         message.Should().NotContainAny("cannot run", "cannot start", "Failed");

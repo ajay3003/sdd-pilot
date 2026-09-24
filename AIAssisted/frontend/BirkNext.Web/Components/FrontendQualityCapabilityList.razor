@@ -18,8 +18,14 @@
             <a class="btn-secondary fqr-edit-engines" href="@FrontendQualityLandingPresentation.FrontendReviewEnginesHref" data-testid="fqr-edit-engines">Edit engines</a>
         </div>
         <p class="fqr-section-note" data-testid="fqr-engine-configuration-note">@FrontendQualityLandingPresentation.EnginesConfigurationNote Availability is re-validated when the review starts.</p>
-        <p class="fqr-section-note">Available: no known access blocker; runtime checking may still be pending. Ready: runtime readiness confirmed or Browser Companion connected. Neither means assessed.</p>
-        <p class="fqr-section-note">Companion setup states describe the current session. Browser Quality can use captured pages while paired but disconnected; BirkNext Performance Quality can use recorded evidence without a live session.</p>
+        <p class="fqr-section-note" data-testid="fqr-engine-state-definitions">Ready: confirmed for this review. Available: no known blocker. Neither means assessed.</p>
+        @* The longer explanation is reference material, not part of the run decision. Collapsed; its state is local to
+           the disclosure, so polling rerenders leave it as the reader set it. *@
+        <ReviewDisclosure Text="How availability works" CollapseText="Hide how availability works"
+                          TestId="fqr-availability-help" Class="fqr-availability-help">
+            <p class="fqr-section-note">Available means no known access blocker; runtime checking may still be pending. Ready means runtime readiness was confirmed, or the evidence the engine reads is present.</p>
+            <p class="fqr-section-note">Browser Quality reads the live Browser Companion session, or pages already captured while the Companion is paired but not reporting. BirkNext Performance Quality reads recorded performance evidence and does not need a live session.</p>
+        </ReviewDisclosure>
     </div>
 
     @* A Required engine switched off is a configuration inconsistency, not an execution failure — and the fix is one click away. *@
