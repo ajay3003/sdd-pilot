@@ -32,23 +32,32 @@
 
     <div class="bad-controls">
         <label class="bad-target-label" for="bad-target">Target Environment</label>
-        @if (EligibleTargets.Count == 0)
+        @if (Targets.Count == 0)
         {
             <p class="bad-empty" data-testid="bad-no-targets">
-                No eligible Target Environment. The diagnostic runs against Development and QA targets with a frontend URL.
+                No Target Environments configured.
+                <a class="bad-link" href="@TargetEnvironmentsHref" data-testid="bad-open-targets">Open Target Environments</a>
             </p>
         }
         else
         {
+            @* Every Target Environment is listed, each with the URL it would test, so the reader sees exactly what will be
+               driven. Ineligible ones stay selectable and say why they cannot run; the backend refuses them regardless. *@
             <select id="bad-target" class="form-control bad-target" data-testid="bad-target-select"
-                    value="@_selectedId" @onchange="OnTargetChanged" disabled="@_running">
-                @foreach (var target in EligibleTargets)
+                    value="@(_selectedId ?? "")" @onchange="OnTargetChanged" disabled="@_running"
+                    aria-describedby="bad-target-help">
+                @if (Selected is null)
                 {
-                    <option value="@target.Id">@target.Name (@target.EnvironmentType)</option>
+                    <option value="" disabled selected data-testid="bad-target-placeholder">Select a Target Environment</option>
+                }
+                @foreach (var target in Targets)
+                {
+                    <option value="@target.Id">@BrowserAutomationDiagnosticTargets.OptionLabel(target)</option>
                 }
             </select>
             <button type="button" class="btn-primary" data-testid="bad-run"
-                    disabled="@(_running || Selected is null)" @onclick="RunAsync">
+                    disabled="@(_running || RunBlockedReason is not null)" @onclick="RunAsync"
+                    aria-describedby="@(RunBlockedReason is not null ? "bad-target-help" : null)">
                 @(_running ? "Running diagnostic…" : _report is null ? "Run diagnostic" : "Run again")
             </button>
             @if (_running)
@@ -58,9 +67,17 @@
         }
     </div>
 
-    @if (Selected is { } selected)
+    @if (Targets.Count > 0)
     {
-        <p class="bad-target-url" data-testid="bad-target-url"><code>@selected.TargetUrl</code></p>
+        @* One line under the select: why Run is unavailable, or what it will run against. Neutral until the reader acts. *@
+        <p class="bad-target-help @(RunBlockedReason is not null && Selected is not null ? "bad-target-help-blocked" : "")" id="bad-target-help" data-testid="bad-target-help">
+            @(Selected is null ? (ActiveResolutionError is { Length: > 0 } activeError ? $"{activeError} " : "") + "Select an environment to run the browser automation diagnostic."
+              : RunBlockedReason ?? "Browser automation diagnostic runs against the selected Target Environment.")
+            @if (Selected is not null && RunBlockedReason is not null)
+            {
+                <a class="bad-link" href="@TargetEnvironmentsHref" data-testid="bad-open-target">Open Target Environment</a>
+            }
+        </p>
     }
 
     @if (_running)
@@ -86,6 +103,11 @@
                 <span class="fqr-pill fqr-pill-@BrowserAutomationDiagnosticStages.ResultTone(report.Result)"
                       data-testid="bad-result-label">@report.ResultLabel</span>
             </div>
+            @* The run's own target, from the report — changing the selection afterwards never relabels it. *@
+            <p class="bad-result-target" data-testid="bad-result-target">
+                <span class="bad-result-target-name">@report.TargetEnvironmentName</span>
+                <code class="bad-result-target-url">@report.TargetUrl</code>
+            </p>
 
             @if (report.BlockedReason is { Length: > 0 } blocked)
             {
@@ -266,8 +288,14 @@
 </section>
 
 @code {
-    /// <summary>Target Environments this diagnostic may run against. Production is never among them.</summary>
+    /// <summary>Every configured Target Environment. Which one may run is decided per selection (and again by the backend).</summary>
     [Parameter, EditorRequired] public IReadOnlyList<FrontendAnalysisProfile> Targets { get; set; } = [];
+    /// <summary>The active Target Environment, selected by default until the reader chooses another one.</summary>
+    [Parameter] public string? ActiveProfileId { get; set; }
+    /// <summary>Why no active target could be resolved (e.g. several saved as active). Nothing is guessed then.</summary>
+    [Parameter] public string? ActiveResolutionError { get; set; }
+
+    private const string TargetEnvironmentsHref = "/admin/system-settings?section=target-environments";
 
     private BrowserAutomationDiagnosticReport? _report;
     private CancellationTokenSource? _cts;
@@ -275,14 +303,8 @@
     private bool _requestFailed;
     private bool _copied;
     private string? _selectedId;
-
-    /// <summary>
-    /// Development and QA targets with a frontend URL. The production exclusion is enforced again on the backend —
-    /// this list is the UI not offering what policy would refuse, not the guard itself.
-    /// </summary>
-    private IReadOnlyList<FrontendAnalysisProfile> EligibleTargets => Targets
-        .Where(t => !string.IsNullOrWhiteSpace(t.TargetUrl) && t.EnvironmentType != FrontendEnvironmentType.Production)
-        .ToList();
+    /// <summary>Set once the reader picks an environment; from then on status refreshes and active changes leave it alone.</summary>
+    private bool _chosen;
 
     /// <summary>
     /// Headed then headless, always both, always in that order — the order they ran in. A mode with no report is
@@ -304,21 +326,32 @@
         mode.Stages.FirstOrDefault(s => BrowserAutomationDiagnosticStages.TargetStages.Contains(s.Stage)
                                         && s.State is BrowserAutomationDiagnosticStageState.Blocked or BrowserAutomationDiagnosticStageState.Failed);
 
-    private FrontendAnalysisProfile? Selected =>
-        EligibleTargets.FirstOrDefault(t => t.Id == _selectedId) ?? EligibleTargets.FirstOrDefault();
+    /// <summary>The selected environment — never a substitute. No selection is no target, not the first one listed.</summary>
+    private FrontendAnalysisProfile? Selected => Targets.FirstOrDefault(t => t.Id == _selectedId);
 
-    protected override void OnParametersSet() => _selectedId ??= EligibleTargets.FirstOrDefault()?.Id;
+    private string? RunBlockedReason => BrowserAutomationDiagnosticTargets.BlockedReason(Selected);
+
+    /// <summary>
+    /// Until the reader chooses, the selection is the active Target Environment (or nothing when none is active) — on a
+    /// fresh load, and if the active environment changes while the page is open. A choice is never overridden.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        if (_chosen && Targets.Any(t => t.Id == _selectedId)) return;
+        _chosen = false;
+        _selectedId = Targets.Any(t => t.Id == ActiveProfileId) ? ActiveProfileId : null;
+    }
 
     private void OnTargetChanged(ChangeEventArgs e)
     {
-        _selectedId = e.Value?.ToString();
-        _report = null;
+        _selectedId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString();
+        _chosen = _selectedId is not null;
         _copied = false;
     }
 
     private async Task RunAsync()
     {
-        if (_running || Selected is not { } target) return;
+        if (_running || RunBlockedReason is not null || Selected is not { } target) return;
         _running = true;
         _requestFailed = false;
         _copied = false;

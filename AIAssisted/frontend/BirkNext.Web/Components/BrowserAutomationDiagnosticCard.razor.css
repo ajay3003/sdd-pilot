@@ -137,3 +137,14 @@
     .bad-stage-state, .bad-stage-url, .bad-stage-detail { grid-column: 2; }
     .bad-fact { grid-template-columns: 1fr; gap: 0; }
 }
+
+/* Target selection: one neutral line under the select — why Run is unavailable, or what it runs against. */
+.bad-target-help { margin: .35rem 0 0; font-size: .85rem; color: var(--clr-text-muted, #555); }
+.bad-target-help-blocked { color: var(--clr-warning, #8a6d00); }
+.bad-link { margin-left: .35rem; font-weight: 600; color: var(--clr-primary, #1d4ed8); text-decoration: none; }
+.bad-link:hover, .bad-link:focus-visible { text-decoration: underline; }
+.bad-target { max-width: 100%; min-width: 0; }
+/* A result names its own target; long URLs wrap inside the card. */
+.bad-result-target { display: flex; flex-wrap: wrap; gap: .25rem .6rem; margin: .35rem 0 0; font-size: .85rem; color: var(--clr-text-muted, #555); }
+.bad-result-target-name { font-weight: 600; color: var(--clr-text-body, #333); }
+.bad-result-target-url { overflow-wrap: anywhere; }

@@ -256,12 +256,19 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
         AuthRedirectMode(BrowserAutomationDiagnosticMode.Headed),
         AuthRedirectMode(BrowserAutomationDiagnosticMode.Headless)) with { ControlDimensions = Dimensions };
 
-    private IRenderedComponent<BrowserAutomationDiagnosticCard> Card(params FrontendAnalysisProfile[] targets)
+    /// <summary>The first target is the active one — the ordinary case these fixtures describe.</summary>
+    private IRenderedComponent<BrowserAutomationDiagnosticCard> Card(params FrontendAnalysisProfile[] targets) =>
+        CardWith(targets.FirstOrDefault()?.Id, targets);
+
+    private IRenderedComponent<BrowserAutomationDiagnosticCard> CardWith(string? activeId, params FrontendAnalysisProfile[] targets)
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
         Services.AddSingleton(_api.Object);
-        return Render<BrowserAutomationDiagnosticCard>(p => p.Add(c => c.Targets, targets.ToList()));
+        return Render<BrowserAutomationDiagnosticCard>(p => p.Add(c => c.Targets, targets.ToList()).Add(c => c.ActiveProfileId, activeId));
     }
+
+    private static string SelectedOption(IRenderedComponent<BrowserAutomationDiagnosticCard> card) =>
+        card.Find("[data-testid=bad-target-select]").GetAttribute("value") ?? "";
 
     private void Returns(BrowserAutomationDiagnosticReport report) =>
         _api.Setup(a => a.RunAsync(It.IsAny<BrowserAutomationDiagnosticRequest>(), It.IsAny<CancellationToken>()))
@@ -291,30 +298,115 @@ public sealed class BrowserAutomationDiagnosticCardTests : BunitContext
         var card = Card(Dev, Qa);
 
         card.Find("[data-testid=bad-run]").TextContent.Trim().Should().Be("Run diagnostic");
+        card.Find("[data-testid=bad-run]").HasAttribute("disabled").Should().BeFalse();
+        // Each option names the URL it would drive, so the reader sees exactly what will be tested.
         card.Find("[data-testid=bad-target-select]").QuerySelectorAll("option")
-            .Select(o => o.TextContent.Trim()).Should().Equal("M2LB DEV (Development)", "M2LB QA (QA)");
-        card.Find("[data-testid=bad-target-url]").TextContent.Should().Contain("https://m2lbdev.example.test/");
+            .Select(o => o.TextContent.Trim()).Should().Equal("M2LB DEV — https://m2lbdev.example.test/", "M2LB QA — https://m2lbqa.example.test/");
+        SelectedOption(card).Should().Be("dev", "the active Target Environment is selected by default");
+        card.Find("[data-testid=bad-target-help]").TextContent.Trim().Should().Be("Browser automation diagnostic runs against the selected Target Environment.");
     }
 
-    // 33. A Production target is never offered. The backend refuses it too; the card simply does not propose it.
+    // 34. Production can be the active target and is shown as such, but Run stays blocked; the card never switches to
+    // another environment to make Run available.
     [Fact]
-    public void ProductionTargetsAreNotOffered()
+    public void AnActiveProductionTargetIsSelectedButCannotRun()
     {
-        var card = Card(Dev, Prod);
+        var card = CardWith("prod", Dev, Prod);
 
-        var options = card.Find("[data-testid=bad-target-select]").QuerySelectorAll("option")
-            .Select(o => o.TextContent).ToList();
-        options.Should().NotContain(o => o.Contains("PROD"));
-        options.Should().HaveCount(1);
+        SelectedOption(card).Should().Be("prod");
+        card.Find("[data-testid=bad-run]").HasAttribute("disabled").Should().BeTrue();
+        card.Find("[data-testid=bad-run]").GetAttribute("aria-describedby").Should().Be("bad-target-help");
+        card.Find("[data-testid=bad-target-help]").TextContent.Should().Contain("does not run against Production");
     }
 
+    // 32. No Target Environments at all: say so, and link to where they are configured.
     [Fact]
-    public void WithNoEligibleTargetThereIsNothingToRun()
+    public void WithNoTargetEnvironmentsThereIsNothingToRun()
     {
-        var card = Card(Prod);
+        var card = Card();
 
         card.FindAll("[data-testid=bad-run]").Should().BeEmpty();
-        card.Find("[data-testid=bad-no-targets]").TextContent.Should().Contain("Development and QA");
+        card.Find("[data-testid=bad-no-targets]").TextContent.Should().Contain("No Target Environments configured.");
+        card.Find("[data-testid=bad-open-targets]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments");
+    }
+
+    // 28. No active Target Environment: nothing selected, no substitute, Run disabled with its reason.
+    [Fact]
+    public void WithNoActiveTargetNothingIsSelected()
+    {
+        var card = CardWith(null, Dev, Qa);
+
+        SelectedOption(card).Should().BeEmpty();
+        card.Find("[data-testid=bad-target-placeholder]").TextContent.Should().Be("Select a Target Environment");
+        card.Find("[data-testid=bad-run]").HasAttribute("disabled").Should().BeTrue();
+        card.Find("[data-testid=bad-target-help]").TextContent.Trim().Should().Be("Select an environment to run the browser automation diagnostic.");
+        card.Markup.Should().NotContain("example-qa.local");
+        card.FindAll("[data-testid=bad-target-url]").Should().BeEmpty("no URL is shown for a target nobody selected");
+    }
+
+    // 29. The active target has no URL: it stays selected, Run is disabled, and the reason is exact.
+    [Fact]
+    public void AnActiveTargetWithoutAUrlIsSelectedButCannotRun()
+    {
+        var noUrl = Profile("dev", "M2LB DEV", FrontendEnvironmentType.Development, url: null);
+        var card = CardWith("dev", noUrl, Qa);
+
+        SelectedOption(card).Should().Be("dev");
+        card.Find("[data-testid=bad-target-select]").QuerySelectorAll("option").First().TextContent.Trim().Should().Be("M2LB DEV — no target URL");
+        card.Find("[data-testid=bad-run]").HasAttribute("disabled").Should().BeTrue();
+        card.Find("[data-testid=bad-target-help]").TextContent.Should().Contain("The selected Target Environment does not have a target URL configured.");
+        card.Find("[data-testid=bad-open-target]").GetAttribute("href").Should().Be("/admin/system-settings?section=target-environments");
+    }
+
+    // 30, 31. A manual choice survives re-renders (a status refresh); a fresh card starts from the active target again.
+    [Fact]
+    public void AManualChoiceSurvivesARerender_AndAFreshCardStartsFromTheActiveTarget()
+    {
+        var card = CardWith("dev", Dev, Qa);
+        card.Find("[data-testid=bad-target-select]").Change("qa");
+        card.Render(p => p.Add(c => c.Targets, new List<FrontendAnalysisProfile> { Dev, Qa }).Add(c => c.ActiveProfileId, "dev"));
+        SelectedOption(card).Should().Be("qa");
+
+        var fresh = Render<BrowserAutomationDiagnosticCard>(p => p.Add(c => c.Targets, new List<FrontendAnalysisProfile> { Dev, Qa }).Add(c => c.ActiveProfileId, "dev"));
+        fresh.Find("[data-testid=bad-target-select]").GetAttribute("value").Should().Be("dev");
+    }
+
+    // 23. Several environments saved as active: nothing is selected and the reason is stated.
+    [Fact]
+    public void AnAmbiguousActiveTargetSelectsNothingAndSaysWhy()
+    {
+        JSInterop.Mode = JSRuntimeMode.Loose;
+        Services.AddSingleton(_api.Object);
+        var card = Render<BrowserAutomationDiagnosticCard>(p => p.Add(c => c.Targets, new List<FrontendAnalysisProfile> { Dev, Qa })
+            .Add(c => c.ActiveProfileId, (string?)null)
+            .Add(c => c.ActiveResolutionError, "Multiple active Target Environments were found in saved settings."));
+        SelectedOption(card).Should().BeEmpty();
+        card.Find("[data-testid=bad-target-help]").TextContent.Should().Contain("Multiple active Target Environments").And.Contain("Select an environment");
+        card.Find("[data-testid=bad-run]").HasAttribute("disabled").Should().BeTrue();
+    }
+
+    // 14. Before any choice, the selection follows the active target if it changes while the page is open.
+    [Fact]
+    public void WithoutAChoiceTheSelectionFollowsTheActiveTarget()
+    {
+        var card = CardWith("dev", Dev, Qa);
+        card.Render(p => p.Add(c => c.Targets, new List<FrontendAnalysisProfile> { Dev, Qa }).Add(c => c.ActiveProfileId, "qa"));
+        SelectedOption(card).Should().Be("qa");
+    }
+
+    // 33. A finished run keeps its own target when the selection changes afterwards.
+    [Fact]
+    public void AResultKeepsItsOwnTargetWhenTheSelectionChanges()
+    {
+        Returns(RestrictedInBothModes());
+        var card = CardWith("dev", Dev, Qa);
+        card.Find("[data-testid=bad-run]").Click();
+        card.WaitForAssertion(() => card.Find("[data-testid=bad-result]"));
+
+        card.Find("[data-testid=bad-target-select]").Change("qa");
+
+        var target = card.Find("[data-testid=bad-result-target]").TextContent;
+        target.Should().Contain("M2LB DEV").And.Contain("https://m2lbdev.example.test/").And.NotContain("M2LB QA");
     }
 
     // 28. While it runs, the card says what is about to happen on screen — twice over, because a window that opens

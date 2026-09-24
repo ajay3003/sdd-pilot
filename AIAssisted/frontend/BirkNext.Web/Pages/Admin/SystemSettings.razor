@@ -688,7 +688,9 @@ else if (_settings is not null)
                 @* An engine/runtime diagnostic, so it belongs with the engine capabilities rather than on a review
                    page or the Target Environment editor. It appears here and nowhere else. *@
                 <div class="settings-card settings-card-full-width">
-                    <BrowserAutomationDiagnosticCard Targets="@FrontendAnalysisSettingsStore.Settings.Profiles" />
+                    <BrowserAutomationDiagnosticCard Targets="@FrontendAnalysisSettingsStore.Settings.Profiles"
+                                                     ActiveProfileId="@FrontendAnalysisSettingsStore.ActiveProfile?.Id"
+                                                     ActiveResolutionError="@FrontendAnalysisSettingsStore.Settings.ActiveResolutionError" />
                 </div>
             }
 
@@ -1959,6 +1961,9 @@ else if (_settings is not null)
 
     protected override async Task OnInitializedAsync()
     {
+        // Target Environments live in browser storage. Loading them here (idempotent) means a direct visit sees them too;
+        // the browser automation diagnostic defaults to the active one.
+        try { await FrontendAnalysisSettingsStore.LoadAsync(JS); } catch { /* the card then says none are configured */ }
         try
         {
             var settingsTask  = AdminApi.GetSystemSettingsAsync();

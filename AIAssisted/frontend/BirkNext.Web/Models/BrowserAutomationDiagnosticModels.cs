@@ -595,3 +595,40 @@ public static class BrowserAutomationDiagnosticReportText
         return line;
     }
 }
+
+/// <summary>
+/// How the diagnostic card presents a Target Environment, and why Run is unavailable for it. The reasons use the backend
+/// policy's own words (BrowserAutomationDiagnosticPolicy); the backend still refuses on its own, including the hostname
+/// production check this page cannot make. Nothing here ever substitutes an example or first-listed target.
+/// </summary>
+public static class BrowserAutomationDiagnosticTargets
+{
+    public const string NoSelectionReason = "Select a Target Environment first.";
+    public const string NoUrlReason = "The selected Target Environment does not have a target URL configured.";
+    public const string InvalidUrlReason = "The Target Environment's frontend URL is not an absolute http(s) URL, so there is nothing to navigate to.";
+    public const string ProductionReason =
+        "The browser automation diagnostic does not run against Production. It drives a real browser at the target "
+        + "application, and that is limited to Development and QA environments.";
+    public const string UnrecognisedReason =
+        "The browser automation diagnostic runs only against Target Environments explicitly typed as non-production "
+        + "(Local, Development, QA, Test or RC). Set the Target Environment type; an unknown or custom type is not assumed safe.";
+
+    private static readonly FrontendEnvironmentType[] Eligible =
+        [FrontendEnvironmentType.Local, FrontendEnvironmentType.Development, FrontendEnvironmentType.QA, FrontendEnvironmentType.Test, FrontendEnvironmentType.RC];
+
+    /// <summary>"Dev — https://m2lbdev.bufetat.no", or "Dev — no target URL".</summary>
+    public static string OptionLabel(FrontendAnalysisProfile target) =>
+        $"{(string.IsNullOrWhiteSpace(target.Name) ? "Unnamed environment" : target.Name)} — "
+        + (string.IsNullOrWhiteSpace(target.TargetUrl) ? "no target URL" : target.TargetUrl.Trim());
+
+    /// <summary>Null when the diagnostic may be started for this selection.</summary>
+    public static string? BlockedReason(FrontendAnalysisProfile? target)
+    {
+        if (target is null) return NoSelectionReason;
+        if (target.EnvironmentType == FrontendEnvironmentType.Production) return ProductionReason;
+        if (!Eligible.Contains(target.EnvironmentType)) return UnrecognisedReason;
+        if (string.IsNullOrWhiteSpace(target.TargetUrl)) return NoUrlReason;
+        if (!BirkNext.Web.Services.FrontendAnalysisSettingsService.IsValidUrl(target.TargetUrl.Trim())) return InvalidUrlReason;
+        return null;
+    }
+}
