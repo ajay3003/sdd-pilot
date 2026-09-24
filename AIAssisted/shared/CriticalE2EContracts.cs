@@ -551,7 +551,10 @@ public sealed record CriticalE2EFlowSummary
     public CriticalE2EStatus LastStatus { get; init; } = CriticalE2EStatus.NotRun;
     public DateTimeOffset? LastRunAt { get; init; }
     public string? LastBuildId { get; init; }
-    /// <summary>False when the most recent result belongs to a different build than the one being validated.</summary>
+    /// <summary>
+    /// True only when a build is named and the most recent result belongs to it. With no build named nothing matches a
+    /// release: the latest result is still reported (LastStatus), it just is not release evidence.
+    /// </summary>
     public bool LastResultMatchesRelease { get; init; }
 }
 
@@ -567,6 +570,12 @@ public enum CriticalE2EReleaseDisposition
     Blocked,
     /// <summary>No required flows are configured, so the gate says nothing at all.</summary>
     NotConfigured,
+    /// <summary>
+    /// Required flows are configured, but no build is named, so release evidence is not evaluated. Runs without a build
+    /// still execute and keep their results; they are execution history, not release evidence. Never Ready, never Failed.
+    /// Appended so existing values keep their meaning.
+    /// </summary>
+    NotEvaluated,
 }
 
 public sealed record CriticalE2EReleaseStatus

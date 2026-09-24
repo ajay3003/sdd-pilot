@@ -64,7 +64,7 @@ public static class CriticalE2EPresentation
     /// The release headline, in context. "Not configured" alone read as "no flows" while fifteen flows were on screen; each
     /// case now says which of flows / critical flows / enabled / required is missing.
     /// </summary>
-    public static CriticalE2EHeadline Headline(CriticalE2EOverview overview, string? buildId = null)
+    public static CriticalE2EHeadline Headline(CriticalE2EOverview overview)
     {
         var release = overview.Release;
         var critical = overview.Flows.Where(f => f.Kind == CriticalE2EFlowKind.Critical).ToList();
@@ -80,10 +80,9 @@ public static class CriticalE2EPresentation
         {
             CriticalE2EReleaseDisposition.NotConfigured => new("Release coverage not configured", CriticalE2ETone.Neutral,
                 $"{critical.Count} critical {Plural(critical.Count, "flow exists", "flows exist")}, but none {(critical.Count == 1 ? "is" : "are")} marked as required for release."),
-            // The backend counts any recent result when no build is named; the page never presents that as release
-            // evidence. The same passes, recorded against a named build, are.
-            CriticalE2EReleaseDisposition.Ready when string.IsNullOrWhiteSpace(buildId) => new("Required flows passed — no build set", CriticalE2ETone.Neutral,
-                $"All {release.RequiredFlowsPassed} required {Plural(release.RequiredFlowsPassed, "flow", "flows")} passed. Set the build to record them as release evidence."),
+            // No build named: the backend does not evaluate release evidence. Neither ready nor failed.
+            CriticalE2EReleaseDisposition.NotEvaluated => new("Release evidence not evaluated", CriticalE2ETone.Neutral,
+                $"No build is selected. {release.RequiredFlowsTotal} required {Plural(release.RequiredFlowsTotal, "flow is", "flows are")} configured; set the build to evaluate release evidence."),
             CriticalE2EReleaseDisposition.Ready => new("Release regression ready", CriticalE2ETone.Good, release.Summary),
             // Incomplete is not a failure. Nothing is known to be wrong; nobody has looked yet.
             CriticalE2EReleaseDisposition.Incomplete => new("Release regression incomplete", CriticalE2ETone.Warning, release.Summary),
@@ -134,7 +133,7 @@ public static class CriticalE2EPresentation
             .OrderBy(f => f.Kind).ThenBy(f => f.Module, StringComparer.CurrentCultureIgnoreCase).ThenBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
             .Select(flow =>
             {
-                var (result, tone, detail) = Result(flow);
+                var (result, tone, detail) = Result(flow, !string.IsNullOrWhiteSpace(overview.Release.BuildId));
                 var engine = Engine(overview, flow.Mode);
                 var blocked = !flow.Enabled ? "This flow is disabled."
                     : !flow.Configured ? flow.ConfigurationProblem ?? "This flow cannot run as configured."
@@ -149,10 +148,11 @@ public static class CriticalE2EPresentation
     /// The outcome of the latest run — never configuration. Disabled lives in its own badge; a flow that has not run reads
     /// "Not run" whether it is enabled or not.
     /// </summary>
-    private static (string Label, CriticalE2ETone Tone, string? Detail) Result(CriticalE2EFlowSummary flow)
+    private static (string Label, CriticalE2ETone Tone, string? Detail) Result(CriticalE2EFlowSummary flow, bool buildNamed)
     {
         if (flow.LastStatus == CriticalE2EStatus.NotRun) return ("Not run", CriticalE2ETone.Neutral, null);
-        if (!flow.LastResultMatchesRelease)
+        // "Pending" is about a named build. With none, the latest result is simply the latest result.
+        if (buildNamed && !flow.LastResultMatchesRelease)
             return ("Pending", CriticalE2ETone.Warning, $"Last result was {flow.LastStatus} on build {flow.LastBuildId ?? "unknown"}.");
         return flow.LastStatus switch
         {

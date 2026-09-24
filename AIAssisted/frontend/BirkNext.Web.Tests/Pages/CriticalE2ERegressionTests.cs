@@ -252,7 +252,8 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     [Fact]
     public void APassFromAnotherBuildReadsAsPendingAndSaysWhichBuildItCameFrom()
     {
-        var page = Render(Overview([Flow("f", matchesRelease: false)], CriticalE2EReleaseDisposition.Incomplete), out _);
+        var overview = Overview([Flow("f", matchesRelease: false)], CriticalE2EReleaseDisposition.Incomplete);
+        var page = Render(overview with { Release = overview.Release with { BuildId = "12345" } }, out _);
         page.Find("[data-testid=e2e-status-f]").Closest("td")!.TextContent.Should().Contain("Pending").And.Contain("12344");
     }
 
@@ -410,12 +411,16 @@ public sealed class CriticalE2ERegressionTests : BunitContext
     [Fact]
     public void BuildNotSetDoesNotBlock_AndSaysWhatItMeans()
     {
-        var page = Render(Overview(), out _);
+        // What the backend returns with no build named: NotEvaluated, never Ready.
+        var overview = Overview([Flow("m02", matchesRelease: false)], CriticalE2EReleaseDisposition.NotEvaluated);
+        var page = Render(overview with { Release = overview.Release with { BuildId = null, RequiredFlowsTotal = 1 } }, out _);
         Text(page, "e2e-build").Should().Be("Not set");
         Text(page, "e2e-build-help").Should().Be("Results can run, but will not count as release evidence.");
-        // The backend reads any recent pass as Ready when no build is named; the page never presents that as evidence.
-        Text(page, "e2e-verdict-label").Should().Be("Required flows passed — no build set");
+        Text(page, "e2e-verdict-label").Should().Be("Release evidence not evaluated");
+        Text(page, "e2e-verdict-detail").Should().Be("No build is selected. 1 required flow is configured; set the build to evaluate release evidence.");
         page.Find("[data-testid=e2e-verdict]").ClassList.Should().Contain("e2e-tone-neutral");
+        // The flow's own latest result is still its result: Passed, not "Pending".
+        Text(page, "e2e-status-m02").Should().Be("Passed");
         page.Find("[data-testid=e2e-run-browser]").HasAttribute("disabled").Should().BeFalse();
     }
 

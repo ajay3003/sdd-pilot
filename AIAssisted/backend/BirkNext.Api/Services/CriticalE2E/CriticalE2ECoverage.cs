@@ -26,7 +26,12 @@ public static class CriticalE2ECoverage
     public static CriticalE2EFlowSummary Summarize(CriticalE2EFlowDefinition flow, IReadOnlyList<CriticalE2ERunResult> history, string? buildId)
     {
         var problem = ConfigurationProblem(flow);
-        var latest = history.Where(r => r.FlowId == flow.Id).OrderByDescending(r => r.StartedAt).FirstOrDefault();
+        var runs = history.Where(r => r.FlowId == flow.Id).OrderByDescending(r => r.StartedAt).ToList();
+        // With a build named, the flow reports its latest run ON that build — the one that is evidence — so a later run
+        // on another build (or without one) neither erases it nor contradicts the release verdict. Otherwise, and when
+        // the build has no run yet, it reports its latest run, which then matches no release.
+        var onBuild = runs.FirstOrDefault(r => MatchesBuild(r.BuildId, buildId));
+        var latest = onBuild ?? runs.FirstOrDefault();
         return new CriticalE2EFlowSummary
         {
             FlowId = flow.Id,
@@ -43,16 +48,18 @@ public static class CriticalE2ECoverage
             LastRunAt = latest?.StartedAt,
             LastBuildId = latest?.BuildId,
             // A green run from a build nobody is shipping says nothing about the build they are.
-            LastResultMatchesRelease = latest is not null && MatchesBuild(latest.BuildId, buildId),
+            LastResultMatchesRelease = onBuild is not null,
         };
     }
 
     /// <summary>
-    /// When no build is being validated, any recent result counts — the user is looking at the capability, not gating a
-    /// release. When a build IS named, only results from that build count.
+    /// Release evidence is build-bound. A result matches only when a build is named and the result was recorded against
+    /// it. With no build named nothing matches: runs still execute and keep their outcome, they are just not evidence.
+    /// (This used to accept any recent result when no build was named, which let the API report Ready with no build.)
     /// </summary>
     private static bool MatchesBuild(string? resultBuild, string? targetBuild) =>
-        string.IsNullOrWhiteSpace(targetBuild) || string.Equals(resultBuild, targetBuild, StringComparison.OrdinalIgnoreCase);
+        !string.IsNullOrWhiteSpace(targetBuild) && string.Equals(resultBuild?.Trim(), targetBuild.Trim(), StringComparison.OrdinalIgnoreCase);
+
 
     public static List<CriticalE2EModuleCoverage> Modules(IReadOnlyList<CriticalE2EFlowDefinition> flows, IReadOnlyList<CriticalE2ERunResult> history,
         IReadOnlyList<string> knownModules, string? buildId)
@@ -83,11 +90,27 @@ public static class CriticalE2ECoverage
     public static CriticalE2EReleaseStatus Release(IReadOnlyList<CriticalE2EFlowDefinition> flows, IReadOnlyList<CriticalE2ERunResult> history,
         IReadOnlyList<string> knownModules, string environmentId, string? buildId, string? releaseId)
     {
+        // Configured coverage is structural: it needs no build and no run.
         var modules = Modules(flows, history, knownModules, buildId);
         var required = flows.Where(f => f.Enabled && f.RequiredForRelease && f.Kind == CriticalE2EFlowKind.Critical).Select(f => Summarize(f, history, buildId)).ToList();
 
-        // A result only counts toward this release when it came from this build. Otherwise the flow is pending, which is
-        // "not known yet" — never "failed".
+        // Release evidence needs a named build. Without one the scope is still reported, but no result is evidence, so
+        // the verdict is "not evaluated" — not Ready (nothing is established) and not Failed (nothing is wrong).
+        if (required.Count > 0 && string.IsNullOrWhiteSpace(buildId))
+            return new CriticalE2EReleaseStatus
+            {
+                BuildId = null,
+                ReleaseId = releaseId,
+                EnvironmentId = environmentId,
+                Disposition = CriticalE2EReleaseDisposition.NotEvaluated,
+                ModulesCovered = modules.Count(m => m.Covered),
+                ModulesTotal = modules.Count,
+                RequiredFlowsTotal = required.Count,
+                Summary = $"No build is selected, so release evidence is not evaluated. {required.Count} required flow(s) are configured.",
+            };
+
+        // A result only counts toward this release when it came from this build (the latest one on it, see Summarize).
+        // Otherwise the flow is pending, which is "not known yet" — never "failed".
         var current = required.Select(r => r.LastResultMatchesRelease ? r.LastStatus : CriticalE2EStatus.NotRun).ToList();
         var passed = current.Count(s => s == CriticalE2EStatus.Passed);
         var failed = current.Count(s => s == CriticalE2EStatus.Failed);

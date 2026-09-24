@@ -148,11 +148,12 @@ public sealed class CriticalE2ECoverageTests
     }
 
     [Fact]
-    public void WithNoBuildSelectedTheMostRecentResultIsTheOneReported()
+    public void WithNoBuildSelectedTheMostRecentResultIsReportedButIsNotReleaseEvidence()
     {
-        // Looking at the capability rather than gating a release: any recent result is informative.
-        var status = Release([Flow("f1", "Person")], [Run("f1", CriticalE2EStatus.Passed, buildId: "anything")], buildId: null);
-        status.Disposition.Should().Be(CriticalE2EReleaseDisposition.Ready);
+        // The latest result is still the flow's latest result; without a named build it is not evidence for any release.
+        var history = new[] { Run("f1", CriticalE2EStatus.Passed, buildId: "anything") };
+        CriticalE2ECoverage.Summarize(Flow("f1", "Person"), history, null).LastStatus.Should().Be(CriticalE2EStatus.Passed);
+        Release([Flow("f1", "Person")], history, buildId: null).Disposition.Should().Be(CriticalE2EReleaseDisposition.NotEvaluated);
     }
 
     [Fact]
