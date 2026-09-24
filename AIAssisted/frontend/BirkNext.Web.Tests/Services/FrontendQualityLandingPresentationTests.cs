@@ -156,9 +156,10 @@ public sealed class FrontendQualityLandingPresentationTests
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
         readiness.Level.Should().Be(FrontendQualityReviewReadinessLevel.Limited);
         // 2. Several unavailable: named, grouped by state, so the reader learns which ones without expanding.
-        readiness.Message.Should().Be("Accessibility is currently unavailable. Lighthouse is not supported for this target. All required capabilities are available, so the review can run.");
-        readiness.Message.Should().Contain("Accessibility").And.Contain("Lighthouse");
-        readiness.Details.Should().Contain(["Accessibility: Unavailable", "Lighthouse: Not supported for this target"]);
+        // Browser Quality is not enabled here, so no automated accessibility source remains: coverage is unavailable.
+        readiness.Message.Should().Be("Automated accessibility coverage is unavailable. Lighthouse is not supported for this target. All required capabilities are available, so the review can run.");
+        readiness.Details.Should().Contain(["Automated accessibility coverage: Unavailable", "Lighthouse: Not supported for this target"]);
+        readiness.Details.Should().NotContain("Accessibility: Unavailable");
         readiness.Details.Where(d => !d.Contains("Disabled")).Should().HaveCount(2);
         Row(rows, FrontendQualityEngineId.StaticSecurity).IsAvailable.Should().BeTrue();
         Row(rows, FrontendQualityEngineId.PassivePerformance).IsAvailable.Should().BeTrue();
@@ -166,7 +167,7 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var requiredBlocked = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context),
             rows.Select(r => r.EngineId == FrontendQualityEngineId.StaticSecurity ? r with { State = FrontendQualityCapabilityState.Unavailable } : r).ToList(), false);
-        requiredBlocked.Message.Should().Be("Static Security and Accessibility are currently unavailable. Lighthouse is not supported for this target. Required coverage will stay incomplete: Static Security.");
+        requiredBlocked.Message.Should().Be("Automated accessibility coverage is unavailable. Static Security is currently unavailable. Lighthouse is not supported for this target. Required coverage will stay incomplete: Static Security.");
     }
 
     [Fact]

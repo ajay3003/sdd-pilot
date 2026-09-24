@@ -11,6 +11,14 @@ namespace BirkNext.Web.Services;
 /// the resolved target access (<see cref="FrontendQualityTargetAccessContext"/> + <see cref="FrontendQualityTargetAccess.Decide"/>) and
 /// the Browser Companion state. No I/O, no business rule of its own: every state shown here is read from those sources.
 /// </summary>
+/// <summary>
+/// Automated accessibility coverage when the dedicated Accessibility engine is unavailable. The WCAG profile is a ruleset
+/// and stays available whatever the engines say; this is only about automated evidence. Limited: another automated
+/// source (Browser Quality's browser evidence) still contributes. Unavailable: none does. Never "full": automation does
+/// not establish WCAG conformance, and manual assessment is required either way.
+/// </summary>
+public enum FrontendQualityAutomatedAccessibilityCoverage { Limited, Unavailable }
+
 public static class FrontendQualityLandingPresentation
 {
     public const string TargetEnvironmentsHref = FrontendQualityTargetAccess.TargetEnvironmentsHref;
@@ -148,7 +156,12 @@ public static class FrontendQualityLandingPresentation
 
         var stateSummary = new FrontendQualityPreRunEngineSummary(capabilities);
         var unavailable = stateSummary.Limitations;
-        var details = unavailable.Select(c => $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}").ToList();
+        // The dedicated Accessibility engine being unavailable is stated as what it means — automated accessibility
+        // coverage — never as "Accessibility: Unavailable", which read as if the WCAG profile or the domain were gone.
+        var accessibility = AutomatedAccessibilityLimitation(capabilities);
+        var named = accessibility is null ? unavailable : unavailable.Where(c => c.EngineId != FrontendQualityEngineId.Accessibility).ToList();
+        var details = (accessibility is { } coverage ? [$"Automated accessibility coverage: {CoverageLabel(coverage)}"] : new List<string>())
+            .Concat(named.Select(c => $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}")).ToList();
         details.AddRange(context.ValidationWarnings);
         if (details.Count > 0)
         {
@@ -167,7 +180,11 @@ public static class FrontendQualityLandingPresentation
             // which one an expand-and-scroll exercise, on the surface whose whole job is that decision.
             var message = unavailable.Count == 0
                 ? "The configuration has warnings. Target reachability is verified when the review starts."
-                : stateSummary.BannerSentences;
+                : string.Join(" ", new[]
+                {
+                    accessibility is { } a ? CoverageSentence(a) : null,
+                    named.Count > 0 ? new FrontendQualityPreRunEngineSummary(named).BannerSentences : null,
+                }.Where(s => !string.IsNullOrEmpty(s)));
             if (stateSummary.AllRequiredAvailable)
                 message += " " + AllRequiredAvailableSentence;
             else if (requiredUnavailable.Count > 0)
@@ -398,6 +415,9 @@ public static class FrontendQualityLandingPresentation
     {
         FrontendQualityDimensionState.NotIncluded => "Nothing in this review contributes to this area.",
 
+        FrontendQualityDimensionState.PartialEvidence or FrontendQualityDimensionState.Limited
+            when category == FrontendQualityCategory.Accessibility && optionalMissing.Any(c => c.EngineId == FrontendQualityEngineId.Accessibility) =>
+            AccessibilityCoverageLimitation(state, optionalMissing),
         FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Accessibility =>
             "Automated accessibility evidence is limited. " + new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
         FrontendQualityDimensionState.PartialEvidence when category == FrontendQualityCategory.Readiness =>
@@ -425,6 +445,35 @@ public static class FrontendQualityLandingPresentation
             "Automated accessibility checks are included.",
         _ => null,
     };
+
+    /// <summary>
+    /// Null unless the dedicated Accessibility engine is active and unavailable. Then Limited when Browser Quality is active
+    /// and available (its browser evidence carries automated accessibility checks), otherwise Unavailable. Typed row state
+    /// only — never a reason string.
+    /// </summary>
+    public static FrontendQualityAutomatedAccessibilityCoverage? AutomatedAccessibilityLimitation(IReadOnlyList<FrontendQualityCapabilityRow> rows)
+    {
+        if (rows.FirstOrDefault(r => r.EngineId == FrontendQualityEngineId.Accessibility) is not { IsActive: true, IsAvailable: false })
+            return null;
+        return rows.FirstOrDefault(r => r.EngineId == FrontendQualityEngineId.BrowserQuality) is { IsActive: true, IsAvailable: true }
+            ? FrontendQualityAutomatedAccessibilityCoverage.Limited
+            : FrontendQualityAutomatedAccessibilityCoverage.Unavailable;
+    }
+
+    public static string CoverageLabel(FrontendQualityAutomatedAccessibilityCoverage coverage) =>
+        coverage == FrontendQualityAutomatedAccessibilityCoverage.Limited ? "Limited" : "Unavailable";
+
+    private static string CoverageSentence(FrontendQualityAutomatedAccessibilityCoverage coverage) =>
+        $"Automated accessibility coverage is {CoverageLabel(coverage).ToLowerInvariant()}.";
+
+    /// <summary>The accessibility card's limitation when the dedicated engine is one of the missing contributors.</summary>
+    private static string AccessibilityCoverageLimitation(FrontendQualityDimensionState state, IReadOnlyList<FrontendQualityCapabilityRow> optionalMissing)
+    {
+        var rest = optionalMissing.Where(c => c.EngineId != FrontendQualityEngineId.Accessibility).ToList();
+        var coverage = state == FrontendQualityDimensionState.Limited
+            ? FrontendQualityAutomatedAccessibilityCoverage.Limited : FrontendQualityAutomatedAccessibilityCoverage.Unavailable;
+        return (CoverageSentence(coverage) + " " + new FrontendQualityPreRunEngineSummary(rest).LimitationSentences).Trim();
+    }
 
     /// <summary>"A", "A and B", "A, B and C". Used wherever capabilities are named in a sentence rather than counted.</summary>
     private static string Join(IEnumerable<string> names)
