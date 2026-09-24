@@ -890,3 +890,13 @@ summary:hover {
 .iqr-domains, .iqr-details { margin-top: 1.5rem; }
 .iqr-details .iqr-dl dt { min-width: 14rem; }
 @media (max-width: 768px) { .iqr-details .iqr-dl dt { min-width: 0; } }
+
+/* ── Target details (final pre-run polish) ─────────────────────────────────────────────────────── */
+/* The base .iqr-dl row gives the label a 12rem floor and the value overflow-wrap:anywhere, which lets the value's
+   minimum width fall to one character; in a quarter-width card that split "Development" letter by letter. Here the
+   label has a fixed, predictable width and the value takes the rest, dropping below the label (full width) when the
+   card is too narrow for both. Values wrap between words; only an unbreakable token (URL, id) breaks. */
+.iqr-target-card .iqr-target-details { gap: 0.45rem; padding: 0.75rem; }
+.iqr-target-card .iqr-target-details > div { display: flex; flex-direction: row; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: 0.1rem 0.75rem; }
+.iqr-target-card .iqr-target-details dt { flex: 0 0 8.5rem; min-width: 0; font-size: 0.75rem; }
+.iqr-target-card .iqr-target-details dd { flex: 1 1 7rem; min-width: 0; overflow-wrap: break-word; }

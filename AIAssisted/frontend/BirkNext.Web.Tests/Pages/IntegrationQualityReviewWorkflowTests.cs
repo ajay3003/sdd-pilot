@@ -199,7 +199,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         page.Find("[data-testid=iqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked");
         page.Find("[data-testid=iqr-readiness]").GetAttribute("role").Should().Be("alert");
         page.Find("[data-testid=iqr-run-review]").HasAttribute("disabled").Should().BeTrue();
-        page.Find("[data-testid=iqr-readiness-message]").TextContent.Should().Be("None of the 1 configured integration is enabled for review.");
+        page.Find("[data-testid=iqr-readiness-message]").TextContent.Should().Be("No configured integration is enabled for review. Enable one in the Target Environment's integrations.");
         page.Find("[data-testid=iqr-go-configure]").TextContent.Should().Be("Configure integrations");
     }
 
@@ -250,7 +250,7 @@ public sealed class IntegrationQualityReviewWorkflowTests : BunitContext
         DomainState(page, "runtime").Should().Be("Not assessed", "missing evidence is not an exclusion");
         var limitation = Domain(page, "runtime").QuerySelector("[data-testid=iqr-domain-limitation]")!.TextContent;
         limitation.Should().Contain("No runtime evidence observed yet");
-        limitation.Should().Contain("No evidence is not the same as no traffic");
+        limitation.Should().Contain("No runtime evidence observed yet").And.Contain("exercised in the environment");
     }
 
     // §15. Transport metadata is not a schema.

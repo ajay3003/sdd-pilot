@@ -149,6 +149,27 @@ public static class IntegrationReviewPresentation
         ? TargetEnvironmentsHref + "&tab=integrations"
         : TargetEnvironmentsHref + "&tab=integrations&profile=" + Uri.EscapeDataString(profileId);
 
+    /// <summary>
+    /// The Target card's secondary facts. The environment NAME is not repeated: the card already shows it. Values are
+    /// readable labels, never enum member names.
+    /// </summary>
+    public static IReadOnlyList<(string Label, string Value)> TargetDetails(FrontendAnalysisContext context) =>
+    [
+        // The full type name ("Development"); the card's pill carries the same fact in short form.
+        ("Environment type", context.ActiveProfile.EnvironmentType.ToString()),
+        ("API authentication", ApiAuthLabel(context.ActiveProfile.ApiAuth.AuthType)),
+        ("Request timeout", $"{context.RequestTimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)} seconds"),
+    ];
+
+    public static string ApiAuthLabel(TargetApiAuthType type) => type switch
+    {
+        TargetApiAuthType.None => "None",
+        TargetApiAuthType.BearerToken => "Bearer token",
+        TargetApiAuthType.ApiKey => "API key",
+        TargetApiAuthType.BasicAuth => "Basic authentication",
+        _ => type.ToString(),
+    };
+
     private static readonly IntegrationType[] Http = [IntegrationType.REST, IntegrationType.GraphQL];
     private static readonly IntegrationType[] Messaging = [IntegrationType.EventHub, IntegrationType.ServiceBus, IntegrationType.Kafka, IntegrationType.RabbitMQ];
     private static readonly IntegrationType[] ContractUnsupported = [IntegrationType.Kafka, IntegrationType.RabbitMQ];
@@ -246,7 +267,7 @@ public static class IntegrationReviewPresentation
                 [], ConfigureAction, href);
         if (scope.NothingEnabled)
             return new(IntegrationReadinessLevel.Blocked, "Review cannot start",
-                $"None of the {scope.Configured} configured integration{(scope.Configured == 1 ? " is" : "s is")} enabled for review.",
+                "No configured integration is enabled for review. Enable one in the Target Environment's integrations.",
                 [], ConfigureAction, href);
 
         var limitations = new List<string>();
@@ -307,7 +328,7 @@ public static class IntegrationReviewPresentation
                 "Runtime evidence comes from observed REST and GraphQL traffic; messaging runtime evidence is not collected in this build.")
             : e.Observed == 0
                 ? new IntegrationDomainCard("runtime", "Runtime evidence", runtimePurpose, IntegrationDomainState.NotAssessed,
-                    $"No runtime evidence observed yet. {IntegrationEvidenceSummary.MessagingNote}")
+                    $"No runtime evidence observed yet. Evidence is collected when {(e.HttpEnabled == 1 ? "this integration is" : "these integrations are")} exercised in the environment.")
                 : e.Observed < e.HttpEnabled || e.MessagingEnabled > 0
                     ? new IntegrationDomainCard("runtime", "Runtime evidence", runtimePurpose, IntegrationDomainState.Limited,
                         $"{Of(e.Observed, e.HttpEnabled, "REST/GraphQL integration")} observed."

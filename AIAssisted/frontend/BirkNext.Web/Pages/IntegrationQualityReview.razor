@@ -52,11 +52,11 @@
                         <div><dt>Configured integrations</dt><dd data-testid="iqr-integration-count">@scope.Configured</dd></div>
                     </dl>
                     <ReviewDisclosure Text="View target details" CollapseText="Hide target details" TestId="iqr-target-details" Class="disclosure-inline">
-                        <dl class="iqr-dl iqr-dl-technical">
-                            <div><dt>Active environment</dt><dd>@setup.ActiveProfile.Name</dd></div>
-                            <div><dt>Type</dt><dd>@setup.ActiveProfile.EnvironmentType</dd></div>
-                            <div><dt>Authentication</dt><dd>@setup.ActiveProfile.ApiAuth.AuthType</dd></div>
-                            <div><dt>Request timeout</dt><dd>@setup.RequestTimeoutSeconds seconds</dd></div>
+                        <dl class="iqr-dl iqr-dl-technical iqr-target-details" data-testid="iqr-target-details-list">
+                            @foreach (var (label, value) in IntegrationReviewPresentation.TargetDetails(setup))
+                            {
+                                <div><dt>@label</dt><dd>@value</dd></div>
+                            }
                         </dl>
                     </ReviewDisclosure>
                 </section>
@@ -189,6 +189,21 @@
                     <p class="iqr-muted" data-testid="iqr-scope-empty">@(scope.NothingConfigured ? "No integrations are configured for this Target Environment." : "No configured integration is enabled for review.")</p>
                 }
                 @RenderIntegrationsByType(setup)
+                @if (setup.Integrations.Where(i => !i.Enabled).OrderBy(i => i.Name, StringComparer.Ordinal).ToList() is { Count: > 0 } off)
+                {
+                    @* Configured is not in scope: listed so the reader can see what exists, with its state, and enable it
+                       where integrations are configured. *@
+                    <h4 class="iqr-group-title" id="iqr-group-not-enabled">Not enabled for review (@off.Count)</h4>
+                    <ul class="iqr-integration-list" aria-labelledby="iqr-group-not-enabled" data-testid="iqr-not-enabled-list">
+                        @foreach (var intg in off)
+                        {
+                            <li class="iqr-integration-item" data-testid="iqr-not-enabled-item" data-integration-id="@intg.Id">
+                                <div class="iqr-integration-name">@intg.Name</div>
+                                <div class="iqr-integration-meta">@IntegrationConfigPresenter.TypeLabel(intg.Type) · Not enabled</div>
+                            </li>
+                        }
+                    </ul>
+                }
                 <p class="iqr-muted"><a class="iqr-link" href="@integrationsHref" data-testid="iqr-manage-scope">@IntegrationReviewPresentation.ConfigureDetailsAction</a></p>
             </ReviewDisclosure>
 
@@ -848,14 +863,10 @@
     /// </summary>
     private static RenderFragment RenderEvidenceSummary(IntegrationScopeSummary scope, IntegrationEvidenceSummary e) => __builder =>
     {
-        <h4 class="iqr-group-title">Configured scope</h4>
-        <dl class="iqr-dl" data-testid="iqr-evidence-scope">
-            <div><dt>Configured integrations</dt><dd data-testid="iqr-evidence-configured">@scope.Configured</dd></div>
-            <div><dt>Enabled for review</dt><dd data-testid="iqr-evidence-enabled">@scope.Enabled</dd></div>
-        </dl>
+        @* Observations only. Configured and enabled counts are Configured integrations' facts, not repeated here. *@
         @if (scope.NothingEnabled)
         {
-            <p class="iqr-muted" data-testid="iqr-evidence-empty">Evidence availability is assessed once an integration is enabled for review.</p>
+            <p class="iqr-muted" data-testid="iqr-evidence-empty">No enabled integrations to observe. Runtime evidence is assessed once an enabled integration is exercised in this environment.</p>
         }
         else
         {

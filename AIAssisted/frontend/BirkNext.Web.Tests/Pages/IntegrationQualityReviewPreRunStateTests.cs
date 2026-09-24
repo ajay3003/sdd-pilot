@@ -130,7 +130,7 @@ public sealed class IntegrationQualityReviewPreRunStateTests : BunitContext
         var page = Landing([Rest("a", enabled: false), Rest("b", enabled: false), Rest("c", enabled: false)]);
 
         page.Find("[data-testid=iqr-readiness]").GetAttribute("data-readiness").Should().Be("Blocked");
-        page.Find("[data-testid=iqr-readiness-message]").TextContent.Should().Be("None of the 3 configured integrations is enabled for review.");
+        page.Find("[data-testid=iqr-readiness-message]").TextContent.Should().Be("No configured integration is enabled for review. Enable one in the Target Environment's integrations.");
         page.Find("[data-testid=iqr-integration-count]").TextContent.Should().Be("3");
         page.Find("[data-testid=iqr-scope-enabled]").TextContent.Should().Be("3 configured, none enabled");
         page.Find("[data-testid=iqr-decide]").TextContent.Should().NotContain("No integrations are configured");
@@ -280,8 +280,8 @@ public sealed class IntegrationQualityReviewPreRunStateTests : BunitContext
         var page = Landing([Rest()]);
         page.Find("[data-testid=iqr-runtime-disclosure-toggle]").Click();
 
-        page.Find("[data-testid=iqr-evidence-configured]").TextContent.Should().Be("1");
-        page.Find("[data-testid=iqr-evidence-enabled]").TextContent.Should().Be("1");
+        // Configured/enabled counts belong to Configured integrations; observations do not repeat them.
+        page.FindAll("[data-testid=iqr-evidence-configured], [data-testid=iqr-evidence-enabled], [data-testid=iqr-evidence-scope]").Should().BeEmpty();
         page.Find("[data-testid=iqr-evidence-contracts]").TextContent.Should().Be("None configured");
         page.Find("[data-testid=iqr-evidence-runtime]").TextContent.Should().Be("Not observed");
         page.Find("[data-testid=iqr-evidence-timing]").TextContent.Should().Be("Not observed");
@@ -295,7 +295,9 @@ public sealed class IntegrationQualityReviewPreRunStateTests : BunitContext
         var page = Landing([]);
 
         page.Find("[data-testid=iqr-runtime-disclosure-toggle]").TextContent.Should().Contain("No enabled integrations to observe");
-        page.Find("[data-testid=iqr-evidence-empty]").TextContent.Should().Contain("once an integration is enabled");
+        page.Find("[data-testid=iqr-evidence-empty]").TextContent.Should().Be(
+            "No enabled integrations to observe. Runtime evidence is assessed once an enabled integration is exercised in this environment.");
+        page.Find("[data-testid=iqr-runtime-disclosure-body]").TextContent.Should().NotContain("Configured integrations").And.NotContain("Enabled for review");
         page.FindAll("[data-testid=iqr-evidence-contracts]").Should().BeEmpty("a contract count of 0 with no scope is not a problem to show");
     }
 
@@ -313,6 +315,76 @@ public sealed class IntegrationQualityReviewPreRunStateTests : BunitContext
             && q.Integrations.Single().ContractName == "Orders"
             && q.Integrations.Single().LogicalProducerService == "Orders"
             && q.Integrations.Single().LogicalConsumerService == "Frontend"), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    // ── Final polish ──────────────────────────────────────────────────────────────────────────────────────────────
+
+    // Target details: label and value are separate elements with readable values, and the name is not repeated.
+    [Fact]
+    public void TargetDetailsRenderLabelledReadableValues()
+    {
+        var page = Landing([]);
+        page.Find("[data-testid=iqr-target-details-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        page.Find("[data-testid=iqr-target-details-toggle]").Click();
+
+        var rows = page.FindAll("[data-testid=iqr-target-details-list] > div")
+            .Select(d => (d.QuerySelector("dt")!.TextContent, d.QuerySelector("dd")!.TextContent)).ToList();
+        rows.Should().Equal(("Environment type", "Development"), ("API authentication", "None"), ("Request timeout", "30 seconds"));
+        page.Find("[data-testid=iqr-target-details-list]").ClassList.Should().Contain("iqr-target-details", "the class that gives values their own width");
+        page.Find("[data-testid=iqr-target-details-list]").TextContent.Should().NotContain("Active environment");
+    }
+
+    [Theory]
+    [InlineData(TargetApiAuthType.BearerToken, "Bearer token")]
+    [InlineData(TargetApiAuthType.ApiKey, "API key")]
+    [InlineData(TargetApiAuthType.BasicAuth, "Basic authentication")]
+    public void ApiAuthenticationIsNeverAnEnumName(TargetApiAuthType type, string label) =>
+        IntegrationReviewPresentation.ApiAuthLabel(type).Should().Be(label);
+
+    // Expanded disclosures are the reader's: rerendering the page does not collapse them.
+    [Fact]
+    public void ExpandedDetailsSurviveRerender()
+    {
+        var page = Landing([Rest("a", enabled: false), Rest("b", enabled: false), Rest("c", enabled: false)]);
+        foreach (var id in new[] { "iqr-scope-disclosure", "iqr-runtime-disclosure", "iqr-target-details" })
+            page.Find($"[data-testid={id}-toggle]").GetAttribute("aria-expanded").Should().Be("false", id);
+
+        page.Find("[data-testid=iqr-scope-disclosure-toggle]").Click();
+        page.Find("[data-testid=iqr-target-details-toggle]").Click();
+        page.Render();
+
+        page.Find("[data-testid=iqr-scope-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        page.Find("[data-testid=iqr-target-details-toggle]").GetAttribute("aria-expanded").Should().Be("true");
+        page.Find("[data-testid=iqr-runtime-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false");
+        page.FindAll("[data-testid=iqr-not-enabled-item]").Select(i => i.TextContent).Should().HaveCount(3).And.OnlyContain(t => t.Contains("Not enabled"));
+        page.Find("[data-testid=iqr-integration-count]").TextContent.Should().Be("3");
+        page.Find("[data-testid=iqr-decide]").TextContent.Should().NotContain("No integrations are configured");
+    }
+
+    // One enabled REST integration with relationship metadata and nothing else: Run is allowed, and every domain states
+    // its own missing input — no Pass, no Failed, no "Not included".
+    [Fact]
+    public void OneEnabledWithoutEvidence_RunsWithEachDomainStatingItsOwnGap()
+    {
+        var page = Landing([Rest()]);
+
+        Run(page).HasAttribute("disabled").Should().BeFalse();
+        page.Find("[data-testid=iqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited");
+        State(page, "relationships").Should().Be("Included");
+        State(page, "contracts").Should().Be("Limited");
+        Limitation(page, "contracts").Should().Contain("No contract source is configured");
+        State(page, "compatibility").Should().Be("Not assessed");
+        Limitation(page, "compatibility").Should().Contain("Insufficient contract evidence");
+        State(page, "runtime").Should().Be("Not assessed");
+        Limitation(page, "runtime").Should().Be("No runtime evidence observed yet. Evidence is collected when this integration is exercised in the environment.");
+        // REST drift is not resolved by this build: that is a build fact, not "no drift".
+        State(page, "drift").Should().Be("Unavailable");
+        Limitation(page, "drift").Should().NotContain("No drift");
+        State(page, "performance").Should().Be("Not assessed");
+        Limitation(page, "performance").Should().StartWith("No timing evidence");
+
+        var domains = page.Find("[data-testid=iqr-domains]").TextContent;
+        domains.Should().NotContainAny("Not included", "Pass", "Failed", "0 ms", "Compatible");
     }
 }
 
