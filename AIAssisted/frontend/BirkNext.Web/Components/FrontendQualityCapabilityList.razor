@@ -18,7 +18,12 @@
             <a class="btn-secondary fqr-edit-engines" href="@FrontendQualityLandingPresentation.FrontendReviewEnginesHref" data-testid="fqr-edit-engines">Edit engines</a>
         </div>
         <p class="fqr-section-note" data-testid="fqr-engine-configuration-note">@FrontendQualityLandingPresentation.EnginesConfigurationNote Availability is re-validated when the review starts.</p>
-        <p class="fqr-section-note" data-testid="fqr-engine-state-definitions">Ready: confirmed for this review. Available: no known blocker. Neither means assessed.</p>
+        @* A two-term legend, in text (badges are never colour-only), and one reminder that neither is a result. *@
+        <dl class="fqr-state-legend" data-testid="fqr-engine-state-definitions">
+            <div><dt>Available</dt><dd>no known blocker</dd></div>
+            <div><dt>Ready</dt><dd>runtime or evidence confirmed</dd></div>
+            <div><dt class="fqr-visually-plain">Neither</dt><dd>means assessed</dd></div>
+        </dl>
         @* The longer explanation is reference material, not part of the run decision. Collapsed; its state is local to
            the disclosure, so polling rerenders leave it as the reader set it. *@
         <ReviewDisclosure Text="How availability works" CollapseText="Hide how availability works"

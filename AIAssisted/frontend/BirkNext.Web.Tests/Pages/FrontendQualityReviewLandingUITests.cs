@@ -248,7 +248,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         Row(page, "Public frontend").Should().Be("Available");
         Row(page, "Authenticated application").Should().Be("Not required for current scope");
         Row(page, "Browser-rendered DOM").Should().Be("Available");
-        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Be("Available for the public pages in the current review scope.");
+        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Be("Rendered DOM is available for pages in the current scope.");
         Row(page, "Authenticated API traffic").Should().Be("Not required for current scope");
         Row(page, "Automatic engines").Should().Be("Available");
         // Scope-relative throughout: nothing claims the target has no signed-in areas, or that the whole application is reached.

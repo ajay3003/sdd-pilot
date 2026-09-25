@@ -27,7 +27,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
     {
         var page = Page(Context(), [Engine(FrontendQualityEngineIdDto.Accessibility)]);
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-run]").HasAttribute("disabled").Should().BeFalse());
-        Toggle(page, "fqr-capabilities-disclosure").Click();
+        // Engines starts open.
         var selector = "[data-engine-id=Accessibility] [data-testid=fqr-capability-include]";
         page.Find(selector).Change(false);
         Toggle(page, "fqr-checks-disclosure").Click();
@@ -114,8 +114,10 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         Toggle(page, id).GetAttribute("aria-expanded") == "false" && Body(page, id).HasAttribute("hidden");
 
     /// <summary>Every disclosure the pre-run Review details section owns.</summary>
+    /// <summary>Collapsed by default. Review access and Engines (<see cref="OpenDisclosures"/>) start open.</summary>
     private static readonly string[] DetailDisclosures =
-        ["fqr-coverage-disclosure", "fqr-checks-disclosure", "fqr-capabilities-disclosure", "fqr-not-assessed-disclosure"];
+        ["fqr-checks-disclosure", "fqr-not-assessed-disclosure", "fqr-technical-disclosure"];
+    private static readonly string[] OpenDisclosures = ["fqr-coverage-disclosure", "fqr-capabilities-disclosure"];
 
     // ── §35. The decision area ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -237,6 +239,9 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var page = Page();
         page.WaitForAssertion(() => Toggle(page, "fqr-coverage-disclosure"));
 
+        // Open by default; collapsing it leaves the summary in the header.
+        Collapsed(page, "fqr-coverage-disclosure").Should().BeFalse();
+        Toggle(page, "fqr-coverage-disclosure").Click();
         Collapsed(page, "fqr-coverage-disclosure").Should().BeTrue();
         var expectedRows = page.Find("[data-testid=fqr-coverage]").QuerySelectorAll("[data-testid=fqr-coverage-row]").Length;
         // 9, 39. The collapsed row answers "can this review reach what it needs?" in words. Counting ("3 available ·
@@ -339,10 +344,9 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
             Engine(FrontendQualityEngineIdDto.Lighthouse, ready: false, reason: "Lighthouse CLI not installed on this host.")]);
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-run]").HasAttribute("disabled").Should().BeFalse());
 
-        Collapsed(page, "fqr-capabilities-disclosure").Should().BeTrue();
-        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").TextContent.Should().Contain("Engines").And.Contain("available");
-
-        Toggle(page, "fqr-capabilities-disclosure").Click();
+        // Open by default; the header still carries the summary.
+        Collapsed(page, "fqr-capabilities-disclosure").Should().BeFalse();
+        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Contain("available");
 
         var body = Body(page, "fqr-capabilities-disclosure");
         // 22, 29, 30. Enabled (saved configuration) and Unavailable (runtime) stay separate facts on the same row.
@@ -388,8 +392,11 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var page = Page(context, [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)]);
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-capabilities-disclosure-toggle]"));
 
+        // Open by default: the summary is the body's own line; collapsed, the header carries it instead (never both).
+        page.Find("[data-testid=fqr-engine-summary]").TextContent.Should().Contain("required disabled");
+        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").TextContent.Should().NotContain("required disabled");
+        Toggle(page, "fqr-capabilities-disclosure").Click();
         page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").TextContent.Should().Contain("required disabled");
-
         Toggle(page, "fqr-capabilities-disclosure").Click();
 
         var warning = Body(page, "fqr-capabilities-disclosure").QuerySelector("[data-testid=fqr-capabilities-required-disabled]")!;
@@ -526,6 +533,13 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
             toggle.GetAttribute("type").Should().Be("button");
             toggle.GetAttribute("aria-controls").Should().Be(Body(page, id).Id);
         }
+        // Review access and Engines start open, with the same exposed state.
+        foreach (var id in OpenDisclosures)
+        {
+            Collapsed(page, id).Should().BeFalse($"{id} starts open");
+            Toggle(page, id).GetAttribute("aria-expanded").Should().Be("true");
+            Toggle(page, id).GetAttribute("aria-controls").Should().Be(Body(page, id).Id);
+        }
         // 35. Nothing focusable is exposed from a collapsed body.
         page.FindAll(".disclosure-body[hidden] button, .disclosure-body[hidden] a, .disclosure-body[hidden] input")
             .Should().OnlyContain(e => e.Closest(".disclosure-body[hidden]") != null, "hidden content is inert");
@@ -561,6 +575,8 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
     {
         var page = Page(Context(), [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)]);
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-capabilities-disclosure-toggle]"));
+        // Read the titles in their collapsed wording (the two open sections say "Hide …" while open).
+        foreach (var id in OpenDisclosures) Toggle(page, id).Click();
 
         var titles = page.Find("[data-testid=fqr-details]")
             .QuerySelectorAll(":scope > .disclosure > .disclosure-toggle .disclosure-text")
@@ -665,7 +681,8 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         headings.Should().OnlyHaveUniqueItems();
         headings.Should().NotContain("Capabilities").And.NotContain("Engine readiness");
 
-        // "Engines" names the concept exactly once, on the disclosure that opens it.
+        // "Engines" names the concept exactly once, on the disclosure that opens it (read collapsed).
+        Toggle(page, "fqr-capabilities-disclosure").Click();
         page.Find("[data-testid=fqr-details]").QuerySelectorAll(".disclosure-text")
             .Count(t => t.TextContent.Trim() == "Engines").Should().Be(1);
         // 15, 45. And the engine set is listed exactly once on the whole pre-run page.

@@ -48,6 +48,50 @@ public sealed class FrontendQualityPreRunPolishTests
     private static FrontendQualityDimensionCard Card(IReadOnlyList<FrontendQualityCapabilityRow> rows, FrontendQualityCategory category) =>
         FrontendQualityLandingPresentation.Dimensions(rows).Single(c => c.Category == category);
 
+    // ── UX polish: the reference Dev state ────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AccessibilityEngineReady_ManualAssessmentStaysRequired_AndNothingSaysAccessibilityIsUnavailable()
+    {
+        var context = Context();
+        var rows = Rows();
+        Engine(rows, FrontendQualityEngineId.Accessibility).State.Should().Be(FrontendQualityCapabilityState.Ready);
+
+        var card = Card(rows, FrontendQualityCategory.Accessibility);
+        card.ManualAssessmentRequired.Should().BeTrue("the WCAG profile's manual obligation is independent of every engine");
+        card.ScopeNote.Should().Be(WcagProfiles.Norwegian.Label);
+
+        var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
+        readiness.Message.Should().NotContain("Accessibility is unavailable").And.NotContain("coverage is unavailable");
+        readiness.Details.Should().Contain(FrontendQualityLandingPresentation.ManualAccessibilityDetail);
+        readiness.Message.Should().NotContainAny("Passed", "Compliant", "Fully available", "All access available");
+    }
+
+    [Fact]
+    public void BrowserRuntimeDisabledIsADecisionNotALimitation()
+    {
+        var context = Context();
+        var rows = Rows();
+        var runtime = Engine(rows, FrontendQualityEngineId.BrowserRuntime);
+        runtime.State.Should().Be(FrontendQualityCapabilityState.Disabled);
+        FrontendQualityCapabilityStates.Label(runtime.State).Should().Be("Disabled").And.NotBe("Unavailable");
+        new FrontendQualityPreRunEngineSummary(rows).Limitations.Should().NotContain(r => r.EngineId == FrontendQualityEngineId.BrowserRuntime);
+
+        var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
+        readiness.Message.Should().NotContain("Browser Runtime", "a switched-off engine is not a fault to fix");
+        readiness.Details.Should().Contain("Browser Runtime: Disabled").And.NotContain("Browser Runtime: Unavailable");
+    }
+
+    [Fact]
+    public void PerformanceNamesBrowserCompanionEvidenceOnlyWhenThoseEnginesAreReady()
+    {
+        Card(Rows(), FrontendQualityCategory.Performance).Limitation
+            .Should().Be("Passive Performance and Browser Companion evidence are included. Lighthouse is unavailable.");
+        // Not paired, nothing recorded: the engines are merely enabled inputs, so nothing is claimed for them.
+        Card(Rows(BrowserCompanionState.NotPaired), FrontendQualityCategory.Performance).Limitation
+            .Should().StartWith("Passive Performance is included.");
+    }
+
     [Fact]
     public void BannerNamesTheUnavailableCapabilitiesAndSaysTheReviewCanRun()
     {
@@ -74,7 +118,7 @@ public sealed class FrontendQualityPreRunPolishTests
     }
 
     [Theory]
-    [InlineData(FrontendQualityCategory.Performance, "Passive Performance is included. Lighthouse is unavailable.")]
+    [InlineData(FrontendQualityCategory.Performance, "Passive Performance and Browser Companion evidence are included. Lighthouse is unavailable.")]
     [InlineData(FrontendQualityCategory.Security, "Static Security is included. Passive Security is unavailable.")]
     public void LimitedDomainsNameWhatRunsThenWhatIsUnavailable(FrontendQualityCategory category, string expected)
     {
@@ -95,8 +139,9 @@ public sealed class FrontendQualityPreRunPolishTests
     {
         var rows = Rows(BrowserCompanionState.Connected, Captured(3, 2));
         Engine(rows, FrontendQualityEngineId.BrowserQuality).State.Should().Be(FrontendQualityCapabilityState.Ready);
-        Engine(rows, FrontendQualityEngineId.BrowserQuality).Summary.Should().Be("Browser Companion connected.");
-        Engine(rows, FrontendQualityEngineId.PerformanceQuality).Summary.Should().Be("Browser Companion connected.");
+        // Connected, plus the captured evidence each engine will also read.
+        Engine(rows, FrontendQualityEngineId.BrowserQuality).Summary.Should().Be("Browser Companion connected. 3 pages of captured evidence.");
+        Engine(rows, FrontendQualityEngineId.PerformanceQuality).Summary.Should().Be("Browser Companion connected. Recorded performance evidence for 2 pages.");
     }
 
     [Fact]

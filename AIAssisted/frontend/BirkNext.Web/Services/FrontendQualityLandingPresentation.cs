@@ -1,4 +1,4 @@
-using BirkNext.BrowserCompanion;
+﻿using BirkNext.BrowserCompanion;
 using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Models;
 
@@ -160,7 +160,9 @@ public static class FrontendQualityLandingPresentation
         // coverage — never as "Accessibility: Unavailable", which read as if the WCAG profile or the domain were gone.
         var accessibility = AutomatedAccessibilityLimitation(capabilities);
         var named = accessibility is null ? unavailable : unavailable.Where(c => c.EngineId != FrontendQualityEngineId.Accessibility).ToList();
-        var details = (accessibility is { } coverage ? [$"Automated accessibility coverage: {CoverageLabel(coverage)}"] : new List<string>())
+        var details = (accessibility is { } coverage
+                ? [$"Automated accessibility coverage: {(coverage == FrontendQualityAutomatedAccessibilityCoverage.Limited ? "Available but limited" : "Unavailable")}"]
+                : new List<string>())
             .Concat(named.Select(c => $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}")).ToList();
         details.AddRange(context.ValidationWarnings);
         if (details.Count > 0)
@@ -171,6 +173,7 @@ public static class FrontendQualityLandingPresentation
             details.AddRange(capabilities
                 .Where(c => c.Policy == FrontendQualityEngineRequirement.Optional && FrontendQualityCapabilityStates.IsDisabled(c.State))
                 .Select(c => $"{c.DisplayName}: {FrontendQualityCapabilityStates.Label(c.State)}"));
+            details.Add(ManualAccessibilityDetail);
             var requiredUnavailable = unavailable.Where(c => c.Policy == FrontendQualityEngineRequirement.Required).Select(c => c.DisplayName).ToList();
             // An engine somebody switched off is reported as switched off, in its own sentence. Merged into the
             // unavailable count it read as a fault, and sent the reader to fix something that is working as configured.
@@ -264,7 +267,10 @@ public static class FrontendQualityLandingPresentation
             }
             return companion switch
             {
-                BrowserCompanionState.Connected => Build(FrontendQualityCapabilityState.Ready, "Browser Companion connected."),
+                BrowserCompanionState.Connected => Build(FrontendQualityCapabilityState.Ready,
+                    engine.EngineId == FrontendQualityEngineId.BrowserQuality
+                        ? "Browser Companion connected." + (browserPages > 0 ? $" {Pages(browserPages)} of captured evidence." : "")
+                        : "Browser Companion connected." + (performancePages > 0 ? $" Recorded performance evidence for {Pages(performancePages)}." : "")),
                 BrowserCompanionState.Disconnected => Build(FrontendQualityCapabilityState.RequiresBrowserSession, "Browser Companion is paired but not reporting. Open the application in your managed Edge."),
                 BrowserCompanionState.Expired => Build(FrontendQualityCapabilityState.RequiresBrowserSession, "The Browser Companion session expired. Pair it again."),
                 BrowserCompanionState.NotPaired or BrowserCompanionState.PairingPending => Build(FrontendQualityCapabilityState.NotConfigured,
@@ -390,7 +396,8 @@ public static class FrontendQualityLandingPresentation
                     : FrontendQualityDimensionState.NotIncluded;
 
             // Engine-level detail (which accessibility engine is ready) stays in Engines; the card states scope only.
-            var limitation = Limitation(category, state, optionalMissing);
+            var limitation = Limitation(category, state, optionalMissing,
+                optional.Where(c => c.State == FrontendQualityCapabilityState.Ready).ToList());
             var scopeNote = accessibility ? (accessibilityProfile ?? WcagProfiles.Norwegian).Label : null;
 
             return new FrontendQualityDimensionCard(
@@ -411,7 +418,8 @@ public static class FrontendQualityLandingPresentation
     /// </summary>
     private static string? Limitation(
         FrontendQualityCategory category, FrontendQualityDimensionState state,
-        IReadOnlyList<FrontendQualityCapabilityRow> optionalMissing) => state switch
+        IReadOnlyList<FrontendQualityCapabilityRow> optionalMissing,
+        IReadOnlyList<FrontendQualityCapabilityRow>? optionalReady = null) => state switch
     {
         FrontendQualityDimensionState.NotIncluded => "Nothing in this review contributes to this area.",
 
@@ -434,7 +442,7 @@ public static class FrontendQualityLandingPresentation
             new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
 
         FrontendQualityDimensionState.Limited when optionalMissing.Count > 0 =>
-            (category == FrontendQualityCategory.Performance ? "Passive Performance is included. " : "")
+            (category == FrontendQualityCategory.Performance ? PerformanceIncluded(optionalReady) : "")
                 + new FrontendQualityPreRunEngineSummary(optionalMissing).LimitationSentences,
         FrontendQualityDimensionState.Limited =>
             "Some optional evidence for this area is unavailable.",
@@ -463,8 +471,18 @@ public static class FrontendQualityLandingPresentation
     public static string CoverageLabel(FrontendQualityAutomatedAccessibilityCoverage coverage) =>
         coverage == FrontendQualityAutomatedAccessibilityCoverage.Limited ? "Limited" : "Unavailable";
 
+    /// <summary>
+    /// Limited means automated accessibility checks still run (Browser Quality carries them) but the dedicated engine does
+    /// not, so it is stated as "available but limited" — never as if automation were absent.
+    /// </summary>
     private static string CoverageSentence(FrontendQualityAutomatedAccessibilityCoverage coverage) =>
-        $"Automated accessibility coverage is {CoverageLabel(coverage).ToLowerInvariant()}.";
+        coverage == FrontendQualityAutomatedAccessibilityCoverage.Limited
+            ? "Automated accessibility coverage is available but limited."
+            : "Automated accessibility coverage is unavailable.";
+
+    /// <summary>Stated in the limitation details whenever they are shown: the WCAG profile's manual obligation is
+    /// independent of every engine, so no engine state removes it.</summary>
+    public const string ManualAccessibilityDetail = "Manual accessibility assessment is still required by the selected WCAG profile";
 
     /// <summary>The accessibility card's limitation when the dedicated engine is one of the missing contributors.</summary>
     private static string AccessibilityCoverageLimitation(FrontendQualityDimensionState state, IReadOnlyList<FrontendQualityCapabilityRow> optionalMissing)
@@ -474,6 +492,15 @@ public static class FrontendQualityLandingPresentation
             ? FrontendQualityAutomatedAccessibilityCoverage.Limited : FrontendQualityAutomatedAccessibilityCoverage.Unavailable;
         return (CoverageSentence(coverage) + " " + new FrontendQualityPreRunEngineSummary(rest).LimitationSentences).Trim();
     }
+
+    /// <summary>
+    /// What Performance will read. Browser Quality / BirkNext Performance Quality are named only when Ready — the state that
+    /// mirrors the run's Assessed rule — so an engine that is merely available is never claimed as a contributor.
+    /// </summary>
+    private static string PerformanceIncluded(IReadOnlyList<FrontendQualityCapabilityRow>? optionalReady) =>
+        optionalReady?.Any(c => c.EngineId is FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality) == true
+            ? "Passive Performance and Browser Companion evidence are included. "
+            : "Passive Performance is included. ";
 
     /// <summary>"A", "A and B", "A, B and C". Used wherever capabilities are named in a sentence rather than counted.</summary>
     private static string Join(IEnumerable<string> names)
@@ -543,13 +570,14 @@ public static class FrontendQualityLandingPresentation
         // nothing here claims that. Configuring sign-in on the Target Environment moves the review to the branch below.
         if (!access.RequiresAuthentication)
         {
+            // One short sentence each; the state chip already says "for current scope".
             rows.Add(new("Authenticated application", FrontendQualityCoverageState.NotRequired,
-                "The current review runs against public pages only. Authenticated areas are not included unless authenticated access is configured."));
-            rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Available for the public pages in the current review scope."));
+                "This review runs against public pages only."));
+            rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Rendered DOM is available for pages in the current scope."));
             rows.Add(new("Authenticated API traffic", FrontendQualityCoverageState.NotRequired,
-                "Needed only when the review includes authenticated, API-backed functionality."));
+                "Needed only for authenticated API-backed functionality."));
             rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available,
-                "Required engines can run against the current public review scope. Individual engine capability is shown under Engines."));
+                "Required engines can run for the current public scope."));
             return rows;
         }
 
@@ -711,9 +739,11 @@ public static class FrontendQualityLandingPresentation
             new("Environment ID", context.ActiveProfile.Id),
             new("Active", "Yes"),
             new("Target URL", context.HasTargetUrl ? context.TargetUrl : "Not configured"),
-            new("Authentication type", context.AuthenticationType.ToString()),
-            new("Authentication required", context.RequiresAuthentication ? "Yes" : "No"),
-            new("Auth status", context.IsAuthenticatedSessionAvailable ? "Authenticated" : context.RequiresAuthentication ? "Session unavailable" : "Not required"),
+            // A configured provider and a public review scope are both true at once; the labels say which is which, so
+            // "Microsoft Entra ID" beside "No" no longer reads as a contradiction.
+            new("Authentication configured", AuthenticationPresentation.ProviderLabel(context.AuthenticationType)),
+            new("Authentication required for current review scope", context.RequiresAuthentication ? "Yes" : "No"),
+            new("Authenticated session for current scope", context.IsAuthenticatedSessionAvailable ? "Available" : context.RequiresAuthentication ? "Unavailable" : "Not required"),
             new("Browser Runtime", context.FeatureToggles.EnableBrowserRuntimeEngine ? "Enabled" : "Disabled"),
             new("Accessibility", context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
             new("Lighthouse", context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),

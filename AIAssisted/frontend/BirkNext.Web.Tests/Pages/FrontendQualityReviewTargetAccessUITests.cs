@@ -26,7 +26,7 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         cut.Find("[data-testid=fqr-access-proxy]").TextContent.Should().Be("Not needed for this run");
         var coverage = FrontendQualityLandingPresentation.Coverage(access, null);
         coverage.Single(r => r.Label == "Public frontend").Detail.Should().Contain("HTTP(S)");
-        coverage.Single(r => r.Label == "Automatic engines").Detail.Should().Contain("Individual engine capability");
+        coverage.Single(r => r.Label == "Automatic engines").Detail.Should().Be("Required engines can run for the current public scope.");
     }
 
     private static FrontendAnalysisContext Context(AuthenticatedTestingMethod method, bool requiresAuth = true)

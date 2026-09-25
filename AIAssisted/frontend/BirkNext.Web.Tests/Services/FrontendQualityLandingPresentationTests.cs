@@ -122,7 +122,7 @@ public sealed class FrontendQualityLandingPresentationTests
         readiness.Message.Should().NotContainAny("cannot run", "cannot start");
         // What cannot run, then what is switched off — listed apart, never counted together.
         readiness.Details.Should().Contain("Lighthouse: Unavailable");
-        readiness.Details.Should().OnlyContain(d => d.Contains("Unavailable") || d.Contains("Disabled"));
+        readiness.Details.Should().OnlyContain(d => d.Contains("Unavailable") || d.Contains("Disabled") || d == FrontendQualityLandingPresentation.ManualAccessibilityDetail);
         readiness.CanRun.Should().BeTrue();
     }
 
@@ -160,7 +160,7 @@ public sealed class FrontendQualityLandingPresentationTests
         readiness.Message.Should().Be("Automated accessibility coverage is unavailable. Lighthouse is not supported for this target. All required capabilities are available, so the review can run.");
         readiness.Details.Should().Contain(["Automated accessibility coverage: Unavailable", "Lighthouse: Not supported for this target"]);
         readiness.Details.Should().NotContain("Accessibility: Unavailable");
-        readiness.Details.Where(d => !d.Contains("Disabled")).Should().HaveCount(2);
+        readiness.Details.Where(d => !d.Contains("Disabled") && d != FrontendQualityLandingPresentation.ManualAccessibilityDetail).Should().HaveCount(2);
         Row(rows, FrontendQualityEngineId.StaticSecurity).IsAvailable.Should().BeTrue();
         Row(rows, FrontendQualityEngineId.PassivePerformance).IsAvailable.Should().BeTrue();
         Row(rows, FrontendQualityEngineId.PassiveSecurity).State.Should().Be(FrontendQualityCapabilityState.Ready, "ZAP passively scans the public shell");
@@ -393,10 +393,10 @@ public sealed class FrontendQualityLandingPresentationTests
         var rows = FrontendQualityLandingPresentation.Coverage(FrontendQualityTargetAccess.FromContext(Context()), null);
         rows.Select(r => r.Label).Should().Equal("Public frontend", "Authenticated application", "Browser-rendered DOM", "Authenticated API traffic", "Automatic engines");
         rows.Select(r => r.State).Should().Equal(FrontendQualityCoverageState.Available, FrontendQualityCoverageState.NotRequired, FrontendQualityCoverageState.Available, FrontendQualityCoverageState.NotRequired, FrontendQualityCoverageState.Available);
-        rows[1].Detail.Should().Be("The current review runs against public pages only. Authenticated areas are not included unless authenticated access is configured.");
-        rows[2].Detail.Should().Be("Available for the public pages in the current review scope.");
-        rows[3].Detail.Should().Be("Needed only when the review includes authenticated, API-backed functionality.");
-        rows[4].Detail.Should().Be("Required engines can run against the current public review scope. Individual engine capability is shown under Engines.");
+        rows[1].Detail.Should().Be("This review runs against public pages only.");
+        rows[2].Detail.Should().Be("Rendered DOM is available for pages in the current scope.");
+        rows[3].Detail.Should().Be("Needed only for authenticated API-backed functionality.");
+        rows[4].Detail.Should().Be("Required engines can run for the current public scope.");
         FrontendQualityLandingPresentation.CoverageSummary(rows).Headline.Should().Be("Public review access available");
         FrontendQualityCoverageStates.Label(FrontendQualityCoverageState.NotRequired).Should().Be("Not required for current scope");
     }
@@ -522,7 +522,18 @@ public sealed class FrontendQualityLandingPresentationTests
 
         var fields = FrontendQualityLandingPresentation.TechnicalTargetFields(context);
         fields.Should().Contain(f => f.Label == "Environment type" && f.Value == "Development");
-        fields.Should().Contain(f => f.Label == "Authentication type" && f.Value == "MicrosoftEntraId");
+        // Configured provider and the current scope's use of it are separate facts, both stated.
+        fields.Should().Contain(f => f.Label == "Authentication configured" && f.Value == "Microsoft Entra ID");
+        fields.Should().Contain(f => f.Label == "Authentication required for current review scope" && f.Value == "Yes");
+        // Entra configured on the Target Environment, while the current review scope is public.
+        var publicScope = Context(requiresAuth: false);
+        publicScope.ActiveProfile.Authentication.AuthenticationType = FrontendAuthenticationType.MicrosoftEntraId;
+        publicScope.AuthenticationType = FrontendAuthenticationType.MicrosoftEntraId;
+        FrontendQualityLandingPresentation.TechnicalTargetFields(publicScope)
+            .Should().Contain(f => f.Label == "Authentication configured" && f.Value == "Microsoft Entra ID")
+            .And.Contain(f => f.Label == "Authentication required for current review scope" && f.Value == "No")
+            .And.Contain(f => f.Label == "Authenticated session for current scope" && f.Value == "Not required")
+            .And.NotContain(f => f.Label == "Authentication type" || f.Label == "Auth status");
         fields.Should().Contain(f => f.Label == "Lighthouse" && f.Value == "Enabled (synthetic lab measurement)");
         fields.Should().Contain(f => f.Label == "Browser Runtime" && f.Value == "Disabled");
 

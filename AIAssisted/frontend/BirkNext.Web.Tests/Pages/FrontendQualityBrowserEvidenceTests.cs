@@ -46,21 +46,27 @@ public sealed class FrontendQualityBrowserEvidenceTests : BunitContext
     }
 
     [Fact]
-    public async Task AllDetailsStartCollapsedAndExpandedStateSurvivesCompanionRefresh()
+    public async Task DetailDefaultsAreAccessAndEnginesOpen_RestCollapsed_AndStateSurvivesCompanionRefresh()
     {
         SeedCapturedPages(3);
         var page = await PageAsync(BrowserCompanionState.NotPaired);
-        var ids = new[] { "fqr-coverage-disclosure", "fqr-checks-disclosure", "fqr-capabilities-disclosure",
-            "fqr-companion", "fqr-not-assessed-disclosure", "fqr-technical-disclosure" };
-        foreach (var id in ids)
+        // Open: the two sections that answer "can this review run and reach what it needs?".
+        foreach (var id in new[] { "fqr-coverage-disclosure", "fqr-capabilities-disclosure" })
         {
-            page.Find($"[data-testid={id}-toggle]").GetAttribute("aria-expanded").Should().Be("false");
-            page.Find($"[data-testid={id}-body]").HasAttribute("hidden").Should().BeTrue();
+            page.Find($"[data-testid={id}-toggle]").GetAttribute("aria-expanded").Should().Be("true", id);
+            page.Find($"[data-testid={id}-body]").HasAttribute("hidden").Should().BeFalse(id);
+        }
+        // Collapsed: scope, evidence, scope boundary and diagnostics — each still states its status in the header.
+        foreach (var id in new[] { "fqr-checks-disclosure", "fqr-companion", "fqr-not-assessed-disclosure", "fqr-technical-disclosure" })
+        {
+            page.Find($"[data-testid={id}-toggle]").GetAttribute("aria-expanded").Should().Be("false", id);
+            page.Find($"[data-testid={id}-body]").HasAttribute("hidden").Should().BeTrue(id);
             page.Find($"[data-testid={id}-toggle] .disclosure-hint").TextContent.Should().NotBeNullOrWhiteSpace();
         }
-        page.Find("[data-testid=fqr-capabilities-disclosure-toggle]").Click();
         // Concise definitions on the surface; the longer explanation collapsed behind its own disclosure.
-        page.Find("[data-testid=fqr-engine-state-definitions]").TextContent.Should().Contain("Ready").And.Contain("Available");
+        page.Find("[data-testid=fqr-engine-state-definitions]").TextContent.Should().Contain("Ready").And.Contain("Available")
+            .And.Contain("no known blocker").And.Contain("runtime or evidence confirmed").And.Contain("means assessed");
+        page.Find("[data-testid=fqr-engine-state-definitions]").TagName.Should().Be("DL", "a text legend, never colour alone");
         page.Find("[data-testid=fqr-availability-help-toggle]").GetAttribute("aria-expanded").Should().Be("false");
         page.Find("[data-testid=fqr-availability-help-body]").HasAttribute("hidden").Should().BeTrue();
         page.Find("[data-testid=fqr-availability-help-toggle]").Click();

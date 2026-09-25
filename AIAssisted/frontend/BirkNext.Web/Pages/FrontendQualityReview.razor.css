@@ -42,6 +42,7 @@
 
 .fqr-decide-cards > * { min-width: 0; }
 
+
 .fqr-run-bar {
     display: flex;
     flex-wrap: wrap;
@@ -333,7 +334,14 @@
 
 ::deep .fqr-coverage-row:last-child { border-bottom: 0; }
 ::deep .fqr-coverage-label { font-weight: 600; color: var(--clr-text-heading); }
-::deep .fqr-coverage-detail { color: var(--clr-text-muted); font-size: 0.86rem; }
+::deep .fqr-coverage-detail { color: var(--clr-text-muted); font-size: 0.86rem; min-width: 0; overflow-wrap: anywhere; }
+
+/* Review access is open by default, so it must hold at medium widths where the sidebar still takes room: the explanation
+   drops under the label and state instead of being squeezed to nothing beside them. */
+@media (max-width: 1100px) {
+    ::deep .fqr-coverage-row { grid-template-columns: minmax(0, 1fr) auto; row-gap: 0.15rem; }
+    ::deep .fqr-coverage-detail { grid-column: 1 / -1; }
+}
 
 /* ── Checks + not assessed ── */
 ::deep .fqr-check-groups {
@@ -1330,4 +1338,20 @@
     /* PageHeader is its own component, so ::deep from this page's root reaches it without touching other pages. */
     .fqr-page ::deep .page-header { flex-wrap: wrap; }
     .fqr-page ::deep .page-header-actions { flex-shrink: 1; min-width: 0; }
+}
+
+/* Available / Ready legend: two short definitions on one wrapping line, text rather than colour. */
+::deep .fqr-state-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; margin: 0.25rem 0 0; font-size: 0.82rem; color: var(--clr-text-muted); }
+::deep .fqr-state-legend > div { display: flex; gap: 0.3rem; min-width: 0; }
+::deep .fqr-state-legend dt { font-weight: 600; color: var(--clr-text); }
+::deep .fqr-state-legend dt.fqr-visually-plain { font-weight: 400; color: inherit; }
+::deep .fqr-state-legend dd { margin: 0; }
+
+/* Medium widths (sidebar still shown): three cards were too narrow to hold a label column, so the Target card read one
+   letter per line. Two columns, readiness on its own row, Target labels above their values. The cards are child
+   components, so the selectors need ::deep, and this block sits last so it outranks the base .fqr-target-list rule. */
+@media (max-width: 1100px) {
+    .fqr-decide-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .fqr-decide-cards ::deep .fqr-readiness { grid-column: 1 / -1; }
+    ::deep .fqr-target-list > div { grid-template-columns: 1fr; gap: 0.1rem; }
 }

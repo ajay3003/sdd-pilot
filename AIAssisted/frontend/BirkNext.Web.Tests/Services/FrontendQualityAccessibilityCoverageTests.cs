@@ -57,12 +57,14 @@ public sealed class FrontendQualityAccessibilityCoverageTests
         FrontendQualityLandingPresentation.AutomatedAccessibilityLimitation(rows).Should().Be(FrontendQualityAutomatedAccessibilityCoverage.Limited);
 
         var readiness = FrontendQualityLandingPresentation.Readiness(context, FrontendQualityActiveEngines.Resolve(context), rows, false);
-        readiness.Message.Should().Be("Automated accessibility coverage is limited. Lighthouse and Passive Security are currently unavailable. All required capabilities are available, so the review can run.");
-        readiness.Details.Should().Contain("Automated accessibility coverage: Limited").And.NotContain("Accessibility: Unavailable");
+        // Limited means automation still runs (through Browser Quality), so it is "available but limited", never absent.
+        readiness.Message.Should().Be("Automated accessibility coverage is available but limited. Lighthouse and Passive Security are currently unavailable. All required capabilities are available, so the review can run.");
+        readiness.Details.Should().Contain("Automated accessibility coverage: Available but limited").And.NotContain("Accessibility: Unavailable");
+        readiness.Details.Should().Contain(FrontendQualityLandingPresentation.ManualAccessibilityDetail);
 
         var card = Accessibility(rows);
         card.State.Should().Be(FrontendQualityDimensionState.Limited);
-        card.Limitation.Should().Be("Automated accessibility coverage is limited.");
+        card.Limitation.Should().Be("Automated accessibility coverage is available but limited.");
         card.ManualAssessmentRequired.Should().BeTrue("the profile requires manual assessment whatever the automation");
         card.ScopeNote.Should().Be(WcagProfiles.Norwegian.Label, "the profile is a ruleset and stays available");
 
