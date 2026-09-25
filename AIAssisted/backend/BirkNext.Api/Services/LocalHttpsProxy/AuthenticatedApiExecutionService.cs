@@ -192,6 +192,7 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         {
             Status = AuthenticatedExecutionStatus.Executed, Mode = ReviewExecutionMode.AuthenticatedViaLocalHttpsProxy, StatusCode = status,
             IntrospectionDisabled = schemaJson is null && disabled, SchemaJson = schemaJson, ElapsedMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1),
+            GraphQlServerFingerprints = schemaJson is null ? ApiQuality.GraphQlServerFingerprints.From(text) : [],
             Message = schemaJson is not null ? $"HTTP {status}; introspection schema returned." : disabled ? $"HTTP {status}; introspection is disabled or rejected." : $"HTTP {status}; response was not a GraphQL result document.",
         };
     }
@@ -250,10 +251,12 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         bool? jsonValid = null;
         IReadOnlyList<BirkNext.ApiReview.JsonShapeEntry> shape = [];
         var leaks = new List<string>();
+        var fingerprints = new List<string>();
         if (sample is not null && sample.Length > 0)
         {
             var text = Encoding.UTF8.GetString(sample);
             leaks = ApiQuality.JsonBodyInspector.LeakIndicators(text);
+            if (graphQl) fingerprints = ApiQuality.GraphQlServerFingerprints.From(text);
             try
             {
                 using var document = JsonDocument.Parse(sample);
@@ -271,7 +274,7 @@ public sealed class AuthenticatedApiExecutionService : IAuthenticatedApiExecutio
         return new AuthenticatedApiExecutionResult
         {
             StatusCode = status, ContentType = mediaType, ContentLength = length, ElapsedMs = Math.Round(stopwatch.Elapsed.TotalMilliseconds, 1),
-            GraphQlErrorCount = errors, GraphQlHasData = hasData, Outcome = DescribeOutcome(status, mediaType, length, graphQl, errors, hasData),
+            GraphQlErrorCount = errors, GraphQlHasData = hasData, GraphQlServerFingerprints = fingerprints, Outcome = DescribeOutcome(status, mediaType, length, graphQl, errors, hasData),
             SecurityHeaders = CollectSecurityHeaders(response), BodyShape = shape, LeakIndicators = leaks, JsonValid = jsonValid,
             ProblemDetails = ApiQuality.JsonBodyInspector.IsProblemDetails(mediaType, shape),
         };

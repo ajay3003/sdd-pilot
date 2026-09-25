@@ -168,6 +168,8 @@ public sealed record AuthenticatedApiExecutionResult
     public bool AuthenticationRejected => StatusCode is 401 or 403;
     public int? GraphQlErrorCount { get; init; }
     public bool? GraphQlHasData { get; init; }
+    /// <summary>GraphQL server fingerprints of the response ("kind|evidence"); descriptions only, never message text or values.</summary>
+    public List<string> GraphQlServerFingerprints { get; init; } = [];
     public string Outcome { get; init; } = "";
     /// <summary>
     /// Allow-listed, non-secret security-relevant response headers (lower-case names, values capped) so reviews can assess the
@@ -207,6 +209,8 @@ public sealed record AuthenticatedGraphQlSchemaOutcome
     public string? SchemaJson { get; init; }
     public string Message { get; init; } = "";
     public double ElapsedMs { get; init; }
+    /// <summary>GraphQL server fingerprints of a refused introspection response ("kind|evidence"); never message text or values.</summary>
+    public List<string> GraphQlServerFingerprints { get; init; } = [];
 }
 
 /// <summary>

@@ -524,3 +524,6 @@
 .aqr-target-access-name { font-weight: 600; }
 
 .aqr-break { overflow-wrap: anywhere; }
+.aqr-gql-technology { margin: 0 0 .6rem; min-width: 0; }
+.aqr-gql-technology-list { margin-bottom: .2rem; }
+.aqr-gql-technology-list dd { overflow-wrap: anywhere; }

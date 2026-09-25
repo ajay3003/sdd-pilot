@@ -203,6 +203,42 @@ public sealed record ApiReviewPolicy
     public bool IntrospectionExpectedDisabled { get; init; }
 }
 
+/// <summary>How strongly a GraphQL technology is evidenced. Confirmed needs build/source evidence; runtime fingerprints reach Likely at most.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GraphQlTechnologyConfidence { NotDetected, Likely, Confirmed }
+
+/// <summary>Where the evidence came from — never presented as something it is not (source ≠ deployed build ≠ runtime).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GraphQlTechnologyEvidenceSource { None, DeployedFrontendArtifact, RuntimeResponse, ApplicationSource }
+
+public static class GraphQlTechnologies
+{
+    public const string HotChocolate = "Hot Chocolate";
+    public const string StrawberryShake = "Strawberry Shake";
+}
+
+/// <summary>One detected (or not detected) GraphQL technology with its confidence and concise evidence. Metadata only.</summary>
+public sealed record GraphQlTechnologyFinding
+{
+    /// <summary>Null when nothing was detected.</summary>
+    public string? Technology { get; init; }
+    public GraphQlTechnologyConfidence Confidence { get; init; }
+    public GraphQlTechnologyEvidenceSource Source { get; init; }
+    public List<string> Evidence { get; init; } = [];
+    public string? Note { get; init; }
+    public bool IsConfirmed(string technology) => Confidence == GraphQlTechnologyConfidence.Confirmed && Technology == technology;
+}
+
+/// <summary>
+/// GraphQL server and client technology of one target, captured at review time. Informational: it never gates the review, changes the
+/// schema source, compatibility, severity or execution, and never produces a finding.
+/// </summary>
+public sealed record GraphQlTechnologyDetection
+{
+    public GraphQlTechnologyFinding Server { get; init; } = new();
+    public GraphQlTechnologyFinding Client { get; init; } = new();
+}
+
 /// <summary>Target Environment → Performance Thresholds profile captured with a review. NotRecorded = the report predates profile capture.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ApiReviewPerformanceProfile { NotRecorded, Default, Strict, Custom }
@@ -385,6 +421,8 @@ public sealed record ApiReviewGraphQlCompatibility
 public sealed record ApiReviewTargetResult
 {
     public ApiReviewTarget Target { get; init; } = new();
+    /// <summary>GraphQL targets: server/client technology metadata captured at review time (null for REST and older reports).</summary>
+    public GraphQlTechnologyDetection? GraphQlTechnology { get; init; }
     public ApiReviewAccessMode AccessMode { get; init; }
     public string AccessReason { get; init; } = "";
     public ApiReviewTargetStatus Status { get; init; }

@@ -79,6 +79,11 @@ public static class ApiReviewExport
                     sb.Append("<h3>GraphQL client/server compatibility</h3><dl>");
                     sb.Append($"<dt>Schema source</dt><dd>{esc(ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compat))}{(compat.SchemaRetrievedAt is { } at ? $" (retrieved {at:u})" : "")}</dd>");
                     if (compat.RuntimeSchemaOutcome is { } runtimeOutcome) sb.Append($"<dt>Runtime introspection</dt><dd>{esc(runtimeOutcome)}</dd>");
+                    if (t.GraphQlTechnology is { } technology)
+                    {
+                        sb.Append($"<dt>GraphQL server technology</dt><dd>{esc(ApiReviewGraphQlCompatibilityPresentation.TechnologyLabel(technology.Server))} {esc(ApiReviewGraphQlCompatibilityPresentation.SourceLabel(technology.Server.Source))}{(technology.Server.Evidence.Count > 0 ? " — " + esc(string.Join("; ", technology.Server.Evidence)) : "")}</dd>");
+                        sb.Append($"<dt>GraphQL client technology</dt><dd>{esc(ApiReviewGraphQlCompatibilityPresentation.TechnologyLabel(technology.Client))} {esc(ApiReviewGraphQlCompatibilityPresentation.SourceLabel(technology.Client.Source))}{(technology.Client.Evidence.Count > 0 ? " — " + esc(string.Join("; ", technology.Client.Evidence)) : "")}</dd>");
+                    }
                     if (ApiReviewGraphQlCompatibilityPresentation.ArtifactLabel(compat) is { } artifactLabel) sb.Append($"<dt>Schema artifact</dt><dd>{esc(artifactLabel)}</dd>");
                     if (compat.ConfiguredArtifactProblem is { } artifactProblem) sb.Append($"<dt>Schema artifact problem</dt><dd>{esc(artifactProblem)}</dd>");
                     sb.Append($"<dt>Observed operations</dt><dd>{compat.Observed}{(compat.HistoricalOnly > 0 ? $" ({compat.Current} current, {compat.HistoricalOnly} historical-only)" : "")}</dd>");

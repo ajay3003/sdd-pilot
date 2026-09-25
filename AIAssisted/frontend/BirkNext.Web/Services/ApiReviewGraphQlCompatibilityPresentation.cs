@@ -89,6 +89,32 @@ public static class ApiReviewGraphQlCompatibilityPresentation
 
     public const string RecommendedAction = "Update the frontend operation to the current contract, or restore the server field if its removal or change was unintended. Regenerate generated GraphQL client code if applicable.";
 
+    /// <summary>Client-specific wording only when the client technology is Confirmed; otherwise the generic action.</summary>
+    public static string RecommendedActionFor(GraphQlTechnologyDetection? technology) =>
+        technology?.Client.IsConfirmed(GraphQlTechnologies.StrawberryShake) == true
+            ? "Update the frontend operation to the current contract and regenerate the Strawberry Shake client after the schema change, or restore the server field if its removal or change was unintended."
+            : RecommendedAction;
+
+    public static string ConfidenceLabel(GraphQlTechnologyConfidence confidence) => confidence switch
+    {
+        GraphQlTechnologyConfidence.Confirmed => "Confirmed",
+        GraphQlTechnologyConfidence.Likely => "Likely",
+        _ => "Not detected",
+    };
+
+    /// <summary>Where the evidence came from — source, deployed build and runtime are never presented as each other.</summary>
+    public static string SourceLabel(GraphQlTechnologyEvidenceSource source) => source switch
+    {
+        GraphQlTechnologyEvidenceSource.DeployedFrontendArtifact => "from the deployed frontend build",
+        GraphQlTechnologyEvidenceSource.RuntimeResponse => "from runtime responses to the review's own requests",
+        GraphQlTechnologyEvidenceSource.ApplicationSource => "from application source",
+        _ => "",
+    };
+
+    /// <summary>"Hot Chocolate · Likely" or "Not detected". Informational metadata, never a status.</summary>
+    public static string TechnologyLabel(GraphQlTechnologyFinding finding) =>
+        finding.Technology is { } name && finding.Confidence != GraphQlTechnologyConfidence.NotDetected ? $"{name} · {ConfidenceLabel(finding.Confidence)}" : "Not detected";
+
     /// <summary>
     /// Pre-run: whether compatibility CAN be assessed for the selected GraphQL targets — never a result. Documents come from
     /// Endpoint Discovery; the schema from runtime introspection during the review, or a configured artifact.

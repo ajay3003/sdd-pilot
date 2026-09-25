@@ -873,6 +873,25 @@
         var compatibility = t.GraphQlCompatibility;
         <h4 class="aqr-group-title">@ApiReviewPresentation.DisplayName(t.Target) · observed operations</h4>
         <p class="aqr-muted" data-testid="aqr-gql-counts">@counts.Summary</p>
+        @if (t.GraphQlTechnology is { } technology)
+        {
+            @* Metadata only: which GraphQL stack the evidence points to, with its confidence and provenance. Never a status or a finding. *@
+            <section class="aqr-gql-technology" data-testid="aqr-gql-technology" aria-label="@($"GraphQL technology · {ApiReviewPresentation.DisplayName(t.Target)}")">
+                <dl class="aqr-dl aqr-gql-technology-list">
+                    <div><dt>GraphQL server</dt><dd data-testid="aqr-gql-tech-server">@ApiReviewGraphQlCompatibilityPresentation.TechnologyLabel(technology.Server)@if (ApiReviewGraphQlCompatibilityPresentation.SourceLabel(technology.Server.Source) is { Length: > 0 } serverSource) { <span class="aqr-muted"> · @serverSource</span> }</dd></div>
+                    <div><dt>GraphQL client</dt><dd data-testid="aqr-gql-tech-client">@ApiReviewGraphQlCompatibilityPresentation.TechnologyLabel(technology.Client)@if (ApiReviewGraphQlCompatibilityPresentation.SourceLabel(technology.Client.Source) is { Length: > 0 } clientSource) { <span class="aqr-muted"> · @clientSource</span> }</dd></div>
+                </dl>
+                <ReviewDisclosure Text="View technology evidence" CollapseText="Hide technology evidence" TestId="@($"aqr-gql-tech-evidence-{t.Target.TargetId}")" Class="disclosure-inline disclosure-small">
+                    <ul class="aqr-list aqr-muted" data-testid="aqr-gql-tech-evidence-list">
+                        @foreach (var line in technology.Server.Evidence) { <li>Server: @line</li> }
+                        @if (technology.Server.Note is { } serverNote) { <li>Server: @serverNote</li> }
+                        @foreach (var line in technology.Client.Evidence) { <li>Client: @line</li> }
+                        @if (technology.Client.Note is { } clientNote) { <li>Client: @clientNote</li> }
+                        <li>Informational only: technology detection never changes schema source, compatibility or severity.</li>
+                    </ul>
+                </ReviewDisclosure>
+            </section>
+        }
         @if (compatibility is { Observed: > 0 })
         {
             <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Observed GraphQL operations">
@@ -893,7 +912,7 @@
                                         <ReviewDisclosure Text="@($"{o.Issues.Count} validation issue{(o.Issues.Count == 1 ? "" : "s")}")" CollapseText="Hide validation issues" Class="disclosure-inline disclosure-small" TestId="@($"aqr-gql-issues-{o.DocumentHash}")">
                                             <ul class="aqr-gql-issues" data-testid="aqr-gql-issue-list">@foreach (var issue in o.Issues) { <li><span class="aqr-mono">@issue.Code</span> — @issue.Message</li> }</ul>
                                             <p class="aqr-muted">Observed: @o.EvidenceSource · @o.ObservationCount observation@(o.ObservationCount == 1 ? "" : "s")@(o.Historical ? " (historical evidence only)" : "") · Schema: @ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compatibility)</p>
-                                            <p><strong>Recommended action:</strong> @ApiReviewGraphQlCompatibilityPresentation.RecommendedAction</p>
+                                            <p><strong>Recommended action:</strong> @ApiReviewGraphQlCompatibilityPresentation.RecommendedActionFor(t.GraphQlTechnology)</p>
                                         </ReviewDisclosure>
                                     }
                                     else if (o.Status == GraphQlCompatibilityStatus.NotAssessed && o.NotAssessedReason is { } why)

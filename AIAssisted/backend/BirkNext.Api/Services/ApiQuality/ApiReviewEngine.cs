@@ -31,7 +31,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
 
     private sealed record Exec(bool Executed, ApiReviewAccessMode Mode, int StatusCode, string? ContentType, double? ElapsedMs, long? ContentLength,
         IReadOnlyDictionary<string, string> Headers, IReadOnlyList<JsonShapeEntry> Shape, IReadOnlyList<string> Leaks, bool ProblemDetails, bool? JsonValid,
-        int? GraphQlErrors, bool? GraphQlHasData, string Message, bool Timeout = false);
+        int? GraphQlErrors, bool? GraphQlHasData, string Message, bool Timeout = false, IReadOnlyList<string>? ServerFingerprints = null);
+
+    // Per run: the frontend's GraphQL client technology (app-level) and each GraphQL target's server fingerprints.
+    private GraphQlTechnologyFinding clientTechnology = new();
+    private readonly Dictionary<string, List<string>> serverFingerprints = new(StringComparer.Ordinal);
 
     public async Task<ApiReviewReport> RunAsync(ApiReviewRunRequest request, CancellationToken cancellationToken = default)
     {
@@ -59,6 +63,13 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             "Business correctness of returned data.",
         };
 
+        serverFingerprints.Clear();
+        // The frontend build manifest is read only when a GraphQL target will actually be reviewed: a blocked review sends nothing.
+        var reviewableGraphQl = request.Targets.Where(t => t.Selected && t.ApiType == ApiReviewTargetType.GraphQl)
+            .Any(t => ResolveAccess(t, request, capabilities).Mode is not (ApiReviewAccessMode.Unavailable or ApiReviewAccessMode.ManualOnly or ApiReviewAccessMode.Blocked));
+        clientTechnology = reviewableGraphQl
+            ? await GraphQlClientTechnologyDetector.DetectAsync(publicClient, request.Environment.TargetUrl ?? request.FrontendOrigin, cancellationToken)
+            : new GraphQlTechnologyFinding { Confidence = GraphQlTechnologyConfidence.NotDetected, Note = "Not attempted: no GraphQL target was reviewable in this run." };
         foreach (var target in request.Targets.Where(t => t.Selected).Take(25))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -69,6 +80,19 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 var result = target.ApiType == ApiReviewTargetType.GraphQl
                     ? await ReviewGraphQlAsync(target, request, mode, reason, action, baseline, findings, cancellationToken)
                     : await ReviewRestAsync(target, request, mode, reason, action, baseline, findings, cancellationToken);
+                if (target.ApiType == ApiReviewTargetType.GraphQl)
+                {
+                    // Metadata only, attached after the review: nothing above read it except recommendation wording for a Confirmed client.
+                    var technology = new GraphQlTechnologyDetection
+                    {
+                        Server = GraphQlServerFingerprints.Classify(serverFingerprints.TryGetValue(target.TargetId, out var prints) ? prints : []),
+                        Client = clientTechnology,
+                    };
+                    result = result with { GraphQlTechnology = technology };
+                    logger.LogInformation("GraphQL technology for target {TargetId}: server {Server} ({ServerConfidence}, {ServerSource}); client {Client} ({ClientConfidence}, {ClientSource}).",
+                        target.TargetId, technology.Server.Technology ?? "unknown", technology.Server.Confidence, technology.Server.Source,
+                        technology.Client.Technology ?? "unknown", technology.Client.Confidence, technology.Client.Source);
+                }
                 results.Add(result);
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -453,7 +477,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             // Compatibility needs a schema and the documents, not access: a configured artifact still lets it run.
             var blockedArtifact = await ResolveSchemaArtifactAsync(target, request, ct);
             var blockedCompatibility = AssessCompatibility(target, null, blockedArtifact, $"Not attempted — {reason}", observed, endpoint);
-            foreach (var f in GraphQlOperationCompatibility.Findings(blockedCompatibility, target.TargetId)) Add(targetFindings, findings, f);
+            foreach (var f in GraphQlOperationCompatibility.Findings(blockedCompatibility, target.TargetId, clientTechnology)) Add(targetFindings, findings, f);
             return new ApiReviewTargetResult
             {
                 Target = target, AccessMode = mode, AccessReason = reason, RequiredAction = action, Status = ApiReviewTargetStatus.Blocked, FindingCount = null,
@@ -464,13 +488,14 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
 
         // 1. Safe query: __typename against the discovered/configured endpoint (never an assumed path).
         var probe = await ExecuteGraphQlAsync(request, mode, endpoint, TypenameProbe, ct);
+        var prints = serverFingerprints[target.TargetId] = [.. probe.ServerFingerprints ?? []];
         var operations = new List<ApiReviewOperationResult>();
         if (!probe.Executed)
         {
             checks.Add(Check("gql-reachability", ApiReviewFindingType.GraphQl, "Endpoint answers a safe query", probe.Timeout ? ApiReviewCheckResult.NotTested : ApiReviewCheckResult.Blocked, probe.Message));
             var unreachedArtifact = await ResolveSchemaArtifactAsync(target, request, ct);
             var unreachedCompatibility = AssessCompatibility(target, null, unreachedArtifact, $"Not attempted — {probe.Message}", observed, endpoint);
-            foreach (var f in GraphQlOperationCompatibility.Findings(unreachedCompatibility, target.TargetId)) Add(targetFindings, findings, f);
+            foreach (var f in GraphQlOperationCompatibility.Findings(unreachedCompatibility, target.TargetId, clientTechnology)) Add(targetFindings, findings, f);
             return new ApiReviewTargetResult
             {
                 Target = target, AccessMode = mode, AccessReason = reason, Status = ApiReviewTargetStatus.NotTested, Checks = checks, FindingCount = null, RequiredAction = probe.Message,
@@ -508,7 +533,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         GraphQlSchemaReviewResult? schemaReview = null;
         ApiReviewContractSummary contractSummary;
         GraphQlNormalizedContract? runtimeSchema = null;
-        var (schemaJson, introspectionDisabled, introspectionMessage) = await FetchSchemaAsync(request, mode, endpoint, ct);
+        var (schemaJson, introspectionDisabled, introspectionMessage, introspectionPrints) = await FetchSchemaAsync(request, mode, endpoint, ct);
+        prints.AddRange(introspectionPrints);
         if (schemaJson is not null)
         {
             var extraction = graphQl.Extract(schemaJson);
@@ -554,7 +580,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             : schemaJson is not null ? "Retrieved but could not be normalized"
             : introspectionDisabled ? $"Rejected — {introspectionMessage}" : $"Unavailable — {introspectionMessage}";
         var compatibility = AssessCompatibility(target, runtimeSchema, await ResolveSchemaArtifactAsync(target, request, ct), runtimeOutcome, observed, endpoint);
-        foreach (var f in GraphQlOperationCompatibility.Findings(compatibility, target.TargetId)) Add(targetFindings, findings, f);
+        foreach (var f in GraphQlOperationCompatibility.Findings(compatibility, target.TargetId, clientTechnology)) Add(targetFindings, findings, f);
         compatibility = compatibility with { SchemaChangeImpact = SchemaChangeImpact(targetFindings, compatibility) };
         checks.Add(Check("gql-compatibility", ApiReviewFindingType.Contract, "Observed operations compatible with the schema",
             compatibility.Observed == 0 ? ApiReviewCheckResult.NotApplicable
@@ -572,6 +598,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (request.Policy.ErrorHandlingProbes && !request.Environment.IsProduction)
         {
             var invalid = await ExecuteGraphQlAsync(request, mode, endpoint, InvalidFieldProbe, ct);
+            prints.AddRange(invalid.ServerFingerprints ?? []);
             if (invalid.Executed)
             {
                 var errorsShape = invalid.GraphQlErrors is > 0;
@@ -808,12 +835,12 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             .Select(x => $"Removed root field `{x.field}` — used by {string.Join(", ", x.ops)}").ToList();
     }
 
-    private async Task<(string? SchemaJson, bool Disabled, string Message)> FetchSchemaAsync(ApiReviewRunRequest request, ApiReviewAccessMode mode, string endpoint, CancellationToken ct)
+    private async Task<(string? SchemaJson, bool Disabled, string Message, List<string> Fingerprints)> FetchSchemaAsync(ApiReviewRunRequest request, ApiReviewAccessMode mode, string endpoint, CancellationToken ct)
     {
         if (mode == ApiReviewAccessMode.AuthenticatedHttp)
         {
             var outcome = await gateway.FetchGraphQlSchemaAsync(request.Identity, endpoint, ct);
-            return (outcome.SchemaJson, outcome.IntrospectionDisabled, outcome.Message);
+            return (outcome.SchemaJson, outcome.IntrospectionDisabled, outcome.Message, outcome.GraphQlServerFingerprints ?? []);
         }
         try
         {
@@ -824,12 +851,12 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             try
             {
                 using var doc = JsonDocument.Parse(text);
-                if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object && data.TryGetProperty("__schema", out _)) return (text, false, "Introspection schema returned.");
-                return (null, true, $"HTTP {(int)response.StatusCode}; introspection disabled or rejected.");
+                if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object && data.TryGetProperty("__schema", out _)) return (text, false, "Introspection schema returned.", []);
+                return (null, true, $"HTTP {(int)response.StatusCode}; introspection disabled or rejected.", GraphQlServerFingerprints.From(text));
             }
-            catch (JsonException) { return (null, false, $"HTTP {(int)response.StatusCode}; response was not JSON."); }
+            catch (JsonException) { return (null, false, $"HTTP {(int)response.StatusCode}; response was not JSON.", []); }
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return (null, false, $"Introspection request failed ({ex.GetType().Name})."); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return (null, false, $"Introspection request failed ({ex.GetType().Name}).", []); }
     }
 
     // ── Execution (public client or gateway) ────────────────────────────────────
@@ -882,7 +909,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (!outcome.Executed || outcome.Result is null)
             return new Exec(false, mode, 0, null, null, null, new Dictionary<string, string>(), [], [], false, null, null, null, outcome.Message);
         var r = outcome.Result;
-        return new Exec(true, mode, r.StatusCode, r.ContentType, r.ElapsedMs, r.ContentLength, new Dictionary<string, string>(r.SecurityHeaders, StringComparer.OrdinalIgnoreCase), r.BodyShape, r.LeakIndicators, r.ProblemDetails, r.JsonValid, r.GraphQlErrorCount, r.GraphQlHasData, r.Outcome);
+        return new Exec(true, mode, r.StatusCode, r.ContentType, r.ElapsedMs, r.ContentLength, new Dictionary<string, string>(r.SecurityHeaders, StringComparer.OrdinalIgnoreCase), r.BodyShape, r.LeakIndicators, r.ProblemDetails, r.JsonValid, r.GraphQlErrorCount, r.GraphQlHasData, r.Outcome,
+            ServerFingerprints: r.GraphQlServerFingerprints);
     }
 
     /// <summary>Public response → structural evidence. The text is scanned for leak indicators and parsed for its shape, then discarded.</summary>
@@ -913,7 +941,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             catch (JsonException) { jsonValid = false; }
         }
         var length = response.Content.Headers.ContentLength ?? Encoding.UTF8.GetByteCount(text);
-        return new Exec(true, mode, (int)response.StatusCode, contentType, Math.Round(elapsedMs, 1), length, headers, shape, leaks, JsonBodyInspector.IsProblemDetails(contentType, shape), jsonValid, errors, hasData, $"HTTP {(int)response.StatusCode}");
+        return new Exec(true, mode, (int)response.StatusCode, contentType, Math.Round(elapsedMs, 1), length, headers, shape, leaks, JsonBodyInspector.IsProblemDetails(contentType, shape), jsonValid, errors, hasData, $"HTTP {(int)response.StatusCode}",
+            ServerFingerprints: graphQl ? GraphQlServerFingerprints.From(text) : null);
     }
 
     private static async Task<string> ReadBoundedTextAsync(HttpResponseMessage response, long max, CancellationToken ct)

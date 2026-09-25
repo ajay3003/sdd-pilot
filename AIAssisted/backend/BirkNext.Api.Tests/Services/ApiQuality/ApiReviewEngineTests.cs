@@ -169,7 +169,9 @@ public sealed class ApiReviewEngineTests
 
         var target = Assert.Single(report.Targets);
         Assert.Equal(ApiReviewTargetStatus.Completed, target.Status);
-        Assert.All(fixture.Requests, r => Assert.Equal("/api/graphql-v2", r.RequestUri!.AbsolutePath));
+        // Every request to the API host goes to the discovered path (the frontend host only serves its public build manifest).
+        Assert.All(fixture.Requests.Where(r => r.RequestUri!.Host == "api-dev.example.test"), r => Assert.Equal("/api/graphql-v2", r.RequestUri!.AbsolutePath));
+        Assert.All(fixture.Requests.Where(r => r.RequestUri!.Host != "api-dev.example.test"), r => Assert.Equal(HttpMethod.Get, r.Method));
         Assert.DoesNotContain(fixture.Requests, r => r.RequestUri!.AbsolutePath == "/graphql");
         Assert.All(fixture.Requests.Where(r => r.Method == HttpMethod.Post), _ => { });
         Assert.DoesNotContain(fixture.Bodies, b => System.Text.RegularExpressions.Regex.IsMatch(b, @"""query"":""\s*mutation"));

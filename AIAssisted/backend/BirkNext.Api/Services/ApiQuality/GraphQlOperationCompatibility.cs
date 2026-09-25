@@ -100,14 +100,19 @@ public static class GraphQlOperationCompatibility
     /// one logical issue with two observations, not two issues. Severity follows the existing contract policy: a break of an operation the
     /// frontend currently uses is High (as a missing required property or type mismatch is); one seen only in retained history is Low.
     /// </summary>
-    public static List<ApiReviewFinding> Findings(ApiReviewGraphQlCompatibility compatibility, string targetId) =>
+    /// <summary>Generic remediation; client-specific wording only when the client technology is Confirmed.</summary>
+    public static string Recommendation(GraphQlTechnologyFinding? client) => client?.IsConfirmed(GraphQlTechnologies.StrawberryShake) == true
+        ? "Update the frontend operation to the current contract and regenerate the Strawberry Shake client after the schema change, or restore the removed/changed server field if the change was unintended."
+        : "Update the frontend operation to the current contract, or restore the removed/changed server field if the change was unintended. Regenerate generated client code if applicable.";
+
+    public static List<ApiReviewFinding> Findings(ApiReviewGraphQlCompatibility compatibility, string targetId, GraphQlTechnologyFinding? client = null) =>
         compatibility.Operations.Where(o => o.Status == GraphQlCompatibilityStatus.Incompatible).Select(o =>
             OpenApiDocumentReview.Finding(targetId, RuleId, o.Historical ? ApiReviewSeverity.Low : ApiReviewSeverity.High, ApiReviewFindingType.Contract, o.Display,
                 "Client/server compatibility",
                 "Observed GraphQL operation is incompatible with current schema",
                 $"{o.Display} ({(o.Historical ? "historical evidence only" : $"observed {o.ObservationCount} time(s)")}) does not validate against the {SourceLabel(compatibility.SchemaSource)}: {o.Issues[0].Message}"
                     + (o.Issues.Count > 1 ? $" (+{o.Issues.Count - 1} more)" : ""),
-                "Update the frontend operation to the current contract, or restore the removed/changed server field if the change was unintended. Regenerate generated client code if applicable.",
+                Recommendation(client),
                 o.Issues.Select(i => $"{i.Code}: {i.Message}").Take(15).ToList(), ApiReviewCheckResult.Fail, ApiReviewDriftClassification.Breaking)).ToList();
 
     public static string SourceLabel(GraphQlSchemaSource source) => source switch
