@@ -64,8 +64,8 @@ public class SystemSettingsArchitectureGovernanceTests
         var values = typeof(SystemSettingsStatus).GetEnumValues();
         var names = typeof(SystemSettingsStatus).GetEnumNames();
 
-        // Should have Pass, Warning, Fail, Unavailable
-        Assert.Equal(4, values.Length);
+        // Pass, Warning, Fail, Unavailable, plus the neutral Info ("not evaluated by this layer")
+        Assert.Equal(5, values.Length);
 
         var nameList = names.ToList();
         Assert.Contains("Pass", nameList);
@@ -73,8 +73,12 @@ public class SystemSettingsArchitectureGovernanceTests
         Assert.Contains("Fail", nameList);
         Assert.Contains("Unavailable", nameList);
 
-        // Should NOT have Info
-        Assert.DoesNotContain("Info", nameList);
+        // Info is the frontend's neutral wire value. It is not the old informational pass: it never degrades
+        // and never counts as a pass.
+        Assert.Contains("Info", nameList);
+        var neutralOnly = new SystemSettingsStatusEngine().SummarizeStatuses([SystemSettingsStatus.Info]);
+        Assert.Equal(SystemSettingsStatus.Info, neutralOnly.OverallStatus);
+        Assert.Equal(0, neutralOnly.PassCount);
 
         // Should NOT have NotAvailable
         Assert.DoesNotContain("NotAvailable", nameList);

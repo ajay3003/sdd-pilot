@@ -129,6 +129,54 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
     }
 
     [Fact]
+    public void SummaryRendering_ListsNotEvaluatedRowsApartFromExecutedChecks()
+    {
+        var report = new EnvironmentDiagnosticsReportDto
+        {
+            Summary = new StatusSummaryDto
+            {
+                PassCount = 20,
+                WarningCount = 1,
+                FailCount = 0,
+                UnavailableCount = 0,
+                InfoCount = 4
+            }
+        };
+
+        SystemSettings.BuildEnvironmentDiagnosticsSummary(report)
+            .Should().Be("Diagnostics completed: 21 checks executed - 20 passed, 1 warnings, 0 failed, 0 unavailable. 4 not evaluated by the backend.");
+    }
+
+    [Fact]
+    public void BackendNotEvaluatedRows_RenderNeutral_NotUnavailable()
+    {
+        _handler.EnvironmentDiagnosticsJson = NotEvaluatedDiagnosticsJson;
+        var cut = RenderEnvironmentDiagnostics();
+
+        ClickRunDiagnostics(cut);
+
+        cut.WaitForAssertion(() => cut.Markup.Should().Contain("Diagnostics completed"));
+        cut.Markup.Should().Contain("2 checks executed - 2 passed, 0 warnings, 0 failed, 0 unavailable. 3 not evaluated by the backend.");
+        cut.Find("[data-testid=diag-info-count]").TextContent.Should().Contain("3");
+        cut.Markup.Should().Contain("Active Workspace Loaded");
+        cut.Markup.Should().Contain("Current Workspace Saved/Unsaved");
+        var rowBadges = cut.FindAll(".ss-health-sev").Select(badge => badge.TextContent.Trim()).ToList();
+        rowBadges.Count(badge => badge == "Not evaluated").Should().Be(3);
+        rowBadges.Should().NotContain("Info").And.NotContain("Unavailable");
+    }
+
+    [Fact]
+    public void HtmlExport_LabelsNotEvaluatedRowsAsNotEvaluated()
+    {
+        var report = System.Text.Json.JsonSerializer.Deserialize<EnvironmentDiagnosticsReportDto>(NotEvaluatedDiagnosticsJson)!;
+
+        var html = SystemSettings.BuildEnvironmentDiagnosticsHtml(report);
+
+        html.Should().Contain(">Not evaluated</span>");
+        html.Should().NotContain(">Unavailable</span>");
+    }
+
+    [Fact]
     public void EmptySectionHandling_RendersEmptySectionMessage()
     {
         _handler.EnvironmentDiagnosticsJson = ZeroChecksDiagnosticsJson;
@@ -425,6 +473,24 @@ public partial class SystemSettingsEnvironmentDiagnosticsTests : BunitContext
             { "title": "Workspace", "description": "Workspace checks", "status": "Warning", "items": [{ "name": "Workspace Persistence Tables", "value": "Missing optional data", "status": "Warning", "description": "Missing optional data", "recommendation": "Review workspace storage", "isRequired": false }], "isRequired": false },
             { "title": "ReviewContext", "description": "ReviewContext checks", "status": "Unavailable", "items": [{ "name": "ReviewContext Available", "value": "Active browser state unavailable", "status": "Unavailable", "description": "Active browser state unavailable", "recommendation": "", "isRequired": false }], "isRequired": false },
             { "title": "Export / Reports", "description": "Export checks", "status": "Pass", "items": [{ "name": "JSON Export", "value": "Available", "status": "Pass", "description": "Available", "recommendation": "", "isRequired": false }], "isRequired": false }
+          ]
+        }
+        """;
+
+    private const string NotEvaluatedDiagnosticsJson = """
+        {
+          "generatedAt": "2026-07-03T12:34:56Z",
+          "environment": "Development",
+          "overallStatus": "Pass",
+          "summary": { "passCount": 2, "warningCount": 0, "failCount": 0, "unavailableCount": 0, "infoCount": 3, "overallStatus": "Pass" },
+          "sections": [
+            { "title": "Database", "description": "Database checks", "status": "Pass", "items": [{ "name": "Required Tables Exist", "value": "All required core tables verified", "status": "Pass", "description": "All required core tables verified", "recommendation": "", "isRequired": false }], "isRequired": false },
+            { "title": "Workspace", "description": "Workspace checks", "status": "Pass", "items": [
+              { "name": "Active Workspace Loaded", "value": "Not evaluated by backend diagnostics", "status": "Info", "description": "Not evaluated by backend diagnostics", "recommendation": "", "isRequired": false },
+              { "name": "Workspace Persistence Tables", "value": "public.saved_workspaces and public.saved_workspace_artifacts exist", "status": "Pass", "description": "exist", "recommendation": "", "isRequired": false },
+              { "name": "Current Workspace Saved/Unsaved", "value": "Not evaluated by backend diagnostics", "status": "Info", "description": "Not evaluated by backend diagnostics", "recommendation": "", "isRequired": false }
+            ], "isRequired": false },
+            { "title": "ReviewContext", "description": "ReviewContext checks", "status": "Info", "items": [{ "name": "ReviewContext Available", "value": "Not evaluated by backend diagnostics", "status": "Info", "description": "Not evaluated by backend diagnostics", "recommendation": "", "isRequired": false }], "isRequired": false }
           ]
         }
         """;

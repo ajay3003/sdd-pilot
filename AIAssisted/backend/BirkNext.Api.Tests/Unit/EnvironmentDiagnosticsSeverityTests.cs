@@ -12,15 +12,15 @@ public sealed class EnvironmentDiagnosticsSeverityTests
         var tables = Tables("project_documents", "saved_workspaces", "saved_workspace_artifacts", "workspace_review_progress", "scenarios");
         var existing = Keys("project_documents", "saved_workspaces", "saved_workspace_artifacts", "workspace_review_progress");
 
-        var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, appliedMigrationsCount: 1);
-        var schemaCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(
+        var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, Keys(), appliedMigrationsCount: 1, pendingMigrationsCount: 0);
+        var schema = EnvironmentDiagnosticsService.EvaluateSchemaUpToDate(
             requiredTables,
             Check("Pending Migrations", SystemSettingsStatus.Pass),
             Check("EF Migration Integrity", SystemSettingsStatus.Pass));
 
         requiredTables.Status.Should().Be(SystemSettingsStatus.Warning);
         requiredTables.Details.Should().Contain("Optional feature tables missing");
-        schemaCurrent.Should().BeTrue();
+        schema.Status.Should().Be(SystemSettingsStatus.Pass);
     }
 
     [Fact]
@@ -29,15 +29,15 @@ public sealed class EnvironmentDiagnosticsSeverityTests
         var tables = Tables("project_documents", "saved_workspaces", "saved_workspace_artifacts", "workspace_review_progress", "scenarios");
         var existing = Keys("project_documents", "saved_workspaces", "workspace_review_progress", "scenarios");
 
-        var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, appliedMigrationsCount: 1);
-        var schemaCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(
+        var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, Keys(), appliedMigrationsCount: 1, pendingMigrationsCount: 0);
+        var schema = EnvironmentDiagnosticsService.EvaluateSchemaUpToDate(
             requiredTables,
             Check("Pending Migrations", SystemSettingsStatus.Pass),
             Check("EF Migration Integrity", SystemSettingsStatus.Pass));
 
         requiredTables.Status.Should().Be(SystemSettingsStatus.Fail);
         requiredTables.Details.Should().Contain("saved_workspace_artifacts");
-        schemaCurrent.Should().BeFalse();
+        schema.Status.Should().Be(SystemSettingsStatus.Fail);
     }
 
     [Fact]
@@ -46,7 +46,7 @@ public sealed class EnvironmentDiagnosticsSeverityTests
         var tables = Tables("project_documents", "saved_workspaces", "saved_workspace_artifacts", "workspace_review_progress", "demo_seed_samples");
         var existing = Keys("project_documents", "saved_workspaces", "saved_workspace_artifacts", "workspace_review_progress");
 
-        var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, appliedMigrationsCount: 0);
+        var requiredTables = EnvironmentDiagnosticsService.EvaluateRequiredTables(tables, existing, Keys(), appliedMigrationsCount: 0, pendingMigrationsCount: 0);
 
         requiredTables.Status.Should().Be(SystemSettingsStatus.Pass);
         requiredTables.Details.Should().Contain("Inactive/demo tables missing");

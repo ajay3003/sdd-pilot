@@ -10,7 +10,7 @@ public interface ISystemSettingsStatusEngine
 {
     /// <summary>
     /// Calculate overall status from a collection of individual statuses.
-    /// Hierarchy: FAIL > WARNING > PASS (UNAVAILABLE treated as WARNING)
+    /// Hierarchy: FAIL > WARNING > PASS (UNAVAILABLE treated as WARNING, INFO ignored)
     /// </summary>
     SystemSettingsStatus CalculateOverallStatus(params SystemSettingsStatus[] statuses);
 
@@ -150,6 +150,10 @@ public class SystemSettingsStatusEngine : ISystemSettingsStatusEngine
 
         if (statusList.Count == 0)
             return SystemSettingsStatus.Unavailable;
+
+        // INFO is neutral: only-neutral says "not evaluated" rather than claiming Pass
+        if (statusList.All(s => s == SystemSettingsStatus.Info))
+            return SystemSettingsStatus.Info;
 
         // All good
         return SystemSettingsStatus.Pass;

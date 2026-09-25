@@ -8,7 +8,8 @@ namespace BirkNext.Api.Models.Admin;
 /// - PASS: correctly configured, healthy, expected
 /// - WARNING: optional missing, default used, workspace not created, not configured
 /// - FAIL: required missing, backend/database unavailable, migration failure
-/// - UNAVAILABLE: cannot check in current environment (never counts as FAIL)
+/// - UNAVAILABLE: the check should run here but the resource it needs cannot be used (never counts as FAIL)
+/// - INFO: not evaluated by this diagnostic layer (e.g. browser/session state the backend cannot see)
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SystemSettingsStatus
@@ -16,7 +17,13 @@ public enum SystemSettingsStatus
     Pass,
     Warning,
     Fail,
-    Unavailable
+    Unavailable,
+    /// <summary>
+    /// Neutral: this layer does not evaluate the fact (it has no context for it, or it is owned elsewhere).
+    /// Counted in <see cref="StatusSummary.InfoCount"/>, not a check, and never degrades the overall status.
+    /// Serialised as "Info", the frontend's matching neutral value (shown as "Not evaluated").
+    /// </summary>
+    Info
 }
 
 /// <summary>
@@ -105,9 +112,13 @@ public class StatusSummary
     [JsonPropertyName("unavailableCount")]
     public int UnavailableCount { get; set; }
 
+    /// <summary>Neutral rows not evaluated by this layer. Not checks, so they never affect the overall status.</summary>
+    [JsonPropertyName("infoCount")]
+    public int InfoCount { get; set; }
+
     /// <summary>
     /// Calculated overall status based on hierarchy:
-    /// FAIL > WARNING > PASS. Empty summaries are unavailable.
+    /// FAIL > WARNING (incl. UNAVAILABLE) > PASS. INFO is ignored; only-INFO is INFO; empty summaries are unavailable.
     /// </summary>
     [JsonPropertyName("overallStatus")]
     public SystemSettingsStatus OverallStatus => CalculateOverallStatus();
@@ -128,6 +139,9 @@ public class StatusSummary
             case SystemSettingsStatus.Unavailable:
                 UnavailableCount++;
                 break;
+            case SystemSettingsStatus.Info:
+                InfoCount++;
+                break;
         }
     }
 
@@ -140,7 +154,7 @@ public class StatusSummary
             return SystemSettingsStatus.Warning;
 
         if (PassCount == 0)
-            return SystemSettingsStatus.Unavailable;
+            return InfoCount > 0 ? SystemSettingsStatus.Info : SystemSettingsStatus.Unavailable;
 
         return SystemSettingsStatus.Pass;
     }

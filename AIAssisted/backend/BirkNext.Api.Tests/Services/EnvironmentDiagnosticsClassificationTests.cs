@@ -68,10 +68,13 @@ public class EnvironmentDiagnosticsClassificationTests
         var check = EnvironmentDiagnosticsService.EvaluateRequiredTables(
             modelTables.Select(t => new EnvironmentDiagnosticsService.SchemaTable(t.Name, t.Schema)).ToList(),
             existing,
-            appliedMigrationsCount: 1);
+            new HashSet<string>(),
+            appliedMigrationsCount: 1,
+            pendingMigrationsCount: 0);
 
         Assert.Equal(SystemSettingsStatus.Fail, check.Status);
         Assert.Contains("Missing required core tables", check.Details);
+        Assert.DoesNotContain("Run: dotnet ef database update", check.Recommendation);
     }
 
     [Fact]
@@ -90,7 +93,9 @@ public class EnvironmentDiagnosticsClassificationTests
         var check = EnvironmentDiagnosticsService.EvaluateRequiredTables(
             modelTables.Select(t => new EnvironmentDiagnosticsService.SchemaTable(t.Name, t.Schema)).ToList(),
             existing,
-            appliedMigrationsCount: 10);
+            new HashSet<string>(),
+            appliedMigrationsCount: 10,
+            pendingMigrationsCount: 0);
 
         Assert.Equal(SystemSettingsStatus.Pass, check.Status);
         Assert.Contains("All required core tables verified", check.Details);
@@ -123,7 +128,9 @@ public class EnvironmentDiagnosticsClassificationTests
         var check = EnvironmentDiagnosticsService.EvaluateRequiredTables(
             tables,
             existing,
-            appliedMigrationsCount: 5);
+            new HashSet<string>(),
+            appliedMigrationsCount: 5,
+            pendingMigrationsCount: 0);
 
         Assert.Equal(SystemSettingsStatus.Warning, check.Status);
         Assert.Contains("Optional feature tables missing", check.Details);
@@ -151,7 +158,9 @@ public class EnvironmentDiagnosticsClassificationTests
         var check = EnvironmentDiagnosticsService.EvaluateRequiredTables(
             tables,
             existing,
-            appliedMigrationsCount: 0);
+            new HashSet<string>(),
+            appliedMigrationsCount: 0,
+            pendingMigrationsCount: 0);
 
         // When no migrations, missing optional tables is normal (PASS)
         Assert.Equal(SystemSettingsStatus.Pass, check.Status);
@@ -184,8 +193,8 @@ public class EnvironmentDiagnosticsClassificationTests
             Recommendation = ""
         };
 
-        bool isCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(tablesCheck, pendingCheck, integrityCheck);
-        Assert.True(isCurrent);
+        var schema = EnvironmentDiagnosticsService.EvaluateSchemaUpToDate(tablesCheck, pendingCheck, integrityCheck);
+        Assert.Equal(SystemSettingsStatus.Pass, schema.Status);
     }
 
     [Fact]
@@ -215,8 +224,9 @@ public class EnvironmentDiagnosticsClassificationTests
             Recommendation = ""
         };
 
-        bool isCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(tablesCheck, pendingCheck, integrityCheck);
-        Assert.False(isCurrent);
+        var schema = EnvironmentDiagnosticsService.EvaluateSchemaUpToDate(tablesCheck, pendingCheck, integrityCheck);
+        Assert.Equal(SystemSettingsStatus.Fail, schema.Status);
+        Assert.Equal("Schema is not current: Migrations are pending.", schema.Details);
     }
 
     [Fact]
@@ -246,8 +256,9 @@ public class EnvironmentDiagnosticsClassificationTests
             Recommendation = ""
         };
 
-        bool isCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(tablesCheck, pendingCheck, integrityCheck);
-        Assert.False(isCurrent);
+        var schema = EnvironmentDiagnosticsService.EvaluateSchemaUpToDate(tablesCheck, pendingCheck, integrityCheck);
+        Assert.Equal(SystemSettingsStatus.Fail, schema.Status);
+        Assert.Equal("Schema is not current: Required core tables are missing.", schema.Details);
     }
 
     [Fact]
@@ -277,8 +288,9 @@ public class EnvironmentDiagnosticsClassificationTests
             Recommendation = "Fix migration files"
         };
 
-        bool isCurrent = EnvironmentDiagnosticsService.IsSchemaCurrent(tablesCheck, pendingCheck, integrityCheck);
-        Assert.False(isCurrent);
+        var schema = EnvironmentDiagnosticsService.EvaluateSchemaUpToDate(tablesCheck, pendingCheck, integrityCheck);
+        Assert.Equal(SystemSettingsStatus.Fail, schema.Status);
+        Assert.Equal("Schema is not current: Migration integrity has critical issues.", schema.Details);
     }
 
     [Fact]
@@ -294,6 +306,15 @@ public class EnvironmentDiagnosticsClassificationTests
 
         Assert.Equal(
             EnvironmentDiagnosticsService.SchemaTableRequirement.Required,
+            EnvironmentDiagnosticsService.ClassifyTable("saved_workspace_artifacts"));
+    }
+
+    [Fact]
+    public void Table_classification_project_documents_is_optional_dormant_store()
+    {
+        // api/project-documents has no writer and no reader besides diagnostics, so its absence is drift, not a core failure
+        Assert.Equal(
+            EnvironmentDiagnosticsService.SchemaTableRequirement.Optional,
             EnvironmentDiagnosticsService.ClassifyTable("project_documents"));
     }
 

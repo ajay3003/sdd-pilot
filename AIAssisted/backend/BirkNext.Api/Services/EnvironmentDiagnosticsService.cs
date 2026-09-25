@@ -45,9 +45,9 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
 
         // Collect all check categories into sections
         var environmentChecks = RunEnvironmentChecks();
-        var databaseChecks = await RunDatabaseChecksAsync();
+        var (databaseChecks, tableProbe) = await RunDatabaseChecksAsync();
         var backendChecks = RunBackendApiChecks();
-        var workspaceChecks = await RunWorkspaceReadinessChecksAsync();
+        var workspaceChecks = await RunWorkspaceReadinessChecksAsync(tableProbe);
         var reviewContextChecks = await RunReviewContextChecksAsync();
         var exportChecks = RunExportChecks();
 
@@ -150,31 +150,28 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         ];
     }
 
-    private async Task<List<EnvironmentDiagnosticCheck>> RunDatabaseChecksAsync()
+    /// <summary>
+    /// Database checks, plus the table probe the workspace checks reuse. The probe is null when the database is unreachable.
+    /// </summary>
+    private async Task<(List<EnvironmentDiagnosticCheck> Checks, TableProbe? Probe)> RunDatabaseChecksAsync()
     {
-        var checks = new List<EnvironmentDiagnosticCheck>();
-
         // 1. Database reachable
         var canConnect = await CanConnectToDatabaseAsync();
-        checks.Add(new EnvironmentDiagnosticCheck
-        {
-            Name = "Database Reachable",
-            Status = canConnect ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
-            Details = canConnect ? "Connected successfully" : "Could not connect to database",
-            Recommendation = canConnect ? "" : "Check database connection string and ensure database server is running"
-        });
-
         if (!canConnect)
         {
-            checks.Add(new EnvironmentDiagnosticCheck
-            {
-                Name = "Database Configuration",
-                Status = SystemSettingsStatus.Unavailable,
-                Details = "Database unreachable; skipping remaining checks",
-                Recommendation = ""
-            });
-            return checks;
+            return (UnreachableDatabaseChecks(), null);
         }
+
+        var checks = new List<EnvironmentDiagnosticCheck>
+        {
+            new()
+            {
+                Name = "Database Reachable",
+                Status = SystemSettingsStatus.Pass,
+                Details = "Connected successfully",
+                Recommendation = ""
+            }
+        };
 
         // 2. Database info
         var dbName = _config["DatabaseSettings:DatabaseName"] ?? "birknext";
@@ -225,42 +222,71 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Recommendation = ""
         });
 
-        // 6. Required tables exist (schema validation - all created by migrations)
-        var tablesCheck = await CheckRequiredTablesExistAsync();
+        // Migration history is read first so a missing-table failure can name the remediation that actually works.
+        var appliedMigrationsCount = await GetAppliedMigrationsCountAsync();
+        var pendingMigrations = await GetPendingMigrationsAsync();
+
+        // 6. Required tables exist: real schema objects, independent of migration history
+        var modelTables = GetTablesFromModel();
+        var tableProbe = await ProbeTablesAsync(modelTables);
+        var tablesCheck = EvaluateRequiredTables(
+            modelTables,
+            tableProbe.ExistingKeys,
+            tableProbe.UnverifiedKeys,
+            appliedMigrationsCount ?? 0,
+            pendingMigrations?.Count);
         checks.Add(tablesCheck);
 
-        // 7. EF Core migrations status
-        var migrationsCheck = await CheckMigrationsAsync();
-        checks.Add(migrationsCheck);
+        // 7. EF Core migrations applied (migration history rows only)
+        checks.Add(EvaluateAppliedMigrations(appliedMigrationsCount));
 
-        // 8. Pending migrations
-        var pendingCheck = await CheckPendingMigrationsAsync();
+        // 8. Pending migrations (assembly migrations absent from history)
+        var pendingCheck = EvaluatePendingMigrations(pendingMigrations);
         checks.Add(pendingCheck);
 
-        // 9. EF Core Migration Integrity
+        // 9. EF Core Migration Integrity (migration files and compiled snapshot)
         var integrityCheck = await CheckMigrationIntegrityAsync();
         checks.Add(integrityCheck);
 
-        // 10. Schema up to date
-        var schemaIsCurrent = IsSchemaCurrent(tablesCheck, pendingCheck, integrityCheck);
+        // 10. Schema up to date, derived from 6, 8 and 9
+        checks.Add(EvaluateSchemaUpToDate(tablesCheck, pendingCheck, integrityCheck));
 
-        var schemaCheck = new EnvironmentDiagnosticCheck
-        {
-            Name = "Schema Up to Date",
-            Status = schemaIsCurrent ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
-            Details = schemaIsCurrent
-                ? "Schema is current"
-                : "Schema is not current: database connectivity, pending migrations, required core tables, or migration integrity checks did not pass",
-            Recommendation = schemaIsCurrent ? "" : "Review failing database diagnostics before using the application"
-        };
-        checks.Add(schemaCheck);
-
-        return checks;
+        return (checks, tableProbe);
     }
 
-    private async Task<List<EnvironmentDiagnosticCheck>> RunWorkspaceReadinessChecksAsync()
+    internal static List<EnvironmentDiagnosticCheck> UnreachableDatabaseChecks() =>
+    [
+        new()
+        {
+            Name = "Database Reachable",
+            Status = SystemSettingsStatus.Fail,
+            Details = "Could not connect to database",
+            Recommendation = "Check database connection string and ensure database server is running"
+        },
+        new()
+        {
+            Name = "Database Configuration",
+            Status = SystemSettingsStatus.Unavailable,
+            Details = "Database unreachable; skipping remaining checks",
+            Recommendation = ""
+        }
+    ];
+
+    private async Task<List<EnvironmentDiagnosticCheck>> RunWorkspaceReadinessChecksAsync(TableProbe? tableProbe)
     {
         var checks = new List<EnvironmentDiagnosticCheck>();
+
+        if (tableProbe is null)
+        {
+            checks.Add(new EnvironmentDiagnosticCheck
+            {
+                Name = "Workspace Initialization",
+                Status = SystemSettingsStatus.Unavailable,
+                Details = "Database unreachable; backend workspace persistence cannot be inspected",
+                Recommendation = "See Database Reachable."
+            });
+            return checks;
+        }
 
         // Check if migrations have run first
         try
@@ -291,172 +317,247 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             return checks;
         }
 
-        checks.Add(new EnvironmentDiagnosticCheck
-        {
-            Name = "Active Workspace Loaded",
-            Status = SystemSettingsStatus.Unavailable,
-            Details = "Backend diagnostics cannot see the active browser workspace. Browser/session state is evaluated by frontend diagnostics.",
-            Recommendation = "Save the workspace if backend diagnostics need to inspect persisted workspace state."
-        });
+        checks.Add(ActiveWorkspaceLoadedCheck());
 
-        // Check if workspace has imported artifacts (table data presence, not schema)
-        var hasWorkspaceData = await CheckIfWorkspaceHasDataAsync();
-
-        if (!hasWorkspaceData)
-        {
-            checks.Add(new EnvironmentDiagnosticCheck
-            {
-                Name = "Imported Project Documents",
-                Status = SystemSettingsStatus.Pass,
-                Details = "No project documents have been imported to backend storage. This is normal when using browser/session workspace state.",
-                Recommendation = ""
-            });
-        }
-        else
-        {
-            checks.Add(new EnvironmentDiagnosticCheck
-            {
-                Name = "Imported Project Documents",
-                Status = SystemSettingsStatus.Pass,
-                Details = "Project documents have been imported to backend storage",
-                Recommendation = ""
-            });
-        }
+        checks.Add(await CheckImportedProjectDocumentsAsync(tableProbe));
 
         // Workspace Persistence checks
-        var persistenceChecks = await RunWorkspacePersistenceChecksAsync();
+        var persistenceChecks = await RunWorkspacePersistenceChecksAsync(tableProbe);
         checks.AddRange(persistenceChecks);
 
         return checks;
     }
 
-    private async Task<List<EnvironmentDiagnosticCheck>> RunWorkspacePersistenceChecksAsync()
+    /// <summary>
+    /// The active workspace is browser/session state. The backend is never sent it, so it does not evaluate it.
+    /// </summary>
+    internal static EnvironmentDiagnosticCheck ActiveWorkspaceLoadedCheck() => new()
     {
-        var checks = new List<EnvironmentDiagnosticCheck>();
+        Name = "Active Workspace Loaded",
+        Status = SystemSettingsStatus.Info,
+        Details = "Not evaluated by backend diagnostics: the active workspace is browser/session state the backend does not receive. It is evaluated in System Settings -> Runtime Diagnostics and ReviewContext Validation.",
+        Recommendation = ""
+    };
+
+    /// <summary>
+    /// Whether the browser's active workspace is saved needs its workspace id, which backend diagnostics never receive.
+    /// </summary>
+    internal static EnvironmentDiagnosticCheck CurrentWorkspaceSavedCheck() => new()
+    {
+        Name = "Current Workspace Saved/Unsaved",
+        Status = SystemSettingsStatus.Info,
+        Details = "Not evaluated by backend diagnostics: no active browser workspace id is available to the backend. Saved workspace totals are reported in Saved Workspaces.",
+        Recommendation = ""
+    };
+
+    /// <summary>
+    /// The backend WorkspacePersistence:AutoSave* settings are read only by the backend AutoSaveService, which nothing
+    /// calls. Live auto-save runs in the browser with its own interval and throttle, so these values are reported, not
+    /// evaluated, and say nothing about whether auto-save storage works.
+    /// </summary>
+    internal static EnvironmentDiagnosticCheck AutoSaveConfigurationCheck(int intervalMs, int throttleMs) => new()
+    {
+        Name = "Auto-Save Configuration",
+        Status = SystemSettingsStatus.Info,
+        Details = $"Backend WorkspacePersistence settings: every {intervalMs}ms, throttled to every {throttleMs}ms. Not evaluated: workspace auto-save runs in the browser with its own interval and throttle, and these settings do not verify auto-save storage (see Workspace Persistence Tables).",
+        Recommendation = ""
+    };
+
+    private async Task<EnvironmentDiagnosticCheck> CheckImportedProjectDocumentsAsync(TableProbe tableProbe)
+    {
+        if (!tableProbe.ExistingKeys.Contains(ProjectDocumentsTable))
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Imported Project Documents",
+                Status = SystemSettingsStatus.Unavailable,
+                Details = tableProbe.UnverifiedKeys.Contains(ProjectDocumentsTable)
+                    ? $"Could not verify that {ProjectDocumentsTable} exists"
+                    : $"{ProjectDocumentsTable} does not exist",
+                Recommendation = "See Required Tables Exist."
+            };
+        }
 
         try
         {
-            // Check workspace tables exist
-            var tablesExist = await CheckWorkspacePersistenceTablesExistAsync();
-            checks.Add(new EnvironmentDiagnosticCheck
+            var hasDocuments = await _db.ProjectDocuments.AnyAsync();
+            return new EnvironmentDiagnosticCheck
             {
-                Name = "Workspace Persistence Tables",
-                Status = tablesExist ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
-                Details = tablesExist ? "saved_workspaces and saved_workspace_artifacts tables exist" : "Required workspace persistence tables are missing",
-                Recommendation = tablesExist ? "" : "Run migrations: dotnet ef database update"
-            });
-
-            if (!tablesExist)
-            {
-                return checks;
-            }
-
-            // Check saved workspaces count
-            var workspaceCount = await _db.SavedWorkspaces.CountAsync(w => !w.IsDeleted);
-            checks.Add(new EnvironmentDiagnosticCheck
-            {
-                Name = "Saved Workspaces",
-                Status = workspaceCount > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Pass,
-                Details = $"{workspaceCount} workspace(s) saved",
-                Recommendation = ""
-            });
-
-            checks.Add(new EnvironmentDiagnosticCheck
-            {
-                Name = "Current Workspace Saved/Unsaved",
-                Status = SystemSettingsStatus.Unavailable,
-                Details = "Backend diagnostics do not receive the active browser workspace id; saved workspace count is reported separately.",
-                Recommendation = "Use frontend ReviewContext Validation for the active session, or save and reopen a workspace before backend diagnostics."
-            });
-
-            // Check auto-save configuration
-            var autoSaveInterval = _config.GetValue("WorkspacePersistence:AutoSaveIntervalMs", 3000);
-            var autoSaveThrottle = _config.GetValue("WorkspacePersistence:AutoSaveThrottleMs", 30000);
-            checks.Add(new EnvironmentDiagnosticCheck
-            {
-                Name = "Auto-Save Configuration",
+                Name = "Imported Project Documents",
                 Status = SystemSettingsStatus.Pass,
-                Details = $"Auto-save every {autoSaveInterval}ms, throttled to every {autoSaveThrottle}ms",
+                Details = hasDocuments
+                    ? "Project documents have been imported to backend storage"
+                    : "No project documents have been imported to backend storage. This is normal when using browser/session workspace state.",
                 Recommendation = ""
-            });
-
-            // Check workflow review progress tables
-            var reviewProgressTableExists = await CheckReviewProgressTableExistsAsync();
-            checks.Add(new EnvironmentDiagnosticCheck
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to read project documents");
+            return new EnvironmentDiagnosticCheck
             {
-                Name = "Review Progress Tables Exist",
-                Status = reviewProgressTableExists ? SystemSettingsStatus.Pass : SystemSettingsStatus.Fail,
-                Details = reviewProgressTableExists ? "workspace_review_progress table exists" : "Required review progress table is missing",
-                Recommendation = reviewProgressTableExists ? "" : "Run pending migrations: dotnet ef database update"
-            });
+                Name = "Imported Project Documents",
+                Status = SystemSettingsStatus.Unavailable,
+                Details = $"Could not read {ProjectDocumentsTable}: {ex.Message}",
+                Recommendation = "Check the backend log for the failing query."
+            };
+        }
+    }
 
-            if (reviewProgressTableExists)
+    private async Task<List<EnvironmentDiagnosticCheck>> RunWorkspacePersistenceChecksAsync(TableProbe tableProbe)
+    {
+        var checks = new List<EnvironmentDiagnosticCheck>();
+
+        // Saved workspaces: saved_workspaces + saved_workspace_artifacts
+        var workspaceTablesCheck = EvaluateWorkspacePersistenceTables(tableProbe.ExistingKeys, tableProbe.UnverifiedKeys);
+        checks.Add(workspaceTablesCheck);
+
+        if (workspaceTablesCheck.Status == SystemSettingsStatus.Pass)
+        {
+            checks.Add((await RunPersistenceQueryAsync("Saved Workspaces", "counting saved workspaces", async () =>
             {
-                // Check saved review progress records
+                var workspaceCount = await _db.SavedWorkspaces.CountAsync(w => !w.IsDeleted);
+                return new EnvironmentDiagnosticCheck
+                {
+                    Name = "Saved Workspaces",
+                    Status = SystemSettingsStatus.Pass,
+                    Details = $"{workspaceCount} workspace(s) saved",
+                    Recommendation = ""
+                };
+            }))!);
+        }
+
+        checks.Add(CurrentWorkspaceSavedCheck());
+
+        checks.Add(AutoSaveConfigurationCheck(
+            _config.GetValue("WorkspacePersistence:AutoSaveIntervalMs", 3000),
+            _config.GetValue("WorkspacePersistence:AutoSaveThrottleMs", 30000)));
+
+        // Workflow review progress: its own table and capability, not saved-workspace persistence
+        var reviewProgressTableCheck = EvaluateReviewProgressTable(tableProbe.ExistingKeys, tableProbe.UnverifiedKeys);
+        checks.Add(reviewProgressTableCheck);
+
+        if (reviewProgressTableCheck.Status == SystemSettingsStatus.Pass)
+        {
+            checks.Add((await RunPersistenceQueryAsync("Saved Review Progress Records", "counting review progress records", async () =>
+            {
                 var reviewProgressCount = await _db.WorkspaceReviewProgress.CountAsync();
-                checks.Add(new EnvironmentDiagnosticCheck
+                return new EnvironmentDiagnosticCheck
                 {
                     Name = "Saved Review Progress Records",
-                    Status = reviewProgressCount > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Pass,
+                    Status = SystemSettingsStatus.Pass,
                     Details = $"{reviewProgressCount} review progress record(s) saved",
                     Recommendation = ""
-                });
+                };
+            }))!);
 
-                // Check for invalidated approvals
+            var invalidatedCheck = await RunPersistenceQueryAsync("Invalidated Approvals", "counting invalidated approvals", async () =>
+            {
                 var invalidatedCount = await _db.WorkspaceReviewProgress
-                    .CountAsync(p => p.ApprovalState.ToString() == "InvalidatedByArtifactChange");
-                if (invalidatedCount > 0)
-                {
-                    checks.Add(new EnvironmentDiagnosticCheck
+                    .CountAsync(p => p.ApprovalState == Models.ApprovalState.InvalidatedByArtifactChange);
+                return invalidatedCount == 0
+                    ? null
+                    : new EnvironmentDiagnosticCheck
                     {
                         Name = "Invalidated Approvals",
                         Status = SystemSettingsStatus.Warning,
                         Details = $"{invalidatedCount} approval(s) invalidated due to artifact changes",
                         Recommendation = "Review affected workspaces and re-approve steps as needed"
-                    });
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error running workspace persistence checks");
-            checks.Add(new EnvironmentDiagnosticCheck
-            {
-                Name = "Workspace Persistence",
-                Status = SystemSettingsStatus.Warning,
-                Details = "Could not check workspace persistence configuration",
-                Recommendation = "Verify workspace persistence is properly configured"
+                    };
             });
+            if (invalidatedCheck is not null)
+            {
+                checks.Add(invalidatedCheck);
+            }
         }
 
         return checks;
     }
 
-    private async Task<bool> CheckReviewProgressTableExistsAsync()
+    /// <summary>
+    /// Runs one persistence query. A query failure is reported against that row, naming what failed; it is never
+    /// read as a missing table or a configuration problem.
+    /// </summary>
+    private async Task<EnvironmentDiagnosticCheck?> RunPersistenceQueryAsync(
+        string name,
+        string operation,
+        Func<Task<EnvironmentDiagnosticCheck?>> query)
     {
         try
         {
-            var count = await _db.WorkspaceReviewProgress.CountAsync();
-            return true;
+            return await query();
         }
-        catch
+        catch (Exception ex)
         {
-            return false;
+            _logger.LogWarning(ex, "Workspace persistence query failed while {Operation}", operation);
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = name,
+                Status = SystemSettingsStatus.Unavailable,
+                Details = $"Query failed while {operation}: {ex.Message}",
+                Recommendation = "Check the backend log for the failing query."
+            };
         }
     }
 
-    private async Task<bool> CheckWorkspacePersistenceTablesExistAsync()
+    internal static EnvironmentDiagnosticCheck EvaluateWorkspacePersistenceTables(
+        IReadOnlySet<string> existingTableKeys,
+        IReadOnlyCollection<string> unverifiedTableKeys) =>
+        EvaluatePersistenceTables(
+            "Workspace Persistence Tables",
+            "saved workspaces",
+            [SavedWorkspacesTable, SavedWorkspaceArtifactsTable],
+            existingTableKeys,
+            unverifiedTableKeys);
+
+    internal static EnvironmentDiagnosticCheck EvaluateReviewProgressTable(
+        IReadOnlySet<string> existingTableKeys,
+        IReadOnlyCollection<string> unverifiedTableKeys) =>
+        EvaluatePersistenceTables(
+            "Review Progress Tables Exist",
+            "workflow review progress, separate from saved workspaces",
+            [WorkspaceReviewProgressTable],
+            existingTableKeys,
+            unverifiedTableKeys);
+
+    private static EnvironmentDiagnosticCheck EvaluatePersistenceTables(
+        string name,
+        string capability,
+        IReadOnlyList<string> tables,
+        IReadOnlySet<string> existingTableKeys,
+        IReadOnlyCollection<string> unverifiedTableKeys)
     {
-        try
+        var missing = tables.Where(t => !existingTableKeys.Contains(t) && !unverifiedTableKeys.Contains(t)).ToList();
+        if (missing.Count > 0)
         {
-            // Try to query the workspace tables
-            var count = await _db.SavedWorkspaces.CountAsync();
-            return true;
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = name,
+                Status = SystemSettingsStatus.Fail,
+                Details = $"Backend persistence for {capability} is unavailable: required tables are missing: {string.Join(", ", missing)}",
+                Recommendation = "See Required Tables Exist for the repair that matches the migration state."
+            };
         }
-        catch
+
+        var unverified = tables.Where(t => !existingTableKeys.Contains(t)).ToList();
+        if (unverified.Count > 0)
         {
-            return false;
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = name,
+                Status = SystemSettingsStatus.Unavailable,
+                Details = $"Could not verify the {capability} tables: {string.Join(", ", unverified)}",
+                Recommendation = "Check the backend log for the failing metadata query."
+            };
         }
+
+        return new EnvironmentDiagnosticCheck
+        {
+            Name = name,
+            Status = SystemSettingsStatus.Pass,
+            Details = $"{string.Join(" and ", tables)} {(tables.Count == 1 ? "exists" : "exist")} ({capability})",
+            Recommendation = ""
+        };
     }
 
     private List<EnvironmentDiagnosticCheck> RunBackendApiChecks()
@@ -515,8 +616,8 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             new()
             {
                 Name = "ReviewContext Available",
-                Status = SystemSettingsStatus.Unavailable,
-                Details = "Active workspace is browser/session state and is not available to backend diagnostics.",
+                Status = SystemSettingsStatus.Info,
+                Details = "Not evaluated by backend diagnostics: the active workspace is browser/session state the backend does not receive.",
                 Recommendation = "Use System Settings -> Developer -> ReviewContext Validation in the browser session for the active workspace."
             }
         };
@@ -604,16 +705,19 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         }
     }
 
+    // A scalar SqlQueryRaw<T> is composed as SELECT t."Value" FROM (<sql>) AS t, so the column must be named "Value".
+    // Without the alias every one of these queries throws 42703 (column t.Value does not exist). Each returns exactly one row.
     private async Task<string?> GetDatabaseVersionAsync()
     {
         try
         {
             var result = await _db.Database.SqlQueryRaw<string>(
-                "SELECT version()").FirstOrDefaultAsync();
+                "SELECT version() AS \"Value\"").SingleAsync();
             return result?.Split(',')[0];
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to read PostgreSQL version");
             return null;
         }
     }
@@ -623,32 +727,22 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         try
         {
             var result = await _db.Database.SqlQueryRaw<string>(
-                "SELECT current_user").FirstOrDefaultAsync();
+                "SELECT current_user::text AS \"Value\"").SingleAsync();
             return result;
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Failed to read current database user");
             return null;
         }
     }
 
     private async Task<EnvironmentDiagnosticCheck> CheckRequiredRolesAsync()
     {
-        try
+        // In PostgreSQL, check if roles exist (typically just need the connecting user's role)
+        var currentUser = await GetCurrentDatabaseUserAsync();
+        if (currentUser is null)
         {
-            // In PostgreSQL, check if roles exist (typically just need the connecting user's role)
-            var currentUser = await GetCurrentDatabaseUserAsync();
-            return new EnvironmentDiagnosticCheck
-            {
-                Name = "Required Roles Exist",
-                Status = SystemSettingsStatus.Pass,
-                Details = $"User role '{currentUser}' exists",
-                Recommendation = ""
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to check database roles");
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Required Roles Exist",
@@ -657,12 +751,23 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Recommendation = "Verify database user has appropriate role permissions"
             };
         }
+
+        return new EnvironmentDiagnosticCheck
+        {
+            Name = "Required Roles Exist",
+            Status = SystemSettingsStatus.Pass,
+            Details = $"User role '{currentUser}' exists",
+            Recommendation = ""
+        };
     }
 
-    private async Task<EnvironmentDiagnosticCheck> CheckRequiredTablesExistAsync()
+    /// <summary>
+    /// Looks each EF model table up in information_schema. A lookup that fails is recorded as unverified, never as missing.
+    /// </summary>
+    private async Task<TableProbe> ProbeTablesAsync(IReadOnlyCollection<SchemaTable> modelTables)
     {
-        var modelTables = GetTablesFromModel();
         var existingTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var unverifiedTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var table in modelTables)
         {
@@ -673,8 +778,8 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                     SELECT EXISTS(
                         SELECT 1 FROM information_schema.tables
                         WHERE table_schema = {0} AND table_name = {1}
-                    )
-                    """, table.Schema, table.Name).FirstOrDefaultAsync();
+                    ) AS "Value"
+                    """, table.Schema, table.Name).SingleAsync();
 
                 if (exists)
                 {
@@ -684,22 +789,25 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to check table {Schema}.{Table}", table.Schema, table.Name);
+                unverifiedTables.Add(table.Key);
             }
         }
 
-        var appliedMigrationsCount = (await _db.Database.GetAppliedMigrationsAsync()).Count();
-
-        return EvaluateRequiredTables(modelTables, existingTables, appliedMigrationsCount);
+        return new TableProbe(existingTables, unverifiedTables);
     }
 
     internal static EnvironmentDiagnosticCheck EvaluateRequiredTables(
         IReadOnlyCollection<SchemaTable> modelTables,
         IReadOnlySet<string> existingTableKeys,
-        int appliedMigrationsCount)
+        IReadOnlySet<string> unverifiedTableKeys,
+        int appliedMigrationsCount,
+        int? pendingMigrationsCount)
     {
         var requiredMissing = new List<string>();
+        var requiredUnverified = new List<string>();
         var optionalMissing = new List<string>();
         var inactiveMissing = new List<string>();
+        var otherUnverified = new List<string>();
 
         foreach (var table in modelTables)
         {
@@ -708,7 +816,14 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 continue;
             }
 
-            switch (ClassifyTable(table.Name))
+            var requirement = ClassifyTable(table.Name);
+            if (unverifiedTableKeys.Contains(table.Key))
+            {
+                (requirement == SchemaTableRequirement.Required ? requiredUnverified : otherUnverified).Add(table.DisplayName);
+                continue;
+            }
+
+            switch (requirement)
             {
                 case SchemaTableRequirement.Required:
                     requiredMissing.Add(table.DisplayName);
@@ -730,7 +845,18 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Name = "Required Tables Exist",
                 Status = SystemSettingsStatus.Fail,
                 Details = $"Missing required core tables: {string.Join(", ", requiredMissing)}",
-                Recommendation = "Migrations did not complete successfully. Run: dotnet ef database update"
+                Recommendation = MissingTablesRemediation(appliedMigrationsCount, pendingMigrationsCount)
+            };
+        }
+
+        if (requiredUnverified.Count > 0)
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Required Tables Exist",
+                Status = SystemSettingsStatus.Unavailable,
+                Details = $"Could not verify required core tables: {string.Join(", ", requiredUnverified)}. The metadata query failed; this is not evidence that they are missing.",
+                Recommendation = "Check the backend log for the failing information_schema query."
             };
         }
 
@@ -744,22 +870,19 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         {
             details += $" Inactive/demo tables missing: {string.Join(", ", inactiveMissing)}.";
         }
+        if (otherUnverified.Count > 0)
+        {
+            details += $" Could not verify: {string.Join(", ", otherUnverified)}.";
+        }
 
         SystemSettingsStatus optionalTableStatus = SystemSettingsStatus.Pass;
         string optionalTableRecommendation = "";
 
-        if (optionalMissing.Count > 0)
+        if (optionalMissing.Count > 0 && appliedMigrationsCount > 0)
         {
-            if (appliedMigrationsCount > 0)
-            {
-                optionalTableStatus = SystemSettingsStatus.Warning;
-                optionalTableRecommendation = "Optional feature tables are missing despite migrations being applied. This may indicate a failed migration or dropped tables.";
-            }
-            else
-            {
-                optionalTableStatus = SystemSettingsStatus.Pass;
-                optionalTableRecommendation = "";
-            }
+            optionalTableStatus = SystemSettingsStatus.Warning;
+            optionalTableRecommendation = "Optional feature tables are missing despite migrations being applied. This may indicate a failed migration or dropped tables. " +
+                MissingTablesRemediation(appliedMigrationsCount, pendingMigrationsCount);
         }
 
         return new EnvironmentDiagnosticCheck
@@ -770,6 +893,21 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             Recommendation = optionalTableRecommendation
         };
     }
+
+    /// <summary>
+    /// 'dotnet ef database update' only applies migrations missing from history. With history complete it recreates
+    /// nothing, so it is only advised when migrations are actually pending or none were ever applied.
+    /// </summary>
+    internal static string MissingTablesRemediation(int appliedMigrationsCount, int? pendingMigrationsCount) =>
+        (appliedMigrationsCount, pendingMigrationsCount) switch
+        {
+            (_, > 0) => "Migrations are pending. Apply them: dotnet ef database update",
+            (0, _) => "No migrations have been applied to this database. Run: dotnet ef database update",
+            (_, 0) => $"Migration history records {appliedMigrationsCount} applied migrations and none pending, so 'dotnet ef database update' will not recreate these tables. " +
+                "The schema has drifted from its migration history (tables dropped or changed outside EF), or this is not the database the migrations were applied to. " +
+                "Confirm the connection string, then repair the schema or recreate the database from migrations.",
+            _ => "Migration history could not be read. Confirm the connection string targets the expected database, then check Pending Migrations."
+        };
 
     private List<SchemaTable> GetTablesFromModel()
     {
@@ -787,21 +925,75 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
             .ToList();
     }
 
-    internal static bool IsSchemaCurrent(
+    /// <summary>
+    /// Derived from Required Tables Exist, Pending Migrations and EF Migration Integrity, naming the prerequisite
+    /// that failed. A prerequisite that could not be determined makes the result Unavailable, not Fail.
+    /// </summary>
+    internal static EnvironmentDiagnosticCheck EvaluateSchemaUpToDate(
         EnvironmentDiagnosticCheck tablesCheck,
         EnvironmentDiagnosticCheck pendingCheck,
-        EnvironmentDiagnosticCheck integrityCheck) =>
-        pendingCheck.Status == SystemSettingsStatus.Pass &&
-        tablesCheck.Status != SystemSettingsStatus.Fail &&
-        integrityCheck.Status != SystemSettingsStatus.Fail;
+        EnvironmentDiagnosticCheck integrityCheck)
+    {
+        var failed = new List<(string Reason, string Check)>();
+        if (tablesCheck.Status == SystemSettingsStatus.Fail)
+            failed.Add(("required core tables are missing", tablesCheck.Name));
+        if (pendingCheck.Status == SystemSettingsStatus.Fail)
+            failed.Add(("migrations are pending", pendingCheck.Name));
+        if (integrityCheck.Status == SystemSettingsStatus.Fail)
+            failed.Add(("migration integrity has critical issues", integrityCheck.Name));
+
+        if (failed.Count > 0)
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Schema Up to Date",
+                Status = SystemSettingsStatus.Fail,
+                Details = $"Schema is not current: {Sentence(failed.Select(f => f.Reason))}",
+                Recommendation = $"See {string.Join(", ", failed.Select(f => f.Check))}."
+            };
+        }
+
+        var unverified = new List<(string Reason, string Check)>();
+        if (tablesCheck.Status == SystemSettingsStatus.Unavailable)
+            unverified.Add(("required core tables could not be verified", tablesCheck.Name));
+        if (pendingCheck.Status != SystemSettingsStatus.Pass)
+            unverified.Add(("pending migrations could not be determined", pendingCheck.Name));
+
+        if (unverified.Count > 0)
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Schema Up to Date",
+                Status = SystemSettingsStatus.Unavailable,
+                Details = $"Schema currency could not be verified: {Sentence(unverified.Select(u => u.Reason))}",
+                Recommendation = $"See {string.Join(", ", unverified.Select(u => u.Check))}."
+            };
+        }
+
+        return new EnvironmentDiagnosticCheck
+        {
+            Name = "Schema Up to Date",
+            Status = SystemSettingsStatus.Pass,
+            Details = "Schema is current: required core tables exist, no migrations are pending, and migration integrity has no critical issues",
+            Recommendation = ""
+        };
+
+        static string Sentence(IEnumerable<string> reasons)
+        {
+            var text = string.Join("; ", reasons);
+            return char.ToUpperInvariant(text[0]) + text[1..] + ".";
+        }
+    }
 
     internal static SchemaTableRequirement ClassifyTable(string tableName) => tableName switch
     {
-        // Core platform infrastructure tables
-        "project_documents" => SchemaTableRequirement.Required,
+        // Core persistence tables: saved workspaces and workflow review progress
         "saved_workspaces" => SchemaTableRequirement.Required,
         "saved_workspace_artifacts" => SchemaTableRequirement.Required,
         "workspace_review_progress" => SchemaTableRequirement.Required,
+
+        // Dormant store: api/project-documents has no writer, and no reader besides System Settings diagnostics
+        "project_documents" => SchemaTableRequirement.Optional,
 
         // Analysis and traceability tables (optional features but created by migrations)
         "scenarios" => SchemaTableRequirement.Optional,
@@ -822,88 +1014,67 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         _ => SchemaTableRequirement.Optional
     };
 
-    private async Task<bool> CheckIfWorkspaceHasDataAsync()
+    private async Task<int?> GetAppliedMigrationsCountAsync()
     {
         try
         {
-            // Check if any project documents exist (primary indicator of imported artifacts)
-            var hasProjectDocuments = await _db.Database.SqlQueryRaw<bool>(
-                """
-                SELECT EXISTS(
-                    SELECT 1 FROM information_schema.tables
-                    WHERE table_schema = 'public' AND table_name = {0}
-                )
-                AND EXISTS(
-                    SELECT 1 FROM project_documents LIMIT 1
-                )
-                """, "project_documents").FirstOrDefaultAsync();
-
-            return hasProjectDocuments;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to check if workspace has data");
-            return false;
-        }
-    }
-
-    private async Task<EnvironmentDiagnosticCheck> CheckMigrationsAsync()
-    {
-        try
-        {
-            var migrations = await _db.Database.GetAppliedMigrationsAsync();
-            var count = migrations.Count();
-
-            return new EnvironmentDiagnosticCheck
-            {
-                Name = "EF Core Migrations Applied",
-                Status = count > 0 ? SystemSettingsStatus.Pass : SystemSettingsStatus.Warning,
-                Details = count > 0 ? $"{count} migrations applied" : "No migrations applied",
-                Recommendation = count > 0 ? "" : "Run migrations: dotnet ef database update"
-            };
+            return (await _db.Database.GetAppliedMigrationsAsync()).Count();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to check applied migrations");
-            return new EnvironmentDiagnosticCheck
-            {
-                Name = "EF Core Migrations Applied",
-                Status = SystemSettingsStatus.Warning,
-                Details = "Could not verify migration status",
-                Recommendation = "Ensure database is up to date: dotnet ef database update"
-            };
+            return null;
         }
     }
 
-    private async Task<EnvironmentDiagnosticCheck> CheckPendingMigrationsAsync()
+    private async Task<IReadOnlyList<string>?> GetPendingMigrationsAsync()
     {
         try
         {
-            var pending = await _db.Database.GetPendingMigrationsAsync();
-            var count = pending.Count();
-
-            if (count == 0)
-            {
-                return new EnvironmentDiagnosticCheck
-                {
-                    Name = "Pending Migrations",
-                    Status = SystemSettingsStatus.Pass,
-                    Details = "No pending migrations",
-                    Recommendation = ""
-                };
-            }
-
-            return new EnvironmentDiagnosticCheck
-            {
-                Name = "Pending Migrations",
-                Status = SystemSettingsStatus.Fail,
-                Details = $"{count} pending migration(s): {string.Join(", ", pending.Select(m => m.Split('_').Last()))}",
-                Recommendation = "Apply migrations: dotnet ef database update"
-            };
+            return (await _db.Database.GetPendingMigrationsAsync()).ToList();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to check pending migrations");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Counts rows in __EFMigrationsHistory. It says nothing about whether the schema objects exist.
+    /// </summary>
+    internal static EnvironmentDiagnosticCheck EvaluateAppliedMigrations(int? appliedMigrationsCount) => appliedMigrationsCount switch
+    {
+        null => new EnvironmentDiagnosticCheck
+        {
+            Name = "EF Core Migrations Applied",
+            Status = SystemSettingsStatus.Warning,
+            Details = "Could not verify migration status",
+            Recommendation = "Confirm the connection string targets the expected database."
+        },
+        0 => new EnvironmentDiagnosticCheck
+        {
+            Name = "EF Core Migrations Applied",
+            Status = SystemSettingsStatus.Warning,
+            Details = "No migrations applied",
+            Recommendation = "Run migrations: dotnet ef database update"
+        },
+        var count => new EnvironmentDiagnosticCheck
+        {
+            Name = "EF Core Migrations Applied",
+            Status = SystemSettingsStatus.Pass,
+            Details = $"{count} migrations applied (recorded in migration history; schema objects are verified by Required Tables Exist)",
+            Recommendation = ""
+        }
+    };
+
+    /// <summary>
+    /// Compares the build's migrations with migration history. Zero pending does not prove the schema is intact.
+    /// </summary>
+    internal static EnvironmentDiagnosticCheck EvaluatePendingMigrations(IReadOnlyList<string>? pending)
+    {
+        if (pending is null)
+        {
             return new EnvironmentDiagnosticCheck
             {
                 Name = "Pending Migrations",
@@ -912,6 +1083,25 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 Recommendation = "Verify database schema is current"
             };
         }
+
+        if (pending.Count == 0)
+        {
+            return new EnvironmentDiagnosticCheck
+            {
+                Name = "Pending Migrations",
+                Status = SystemSettingsStatus.Pass,
+                Details = "No pending migrations (every migration in the build is recorded in migration history)",
+                Recommendation = ""
+            };
+        }
+
+        return new EnvironmentDiagnosticCheck
+        {
+            Name = "Pending Migrations",
+            Status = SystemSettingsStatus.Fail,
+            Details = $"{pending.Count} pending migration(s): {string.Join(", ", pending.Select(m => m.Split('_').Last()))}",
+            Recommendation = "Apply migrations: dotnet ef database update"
+        };
     }
 
     private async Task<EnvironmentDiagnosticCheck> CheckMigrationIntegrityAsync()
@@ -926,7 +1116,7 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
                 {
                     Name = "EF Migration Integrity",
                     Status = SystemSettingsStatus.Pass,
-                    Details = $"{report.AppliedMigrationCount} migrations applied, snapshot {report.SnapshotName} detected, 0 issues detected",
+                    Details = $"{report.AppliedMigrationCount} migrations applied, snapshot {report.SnapshotName} detected, 0 issues detected (checks migration files, history recognition and a compiled snapshot; not schema objects)",
                     Recommendation = ""
                 };
             }
@@ -974,4 +1164,12 @@ public class EnvironmentDiagnosticsService : IEnvironmentDiagnosticsService
         public string Key => $"{Schema}.{Name}";
         public string DisplayName => $"{Schema}.{Name}";
     }
+
+    /// <summary>Result of looking the EF model tables up in the connected database, keyed by <see cref="SchemaTable.Key"/>.</summary>
+    internal sealed record TableProbe(IReadOnlySet<string> ExistingKeys, IReadOnlySet<string> UnverifiedKeys);
+
+    private const string ProjectDocumentsTable = "public.project_documents";
+    private const string SavedWorkspacesTable = "public.saved_workspaces";
+    private const string SavedWorkspaceArtifactsTable = "public.saved_workspace_artifacts";
+    private const string WorkspaceReviewProgressTable = "public.workspace_review_progress";
 }

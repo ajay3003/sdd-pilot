@@ -2594,7 +2594,7 @@ else if (_settings is not null)
         StateHasChanged();
     }
 
-    private static string BuildEnvironmentDiagnosticsHtml(EnvironmentDiagnosticsReportDto report)
+    internal static string BuildEnvironmentDiagnosticsHtml(EnvironmentDiagnosticsReportDto report)
     {
         static string E(object? value) => System.Net.WebUtility.HtmlEncode(value?.ToString() ?? "");
         static string StatusBadge(SystemSettingsStatus status) => status switch
@@ -2602,6 +2602,7 @@ else if (_settings is not null)
             SystemSettingsStatus.Pass => "<span style=\"background:#d1fae5;color:#065f46;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Pass</span>",
             SystemSettingsStatus.Warning => "<span style=\"background:#fef08a;color:#854d0e;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Warning</span>",
             SystemSettingsStatus.Fail => "<span style=\"background:#fee2e2;color:#991b1b;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Fail</span>",
+            SystemSettingsStatus.Info => "<span style=\"background:#f3f4f6;color:#6b7280;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Not evaluated</span>",
             _ => "<span style=\"background:#f3f4f6;color:#6b7280;padding:.25rem .5rem;border-radius:.25rem;font-weight:600;font-size:.85rem\">Unavailable</span>"
         };
 
@@ -2645,7 +2646,9 @@ else if (_settings is not null)
             return "Diagnostics completed: 0 checks executed - 0 passed, 0 warnings, 0 failed, 0 unavailable.";
         }
 
-        return $"Diagnostics completed: {summary.TotalCount} checks executed - {summary.PassCount} passed, {summary.WarningCount} warnings, {summary.FailCount} failed, {summary.UnavailableCount} unavailable.";
+        // Not-evaluated rows are not checks: they are listed apart and never part of "checks executed".
+        var notEvaluated = summary.InfoCount > 0 ? $" {summary.InfoCount} not evaluated by the backend." : "";
+        return $"Diagnostics completed: {summary.TotalCount} checks executed - {summary.PassCount} passed, {summary.WarningCount} warnings, {summary.FailCount} failed, {summary.UnavailableCount} unavailable.{notEvaluated}";
     }
 
     internal static string FormatEnvironmentDiagnosticsTimestamp(DateTime timestamp) =>
