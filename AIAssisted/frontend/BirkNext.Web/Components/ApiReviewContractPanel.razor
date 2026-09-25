@@ -1,4 +1,4 @@
-@using BirkNext.Web.Models
+﻿@using BirkNext.Web.Models
 @using BirkNext.Web.Services
 
 @* Contract and schema evidence for the selected targets, plus the baseline history drift is compared against. Each state
@@ -21,9 +21,12 @@
             <dd><span data-testid="aqr-baselines">@Contracts.HistoryLabel</span> · <span data-testid="aqr-latest-comparison">@Contracts.LatestComparison</span></dd>
         </div>
     </dl>
-    <ReviewDisclosure Text="View contract details" CollapseText="Hide contract details" TestId="aqr-contract-details" Class="disclosure-inline">
+    @* How each source is used, not what state it is in: the rows above already say that. *@
+    <ReviewDisclosure Text="Contract details" CollapseText="Hide contract details" TestId="aqr-contract-details" Class="disclosure-inline disclosure-small">
         <ul class="aqr-list aqr-muted" data-testid="aqr-contract-details-list">
-            @foreach (var row in Contracts.Rows) { <li>@(row.Label): @row.Detail</li> }
+            @* A runtime schema row reads the same whether the latest review retrieved it or the next one will try; only its
+               detail says which. Every other row's detail restates its summary, so it is not repeated here. *@
+            @foreach (var row in Contracts.Rows.Where(r => r.State == ApiReviewContractState.RuntimeSchema)) { <li>@(row.Label): @row.Detail</li> }
             @foreach (var line in Contracts.Details) { <li>@line</li> }
         </ul>
     </ReviewDisclosure>

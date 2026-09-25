@@ -18,6 +18,8 @@ public static class ApiReviewPresentation
     public const string ReadOnlySummary = "The automated review does not execute write operations. Only safe requests are sent: REST GET, HEAD and OPTIONS, and GraphQL queries. Mutations and other write operations are listed for manual review and never called.";
     public const string SecurityScopeNote = "Passive, read-only security review. An empty list means no configured issue was detected on the assessed targets; it does not establish that the API is secure.";
     public const string TimingScopeNote = "Response timing is measured from the backend gateway to the API. It is not end-user or browser latency.";
+    /// <summary>The same fact under a "Timing note" label in Read-only review.</summary>
+    public const string TimingScopeShort = "Measured backend gateway → API, not browser or end-user latency.";
     public const string PerformanceScopeNote = "API response timing observed by the review's own requests (backend gateway to the API). Not end-user or production performance.";
 
     /// <summary>
@@ -133,9 +135,10 @@ public static class ApiReviewPresentation
             technical.Add(new("REST", capabilities.AuthenticatedRest ? "Authenticated REST traffic observed" : "No authenticated REST traffic observed"));
             technical.Add(new("GraphQL", capabilities.AuthenticatedGraphQlQuery ? "Authenticated GraphQL query traffic observed" : "No authenticated GraphQL traffic observed"));
             if (capabilities.ObservedHost is { Length: > 0 } host) technical.Add(new("Observed host", host));
-            if (capabilities.Reason is { Length: > 0 } reason) technical.Add(new("Resolution", capabilities.AuthenticatedApi ? "Authenticated API access is available through the Local HTTPS Proxy. API Quality Review needs API access only; browser runtime inspection is outside this review." : reason));
+            if (!capabilities.AuthenticatedApi && capabilities.Reason is { Length: > 0 } reason) technical.Add(new("Resolution", reason));
         }
-        technical.Add(new("Execution", "Authenticated requests are executed by the backend gateway with the memory-only proxy credential (REST GET/HEAD/OPTIONS, GraphQL queries). The review itself never receives a token."));
+        // Which methods are safe is Read-only review's fact; this row says who holds the credential.
+        technical.Add(new("Execution", "Authenticated requests executed by the backend gateway. The review does not receive a token."));
 
         var authHref = AuthenticationHref(context);
         return availability switch
@@ -241,13 +244,16 @@ public static class ApiReviewPresentation
         // Only the limiting facts, one short clause each; the domain cards and Review details carry the explanation.
         if (restContract == ApiReviewContractState.NotConfigured)
         {
-            limitations.Add("No published REST contract");
-            items.Add(new("REST contract validation unavailable — responses are reviewed structurally", ApiReviewReadinessItemState.Warning));
+            limitations.Add("REST contract validation is unavailable");
+            items.Add(new("REST contract validation unavailable — responses reviewed structurally", ApiReviewReadinessItemState.Warning));
         }
         if (gqlContract == ApiReviewContractState.IntrospectionUnavailable)
         {
-            limitations.Add("GraphQL schema was unavailable previously");
-            items.Add(new("GraphQL schema unavailable previously — retrieval will be attempted again; unmatched operations are marked for manual review", ApiReviewReadinessItemState.Warning));
+            // The previous attempt, not this review: nothing has been retrieved or refused yet.
+            limitations.Add("GraphQL schema retrieval will be retried during the review");
+            // Narrow on purpose: with a schema only unmatched operations become manual review; without one, schema-dependent
+            // checks are simply not performed (observed operations are recorded as not matched, not as manual review).
+            items.Add(new("GraphQL schema unavailable on the previous attempt — retried during this review; if it is still unavailable, schema-dependent checks are not performed, and with a schema only unmatched operations need manual review", ApiReviewReadinessItemState.Warning));
         }
         // Listed, never counted: see the rule above.
         if (contracts is { BaselineCount: 0 } && chosen.Count > 0)
@@ -370,7 +376,7 @@ public static class ApiReviewPresentation
         var details = new List<string>
         {
             "REST: a published OpenAPI contract enables contract validation of live responses (documented operations, response shapes). Without one the review records the observed JSON structure (paths and types, never values) and compares it with previous runs.",
-            "GraphQL: schema retrieval is attempted by runtime introspection with a query-only request when the review runs. Disabled introspection is recorded as a policy observation, not as a failure; observed operations are then marked for manual review.",
+            "GraphQL: schema retrieval is attempted by runtime introspection with a query-only request when the review runs. Disabled introspection is recorded as a policy observation, not as a failure; schema-dependent checks are then not performed. With a schema, observed operations that cannot be matched to it are marked for manual review.",
             "Contract history: structural baselines from previous runs (contract hash, root fields, response shapes) are sent with the next run to detect drift. Baselines contain no values.",
         };
         details.AddRange(openApi.Select(u => $"OpenAPI source: {u}"));
@@ -490,10 +496,10 @@ public static class ApiReviewPresentation
         var contractLimits = restLimited || gqlLimited
             ? new[]
             {
-                restLimited ? "REST: no published contract." : null,
+                restLimited ? "REST: No published OpenAPI contract." : null,
                 // Why it was unavailable (introspection policy) is Contracts details' fact, not the card's.
-                gqlLimited ? "GraphQL: schema retrieval will be retried during the review."
-                    : gqlContract == ApiReviewContractState.RuntimeSchema ? "GraphQL: schema retrieval will be attempted during the review." : null,
+                gqlLimited ? "GraphQL: Runtime schema retrieval will be retried during the review."
+                    : gqlContract == ApiReviewContractState.RuntimeSchema ? "GraphQL: Runtime schema retrieval will be attempted during the review." : null,
             }.Where(l => l is not null).ToList()
             : [];
 
@@ -502,7 +508,7 @@ public static class ApiReviewPresentation
             new("security", "Security", "Passive, read-only response and header review.",
                 Scoped(true, authLimited), authLimitation),
 
-            new("contracts", "Contracts", "Published contracts and schemas, compared with previous baselines.",
+            new("contracts", "Contracts", "Published contracts and schemas compared with previous baselines.",
                 nothingSelected ? ApiReviewDomainState.NotIncluded
                     : contractLimits.Count > 0 ? ApiReviewDomainState.Limited
                     : ApiReviewDomainState.Included,
@@ -519,13 +525,13 @@ public static class ApiReviewPresentation
             new("rest", "REST", "Routes, status handling and response structure.",
                 Scoped(scope.Rest > 0, restLimited),
                 scope.Rest > 0 && restLimited
-                    ? "Structural review is available. Published contract comparison is unavailable."
+                    ? "Structural review available. Published contract comparison unavailable."
                     : null),
 
             new("graphql", "GraphQL", "Observed operations, schema evidence and error behaviour.",
                 Scoped(scope.GraphQl > 0, gqlLimited),
                 scope.GraphQl > 0 && gqlLimited
-                    ? "Observed operations can be reviewed. Schema-dependent checks are limited until runtime schema retrieval succeeds."
+                    ? "Observed operations can be reviewed. Schema-dependent checks remain limited until runtime schema retrieval succeeds."
                     : null),
         ];
     }

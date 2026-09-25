@@ -188,7 +188,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid=aqr-readiness]").GetAttribute("data-readiness").Should().Be("Limited"));
         page.Find("#aqr-readiness-heading").TextContent.Should().Contain("Review can run with limitations");
         page.Find("[data-testid=aqr-readiness]").TextContent
-            .Should().Contain("No published REST contract")
+            .Should().Contain("REST contract validation is unavailable")
             .And.NotContain("Authenticated requests cannot be sent", "nothing selected needs authentication");
 
         page.FindAll("[data-testid=aqr-scope-auth]").Should().BeEmpty("no selected API needs authentication, so the scope says nothing about it");
@@ -308,9 +308,9 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
 
         var rest = page.Find("[data-testid=aqr-contract-row][data-protocol='REST']");
         rest.GetAttribute("data-state").Should().Be("NotConfigured");
-        rest.QuerySelector("[data-testid=aqr-contract-state]")!.TextContent.Should().Contain("Not configured");
+        rest.QuerySelector("[data-testid=aqr-contract-state]")!.TextContent.Should().Contain("No published OpenAPI contract");
         rest.TextContent.Should().NotContainAny("Fail", "fail");
-        page.Find("[data-testid=aqr-contract-details-body]").TextContent.Should().Contain("Live responses can still be reviewed structurally");
+        page.Find("[data-testid=aqr-contract-details-body]").TextContent.Should().Contain("records the observed JSON structure");
         var gql = page.Find("[data-testid=aqr-contract-row][data-protocol='GraphQL']");
         gql.GetAttribute("data-state").Should().Be("RuntimeSchema");
         gql.QuerySelector("[data-testid=aqr-contract-state]")!.TextContent.Should().Contain("Retrieved during review");

@@ -135,9 +135,20 @@ public static class ApiReviewContractStates
     public static string PreRunSummary(ApiReviewContractState state) => state switch
     {
         ApiReviewContractState.Available => "OpenAPI configured",
-        ApiReviewContractState.NotConfigured => "Not configured",
+        ApiReviewContractState.NotConfigured => "No published OpenAPI contract",
         ApiReviewContractState.RuntimeSchema => "Retrieved during review",
-        ApiReviewContractState.IntrospectionUnavailable => "Unavailable previously · retry during review",
+        ApiReviewContractState.IntrospectionUnavailable => "Unavailable on previous attempt · retry during review",
+        ApiReviewContractState.NotApplicable => "No target selected",
+        _ => state.ToString(),
+    };
+
+    /// <summary>The fragment in the collapsed Contracts header: short enough that three facts fit on one line.</summary>
+    public static string HeaderSummary(ApiReviewContractState state) => state switch
+    {
+        ApiReviewContractState.Available => "OpenAPI contract",
+        ApiReviewContractState.NotConfigured => "No published contract",
+        ApiReviewContractState.RuntimeSchema => "schema retrieved during review",
+        ApiReviewContractState.IntrospectionUnavailable => "schema retry pending",
         ApiReviewContractState.NotApplicable => "No target selected",
         _ => state.ToString(),
     };

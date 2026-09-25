@@ -217,14 +217,12 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
     // 11, 12, 13.
     [Fact]
-    public void ApiTargetsAreCollapsedByDefault_AndSelectionStillWorksWhenExpanded()
+    public void ApiTargetsAreOpenByDefault_AndSelectionWorks()
     {
         var page = Landing();
 
-        Collapsed(page, "aqr-targets-disclosure").Should().BeTrue();
-        Toggle(page, "aqr-targets-disclosure").TextContent.Should().Contain("API targets").And.Contain("2 selected").And.Contain("1 REST · 1 GraphQL");
-
-        Toggle(page, "aqr-targets-disclosure").Click();
+        Collapsed(page, "aqr-targets-disclosure").Should().BeFalse("API targets is the main pre-run detail section");
+        Toggle(page, "aqr-targets-disclosure").TextContent.Should().Contain("Hide API targets").And.Contain("2 selected").And.Contain("1 REST · 1 GraphQL");
 
         var body = Body(page, "aqr-targets-disclosure");
         body.HasAttribute("hidden").Should().BeFalse();
@@ -280,7 +278,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
             "Sign in and perform an authenticated action against the target.",
             "Return to API Quality Review once authenticated traffic is observed.");
         steps.QuerySelector("[data-testid=aqr-access-details-action]")!.GetAttribute("href").Should().Contain("tab=auth");
-        body.TextContent.Should().Contain("backend gateway").And.Contain("never receives a token");
+        body.TextContent.Should().Contain("backend gateway").And.Contain("does not receive a token");
     }
 
     private static int Occurrences(string haystack, string needle)
@@ -327,10 +325,10 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         var body = Body(page, "aqr-contracts-disclosure");
         var rest = body.QuerySelector("[data-testid=aqr-contract-row][data-protocol='REST']")!;
-        rest.TextContent.Should().Contain("REST contract").And.Contain("Not configured");
+        rest.TextContent.Should().Contain("REST contract").And.Contain("No published OpenAPI contract");
         rest.TextContent.Should().NotContainAny("failed", "error", "incompatible");
         // The explanation is kept, one disclosure further down.
-        body.QuerySelector("[data-testid=aqr-contract-details-body]")!.TextContent.Should().Contain("can still be reviewed structurally");
+        body.QuerySelector("[data-testid=aqr-contract-details-body]")!.TextContent.Should().Contain("records the observed JSON structure");
         // 23. Baseline history keeps its own row, and "not compared yet" is not "no drift".
         body.QuerySelector("[data-testid=aqr-baselines]")!.TextContent.Should().Contain("No previous baseline");
         body.QuerySelector("[data-testid=aqr-latest-comparison]")!.TextContent.Should().Be("Not compared yet");
@@ -375,7 +373,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var rest = page.Find("[data-testid=aqr-domain][data-domain='rest']");
         rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Trim().Should().Be("Limited");
         rest.QuerySelector("[data-testid=aqr-domain-state]")!.TextContent.Should().NotContain("Not included");
-        rest.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Be("Structural review is available. Published contract comparison is unavailable.");
+        rest.QuerySelector("[data-testid=aqr-domain-limitation]")!.TextContent.Should().Be("Structural review available. Published contract comparison unavailable.");
     }
 
     // 27. GraphQL stays in the review; only its schema evidence is limited.

@@ -56,6 +56,13 @@
 }
 
 .aqr-link:hover, .aqr-link:focus-visible { text-decoration: underline; }
+/* A settled secondary action (e.g. Manage authentication once access is available): present, but never competing with Run. */
+.aqr-link-quiet { font-weight: 500; font-size: 0.82rem; color: var(--clr-text-muted); }
+.aqr-link-quiet:hover, .aqr-link-quiet:focus-visible { color: var(--clr-primary); }
+/* The configuration link under API targets is tertiary. It lives in the target picker, so it needs ::deep. */
+.aqr-page ::deep .aqr-targets-source { margin: 0.5rem 0 0; }
+.aqr-page ::deep .aqr-targets-source .aqr-link { font-size: 0.82rem; font-weight: 500; color: var(--clr-text-muted); text-decoration: none; }
+.aqr-page ::deep .aqr-targets-source .aqr-link:hover, .aqr-page ::deep .aqr-targets-source .aqr-link:focus-visible { color: var(--clr-primary); text-decoration: underline; }
 .aqr-link-button { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-size: 0.88rem; font-weight: 600; }
 
 .aqr-empty {

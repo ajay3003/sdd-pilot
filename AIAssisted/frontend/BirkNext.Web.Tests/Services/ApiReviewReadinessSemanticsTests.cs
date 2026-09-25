@@ -88,9 +88,9 @@ public sealed class ApiReviewReadinessSemanticsTests
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
         readiness.Title.Should().Be("Review can run with limitations");
-        readiness.Message.Should().Contain("No published REST contract");
+        readiness.Message.Should().Contain("REST contract validation is unavailable");
         readiness.CanRun.Should().BeTrue("a missing contract limits the review, it does not block it");
-        readiness.Items.Should().Contain(i => i.Label.Contains("responses are reviewed structurally") && i.State == ApiReviewReadinessItemState.Warning);
+        readiness.Items.Should().Contain(i => i.Label.Contains("responses reviewed structurally") && i.State == ApiReviewReadinessItemState.Warning);
 
         // REST is Limited, never Unavailable: routes, statuses, headers and structure are still reviewable.
         var contracts = ApiReviewPresentation.Contracts(targets, targets.Select(t => t.TargetId).ToList(), null, null);
@@ -148,7 +148,7 @@ public sealed class ApiReviewReadinessSemanticsTests
         var readiness = Readiness(targets, authenticated: false);
 
         readiness.Level.Should().Be(ApiReviewReadinessLevel.Limited);
-        readiness.Message.Should().Contain("Authenticated requests cannot be sent").And.Contain("No published REST contract");
+        readiness.Message.Should().Contain("Authenticated requests cannot be sent").And.Contain("REST contract validation is unavailable");
         readiness.CanRun.Should().BeTrue();
     }
 

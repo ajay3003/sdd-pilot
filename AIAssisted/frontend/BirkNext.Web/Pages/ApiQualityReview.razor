@@ -123,7 +123,7 @@
                     @if (access.ActionText is not null && readiness.ActionHref is null)
                     {
                         <p class="aqr-card-actions">
-                            <a class="aqr-link" href="@access.ActionHref" data-testid="aqr-access-action">@access.ActionText</a>
+                            <a class="@(access.Availability == ApiReviewAccessAvailability.Available ? "aqr-link aqr-link-quiet" : "aqr-link")" href="@access.ActionHref" data-testid="aqr-access-action">@access.ActionText</a>
                         </p>
                     }
                 </section>
@@ -136,7 +136,7 @@
                     @if (readiness.Items.Count > 0 && readiness.Level != ApiReviewReadinessLevel.Blocked)
                     {
                         @* While the review can still run, the individual limitations are what the reader opens. *@
-                        <ReviewDisclosure Text="View limitations" CollapseText="Hide limitations" TestId="aqr-readiness-limitations" Class="disclosure-inline disclosure-small">
+                        <ReviewDisclosure Text="View limitation details" CollapseText="Hide limitation details" TestId="aqr-readiness-limitations" Class="disclosure-inline disclosure-small">
                             <ul class="aqr-readiness-items" data-testid="aqr-readiness-items">
                                 @foreach (var item in readiness.Items)
                                 {
@@ -226,7 +226,9 @@
         <section class="aqr-section aqr-details" data-testid="aqr-details" aria-labelledby="aqr-details-heading">
             <div class="aqr-card-head"><h2 id="aqr-details-heading">Review details</h2></div>
 
-            <ReviewDisclosure Text="API targets" CollapseText="Hide API targets" Hint="@ScopeHint(scope)" TestId="aqr-targets-disclosure" Class="aqr-detail-disclosure">
+            @* Open by default and bound, so a re-render never re-opens it after the reader collapsed it. *@
+            <ReviewDisclosure Text="API targets" CollapseText="Hide API targets" Hint="@ScopeHint(scope)" TestId="aqr-targets-disclosure" Class="aqr-detail-disclosure"
+                              @bind-Expanded="_targetsExpanded">
                 <ApiReviewTargetPicker Targets="_targets" Selected="_selected" Toggle="OnToggleTarget" LastReport="_history?.LastReport" />
             </ReviewDisclosure>
 
@@ -243,9 +245,9 @@
                 <dl class="aqr-dl aqr-readonly-methods" data-testid="aqr-readonly-summary">
                     <div><dt>REST</dt><dd>GET, HEAD, OPTIONS</dd></div>
                     <div><dt>GraphQL</dt><dd>Queries only</dd></div>
-                    <div><dt>Never executed</dt><dd>Mutations, write operations and destructive operations. Observed ones are listed for manual review.</dd></div>
+                    <div><dt>Never executed</dt><dd>Mutations, write operations and destructive operations</dd></div>
+                    <div><dt>Timing note</dt><dd class="aqr-muted" data-testid="aqr-timing-scope">@ApiReviewPresentation.TimingScopeShort</dd></div>
                 </dl>
-                <p class="aqr-muted" data-testid="aqr-timing-scope">@ApiReviewPresentation.TimingScopeNote</p>
             </ReviewDisclosure>
         </section>
     }
@@ -572,6 +574,8 @@
     private ApiReviewHistory? _history;
     private ApiReviewReport? _report;
     private bool _running;
+    /// <summary>API targets is the one pre-run detail open by default; everything else under Review details starts collapsed.</summary>
+    private bool _targetsExpanded = true;
     private string _progressMessage = "";
     private string? _errorMessage;
     private string _tab = "Overview";
@@ -633,7 +637,7 @@
     /// <summary>The two contract states plus the baseline count, in the order the expanded rows repeat them.</summary>
     private static string ContractHint(ApiReviewContractPanelModel contracts) => string.Join(" · ",
         contracts.Rows.Where(r => r.State != ApiReviewContractState.NotApplicable)
-            .Select(r => $"{r.Label}: {ApiReviewContractStates.Label(r.State)}")
+            .Select(r => $"{r.Label}: {ApiReviewContractStates.HeaderSummary(r.State)}")
             .Append(contracts.HistoryLabel));
     private void ToggleService(string id) { if (!_expandedServices.Remove(id)) _expandedServices.Add(id); }
     private void ToggleFinding(string id) { if (!_expandedFindings.Remove(id)) _expandedFindings.Add(id); }

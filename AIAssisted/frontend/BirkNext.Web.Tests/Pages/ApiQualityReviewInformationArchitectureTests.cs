@@ -113,11 +113,11 @@ public sealed partial class ApiQualityReviewLandingUITests
     }
 
     [Fact]
-    public void SetupKeepsTargetsCollapsed_ExplainsCredentialLifetime_AndAttemptsSchema()
+    public void SetupShowsTargetsOpen_ExplainsCredentialLifetime_AndAttemptsSchema()
     {
         Register(Context(), true, AutorisasjonEndpoints());
         var page = Render<ApiQualityReview>();
-        page.WaitForAssertion(() => page.Find("[data-testid=aqr-targets-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("false"));
+        page.WaitForAssertion(() => page.Find("[data-testid=aqr-targets-disclosure-toggle]").GetAttribute("aria-expanded").Should().Be("true"));
         page.Find("[data-testid=aqr-memory-only-help]").TextContent.Should().Contain("backend runtime").And.Contain("not exposed to the review result");
         page.Find("[data-testid=aqr-target][data-type=GraphQl] [data-testid=aqr-target-contract]").TextContent.Should().Be("Schema retrieval pending");
     }
