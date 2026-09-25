@@ -20,6 +20,10 @@ public class AppDbContext : DbContext
     public DbSet<SavedWorkspaceArtifact> SavedWorkspaceArtifacts => Set<SavedWorkspaceArtifact>();
     public DbSet<WorkspaceReviewProgress> WorkspaceReviewProgress => Set<WorkspaceReviewProgress>();
     public DbSet<IntegrationQualitySnapshotRecord> IntegrationQualitySnapshots => Set<IntegrationQualitySnapshotRecord>();
+    public DbSet<IntegrationPlatformRecord> IntegrationPlatforms => Set<IntegrationPlatformRecord>();
+    public DbSet<IntegrationDefinitionRecord> IntegrationDefinitions => Set<IntegrationDefinitionRecord>();
+    public DbSet<IntegrationEnvironmentStateRecord> IntegrationEnvironmentStates => Set<IntegrationEnvironmentStateRecord>();
+    public DbSet<IntegrationReviewRunRecord> IntegrationReviewRuns => Set<IntegrationReviewRunRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -525,6 +529,57 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(r => new { r.WorkspaceId, r.ApprovalState })
                 .HasDatabaseName("ix_workspace_review_progress_workspace_approval");
+        });
+
+        // ── Integration catalog (Target Environment → Integrations) and Integration Quality Review runs ──
+        modelBuilder.Entity<IntegrationPlatformRecord>(entity =>
+        {
+            entity.ToTable("integration_platforms");
+            entity.HasKey(r => new { r.EnvironmentId, r.Id });
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200);
+            entity.Property(r => r.Id).HasColumnName("id").HasMaxLength(300);
+            entity.Property(r => r.Name).HasColumnName("name").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.UserModified).HasColumnName("user_modified");
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<IntegrationDefinitionRecord>(entity =>
+        {
+            entity.ToTable("integration_definitions");
+            entity.HasKey(r => new { r.EnvironmentId, r.Id });
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200);
+            entity.Property(r => r.Id).HasColumnName("id").HasMaxLength(300);
+            entity.Property(r => r.PlatformId).HasColumnName("platform_id").HasMaxLength(300);
+            entity.Property(r => r.DisplayName).HasColumnName("display_name").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.Enabled).HasColumnName("enabled");
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.UserModified).HasColumnName("user_modified");
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+            entity.HasIndex(r => new { r.EnvironmentId, r.PlatformId }).HasDatabaseName("ix_integration_definitions_environment_platform");
+        });
+
+        modelBuilder.Entity<IntegrationEnvironmentStateRecord>(entity =>
+        {
+            entity.ToTable("integration_environment_states");
+            entity.HasKey(r => r.EnvironmentId);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200);
+            entity.Property(r => r.SeedVersion).HasColumnName("seed_version");
+            entity.Property(r => r.SeedName).HasColumnName("seed_name").HasMaxLength(200);
+            entity.Property(r => r.LegacyImportedAt).HasColumnName("legacy_imported_at");
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+        });
+
+        modelBuilder.Entity<IntegrationReviewRunRecord>(entity =>
+        {
+            entity.ToTable("integration_review_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.CompletedAt).HasColumnName("completed_at");
+            entity.Property(r => r.Outcome).HasColumnName("outcome").HasMaxLength(50).IsRequired();
+            entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.CompletedAt }).HasDatabaseName("ix_integration_review_runs_environment_completed");
         });
     }
 }

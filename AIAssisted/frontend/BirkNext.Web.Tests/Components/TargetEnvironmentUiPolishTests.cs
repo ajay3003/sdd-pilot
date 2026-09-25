@@ -4,6 +4,7 @@ using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using BirkNext.Web.Tests.Integration;
 using Component = BirkNext.Web.Components.FrontendAnalysisSettings;
 
 namespace BirkNext.Web.Tests.Components;
@@ -26,6 +27,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         Services.AddSingleton<IFrontendAnalysisSettingsService>(_settings);
         Services.AddSingleton(_api.Object);
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
+        Services.AddSingleton<IIntegrationCatalogApiService>(new FakeIntegrationCatalogApi { Catalog = M2lbFixture.Catalog() });
         JSInterop.Mode = JSRuntimeMode.Loose;
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult($$"""
         {"activeProfileId":"dev","profiles":[
@@ -144,12 +146,10 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
 
     // ── Integrations ────────────────────────────────────────────────────────
 
-    private IRenderedComponent<Component> OpenAddIntegration()
+    private IRenderedComponent<Component> OpenIntegrations()
     {
         var cut = Open();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
         cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Integrations").Click();
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "+ Add Integration").Click();
         return cut;
     }
 
@@ -158,11 +158,11 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
     [Fact]
     public void IntegrationQualityReviewGuidanceRemainsAndIsNotStyledAsAWarning()
     {
-        var cut = OpenAddIntegration();
+        var cut = OpenIntegrations();
 
-        var note = cut.Find("[data-testid=fa-integrations-note]");
-        note.TextContent.Should().Contain("Configure service integrations used by Integration Quality Review.");
-        note.TextContent.Should().Contain("not added here automatically", "the page must not imply Endpoint Discovery populates it");
+        var note = cut.WaitForElement("[data-testid=ip-intro]");
+        note.TextContent.Should().Contain("Configured integrations used by Integration Quality Review.");
+        note.TextContent.Should().Contain("never added here automatically", "the page must not imply Endpoint Discovery populates it");
         note.ClassList.Should().NotContain(c => c.Contains("warn") || c.Contains("error"));
         note.GetAttribute("style").Should().BeNullOrEmpty("styling moved out of inline attributes");
     }

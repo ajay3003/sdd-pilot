@@ -391,6 +391,16 @@ builder.Services.AddScoped<IGraphQlExtractor, GraphQlExtractor>();
 builder.Services.AddScoped<IContractComparer, ContractComparer>();
 builder.Services.AddScoped<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualitySnapshotRepository,
                            BirkNext.Api.Services.IntegrationQuality.IntegrationQualitySnapshotRepository>();
+
+// Integration catalog (Target Environment → Integrations) and Integration Quality Review over it. Read-only evidence ports:
+// a DNS/TCP/TLS namespace probe; no runtime or contract adapter exists in this build, so those domains report Not assessed.
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationCatalogService, BirkNext.Api.Services.Integrations.IntegrationCatalogService>();
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationNamespaceProbe, BirkNext.Api.Services.Integrations.TlsNamespaceProbe>();
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationRuntimeEvidenceSource, BirkNext.Api.Services.Integrations.NoRuntimeEvidenceSource>();
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationContractSource, BirkNext.Api.Services.Integrations.NoContractSource>();
+builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationReviewEngine>(client => client.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

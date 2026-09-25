@@ -184,6 +184,9 @@ builder.Services.AddSingleton<ISampleProjectDocumentResolver>(sp =>
 builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
+// Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
+builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IIntegrationQualityReviewService, IntegrationQualityReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 

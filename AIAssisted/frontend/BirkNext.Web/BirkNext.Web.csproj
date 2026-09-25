@@ -30,5 +30,6 @@
     <Compile Include="../../shared/BrowserCompanionContracts.cs" Link="Models/BrowserCompanionContracts.cs" />
     <Compile Include="../../shared/ApiReviewContracts.cs" Link="Models/ApiReviewContracts.cs" />
     <Compile Include="../../shared/CriticalE2EContracts.cs" Link="Models/CriticalE2EContracts.cs" />
+    <Compile Include="../../shared/IntegrationCatalogContracts.cs" Link="Models/IntegrationCatalogContracts.cs" />
   </ItemGroup>
 </Project>

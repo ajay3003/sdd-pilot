@@ -6,6 +6,7 @@ using Bunit;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
+using BirkNext.Web.Tests.Integration;
 using Component = BirkNext.Web.Components.FrontendAnalysisSettings;
 
 namespace BirkNext.Web.Tests.Components;
@@ -19,6 +20,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
 {
     private readonly FrontendAnalysisSettingsService _settings = new();
     private readonly Mock<ITargetEnvironmentDetectionApiService> _api = new(MockBehavior.Strict);
+    private readonly FakeIntegrationCatalogApi _integrations = new();
     private const string Url = "https://m2lbdev.example.com/";
     private const string Authority = "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111";
     private const string Tenant = "11111111-1111-1111-1111-111111111111";
@@ -31,6 +33,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Services.AddSingleton<IFrontendAnalysisSettingsService>(_settings);
         Services.AddSingleton(_api.Object);
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
+        Services.AddSingleton<IIntegrationCatalogApiService>(_integrations);
         JSInterop.SetupVoid("birkNextStorage.setItem", _ => true).SetVoidResult();
         JSInterop.SetupVoid("birkNextStorage.setDiscovery", _ => true).SetVoidResult();
         JSInterop.Setup<string?>("birkNextStorage.getDiscovery").SetResult(null);
@@ -143,10 +146,13 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         {
             OpenTab(cut, tab);
             // Settings form stays read-only; the managed Edge runtime panel has no editable control either (no runtime trust opt-in).
-            cut.FindAll("input, select, textarea").Should().BeEmpty(tab);
-            cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel" || b.TextContent.Contains("Add Integration"));
+            // Integrations are a backend catalog saved per record, outside the profile draft: its search/filter controls are not
+            // profile fields, and nothing there is written unless the user saves an integration.
+            if (tab != "Integrations") cut.FindAll("input, select, textarea").Should().BeEmpty(tab);
+            cut.FindAll("button").Should().NotContain(b => b.TextContent.Trim() == "Save changes" || b.TextContent.Trim() == "Cancel", tab);
         }
-        cut.Markup.Should().Contain("Switch to Edit mode to add integrations");
+        _integrations.Saved.Should().BeEmpty("detecting settings never writes an integration");
+        _integrations.Calls.Should().NotContain(c => c == "create" || c == "update" || c.StartsWith("delete") || c.StartsWith("enabled"));
         var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
         ((bool)typeof(Component).GetField("_isEditMode", flags)!.GetValue(cut.Instance)!).Should().BeFalse();
         ((bool)typeof(Component).GetProperty("IsDirty", flags)!.GetValue(cut.Instance)!).Should().BeFalse();
