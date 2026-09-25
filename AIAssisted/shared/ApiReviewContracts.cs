@@ -56,6 +56,8 @@ public sealed record ApiReviewOperation
     public string? Document { get; init; }
     /// <summary>GraphQL: identity of the document variant. Same name, different selection → different hash.</summary>
     public string? DocumentHash { get; init; }
+    /// <summary>GraphQL: why no document is available although the operation was observed (persisted-query hash only, over the retention limit).</summary>
+    public GraphQlDocumentOmission DocumentOmission { get; init; }
     public DateTimeOffset? FirstObservedAt { get; init; }
     public DateTimeOffset? LastObservedAt { get; init; }
     /// <summary>Only in retained history (an earlier analysis generation), not in the current evidence.</summary>
@@ -311,6 +313,9 @@ public sealed record GraphQlOperationCompatibilityResult
     public DateTimeOffset? LastObservedAt { get; init; }
     public bool Historical { get; init; }
     public string EvidenceSource { get; init; } = "Endpoint Discovery";
+    /// <summary>Deprecated schema members the document uses ("`User.oldName` is deprecated — Use displayName."). Informational only: a
+    /// deprecated field is still part of the contract, so this never makes an operation incompatible (removed ≠ deprecated).</summary>
+    public List<string> DeprecatedUsage { get; init; } = [];
     [JsonIgnore] public string Display => $"{OperationType} {OperationName ?? "(anonymous)"}";
 }
 
@@ -329,6 +334,12 @@ public sealed record ApiReviewGraphQlCompatibility
     public double DurationMs { get; init; }
     /// <summary>Schema changes since the baseline that touch root fields observed operations select ("Removed root field `user` — GetUser").</summary>
     public List<string> SchemaChangeImpact { get; init; } = [];
+    /// <summary>Outcome of the runtime introspection attempt this run ("Retrieved", "Rejected — HTTP 400", "Not attempted — target not reachable").</summary>
+    public string? RuntimeSchemaOutcome { get; init; }
+    /// <summary>The configured schema artifact of this target at run time — used, or available as fallback. Null when none was configured.</summary>
+    public GraphQlSchemaArtifactSnapshot? ConfiguredArtifact { get; init; }
+    /// <summary>Why the configured artifact could not be used (invalid SDL). Null when it parsed or none is configured.</summary>
+    public string? ConfiguredArtifactProblem { get; init; }
     [JsonIgnore] public int Observed => Operations.Count;
     [JsonIgnore] public int Assessed => Operations.Count(o => o.Status != GraphQlCompatibilityStatus.NotAssessed);
     [JsonIgnore] public int Compatible => Operations.Count(o => o.Status == GraphQlCompatibilityStatus.Compatible);

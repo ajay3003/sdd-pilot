@@ -278,6 +278,10 @@ public enum ObservedEndpointConfidence { Rejected, Candidate, Verified }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum GraphQlOperationType { None, Query, Mutation, Subscription }
 
+/// <summary>Why an observed GraphQL operation carries no document. Each is Not assessed with its own reason — never incompatible.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GraphQlDocumentOmission { None, PersistedQueryHashOnly, ExceededRetentionLimit }
+
 /// <summary>
 /// Safe, non-secret evidence of one authenticated API endpoint that BirkNext actually observed in intercepted browser traffic on an
 /// approved host. Traffic-driven, so discovery never assumes <c>/health</c> or <c>/graphql</c>. Deliberately carries no credential:
@@ -312,7 +316,9 @@ public sealed record ObservedAuthenticatedEndpoint
 public sealed record ObservedGraphQlDocument
 {
     public string Hash { get; init; } = "";
+    /// <summary>Empty when the document was observed but not kept (<see cref="Omission"/>); the hash still identifies the variant.</summary>
     public string Document { get; init; } = "";
+    public GraphQlDocumentOmission Omission { get; init; }
     public int Count { get; init; } = 1;
     public DateTimeOffset FirstObservedAt { get; init; }
     public DateTimeOffset LastObservedAt { get; init; }

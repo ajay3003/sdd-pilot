@@ -78,6 +78,7 @@ internal sealed class ProxyExchange
     /// <summary>Normalized, literal-redacted operation document; never variables, never the raw body.</summary>
     public string? GraphQlDocument { get; init; }
     public string? GraphQlDocumentHash { get; init; }
+    public GraphQlDocumentOmission GraphQlDocumentOmission { get; init; }
     /// <summary>The request Referer, used only to correlate the request to a page. Never persisted or logged.</summary>
     public string? Referer { get; init; }
     /// <summary>True for a WebSocket upgrade (HTTP 101). No message bytes are ever inspected.</summary>
@@ -456,7 +457,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             Host = host, Port = port, Method = request.Method, StatusCode = statusCode, BearerToken = request.Bearer,
             Path = request.Path, RequestContentType = request.RequestContentType, ResponseContentType = responseContentType,
             GraphQlOperationType = request.GraphQlOperation, GraphQlOperationName = request.GraphQlOperationName,
-            GraphQlDocument = request.GraphQlDocument?.Document, GraphQlDocumentHash = request.GraphQlDocument?.Hash,
+            GraphQlDocument = request.GraphQlDocument?.Document, GraphQlDocumentHash = request.GraphQlDocument?.Hash, GraphQlDocumentOmission = request.GraphQlDocument?.Omission ?? GraphQlDocumentOmission.None,
             Provenance = request.Provenance, Referer = request.Referer, IsWebSocket = statusCode == 101,
             DurationMs = Math.Round(Stopwatch.GetElapsedTime(request.StartedTimestamp).TotalMilliseconds, 1),
             CacheDirectives = CacheHeaderMetadata.NormalizeCacheControl(response?.Header("Cache-Control")),

@@ -58,6 +58,8 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
     private EndpointDiscoveryService _discovery = new();
     private ApiReviewHistoryService _history = new();
 
+    private readonly BirkNext.Web.Tests.Integration.FakeGraphQlSchemaArtifactApi _schemaArtifacts = new();
+
     private void Register(FrontendAnalysisContext context, bool authenticated, ObservedNetworkEndpoint[] endpoints, Func<ApiReviewRunRequest, ApiReviewReport>? report = null, AuthenticatedApiContextStatus? contextStatus = null)
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
@@ -79,6 +81,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         Services.AddSingleton<IEndpointDiscoveryService>(_discovery);
         Services.AddSingleton<IApiReviewHistoryService>(_history);
         Services.AddSingleton(caps.Object);
+        Services.AddSingleton<IGraphQlSchemaArtifactApiService>(_schemaArtifacts);
         Services.AddSingleton(_review.Object);
         Services.AddSingleton<RuntimeReviewSessionService>();
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
@@ -388,6 +391,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         Services.AddSingleton<IApiReviewHistoryService, ApiReviewHistoryService>();
         Services.AddSingleton(Mock.Of<IAuthenticatedReviewCapabilitiesService>());
+        Services.AddSingleton<IGraphQlSchemaArtifactApiService>(new BirkNext.Web.Tests.Integration.FakeGraphQlSchemaArtifactApi());
         Services.AddSingleton(Mock.Of<IApiReviewService>());
         Services.AddSingleton<RuntimeReviewSessionService>();
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());

@@ -25,6 +25,8 @@ public static class GraphQlOperationCompatibility
     public const string NoSchemaReason = "No GraphQL schema was available for validation.";
     public const string NoDocumentReason = "The operation document was not captured (Endpoint Discovery recorded its name and type only).";
     public const string UnparseableReason = "The observed operation document could not be parsed.";
+    public const string PersistedQueryReason = "Operation text unavailable; only a persisted-query hash was observed.";
+    public const string OversizeReason = "The operation document exceeded the retained-query size limit (16 KB) and was not kept.";
 
     /// <summary>
     /// Assesses every observed operation of one endpoint. With no schema every operation is Not assessed — never "0 compatible" — and
@@ -32,8 +34,9 @@ public static class GraphQlOperationCompatibility
     /// </summary>
     public static ApiReviewGraphQlCompatibility Assess(
         GraphQlNormalizedContract? schema, GraphQlSchemaSource source, string? sourceDetail, DateTimeOffset? retrievedAt,
-        IReadOnlyList<ApiReviewOperation> observed, string endpoint, ILogger? logger = null)
+        IReadOnlyList<ApiReviewOperation> observed, string endpoint, ILogger? logger = null, string? noSchemaReason = null)
     {
+        var missingSchema = noSchemaReason ?? NoSchemaReason;
         var stopwatch = Stopwatch.StartNew();
         var index = schema is null ? null : SchemaIndex.From(schema);
         var results = new List<GraphQlOperationCompatibilityResult>();
@@ -46,15 +49,24 @@ public static class GraphQlOperationCompatibility
                 DocumentHash = operation.DocumentHash, ObservationCount = operation.ObservedCount,
                 FirstObservedAt = operation.FirstObservedAt, LastObservedAt = operation.LastObservedAt, Historical = operation.Historical,
             };
-            if (index is null) { results.Add(result with { NotAssessedReason = NoSchemaReason }); continue; }
+            // A document that was never kept is explained by why it is missing (persisted-query hash, size limit) — never incompatible.
+            if (string.IsNullOrWhiteSpace(operation.Document) && operation.DocumentOmission != GraphQlDocumentOmission.None)
+            {
+                results.Add(result with
+                {
+                    NotAssessedReason = operation.DocumentOmission == GraphQlDocumentOmission.PersistedQueryHashOnly ? PersistedQueryReason : OversizeReason,
+                });
+                continue;
+            }
+            if (index is null) { results.Add(result with { NotAssessedReason = missingSchema }); continue; }
             if (string.IsNullOrWhiteSpace(operation.Document)) { results.Add(result with { NotAssessedReason = NoDocumentReason }); continue; }
             try
             {
-                var (issues, rootFields) = Validator.Validate(index, operation.Document);
+                var (issues, rootFields, deprecated) = Validator.Validate(index, operation.Document);
                 results.Add(result with
                 {
                     Status = issues.Count == 0 ? GraphQlCompatibilityStatus.Compatible : GraphQlCompatibilityStatus.Incompatible,
-                    Issues = issues, RootFields = rootFields,
+                    Issues = issues, RootFields = rootFields, DeprecatedUsage = deprecated,
                 });
             }
             catch (SyntaxException)
@@ -73,7 +85,7 @@ public static class GraphQlOperationCompatibility
             SchemaSource = index is null ? GraphQlSchemaSource.None : source,
             SchemaSourceDetail = index is null ? null : sourceDetail,
             SchemaRetrievedAt = index is null ? null : retrievedAt,
-            NotAssessedReason = index is null ? NoSchemaReason : null,
+            NotAssessedReason = index is null ? missingSchema : null,
             Operations = results,
             DurationMs = stopwatch.Elapsed.TotalMilliseconds,
         };
@@ -158,13 +170,20 @@ public static class GraphQlOperationCompatibility
             public Dictionary<string, VariableDefinitionNode>? Variables { get; set; }
             public HashSet<string> Visiting { get; } = new(StringComparer.Ordinal);
             public List<GraphQlValidationIssue> Issues { get; } = [];
+            /// <summary>Deprecated members the document uses. Never an issue: a deprecated member is still part of the contract.</summary>
+            public List<string> Deprecated { get; } = [];
+            public void Deprecation(string member, string? reason)
+            {
+                var note = $"`{member}` is deprecated" + (string.IsNullOrWhiteSpace(reason) ? "." : $" — {reason.Trim()}");
+                if (!Deprecated.Contains(note)) Deprecated.Add(note);
+            }
             public void Add(string code, string message, string? path)
             {
                 if (!Issues.Any(i => i.Code == code && i.Message == message && i.Path == path)) Issues.Add(new(code, message, path));
             }
         }
 
-        public static (List<GraphQlValidationIssue> Issues, List<string> RootFields) Validate(SchemaIndex schema, string document)
+        public static (List<GraphQlValidationIssue> Issues, List<string> RootFields, List<string> Deprecated) Validate(SchemaIndex schema, string document)
         {
             var parsed = Utf8GraphQLParser.Parse(document);
             var fragments = parsed.Definitions.OfType<FragmentDefinitionNode>()
@@ -203,7 +222,7 @@ public static class GraphQlOperationCompatibility
                 if (!SchemaIndex.IsComposite(type)) { context.Add("INVALID_FRAGMENT_TYPE", $"Fragment `{fragment.Name.Value}` cannot be on the non-composite type `{type.Name}`.", fragment.Name.Value); continue; }
                 ValidateSelectionSet(context, type, fragment.SelectionSet, fragment.Name.Value, false, usedFragments);
             }
-            return (context.Issues, rootFields.Distinct(StringComparer.Ordinal).ToList());
+            return (context.Issues, rootFields.Distinct(StringComparer.Ordinal).ToList(), context.Deprecated);
         }
 
         private static IEnumerable<string> RootFieldNames(Context context, SelectionSetNode selectionSet)
@@ -296,6 +315,7 @@ public static class GraphQlOperationCompatibility
                 context.Add("FIELD_NOT_FOUND", $"The field `{name}` does not exist on the type `{parent.Name}`.", fieldPath);
                 return;
             }
+            if (field.IsDeprecated) context.Deprecation($"{parent.Name}.{name}", field.DeprecationReason);
 
             foreach (var argument in node.Arguments)
             {
@@ -359,6 +379,8 @@ public static class GraphQlOperationCompatibility
                     if (value is not EnumValueNode enumValue) { context.Add("TYPE_MISMATCH", $"{Capitalize(label)} expects a value of the enum `{type.Name}`.", path); return; }
                     if (type.EnumValues is { } values && !values.Any(v => v.Name == enumValue.Value))
                         context.Add("ENUM_VALUE_INVALID", $"The value `{enumValue.Value}` is not a valid value of the enum `{type.Name}`.", path);
+                    else if (type.EnumValues?.FirstOrDefault(v => v.Name == enumValue.Value) is { IsDeprecated: true } deprecatedValue)
+                        context.Deprecation($"{type.Name}.{deprecatedValue.Name}", deprecatedValue.DeprecationReason);
                     return;
                 case "INPUT_OBJECT":
                     if (value is not ObjectValueNode obj) { context.Add("TYPE_MISMATCH", $"{Capitalize(label)} expects an object of the input type `{type.Name}`.", path); return; }
@@ -466,7 +488,7 @@ public static class GraphQlSdlSchema
                     (Get(union.Name.Value, "UNION").PossibleTypes ??= []).AddRange(union.Types.Select(t => t.Name.Value));
                     break;
                 case EnumTypeDefinitionNodeBase enumType:
-                    (Get(enumType.Name.Value, "ENUM").EnumValues ??= []).AddRange(enumType.Values.Select(v => new GraphQlEnumValue { Name = v.Name.Value, IsDeprecated = IsDeprecated(v.Directives) }));
+                    (Get(enumType.Name.Value, "ENUM").EnumValues ??= []).AddRange(enumType.Values.Select(v => new GraphQlEnumValue { Name = v.Name.Value, IsDeprecated = IsDeprecated(v.Directives), DeprecationReason = DeprecationReason(v.Directives) }));
                     break;
                 case InputObjectTypeDefinitionNodeBase input:
                     (Get(input.Name.Value, "INPUT_OBJECT").InputFields ??= []).AddRange(input.Fields.Select(f => new GraphQlField { Name = f.Name.Value, Type = TypeRef(f.Type) }));
@@ -496,10 +518,14 @@ public static class GraphQlSdlSchema
         Name = field.Name.Value,
         Type = TypeRef(field.Type),
         IsDeprecated = IsDeprecated(field.Directives),
+        DeprecationReason = DeprecationReason(field.Directives),
         Arguments = field.Arguments.Select(a => new GraphQlArgument { Name = a.Name.Value, Type = TypeRef(a.Type), DefaultValue = a.DefaultValue?.ToString() }).ToList(),
     };
 
     private static bool IsDeprecated(IReadOnlyList<DirectiveNode> directives) => directives.Any(d => d.Name.Value == "deprecated");
+
+    private static string? DeprecationReason(IReadOnlyList<DirectiveNode> directives) =>
+        directives.FirstOrDefault(d => d.Name.Value == "deprecated")?.Arguments.FirstOrDefault(a => a.Name.Value == "reason")?.Value is StringValueNode reason ? reason.Value : null;
 
     private static GraphQlTypeRef TypeRef(ITypeNode node) => node switch
     {

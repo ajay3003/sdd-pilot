@@ -60,6 +60,7 @@ public sealed class ApiQualityReviewPageTests : BunitContext
         Services.AddSingleton<IEndpointDiscoveryService>(discovery);
         Services.AddSingleton<IApiReviewHistoryService, ApiReviewHistoryService>();
         Services.AddSingleton(caps.Object);
+        Services.AddSingleton<IGraphQlSchemaArtifactApiService>(new BirkNext.Web.Tests.Integration.FakeGraphQlSchemaArtifactApi());
         Services.AddSingleton(review.Object);
         Services.AddSingleton<RuntimeReviewSessionService>();
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());

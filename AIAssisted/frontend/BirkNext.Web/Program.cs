@@ -187,6 +187,9 @@ builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
 // Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
 builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+// Trusted GraphQL schema artifacts per (Target Environment, API target) — API Quality Review's fallback schema for compatibility.
+builder.Services.AddHttpClient<IGraphQlSchemaArtifactApiService, GraphQlSchemaArtifactApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IIntegrationQualityReviewService, IntegrationQualityReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 

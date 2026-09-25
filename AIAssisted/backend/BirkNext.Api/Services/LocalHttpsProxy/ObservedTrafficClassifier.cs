@@ -61,7 +61,7 @@ internal static class GraphQlBodyInspector
         }
         catch (JsonException) { return (GraphQlOperationType.None, null, null); }
         var (type, name) = ClassifyQuery(query, operationName);
-        return type == GraphQlOperationType.None ? (type, null, null) : (type, name, GraphQlDocumentNormalizer.Normalize(query));
+        return type == GraphQlOperationType.None ? (type, null, null) : (type, name, GraphQlDocumentNormalizer.NormalizeForEvidence(query));
     }
 
     /// <summary>Derives the operation kind from the GraphQL document text: the leading keyword (shorthand <c>{ ... }</c> is a query), and the operation name when present.</summary>
@@ -263,6 +263,7 @@ internal sealed record NetworkRequestMetadata
     /// <summary>Normalized, literal-redacted operation document (see <see cref="GraphQlDocumentNormalizer"/>).</summary>
     public string? GraphQlDocument { get; init; }
     public string? GraphQlDocumentHash { get; init; }
+    public GraphQlDocumentOmission GraphQlDocumentOmission { get; init; }
     /// <summary>The request Referer header, if any. Used only to derive the correlating page origin/path; the value is never persisted.</summary>
     public string? Referer { get; init; }
     // ── performance metadata (timing, allow-listed cache directives, presence flags, declared size) ──
@@ -349,7 +350,7 @@ internal static class NetworkTrafficClassifier
             OperationType = metadata.GraphQlOperationType,
             OperationName = metadata.GraphQlOperationName,
             GraphQlDocuments = category == ObservedTrafficCategory.GraphQl && metadata.GraphQlDocument is { } doc && metadata.GraphQlDocumentHash is { } hash
-                ? [new ObservedGraphQlDocument { Hash = hash, Document = doc, Count = 1, FirstObservedAt = observedAt, LastObservedAt = observedAt }]
+                ? [new ObservedGraphQlDocument { Hash = hash, Document = doc, Omission = metadata.GraphQlDocumentOmission, Count = 1, FirstObservedAt = observedAt, LastObservedAt = observedAt }]
                 : [],
             PageOrigin = pageOrigin,
             PagePath = pagePath,

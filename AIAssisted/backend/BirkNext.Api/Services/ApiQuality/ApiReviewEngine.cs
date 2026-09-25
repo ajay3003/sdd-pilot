@@ -20,7 +20,8 @@ public interface IApiReviewEngine
 /// Public targets use the anonymous HTTP client; authenticated targets go through <see cref="IAuthenticatedReviewGateway"/> so the
 /// engine never sees a token. Endpoint paths come from the request (Endpoint Discovery / configuration / contract) — nothing is guessed.
 /// </summary>
-public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedReviewGateway gateway, IOpenApiExtractor openApi, IGraphQlExtractor graphQl, ILogger<ApiReviewEngine> logger) : IApiReviewEngine
+public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedReviewGateway gateway, IOpenApiExtractor openApi, IGraphQlExtractor graphQl, ILogger<ApiReviewEngine> logger,
+    IGraphQlSchemaArtifactStore? schemaArtifacts = null) : IApiReviewEngine
 {
     public const string TypenameProbe = "query { __typename }";
     public const string InvalidFieldProbe = "query { __birkNextUnknownFieldProbe }";
@@ -440,8 +441,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (mode is ApiReviewAccessMode.Unavailable or ApiReviewAccessMode.ManualOnly or ApiReviewAccessMode.Blocked)
         {
             // Compatibility needs a schema and the documents, not access: a configured artifact still lets it run.
-            var (artifact, artifactDetail) = await FetchSchemaArtifactAsync(target, ct);
-            var blockedCompatibility = GraphQlOperationCompatibility.Assess(artifact, GraphQlSchemaSource.ConfiguredArtifact, artifactDetail, artifact is null ? null : DateTimeOffset.UtcNow, observed, endpoint, logger);
+            var blockedArtifact = await ResolveSchemaArtifactAsync(target, request, ct);
+            var blockedCompatibility = AssessCompatibility(target, null, blockedArtifact, $"Not attempted — {reason}", observed, endpoint);
             foreach (var f in GraphQlOperationCompatibility.Findings(blockedCompatibility, target.TargetId)) Add(targetFindings, findings, f);
             return new ApiReviewTargetResult
             {
@@ -457,8 +458,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (!probe.Executed)
         {
             checks.Add(Check("gql-reachability", ApiReviewFindingType.GraphQl, "Endpoint answers a safe query", probe.Timeout ? ApiReviewCheckResult.NotTested : ApiReviewCheckResult.Blocked, probe.Message));
-            var (artifact, artifactDetail) = await FetchSchemaArtifactAsync(target, ct);
-            var unreachedCompatibility = GraphQlOperationCompatibility.Assess(artifact, GraphQlSchemaSource.ConfiguredArtifact, artifactDetail, artifact is null ? null : DateTimeOffset.UtcNow, observed, endpoint, logger);
+            var unreachedArtifact = await ResolveSchemaArtifactAsync(target, request, ct);
+            var unreachedCompatibility = AssessCompatibility(target, null, unreachedArtifact, $"Not attempted — {probe.Message}", observed, endpoint);
             foreach (var f in GraphQlOperationCompatibility.Findings(unreachedCompatibility, target.TargetId)) Add(targetFindings, findings, f);
             return new ApiReviewTargetResult
             {
@@ -537,11 +538,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
 
         // Client/server compatibility: the observed documents against the best trusted schema of THIS endpoint. Runtime introspection
         // first; a configured schema artifact when introspection is unavailable; otherwise Not assessed — never a fabricated schema.
-        var (compatibilitySchema, schemaSource, schemaDetail) = runtimeSchema is not null
-            ? (runtimeSchema, GraphQlSchemaSource.RuntimeIntrospection, $"Introspection of {endpoint}")
-            : await FetchSchemaArtifactAsync(target, ct) is ({ } configured, var configuredDetail) ? (configured, GraphQlSchemaSource.ConfiguredArtifact, configuredDetail)
-            : ((GraphQlNormalizedContract?)null, GraphQlSchemaSource.None, (string?)null);
-        var compatibility = GraphQlOperationCompatibility.Assess(compatibilitySchema, schemaSource, schemaDetail, compatibilitySchema is null ? null : DateTimeOffset.UtcNow, observed, endpoint, logger);
+        // The artifact is resolved even when runtime introspection wins, so the result records that a fallback existed.
+        var runtimeOutcome = runtimeSchema is not null ? "Retrieved"
+            : schemaJson is not null ? "Retrieved but could not be normalized"
+            : introspectionDisabled ? $"Rejected — {introspectionMessage}" : $"Unavailable — {introspectionMessage}";
+        var compatibility = AssessCompatibility(target, runtimeSchema, await ResolveSchemaArtifactAsync(target, request, ct), runtimeOutcome, observed, endpoint);
         foreach (var f in GraphQlOperationCompatibility.Findings(compatibility, target.TargetId)) Add(targetFindings, findings, f);
         compatibility = compatibility with { SchemaChangeImpact = SchemaChangeImpact(targetFindings, compatibility) };
         checks.Add(Check("gql-compatibility", ApiReviewFindingType.Contract, "Observed operations compatible with the schema",
@@ -586,9 +587,54 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         };
     }
 
+    /// <summary>A configured schema for one target: the parsed schema (or why it is unusable) and, for a stored artifact, its metadata.</summary>
+    private sealed record SchemaArtifactResolution(GraphQlNormalizedContract? Schema, string? Detail, GraphQlSchemaArtifact? Stored, string? Problem);
+
     /// <summary>
-    /// The configured, trusted schema artifact of a GraphQL target (<see cref="ApiReviewTarget.ContractSource"/>): SDL or an introspection
-    /// result, fetched read-only. Null when none is configured or it cannot be read — never a schema inferred from observed operations.
+    /// The trusted schema artifact configured for THIS target in THIS environment (the run's environment + stable target id — never a
+    /// display name, never another environment's artifact). Falls back to a schema URL in <see cref="ApiReviewTarget.ContractSource"/>.
+    /// Null when nothing is configured — never a schema inferred from observed operations.
+    /// </summary>
+    private async Task<SchemaArtifactResolution?> ResolveSchemaArtifactAsync(ApiReviewTarget target, ApiReviewRunRequest request, CancellationToken ct)
+    {
+        if (schemaArtifacts is not null && await schemaArtifacts.ResolveAsync(request.Environment.EnvironmentId, target.TargetId, ct) is { } stored)
+            return new SchemaArtifactResolution(stored.Schema, $"Configured SDL {stored.Artifact.FileName} ({stored.Artifact.ShortHash})", stored.Artifact, stored.Problem);
+        var (schema, detail) = await FetchSchemaArtifactAsync(target, ct);
+        return schema is null ? null : new SchemaArtifactResolution(schema, detail, null, null);
+    }
+
+    /// <summary>
+    /// Source selection and assessment in one place: runtime introspection first; the configured artifact only when the runtime schema is
+    /// unavailable; otherwise Not assessed (with the artifact's problem as the reason when it exists but is invalid). The result records
+    /// which source was used, what the runtime attempt returned and the artifact snapshot — so a historical run never reads the current one.
+    /// </summary>
+    private ApiReviewGraphQlCompatibility AssessCompatibility(ApiReviewTarget target, GraphQlNormalizedContract? runtimeSchema, SchemaArtifactResolution? artifact, string runtimeOutcome,
+        IReadOnlyList<ApiReviewOperation> observed, string endpoint)
+    {
+        var useArtifact = runtimeSchema is null && artifact?.Schema is not null;
+        var (schema, source, detail) = runtimeSchema is not null ? (runtimeSchema, GraphQlSchemaSource.RuntimeIntrospection, $"Introspection of {endpoint}")
+            : useArtifact ? (artifact!.Schema, GraphQlSchemaSource.ConfiguredArtifact, artifact.Detail)
+            : ((GraphQlNormalizedContract?)null, GraphQlSchemaSource.None, (string?)null);
+        var invalidArtifact = runtimeSchema is null && artifact?.Problem is { } problem ? $"Configured schema artifact invalid: {problem}" : null;
+        var compatibility = GraphQlOperationCompatibility.Assess(schema, source, detail, schema is null ? null : DateTimeOffset.UtcNow, observed, endpoint, logger, invalidArtifact) with
+        {
+            RuntimeSchemaOutcome = runtimeOutcome,
+            ConfiguredArtifact = artifact?.Stored is { } stored
+                ? new GraphQlSchemaArtifactSnapshot { ArtifactId = stored.Id, FileName = stored.FileName, ContentHash = stored.ContentHash, UpdatedAt = stored.UpdatedAt, UsedForCompatibility = useArtifact }
+                : null,
+            ConfiguredArtifactProblem = artifact?.Problem,
+        };
+        logger.LogInformation(
+            "GraphQL schema source for target {TargetId}: {SchemaSource}; runtime introspection {RuntimeOutcome}; artifact {ArtifactId} {ArtifactHash} {ArtifactStatus}; {Observed} observed, {Compatible} compatible, {Incompatible} incompatible, {NotAssessed} not assessed in {DurationMs:0} ms.",
+            target.TargetId, compatibility.SchemaSource, runtimeOutcome, artifact?.Stored?.Id ?? "none", artifact?.Stored?.ShortHash ?? "",
+            artifact is null ? "not configured" : artifact.Problem is not null ? "invalid" : useArtifact ? "used" : "available as fallback",
+            compatibility.Observed, compatibility.Compatible, compatibility.Incompatible, compatibility.NotAssessed, compatibility.DurationMs);
+        return compatibility;
+    }
+
+    /// <summary>
+    /// A schema URL in <see cref="ApiReviewTarget.ContractSource"/>: SDL or an introspection result, fetched read-only. Null when none is
+    /// configured or it cannot be read.
     /// </summary>
     private async Task<(GraphQlNormalizedContract? Schema, string? Detail)> FetchSchemaArtifactAsync(ApiReviewTarget target, CancellationToken ct)
     {

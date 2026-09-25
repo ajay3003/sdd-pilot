@@ -356,6 +356,7 @@ builder.Services.AddHttpClient<IApiQualityReviewService, ApiQualityReviewService
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiQualityScanner/1.0");
 });
 // API Quality Review v2 engine (public client: no cookies, no automatic decompression so compression evidence stays visible, no redirects into other hosts)
+builder.Services.AddScoped<BirkNext.Api.Services.ApiQuality.IGraphQlSchemaArtifactStore, BirkNext.Api.Services.ApiQuality.GraphQlSchemaArtifactService>();
 builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);

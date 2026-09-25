@@ -33,6 +33,17 @@ public static class ApiReviewGraphQlCompatibilityPresentation
         _ => "None",
     };
 
+    /// <summary>The source as used by this run: a stored SDL artifact reads "Configured SDL", never "runtime schema".</summary>
+    public static string SchemaSourceLabel(ApiReviewGraphQlCompatibility compatibility) =>
+        compatibility.SchemaSource == GraphQlSchemaSource.ConfiguredArtifact && compatibility.ConfiguredArtifact is { UsedForCompatibility: true }
+            ? "Configured SDL"
+            : SchemaSourceLabel(compatibility.SchemaSource);
+
+    /// <summary>"m2lb-schema.graphql · sha256 1a2b3c4d5e6f · updated 2026-09-25 13:10" — what this run had, from its own snapshot.</summary>
+    public static string? ArtifactLabel(ApiReviewGraphQlCompatibility compatibility) => compatibility.ConfiguredArtifact is { } a
+        ? $"{a.FileName} · sha256 {a.ShortHash} · updated {a.UpdatedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC" + (a.UsedForCompatibility ? "" : " · available as fallback (not used)")
+        : null;
+
     /// <summary>Runtime column: the review validates observed operations, it does not run them.</summary>
     public static string RuntimeLabel(GraphQlOperationType type) => type switch
     {
@@ -82,7 +93,8 @@ public static class ApiReviewGraphQlCompatibilityPresentation
     /// Pre-run: whether compatibility CAN be assessed for the selected GraphQL targets — never a result. Documents come from
     /// Endpoint Discovery; the schema from runtime introspection during the review, or a configured artifact.
     /// </summary>
-    public static IReadOnlyList<ApiReviewReadinessItem> Readiness(IReadOnlyList<ApiReviewTarget> graphQlTargets, bool introspectionUnavailablePreviously)
+    public static IReadOnlyList<ApiReviewReadinessItem> Readiness(IReadOnlyList<ApiReviewTarget> graphQlTargets, bool introspectionUnavailablePreviously,
+        IReadOnlyDictionary<string, GraphQlSchemaArtifact>? artifacts = null)
     {
         var items = new List<ApiReviewReadinessItem>();
         foreach (var target in graphQlTargets)
@@ -96,11 +108,16 @@ public static class ApiReviewGraphQlCompatibilityPresentation
                 items.Add(new($"{noun} · operation documents not captured yet — compatibility will not be assessed until Endpoint Discovery observes them again", ApiReviewReadinessItemState.Missing));
                 continue;
             }
-            var documents = withDocument == observed.Count ? "" : $" ({withDocument} with a captured document)";
-            if (!string.IsNullOrWhiteSpace(target.ContractSource))
+            var persisted = observed.Count(o => o.DocumentOmission == GraphQlDocumentOmission.PersistedQueryHashOnly);
+            var oversize = observed.Count(o => o.DocumentOmission == GraphQlDocumentOmission.ExceededRetentionLimit);
+            var documents = withDocument == observed.Count ? "" : $" ({withDocument} with a captured document"
+                + (persisted > 0 ? $", {persisted} persisted-query hash only" : "") + (oversize > 0 ? $", {oversize} over the retained-size limit" : "") + ")";
+            if (artifacts?.TryGetValue(target.TargetId, out var artifact) == true)
+                items.Add(new($"{noun}{documents} · runtime introspection will be attempted first; configured SDL {artifact.FileName} is available as fallback — compatibility can be assessed", ApiReviewReadinessItemState.Ok));
+            else if (!string.IsNullOrWhiteSpace(target.ContractSource))
                 items.Add(new($"{noun}{documents} · configured schema artifact available — compatibility can be assessed", ApiReviewReadinessItemState.Ok));
             else if (introspectionUnavailablePreviously)
-                items.Add(new($"{noun}{documents} · no configured schema artifact and the runtime schema was unavailable last time — compatibility is assessed only if introspection succeeds", ApiReviewReadinessItemState.Warning));
+                items.Add(new($"{noun}{documents} · no configured schema artifact and the runtime schema was unavailable last time — compatibility is assessed only if introspection succeeds (add a trusted SDL under Review details → GraphQL schema artifacts)", ApiReviewReadinessItemState.Warning));
             else
                 items.Add(new($"{noun}{documents} · runtime schema will be retrieved during the review for compatibility", ApiReviewReadinessItemState.Ok));
         }

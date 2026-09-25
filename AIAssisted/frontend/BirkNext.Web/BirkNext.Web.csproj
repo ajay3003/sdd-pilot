@@ -31,5 +31,6 @@
     <Compile Include="../../shared/ApiReviewContracts.cs" Link="Models/ApiReviewContracts.cs" />
     <Compile Include="../../shared/CriticalE2EContracts.cs" Link="Models/CriticalE2EContracts.cs" />
     <Compile Include="../../shared/IntegrationCatalogContracts.cs" Link="Models/IntegrationCatalogContracts.cs" />
+    <Compile Include="../../shared/GraphQlSchemaArtifactContracts.cs" Link="Models/GraphQlSchemaArtifactContracts.cs" />
   </ItemGroup>
 </Project>

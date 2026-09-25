@@ -75,7 +75,10 @@ public static class ApiReviewExport
                 {
                     // Client/server compatibility, apart from drift and from runtime.
                     sb.Append("<h3>GraphQL client/server compatibility</h3><dl>");
-                    sb.Append($"<dt>Schema source</dt><dd>{esc(ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compat.SchemaSource))}{(compat.SchemaRetrievedAt is { } at ? $" (retrieved {at:u})" : "")}</dd>");
+                    sb.Append($"<dt>Schema source</dt><dd>{esc(ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compat))}{(compat.SchemaRetrievedAt is { } at ? $" (retrieved {at:u})" : "")}</dd>");
+                    if (compat.RuntimeSchemaOutcome is { } runtimeOutcome) sb.Append($"<dt>Runtime introspection</dt><dd>{esc(runtimeOutcome)}</dd>");
+                    if (ApiReviewGraphQlCompatibilityPresentation.ArtifactLabel(compat) is { } artifactLabel) sb.Append($"<dt>Schema artifact</dt><dd>{esc(artifactLabel)}</dd>");
+                    if (compat.ConfiguredArtifactProblem is { } artifactProblem) sb.Append($"<dt>Schema artifact problem</dt><dd>{esc(artifactProblem)}</dd>");
                     sb.Append($"<dt>Observed operations</dt><dd>{compat.Observed}{(compat.HistoricalOnly > 0 ? $" ({compat.Current} current, {compat.HistoricalOnly} historical-only)" : "")}</dd>");
                     sb.Append($"<dt>Assessed</dt><dd>{compat.Assessed}</dd><dt>Compatible</dt><dd>{(compat.Assessed == 0 ? "—" : compat.Compatible)}</dd>");
                     sb.Append($"<dt>Incompatible</dt><dd>{(compat.Assessed == 0 ? "—" : compat.Incompatible)}</dd><dt>Not assessed</dt><dd>{compat.NotAssessed}</dd>");
@@ -85,7 +88,7 @@ public static class ApiReviewExport
                     {
                         esc((o.OperationName ?? "(anonymous)") + (o.Historical ? " (historical)" : "")), esc(o.OperationType.ToString()), o.ObservationCount.ToString(),
                         esc(ApiReviewGraphQlCompatibilityPresentation.RuntimeLabel(o.OperationType)), badge(ApiReviewGraphQlCompatibilityPresentation.StatusLabel(o.Status)),
-                        esc(o.Status == GraphQlCompatibilityStatus.Incompatible ? string.Join("; ", o.Issues.Select(i => $"{i.Code}: {i.Message}")) : o.NotAssessedReason ?? ""),
+                        esc(o.Status == GraphQlCompatibilityStatus.Incompatible ? string.Join("; ", o.Issues.Select(i => $"{i.Code}: {i.Message}")) : o.NotAssessedReason ?? (o.DeprecatedUsage.Count > 0 ? "Observation: " + string.Join("; ", o.DeprecatedUsage) : "")),
                         esc(o.LastObservedAt?.ToString("u") ?? "—"),
                     })));
                     if (compat.SchemaChangeImpact.Count > 0)

@@ -115,6 +115,8 @@ public enum ApiReviewContractState
     RuntimeSchema,
     /// <summary>Introspection was refused by the server (a policy observation, not a failure).</summary>
     IntrospectionUnavailable,
+    /// <summary>GraphQL: runtime introspection is attempted first; a trusted configured SDL is the fallback for every selected target.</summary>
+    ArtifactFallback,
     /// <summary>No target of this protocol is selected.</summary>
     NotApplicable,
 }
@@ -127,6 +129,7 @@ public static class ApiReviewContractStates
         ApiReviewContractState.NotConfigured => "No contract configured",
         ApiReviewContractState.RuntimeSchema => "Runtime schema",
         ApiReviewContractState.IntrospectionUnavailable => "Introspection unavailable previously",
+        ApiReviewContractState.ArtifactFallback => "Runtime schema · configured SDL fallback",
         ApiReviewContractState.NotApplicable => "No target",
         _ => state.ToString(),
     };
@@ -138,6 +141,7 @@ public static class ApiReviewContractStates
         ApiReviewContractState.NotConfigured => "No published OpenAPI contract",
         ApiReviewContractState.RuntimeSchema => "Retrieved during review",
         ApiReviewContractState.IntrospectionUnavailable => "Unavailable on previous attempt · retry during review",
+        ApiReviewContractState.ArtifactFallback => "Runtime schema first · configured SDL fallback",
         ApiReviewContractState.NotApplicable => "No target selected",
         _ => state.ToString(),
     };
@@ -149,20 +153,21 @@ public static class ApiReviewContractStates
         ApiReviewContractState.NotConfigured => "No published contract",
         ApiReviewContractState.RuntimeSchema => "schema retrieved during review",
         ApiReviewContractState.IntrospectionUnavailable => "schema retry pending",
+        ApiReviewContractState.ArtifactFallback => "configured SDL fallback",
         ApiReviewContractState.NotApplicable => "No target selected",
         _ => state.ToString(),
     };
 
     public static string Glyph(ApiReviewContractState state) => state switch
     {
-        ApiReviewContractState.Available or ApiReviewContractState.RuntimeSchema => "✓",
+        ApiReviewContractState.Available or ApiReviewContractState.RuntimeSchema or ApiReviewContractState.ArtifactFallback => "✓",
         ApiReviewContractState.IntrospectionUnavailable => "⚠",
         _ => "○",
     };
 
     public static string Tone(ApiReviewContractState state) => state switch
     {
-        ApiReviewContractState.Available or ApiReviewContractState.RuntimeSchema => "ready",
+        ApiReviewContractState.Available or ApiReviewContractState.RuntimeSchema or ApiReviewContractState.ArtifactFallback => "ready",
         ApiReviewContractState.IntrospectionUnavailable => "attention",
         _ => "muted",
     };
@@ -175,7 +180,12 @@ public sealed record ApiReviewContractPanelModel(
     int BaselineCount,
     string HistoryLabel,
     string LatestComparison,
-    IReadOnlyList<string> Details);
+    IReadOnlyList<string> Details,
+    IReadOnlyDictionary<string, GraphQlSchemaArtifact>? GraphQlArtifacts = null)
+{
+    /// <summary>Trusted schema artifacts configured for this environment, by target id (see <see cref="GraphQlSchemaArtifact"/>).</summary>
+    public IReadOnlyDictionary<string, GraphQlSchemaArtifact> Artifacts => GraphQlArtifacts ?? new Dictionary<string, GraphQlSchemaArtifact>();
+}
 
 public sealed record ApiReviewOperationRowModel(string Primary, string Secondary, string Access, string Source, bool IsSafe);
 

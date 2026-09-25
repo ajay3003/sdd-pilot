@@ -710,6 +710,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
                 GraphQlOperationName = exchange.GraphQlOperationName,
                 GraphQlDocument = exchange.GraphQlDocument,
                 GraphQlDocumentHash = exchange.GraphQlDocumentHash,
+                GraphQlDocumentOmission = exchange.GraphQlDocumentOmission,
                 Referer = exchange.Referer,
                 DurationMs = exchange.DurationMs,
                 CacheDirectives = exchange.CacheDirectives,

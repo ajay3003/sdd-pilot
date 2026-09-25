@@ -176,10 +176,10 @@ public static class ApiReviewTargetResolver
         if (variants.Count == 0)
             yield return baseOperation with { ObservedCount = observations.Sum(e => e.Count), FirstObservedAt = observations.Min(e => e.FirstObservedAt), LastObservedAt = observations.Max(e => e.LastObservedAt) };
         foreach (var variant in variants)
-            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt };
+            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, DocumentOmission = variant.Omission, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt };
         var current = variants.Select(v => v.Hash).ToHashSet(StringComparer.Ordinal);
         foreach (var variant in ObservedGraphQlDocuments.Union([], history.SelectMany(e => e.GraphQlDocuments).ToList()).Where(v => !current.Contains(v.Hash)))
-            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt, Historical = true };
+            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, DocumentOmission = variant.Omission, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt, Historical = true };
     }
 
     public static string Id(ApiReviewTargetType type, string origin, string basePath) =>

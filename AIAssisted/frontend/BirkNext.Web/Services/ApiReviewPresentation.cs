@@ -288,7 +288,7 @@ public static class ApiReviewPresentation
         }
         // Whether client/server compatibility CAN be assessed for the selected GraphQL targets (never a result pre-run).
         items.AddRange(ApiReviewGraphQlCompatibilityPresentation.Readiness(
-            chosen.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList(), gqlContract == ApiReviewContractState.IntrospectionUnavailable));
+            chosen.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList(), gqlContract == ApiReviewContractState.IntrospectionUnavailable, contracts?.Artifacts));
         // Listed, never counted: see the rule above.
         if (contracts is { BaselineCount: 0 } && chosen.Count > 0)
             items.Add(new("No previous baseline — this review records the first one, so there is nothing to compare yet", ApiReviewReadinessItemState.Missing));
@@ -374,8 +374,10 @@ public static class ApiReviewPresentation
 
     // ── Contracts ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public static ApiReviewContractPanelModel Contracts(IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected, ApiReviewHistory? history, ApiReviewReport? lastReport)
+    public static ApiReviewContractPanelModel Contracts(IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected, ApiReviewHistory? history, ApiReviewReport? lastReport,
+        IReadOnlyDictionary<string, GraphQlSchemaArtifact>? artifacts = null)
     {
+        artifacts ??= new Dictionary<string, GraphQlSchemaArtifact>();
         var chosen = targets.Where(t => selected.Contains(t.TargetId)).ToList();
         var rest = chosen.Where(t => t.ApiType == ApiReviewTargetType.Rest).ToList();
         var gql = chosen.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList();
@@ -387,6 +389,10 @@ public static class ApiReviewPresentation
         else rows.Add(new("REST", ApiReviewContractState.NotConfigured, "No OpenAPI contract configured. Live responses can still be reviewed structurally."));
 
         if (gql.Count == 0) rows.Add(new("GraphQL", ApiReviewContractState.NotApplicable, "No GraphQL target selected."));
+        else if (gql.All(t => artifacts.ContainsKey(t.TargetId)))
+            rows.Add(new("GraphQL", ApiReviewContractState.ArtifactFallback, gql.Count == 1
+                ? $"Runtime introspection is attempted first; configured SDL {artifacts[gql[0].TargetId].FileName} is the fallback."
+                : $"Runtime introspection is attempted first; each selected target has a configured SDL fallback."));
         else
         {
             var lastGql = lastReport?.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl && selected.Contains(t.Target.TargetId) && t.Contract is not null).ToList() ?? [];
@@ -414,7 +420,9 @@ public static class ApiReviewPresentation
             "Contract history: structural baselines from previous runs (contract hash, root fields, response shapes) are sent with the next run to detect drift. Baselines contain no values.",
         };
         details.AddRange(openApi.Select(u => $"OpenAPI source: {u}"));
-        return new(rows, baselines, historyLabel, latest, details);
+        details.AddRange(gql.Where(t => artifacts.ContainsKey(t.TargetId)).Select(t => artifacts[t.TargetId]).Select(a =>
+            $"GraphQL schema artifact: {a.FileName} · sha256 {a.ShortHash} · updated {a.UpdatedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC — used only when runtime introspection is unavailable."));
+        return new(rows, baselines, historyLabel, latest, details, artifacts);
     }
 
     // ── Results ───────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -593,7 +601,8 @@ public static class ApiReviewPresentation
                 restLimited ? "REST: No published OpenAPI contract." : null,
                 // Why it was unavailable (introspection policy) is Contracts details' fact, not the card's.
                 gqlLimited ? "GraphQL: Runtime schema retrieval will be retried during the review."
-                    : gqlContract == ApiReviewContractState.RuntimeSchema ? "GraphQL: Runtime schema retrieval will be attempted during the review." : null,
+                    : gqlContract == ApiReviewContractState.RuntimeSchema ? "GraphQL: Runtime schema retrieval will be attempted during the review."
+                    : gqlContract == ApiReviewContractState.ArtifactFallback ? "GraphQL: Runtime schema retrieval will be attempted; configured SDL is the fallback." : null,
             }.Where(l => l is not null).ToList()
             : [];
 
@@ -626,7 +635,9 @@ public static class ApiReviewPresentation
                 Scoped(scope.GraphQl > 0, gqlLimited),
                 scope.GraphQl > 0 && gqlLimited
                     ? "Observed operations can be reviewed. Schema-dependent checks remain limited until runtime schema retrieval succeeds."
-                    : null),
+                    : scope.GraphQl > 0 && gqlContract == ApiReviewContractState.ArtifactFallback
+                        ? "Runtime schema retrieval will be attempted. Configured SDL available as fallback for compatibility."
+                        : null),
         ];
     }
 

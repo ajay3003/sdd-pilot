@@ -1,0 +1,137 @@
+@using BirkNext.ApiReview
+@using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject IGraphQlSchemaArtifactApiService Api
+
+@* Trusted GraphQL schema (SDL) per GraphQL API target of the active Target Environment. API Quality Review uses it only when runtime
+   introspection is unavailable. Nothing is discovered or inferred: an artifact exists because it was added here for this target, and
+   it never applies to another target or environment. Replacing or removing it never changes the result of an earlier run. *@
+<div class="gsa" data-testid="gsa">
+    <p class="gsa-muted">Runtime introspection is always tried first. A configured SDL (<span class="gsa-mono">.graphql</span>, <span class="gsa-mono">.graphqls</span>, <span class="gsa-mono">.gql</span>, up to @(GraphQlSchemaArtifactRules.MaxBytes / (1024 * 1024)) MB) is the fallback for client/server compatibility.</p>
+    @if (LoadError is { } loadError)
+    {
+        <p class="gsa-error" role="alert" data-testid="gsa-load-error">@loadError</p>
+    }
+    <p class="gsa-sr" role="status" aria-live="polite" data-testid="gsa-status">@_status</p>
+    <ul class="gsa-list">
+        @foreach (var target in Targets)
+        {
+            var artifact = Artifacts.TryGetValue(target.TargetId, out var a) ? a : null;
+            var slug = Slug(target.TargetId);
+            var errorId = $"gsa-error-{slug}";
+            var error = _errors.TryGetValue(target.TargetId, out var e) ? e : null;
+            <li class="gsa-target" data-testid="gsa-target" data-target-id="@target.TargetId" data-configured="@(artifact is not null ? "true" : "false")">
+                <div class="gsa-head">
+                    <strong class="gsa-name">@ApiReviewPresentation.DisplayName(target)</strong>
+                    <span class="gsa-mono gsa-muted gsa-url">@target.Url</span>
+                </div>
+                <dl class="gsa-dl">
+                    <div><dt>Schema source</dt><dd data-testid="gsa-source">@(artifact is null ? "Runtime introspection only" : "Runtime introspection + configured fallback")</dd></div>
+                    <div>
+                        <dt>Configured artifact</dt>
+                        <dd data-testid="gsa-artifact">
+                            @if (artifact is null)
+                            {
+                                <span>None</span>
+                            }
+                            else
+                            {
+                                <span class="gsa-file">@artifact.FileName</span>
+                                <span class="gsa-valid" data-testid="gsa-validity"><span aria-hidden="true">✓</span> Valid SDL</span>
+                            }
+                        </dd>
+                    </div>
+                    @if (artifact is not null)
+                    {
+                        <div><dt>Updated</dt><dd data-testid="gsa-updated">@artifact.UpdatedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</dd></div>
+                        <div><dt>Fingerprint</dt><dd><span class="gsa-mono" data-testid="gsa-hash" title="SHA-256 @artifact.ContentHash">sha256 @artifact.ShortHash</span> <span class="gsa-muted">· @artifact.TypeCount types</span></dd></div>
+                    }
+                </dl>
+                <div class="gsa-actions">
+                    @* A real file input, visually hidden but focusable, named by its label; the label is what is seen and clicked. *@
+                    <label class="gsa-file-button @(_busy == target.TargetId ? "gsa-busy" : "")">
+                        <InputFile class="gsa-file-input" accept=".graphql,.graphqls,.gql" OnChange="args => OnFileAsync(target, args)"
+                                   disabled="@(_busy is not null)" aria-describedby="@(error is not null ? errorId : null)" data-testid="gsa-file-input" />
+                        <span>@(_busy == target.TargetId ? "Validating…" : artifact is null ? "Add schema artifact" : "Replace")</span>
+                    </label>
+                    @if (artifact is not null)
+                    {
+                        <button type="button" class="gsa-link" data-testid="gsa-remove" disabled="@(_busy is not null)" @onclick="() => RemoveAsync(target, artifact)"
+                                aria-label="@($"Remove schema artifact {artifact.FileName} from {ApiReviewPresentation.DisplayName(target)}")">Remove</button>
+                    }
+                </div>
+                @if (error is not null)
+                {
+                    <p class="gsa-error" id="@errorId" role="alert" data-testid="gsa-error">Invalid schema artifact: @error</p>
+                }
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public IReadOnlyList<ApiReviewTarget> Targets { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<string, GraphQlSchemaArtifact> Artifacts { get; set; } = new Dictionary<string, GraphQlSchemaArtifact>();
+    [Parameter] public string? LoadError { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+
+    private readonly Dictionary<string, string> _errors = new(StringComparer.Ordinal);
+    private string? _busy;
+    private string _status = "";
+
+    private async Task OnFileAsync(ApiReviewTarget target, InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        _errors.Remove(target.TargetId);
+        if (!GraphQlSchemaArtifactRules.HasAllowedExtension(file.Name)) { Fail(target, $"Only {string.Join(", ", GraphQlSchemaArtifactRules.AllowedExtensions)} files are accepted."); return; }
+        if (file.Size > GraphQlSchemaArtifactRules.MaxBytes) { Fail(target, $"The file is larger than the {GraphQlSchemaArtifactRules.MaxBytes / (1024 * 1024)} MB limit."); return; }
+
+        // Read fully before any re-render: the browser file handle does not survive the input leaving the DOM.
+        string content;
+        try
+        {
+            await using var stream = file.OpenReadStream(GraphQlSchemaArtifactRules.MaxBytes);
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+            content = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException) { Fail(target, "The file could not be read."); return; }
+
+        _busy = target.TargetId;
+        StateHasChanged();
+        try
+        {
+            var result = await Api.SaveAsync(new GraphQlSchemaArtifactUpload { EnvironmentId = EnvironmentId, TargetId = target.TargetId, TargetUrl = target.Url, FileName = file.Name, Content = content });
+            if (result.Artifact is { } saved)
+            {
+                _status = $"{saved.FileName} saved as the schema artifact for {ApiReviewPresentation.DisplayName(target)}: valid SDL, sha256 {saved.ShortHash}.";
+                await Changed.InvokeAsync();
+            }
+            else Fail(target, result.Error ?? "The schema artifact was rejected.");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { Fail(target, "The BirkNext backend did not answer; nothing was saved."); }
+        finally { _busy = null; }
+    }
+
+    private async Task RemoveAsync(ApiReviewTarget target, GraphQlSchemaArtifact artifact)
+    {
+        _busy = target.TargetId;
+        try
+        {
+            await Api.RemoveAsync(EnvironmentId, target.TargetId);
+            _errors.Remove(target.TargetId);
+            _status = $"{artifact.FileName} removed. Future reviews of {ApiReviewPresentation.DisplayName(target)} have no schema fallback; earlier results are unchanged.";
+            await Changed.InvokeAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { Fail(target, "The BirkNext backend did not answer; the artifact was not removed."); }
+        finally { _busy = null; }
+    }
+
+    private void Fail(ApiReviewTarget target, string reason)
+    {
+        _errors[target.TargetId] = reason;
+        _status = "";
+    }
+
+    private static string Slug(string value) => new(value.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
+}

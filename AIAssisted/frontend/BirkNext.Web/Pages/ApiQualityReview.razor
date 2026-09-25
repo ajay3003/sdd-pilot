@@ -15,6 +15,7 @@
 @inject IReportExportService ExportService
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
+@inject IGraphQlSchemaArtifactApiService SchemaArtifacts
 
 <PageTitle>API Quality Review</PageTitle>
 
@@ -32,7 +33,7 @@
 
     @{
         var access = ApiReviewPresentation.AccessPanel(_context, _capabilities, _targets, _selected);
-        var contracts = ApiReviewPresentation.Contracts(_targets, _selected, _history, _report ?? _history?.LastReport);
+        var contracts = ApiReviewPresentation.Contracts(_targets, _selected, _history, _report ?? _history?.LastReport, _schemaArtifacts);
         var readiness = ApiReviewPresentation.Readiness(Eligibility, _context, _targets, _selected, _capabilities, contracts);
         var scope = ApiReviewPresentation.Scope(_targets, _selected);
         var domains = ApiReviewPresentation.Domains(scope, contracts, access.Availability);
@@ -249,6 +250,15 @@
             <ReviewDisclosure Text="Contracts" CollapseText="Hide contracts" Hint="@ContractHint(contracts)" TestId="aqr-contracts-disclosure" Class="aqr-detail-disclosure">
                 <ApiReviewContractPanel Contracts="contracts" />
             </ReviewDisclosure>
+            @if (_context is not null && _targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl))
+            {
+                var gqlTargets = _targets.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList();
+                var configured = gqlTargets.Count(t => _schemaArtifacts.ContainsKey(t.TargetId));
+                <ReviewDisclosure Text="GraphQL schema artifacts" CollapseText="Hide GraphQL schema artifacts" Hint="@(configured == 0 ? "None configured" : $"{configured} of {gqlTargets.Count} configured")" TestId="aqr-schema-artifacts-disclosure" Class="aqr-detail-disclosure">
+                    <GraphQlSchemaArtifactPanel EnvironmentId="@_context.ActiveProfile.Id" Targets="gqlTargets" Artifacts="_schemaArtifacts" LoadError="@_schemaArtifactsError" Changed="OnSchemaArtifactsChanged" />
+                </ReviewDisclosure>
+            }
+
 
             <ReviewDisclosure Text="Authentication details" CollapseText="Hide authentication details" Hint="@ApiReviewAccessAvailabilities.Label(access.Availability)" TestId="aqr-access-details" Class="aqr-detail-disclosure">
                 <ApiReviewAccessDetails Access="access" />
@@ -615,6 +625,8 @@
     private FrontendAnalysisContext? _context;
     private AuthenticatedReviewCapabilities? _capabilities;
     private List<ApiReviewTarget> _targets = [];
+    private IReadOnlyDictionary<string, GraphQlSchemaArtifact> _schemaArtifacts = new Dictionary<string, GraphQlSchemaArtifact>();
+    private string? _schemaArtifactsError;
     private readonly HashSet<string> _selected = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedServices = new(StringComparer.Ordinal);
     private readonly HashSet<string> _expandedFindings = new(StringComparer.Ordinal);
@@ -647,6 +659,7 @@
         _history = History.For(_context.ActiveProfile.Id);
         _report ??= _history.LastReport is { } last && last.Environment.EnvironmentId == _context.ActiveProfile.Id ? last : null;
         _targets = ApiReviewTargetResolver.Resolve(_context, Discovery.GetSnapshot(_context.ActiveProfile.Id));
+        await LoadSchemaArtifactsAsync();
         _selected.Clear();
         foreach (var t in _targets.Where(t => t.Selected)) _selected.Add(t.TargetId);
         if (_requestedTargetId is not null && _targets.Any(t => t.TargetId == _requestedTargetId)) _selected.Add(_requestedTargetId);
@@ -655,6 +668,24 @@
         try { _capabilities = await Capabilities.ResolveAsync(identity); }
         catch { _capabilities = new AuthenticatedReviewCapabilities { Method = identity.Method, PublicApi = true, Reason = "Authenticated capabilities could not be resolved; public targets only." }; }
     }
+
+    /// <summary>Trusted schema artifacts of THIS environment only; a failure leaves none (never another environment's) and says so.</summary>
+    private async Task LoadSchemaArtifactsAsync()
+    {
+        _schemaArtifactsError = null;
+        if (_context is null || !_targets.Any(t => t.ApiType == ApiReviewTargetType.GraphQl)) { _schemaArtifacts = new Dictionary<string, GraphQlSchemaArtifact>(); return; }
+        try
+        {
+            _schemaArtifacts = (await SchemaArtifacts.ListAsync(_context.ActiveProfile.Id)).ToDictionary(a => a.TargetId, StringComparer.Ordinal);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _schemaArtifacts = new Dictionary<string, GraphQlSchemaArtifact>();
+            _schemaArtifactsError = "Configured schema artifacts could not be loaded from the BirkNext backend.";
+        }
+    }
+
+    private async Task OnSchemaArtifactsChanged() => await LoadSchemaArtifactsAsync();
 
     private ElementReference _reviewDetailsHeading;
     private bool _focusReviewDetails;
@@ -850,13 +881,17 @@
                                     {
                                         <ReviewDisclosure Text="@($"{o.Issues.Count} validation issue{(o.Issues.Count == 1 ? "" : "s")}")" CollapseText="Hide validation issues" Class="disclosure-inline disclosure-small" TestId="@($"aqr-gql-issues-{o.DocumentHash}")">
                                             <ul class="aqr-gql-issues" data-testid="aqr-gql-issue-list">@foreach (var issue in o.Issues) { <li><span class="aqr-mono">@issue.Code</span> — @issue.Message</li> }</ul>
-                                            <p class="aqr-muted">Observed: @o.EvidenceSource · @o.ObservationCount observation@(o.ObservationCount == 1 ? "" : "s")@(o.Historical ? " (historical evidence only)" : "") · Schema: @ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compatibility.SchemaSource)</p>
+                                            <p class="aqr-muted">Observed: @o.EvidenceSource · @o.ObservationCount observation@(o.ObservationCount == 1 ? "" : "s")@(o.Historical ? " (historical evidence only)" : "") · Schema: @ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compatibility)</p>
                                             <p><strong>Recommended action:</strong> @ApiReviewGraphQlCompatibilityPresentation.RecommendedAction</p>
                                         </ReviewDisclosure>
                                     }
                                     else if (o.Status == GraphQlCompatibilityStatus.NotAssessed && o.NotAssessedReason is { } why)
                                     {
                                         <span class="aqr-muted aqr-gql-reason"> · @why</span>
+                                    }
+                                    @if (o.DeprecatedUsage.Count > 0)
+                                    {
+                                        <span class="aqr-muted aqr-gql-deprecated" data-testid="aqr-gql-deprecated"> · Observation: @string.Join("; ", o.DeprecatedUsage)</span>
                                     }
                                 </td>
                                 <td class="aqr-muted">@(o.LastObservedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
@@ -889,7 +924,12 @@
         <section class="aqr-card aqr-gql-compatibility" data-testid="aqr-gql-compatibility" aria-label="@($"GraphQL client/server compatibility · {ApiReviewPresentation.DisplayName(t.Target)}")">
             <h4 class="aqr-group-title">Client/server compatibility · @ApiReviewPresentation.DisplayName(t.Target)</h4>
             <dl class="aqr-dl aqr-gql-compatibility-counts">
-                <div><dt>Schema source</dt><dd data-testid="aqr-gql-schema-source">@ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(c.SchemaSource)@if (c.SchemaRetrievedAt is { } at) { <span class="aqr-muted"> · retrieved @at.ToString("yyyy-MM-dd HH:mm")</span> }</dd></div>
+                <div><dt>Schema source</dt><dd data-testid="aqr-gql-schema-source">@ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(c)@if (c.SchemaRetrievedAt is { } at) { <span class="aqr-muted"> · retrieved @at.ToString("yyyy-MM-dd HH:mm")</span> }</dd></div>
+                @if (c.RuntimeSchemaOutcome is { } runtimeOutcome) { <div><dt>Runtime introspection</dt><dd data-testid="aqr-gql-runtime-outcome">@runtimeOutcome</dd></div> }
+                @if (c.ConfiguredArtifact is { } snapshot)
+                {
+                    <div><dt>Schema artifact</dt><dd data-testid="aqr-gql-artifact"><span class="aqr-break">@snapshot.FileName</span> <span class="aqr-muted">· sha256 <span class="aqr-mono">@snapshot.ShortHash</span> · updated @snapshot.UpdatedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC@(snapshot.UsedForCompatibility ? "" : " · fallback, not used")</span></dd></div>
+                }
                 <div><dt>Observed operations</dt><dd data-testid="aqr-gql-observed">@c.Observed@if (c.HistoricalOnly > 0) { <span class="aqr-muted"> (@c.Current current · @c.HistoricalOnly historical-only)</span> }</dd></div>
                 <div><dt>Assessed</dt><dd data-testid="aqr-gql-assessed">@c.Assessed</dd></div>
                 <div><dt>Compatible</dt><dd data-testid="aqr-gql-compatible">@(c.Assessed == 0 ? "—" : c.Compatible.ToString())</dd></div>
@@ -897,6 +937,14 @@
                 <div><dt>Not assessed</dt><dd data-testid="aqr-gql-not-assessed">@c.NotAssessed</dd></div>
                 <div><dt>Contract coverage</dt><dd data-testid="aqr-gql-coverage">@ApiReviewGraphQlCompatibilityPresentation.Coverage(c)</dd></div>
             </dl>
+            @if (c.ConfiguredArtifactProblem is { } artifactProblem)
+            {
+                <p class="aqr-muted" data-testid="aqr-gql-artifact-problem">Configured schema artifact not used: @artifactProblem</p>
+            }
+            @if (c.Operations.Where(o => o.DeprecatedUsage.Count > 0).ToList() is { Count: > 0 } deprecatedOps)
+            {
+                <p class="aqr-muted" data-testid="aqr-gql-deprecated-summary">Observation (not an incompatibility): @deprecatedOps.Count compatible operation@(deprecatedOps.Count == 1 ? " uses" : "s use") deprecated schema members.</p>
+            }
             @if (c.NotAssessedReason is { } reason)
             {
                 <p class="aqr-muted" data-testid="aqr-gql-not-assessed-reason">Not assessed: @reason Compatibility is not the same as reachability: the endpoint itself was reviewed separately.</p>

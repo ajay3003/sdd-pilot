@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using BirkNext.LocalHttpsProxy;
 using HotChocolate.Language;
 
 namespace BirkNext.Api.Services.LocalHttpsProxy;
@@ -19,10 +20,29 @@ public static class GraphQlDocumentNormalizer
     /// <summary>Normalized documents above this size are not kept; the operation stays observed but cannot be contract-checked.</summary>
     public const int MaxDocumentLength = 16 * 1024;
 
-    public sealed record Normalized(string Document, string Hash);
+    /// <summary>A kept document, or — with <see cref="Omission"/> set — an empty document whose hash still identifies the variant.</summary>
+    public sealed record Normalized(string Document, string Hash, GraphQlDocumentOmission Omission = GraphQlDocumentOmission.None);
+
+    /// <summary>
+    /// The normalization outcome for evidence: a kept document, or an explicit oversize marker (the redacted token stream's hash, no
+    /// content) so the operation is reported as "exceeded the retained-query size limit" rather than silently losing its document.
+    /// Unparseable text yields neither.
+    /// </summary>
+    public static (string? Document, string? Hash, GraphQlDocumentOmission Omission) NormalizeWithOutcome(string? query)
+    {
+        var result = NormalizeCore(query);
+        return result is null ? (null, null, GraphQlDocumentOmission.None)
+            : result.Omission == GraphQlDocumentOmission.None ? (result.Document, result.Hash, GraphQlDocumentOmission.None)
+            : (null, result.Hash, result.Omission);
+    }
+
+    /// <summary>Kept document or oversize marker, as carried through the capture pipeline. Null when the text is not parseable GraphQL.</summary>
+    public static Normalized? NormalizeForEvidence(string? query) => NormalizeCore(query);
 
     /// <summary>The normalized, literal-redacted document and its hash; null when the text is not a parseable GraphQL document or too large.</summary>
-    public static Normalized? Normalize(string? query)
+    public static Normalized? Normalize(string? query) => NormalizeCore(query) is { Omission: GraphQlDocumentOmission.None } kept ? kept : null;
+
+    private static Normalized? NormalizeCore(string? query)
     {
         if (string.IsNullOrWhiteSpace(query)) return null;
         try
@@ -48,11 +68,13 @@ public static class GraphQlDocumentNormalizer
                 if (isWord && previousWasWord) builder.Append(' ');
                 builder.Append(token);
                 previousWasWord = isWord;
-                if (builder.Length > MaxDocumentLength) return null;
             }
             var document = builder.ToString();
             Utf8GraphQLParser.Parse(document);   // still a valid document after redaction
-            return new Normalized(document, Hash(document));
+            // Over the limit: the redacted text lives only in this method; evidence keeps the hash and the marker, never the content.
+            return document.Length > MaxDocumentLength
+                ? new Normalized("", Hash(document), GraphQlDocumentOmission.ExceededRetentionLimit)
+                : new Normalized(document, Hash(document));
         }
         catch (SyntaxException) { return null; }
         catch (ArgumentException) { return null; }
