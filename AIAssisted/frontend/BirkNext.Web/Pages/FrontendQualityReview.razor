@@ -265,9 +265,9 @@
         var result = FrontendQualityResultPresentation.Build(report, WcagSnapshot.Wcag.ProfileId);
         @* Actionable = not informational and not derived: an absent optional capability and a restated conclusion are
            both worth keeping and neither is a problem to fix. *@
-        var actionableIssues = report.LogicalIssues.Where(i => i.IsActionable).ToList();
+        var actionableIssues = result.ActionableIssues;
         var keyIssues = actionableIssues.Take(KeyIssueCount).ToList();
-        var themes = FrontendQualityRecommendationGrouper.Build(report.LogicalIssues);
+        var themes = FrontendQualityRecommendationGrouper.Build(result.LogicalIssues);
         var evidenceRecords = DistinctEvidence(report);
 
         @* ── 1. The result itself: what ran, against what, and how it ended. ────────────────────────────────── *@
@@ -299,7 +299,7 @@
             @if (actionableIssues.Count > keyIssues.Count)
             {
                 <p class="fqr-section-note" data-testid="fqr-key-issues-more">
-                    @(actionableIssues.Count - keyIssues.Count) further logical issue@(actionableIssues.Count - keyIssues.Count == 1 ? "" : "s") in <strong>Logical issues</strong> below.
+                    @(actionableIssues.Count - keyIssues.Count) further logical issue@(actionableIssues.Count - keyIssues.Count == 1 ? "" : "s") in <strong>Review items</strong> below.
                 </p>
             }
         </section>
@@ -428,9 +428,22 @@
             @* Informational observations and derived indicators are listed here too, and are not logical issues: the label
                counts each kind by its own name, so "28 logical issues" means the same thing here as in the metric. *@
             <ReviewDisclosure Text="Review items" CollapseText="Hide review items"
-                              Hint="@ReviewItemsHint(report, actionableIssues.Count, result.InformationalIssueCount)"
+                              Hint="@ReviewItemsHint(result)"
                               TestId="fqr-all-logical-issues" Class="fqr-detail-disclosure">
-                <FrontendQualityLogicalIssues Issues="report.LogicalIssues" />
+                @* Three disjoint kinds, each under its own name, so no item is read as belonging to another's count. *@
+                <h3 class="fqr-review-items-heading" data-testid="fqr-review-items-actionable">Actionable logical issues (@result.LogicalIssueCount)</h3>
+                <FrontendQualityLogicalIssues Issues="actionableIssues" />
+                @if (result.InformationalIssues is { Count: > 0 } informational)
+                {
+                    <h3 class="fqr-review-items-heading" data-testid="fqr-review-items-informational">Informational observations (@informational.Count)</h3>
+                    <FrontendQualityLogicalIssues Issues="informational" />
+                }
+                @if (result.DerivedIssues is { Count: > 0 } derivedIssues)
+                {
+                    <h3 class="fqr-review-items-heading" data-testid="fqr-review-items-derived">Derived indicators (@result.DerivedIndicatorCount)</h3>
+                    <p class="fqr-section-note">Conclusions drawn from evidence reported elsewhere. Not added to logical issues or source findings.</p>
+                    <FrontendQualityLogicalIssues Issues="derivedIssues" />
+                }
             </ReviewDisclosure>
 
             @* 44 source findings plus 4 derived indicators are 48 recorded rows, and the hint says exactly that. It used to
@@ -513,7 +526,7 @@
             </ReviewDisclosure>
 
             <ReviewDisclosure Text="Engine coverage" CollapseText="Hide engine coverage"
-                              Hint="@EngineCoverageHint(result)" TestId="fqr-engine-coverage" Class="fqr-detail-disclosure">
+                              Hint="@EngineCoverageHint(report, result)" TestId="fqr-engine-coverage" Class="fqr-detail-disclosure">
                 <FrontendQualityDecisionSupport Report="report" />
             </ReviewDisclosure>
 
@@ -602,18 +615,14 @@
                         </ul>
                     </section>
 
-                    @if (report.Risks.Count > 0 || report.Limitations.Count > 0)
+                    @* Method limitations only: what the review could not establish. Critical/high finding titles (report.Risks
+                       — a missing CSP, a Development build) were listed here too, presenting findings as constraints on the
+                       review; they are findings, and are listed as logical issues. *@
+                    @if (FrontendQualityResultPresentation.MethodLimitations(report) is { Count: > 0 } limitations)
                     {
                         <section class="fqr-technical-block" aria-labelledby="fqr-tech-limits">
-                            <h3 id="fqr-tech-limits">Limitations</h3>
-                            @if (report.Risks.Count > 0)
-                            {
-                                <ul data-testid="fqr-technical-risks">@foreach (var risk in report.Risks) { <li>@risk</li> }</ul>
-                            }
-                            @if (report.Limitations.Count > 0)
-                            {
-                                <ul data-testid="fqr-technical-limitations">@foreach (var limitation in report.Limitations) { <li>@limitation</li> }</ul>
-                            }
+                            <h3 id="fqr-tech-limits">Review limitations</h3>
+                            <ul data-testid="fqr-technical-limitations">@foreach (var limitation in limitations) { <li>@limitation</li> }</ul>
                         </section>
                     }
 
@@ -790,7 +799,7 @@
     /// <summary>The accessibility profile THIS result was produced under, with its scope — read from the report, never from settings.</summary>
     private static string? AccessibilityScope(FrontendQualityResultView result) =>
         result.ProfileLabel is { Length: > 0 } label
-            ? result.CriteriaInScope is { } criteria ? $"{label} · {criteria} criteria in scope" : label
+            ? result.CriteriaInScope is { } criteria ? $"{label} · {criteria} criteria in selected profile" : label
             : null;
 
     /// <summary>
@@ -822,21 +831,31 @@
             ? $" · {result.DerivedIndicatorCount} derived indicator{(result.DerivedIndicatorCount == 1 ? "" : "s")} · {result.SourceFindingCount + result.DerivedIndicatorCount} recorded"
             : "");
 
-    /// <summary>Each kind of review item counted by its own name.</summary>
-    private static string ReviewItemsHint(FrontendQualityReviewReport report, int actionable, int informational)
-    {
-        var derived = report.LogicalIssues.Count(i => !i.IsActionable && !i.Informational);
-        return $"{actionable} actionable logical issue{(actionable == 1 ? "" : "s")}"
-            + (informational > 0 ? $" · {informational} informational observation{(informational == 1 ? "" : "s")}" : "")
-            + (derived > 0 ? $" · {derived} derived indicator{(derived == 1 ? "" : "s")}" : "");
-    }
+    /// <summary>
+    /// Each kind of review item by its own name, from the result's counts — the same numbers as the metrics. It recounted
+    /// report.LogicalIssues as "not actionable and not informational", which dropped the derived Info record and read 3
+    /// beside a metric of 4.
+    /// </summary>
+    private static string ReviewItemsHint(FrontendQualityResultView result) =>
+        $"{result.LogicalIssueCount} actionable logical issue{(result.LogicalIssueCount == 1 ? "" : "s")}"
+        + (result.InformationalIssueCount > 0 ? $" · {result.InformationalIssueCount} informational observation{(result.InformationalIssueCount == 1 ? "" : "s")}" : "")
+        + (result.DerivedIndicatorCount > 0 ? $" · {result.DerivedIndicatorCount} derived indicator{(result.DerivedIndicatorCount == 1 ? "" : "s")}" : "");
 
     /// <summary>Local UI state: raw evidence is built only after the reader asks for it.</summary>
     private bool _rawEvidenceOpen;
 
-    private static string EngineCoverageHint(FrontendQualityResultView result) =>
-        result.Completeness is not { } completeness ? "Engine outcomes for this run"
-            : $"Required {completeness.RequiredAssessed}/{completeness.RequiredTotal} · Optional {completeness.OptionalAssessed}/{completeness.OptionalTotal}";
+    /// <summary>
+    /// Assessed of ACTIVE engines. Disabled or deselected engines were never part of the run, so they are excluded from
+    /// the denominator and named as excluded rather than folded silently into "Optional 3/5".
+    /// </summary>
+    private static string EngineCoverageHint(FrontendQualityReviewReport report, FrontendQualityResultView result)
+    {
+        if (result.Completeness is not { } completeness) return "Engine outcomes for this run";
+        var inactive = (report.Coverage is { } c && c.RequiredTotal + c.OptionalTotal + c.InactiveCount > 0 ? c
+            : FrontendQualityCoverage.Evaluate(report.EngineOutcomes)).InactiveCount;
+        return $"Required {completeness.RequiredAssessed} of {completeness.RequiredTotal} assessed · Optional {completeness.OptionalAssessed} of {completeness.OptionalTotal} active assessed"
+            + (inactive > 0 ? $" · {inactive} not active, excluded" : "");
+    }
 
     /// <summary>
     /// Every evidence line once, with the findings that cited it. The raw-evidence block grouped by FINDING, so the

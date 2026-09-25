@@ -26,8 +26,8 @@ public sealed class FrontendQualityDecisionSupportTests : BunitContext
         var cut = Render<FrontendQualityDecisionSupport>(p => p.Add(c => c.Report, DecisionFixtures.Report()));
 
         cut.Markup.Should().Contain("All required engines assessed")
-            .And.Contain("Required assessed:").And.Contain("2 / 2")
-            .And.Contain("Optional assessed:").And.Contain("4 / 4");
+            .And.Contain("Required assessed:").And.Contain("2 of 2")
+            .And.Contain("Optional assessed:").And.Contain("4 of 4 active");
         cut.FindAll("tr[data-engine-id]").Should().HaveCount(6);
         cut.FindAll("tr[data-engine-id]").Select(row => row.GetAttribute("data-engine-id")).Should().OnlyHaveUniqueItems();
     }

@@ -89,7 +89,7 @@
                     @profile
                     @if (Result.CriteriaInScope is { } criteria)
                     {
-                        <span class="fqr-result-profile-scope" data-testid="fqr-result-profile-scope">@criteria criteria in scope</span>
+                        <span class="fqr-result-profile-scope" data-testid="fqr-result-profile-scope">@criteria criteria in selected profile</span>
                     }
                 </dd>
             </div>
@@ -112,7 +112,8 @@
                 <dd data-testid="fqr-completeness-optional">@completeness.OptionalCoverageLabel
                     @if (completeness.OptionalTotal > 0)
                     {
-                        <span class="fqr-muted">(@completeness.OptionalAssessed of @completeness.OptionalTotal)</span>
+                        @* Razor drops the whitespace before @if, so the space is inside the span: "None(0 of 3)" otherwise. *@
+                        <span class="fqr-muted"> (@completeness.OptionalAssessed of @completeness.OptionalTotal)</span>
                     }
                 </dd>
             </div>

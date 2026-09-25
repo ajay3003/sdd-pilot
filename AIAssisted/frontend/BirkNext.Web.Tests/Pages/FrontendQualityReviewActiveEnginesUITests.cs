@@ -214,8 +214,8 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
 
         var cut = Render<FrontendQualityDecisionSupport>(p => p.Add(x => x.Report, report));
 
-        cut.Find("[data-testid=fqr-required-assessed]").TextContent.Trim().Should().Be("2 / 2");
-        cut.Find("[data-testid=fqr-optional-assessed]").TextContent.Trim().Should().Be("0 / 0 (no optional engine enabled)");
+        cut.Find("[data-testid=fqr-required-assessed]").TextContent.Trim().Should().Be("2 of 2");
+        cut.Find("[data-testid=fqr-optional-assessed]").TextContent.Trim().Should().Be("0 of 0 (no optional engine enabled)");
         cut.Find("[data-testid=fqr-inactive-count]").TextContent.Should().Contain("6 engines not active");
         cut.FindAll("tr[data-engine-id]").Should().HaveCount(2, "disabled engines are hidden by default");
         cut.Markup.Should().NotContain("Not assessed");
@@ -252,7 +252,7 @@ public sealed class FrontendQualityReviewActiveEnginesUITests : BunitContext
         var html = new ReportExportService().ExportFrontendQualityReview(report, "Project");
 
         html.Should().Contain("Active review engines").And.Contain("<strong>3 enabled</strong>").And.Contain("Enabled at review start");
-        html.Should().Contain("Required assessed:</strong> 2 / 2").And.Contain("Optional assessed:</strong> 0 / 1");
+        html.Should().Contain("Required assessed:</strong> 2 of 2").And.Contain("Optional assessed:</strong> 0 of 1 active");
         html.Should().MatchRegex(@"<td>Accessibility</td><td>Optional</td><td>Yes</td>");
         html.Should().MatchRegex(@"<td>Lighthouse</td><td>Optional</td><td>No</td>");
     }

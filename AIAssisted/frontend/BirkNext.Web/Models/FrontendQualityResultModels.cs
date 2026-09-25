@@ -323,9 +323,20 @@ public sealed record FrontendQualityResultView(
     int LogicalIssueCount = 0,
     int CriticalHighSourceCount = 0,
     int DerivedIndicatorCount = 0,
-    int InformationalIssueCount = 0)
+    int InformationalIssueCount = 0,
+    IReadOnlyList<FrontendQualityLogicalIssue>? Issues = null)
 {
     public string StateLabel => FrontendQualityResultStates.Label(State);
+
+    /// <summary>
+    /// The canonical grouped items every surface reads — the metrics, the key issues, the recommendations, the Review
+    /// items list and the export. The Review items header once recounted report.LogicalIssues by its own rule and said
+    /// "3 derived indicators" beside a metric of 4.
+    /// </summary>
+    public IReadOnlyList<FrontendQualityLogicalIssue> LogicalIssues => Issues ?? [];
+    public IReadOnlyList<FrontendQualityLogicalIssue> ActionableIssues => LogicalIssues.Where(i => i.IsActionable).ToList();
+    public IReadOnlyList<FrontendQualityLogicalIssue> InformationalIssues => LogicalIssues.Where(i => i.IsInformationalObservation).ToList();
+    public IReadOnlyList<FrontendQualityLogicalIssue> DerivedIssues => LogicalIssues.Where(i => i.Derived).ToList();
     public FrontendQualityDomainResult Domain(FrontendQualityCategory category) => Domains.Single(d => d.Category == category);
 }
 

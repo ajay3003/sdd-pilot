@@ -227,6 +227,13 @@ public static class FrontendQualityTargetAccess
         };
     }
 
+    /// <summary>
+    /// Whether the scope a finished review covered needed a sign-in, and with which provider: "Yes (Microsoft Entra ID)"
+    /// or "No". A configured provider on a public scope is not a contradiction, so the label never implies one.
+    /// </summary>
+    public static string ReviewedScopeAuthenticationLabel(FrontendQualityTargetAccessContext access) =>
+        access.RequiresAuthentication ? $"Yes ({AuthenticationPresentation.ProviderLabel(access.AuthenticationType)})" : "No";
+
     public static string ModeLabel(FrontendQualityTargetAccessMode mode) => mode switch
     {
         FrontendQualityTargetAccessMode.PublicDirect => "Public (direct)",

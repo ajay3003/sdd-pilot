@@ -13,8 +13,8 @@
     <SectionHeader Title="Automated coverage" />
     <p><strong data-testid="fqr-coverage-label">@CoverageLabel</strong></p>
     <p>
-        <strong>Required assessed:</strong> <span data-testid="fqr-required-assessed">@RequiredAssessed / @RequiredTotal</span> &nbsp;
-        <strong>Optional assessed:</strong> <span data-testid="fqr-optional-assessed">@(OptionalTotal == 0 ? "0 / 0 (no optional engine enabled)" : $"{OptionalAssessed} / {OptionalTotal}")</span>
+        <strong>Required assessed:</strong> <span data-testid="fqr-required-assessed">@RequiredAssessed of @RequiredTotal</span> &nbsp;
+        <strong>Optional assessed:</strong> <span data-testid="fqr-optional-assessed">@(OptionalTotal == 0 ? "0 of 0 (no optional engine enabled)" : $"{OptionalAssessed} of {OptionalTotal} active")</span>
         @if (InactiveCount > 0) { <span class="fqr-muted" data-testid="fqr-inactive-count"> &nbsp; @InactiveCount @(InactiveCount == 1 ? "engine" : "engines") not active (disabled or not selected) — excluded from coverage</span> }
     </p>
     <p class="fqr-engine-filter">
@@ -34,7 +34,7 @@
     }
     <div class="fqr-table-wrap">
         <table class="fqr-findings-table fqr-engine-matrix">
-            <thead><tr><th>Engine</th><th>Policy</th><th>Enabled</th><th>Assessment</th><th>Access</th><th>Outcome</th><th>Evidence / findings</th><th>Duration</th><th>Tool / browser</th><th>Reason / required action</th></tr></thead>
+            <thead><tr><th>Engine</th><th>Policy</th><th>Enabled</th><th>Assessment</th><th>Access</th><th>Outcome</th><th>Evidence records</th><th>Findings</th><th>Duration</th><th>Tool / browser</th><th>Reason / required action</th></tr></thead>
             <tbody>
                 @foreach (var outcome in Report.EngineOutcomes.Where(item => _showInactive || !FrontendQualityCoverage.IsInactive(item)).OrderBy(item => item.EngineId))
                 {
@@ -51,7 +51,8 @@
                                 <span class="fqr-outcome-reason fqr-reason-@(FrontendQualityEngineOutcomePresentation.GetCategory(outcome.OutcomeReason).ToString().ToLowerInvariant())" data-testid="fqr-outcome-reason">@FrontendQualityEngineOutcomePresentation.GetLabel(outcome.OutcomeReason)</span>
                             }
                         </td>
-                        <td>@(outcome.EvidenceCount?.ToString() ?? "—") / @(outcome.FindingCount?.ToString() ?? "—")</td>
+                        <td data-testid="fqr-engine-evidence">@FrontendQualityEngineOutcomePresentation.EvidenceLabel(outcome)</td>
+                        <td data-testid="fqr-engine-findings">@FrontendQualityEngineOutcomePresentation.FindingsLabel(outcome)</td>
                         <td>@(outcome.DurationMs.HasValue ? $"{outcome.DurationMs.Value} ms" : "—")</td>
                         <td>@ToolLabel(outcome)</td>
                         <td data-testid="fqr-reason">

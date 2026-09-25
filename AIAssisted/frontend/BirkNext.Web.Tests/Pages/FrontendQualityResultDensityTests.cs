@@ -460,7 +460,7 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
     {
         var report = RealisticReport();
         var page = Result(report);
-        var actionable = report.LogicalIssues.Count(i => i.IsActionable);
+        var actionable = FrontendQualityResultPresentation.Build(report).LogicalIssueCount;
 
         page.Find("[data-testid=fqr-metric-logical]").TextContent.Trim().Should().Be(actionable.ToString());
         page.Find("[data-testid=fqr-all-logical-issues-toggle]").TextContent.Should().Contain("Review items");

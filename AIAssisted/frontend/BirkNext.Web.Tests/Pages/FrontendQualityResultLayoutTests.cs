@@ -330,9 +330,9 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
         var page = Result();
 
         page.Find("[data-testid=fqr-result-profile]").TextContent.Should().Contain(WcagProfiles.Norwegian.Label);
-        page.Find("[data-testid=fqr-result-profile-scope]").TextContent.Should().Be($"{WcagProfiles.Norwegian.CriteriaInScope} criteria in scope");
+        page.Find("[data-testid=fqr-result-profile-scope]").TextContent.Should().Be($"{WcagProfiles.Norwegian.CriteriaInScope} criteria in selected profile");
         Domain(page, FrontendQualityCategory.Accessibility).QuerySelector("[data-testid=fqr-domain-result-scope]")!.TextContent
-            .Should().Contain(WcagProfiles.Norwegian.Label).And.Contain("criteria in scope");
+            .Should().Contain(WcagProfiles.Norwegian.Label).And.Contain("criteria in selected profile");
     }
 
     // 8, 9 (§43). Changing the profile after a run asks for a rerun; it never relabels the finished result.
@@ -351,7 +351,7 @@ public sealed class FrontendQualityResultLayoutTests : BunitContext
             .And.Contain("Run the review again");
         // The result itself is untouched: same profile, same scope, same counts.
         page.Find("[data-testid=fqr-result-profile]").TextContent.Should().Contain(WcagProfiles.Norwegian.Label);
-        page.Find("[data-testid=fqr-result-profile-scope]").TextContent.Should().Be($"{WcagProfiles.Norwegian.CriteriaInScope} criteria in scope");
+        page.Find("[data-testid=fqr-result-profile-scope]").TextContent.Should().Be($"{WcagProfiles.Norwegian.CriteriaInScope} criteria in selected profile");
         page.Find("[data-testid=wcag-assessment-title]").TextContent.Should().Be(WcagProfiles.Norwegian.Label);
     }
 

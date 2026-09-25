@@ -19,7 +19,16 @@
             <dl class="fqr-target-access-list">
                 <div><dt>Target</dt><dd data-testid="fqr-access-target">@Access.EnvironmentName <span class="fqr-muted">(@Access.EnvironmentType)</span></dd></div>
                 <div><dt>URL</dt><dd class="fqr-access-url" data-testid="fqr-access-url">@Access.TargetUrl</dd></div>
-                <div><dt>Authentication</dt><dd data-testid="fqr-access-auth">@(Access.RequiresAuthentication ? Access.AuthenticationType.ToString() : "Not required")</dd></div>
+                @* After a run the question is whether the scope that was reviewed needed a sign-in; "Authentication:
+                   Not required" beside a configured provider read as a contradiction. The landing keeps its label. *@
+                @if (ShowActions)
+                {
+                    <div><dt>Authentication</dt><dd data-testid="fqr-access-auth">@(Access.RequiresAuthentication ? Access.AuthenticationType.ToString() : "Not required")</dd></div>
+                }
+                else
+                {
+                    <div><dt>Authentication required for reviewed scope</dt><dd data-testid="fqr-access-auth">@FrontendQualityTargetAccess.ReviewedScopeAuthenticationLabel(Access)</dd></div>
+                }
                 <div><dt>Access mode</dt><dd data-testid="fqr-access-mode">@FrontendQualityTargetAccess.ModeLabel(Access.Mode)</dd></div>
             </dl>
         </div>

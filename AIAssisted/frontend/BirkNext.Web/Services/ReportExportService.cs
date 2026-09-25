@@ -402,11 +402,12 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</section>\n");
         }
 
-        if (report.Limitations.Count > 0)
+        // The same method limitations as the page, each once; critical/high finding titles are findings, not limitations.
+        if (FrontendQualityResultPresentation.MethodLimitations(report) is { Count: > 0 } methodLimitations)
         {
             sb.Append("<section class=\"block\">\n<h2>Assessment Limitations & Scope</h2>\n");
             sb.Append("<ul style=\"margin-left:1.2rem;font-size:.85rem;color:#374151\">\n");
-            foreach (var l in report.Limitations)
+            foreach (var l in methodLimitations)
                 sb.Append($"<li>{Esc(l)}</li>\n");
             sb.Append("</ul>\n");
             sb.Append("<p style=\"margin-top:0.5rem;font-size:.8rem;color:#6b7280\"><strong>Note:</strong> This review uses passive static analysis. " +
@@ -625,7 +626,7 @@ public sealed class ReportExportService : IReportExportService
         // The page's count model, not raw list lengths: informational and derived items are neither logical issues nor
         // source findings, and are listed by their own names.
         var view = FrontendQualityResultPresentation.Build(report);
-        var actionable = report.LogicalIssues.Where(i => i.IsActionable).ToList();
+        var actionable = view.ActionableIssues;
         sb.Append($"<p><strong>Critical/high logical issues:</strong> {actionable.Count(i => i.PrimarySeverity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High)} &nbsp; "
             + $"<strong>Logical issues:</strong> {view.LogicalIssueCount} &nbsp; <strong>Source findings:</strong> {view.SourceFindingCount} &nbsp; "
             + $"<strong>Derived indicators:</strong> {view.DerivedIndicatorCount} &nbsp; <strong>Informational observations:</strong> {view.InformationalIssueCount}</p>\n");
@@ -636,7 +637,7 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("<section class=\"block\">\n<h2>Target environment access</h2>\n<dl>\n");
             sb.Append($"<dt><strong>Target:</strong></dt><dd>{Esc(access.EnvironmentName)} ({Esc(access.EnvironmentType)})</dd>\n");
             sb.Append($"<dt><strong>URL:</strong></dt><dd>{Esc(access.TargetUrl)}</dd>\n");
-            sb.Append($"<dt><strong>Authentication:</strong></dt><dd>{Esc(access.RequiresAuthentication ? access.AuthenticationType.ToString() : "Not required")}</dd>\n");
+            sb.Append($"<dt><strong>Authentication required for reviewed scope:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ReviewedScopeAuthenticationLabel(access))}</dd>\n");
             sb.Append($"<dt><strong>Testing method:</strong></dt><dd>{Esc(AuthenticatedTestingMethodLabels.Option(access.Method))}</dd>\n");
             sb.Append($"<dt><strong>Access mode:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ModeLabel(access.Mode))}</dd>\n");
             sb.Append($"<dt><strong>Authenticated context:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ApiContextLabel(access))}</dd>\n");
@@ -664,9 +665,9 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</section>\n");
         }
         sb.Append("<section class=\"block\">\n<h2>Automated coverage</h2>\n");
-        var optionalText = counts.OptionalTotal == 0 ? "0 / 0 (no optional engine enabled)" : $"{counts.OptionalAssessed} / {counts.OptionalTotal}";
+        var optionalText = counts.OptionalTotal == 0 ? "0 of 0 (no optional engine enabled)" : $"{counts.OptionalAssessed} of {counts.OptionalTotal} active";
         var inactiveText = counts.InactiveCount > 0 ? $" &nbsp; {counts.InactiveCount} engine(s) not active — excluded from coverage" : "";
-        sb.Append($"<p><strong>{Esc(coverageText)}</strong></p><p><strong>Required assessed:</strong> {requiredAssessed} / {counts.RequiredTotal} &nbsp; <strong>Optional assessed:</strong> {Esc(optionalText)}{inactiveText}</p>\n");
+        sb.Append($"<p><strong>{Esc(coverageText)}</strong></p><p><strong>Required assessed:</strong> {requiredAssessed} of {counts.RequiredTotal} &nbsp; <strong>Optional assessed:</strong> {Esc(optionalText)}{inactiveText}</p>\n");
         if (counts.RequiredTotal > 0 && requiredAssessed < counts.RequiredTotal)
         {
             sb.Append($"<p>{requiredAssessed} of {counts.RequiredTotal} required engines completed.</p>\n<ul>\n");
@@ -675,14 +676,15 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("</ul>\n");
         }
         sb.Append(Table(
-            ["Engine", "Policy", "Enabled", "Assessment", "Access", "Outcome", "Evidence / findings", "Duration", "Tool / browser", "Reason / required action"],
+            ["Engine", "Policy", "Enabled", "Assessment", "Access", "Outcome", "Evidence records", "Findings", "Duration", "Tool / browser", "Reason / required action"],
             report.EngineOutcomes.OrderBy(o => o.EngineId).Select(o => new[]
             {
                 Esc(o.DisplayName), Esc(o.Requirement.ToString()), o.Enabled ? "Yes" : "No",
                 Esc(FrontendQualityEngineOutcomePresentation.AssessmentLabel(o)),
                 Esc(o.AccessLabel ?? (o.AccessKind.HasValue ? FrontendQualityEngineOutcomePresentation.AccessKindLabel(o.AccessKind.Value) : "—")),
                 Esc($"{FrontendQualityEngineOutcomePresentation.StateLabel(o)} · {FrontendQualityEngineOutcomePresentation.GetLabel(o.OutcomeReason)}"),
-                $"{o.EvidenceCount?.ToString() ?? "—"} / {o.FindingCount?.ToString() ?? "—"}",
+                Esc(FrontendQualityEngineOutcomePresentation.EvidenceLabel(o)),
+                Esc(FrontendQualityEngineOutcomePresentation.FindingsLabel(o)),
                 o.DurationMs.HasValue ? $"{o.DurationMs.Value} ms" : "—",
                 Esc(string.Join(" · ", new[] { o.ToolName, o.ToolVersion, o.BrowserName, o.BrowserVersion }.Where(v => !string.IsNullOrWhiteSpace(v)))),
                 Esc(SanitizePassive(string.Join(" ", new[] { o.SanitizedFailureReason, o.RequiredAction is { Length: > 0 } action ? $"Required action: {action}." : null }

@@ -9,6 +9,33 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class FrontendQualityEngineOutcomePresentation
 {
+    /// <summary>
+    /// The evidence count in the unit this engine actually counted. "5 / 6" under "Evidence / findings" was read as a
+    /// ratio, and the left number meant evidence items for one engine, pages for another and metrics for a third.
+    /// </summary>
+    /// An engine that did not assess the target has no counts: "0 metrics · 0 audits" beside "Unavailable" read as a
+    /// clean run.
+    public static string EvidenceLabel(FrontendQualityEngineOutcome outcome) =>
+        outcome.EvidenceCount is not { } count || !Assessed(outcome) ? "—" : Counted(count, EvidenceUnit(outcome.EngineId));
+
+    /// <summary>The finding count, named. Lighthouse reports audits, which are not findings of this review.</summary>
+    public static string FindingsLabel(FrontendQualityEngineOutcome outcome) =>
+        outcome.FindingCount is not { } count || !Assessed(outcome) ? "—"
+            : Counted(count, outcome.EngineId == FrontendQualityEngineId.Lighthouse ? ("audit", "audits") : ("finding", "findings"));
+
+    private static bool Assessed(FrontendQualityEngineOutcome outcome) => outcome.ExecutionState == FrontendQualityEngineExecutionState.Assessed;
+
+    private static (string One, string Many) EvidenceUnit(FrontendQualityEngineId engine) => engine switch
+    {
+        FrontendQualityEngineId.BrowserQuality or FrontendQualityEngineId.PerformanceQuality => ("page with evidence", "pages with evidence"),
+        FrontendQualityEngineId.Accessibility => ("element/failure reference", "element/failure references"),
+        FrontendQualityEngineId.Lighthouse => ("metric", "metrics"),
+        FrontendQualityEngineId.PassiveSecurity => ("finding with evidence", "findings with evidence"),
+        _ => ("evidence item", "evidence items"),
+    };
+
+    private static string Counted(int count, (string One, string Many) unit) => $"{count} {(count == 1 ? unit.One : unit.Many)}";
+
     public sealed record OutcomePresentation(
         string Label,
         string Description,

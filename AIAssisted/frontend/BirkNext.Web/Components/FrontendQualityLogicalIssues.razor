@@ -29,7 +29,11 @@
                                 also in @string.Join(", ", issue.RelatedCategories.Select(FrontendQualityCategoryEngines.Label))
                             </span>
                         }
-                        @if (issue.Informational)
+                        @if (issue.Derived)
+                        {
+                            <span class="fqr-pill fqr-pill-muted" data-testid="fqr-issue-derived">Derived indicator</span>
+                        }
+                        else if (issue.Informational)
                         {
                             <span class="fqr-pill fqr-pill-info" data-testid="fqr-issue-informational">Informational</span>
                         }

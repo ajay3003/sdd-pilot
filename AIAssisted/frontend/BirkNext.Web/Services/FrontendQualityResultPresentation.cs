@@ -70,7 +70,20 @@ public static class FrontendQualityResultPresentation
                 f.Origin == FrontendQualityFindingOrigin.Source &&
                 f.Severity is FrontendQualitySeverity.Critical or FrontendQualitySeverity.High),
             DerivedIndicatorCount: derived,
-            InformationalIssueCount: issues.Count(issue => issue.Informational));
+            // Disjoint from the derived indicators: a derived Info record is counted there, once.
+            InformationalIssueCount: issues.Count(issue => issue.IsInformationalObservation),
+            Issues: issues);
+    }
+
+    /// <summary>
+    /// The review's method limitations, each stated once. Engines append their own wording to the review's, and exact
+    /// de-duplication kept "Automated tooling cannot verify all WCAG requirements. Manual accessibility testing is still
+    /// required." as its own item after a longer item that already ended with it.
+    /// </summary>
+    public static IReadOnlyList<string> MethodLimitations(FrontendQualityReviewReport report)
+    {
+        var items = report.Limitations.Where(l => !string.IsNullOrWhiteSpace(l)).Select(l => l.Trim()).Distinct(StringComparer.Ordinal).ToList();
+        return items.Where(item => !items.Any(other => other.Length > item.Length && other.Contains(item, StringComparison.Ordinal))).ToList();
     }
 
     // ── Completeness, on its own dimensions ───────────────────────────────────────────────────────────────────────

@@ -735,6 +735,21 @@
     background: var(--clr-surface);
 }
 
+/* The Engine coverage matrix is rendered by a child component, which the scoped rule above never reached. Its eleven
+   columns set the min-content width of the layout's flex <main>, so the whole page scrolled sideways (1428px at a
+   1100px viewport). inline-size containment keeps the table's width inside its own scroll container. */
+::deep .fqr-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    contain: inline-size;
+}
+
+/* Contained, the matrix would shrink to fit and squeeze the reason column to a word per line; it scrolls instead. */
+::deep .fqr-engine-matrix {
+    min-width: 64rem;
+}
+
 .fqr-findings-table {
     width: 100%;
     border-collapse: collapse;
@@ -1354,4 +1369,15 @@
     .fqr-decide-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .fqr-decide-cards ::deep .fqr-readiness { grid-column: 1 / -1; }
     ::deep .fqr-target-list > div { grid-template-columns: 1fr; gap: 0.1rem; }
+}
+
+/* Review items: one heading per disjoint kind (actionable, informational, derived). */
+.fqr-review-items-heading {
+    margin: 1rem 0 .5rem;
+    font-size: .95rem;
+    font-weight: 600;
+}
+
+.fqr-review-items-heading:first-child {
+    margin-top: 0;
 }
