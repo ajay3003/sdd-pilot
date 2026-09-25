@@ -106,7 +106,8 @@ public static class FrontendQualityTargetAccess
                     : FrontendQualityTargetAccessMode.AuthRequiredContextMissing,
             };
 
-        var reason = !context.RequiresAuthentication ? "Target does not require authentication; engines access it directly."
+        // Scope, not a fact about the application: a public review of an Entra ID application is still a public review.
+        var reason = !context.RequiresAuthentication ? "Review scope is public only; engines access the public frontend directly."
             : method switch
             {
                 AuthenticatedTestingMethod.ManualOnly => ManualOnlyReason,
@@ -227,13 +228,6 @@ public static class FrontendQualityTargetAccess
         };
     }
 
-    /// <summary>
-    /// Whether the scope a finished review covered needed a sign-in, and with which provider: "Yes (Microsoft Entra ID)"
-    /// or "No". A configured provider on a public scope is not a contradiction, so the label never implies one.
-    /// </summary>
-    public static string ReviewedScopeAuthenticationLabel(FrontendQualityTargetAccessContext access) =>
-        access.RequiresAuthentication ? $"Yes ({AuthenticationPresentation.ProviderLabel(access.AuthenticationType)})" : "No";
-
     public static string ModeLabel(FrontendQualityTargetAccessMode mode) => mode switch
     {
         FrontendQualityTargetAccessMode.PublicDirect => "Public (direct)",
@@ -246,9 +240,10 @@ public static class FrontendQualityTargetAccess
     };
 
     public static string ApiContextLabel(FrontendQualityTargetAccessContext access) =>
-        // "Not available" beside "Authentication: Not required" read as a problem; for a public target it is simply not needed.
+        // "Not available" read as a problem; in a public-only review nothing uses the context. Stated as the review's scope,
+        // never as "target does not require authentication", which is a claim about the application.
         !access.RequiresAuthentication && access.ApiContextStatus != AuthenticatedApiContextStatus.Available
-            ? "Not needed — target does not require authentication"
+            ? "Not used — review scope is public only"
             : ApiContextLabelCore(access);
 
     private static string ApiContextLabelCore(FrontendQualityTargetAccessContext access) => access.Method switch
@@ -286,7 +281,7 @@ public static class FrontendQualityTargetAccess
     /// <summary>Automated engine access, kept separate from manual verification: a passed manual verification never grants automation access.</summary>
     public static string AutomatedAccessLabel(FrontendQualityTargetAccessContext access) => access.Mode switch
     {
-        FrontendQualityTargetAccessMode.PublicDirect => "Available — public target",
+        FrontendQualityTargetAccessMode.PublicDirect => "Available — public scope",
         FrontendQualityTargetAccessMode.LocalHttpsProxy => "Available — authenticated API context (no DOM)",
         FrontendQualityTargetAccessMode.ManagedEdgeCdp => "Available — authenticated browser session",
         FrontendQualityTargetAccessMode.ManualOnly => "Unavailable — manual verification only",

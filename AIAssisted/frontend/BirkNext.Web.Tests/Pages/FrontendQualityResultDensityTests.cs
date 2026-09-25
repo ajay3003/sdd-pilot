@@ -582,7 +582,7 @@ public sealed class FrontendQualityResultDensityTests : BunitContext
     {
         FrontendQualityTargetAccess.ApiContextLabel(new FrontendQualityTargetAccessContext
             { RequiresAuthentication = false, Method = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy })
-            .Should().Be("Not needed — target does not require authentication");
+            .Should().Be("Not used — review scope is public only");
         FrontendQualityTargetAccess.ApiContextLabel(new FrontendQualityTargetAccessContext
             { RequiresAuthentication = true, Method = BirkNext.LocalHttpsProxy.AuthenticatedTestingMethod.LocalHttpsProxy })
             .Should().Be("Not available", "an authenticated target without a context is still reported as missing");

@@ -196,16 +196,16 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         var rows = new List<FrontendQualityCoverageRow>
         {
             new("Public frontend", FrontendQualityCoverageState.Available, null),
-            new("Authenticated application", FrontendQualityCoverageState.NotRequired, null),
+            new("Authenticated frontend", FrontendQualityCoverageState.NotIncluded, null),
             new("Browser-rendered DOM", FrontendQualityCoverageState.Available, null),
-            new("Authenticated API traffic", FrontendQualityCoverageState.NotRequired, null),
+            new("Authenticated API traffic", FrontendQualityCoverageState.NotIncluded, null),
             new("Automatic engines", FrontendQualityCoverageState.Available, null),
         };
 
         var summary = FrontendQualityLandingPresentation.CoverageSummary(rows);
 
         summary.AvailableCount.Should().Be(3);
-        summary.NotRequiredCount.Should().Be(2);
+        summary.NotIncludedCount.Should().Be(2);
         summary.NotAvailableCount.Should().Be(0);
         // 18, 39. The exact case from the screenshot: 3 available + 2 not required. Nothing is missing, so the line
         // says so in words. "3 available · 2 not required" was arithmetic the reader had to finish themselves.
@@ -221,7 +221,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         {
             new("Public frontend", FrontendQualityCoverageState.Available, null),
             new("Browser-rendered DOM", FrontendQualityCoverageState.NotAvailable, null),
-            new("Authenticated API traffic", FrontendQualityCoverageState.NotRequired, null),
+            new("Authenticated API traffic", FrontendQualityCoverageState.NotIncluded, null),
         };
 
         var summary = FrontendQualityLandingPresentation.CoverageSummary(rows);
@@ -229,7 +229,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         // 20. Something genuinely unavailable is still reported as unavailable, and is what the line leads with.
         summary.Headline.Should().Be("1 access path not available");
         summary.NotAvailableCount.Should().Be(1);
-        summary.NotRequiredCount.Should().Be(1);
+        summary.NotIncludedCount.Should().Be(1);
     }
 
     // An access path that reaches only the public frontend is neither available nor unavailable, so it may not be
@@ -240,7 +240,7 @@ public sealed class FrontendQualityCapabilityStateConsistencyTests
         var rows = new List<FrontendQualityCoverageRow>
         {
             new("Public frontend", FrontendQualityCoverageState.Available, null),
-            new("Authenticated application", FrontendQualityCoverageState.NotRequired, null),
+            new("Authenticated frontend", FrontendQualityCoverageState.NotIncluded, null),
             new("Automatic engines", FrontendQualityCoverageState.PublicOnly, null),
         };
 

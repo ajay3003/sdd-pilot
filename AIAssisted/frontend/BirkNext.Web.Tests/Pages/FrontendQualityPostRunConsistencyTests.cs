@@ -367,20 +367,21 @@ public sealed class FrontendQualityPostRunConsistencyTests : BunitContext
     }
 
     [Fact]
-    public void TargetAccessSaysWhetherTheReviewedScopeRequiredAuthentication()
+    public void TargetAccessSeparatesConfiguredProviderScopeAndAccessUsed()
     {
         var report = Report();
         var page = Result(report);
         Open(page, "fqr-result-technical");
         var auth = page.Find("[data-testid=fqr-access-auth]");
-        auth.PreviousElementSibling!.TextContent.Should().Be("Authentication required for reviewed scope");
-        auth.TextContent.Should().Be("No");
+        auth.PreviousElementSibling!.TextContent.Should().Be("Authentication configured");
+        auth.TextContent.Should().Be("Microsoft Entra ID");
+        page.Find("[data-testid=fqr-access-scope]").TextContent.Should().Be("Public only");
+        // Manual verification may legitimately read "Not required"; the target facts never do.
+        page.Find("[data-testid=fqr-access-group-target]").TextContent.Should().NotContain("Not required");
 
-        FrontendQualityTargetAccess.ReviewedScopeAuthenticationLabel(new FrontendQualityTargetAccessContext
-            { RequiresAuthentication = true, AuthenticationType = FrontendAuthenticationType.MicrosoftEntraId })
-            .Should().Be("Yes (Microsoft Entra ID)");
-        new ReportExportService().ExportFrontendQualityReview(report, "Test")
-            .Should().Contain("<strong>Authentication required for reviewed scope:</strong></dt><dd>No</dd>");
+        var html = new ReportExportService().ExportFrontendQualityReview(report, "Test");
+        html.Should().Contain("<strong>Authentication configured:</strong></dt><dd>Microsoft Entra ID</dd>")
+            .And.Contain("<strong>Review scope:</strong></dt><dd>Public only</dd>");
     }
 
     [Fact]

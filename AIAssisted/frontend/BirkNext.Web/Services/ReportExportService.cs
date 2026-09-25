@@ -637,7 +637,13 @@ public sealed class ReportExportService : IReportExportService
             sb.Append("<section class=\"block\">\n<h2>Target environment access</h2>\n<dl>\n");
             sb.Append($"<dt><strong>Target:</strong></dt><dd>{Esc(access.EnvironmentName)} ({Esc(access.EnvironmentType)})</dd>\n");
             sb.Append($"<dt><strong>URL:</strong></dt><dd>{Esc(access.TargetUrl)}</dd>\n");
-            sb.Append($"<dt><strong>Authentication required for reviewed scope:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ReviewedScopeAuthenticationLabel(access))}</dd>\n");
+            var executed = FrontendQualityReviewScopes.Executed(report);
+            sb.Append($"<dt><strong>Authentication configured:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.ConfiguredProviderLabel(access.AuthenticationType))}</dd>\n");
+            sb.Append($"<dt><strong>Review scope:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(access.RequiresAuthentication)))}</dd>\n");
+            sb.Append($"<dt><strong>Access used:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.ExecutedLabel(executed))}{(executed.Partial ? " (partial: the configured scope was not fully assessed)" : "")}</dd>\n");
+            sb.Append($"<dt><strong>Public frontend reviewed by:</strong></dt><dd>{Esc(executed.PublicEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.PublicEngines))}</dd>\n");
+            if (access.RequiresAuthentication || executed.AuthenticatedEngines.Count > 0)
+                sb.Append($"<dt><strong>Signed-in pages reviewed by:</strong></dt><dd>{Esc(executed.AuthenticatedEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.AuthenticatedEngines))}</dd>\n");
             sb.Append($"<dt><strong>Testing method:</strong></dt><dd>{Esc(AuthenticatedTestingMethodLabels.Option(access.Method))}</dd>\n");
             sb.Append($"<dt><strong>Access mode:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ModeLabel(access.Mode))}</dd>\n");
             sb.Append($"<dt><strong>Authenticated context:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ApiContextLabel(access))}</dd>\n");

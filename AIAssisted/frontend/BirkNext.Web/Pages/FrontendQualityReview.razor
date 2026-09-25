@@ -111,7 +111,7 @@
                 @* 1. Review access — which surfaces of the target this review can reach. *@
                 @if (_access is { } landingAccess)
                 {
-                    var coverageRows = FrontendQualityLandingPresentation.Coverage(landingAccess, _caps);
+                    var coverageRows = FrontendQualityLandingPresentation.Coverage(landingAccess, _caps, landing.Scope);
                     @* Open by default (it answers "can this review reach what it needs?"), bound so a rerender never
                        re-opens it after the reader closes it. *@
                     <ReviewDisclosure Text="Review access" CollapseText="Hide review access"
@@ -139,7 +139,7 @@
                     <ReviewDisclosure Text="Engines" CollapseText="Hide engines"
                                       Hint="@(_enginesExpanded ? null : FrontendQualityLandingPresentation.CapabilitySummary(landing.Capabilities).Collapsed)"
                                       TestId="fqr-capabilities-disclosure" Class="fqr-detail-disclosure" @bind-Expanded="_enginesExpanded">
-                        <FrontendQualityCapabilityList Rows="landing.Capabilities" SelectionChanged="OnCapabilitySelectionChanged" />
+                        <FrontendQualityCapabilityList Rows="landing.Capabilities" Scope="landing.Scope" SelectionChanged="OnCapabilitySelectionChanged" />
                     </ReviewDisclosure>
                 }
 
@@ -538,7 +538,7 @@
                 }
                 @if (report.TargetAccess is { } access)
                 {
-                    <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" />
+                    <FrontendQualityTargetAccessPanel Access="access" ShowActions="false" Executed="FrontendQualityReviewScopes.Executed(report)" />
                 }
             </ReviewDisclosure>
 
@@ -670,7 +670,8 @@
         IReadOnlyList<FrontendQualityCapabilityRow> Capabilities,
         IReadOnlyList<FrontendQualityDimensionCard> Dimensions,
         IReadOnlyList<FrontendQualityTechnicalField> TechnicalFields,
-        FrontendQualityAuthenticatedReviewModel? AuthenticatedReview);
+        FrontendQualityAuthenticatedReviewModel? AuthenticatedReview,
+        FrontendQualityReviewScope? Scope = null);
 
     private const string TargetEnvironmentsHref = FrontendQualityTargetAccess.TargetEnvironmentsHref;
 
@@ -770,14 +771,19 @@
         var capabilities = _context is null || _context.ActiveTargetError is not null || _activeEngines is null
             ? (IReadOnlyList<FrontendQualityCapabilityRow>)[]
             : FrontendQualityLandingPresentation.Capabilities(_context, _activeEngines, _engineStatus, _engineStatusPending, _readinessPending, _access, CompanionState, RecordedEvidence);
-        var readiness = FrontendQualityLandingPresentation.Readiness(_context, _activeEngines, capabilities, _engineStatusPending);
+        // Configuration → available paths → what the runnable engines cover. Resolved once and read by the Target card,
+        // the readiness banner, Review access and the engine list, so none of them re-derives scope on its own.
+        var scope = _context is null || _context.ActiveTargetError is not null || _access is null || capabilities.Count == 0 ? null
+            : FrontendQualityReviewScopes.Resolve(_context, _access, capabilities);
+        var readiness = FrontendQualityReviewScopes.ApplyTo(
+            FrontendQualityLandingPresentation.Readiness(_context, _activeEngines, capabilities, _engineStatusPending), scope);
         var target = _context is null
-            ? new FrontendQualityTargetSummaryModel("Loading…", "—", "—", "—", "Loading", false)
-            : FrontendQualityLandingPresentation.TargetSummary(_context);
-        var technical = _context is null ? [] : FrontendQualityLandingPresentation.TechnicalTargetFields(_context);
+            ? new FrontendQualityTargetSummaryModel("Loading…", "—", "—", "—", "—", "Loading", false)
+            : FrontendQualityLandingPresentation.TargetSummary(_context, scope);
+        var technical = _context is null ? [] : FrontendQualityLandingPresentation.TechnicalTargetFields(_context, scope);
         var auth = _context is null || _context.ActiveTargetError is not null ? null
             : FrontendQualityLandingPresentation.AuthenticatedReview(_context, _access, _caps, _authSession);
-        return new LandingView(target, readiness, capabilities, FrontendQualityLandingPresentation.Dimensions(capabilities, SelectedWcagProfile), technical, auth);
+        return new LandingView(target, readiness, capabilities, FrontendQualityLandingPresentation.Dimensions(capabilities, SelectedWcagProfile), technical, auth, scope);
     }
 
     private FrontendAnalysisContext? _context;

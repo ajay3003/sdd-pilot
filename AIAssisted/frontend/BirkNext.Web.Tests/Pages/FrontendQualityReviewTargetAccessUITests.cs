@@ -22,11 +22,11 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         var access = new FrontendQualityTargetAccessContext { RequiresAuthentication = false,
             Method = AuthenticatedTestingMethod.LocalHttpsProxy, ProxyState = LocalHttpsProxyState.NotStarted };
         var cut = Render<FrontendQualityTargetAccessPanel>(p => p.Add(c => c.Access, access));
-        cut.Find("[data-testid=fqr-access-method]").TextContent.Should().Contain("not needed for this target");
-        cut.Find("[data-testid=fqr-access-proxy]").TextContent.Should().Be("Not needed for this run");
+        cut.Find("[data-testid=fqr-access-method]").TextContent.Should().Contain("not used in a public-only review");
+        cut.Find("[data-testid=fqr-access-proxy]").TextContent.Should().Be("Not used in a public-only review");
         var coverage = FrontendQualityLandingPresentation.Coverage(access, null);
         coverage.Single(r => r.Label == "Public frontend").Detail.Should().Contain("HTTP(S)");
-        coverage.Single(r => r.Label == "Automatic engines").Detail.Should().Be("Required engines can run for the current public scope.");
+        coverage.Single(r => r.Label == "Automatic engines").Detail.Should().Be("Active engines can run for the public scope.");
     }
 
     private static FrontendAnalysisContext Context(AuthenticatedTestingMethod method, bool requiresAuth = true)
@@ -73,7 +73,8 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
         page.WaitForAssertion(() => page.Find("[data-testid='fqr-target-access']"));
         page.Find("[data-testid='fqr-access-target']").TextContent.Should().Contain("M2LB DEV");
         page.Find("[data-testid='fqr-access-url']").TextContent.Should().Contain("https://m2lbdev.example.test/");
-        page.Find("[data-testid='fqr-access-auth']").TextContent.Should().Contain("MicrosoftEntraId");
+        page.Find("[data-testid='fqr-access-auth']").TextContent.Should().Be("Microsoft Entra ID");
+        page.Find("[data-testid='fqr-access-scope']").TextContent.Should().Be("Public + authenticated");
         page.Find("[data-testid='fqr-access-method']").TextContent.Should().Be(AuthenticatedTestingMethodLabels.ProxyOption);
         page.Find("[data-testid='fqr-access-context']").TextContent.Should().Be("Available — memory only");
         page.Find("[data-testid='fqr-access-dom']").TextContent.Should().Be("Not available with Local HTTPS Proxy");
@@ -146,7 +147,9 @@ public sealed class FrontendQualityReviewTargetAccessUITests : BunitContext
 
         page.WaitForAssertion(() => page.Find("[data-testid='fqr-target-access']"));
         page.Find("[data-testid='fqr-access-mode']").TextContent.Should().Be("Public (direct)");
-        page.Find("[data-testid='fqr-access-auth']").TextContent.Should().Be("Not required");
+        // No provider configured, public scope: stated as both facts, never as "Authentication: Not required".
+        page.Find("[data-testid='fqr-access-auth']").TextContent.Should().Be("Not configured");
+        page.Find("[data-testid='fqr-access-scope']").TextContent.Should().Be("Public only");
         page.FindAll("[data-testid='fqr-access-reason']").Should().BeEmpty();
         page.Markup.Should().NotContain("Sign in for review");
     }

@@ -105,7 +105,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=fqr-readiness-message]").TextContent.Should().Contain("valid");
         page.Find("[data-testid=fqr-target-environment]").TextContent.Should().Contain("M2LB DEV").And.Contain("Dev");
         page.Find("[data-testid=fqr-target-url]").TextContent.Should().Be(Url);
-        page.Find("[data-testid=fqr-target-authentication]").TextContent.Should().Be("Not required");
+        // The review's scope, never "Authentication: Not required" — that read as a fact about the application.
+        page.Find("[data-testid=fqr-target-scope]").TextContent.Should().Be("Public only");
+        page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Not included in this review");
+        page.FindAll("[data-testid=fqr-target-authentication]").Should().BeEmpty();
         page.Find("[data-testid=fqr-target-status]").TextContent.Should().Be("Ready");
         // Whole-review readiness is stated once, by the readiness panel — the Target card no longer repeats it.
         page.FindAll("[data-testid=fqr-target-review-status]").Should().BeEmpty();
@@ -246,10 +249,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-coverage]"));
         Row(page, "Public frontend").Should().Be("Available");
-        Row(page, "Authenticated application").Should().Be("Not required for current scope");
+        Row(page, "Authenticated frontend").Should().Be("Not included in this review");
         Row(page, "Browser-rendered DOM").Should().Be("Available");
-        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Be("Rendered DOM is available for pages in the current scope.");
-        Row(page, "Authenticated API traffic").Should().Be("Not required for current scope");
+        page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Be("Public pages, rendered in an anonymous browser.");
+        page.FindAll("[data-testid=fqr-coverage-row][data-coverage='Authenticated API traffic']").Should().BeEmpty("no engine in a public review reads it");
         Row(page, "Automatic engines").Should().Be("Available");
         // Scope-relative throughout: nothing claims the target has no signed-in areas, or that the whole application is reached.
         var coverage = page.Find("[data-testid=fqr-coverage]").TextContent;
@@ -266,7 +269,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
 
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-coverage]"));
         Row(page, "Public frontend").Should().Be("Available");
-        Row(page, "Authenticated application").Should().Be("Not available");
+        Row(page, "Authenticated frontend").Should().Be("Not available");
         Row(page, "Browser-rendered DOM").Should().Be("Not available");
         page.Find("[data-testid=fqr-coverage-row][data-coverage='Browser-rendered DOM'] .fqr-coverage-detail").TextContent.Should().Contain("Sign in for review");
         Row(page, "Automatic engines").Should().Be("Public frontend only");
@@ -285,10 +288,13 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         var page = Render<FrontendQualityReview>();
 
         page.WaitForAssertion(() => page.Find("[data-testid=fqr-coverage]"));
-        Row(page, "Authenticated application").Should().Be("Available");
+        // An authenticated API context is not an authenticated frontend: the proxy renders no signed-in page.
+        Row(page, "Authenticated frontend").Should().Be("Not available");
+        page.Find("[data-testid=fqr-coverage-row][data-coverage='Authenticated frontend'] .fqr-coverage-detail").TextContent
+            .Should().Be(FrontendQualityReviewScopes.ProxyApiOnlyDetail);
         Row(page, "Browser-rendered DOM").Should().Be("Not available");
         Row(page, "Authenticated API traffic").Should().Be("Available");
-        Row(page, "Automatic engines").Should().Be("Available");
+        Row(page, "Automatic engines").Should().Be("Public frontend only");
     }
 
     private static string Row(IRenderedComponent<FrontendQualityReview> page, string label) =>
@@ -356,7 +362,10 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.FindAll("[data-testid=fqr-auth-steps] li").Should().HaveCount(3);
         page.Find("[data-testid=fqr-auth-evidence]").TextContent.Should().Contain("Browser session").And.Contain("Authenticated DOM").And.Contain("Not connected");
         page.Find("[data-testid=fqr-auth-sign-in]").TextContent.Should().Be("Sign in for review");
-        page.Find("[data-testid=fqr-target-authentication]").TextContent.Should().Be("Microsoft Entra ID");
+        // Sign-in required, no session: the Target card states the reachable part of the scope and why the rest is not.
+        page.Find("[data-testid=fqr-target-scope]").TextContent.Should().Be("Public only · authenticated scope unavailable");
+        page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Unavailable");
+        page.Find("[data-testid=fqr-target-status]").TextContent.Should().Be("Ready with limitations");
         // Raw capability rows are behind a collapsed disclosure.
         page.Find("[data-testid=fqr-auth-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
     }

@@ -256,7 +256,8 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var body = Body(page, "fqr-coverage-disclosure");
         body.HasAttribute("hidden").Should().BeFalse();
         body.QuerySelectorAll("[data-testid=fqr-coverage-row]").Select(r => r.GetAttribute("data-coverage"))
-            .Should().Equal("Public frontend", "Authenticated application", "Browser-rendered DOM", "Authenticated API traffic", "Automatic engines");
+            // No "Authenticated API traffic" row for a public review: nothing in it reads that context.
+            .Should().Equal("Public frontend", "Authenticated frontend", "Browser-rendered DOM", "Automatic engines");
         // The exact access panel is still nested one level deeper, unchanged.
         body.QuerySelector("[data-testid=fqr-coverage-technical-body] [data-testid=fqr-target-access]").Should().NotBeNull();
     }
@@ -272,7 +273,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         var available = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.Available));
         var hint = page.Find("[data-testid=fqr-coverage-disclosure-toggle] .disclosure-hint").TextContent;
 
-        var notRequired = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotRequired));
+        var notRequired = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotIncluded));
         var notAvailable = rows.Count(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotAvailable));
 
         // The summary is a statement about the rows, derived from them and agreeing with them.
@@ -281,7 +282,7 @@ public sealed class FrontendQualityLandingDisclosureTests : BunitContext
         hint.Should().Be("Public review access available");
         // 10, 19. Not required stays its own state in the expanded rows; it is never promoted to Available.
         notRequired.Should().BePositive();
-        rows.Should().NotContain(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotRequired)
+        rows.Should().NotContain(r => r.GetAttribute("data-state") == nameof(FrontendQualityCoverageState.NotIncluded)
                                    && r.TextContent.Contains("✓ Available"));
         hint.Should().NotContain("%");
         hint.Should().NotContain($"of {rows.Count}", "a not-required area is not a missing one");

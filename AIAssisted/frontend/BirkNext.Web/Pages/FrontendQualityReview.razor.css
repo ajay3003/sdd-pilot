@@ -1371,6 +1371,12 @@
     ::deep .fqr-target-list > div { grid-template-columns: 1fr; gap: 0.1rem; }
 }
 
+/* The two-column block above comes later than the 760px single-column rule and silently overrode it, so at 390px the
+   Target card was 164px wide beside the profile card. Restated here, last, so phones stack the cards again. */
+@media (max-width: 760px) {
+    .fqr-decide-cards { grid-template-columns: 1fr; }
+}
+
 /* Review items: one heading per disjoint kind (actionable, informational, derived). */
 .fqr-review-items-heading {
     margin: 1rem 0 .5rem;
@@ -1380,4 +1386,11 @@
 
 .fqr-review-items-heading:first-child {
     margin-top: 0;
+}
+
+/* What an engine covers in this review (public frontend / signed-in pages / companion evidence). Text, not colour. */
+::deep .fqr-capability-scope {
+    font-size: .6875rem;
+    color: var(--clr-text-muted);
+    white-space: nowrap;
 }

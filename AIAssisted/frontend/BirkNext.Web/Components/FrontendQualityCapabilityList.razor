@@ -61,6 +61,12 @@
                                 <div class="fqr-capability-main">
                                     <span class="fqr-capability-glyph" aria-hidden="true">@(row.IsAvailable ? "✓" : "○")</span>
                                     <span class="fqr-capability-name">@row.DisplayName</span>
+                                    @* What this engine covers in this review. A flat "Available" would let Lighthouse or Static
+                                       Security read as covering signed-in pages. *@
+                                    @if (Scope?.Engines.FirstOrDefault(e => e.EngineId == row.EngineId) is { } scoped)
+                                    {
+                                        <span class="fqr-capability-scope" data-testid="fqr-capability-scope" data-path="@scoped.Path" data-available="@(scoped.Available ? "true" : "false")">@FrontendQualityReviewScopes.EngineScopeLabel(scoped)</span>
+                                    }
                                     @* Saved configuration first, then what is true right now. Two chips, because they
                                        are two facts: one is a decision someone made, the other is a condition. *@
                                     @if (row.ShowsEnabledAlongsideState)
@@ -116,6 +122,8 @@
     private sealed record Group(FrontendQualityEngineRequirement Policy, IReadOnlyList<FrontendQualityCapabilityRow> Rows);
 
     [Parameter, EditorRequired] public IReadOnlyList<FrontendQualityCapabilityRow> Rows { get; set; } = [];
+    /// <summary>The resolved access scope; when given, each active engine is tagged with the path it covers.</summary>
+    [Parameter] public FrontendQualityReviewScope? Scope { get; set; }
     /// <summary>Per-review include/exclude for an enabled backend engine.</summary>
     [Parameter] public EventCallback<(FrontendQualityEngineIdDto EngineId, bool Selected)> SelectionChanged { get; set; }
     /// <summary>Internal engine ids, readiness data, layer status — the only place they appear on the landing view.</summary>

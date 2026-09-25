@@ -210,7 +210,8 @@ public enum FrontendQualityCoverageState
     /// <summary>Only the public frontend is covered by automated engines.</summary>
     PublicOnly,
     NotAvailable,
-    NotRequired,
+    /// <summary>Outside this review's access scope (the authenticated frontend of a Target Environment reviewed without sign-in).</summary>
+    NotIncluded,
 }
 
 public static class FrontendQualityCoverageStates
@@ -221,15 +222,15 @@ public static class FrontendQualityCoverageStates
         FrontendQualityCoverageState.PublicOnly => "Public frontend only",
         FrontendQualityCoverageState.NotAvailable => "Not available",
         // Scope-relative: the review is configured for the public surface, which says nothing about whether the target
-        // uses sign-in anywhere.
-        FrontendQualityCoverageState.NotRequired => "Not required for current scope",
+        // uses sign-in anywhere. "Not required" read as a fact about the application.
+        FrontendQualityCoverageState.NotIncluded => "Not included in this review",
         _ => state.ToString(),
     };
 
     public static string Tone(FrontendQualityCoverageState state) => state switch
     {
         FrontendQualityCoverageState.Available => "ready",
-        FrontendQualityCoverageState.NotRequired => "muted",
+        FrontendQualityCoverageState.NotIncluded => "muted",
         _ => "attention",
     };
 
@@ -239,11 +240,16 @@ public static class FrontendQualityCoverageStates
 
 public sealed record FrontendQualityCoverageRow(string Label, FrontendQualityCoverageState State, string Detail);
 
+/// <param name="ReviewScope">What this review covers — "Public only", "Public + authenticated", or the reachable part of it.
+/// Replaces "Authentication: Not required", which read as a fact about the application rather than about the review.</param>
+/// <param name="AuthenticatedAccess">The authenticated frontend path for this review: Available, Unavailable, Not configured
+/// or Not included — never inferred from whether a sign-in provider is configured.</param>
 public sealed record FrontendQualityTargetSummaryModel(
     string Environment,
     string EnvironmentType,
     string Url,
-    string Authentication,
+    string ReviewScope,
+    string AuthenticatedAccess,
     string TargetStatus,
     bool TargetReady);
 
@@ -388,7 +394,7 @@ public sealed record FrontendQualityCapabilitySummary(
 /// is neither available nor unavailable, and folding it into either one would overstate or understate what can be reached.
 /// </param>
 public sealed record FrontendQualityCoverageSummaryModel(
-    int TotalCount, int AvailableCount, int NotAvailableCount, int NotRequiredCount = 0, int PublicOnlyCount = 0)
+    int TotalCount, int AvailableCount, int NotAvailableCount, int NotIncludedCount = 0, int PublicOnlyCount = 0)
 {
     /// <summary>
     /// What the collapsed "Review access" row says. Arithmetic ("3 available · 2 not required") is correct and tells the
@@ -397,7 +403,7 @@ public sealed record FrontendQualityCoverageSummaryModel(
     /// one is attached to the path it describes.
     /// </summary>
     /// <remarks>
-    /// NotRequired rows exist only when the review is scoped to the public surface, so their presence says the access
+    /// NotIncluded rows exist only when the review is scoped to the public surface, so their presence says the access
     /// that is available is public access — never "all" access, which read as the whole application being reachable.
     /// </remarks>
     public string Headline =>
@@ -405,7 +411,7 @@ public sealed record FrontendQualityCoverageSummaryModel(
             ? $"{NotAvailableCount} access path{(NotAvailableCount == 1 ? "" : "s")} not available"
             : PublicOnlyCount > 0
                 ? "Automated review limited to the public frontend"
-                : NotRequiredCount > 0
+                : NotIncludedCount > 0
                     ? "Public review access available"
                     : "All required access paths available";
 }

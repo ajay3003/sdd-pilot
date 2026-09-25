@@ -55,7 +55,7 @@ public static class FrontendQualityLandingPresentation
         TotalCount: rows.Count,
         AvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.Available),
         NotAvailableCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotAvailable),
-        NotRequiredCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotRequired),
+        NotIncludedCount: rows.Count(r => r.State is FrontendQualityCoverageState.NotIncluded),
         PublicOnlyCount: rows.Count(r => r.State is FrontendQualityCoverageState.PublicOnly));
 
     /// <summary>
@@ -80,20 +80,30 @@ public static class FrontendQualityLandingPresentation
 
     // ── Target summary ────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public static FrontendQualityTargetSummaryModel TargetSummary(FrontendAnalysisContext context)
+    /// <param name="scope">The resolved access scope; null while target access is still being resolved, when only the
+    /// configured scope is stated and the authenticated path reads "Checking…".</param>
+    public static FrontendQualityTargetSummaryModel TargetSummary(FrontendAnalysisContext context, FrontendQualityReviewScope? scope = null)
     {
         if (context.ActiveTargetError is { } error)
-            return new("No active Target Environment", "—", "—", "—", error, false);
+            return new("No active Target Environment", "—", "—", "—", "—", error, false);
 
         var profile = context.ActiveProfile;
-        var targetReady = context.HasTargetUrl && !context.HasValidationErrors;
+        var configValid = context.HasTargetUrl && !context.HasValidationErrors;
+        // Target status is evaluated against the configured scope: public availability never masks an authenticated part
+        // of the scope that this run cannot reach.
+        var (status, ready) = !configValid ? (context.HasTargetUrl ? "Configuration incomplete" : "Frontend URL missing", false)
+            : scope is null ? ("Ready", true)
+            : FrontendQualityReviewScopes.TargetStatus(scope);
         return new(
             string.IsNullOrWhiteSpace(profile.Name) ? "Unnamed environment" : profile.Name,
             EnvironmentTypeLabel(profile.EnvironmentType),
             context.HasTargetUrl ? context.TargetUrl : "Not configured",
-            AuthenticationLabel(context.AuthenticationType, context.RequiresAuthentication),
-            targetReady ? "Ready" : context.HasTargetUrl ? "Configuration incomplete" : "Frontend URL missing",
-            targetReady);
+            scope is null ? FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(context.RequiresAuthentication))
+                : FrontendQualityReviewScopes.ScopeSummary(scope),
+            scope is null ? (context.RequiresAuthentication ? "Checking…" : "Not included in this review")
+                : FrontendQualityReviewScopes.AuthenticatedAccessLabel(scope),
+            status,
+            ready);
     }
 
     public static string EnvironmentTypeLabel(FrontendEnvironmentType type) => type switch
@@ -558,41 +568,43 @@ public static class FrontendQualityLandingPresentation
 
     // ── Coverage ──────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public static IReadOnlyList<FrontendQualityCoverageRow> Coverage(FrontendQualityTargetAccessContext access, AuthenticatedReviewCapabilities? capabilities)
+    /// <summary>
+    /// Review access, organised around the two access paths a Frontend Quality Review can use — the public frontend and the
+    /// authenticated frontend — and then the DOM and engines that ride on them. "Authenticated application: Not required
+    /// for current scope" read as a fact about the application; a public review of an Entra ID application is a choice of
+    /// scope, and says so.
+    /// </summary>
+    /// <param name="scope">The resolved scope. When given, the Automatic engines row states what the runnable engines cover.</param>
+    public static IReadOnlyList<FrontendQualityCoverageRow> Coverage(
+        FrontendQualityTargetAccessContext access, AuthenticatedReviewCapabilities? capabilities, FrontendQualityReviewScope? scope = null)
     {
         var rows = new List<FrontendQualityCoverageRow>
         {
-            new("Public frontend", FrontendQualityCoverageState.Available, "Public pages and static assets can be reviewed over HTTP(S)."),
+            new(PublicFrontendRow, FrontendQualityCoverageState.Available, "Public pages and static assets can be reviewed over HTTP(S)."),
         };
 
-        // Public-only scope: the Target Environment is configured without sign-in (RequiresAuthentication = false). That
+        // Public-only scope: the Target Environment is reviewed without sign-in (RequiresAuthentication = false). That
         // scopes THIS review to the public surface; it does not establish that the target has no signed-in areas, so
-        // nothing here claims that. Configuring sign-in on the Target Environment moves the review to the branch below.
+        // nothing here claims that. Requiring sign-in on the Target Environment moves the review to the branch below.
         if (!access.RequiresAuthentication)
         {
-            // One short sentence each; the state chip already says "for current scope".
-            rows.Add(new("Authenticated application", FrontendQualityCoverageState.NotRequired,
-                "This review runs against public pages only."));
-            rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Rendered DOM is available for pages in the current scope."));
-            rows.Add(new("Authenticated API traffic", FrontendQualityCoverageState.NotRequired,
-                "Needed only for authenticated API-backed functionality."));
-            rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available,
-                "Required engines can run for the current public scope."));
+            rows.Add(new(AuthenticatedFrontendRow, FrontendQualityCoverageState.NotIncluded,
+                access.AuthenticatedBrowserSessionAvailable
+                    ? "An authenticated browser session exists, but this Target Environment is reviewed without sign-in."
+                    : FrontendQualityReviewScopes.NotIncludedDetail));
+            rows.Add(new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Public pages, rendered in an anonymous browser."));
+            rows.Add(new("Automatic engines", FrontendQualityCoverageState.Available, EnginesDetail(scope, "Active engines can run for the public scope.")));
             return rows;
         }
 
-        rows.Add(access.Mode switch
-        {
-            FrontendQualityTargetAccessMode.ManagedEdgeCdp => new("Authenticated application", FrontendQualityCoverageState.Available, "Authenticated browser session available."),
-            FrontendQualityTargetAccessMode.LocalHttpsProxy => new("Authenticated application", FrontendQualityCoverageState.Available, "Authenticated API context available. Signed-in pages are not rendered with this method."),
-            FrontendQualityTargetAccessMode.ManualOnly => new("Authenticated application", FrontendQualityCoverageState.NotAvailable, "Manual verification only; no automated access to the signed-in application."),
-            FrontendQualityTargetAccessMode.EnterpriseBlocked => new("Authenticated application", FrontendQualityCoverageState.NotAvailable, "Blocked by enterprise browser protection."),
-            _ => new("Authenticated application", FrontendQualityCoverageState.NotAvailable,
-                access.Method == AuthenticatedTestingMethod.LocalHttpsProxy ? "Start the Local HTTPS proxy and sign in to the target application." : "Sign in for review to include the signed-in application."),
-        });
+        var path = FrontendQualityReviewScopes.AuthenticatedPath(access);
+        var authenticated = scope?.AuthenticatedAccess ?? path.State;
+        rows.Add(new(AuthenticatedFrontendRow,
+            authenticated == FrontendQualityAccessPathState.Available ? FrontendQualityCoverageState.Available : FrontendQualityCoverageState.NotAvailable,
+            scope?.AuthenticatedDetail ?? path.Detail));
 
         rows.Add(access.AuthenticatedBrowserDomAvailable
-            ? new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Available in the authenticated browser session.")
+            ? new("Browser-rendered DOM", FrontendQualityCoverageState.Available, "Signed-in pages, in the authenticated browser session.")
             : access.Method switch
             {
                 AuthenticatedTestingMethod.LocalHttpsProxy => new("Browser-rendered DOM", FrontendQualityCoverageState.NotAvailable, "Not available with the Local HTTPS proxy method."),
@@ -601,29 +613,40 @@ public static class FrontendQualityLandingPresentation
                 _ => new("Browser-rendered DOM", FrontendQualityCoverageState.NotAvailable, "Requires an authenticated browser session (Sign in for review)."),
             });
 
-        rows.Add(access.Method switch
-        {
-            AuthenticatedTestingMethod.LocalHttpsProxy when access.AuthenticatedApiAvailable =>
-                new("Authenticated API traffic", FrontendQualityCoverageState.Available, ApiTrafficDetail(capabilities)),
-            AuthenticatedTestingMethod.LocalHttpsProxy =>
-                new("Authenticated API traffic", FrontendQualityCoverageState.NotAvailable,
+        // Authenticated API traffic is FQR-relevant only with the Local HTTPS proxy: the HTTP engines consume it through the
+        // authenticated API-surface probes. With any other method nothing in this review reads it, so no row is shown.
+        if (access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
+            rows.Add(access.AuthenticatedApiAvailable
+                ? new("Authenticated API traffic", FrontendQualityCoverageState.Available, ApiTrafficDetail(capabilities))
+                : new("Authenticated API traffic", FrontendQualityCoverageState.NotAvailable,
                     access.ApiContextStatus == AuthenticatedApiContextStatus.Expired
                         ? "The authenticated session expired. Continue using the target application in the proxy-configured browser."
-                        : "Requires an authenticated session through the Local HTTPS proxy."),
-            AuthenticatedTestingMethod.ManualOnly => new("Authenticated API traffic", FrontendQualityCoverageState.NotAvailable, "Not available with manual verification only."),
-            _ => new("Authenticated API traffic", FrontendQualityCoverageState.NotAvailable, "Not provided by the Managed Edge browser method."),
-        });
+                        : "Requires an authenticated session through the Local HTTPS proxy."));
 
-        rows.Add(access.Mode switch
-        {
-            FrontendQualityTargetAccessMode.ManagedEdgeCdp => new("Automatic engines", FrontendQualityCoverageState.Available, "Public frontend and authenticated browser session."),
-            FrontendQualityTargetAccessMode.LocalHttpsProxy => new("Automatic engines", FrontendQualityCoverageState.Available, "Public frontend and authenticated API context (no signed-in pages)."),
-            FrontendQualityTargetAccessMode.ManualOnly => new("Automatic engines", FrontendQualityCoverageState.PublicOnly, "Manual verification only; automated engines review the public frontend."),
-            FrontendQualityTargetAccessMode.EnterpriseBlocked => new("Automatic engines", FrontendQualityCoverageState.PublicOnly, "Browser protection blocks the authenticated session; automated engines review the public frontend."),
-            _ => new("Automatic engines", FrontendQualityCoverageState.PublicOnly, "Authenticated context not available yet; automated engines review the public frontend."),
-        });
+        rows.Add(authenticated == FrontendQualityAccessPathState.Available
+            ? new("Automatic engines", FrontendQualityCoverageState.Available, EnginesDetail(scope, "Public frontend and signed-in pages."))
+            : new("Automatic engines", FrontendQualityCoverageState.PublicOnly, EnginesDetail(scope, "Automated engines review the public frontend.")));
 
         return rows;
+    }
+
+    public const string PublicFrontendRow = "Public frontend";
+    public const string AuthenticatedFrontendRow = "Authenticated frontend";
+
+    /// <summary>Which engines cover which path, from the resolved scope; the fallback sentence until it is resolved.</summary>
+    private static string EnginesDetail(FrontendQualityReviewScope? scope, string fallback)
+    {
+        if (scope is null) return fallback;
+        var runnable = scope.Engines.Where(e => e.Available).ToList();
+        string? Part(FrontendQualityEngineAccessPath path, string label) =>
+            runnable.Where(e => e.Path == path).Select(e => e.DisplayName).ToList() is { Count: > 0 } names ? $"{label}: {Join(names)}" : null;
+        var parts = new[]
+        {
+            Part(FrontendQualityEngineAccessPath.Public, "Public"),
+            Part(FrontendQualityEngineAccessPath.Authenticated, "Authenticated"),
+            Part(FrontendQualityEngineAccessPath.CompanionEvidence, "Browser Companion evidence (sign-in state not recorded)"),
+        }.Where(p => p is not null).ToList();
+        return parts.Count == 0 ? "No active engine can run for this scope." : string.Join(". ", parts) + ".";
     }
 
     private static string ApiTrafficDetail(AuthenticatedReviewCapabilities? capabilities)
@@ -729,7 +752,7 @@ public static class FrontendQualityLandingPresentation
 
     // ── Technical details (exact source values moved behind disclosure) ──────────────────────────────────────────────
 
-    public static IReadOnlyList<FrontendQualityTechnicalField> TechnicalTargetFields(FrontendAnalysisContext context)
+    public static IReadOnlyList<FrontendQualityTechnicalField> TechnicalTargetFields(FrontendAnalysisContext context, FrontendQualityReviewScope? scope = null)
     {
         if (context.ActiveTargetError is { } error)
             return [new("Target Environment", error), new("Active", "No")];
@@ -741,9 +764,11 @@ public static class FrontendQualityLandingPresentation
             new("Target URL", context.HasTargetUrl ? context.TargetUrl : "Not configured"),
             // A configured provider and a public review scope are both true at once; the labels say which is which, so
             // "Microsoft Entra ID" beside "No" no longer reads as a contradiction.
-            new("Authentication configured", AuthenticationPresentation.ProviderLabel(context.AuthenticationType)),
-            new("Authentication required for current review scope", context.RequiresAuthentication ? "Yes" : "No"),
-            new("Authenticated session for current scope", context.IsAuthenticatedSessionAvailable ? "Available" : context.RequiresAuthentication ? "Unavailable" : "Not required"),
+            // Four different facts, never substituted for one another: a configured provider, the scope the Target
+            // Environment gives this review, whether the authenticated path is usable, and (after the run) what executed.
+            new("Authentication configured", FrontendQualityReviewScopes.ConfiguredProviderLabel(context.AuthenticationType)),
+            new("Review scope", scope is null ? FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(context.RequiresAuthentication)) : FrontendQualityReviewScopes.ScopeSummary(scope)),
+            new("Authenticated access", scope is null ? (context.RequiresAuthentication ? "Checking…" : "Not included in this review") : FrontendQualityReviewScopes.AuthenticatedAccessLabel(scope)),
             new("Browser Runtime", context.FeatureToggles.EnableBrowserRuntimeEngine ? "Enabled" : "Disabled"),
             new("Accessibility", context.FeatureToggles.EnableAccessibilityEngine ? "Enabled (automated axe-core checks)" : "Disabled"),
             new("Lighthouse", context.FeatureToggles.EnableLighthouseEngine ? "Enabled (synthetic lab measurement)" : "Disabled"),

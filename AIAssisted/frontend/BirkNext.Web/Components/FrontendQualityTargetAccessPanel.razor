@@ -19,15 +19,31 @@
             <dl class="fqr-target-access-list">
                 <div><dt>Target</dt><dd data-testid="fqr-access-target">@Access.EnvironmentName <span class="fqr-muted">(@Access.EnvironmentType)</span></dd></div>
                 <div><dt>URL</dt><dd class="fqr-access-url" data-testid="fqr-access-url">@Access.TargetUrl</dd></div>
-                @* After a run the question is whether the scope that was reviewed needed a sign-in; "Authentication:
-                   Not required" beside a configured provider read as a contradiction. The landing keeps its label. *@
-                @if (ShowActions)
+                @* Configured provider, configured scope and (after a run) the access actually used are separate rows:
+                   "Authentication: Not required" beside a configured provider read as a fact about the application. *@
+                <div><dt>Authentication configured</dt><dd data-testid="fqr-access-auth">@FrontendQualityReviewScopes.ConfiguredProviderLabel(Access.AuthenticationType)</dd></div>
+                <div><dt>Review scope</dt><dd data-testid="fqr-access-scope">@FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(Access.RequiresAuthentication))</dd></div>
+                @if (Executed is { } executed)
                 {
-                    <div><dt>Authentication</dt><dd data-testid="fqr-access-auth">@(Access.RequiresAuthentication ? Access.AuthenticationType.ToString() : "Not required")</dd></div>
-                }
-                else
-                {
-                    <div><dt>Authentication required for reviewed scope</dt><dd data-testid="fqr-access-auth">@FrontendQualityTargetAccess.ReviewedScopeAuthenticationLabel(Access)</dd></div>
+                    <div>
+                        <dt>Access used</dt>
+                        <dd data-testid="fqr-access-used">
+                            @FrontendQualityReviewScopes.ExecutedLabel(executed)
+                            @if (executed.Partial)
+                            {
+                                <span class="fqr-muted" data-testid="fqr-access-partial"> · partial: the configured scope was not fully assessed</span>
+                            }
+                        </dd>
+                    </div>
+                    <div><dt>Public frontend reviewed by</dt><dd data-testid="fqr-access-public-engines">@EngineList(executed.PublicEngines)</dd></div>
+                    @if (Access.RequiresAuthentication || executed.AuthenticatedEngines.Count > 0)
+                    {
+                        <div><dt>Signed-in pages reviewed by</dt><dd data-testid="fqr-access-authenticated-engines">@EngineList(executed.AuthenticatedEngines)</dd></div>
+                    }
+                    @if (executed.CompanionEngines.Count > 0)
+                    {
+                        <div><dt>Browser Companion evidence</dt><dd data-testid="fqr-access-companion-engines">@string.Join(", ", executed.CompanionEngines) <span class="fqr-muted">(sign-in state of captured pages is not recorded)</span></dd></div>
+                    }
                 }
                 <div><dt>Access mode</dt><dd data-testid="fqr-access-mode">@FrontendQualityTargetAccess.ModeLabel(Access.Mode)</dd></div>
             </dl>
@@ -37,14 +53,14 @@
             <dl class="fqr-target-access-list">
                 <div><dt>Browser DOM</dt><dd data-testid="fqr-access-dom">@FrontendQualityTargetAccess.BrowserDomLabel(Access)</dd></div>
                 <div><dt>Authenticated context</dt><dd data-testid="fqr-access-context">@FrontendQualityTargetAccess.ApiContextLabel(Access)</dd></div>
-                <div><dt>@(ShowActions ? "Authenticated testing method" : "Testing method")</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)@(ShowActions && !Access.RequiresAuthentication ? " — not needed for this target" : "")</dd></div>
+                <div><dt>@(ShowActions ? "Authenticated testing method" : "Testing method")</dt><dd data-testid="fqr-access-method">@AuthenticatedTestingMethodLabels.Option(Access.Method)@(ShowActions && !Access.RequiresAuthentication ? " — not used in a public-only review" : "")</dd></div>
                 @if (Access.ManagedEdgeState is { } edge && Access.Method == AuthenticatedTestingMethod.ManagedEdgeCdp)
                 {
                     <div><dt>Managed Edge (CDP)</dt><dd data-testid="fqr-access-cdp">@AuthenticatedTestingMethodLabels.Connection(edge)</dd></div>
                 }
                 @if (Access.ProxyState is { } proxy && Access.Method == AuthenticatedTestingMethod.LocalHttpsProxy)
                 {
-                    <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@(ShowActions && !Access.RequiresAuthentication ? "Not needed for this run" : AuthenticatedTestingMethodLabels.ProxyState(proxy))</dd></div>
+                    <div><dt>Local HTTPS proxy</dt><dd data-testid="fqr-access-proxy">@(ShowActions && !Access.RequiresAuthentication ? "Not used in a public-only review" : AuthenticatedTestingMethodLabels.ProxyState(proxy))</dd></div>
                 }
                 @* Kept next to, never merged with, automated access: a person can sign in where an engine cannot. *@
                 <div><dt>Manual verification</dt><dd data-testid="fqr-access-manual">@FrontendQualityTargetAccess.ManualVerificationLabel(Access.ManualVerificationStatus)</dd></div>
@@ -80,6 +96,10 @@
     [Parameter, EditorRequired] public FrontendQualityTargetAccessContext Access { get; set; } = new();
     /// <summary>Show navigation actions (landing view). The report view shows the context only.</summary>
     [Parameter] public bool ShowActions { get; set; } = true;
+    /// <summary>What a finished review actually reached. Only the report view passes it.</summary>
+    [Parameter] public FrontendQualityExecutedScope? Executed { get; set; }
+
+    private static string EngineList(IReadOnlyList<string> engines) => engines.Count == 0 ? "No engine assessed this path" : string.Join(", ", engines);
 
     private string ModeClass => Access.Mode switch
     {
