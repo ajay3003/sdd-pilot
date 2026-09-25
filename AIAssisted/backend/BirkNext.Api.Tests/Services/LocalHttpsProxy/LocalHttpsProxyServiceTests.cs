@@ -1052,7 +1052,8 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     {
         var arguments = LocalHttpsProxyService.BuildEdgeArguments(8888, @"C:\Users\tester\AppData\Local\BirkNext\LocalHttpsProxyEdgeProfile", Target);
         Assert.Contains("--proxy-server=127.0.0.1:8888", arguments);
-        Assert.Contains("--proxy-bypass-list=<-loopback>", arguments);
+        // Loopback stays proxied except the BirkNext backend, so the Companion never depends on the proxy.
+        Assert.Contains("--proxy-bypass-list=<-loopback>;127.0.0.1:5000;localhost:5000", arguments);
         Assert.Contains(Target, arguments);
         Assert.DoesNotContain(arguments, a => a.Contains("remote-debugging", StringComparison.OrdinalIgnoreCase));
         Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, @"C:\Users\tester\AppData\Local\Microsoft\Edge\User Data", Target));

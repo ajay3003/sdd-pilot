@@ -324,7 +324,16 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
 
     public static string DefaultEdgeProfileDirectory() => System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BirkNext", "LocalHttpsProxyEdgeProfile");
 
-    /// <summary>Only the loopback proxy, a loopback bypass, a dedicated profile, first-run suppression and the validated target URL.</summary>
+    /// <summary>
+    /// Loopback traffic is proxied (<c>&lt;-loopback&gt;</c> removes Chromium's implicit loopback bypass, so a locally
+    /// hosted target is captured too), EXCEPT the BirkNext backend itself. The Browser Companion talks to that backend on
+    /// loopback, and routing it through the interception proxy made the Companion's connection depend on the proxy: a
+    /// backend restart took the in-process proxy down, and Dedicated Edge could not reach the restarted backend until the
+    /// proxy was started again. The proxy and the Companion are independent paths.
+    /// </summary>
+    public const string ProxyBypassList = "<-loopback>;127.0.0.1:5000;localhost:5000";
+
+    /// <summary>Only the loopback proxy, the BirkNext-backend bypass, a dedicated profile, first-run suppression and the validated target URL.</summary>
     public static IReadOnlyList<string> BuildEdgeArguments(int port, string profileDirectory, string targetUrl, string? companionDirectory = null)
     {
         if (port is < 1 or > 65535) throw new ArgumentException("A bound loopback proxy port is required.");
@@ -332,7 +341,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
             throw new ArgumentException("A dedicated BirkNext profile directory is required; the normal Edge profile is never reused.");
         ManagedEdgePolicy.Origin(targetUrl);
         if (companionDirectory is not null) DedicatedCompanionProvisioner.ValidateManagedPath(companionDirectory);
-        return [$"--proxy-server=127.0.0.1:{port}", "--proxy-bypass-list=<-loopback>", $"--user-data-dir={profileDirectory}", "--no-first-run", "--no-default-browser-check",
+        return [$"--proxy-server=127.0.0.1:{port}", $"--proxy-bypass-list={ProxyBypassList}", $"--user-data-dir={profileDirectory}", "--no-first-run", "--no-default-browser-check",
             .. companionDirectory is null ? Array.Empty<string>() : [$"--load-extension={companionDirectory}"], new Uri(targetUrl, UriKind.Absolute).AbsoluteUri];
     }
 

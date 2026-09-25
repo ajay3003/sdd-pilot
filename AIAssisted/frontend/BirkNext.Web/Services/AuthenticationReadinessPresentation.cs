@@ -257,6 +257,7 @@ public static class AuthenticationReadinessPresentation
             "SessionConflict" => "Another browser is paired",
             "VersionMismatch" => "Incompatible build",
             "AwaitingHeartbeat" => "Loaded; awaiting heartbeat",
+            "PermissionRequired" => $"Site access required: {string.Join(", ", companion.PermissionOrigins)}",
             "AwaitingCompanion" => "Load requested; not observed yet",
             _ => "Not observed in dedicated profile",
         };

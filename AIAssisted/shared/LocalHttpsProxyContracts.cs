@@ -459,6 +459,8 @@ public sealed record DedicatedCompanionReadiness
     public bool ElementPickAvailable { get; init; }
     public string? ExpectedVersion { get; init; }
     public string? ObservedVersion { get; init; }
+    /// <summary>Set only in state PermissionRequired: the exact approved origins the Companion still needs access to.</summary>
+    public IReadOnlyList<string> PermissionOrigins { get; init; } = [];
     public bool BrowserDiscoveryReady => Connected && VersionCompatible && ApprovedPageAvailable;
 }
 

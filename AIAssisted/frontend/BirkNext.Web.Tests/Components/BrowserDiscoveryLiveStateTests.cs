@@ -83,6 +83,40 @@ public sealed class BrowserDiscoveryLiveStateTests : BunitContext
         cut.Find($"[data-testid={testId}]").TextContent.Trim();
 
     [Fact]
+    public async Task PairedWithoutSiteAccessSaysWhichOriginNeedsAccessNotPairAgain()
+    {
+        var cut = await OpenAsync(Status(BrowserCompanionState.Disconnected) with { OriginPermissionRequired = true });
+
+        Text(cut, "bd-companion-alert-title").Should().Be("Browser Companion needs site access");
+        var alert = cut.Find("[data-testid=bd-companion-alert]").TextContent;
+        alert.Should().Contain(Origin).And.Contain("Allow access");
+        alert.Should().NotContain("Open or refresh an approved application page", "opening a page cannot fix a missing permission");
+        cut.FindAll("[data-testid=bd-companion-alert-action]").Should().BeEmpty("pairing again would not grant the permission");
+    }
+
+    [Fact]
+    public async Task ConnectedWithNoApprovedPageIsConnectedWithLiveCaptureUnavailable()
+    {
+        var cut = await OpenAsync(Status());
+
+        Text(cut, "bd-session").Should().Be("Connected");
+        Text(cut, "bd-live-pages").Should().Be("0");
+        Text(cut, "bd-current-page").Should().Be("None");
+        cut.FindAll("[data-testid=bd-companion-alert]").Should().BeEmpty("connected without a page is not a warning");
+    }
+
+    [Fact]
+    public async Task ConnectedOnAnApprovedPageShowsTheLivePage()
+    {
+        var cut = await OpenAsync(Status(BrowserCompanionState.Connected, ("/saker", "i1")));
+
+        Text(cut, "bd-session").Should().Be("Connected");
+        Text(cut, "bd-live-pages").Should().Be("1");
+        Text(cut, "bd-current-page").Should().Contain("/saker");
+        Text(cut, "bd-live-dom").Should().NotBe("Not available");
+    }
+
+    [Fact]
     public async Task ConnectedWithEvidenceAndNothingOpenNeverClaimsAnythingIsAvailableNow()
     {
         SeedEvidence();

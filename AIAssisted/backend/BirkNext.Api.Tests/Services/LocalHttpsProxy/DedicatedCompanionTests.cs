@@ -22,7 +22,7 @@ public sealed class DedicatedCompanionTests
 
     [Fact] public void LaunchKeepsProxyAndProfileAndUsesOneExtensionArgument()
     {
-        var path = DedicatedCompanionProvisioner.ManagedDirectory;
+        var path = DedicatedCompanionProvisioner.ManagedDirectoryFor(Build);
         var args = LocalHttpsProxyService.BuildEdgeArguments(8888, LocalHttpsProxyService.DefaultEdgeProfileDirectory(), Origin, path);
         Assert.Contains("--proxy-server=127.0.0.1:8888", args);
         Assert.Contains("--user-data-dir=" + LocalHttpsProxyService.DefaultEdgeProfileDirectory(), args);

@@ -62,7 +62,7 @@ public enum BrowserCompanionState
     NotPaired,
     /// <summary>BirkNext issued a pairing code and waits for the extension to present it.</summary>
     PairingPending,
-    /// <summary>A paired extension reported a heartbeat or evidence recently.</summary>
+    /// <summary>A paired extension sent a heartbeat within <see cref="BrowserCompanionLimits.ConnectedWindow"/>. Other activity (pairing, bootstrap, evidence) keeps a session alive but never makes it connected.</summary>
     Connected,
     /// <summary>A paired extension has not reported for a while (browser closed, extension disabled, or blocked by policy).</summary>
     Disconnected,
@@ -153,7 +153,15 @@ public sealed record BrowserCompanionStatus
     public string? PairingCode { get; init; }
     public DateTimeOffset? PairingExpiresAt { get; init; }
     public DateTimeOffset? PairedAt { get; init; }
+    /// <summary>Any authenticated extension activity (pairing, dedicated bootstrap, heartbeat, evidence). Keeps the session alive; it is not connection evidence.</summary>
     public DateTimeOffset? LastSeenAt { get; init; }
+    /// <summary>The last heartbeat from an active session. The one input to <see cref="BrowserCompanionState.Connected"/>.</summary>
+    public DateTimeOffset? LastHeartbeatAt { get; init; }
+    /// <summary>
+    /// The extension holds this session but has not been granted access to the approved origins, so it cannot report.
+    /// Only a user-approved permission (or the Dedicated Edge's declared origin) clears it; pairing again would not.
+    /// </summary>
+    public bool OriginPermissionRequired { get; init; }
     public string? ExtensionVersion { get; init; }
     public IReadOnlyList<string> ApprovedOrigins { get; init; } = [];
     /// <summary>Live: the origin of the single open approved page, or null. Never set from stored evidence.</summary>

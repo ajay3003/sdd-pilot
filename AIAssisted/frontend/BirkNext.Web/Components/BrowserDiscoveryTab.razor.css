@@ -209,7 +209,7 @@
 .bd-live-note { margin: -.25rem 0 0; font-size: .82rem; color: var(--clr-text-muted); }
 
 /* Icons carry no meaning on their own — every one of these sits beside its own text. */
-.bd-icon-link-off, .bd-icon-signal-off {
+.bd-icon-link-off, .bd-icon-signal-off, .bd-icon-lock {
   background: currentColor;
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
   -webkit-mask-size: contain; mask-size: contain;
@@ -221,6 +221,11 @@
 .bd-icon-signal-off {
   -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 19v-4M10 19v-7M15 19v-3M20 19V8M2 2l20 20'/%3E%3C/svg%3E");
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 19v-4M10 19v-7M15 19v-3M20 19V8M2 2l20 20'/%3E%3C/svg%3E");
+}
+
+.bd-icon-lock {
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Crect x='5' y='11' width='14' height='10' rx='2'/%3E%3Cpath d='M8 11V7a4 4 0 0 1 8 0v4'/%3E%3C/svg%3E");
 }
 
 @media (max-width: 640px) {

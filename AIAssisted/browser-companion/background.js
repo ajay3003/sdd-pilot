@@ -64,6 +64,8 @@ async function post(path, body) {
   const base = await backendBase();
   const response = await fetch(`${base}/api/browser-companion/extension/${path}`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store',
+    // A request that never settles must not hold anything waiting on it; a timeout reads as an unreachable backend.
+    signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) ? AbortSignal.timeout(15000) : undefined,
   });
   const text = await response.text();
   let json = null;
@@ -121,16 +123,26 @@ async function activate(session) {
   }
   trace('PairingStatePersisted');
   lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
+  // Tell BirkNext now: an active session with no heartbeat reads as not connected, and waiting for the next alarm
+  // would leave a freshly granted or bootstrapped session looking dead for up to half a minute.
+  await heartbeat();
   return lastStatus;
 }
 
 // The backend has discarded this session, so the extension stops claiming it too. Only an explicit rejection
 // gets here: a backend that is merely unreachable keeps the session, because those credentials are still good.
-async function revokeSession(message) {
+async function revokeSession(message, rejectedSessionId) {
+  // A rejection answers the request that carried it. If the stored session has changed since (a Dedicated Edge
+  // bootstrap replaced it while that request was in flight), the new session was not rejected and must stay.
+  const current = await getSession();
+  if (rejectedSessionId && current && current.sessionId !== rejectedSessionId) return lastStatus;
   try { await setSession(null); } catch { /* registration teardown is best effort; the session is gone either way */ }
   await chrome.storage.local.remove('pendingSession');
   trace('SessionRevoked');
   lastStatus = { state: 'stale', message: message || 'Session no longer valid. Pair again in BirkNext.' };
+  // In Dedicated Edge the launch itself is the credential, so a lost session (a restarted backend, an idle expiry) is
+  // re-established without a pairing code. Absent the managed launch file (normal Edge) this does nothing.
+  if (typeof dedicatedBootstrap === 'function') dedicatedBootstrap();
   return lastStatus;
 }
 
@@ -172,7 +184,7 @@ async function validate() {
       lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
     } else if (result.status === 403 || (result.json && result.json.accepted === false)) {
       // An explicit rejection, not a network fault: the session is gone on the backend, so it goes here too.
-      return await revokeSession(result.json && result.json.message);
+      return await revokeSession(result.json && result.json.message, session.sessionId);
     } else {
       lastStatus = { state: 'backend-unavailable', message: 'BirkNext backend not reachable on loopback.', session };
     }
@@ -223,7 +235,7 @@ async function flush() {
   try {
     const result = await post('evidence', { sessionId: session.sessionId, profileId: session.profileId, extensionVersion: EXTENSION_VERSION, pages });
     if (result.status === 403 && result.json && /session|pair/i.test(result.json.message || '')) {
-      return await revokeSession(result.json.message);
+      return await revokeSession(result.json.message, session.sessionId);
     } else if (result.ok) {
       lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}. Last evidence accepted ${new Date().toLocaleTimeString()}.`, session };
       trace('EvidenceAccepted');
@@ -255,7 +267,7 @@ async function heartbeat() {
       buildId: globalThis.birkNextBuildId ?? null,
     });
     if (result.ok && result.json && result.json.accepted && lastStatus.state !== 'connected') lastStatus = { state: 'connected', message: `Paired with ${session.environmentName}.`, session };
-    if (result.status === 403) { await revokeSession(result.json && result.json.message); return; }
+    if (result.status === 403 || (result.ok && result.json && result.json.accepted === false)) { await revokeSession(result.json && result.json.message, session.sessionId); return; }
     trace(result.ok ? 'HeartbeatSucceeded' : 'HeartbeatRejected');
     if (result.ok && result.json) await afterHeartbeat(session, result.json);
     // A backend that answers otherwise is still a backend: these credentials remain good, and a transient

@@ -61,8 +61,8 @@ The status document (`LocalHttpsProxyStatus`) has no credential-shaped members b
 ## Browser configuration
 
 BirkNext never changes the Windows or default-profile proxy settings. Either *Start Edge with proxy* (separate `msedge.exe` with
-`--proxy-server=127.0.0.1:<port> --proxy-bypass-list=<-loopback> --user-data-dir=%LOCALAPPDATA%\BirkNext\LocalHttpsProxyEdgeProfile`,
-never the normal profile) or configure the proxy manually in Windows Settings → Network & Internet → Proxy. If organization policy
+`--proxy-server=127.0.0.1:<port> --proxy-bypass-list=<-loopback>;127.0.0.1:5000;localhost:5000 --user-data-dir=%LOCALAPPDATA%\BirkNext\LocalHttpsProxyEdgeProfile`,
+never the normal profile; loopback is proxied except the BirkNext backend, so the Browser Companion's connection never depends on the proxy) or configure the proxy manually in Windows Settings → Network & Internet → Proxy. If organization policy
 forces proxy settings, only the manual route applies.
 
 ## Configuration

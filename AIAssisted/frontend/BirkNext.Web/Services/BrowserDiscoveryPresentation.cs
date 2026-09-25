@@ -972,8 +972,16 @@ public static class BrowserCompanionSituations
     /// The one notice for this state, or null. A connected companion with no page open is not a warning: nothing is
     /// wrong and nothing needs fixing, so it is stated in the live facts and nowhere else.
     /// </summary>
-    public static BrowserCompanionAlert? Alert(BrowserCompanionSituation situation, int pagesWithEvidence = 0) => situation switch
+    public static BrowserCompanionAlert? Alert(BrowserCompanionSituation situation, int pagesWithEvidence = 0,
+        IReadOnlyList<string>? permissionRequiredFor = null) => situation switch
     {
+        // Paired, and the extension holds the session, but the browser has not granted it the approved origin. Neither
+        // "open a page" nor "pair again" fixes that; only the permission does.
+        BrowserCompanionSituation.PairedNotConnected when permissionRequiredFor is { Count: > 0 } origins => new(
+            "lock", "Browser Companion needs site access",
+            $"Live capture unavailable: the Companion is paired but has no access to {string.Join(", ", origins)}. Open the Companion popup in that browser and choose Allow access. The grant is kept for later sessions.",
+            null, "needs-action"),
+
         BrowserCompanionSituation.NotPaired => new(
             "link-off", "Browser Companion not paired", "Live capture unavailable.",
             "Pair Browser Companion", "needs-action"),

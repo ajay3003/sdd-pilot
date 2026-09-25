@@ -67,6 +67,7 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         public required IReadOnlyList<string> ApprovedOrigins { get; init; }
         public required string ExtensionOrigin { get; init; }
         public required DateTimeOffset PairedAt { get; init; }
+        /// <summary>Any authenticated extension activity. Keeps the session alive (idle expiry); never connection evidence.</summary>
         public DateTimeOffset LastSeenAt { get; set; }
         public DateTimeOffset LastEnvelopeAt { get; set; } = DateTimeOffset.MinValue;
         /// <summary>While this is in the future the companion polls quickly, because a Critical E2E run is expected.</summary>
@@ -76,7 +77,10 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         public List<string> Capabilities { get; set; } = [];
         public string? DedicatedLaunchId { get; set; }
         public string? BuildId { get; set; }
+        /// <summary>Only a heartbeat from an active session sets this, and it is the one input to <see cref="IsConnected"/>.</summary>
         public DateTimeOffset? LastHeartbeatAt { get; set; }
+        /// <summary>The extension reported that it holds this session but lacks the approved-origin permission. A heartbeat clears it.</summary>
+        public bool AwaitingOriginPermission { get; set; }
         /// <summary>Approved pages with a live content script, keyed by PageId. Only the heartbeat writes this.</summary>
         public Dictionary<string, BrowserCompanionLivePage> LivePages { get; } = new(StringComparer.Ordinal);
         public DateTimeOffset? LastContentScriptSeenAt { get; set; }
@@ -89,6 +93,13 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         public Dictionary<string, PendingCommand> Commands { get; } = new(StringComparer.Ordinal);
         public DateTimeOffset AbsoluteExpiry => PairedAt + BrowserCompanionLimits.SessionAbsoluteLifetime;
         public bool Expired(DateTimeOffset now) => now > AbsoluteExpiry || now - LastSeenAt > BrowserCompanionLimits.SessionIdleLifetime;
+        /// <summary>
+        /// The canonical live-connection rule, shared by Browser Discovery (<see cref="Status"/>) and Dedicated Edge
+        /// readiness: a heartbeat within <see cref="BrowserCompanionLimits.ConnectedWindow"/>. Pairing, bootstrap and
+        /// evidence keep a session alive but prove nothing about a reporting extension — a parked session touches the
+        /// backend without ever heartbeating, and counting that as connected is how the two surfaces disagreed.
+        /// </summary>
+        public bool IsConnected(DateTimeOffset now) => !Expired(now) && LastHeartbeatAt is { } beat && now - beat <= BrowserCompanionLimits.ConnectedWindow;
     }
 
     public BrowserCompanionPairingChallenge StartPairing(BrowserCompanionPairingStartRequest request)
@@ -167,6 +178,7 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
             session.ExtensionVersion = Safe(heartbeat.ExtensionVersion, 40);
             session.Capabilities = SafeCapabilities(heartbeat.Capabilities);
             session.LastHeartbeatAt = heartbeatAt;
+            session.AwaitingOriginPermission = false;
             session.BuildId = Safe(heartbeat.BuildId, 64);
             ReconcileLivePages(session, heartbeat, heartbeatAt);
             // A queued command rides back on this response. It is only handed out when a live page is actually there to
@@ -258,18 +270,23 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
                     _sessionsByProfile.Remove(profileId);
                     return new BrowserCompanionStatus { State = BrowserCompanionState.Expired, ProfileId = profileId, EnvironmentName = session.EnvironmentName, Message = "Companion session expired. Pair the browser companion again." };
                 }
-                var connected = now - session.LastSeenAt <= BrowserCompanionLimits.ConnectedWindow;
+                var connected = session.IsConnected(now);
+                var permissionRequired = !connected && session.AwaitingOriginPermission;
                 return new BrowserCompanionStatus
                 {
                     State = connected ? BrowserCompanionState.Connected : BrowserCompanionState.Disconnected,
                     ProfileId = profileId, EnvironmentName = session.EnvironmentName, PairedAt = session.PairedAt, LastSeenAt = session.LastSeenAt,
+                    LastHeartbeatAt = session.LastHeartbeatAt, OriginPermissionRequired = permissionRequired,
                     ExtensionVersion = session.ExtensionVersion, ApprovedOrigins = session.ApprovedOrigins,
-                    CurrentPageOrigin = session.CurrentPageOrigin, CurrentPagePath = session.CurrentPagePath,
+                    // Live facts only while connected: a closed browser has no current page, whatever it last reported.
+                    CurrentPageOrigin = connected ? session.CurrentPageOrigin : null, CurrentPagePath = connected ? session.CurrentPagePath : null,
                     PagesWithEvidence = session.Pages.Count, RejectedMessages = session.RejectedMessages,
                     Pages = session.Pages.Values.OrderByDescending(p => p.CapturedAt).ToList(),
                     Live = LiveSession(session, connected, now),
                     Evidence = EvidenceSummary(session),
-                    Message = connected ? "Browser Companion connected." : "Browser Companion paired but not reporting. Open an approved page in the paired browser, or check that the extension is enabled.",
+                    Message = connected ? "Browser Companion connected."
+                        : permissionRequired ? $"Browser Companion is paired but has no access to {string.Join(", ", session.ApprovedOrigins)}. Open the Companion popup in that browser and choose Allow access."
+                        : "Browser Companion paired but not reporting. Open an approved page in the paired browser, or check that the extension is enabled.",
                 };
             }
             if (_challengesByProfile.TryGetValue(profileId, out var challenge) && !challenge.Used)

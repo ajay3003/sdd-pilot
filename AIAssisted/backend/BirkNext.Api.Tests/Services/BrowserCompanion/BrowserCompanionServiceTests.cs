@@ -62,8 +62,12 @@ public sealed class BrowserCompanionServiceTests
         result.ProfileId.Should().Be("dev");
         result.ApprovedOrigins.Should().BeEquivalentTo(["https://m2lbdev.bufetat.no"]);
         var status = _service.Status("dev");
-        status.State.Should().Be(BrowserCompanionState.Connected);
+        // Paired, but connected only once the extension heartbeats: pairing is activity, not connection evidence.
+        status.State.Should().Be(BrowserCompanionState.Disconnected);
+        status.LastHeartbeatAt.Should().BeNull();
         status.PairingCode.Should().BeNull("the code is consumed and never shown again");
+        _service.Heartbeat(new BrowserCompanionHeartbeat(result.SessionId!, "dev", null, null, "0.1.0"), Extension);
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected);
         status.ApprovedOrigins.Should().BeEquivalentTo(["https://m2lbdev.bufetat.no"]);
     }
 
@@ -72,7 +76,7 @@ public sealed class BrowserCompanionServiceTests
     {
         var paired = Pair();
         const string origin = "https://m2lbdev.bufetat.no";
-        _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected);
+        _service.Status("dev").State.Should().Be(BrowserCompanionState.Disconnected, "no heartbeat yet");
         for (var i = 0; i < 4; i++)
         {
             _time.Advance(TimeSpan.FromSeconds(30));
@@ -118,12 +122,14 @@ public sealed class BrowserCompanionServiceTests
     public void ReplayedNonce_Rejected()
     {
         var challenge = Start();
-        _service.CompletePairing(new BrowserCompanionPairRequest(challenge.PairingCode, "0.1.0"), Extension).Accepted.Should().BeTrue();
+        var first = _service.CompletePairing(new BrowserCompanionPairRequest(challenge.PairingCode, "0.1.0"), Extension);
+        first.Accepted.Should().BeTrue();
 
         var replay = _service.CompletePairing(new BrowserCompanionPairRequest(challenge.PairingCode, "0.1.0"), OtherExtension);
 
         replay.Accepted.Should().BeFalse();
-        _service.Status("dev").State.Should().Be(BrowserCompanionState.Connected, "the first pairing stays intact");
+        _service.Status("dev").State.Should().NotBe(BrowserCompanionState.NotPaired, "the first pairing stays intact");
+        _service.ValidateSession(first.SessionId!, "dev", Extension).Accepted.Should().BeTrue("the first pairing stays intact");
     }
 
     [Fact]
