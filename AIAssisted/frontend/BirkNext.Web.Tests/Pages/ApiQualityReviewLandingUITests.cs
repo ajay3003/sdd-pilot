@@ -534,7 +534,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
             toggle.TextContent.Trim().Should().NotBeEmpty();
         }
         page.FindAll("h1").Should().ContainSingle();
-        page.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Review result", "Key findings", "Review details"]);
+        page.FindAll("h2").Select(h => h.TextContent.Trim()).Should().Contain(["Review result", "Key issues", "Review details"]);
         page.FindAll("[data-testid=aqr-target-checkbox]").Should().OnlyContain(c => c.HasAttribute("aria-label") && c.HasAttribute("id"));
         page.FindAll("table thead th").Should().OnlyContain(th => th.GetAttribute("scope") == "col");
         page.FindAll(".aqr-pill, .aqr-sev").Should().OnlyContain(p => p.TextContent.Trim().Length > 0, "state chips carry text");

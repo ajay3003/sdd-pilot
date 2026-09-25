@@ -37,6 +37,18 @@ public static class ApiReviewEvidencePresentation
     {
         if (check.CheckId == "rest-payload" && check.Result == ApiReviewCheckResult.Pass && policy.LargePayloadBytes <= 0)
             return "Observed";
+        // Header checks that detected something produce a finding with its own severity; the check says what it saw,
+        // not a second severity-like word. Other results (threshold warnings, failures) keep their real meaning.
+        if (check.Result == ApiReviewCheckResult.Warning)
+        {
+            var observedLabel = check.CheckId switch
+            {
+                "sec-hsts" or "sec-xcto" or "sec-cache-control" => "Issue detected",
+                "sec-server-disclosure" => "Disclosure observed",
+                _ => null,
+            };
+            if (observedLabel is not null) return observedLabel;
+        }
         if (check.Result != ApiReviewCheckResult.Pass) return ApiReviewStatusLabels.ResultLabel(check.Result);
         if (check.Area == ApiReviewFindingType.Drift) return "No changes detected";
         return check.CheckId switch

@@ -183,6 +183,12 @@ public sealed record ApiReviewOperationResult
 public sealed record ApiReviewFinding
 {
     public string Id { get; init; } = "";
+    /// <summary>
+    /// The typed rule that produced this finding (e.g. "sec-no-hsts"), without the per-observation suffix <see cref="Id"/>
+    /// carries. The same rule on the same endpoint from two services is one logical issue with two source observations.
+    /// Empty in reports recorded before this field existed.
+    /// </summary>
+    public string RuleId { get; init; } = "";
     public string TargetId { get; init; } = "";
     public ApiReviewSeverity Severity { get; init; }
     public ApiReviewFindingType Type { get; init; }

@@ -299,10 +299,15 @@
             @* ── 2. What was found. Findings are defects; manual-review obligations are counted separately. ── *@
             <section class="aqr-card aqr-key-findings-card" data-testid="aqr-key-findings" aria-labelledby="aqr-key-findings-heading">
                 <div class="aqr-card-head">
-                    <h2 id="aqr-key-findings-heading">Key findings</h2>
+                    <h2 id="aqr-key-findings-heading">Key issues</h2>
                     <button type="button" class="aqr-link aqr-link-button" data-testid="aqr-all-findings" @onclick='() => _tab = "Findings"'>All source findings (@result.FindingCount)</button>
                 </div>
-                <ul class="aqr-sev-strip" aria-label="Findings by severity" data-testid="aqr-finding-counts">
+                @if (report.Findings.Count > 0)
+                {
+                    @* Two layers, both counted: what to act on, and the raw observations behind it. *@
+                    <p class="aqr-muted" data-testid="aqr-issue-counts">@result.IssueCount logical @(result.IssueCount == 1 ? "issue" : "issues") · @result.FindingCount source @(result.FindingCount == 1 ? "finding" : "findings")</p>
+                }
+                <ul class="aqr-sev-strip" aria-label="Source findings by severity" data-testid="aqr-finding-counts">
                     @foreach (var sev in summary.Severities)
                     {
                         <li class="aqr-sev aqr-sev-@sev.Severity.ToString().ToLowerInvariant() @(sev.Count == 0 ? "aqr-sev-zero" : "")" data-testid="aqr-sev" data-severity="@sev.Severity"><span class="aqr-sev-label">@sev.Severity</span> <span class="aqr-sev-count">@sev.Count</span></li>
@@ -315,9 +320,13 @@
                 else
                 {
                     <ul class="aqr-key-findings">
-                        @foreach (var f in ApiReviewPresentation.KeyFindings(report))
+                        @foreach (var issue in ApiReviewPresentation.KeyIssues(report))
                         {
-                            <li><span class="aqr-sev aqr-sev-@f.Severity.ToString().ToLowerInvariant()"><span class="aqr-sev-label">@f.Severity</span></span> <span class="aqr-key-finding-title">@f.Title</span> <span class="aqr-muted">@ApiReviewPresentation.ServiceNameOf(report, f.TargetId) · @f.Endpoint</span></li>
+                            <li data-testid="aqr-key-issue" data-sources="@issue.Sources.Count">
+                                <span class="aqr-sev aqr-sev-@issue.Severity.ToString().ToLowerInvariant()"><span class="aqr-sev-label">@issue.Severity</span></span>
+                                <span class="aqr-key-finding-title">@issue.Title</span>
+                                <span class="aqr-muted" data-testid="aqr-key-issue-affects">@string.Join(", ", issue.Affects) · @issue.Endpoint@(issue.Sources.Count > 1 ? $" · {issue.Sources.Count} source observations" : "")</span>
+                            </li>
                         }
                     </ul>
                 }
@@ -398,13 +407,19 @@
                         {
                             <p><strong>@contract.Kind:</strong> <span class="aqr-state aqr-state-@contract.Status.ToString().ToLowerInvariant()">@ApiReviewEvidencePresentation.ContractState(contract)</span> @contract.Note @(contract.Hash is null ? "" : $"· hash {contract.Hash}")</p>
                         }
-                        @if (t.Operations.Count > 0)
+                        @{
+                            // For GraphQL the review's own safe requests and the observed business operations are different
+                            // sets; each is rendered once. Observed operations live in the observed-operations table below.
+                            var requestRows = type == ApiReviewTargetType.GraphQl ? t.Operations.Where(o => o.Executed).ToList() : t.Operations;
+                        }
+                        @if (requestRows.Count > 0)
                         {
+                            @if (type == ApiReviewTargetType.GraphQl) { <h4 class="aqr-group-title">@ApiReviewPresentation.DisplayName(t.Target) · review requests executed</h4> }
                             <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Review evidence table">
                                 <table class="aqr-table">
                                     <thead><tr><th scope="col">Operation</th><th scope="col">Execution</th><th scope="col">Status</th><th scope="col">Content type</th><th scope="col">Response time</th><th scope="col">Bytes</th><th scope="col">Review checks</th><th scope="col">Contract</th><th scope="col">Note</th></tr></thead>
                                     <tbody>
-                                        @foreach (var o in t.Operations)
+                                        @foreach (var o in requestRows)
                                         {
                                             <tr data-testid="aqr-operation-row">
                                                 <td class="aqr-mono">@o.Display</td>
@@ -484,7 +499,7 @@
                     </div>
                     @foreach (var t in report.Targets.Where(t => t.GraphQlOperationMatches.Count > 0)) { @RenderObservedOperations(t) }
                 }
-                var domainChecks = report.Targets.SelectMany(t => t.Checks.Concat(t.Operations.SelectMany(ApiReviewEvidencePresentation.OperationChecks)).Where(c => areas.Contains(c.Area)).Select(c => c with { Title = $"{ApiReviewPresentation.DisplayName(t.Target)}: {c.Title}" })).ToList();
+                var domainChecks = ApiReviewPresentation.DomainChecks(report, areas);
                 @if (_tab == "Contracts")
                 {
                     <h3>Drift comparison</h3>
@@ -767,16 +782,34 @@
         </details>
     };
 
+    /// <summary>
+    /// The observed GraphQL inventory, rendered once. With a runtime schema the rows are the schema matches (root field and
+    /// result); without one, matching never ran, so the rows are the observed operations recorded as not tested and the root
+    /// field is "Not assessed" — never an empty table under a "0 observed" line.
+    /// </summary>
     private RenderFragment RenderObservedOperations(ApiReviewTargetResult t) => __builder =>
     {
-        <p class="aqr-muted">@t.GraphQlOperationMatches.Count observed operations / @t.GraphQlOperationMatches.Count(m => m.MatchedRootField is not null) / @t.GraphQlOperationMatches.Count matched to runtime schema</p>
+        var counts = ApiReviewPresentation.GraphQlCounts(t);
         <h4 class="aqr-group-title">@ApiReviewPresentation.DisplayName(t.Target) · observed operations</h4>
-        <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Review evidence table">
-            <table class="aqr-table" data-testid="aqr-gql-operations">
-                <thead><tr><th scope="col">Observed operation</th><th scope="col">Root field</th><th scope="col">Result</th><th scope="col">Note</th></tr></thead>
-                <tbody>@foreach (var m in t.GraphQlOperationMatches) { <tr><td class="aqr-mono">@m.Operation</td><td class="aqr-mono">@(m.MatchedRootField ?? "—")</td><td><span class="aqr-state aqr-state-@m.Result.ToString().ToLowerInvariant()">@ApiReviewStatusLabels.ResultLabel(m.Result)</span></td><td class="aqr-muted">@m.Note</td></tr> }</tbody>
-            </table>
-        </div>
+        <p class="aqr-muted" data-testid="aqr-gql-counts">@counts.Summary</p>
+        @if (counts.Observed > 0)
+        {
+            <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Observed GraphQL operations">
+                <table class="aqr-table" data-testid="aqr-gql-operations">
+                    <thead><tr><th scope="col">Observed operation</th><th scope="col">Root field</th><th scope="col">Result</th><th scope="col">Note</th></tr></thead>
+                    <tbody>
+                        @if (t.GraphQlOperationMatches.Count > 0)
+                        {
+                            @foreach (var m in t.GraphQlOperationMatches) { <tr data-testid="aqr-gql-operation-row"><td class="aqr-mono">@m.Operation</td><td class="aqr-mono">@(m.MatchedRootField ?? "—")</td><td><span class="aqr-state aqr-state-@m.Result.ToString().ToLowerInvariant()">@ApiReviewStatusLabels.ResultLabel(m.Result)</span></td><td class="aqr-muted">@m.Note</td></tr> }
+                        }
+                        else
+                        {
+                            @foreach (var o in t.Operations.Where(o => !o.Executed)) { <tr data-testid="aqr-gql-operation-row"><td class="aqr-mono">@o.Display</td><td class="aqr-muted">Not assessed</td><td><span class="aqr-state aqr-state-@o.Result.ToString().ToLowerInvariant()">@ApiReviewStatusLabels.ResultLabel(o.Result)</span></td><td class="aqr-muted">@o.Note</td></tr> }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     };
 
     private RenderFragment RenderFindings(ApiReviewReport report, IReadOnlyList<ApiReviewFinding> findings, ApiReviewFindingType[]? areas) => __builder =>
@@ -808,7 +841,7 @@
                                 <td colspan="6">
                                     <dl class="aqr-dl aqr-dl-technical">
                                         <div><dt>Description</dt><dd>@f.Description</dd></div>
-                                        <div><dt>Check</dt><dd>@f.Check · <span class="aqr-state aqr-state-@f.Result.ToString().ToLowerInvariant()">@ApiReviewStatusLabels.ResultLabel(f.Result)</span></dd></div>
+                                        <div><dt>Check</dt><dd>@f.Check · <span class="aqr-state aqr-state-@f.Result.ToString().ToLowerInvariant()" data-testid="aqr-finding-check-result">@ApiReviewStatusLabels.FindingCheckLabel(f)</span></dd></div>
                                         @if (f.Evidence.Count > 0) { <div><dt>Evidence</dt><dd class="aqr-mono aqr-evidence">@string.Join(" · ", f.Evidence.Take(8))</dd></div> }
                                         <div><dt>Recommendation</dt><dd>@f.Recommendation</dd></div>
                                         @if (f.Result == ApiReviewCheckResult.ManualReview) { <div><dt>Manual verification</dt><dd>Required — this item was not verified automatically.</dd></div> }

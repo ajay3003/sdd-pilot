@@ -252,6 +252,20 @@ public static class ApiReviewStatusLabels
         _ => mode.ToString(),
     };
 
+    /// <summary>
+    /// The outcome of the check behind a FINDING, worded so it never competes with the finding's severity: a finding exists
+    /// because its check detected something, and how serious that is is the severity's job. "Warning" beside "Info" read as a
+    /// contradiction; "Observed" beside "Info" does not.
+    /// </summary>
+    public static string FindingCheckLabel(ApiReviewFinding finding) => finding.Result switch
+    {
+        ApiReviewCheckResult.ManualReview => "Manual review",
+        ApiReviewCheckResult.Fail => "Check failed",
+        ApiReviewCheckResult.Warning when finding.Severity == ApiReviewSeverity.Info => "Observed",
+        ApiReviewCheckResult.Warning => "Issue detected",
+        var other => ResultLabel(other),
+    };
+
     public static string ResultLabel(ApiReviewCheckResult result) => result switch
     {
         ApiReviewCheckResult.Pass => "Pass",
@@ -398,6 +412,8 @@ public static class ApiReviewResultStates
 /// <param name="ManualReviewCount">
 /// Review obligations, counted separately from findings and never added to them: they are work outstanding, not defects found.
 /// </param>
+/// <param name="FindingCount">Source findings: every raw observation the engine recorded.</param>
+/// <param name="IssueCount">Logical issues: source findings grouped by rule, endpoint and severity (see <see cref="ApiReviewLogicalIssue"/>).</param>
 public sealed record ApiReviewResultView(
     ApiReviewResultState State,
     string Summary,
@@ -405,7 +421,39 @@ public sealed record ApiReviewResultView(
     int ManualReviewCount,
     int TargetsAssessed,
     int TargetsBlocked,
-    ApiReviewSummaryModel Metadata)
+    ApiReviewSummaryModel Metadata,
+    int IssueCount = 0)
 {
     public string StateLabel => ApiReviewResultStates.Label(State);
 }
+
+/// <summary>
+/// One logical issue: the source findings that share a typed rule, the same endpoint and the same severity. A host-level
+/// header rule observed on the REST and the GraphQL responses of one host is one issue with two source observations; an
+/// endpoint-specific finding has its own endpoint and therefore stays its own issue. Nothing is grouped by display text.
+/// </summary>
+public sealed record ApiReviewLogicalIssue(
+    string Key,
+    ApiReviewSeverity Severity,
+    ApiReviewFindingType Type,
+    string Title,
+    string Endpoint,
+    IReadOnlyList<string> Affects,
+    IReadOnlyList<ApiReviewFinding> Sources);
+
+/// <summary>
+/// GraphQL operation counts for one service, each a separate concept:
+/// <list type="bullet">
+/// <item><see cref="Observed"/> — business operations seen in discovered traffic (the target's inventory).</item>
+/// <item><see cref="SafeQueriesExecuted"/> — the review's own safe requests (e.g. <c>query { __typename }</c>); never part of the inventory.</item>
+/// <item><see cref="MatchingAssessed"/> — whether schema matching ran at all. Without a runtime schema it did not, and
+/// <see cref="Matched"/> is then not a count of anything (never shown as "0 matched").</item>
+/// </list>
+/// </summary>
+public sealed record ApiReviewGraphQlCounts(
+    int Observed,
+    int SafeQueriesExecuted,
+    bool MatchingAssessed,
+    int Matched,
+    int NeedManualReview,
+    string Summary);

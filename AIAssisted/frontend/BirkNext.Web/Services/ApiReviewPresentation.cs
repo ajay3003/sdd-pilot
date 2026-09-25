@@ -404,7 +404,7 @@ public static class ApiReviewPresentation
         var coverage = new List<ApiReviewCoverageRowModel>
         {
             new("REST", $"{c.RestOperationsReviewed} / {c.RestOperationsTotal} operations reviewed", null),
-            new("GraphQL", $"{c.GraphQlOperationsObserved} observed operations", c.GraphQlOperationsObserved > 0 ? $"{c.GraphQlOperationsMatched} / {c.GraphQlOperationsObserved} matched to the runtime schema" : null),
+            new("GraphQL", $"{c.GraphQlOperationsObserved} observed operation{(c.GraphQlOperationsObserved == 1 ? "" : "s")}", GraphQlMatchingSummary(report)),
             new("Contracts", ContractCoverageLabel(restContract, gqlContract), ApiReviewEvidencePresentation.ContractCheckCoverage(report)),
             new("Security", $"{c.SecurityChecks} passive, read-only checks executed", null),
             new("Access", accessUsed, accessDetail),
@@ -436,9 +436,81 @@ public static class ApiReviewPresentation
         return parts.Count == 0 ? "No contract evidence" : string.Join(" · ", parts);
     }
 
-    /// <summary>Top findings for the Overview tab: severity first, then type, capped.</summary>
+    /// <summary>Top source findings: severity first, then type, capped. The Overview shows <see cref="KeyIssues"/> instead.</summary>
     public static IReadOnlyList<ApiReviewFinding> KeyFindings(ApiReviewReport report, int max = 5) =>
         report.Findings.OrderBy(f => f.Severity).ThenBy(f => f.Type).ThenBy(f => f.Title).Take(max).ToList();
+
+    /// <summary>Top logical issues for the Overview: severity first, then type, capped.</summary>
+    public static IReadOnlyList<ApiReviewLogicalIssue> KeyIssues(ApiReviewReport report, int max = 5) => LogicalIssues(report).Take(max).ToList();
+
+    /// <summary>
+    /// Source findings grouped deterministically by typed rule + endpoint + severity. Host-level rules use the target origin
+    /// as their endpoint, so the same rule on one host's REST and GraphQL responses is one issue; findings on different
+    /// hosts, endpoints or operations never share a key. Source findings are untouched and stay listed individually.
+    /// </summary>
+    public static IReadOnlyList<ApiReviewLogicalIssue> LogicalIssues(ApiReviewReport report) =>
+        report.Findings
+            .GroupBy(f => $"{RuleIdOf(f)}|{f.Endpoint}|{f.Severity}", StringComparer.Ordinal)
+            .Select(g =>
+            {
+                var first = g.First();
+                var affects = g.Select(f => ServiceNameOf(report, f.TargetId)).Where(n => n.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+                return new ApiReviewLogicalIssue(g.Key, first.Severity, first.Type, first.Title, first.Endpoint, affects, g.ToList());
+            })
+            .OrderBy(i => i.Severity).ThenBy(i => i.Type).ThenBy(i => i.Title, StringComparer.Ordinal).ThenBy(i => i.Endpoint, StringComparer.Ordinal)
+            .ToList();
+
+    /// <summary>The typed rule id. Reports recorded before <see cref="ApiReviewFinding.RuleId"/> existed carry it as the
+    /// prefix of <see cref="ApiReviewFinding.Id"/> ("sec-no-hsts-12345"), whose numeric suffix is per observation.</summary>
+    public static string RuleIdOf(ApiReviewFinding finding) =>
+        finding.RuleId is { Length: > 0 } rule ? rule
+        : System.Text.RegularExpressions.Regex.Replace(finding.Id, @"-\d+$", "");
+
+    /// <summary>
+    /// The checks of one result area across all services, each titled with what it was run against. Operation-level checks
+    /// (per-operation drift, payload, latency) carry the operation, so two operations of one service are two identifiable
+    /// rows rather than two copies of "Service: No drift since previous review". A check generated twice for the same
+    /// subject with the same outcome is one row.
+    /// </summary>
+    public static IReadOnlyList<ApiReviewCheck> DomainChecks(ApiReviewReport report, IReadOnlyCollection<ApiReviewFindingType> areas) =>
+        report.Targets.SelectMany(t =>
+                t.Checks.Where(c => areas.Contains(c.Area)).Select(c => c with { Title = $"{DisplayName(t.Target)}: {c.Title}" })
+                    .Concat(t.Operations.SelectMany(o => ApiReviewEvidencePresentation.OperationChecks(o)
+                        .Where(c => areas.Contains(c.Area))
+                        .Select(c => c with { Title = $"{DisplayName(t.Target)} · {o.Display}: {c.Title}" }))))
+            .DistinctBy(c => (c.CheckId, c.Title, c.Result, c.Detail, string.Join("\u001f", c.Evidence)))
+            .ToList();
+
+    /// <summary>GraphQL counts for one service, from one canonical source each (see <see cref="ApiReviewGraphQlCounts"/>).</summary>
+    public static ApiReviewGraphQlCounts GraphQlCounts(ApiReviewTargetResult result)
+    {
+        // Same rule as the engine's coverage count: the target's observed business operations.
+        var observed = result.Target.Operations.Count(o => o.OperationType != GraphQlOperationType.None);
+        var executed = result.Operations.Count(o => o.Executed);
+        // Matching ran only if a schema was retrieved, or some operation was actually matched or referred to manual review.
+        var assessed = result.Contract is { Available: true }
+            || result.GraphQlOperationMatches.Any(m => m.Result is ApiReviewCheckResult.Pass or ApiReviewCheckResult.ManualReview);
+        var matched = result.GraphQlOperationMatches.Count(m => m.Result == ApiReviewCheckResult.Pass);
+        var manual = result.GraphQlOperationMatches.Count(m => m.Result == ApiReviewCheckResult.ManualReview);
+        var noun = $"{observed} observed operation{(observed == 1 ? "" : "s")}";
+        var summary = observed == 0 ? "No observed operations"
+            : !assessed ? $"{noun} · schema matching not assessed (runtime schema unavailable)"
+            : $"{noun} · {matched} matched to the runtime schema{(manual > 0 ? $" · {manual} need manual review" : "")}";
+        return new(observed, executed, assessed, matched, manual, summary);
+    }
+
+    /// <summary>The Overview's matching line across GraphQL services. Never a "0 / N matched" when matching did not run.</summary>
+    public static string? GraphQlMatchingSummary(ApiReviewReport report)
+    {
+        var counts = report.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl).Select(GraphQlCounts).Where(c => c.Observed > 0).ToList();
+        if (counts.Count == 0) return null;
+        var assessed = counts.Where(c => c.MatchingAssessed).ToList();
+        if (assessed.Count == 0) return "Schema matching not assessed — runtime schema unavailable";
+        // The engine's coverage count is the canonical matched total (matches with a Pass result, as per service).
+        var line = $"{report.Coverage.GraphQlOperationsMatched} / {assessed.Sum(c => c.Observed)} matched to the runtime schema";
+        var notAssessed = counts.Count - assessed.Count;
+        return notAssessed == 0 ? line : $"{line} · matching not assessed for {notAssessed} service{(notAssessed == 1 ? "" : "s")} without a runtime schema";
+    }
 
     public static string ServiceNameOf(ApiReviewReport report, string targetId) =>
         report.Targets.FirstOrDefault(t => t.Target.TargetId == targetId) is { } t ? DisplayName(t.Target) : "";
@@ -559,18 +631,22 @@ public static class ApiReviewPresentation
             : ApiReviewResultState.Completed;
 
         var findings = report.Findings.Count;
+        var issues = LogicalIssues(report).Count;
         var services = $"{assessed} of {report.Targets.Count} selected service{(report.Targets.Count == 1 ? "" : "s")}";
+        // Two layers, two words: logical issues are what a reader acts on; source findings are the raw observations.
+        var found = findings == 0 ? "No source findings"
+            : $"{issues} logical issue{(issues == 1 ? "" : "s")} from {findings} source finding{(findings == 1 ? "" : "s")}";
         var text = state switch
         {
             ApiReviewResultState.FailedToRun =>
                 "No selected API target could be reviewed, so nothing can be concluded about them.",
             ApiReviewResultState.PartialCoverage =>
-                $"{findings} finding{(findings == 1 ? "" : "s")} across {services}. {blocked} could not be reached and {(blocked == 1 ? "is" : "are")} reported as such, never as a pass.",
+                $"{found} across {services}. {blocked} could not be reached and {(blocked == 1 ? "is" : "are")} reported as such, never as a pass.",
             ApiReviewResultState.CompletedWithLimitations =>
-                $"{findings} finding{(findings == 1 ? "" : "s")} across {services}; some were reviewed under reduced access.",
-            _ => $"{findings} finding{(findings == 1 ? "" : "s")} across {services}.",
+                $"{found} across {services}; some were reviewed under reduced access.",
+            _ => $"{found} across {services}.",
         };
 
-        return new ApiReviewResultView(state, text, findings, report.ManualReviewItems.Count, assessed, blocked, summary);
+        return new ApiReviewResultView(state, text, findings, report.ManualReviewItems.Count, assessed, blocked, summary, issues);
     }
 }

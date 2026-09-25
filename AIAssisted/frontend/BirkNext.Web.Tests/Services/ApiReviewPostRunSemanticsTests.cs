@@ -105,7 +105,7 @@ public sealed class ApiReviewPostRunSemanticsTests
 
         view.FindingCount.Should().Be(0, "three manual review areas are obligations, not findings");
         view.ManualReviewCount.Should().Be(3);
-        view.Summary.Should().Contain("0 findings");
+        view.Summary.Should().Contain("No source findings");
     }
 
     // ── §43. Execution status is only execution ─────────────────────────────

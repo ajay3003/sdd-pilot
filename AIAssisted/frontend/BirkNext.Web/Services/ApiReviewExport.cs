@@ -28,7 +28,11 @@ public static class ApiReviewExport
         var c = report.Coverage;
         sb.Append("<div class=\"kpi-row\">");
         sb.Append(Kpi(report.RestServices.ToString(), "REST services")).Append(Kpi(report.GraphQlServices.ToString(), "GraphQL services"));
-        sb.Append(Kpi($"{c.RestOperationsReviewed} / {c.RestOperationsTotal}", "REST operations reviewed")).Append(Kpi($"{c.GraphQlOperationsMatched} / {c.GraphQlOperationsObserved}", "GraphQL operations matched"));
+        sb.Append(Kpi($"{c.RestOperationsReviewed} / {c.RestOperationsTotal}", "REST operations reviewed")).Append(Kpi(c.GraphQlOperationsObserved.ToString(), "GraphQL observed operations"));
+        // Same wording as the page: matching that never ran is "Not assessed", never "0 / N".
+        var gqlCounts = report.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl).Select(ApiReviewPresentation.GraphQlCounts).Where(x => x.Observed > 0).ToList();
+        if (gqlCounts.Count > 0)
+            sb.Append(Kpi(gqlCounts.Any(x => x.MatchingAssessed) ? $"{c.GraphQlOperationsMatched} / {gqlCounts.Where(x => x.MatchingAssessed).Sum(x => x.Observed)}" : "Not assessed", "GraphQL schema matching"));
         sb.Append(Kpi(c.ContractChecks.ToString(), "Contract checks")).Append(Kpi(c.SecurityChecks.ToString(), "Security checks"));
         sb.Append(Kpi($"{c.AuthenticatedExecuted} / {c.AuthenticatedPlanned}", "Authenticated targets")).Append(Kpi($"{c.PublicExecuted} / {c.PublicPlanned}", "Public targets"));
         sb.Append(Kpi(c.TargetsBlocked.ToString(), "Blocked targets"));
@@ -51,25 +55,46 @@ public static class ApiReviewExport
             sb.Append($"<p><strong>Access:</strong> {esc(t.AccessMode.ToString())} — {esc(t.AccessReason)}{(t.RequiredAction is null ? "" : $" <strong>Action:</strong> {esc(t.RequiredAction)}")}</p>");
             if (t.Contract is { } contract)
                 sb.Append($"<p><strong>{esc(contract.Kind)}:</strong> {esc(contract.Status.ToString())}{(contract.Version is null ? "" : $" · version {esc(contract.Version)}")}{(contract.Hash is null ? "" : $" · hash {esc(contract.Hash)}")} · {esc(contract.Note)}</p>");
-            if (t.Operations.Count > 0)
-                sb.Append(table(["Operation", "Access", "Executed", "Status", "Content type", "Latency", "Bytes", "Result", "Contract", "Note"], t.Operations.Select(o => new[]
+            var isGraphQl = t.Target.ApiType == ApiReviewTargetType.GraphQl;
+            // GraphQL: the review's own requests and the observed inventory are separate sets, each listed once.
+            var requestRows = isGraphQl ? t.Operations.Where(o => o.Executed).ToList() : t.Operations;
+            if (requestRows.Count > 0)
+                sb.Append(table(["Operation", "Access", "Executed", "Status", "Content type", "Latency", "Bytes", "Result", "Contract", "Note"], requestRows.Select(o => new[]
                 {
                     esc(o.Display), esc(o.AccessMode.ToString()), o.Executed ? "yes" : "no", o.Executed ? o.StatusCode.ToString() : "—", esc(o.ContentType ?? "—"),
                     o.ElapsedMs is { } ms ? $"{ms:0} ms" : "—", o.ContentLength?.ToString() ?? "—", badge(o.Result.ToString()), esc(o.ContractMatched is null ? "—" : o.ContractMatched.Value ? "matched" : "not documented"), esc(o.Note ?? ""),
                 })));
             var checks = t.Checks.Concat(t.Operations.SelectMany(o => o.Checks.Select(ch => ch with { Title = $"{o.Display}: {ch.Title}" }))).ToList();
             if (checks.Count > 0)
-                sb.Append(table(["Area", "Check", "Result", "Detail", "Evidence"], checks.Select(ch => new[] { esc(ch.Area.ToString()), esc(ch.Title), badge(ch.Result.ToString()), esc(ch.Detail), esc(string.Join("; ", ch.Evidence)) })));
-            if (t.GraphQlOperationMatches.Count > 0)
-                sb.Append(table(["Observed operation", "Root field", "Result", "Note"], t.GraphQlOperationMatches.Select(m => new[] { esc(m.Operation), esc(m.MatchedRootField ?? "—"), badge(m.Result.ToString()), esc(m.Note) })));
+                sb.Append(table(["Area", "Check", "Result", "Detail", "Evidence"], checks.Select(ch => new[] { esc(ch.Area.ToString()), esc(ch.Title), badge(ApiReviewEvidencePresentation.CheckLabel(ch, report.Policy)), esc(ch.Detail), esc(string.Join("; ", ch.Evidence)) })));
+            if (isGraphQl)
+            {
+                var counts = ApiReviewPresentation.GraphQlCounts(t);
+                sb.Append($"<p><strong>Observed operations:</strong> {esc(counts.Summary)}</p>");
+                if (t.GraphQlOperationMatches.Count > 0)
+                    sb.Append(table(["Observed operation", "Root field", "Result", "Note"], t.GraphQlOperationMatches.Select(m => new[] { esc(m.Operation), esc(m.MatchedRootField ?? "—"), badge(m.Result.ToString()), esc(m.Note) })));
+                else if (counts.Observed > 0)
+                    sb.Append(table(["Observed operation", "Root field", "Result", "Note"], t.Operations.Where(o => !o.Executed).Select(o => new[] { esc(o.Display), "Not assessed", badge(o.Result.ToString()), esc(o.Note ?? "") })));
+            }
             sb.Append("</section>\n");
         }
 
-        sb.Append("<section class=\"block\"><h2>Findings</h2>");
-        if (report.Findings.Count == 0) sb.Append("<p>No findings on the completed targets. Blocked/Not tested targets are not passes.</p>");
-        else sb.Append(table(["Severity", "Type", "Endpoint / operation", "Check", "Result", "Finding", "Evidence", "Recommendation", "Drift"], report.Findings.Select(f => new[]
+        var issues = ApiReviewPresentation.LogicalIssues(report);
+        if (issues.Count > 0)
         {
-            badge(f.Severity.ToString()), esc(f.Type.ToString()), esc(f.Endpoint), esc(f.Check), esc(f.Result.ToString()), $"<strong>{esc(f.Title)}</strong><br/>{esc(f.Description)}",
+            sb.Append($"<section class=\"block\"><h2>Logical issues</h2><p>{issues.Count} logical issue{(issues.Count == 1 ? "" : "s")} from {report.Findings.Count} source finding{(report.Findings.Count == 1 ? "" : "s")}.</p>");
+            sb.Append(table(["Severity", "Issue", "Endpoint", "Affects", "Source observations"], issues.Select(i => new[]
+            {
+                badge(i.Severity.ToString()), esc(i.Title), esc(i.Endpoint), esc(string.Join(", ", i.Affects)), i.Sources.Count.ToString(),
+            })));
+            sb.Append("</section>\n");
+        }
+
+        sb.Append("<section class=\"block\"><h2>Source findings</h2>");
+        if (report.Findings.Count == 0) sb.Append("<p>No findings on the completed targets. Blocked/Not tested targets are not passes.</p>");
+        else sb.Append(table(["Severity", "Type", "Endpoint / operation", "Check", "Check result", "Finding", "Evidence", "Recommendation", "Drift"], report.Findings.Select(f => new[]
+        {
+            badge(f.Severity.ToString()), esc(f.Type.ToString()), esc(f.Endpoint), esc(f.Check), esc(ApiReviewStatusLabels.FindingCheckLabel(f)), $"<strong>{esc(f.Title)}</strong><br/>{esc(f.Description)}",
             esc(string.Join("; ", f.Evidence)), esc(f.Recommendation), esc(f.Drift?.ToString() ?? "—"),
         })));
         sb.Append("</section>\n");

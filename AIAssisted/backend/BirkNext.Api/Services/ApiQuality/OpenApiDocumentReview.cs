@@ -189,6 +189,6 @@ public static class OpenApiDocumentReview
 
     internal static ApiReviewFinding Finding(string targetId, string id, ApiReviewSeverity severity, ApiReviewFindingType type, string endpoint, string check, string title,
         string description, string recommendation, List<string> evidence, ApiReviewCheckResult result = ApiReviewCheckResult.Fail, ApiReviewDriftClassification? drift = null) =>
-        new() { Id = $"{id}-{Math.Abs(HashCode.Combine(targetId, endpoint, title)) % 100000}", TargetId = targetId, Severity = severity, Type = type, Endpoint = endpoint, Check = check, Title = title,
+        new() { Id = $"{id}-{Math.Abs(HashCode.Combine(targetId, endpoint, title)) % 100000}", RuleId = id, TargetId = targetId, Severity = severity, Type = type, Endpoint = endpoint, Check = check, Title = title,
             Description = description, Recommendation = recommendation, Evidence = evidence, Result = result, Drift = drift };
 }

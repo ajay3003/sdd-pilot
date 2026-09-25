@@ -1,4 +1,5 @@
 using BirkNext.ApiReview;
+using BirkNext.LocalHttpsProxy;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
@@ -8,11 +9,27 @@ namespace BirkNext.Web.Tests.Pages;
 
 public sealed partial class ApiQualityReviewLandingUITests
 {
+    // The reported run: six observed business operations, one safe __typename query executed, runtime schema unavailable.
+    private static readonly string[] ObservedNames = ["HentAlleOperasjoner", "HentGenerelleTildelingerForRolle", "HentNødinnganger", "HentOrganisasjonstre", "HentAlleGenerelleRoller", "HentAlleBarnespesifikkeRoller"];
+
+    private static List<ApiReviewOperation> ObservedGraphQlOperations => ObservedNames.Select(n => new ApiReviewOperation
+    {
+        Method = "POST", Path = "/api/autorisasjon/graphql", OperationType = GraphQlOperationType.Query, OperationName = n, ObservedCount = 2, AuthObserved = true,
+    }).ToList();
+
+    private static List<ApiReviewOperationResult> EngineShapedGraphQlOperations() =>
+    [
+        new() { Display = "query { __typename }", Method = "POST", Path = "/api/autorisasjon/graphql", Executed = true, StatusCode = 200, ContentType = "application/graphql-response+json", ElapsedMs = 90, Result = ApiReviewCheckResult.Pass },
+        .. ObservedNames.Select(n => new ApiReviewOperationResult { Display = $"Query {n}", Method = "POST", Path = "/api/autorisasjon/graphql", Executed = false, Result = ApiReviewCheckResult.NotTested, Note = "Observed operation; schema unavailable so it could not be matched." }),
+    ];
+
     private static ApiReviewReport LimitedEvidence(ApiReviewRunRequest request)
     {
         var report = StubReport(request, true);
         return report with
         {
+            // As the engine computes it: observed = the GraphQL target's observed operations; nothing matched without a schema.
+            Coverage = report.Coverage with { GraphQlOperationsObserved = ObservedNames.Length, GraphQlOperationsMatched = 0 },
             Targets = report.Targets.Select(t => t with
             {
                 Contract = t.Target.ApiType == ApiReviewTargetType.Rest ? null : new()
@@ -27,9 +44,10 @@ public sealed partial class ApiQualityReviewLandingUITests
                     Checks = [new() { CheckId = "rest-cache-control", Result = ApiReviewCheckResult.Warning },
                         new() { CheckId = "drift-shape", Area = ApiReviewFindingType.Drift, Result = ApiReviewCheckResult.Pass, Detail = "0 change(s) vs baseline." },
                         new() { CheckId = "rest-payload", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Pass, Detail = "141 bytes." }]
-                }] : t.Operations,
-                GraphQlOperationMatches = t.Target.ApiType == ApiReviewTargetType.GraphQl
-                    ? Enumerable.Range(1, 6).Select(i => new ApiReviewGraphQlOperationMatch($"HentGenerelleTildelingerForRolle{i}", null, ApiReviewCheckResult.NotTested, "Schema unavailable.")).ToList() : [],
+                }] : EngineShapedGraphQlOperations(),
+                // Engine shape without a runtime schema: no matches at all — matching never ran.
+                GraphQlOperationMatches = [],
+                Target = t.Target.ApiType == ApiReviewTargetType.GraphQl ? t.Target with { Operations = ObservedGraphQlOperations } : t.Target,
                 Checks = [new() { CheckId = "sec-tls", Area = ApiReviewFindingType.Security, Title = "TLS", Result = ApiReviewCheckResult.Pass, Detail = "HTTPS" },
                     new() { CheckId = "errors-leak", Area = ApiReviewFindingType.Errors, Title = "No internal details in error responses", Result = ApiReviewCheckResult.Pass, Detail = "No indicators." }]
             }).ToList()
@@ -68,9 +86,18 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find("[data-testid=aqr-tab-graphql]").Click();
         var panel = page.Find("[data-testid=aqr-tabpanel]");
         panel.TextContent.Should().Contain("Unavailable").And.Contain("HTTP 400").And.NotContain("Not applicable");
-        panel.TextContent.Should().Contain("6 observed operations").And.Contain("0 / 6 matched to runtime schema");
+        // Six listed operations are six observed operations, and matching that never ran is not "0 matched".
+        page.Find("[data-testid=aqr-gql-counts]").TextContent.Should().Be("6 observed operations · schema matching not assessed (runtime schema unavailable)");
+        panel.TextContent.Should().NotContain("0 observed operations").And.NotContain("0 / 6").And.NotContain("0 matched");
         page.FindAll("[data-testid=aqr-gql-operations] tbody tr").Should().HaveCount(6)
-            .And.OnlyContain(r => r.TextContent.Contains("Not tested"));
+            .And.OnlyContain(r => r.TextContent.Contains("Not tested") && r.TextContent.Contains("Not assessed"));
+        // The safe __typename query is the review's own request, listed once and never counted as an observed operation.
+        page.FindAll("[data-testid=aqr-operation-row]").Select(r => r.TextContent).Should().ContainSingle(r => r.Contains("query { __typename }"));
+        page.FindAll("[data-testid=aqr-operation-row]").Should().HaveCount(1);
+        // Overview says the same thing.
+        page.Find("[data-testid=aqr-tab-overview]").Click();
+        page.Find("[data-testid=aqr-coverage-row][data-coverage='GraphQL']").TextContent
+            .Should().Contain("6 observed operations").And.Contain("Schema matching not assessed").And.NotContain("0 / 6");
     }
 
     [Fact]

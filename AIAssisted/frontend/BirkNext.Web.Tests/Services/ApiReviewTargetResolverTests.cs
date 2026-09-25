@@ -251,7 +251,7 @@ public sealed class ApiReviewTargetResolverTests
         };
         var html = new ReportExportService().ExportApiReview(report, "BirkNext");
         html.Should().Contain("M2LB DEV").And.Contain("Children API").And.Contain("Authenticated HTTP via Local HTTPS Proxy").And.Contain("deadbeef").And.Contain("3.0.3")
-            .And.Contain("Blocked").And.Contain("Not tested").And.Contain("NotTested").And.Contain("Missing required property $.name").And.Contain("Breaking").And.Contain("Write operations").And.Contain("1 / 1");
+            .And.Contain("Blocked").And.Contain("Not tested").And.Contain("Missing required property $.name").And.Contain("Breaking").And.Contain("Write operations").And.Contain("1 / 1");
         html.Should().NotContainAny("Bearer", "Authorization", "Cookie", "eyJ");
     }
 
