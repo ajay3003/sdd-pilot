@@ -104,6 +104,16 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
                     : null,
                 Operations = blocked ? [] : t.Operations.Where(o => o.IsSafe).Select(o => new ApiReviewOperationResult { Display = o.Display, Method = o.Method, Path = o.Path, AccessMode = ApiReviewAccessMode.AuthenticatedHttp, Executed = true, StatusCode = 200, ContentType = "application/json", ElapsedMs = 120, ContentLength = 2048, Result = ApiReviewCheckResult.Pass }).ToList(),
                 Baseline = blocked ? null : new ApiReviewBaseline { TargetId = t.TargetId, RecordedAt = DateTimeOffset.UtcNow },
+                GraphQlCompatibility = t.ApiType != ApiReviewTargetType.GraphQl || blocked ? null : new ApiReviewGraphQlCompatibility
+                {
+                    SchemaSource = GraphQlSchemaSource.RuntimeIntrospection,
+                    Operations = t.Operations.Where(o => o.OperationType != GraphQlOperationType.None).Select((o, i) => new GraphQlOperationCompatibilityResult
+                    {
+                        OperationName = o.OperationName, OperationType = o.OperationType, ObservationCount = o.ObservedCount,
+                        Status = i == 0 ? GraphQlCompatibilityStatus.Compatible : GraphQlCompatibilityStatus.Incompatible,
+                        Issues = i == 0 ? [] : [new GraphQlValidationIssue("FIELD_NOT_FOUND", "The field `navn` does not exist on the type `Rolle`.")],
+                    }).ToList(),
+                },
             };
         }).ToList();
         var assessed = targets.Where(t => t.Status == ApiReviewTargetStatus.Completed).ToList();
@@ -414,7 +424,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         var coverage = page.FindAll("[data-testid=aqr-coverage-row]");
         coverage.Select(r => r.GetAttribute("data-coverage")).Should().Contain(["REST", "GraphQL", "Contracts", "Security", "Access", "Write operations"]);
         page.Find("[data-testid=aqr-coverage-row][data-coverage='REST']").TextContent.Should().Contain("2 / 2 operations reviewed");
-        page.Find("[data-testid=aqr-coverage-row][data-coverage='GraphQL']").TextContent.Should().Contain("1 / 2 matched to the runtime schema");
+        page.Find("[data-testid=aqr-coverage-row][data-coverage='GraphQL']").TextContent.Should().Contain("Compatibility: 1 compatible · 1 incompatible");
         page.Find("[data-testid=aqr-coverage-row][data-coverage='Security']").TextContent.Should().Contain("17 passive, read-only checks executed");
         page.Find("[data-testid=aqr-coverage-row][data-coverage='Contracts']").TextContent.Should().Contain("No REST contract configured").And.Contain("GraphQL runtime schema available");
 

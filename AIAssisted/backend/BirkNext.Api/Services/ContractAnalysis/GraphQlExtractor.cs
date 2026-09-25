@@ -79,7 +79,10 @@ public sealed class GraphQlExtractor : IGraphQlExtractor
                     FetchedAt = DateTime.UtcNow
                 },
                 Types = types,
-                Operations = ExtractOperations(queryTypeName, mutationTypeName, subscriptionTypeName, types)
+                Operations = ExtractOperations(queryTypeName, mutationTypeName, subscriptionTypeName, types),
+                QueryTypeName = queryTypeName,
+                MutationTypeName = mutationTypeName,
+                SubscriptionTypeName = subscriptionTypeName,
             };
 
             return GraphQlExtractionResult.SuccessResult(contract);
@@ -331,11 +334,15 @@ public sealed class GraphQlExtractor : IGraphQlExtractor
         if (!typeEl.TryGetProperty("kind", out var kindEl))
             return null;
 
+        // Introspection names a type reference's kind as the TYPE's kind (OBJECT, SCALAR, ENUM, …) and uses LIST / NON_NULL only for
+        // wrappers. The normalized model keeps wrappers and calls every named reference NAMED; reading "OBJECT" through as the ref
+        // kind left Name unset, so Unwrap() returned "" for every field of a real introspection schema.
         var kind = kindEl.GetString() ?? "NAMED";
+        var isWrapper = kind is "LIST" or "NON_NULL";
 
-        var typeRef = new GraphQlTypeRef { Kind = kind };
+        var typeRef = new GraphQlTypeRef { Kind = isWrapper ? kind : "NAMED" };
 
-        if (kind == "NAMED" && typeEl.TryGetProperty("name", out var nameEl))
+        if (!isWrapper && typeEl.TryGetProperty("name", out var nameEl))
         {
             typeRef.Name = nameEl.GetString();
         }

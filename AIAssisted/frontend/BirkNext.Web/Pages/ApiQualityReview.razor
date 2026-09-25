@@ -502,10 +502,23 @@
                 var domainChecks = ApiReviewPresentation.DomainChecks(report, areas);
                 @if (_tab == "Contracts")
                 {
+                    @* Contract source (above) → client/server compatibility → schema drift → detailed validation. Compatibility and drift
+                       are separate questions and are never counted together. *@
+                    @if (report.Targets.Where(t => t.GraphQlCompatibility is { Observed: > 0 }).ToList() is { Count: > 0 } gqlTargets)
+                    {
+                        <h3>GraphQL client/server compatibility</h3>
+                        <p class="aqr-muted">Are the GraphQL operations the frontend actually sends still valid against the server's current contract? Observed operations are validated, never executed.</p>
+                        @foreach (var t in gqlTargets) { @RenderCompatibilityCard(t, t.GraphQlCompatibility!) }
+                    }
                     <h3>Drift comparison</h3>
                     <p class="aqr-muted">Compares available evidence with previous baselines. No changes detected does not establish contract or schema coverage.</p>
                     @RenderChecks(domainChecks.Where(c => c.Area == ApiReviewFindingType.Drift).ToList(), areas)
                     @if (!domainChecks.Any(c => c.Area == ApiReviewFindingType.Drift)) { <p>Not tested - no drift comparison recorded.</p> }
+                    @if (report.Targets.SelectMany(t => t.GraphQlCompatibility?.SchemaChangeImpact ?? []).ToList() is { Count: > 0 } impact)
+                    {
+                        <h4 class="aqr-group-title">Client impact</h4>
+                        <ul data-testid="aqr-gql-client-impact">@foreach (var line in impact) { <li>@line</li> }</ul>
+                    }
                     @RenderChecks(domainChecks.Where(c => c.Area != ApiReviewFindingType.Drift).ToList(), areas)
                 }
                 else { @RenderChecks(domainChecks, areas) }
@@ -783,33 +796,96 @@
     };
 
     /// <summary>
-    /// The observed GraphQL inventory, rendered once. With a runtime schema the rows are the schema matches (root field and
-    /// result); without one, matching never ran, so the rows are the observed operations recorded as not tested and the root
-    /// field is "Not assessed" — never an empty table under a "0 observed" line.
+    /// The observed GraphQL inventory, rendered once: one row per observed document variant, with RUNTIME and CONTRACT in
+    /// separate columns (the review never executes an observed business operation; the __typename probe is its own row in the
+    /// requests table). Without a schema the Contract column says "Not assessed" for every row — never an empty table under a
+    /// "0 observed" line. Incompatible rows open to their violations; compatible rows stay compact.
     /// </summary>
     private RenderFragment RenderObservedOperations(ApiReviewTargetResult t) => __builder =>
     {
         var counts = ApiReviewPresentation.GraphQlCounts(t);
+        var compatibility = t.GraphQlCompatibility;
         <h4 class="aqr-group-title">@ApiReviewPresentation.DisplayName(t.Target) · observed operations</h4>
         <p class="aqr-muted" data-testid="aqr-gql-counts">@counts.Summary</p>
-        @if (counts.Observed > 0)
+        @if (compatibility is { Observed: > 0 })
         {
             <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Observed GraphQL operations">
                 <table class="aqr-table" data-testid="aqr-gql-operations">
-                    <thead><tr><th scope="col">Observed operation</th><th scope="col">Root field</th><th scope="col">Result</th><th scope="col">Note</th></tr></thead>
+                    <thead><tr><th scope="col">Operation</th><th scope="col">Type</th><th scope="col">Observations</th><th scope="col">Runtime</th><th scope="col">Contract</th><th scope="col">Last observed</th></tr></thead>
                     <tbody>
-                        @if (t.GraphQlOperationMatches.Count > 0)
+                        @foreach (var o in compatibility.Operations)
                         {
-                            @foreach (var m in t.GraphQlOperationMatches) { <tr data-testid="aqr-gql-operation-row"><td class="aqr-mono">@m.Operation</td><td class="aqr-mono">@(m.MatchedRootField ?? "—")</td><td><span class="aqr-state aqr-state-@m.Result.ToString().ToLowerInvariant()">@ApiReviewStatusLabels.ResultLabel(m.Result)</span></td><td class="aqr-muted">@m.Note</td></tr> }
-                        }
-                        else
-                        {
-                            @foreach (var o in t.Operations.Where(o => !o.Executed)) { <tr data-testid="aqr-gql-operation-row"><td class="aqr-mono">@o.Display</td><td class="aqr-muted">Not assessed</td><td><span class="aqr-state aqr-state-@o.Result.ToString().ToLowerInvariant()">@ApiReviewStatusLabels.ResultLabel(o.Result)</span></td><td class="aqr-muted">@o.Note</td></tr> }
+                            <tr data-testid="aqr-gql-operation-row" data-compatibility="@o.Status" data-historical="@(o.Historical ? "true" : "false")">
+                                <td class="aqr-mono">@(o.OperationName ?? "(anonymous)")@if (o.Historical) { <span class="aqr-pill aqr-pill-muted aqr-gql-historical" data-testid="aqr-gql-historical">Historical</span> }</td>
+                                <td>@o.OperationType</td>
+                                <td>@o.ObservationCount</td>
+                                <td class="aqr-muted" data-testid="aqr-gql-runtime">@ApiReviewGraphQlCompatibilityPresentation.RuntimeLabel(o.OperationType)</td>
+                                <td>
+                                    <span class="aqr-state aqr-state-@ApiReviewGraphQlCompatibilityPresentation.StatusTone(o.Status)" data-testid="aqr-gql-contract">@ApiReviewGraphQlCompatibilityPresentation.StatusLabel(o.Status)</span>
+                                    @if (o.Status == GraphQlCompatibilityStatus.Incompatible)
+                                    {
+                                        <ReviewDisclosure Text="@($"{o.Issues.Count} validation issue{(o.Issues.Count == 1 ? "" : "s")}")" CollapseText="Hide validation issues" Class="disclosure-inline disclosure-small" TestId="@($"aqr-gql-issues-{o.DocumentHash}")">
+                                            <ul class="aqr-gql-issues" data-testid="aqr-gql-issue-list">@foreach (var issue in o.Issues) { <li><span class="aqr-mono">@issue.Code</span> — @issue.Message</li> }</ul>
+                                            <p class="aqr-muted">Observed: @o.EvidenceSource · @o.ObservationCount observation@(o.ObservationCount == 1 ? "" : "s")@(o.Historical ? " (historical evidence only)" : "") · Schema: @ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compatibility.SchemaSource)</p>
+                                            <p><strong>Recommended action:</strong> @ApiReviewGraphQlCompatibilityPresentation.RecommendedAction</p>
+                                        </ReviewDisclosure>
+                                    }
+                                    else if (o.Status == GraphQlCompatibilityStatus.NotAssessed && o.NotAssessedReason is { } why)
+                                    {
+                                        <span class="aqr-muted aqr-gql-reason"> · @why</span>
+                                    }
+                                </td>
+                                <td class="aqr-muted">@(o.LastObservedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</td>
+                            </tr>
                         }
                     </tbody>
                 </table>
             </div>
         }
+        else if (counts.Observed > 0)
+        {
+            @* A report recorded before compatibility existed: the observed operations, with nothing claimed about them. *@
+            <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Observed GraphQL operations">
+                <table class="aqr-table" data-testid="aqr-gql-operations">
+                    <thead><tr><th scope="col">Operation</th><th scope="col">Runtime</th><th scope="col">Contract</th><th scope="col">Note</th></tr></thead>
+                    <tbody>
+                        @foreach (var o in t.Operations.Where(o => !o.Executed)) { <tr data-testid="aqr-gql-operation-row"><td class="aqr-mono">@o.Display</td><td class="aqr-muted">Not executed</td><td class="aqr-muted">Not assessed</td><td class="aqr-muted">@o.Note</td></tr> }
+                    </tbody>
+                </table>
+            </div>
+        }
+    };
+
+    /// <summary>
+    /// Contracts → GraphQL client/server compatibility for one endpoint: schema source, the five counts (never merged with drift),
+    /// coverage, current vs historical-only, and the incompatible operations. Drift and its client impact are the next section.
+    /// </summary>
+    private RenderFragment RenderCompatibilityCard(ApiReviewTargetResult t, ApiReviewGraphQlCompatibility c) => __builder =>
+    {
+        <section class="aqr-card aqr-gql-compatibility" data-testid="aqr-gql-compatibility" aria-label="@($"GraphQL client/server compatibility · {ApiReviewPresentation.DisplayName(t.Target)}")">
+            <h4 class="aqr-group-title">Client/server compatibility · @ApiReviewPresentation.DisplayName(t.Target)</h4>
+            <dl class="aqr-dl aqr-gql-compatibility-counts">
+                <div><dt>Schema source</dt><dd data-testid="aqr-gql-schema-source">@ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(c.SchemaSource)@if (c.SchemaRetrievedAt is { } at) { <span class="aqr-muted"> · retrieved @at.ToString("yyyy-MM-dd HH:mm")</span> }</dd></div>
+                <div><dt>Observed operations</dt><dd data-testid="aqr-gql-observed">@c.Observed@if (c.HistoricalOnly > 0) { <span class="aqr-muted"> (@c.Current current · @c.HistoricalOnly historical-only)</span> }</dd></div>
+                <div><dt>Assessed</dt><dd data-testid="aqr-gql-assessed">@c.Assessed</dd></div>
+                <div><dt>Compatible</dt><dd data-testid="aqr-gql-compatible">@(c.Assessed == 0 ? "—" : c.Compatible.ToString())</dd></div>
+                <div><dt>Incompatible</dt><dd data-testid="aqr-gql-incompatible">@(c.Assessed == 0 ? "—" : c.Incompatible.ToString())</dd></div>
+                <div><dt>Not assessed</dt><dd data-testid="aqr-gql-not-assessed">@c.NotAssessed</dd></div>
+                <div><dt>Contract coverage</dt><dd data-testid="aqr-gql-coverage">@ApiReviewGraphQlCompatibilityPresentation.Coverage(c)</dd></div>
+            </dl>
+            @if (c.NotAssessedReason is { } reason)
+            {
+                <p class="aqr-muted" data-testid="aqr-gql-not-assessed-reason">Not assessed: @reason Compatibility is not the same as reachability: the endpoint itself was reviewed separately.</p>
+            }
+            @foreach (var o in c.Operations.Where(o => o.Status == GraphQlCompatibilityStatus.Incompatible))
+            {
+                <div class="aqr-gql-incompatible" data-testid="aqr-gql-incompatible-detail">
+                    <p><strong class="aqr-mono">@(o.OperationName ?? "(anonymous)")</strong> · @o.OperationType · <span class="aqr-state aqr-state-fail">Incompatible</span>@if (o.Historical) { <span class="aqr-pill aqr-pill-muted aqr-gql-historical">Historical</span> }</p>
+                    <p>@o.Issues[0].Message@(o.Issues.Count > 1 ? $" (+{o.Issues.Count - 1} more)" : "")</p>
+                    <p class="aqr-muted">Observed: @o.EvidenceSource · @o.ObservationCount observation@(o.ObservationCount == 1 ? "" : "s") · Last observed @(o.LastObservedAt?.ToString("yyyy-MM-dd HH:mm") ?? "—")</p>
+                </div>
+            }
+        </section>
     };
 
     private RenderFragment RenderFindings(ApiReviewReport report, IReadOnlyList<ApiReviewFinding> findings, ApiReviewFindingType[]? areas) => __builder =>

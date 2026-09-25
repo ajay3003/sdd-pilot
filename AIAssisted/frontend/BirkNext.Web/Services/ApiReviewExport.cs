@@ -29,10 +29,10 @@ public static class ApiReviewExport
         sb.Append("<div class=\"kpi-row\">");
         sb.Append(Kpi(report.RestServices.ToString(), "REST services")).Append(Kpi(report.GraphQlServices.ToString(), "GraphQL services"));
         sb.Append(Kpi($"{c.RestOperationsReviewed} / {c.RestOperationsTotal}", "REST operations reviewed")).Append(Kpi(c.GraphQlOperationsObserved.ToString(), "GraphQL observed operations"));
-        // Same wording as the page: matching that never ran is "Not assessed", never "0 / N".
+        // Same wording as the page: compatibility that never ran is "Not assessed", never "0 / N".
         var gqlCounts = report.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl).Select(ApiReviewPresentation.GraphQlCounts).Where(x => x.Observed > 0).ToList();
         if (gqlCounts.Count > 0)
-            sb.Append(Kpi(gqlCounts.Any(x => x.MatchingAssessed) ? $"{c.GraphQlOperationsMatched} / {gqlCounts.Where(x => x.MatchingAssessed).Sum(x => x.Observed)}" : "Not assessed", "GraphQL schema matching"));
+            sb.Append(Kpi(gqlCounts.Any(x => x.CompatibilityAssessed) ? $"{gqlCounts.Sum(x => x.Compatible)} compatible · {gqlCounts.Sum(x => x.Incompatible)} incompatible" : "Not assessed", "GraphQL client/server compatibility"));
         sb.Append(Kpi(c.ContractChecks.ToString(), "Contract checks")).Append(Kpi(c.SecurityChecks.ToString(), "Security checks"));
         sb.Append(Kpi($"{c.AuthenticatedExecuted} / {c.AuthenticatedPlanned}", "Authenticated targets")).Append(Kpi($"{c.PublicExecuted} / {c.PublicPlanned}", "Public targets"));
         sb.Append(Kpi(c.TargetsBlocked.ToString(), "Blocked targets"));
@@ -71,10 +71,28 @@ public static class ApiReviewExport
             {
                 var counts = ApiReviewPresentation.GraphQlCounts(t);
                 sb.Append($"<p><strong>Observed operations:</strong> {esc(counts.Summary)}</p>");
-                if (t.GraphQlOperationMatches.Count > 0)
-                    sb.Append(table(["Observed operation", "Root field", "Result", "Note"], t.GraphQlOperationMatches.Select(m => new[] { esc(m.Operation), esc(m.MatchedRootField ?? "—"), badge(m.Result.ToString()), esc(m.Note) })));
+                if (t.GraphQlCompatibility is { Observed: > 0 } compat)
+                {
+                    // Client/server compatibility, apart from drift and from runtime.
+                    sb.Append("<h3>GraphQL client/server compatibility</h3><dl>");
+                    sb.Append($"<dt>Schema source</dt><dd>{esc(ApiReviewGraphQlCompatibilityPresentation.SchemaSourceLabel(compat.SchemaSource))}{(compat.SchemaRetrievedAt is { } at ? $" (retrieved {at:u})" : "")}</dd>");
+                    sb.Append($"<dt>Observed operations</dt><dd>{compat.Observed}{(compat.HistoricalOnly > 0 ? $" ({compat.Current} current, {compat.HistoricalOnly} historical-only)" : "")}</dd>");
+                    sb.Append($"<dt>Assessed</dt><dd>{compat.Assessed}</dd><dt>Compatible</dt><dd>{(compat.Assessed == 0 ? "—" : compat.Compatible)}</dd>");
+                    sb.Append($"<dt>Incompatible</dt><dd>{(compat.Assessed == 0 ? "—" : compat.Incompatible)}</dd><dt>Not assessed</dt><dd>{compat.NotAssessed}</dd>");
+                    sb.Append($"<dt>Contract coverage</dt><dd>{esc(ApiReviewGraphQlCompatibilityPresentation.Coverage(compat))}</dd></dl>");
+                    if (compat.NotAssessedReason is { } reason) sb.Append($"<p><em>Not assessed: {esc(reason)}</em></p>");
+                    sb.Append(table(["Operation", "Type", "Observations", "Runtime", "Contract", "Issues", "Last observed"], compat.Operations.Select(o => new[]
+                    {
+                        esc((o.OperationName ?? "(anonymous)") + (o.Historical ? " (historical)" : "")), esc(o.OperationType.ToString()), o.ObservationCount.ToString(),
+                        esc(ApiReviewGraphQlCompatibilityPresentation.RuntimeLabel(o.OperationType)), badge(ApiReviewGraphQlCompatibilityPresentation.StatusLabel(o.Status)),
+                        esc(o.Status == GraphQlCompatibilityStatus.Incompatible ? string.Join("; ", o.Issues.Select(i => $"{i.Code}: {i.Message}")) : o.NotAssessedReason ?? ""),
+                        esc(o.LastObservedAt?.ToString("u") ?? "—"),
+                    })));
+                    if (compat.SchemaChangeImpact.Count > 0)
+                        sb.Append("<p><strong>Schema drift client impact:</strong></p><ul>" + string.Concat(compat.SchemaChangeImpact.Select(l => $"<li>{esc(l)}</li>")) + "</ul>");
+                }
                 else if (counts.Observed > 0)
-                    sb.Append(table(["Observed operation", "Root field", "Result", "Note"], t.Operations.Where(o => !o.Executed).Select(o => new[] { esc(o.Display), "Not assessed", badge(o.Result.ToString()), esc(o.Note ?? "") })));
+                    sb.Append(table(["Observed operation", "Runtime", "Contract", "Note"], t.Operations.Where(o => !o.Executed).Select(o => new[] { esc(o.Display), "Not executed", "Not assessed", esc(o.Note ?? "") })));
             }
             sb.Append("</section>\n");
         }

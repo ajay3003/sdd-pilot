@@ -116,10 +116,8 @@ public static class GraphQlSchemaReview
             else
                 matches.Add(new ApiReviewGraphQlOperationMatch(display, null, ApiReviewCheckResult.ManualReview, "No root field matches the operation name; the query body is not persisted, so the selection set cannot be verified automatically."));
         }
-        var unmatched = matches.Where(m => m.Result != ApiReviewCheckResult.Pass).ToList();
-        checks.Add(OpenApiDocumentReview.Check("gql-observed-operations", ApiReviewFindingType.Contract, "Observed operations map to schema",
-            matches.Count == 0 ? ApiReviewCheckResult.NotApplicable : unmatched.Count == 0 ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.ManualReview,
-            $"{matches.Count - unmatched.Count} of {matches.Count} observed operation(s) mapped to a root field.", unmatched.Select(m => m.Operation).Take(20).ToList()));
+        // Observed operations are assessed by GraphQlOperationCompatibility (document validation), not by this name heuristic; the
+        // matches are kept only as a fallback description when no document was captured.
 
         var hash = JsonBodyInspector.Hash(userTypes.Select(t => $"{t.Kind} {t.Name}: {string.Join(",", t.Fields.Select(f => f.Name + ":" + (f.Type?.Unwrap().TypeName ?? "") + (f.IsDeprecated ? "!" : "")))}"));
         return new GraphQlSchemaReviewResult(hash, rootQuery, mutations, subscriptions, deprecated, userTypes.Count, checks, findings, matches);

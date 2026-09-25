@@ -510,3 +510,9 @@
 @media (max-width: 760px) {
     .aqr-page ::deep .aqr-contract-row { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
 }
+
+/* GraphQL client/server compatibility */
+.aqr-gql-historical { margin-left: .4rem; }
+.aqr-gql-issues { margin: .35rem 0; padding-left: 1.1rem; }
+.aqr-gql-incompatible { border-top: 1px solid var(--clr-border); padding-top: .5rem; margin-top: .5rem; }
+.aqr-gql-incompatible p { margin: .15rem 0; overflow-wrap: anywhere; }

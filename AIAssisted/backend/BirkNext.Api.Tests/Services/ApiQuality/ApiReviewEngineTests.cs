@@ -179,15 +179,15 @@ public sealed class ApiReviewEngineTests
         Assert.Contains(target.Checks, c => c.CheckId == "gql-error-shape" && c.Result == ApiReviewCheckResult.Pass);
         Assert.Contains(target.Checks, c => c.CheckId == "gql-introspection" && c.Result == ApiReviewCheckResult.Pass);
         Assert.Equal(2, target.Contract!.OperationCount); Assert.Equal(1, target.Contract.MutationCount); Assert.Equal(1, target.Contract.DeprecatedCount);
-        Assert.Contains(target.GraphQlOperationMatches, m => m.Operation == "Query GetChildren" && m.MatchedRootField == "children" && m.Result == ApiReviewCheckResult.Pass);
-        Assert.Contains(target.GraphQlOperationMatches, m => m.Operation == "Query GetPlacements" && m.Result == ApiReviewCheckResult.ManualReview);
+        // No document was captured for these operations, so compatibility is Not assessed — never guessed from the operation name.
+        Assert.All(target.GraphQlOperationMatches, m => Assert.Equal(ApiReviewCheckResult.NotTested, m.Result));
+        Assert.All(target.GraphQlCompatibility!.Operations, o => Assert.Equal(GraphQlOperationCompatibility.NoDocumentReason, o.NotAssessedReason));
         Assert.Contains(report.Findings, f => f.Id.StartsWith("gql-observed-mutation") && f.Result == ApiReviewCheckResult.ManualReview);
         // Every finding names its typed rule without the per-observation suffix, so the UI can group by rule.
         Assert.All(report.Findings, f => Assert.True(f.RuleId.Length > 0 && f.Id.StartsWith(f.RuleId + "-", StringComparison.Ordinal), f.Id));
         Assert.Contains(report.Findings, f => f.RuleId == "gql-observed-mutation");
         Assert.Contains(report.Findings, f => f.Id.StartsWith("gql-deprecated-fields"));
-        Assert.Contains(target.GraphQlOperationMatches, m => m.Operation == "Mutation DeleteChild" && m.MatchedRootField == "deleteChild");
-        Assert.Equal(2, report.Coverage.GraphQlOperationsMatched); Assert.Equal(3, report.Coverage.GraphQlOperationsObserved);
+        Assert.Equal(0, report.Coverage.GraphQlOperationsMatched); Assert.Equal(3, report.Coverage.GraphQlOperationsObserved);
         Assert.DoesNotContain("query {", JsonSerializer.Serialize(report.Targets.Select(t => t.Target)));
     }
 
@@ -216,7 +216,8 @@ public sealed class ApiReviewEngineTests
         Assert.Equal(ApiReviewDriftClassification.Breaking, drift.Drift);
         Assert.Equal(ApiReviewSeverity.High, drift.Severity);
         Assert.Contains("Removed root field: roles", drift.Evidence);
-        Assert.Contains(report.Targets[0].GraphQlOperationMatches, m => m.Operation == "Query GetRoles" && m.Result == ApiReviewCheckResult.ManualReview);
+        // No document captured: compatibility is Not assessed rather than a name-based guess.
+        Assert.Contains(report.Targets[0].GraphQlOperationMatches, m => m.Operation == "Query GetRoles" && m.Result == ApiReviewCheckResult.NotTested);
     }
 
     // ── Contract validation & drift ─────────────────────────────────────────────

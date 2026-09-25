@@ -45,8 +45,17 @@ public sealed partial class ApiQualityReviewLandingUITests
                         new() { CheckId = "drift-shape", Area = ApiReviewFindingType.Drift, Result = ApiReviewCheckResult.Pass, Detail = "0 change(s) vs baseline." },
                         new() { CheckId = "rest-payload", Area = ApiReviewFindingType.Performance, Result = ApiReviewCheckResult.Pass, Detail = "141 bytes." }]
                 }] : EngineShapedGraphQlOperations(),
-                // Engine shape without a runtime schema: no matches at all — matching never ran.
+                // Engine shape without any schema: every observed operation is Not assessed — compatibility could not run.
                 GraphQlOperationMatches = [],
+                GraphQlCompatibility = t.Target.ApiType == ApiReviewTargetType.Rest ? null : new ApiReviewGraphQlCompatibility
+                {
+                    SchemaSource = GraphQlSchemaSource.None, NotAssessedReason = "No GraphQL schema was available for validation.",
+                    Operations = ObservedNames.Select(n => new GraphQlOperationCompatibilityResult
+                    {
+                        OperationName = n, OperationType = GraphQlOperationType.Query, ObservationCount = 3, Status = GraphQlCompatibilityStatus.NotAssessed,
+                        NotAssessedReason = "No GraphQL schema was available for validation.",
+                    }).ToList(),
+                },
                 Target = t.Target.ApiType == ApiReviewTargetType.GraphQl ? t.Target with { Operations = ObservedGraphQlOperations } : t.Target,
                 Checks = [new() { CheckId = "sec-tls", Area = ApiReviewFindingType.Security, Title = "TLS", Result = ApiReviewCheckResult.Pass, Detail = "HTTPS" },
                     new() { CheckId = "errors-leak", Area = ApiReviewFindingType.Errors, Title = "No internal details in error responses", Result = ApiReviewCheckResult.Pass, Detail = "No indicators." }]
@@ -86,18 +95,19 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find("[data-testid=aqr-tab-graphql]").Click();
         var panel = page.Find("[data-testid=aqr-tabpanel]");
         panel.TextContent.Should().Contain("Unavailable").And.Contain("HTTP 400").And.NotContain("Not applicable");
-        // Six listed operations are six observed operations, and matching that never ran is not "0 matched".
-        page.Find("[data-testid=aqr-gql-counts]").TextContent.Should().Be("6 observed operations · schema matching not assessed (runtime schema unavailable)");
-        panel.TextContent.Should().NotContain("0 observed operations").And.NotContain("0 / 6").And.NotContain("0 matched");
+        // Six listed operations are six observed operations, and compatibility that could not run is not "0 compatible".
+        page.Find("[data-testid=aqr-gql-counts]").TextContent.Should().Be("6 observed operations · compatibility not assessed — schema unavailable");
+        panel.TextContent.Should().NotContain("0 observed operations").And.NotContain("0 / 6").And.NotContain("0 compatible");
+        // Runtime and contract are separate columns: never executed, and not assessed.
         page.FindAll("[data-testid=aqr-gql-operations] tbody tr").Should().HaveCount(6)
-            .And.OnlyContain(r => r.TextContent.Contains("Not tested") && r.TextContent.Contains("Not assessed"));
+            .And.OnlyContain(r => r.TextContent.Contains("Not executed (observed only)") && r.TextContent.Contains("Not assessed"));
         // The safe __typename query is the review's own request, listed once and never counted as an observed operation.
         page.FindAll("[data-testid=aqr-operation-row]").Select(r => r.TextContent).Should().ContainSingle(r => r.Contains("query { __typename }"));
         page.FindAll("[data-testid=aqr-operation-row]").Should().HaveCount(1);
         // Overview says the same thing.
         page.Find("[data-testid=aqr-tab-overview]").Click();
         page.Find("[data-testid=aqr-coverage-row][data-coverage='GraphQL']").TextContent
-            .Should().Contain("6 observed operations").And.Contain("Schema matching not assessed").And.NotContain("0 / 6");
+            .Should().Contain("6 observed operations").And.Contain("Compatibility not assessed — schema unavailable").And.NotContain("0 / 6");
     }
 
     [Fact]

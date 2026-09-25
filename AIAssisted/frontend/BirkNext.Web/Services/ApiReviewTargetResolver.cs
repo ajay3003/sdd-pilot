@@ -26,16 +26,19 @@ public static class ApiReviewTargetResolver
             .Where(NetworkEvidencePolicy.IsApiCandidate).ToList();
         var targets = new List<ApiReviewTarget>();
 
+        // Earlier analysis generations of a page: evidence Endpoint Discovery retains, but that is not current. Only GraphQL document
+        // variants are read from it, and they stay marked Historical so they are never presented as live.
+        var history = discovery.Pages.SelectMany(p => p.NetworkHistory).SelectMany(h => h.Endpoints)
+            .Where(e => e.Category == ObservedTrafficCategory.GraphQl && NetworkEvidencePolicy.IsApiCandidate(e)).ToList();
+
         // ── GraphQL endpoints (learned path) ──
         foreach (var group in observed.Where(e => e.Category == ObservedTrafficCategory.GraphQl).GroupBy(e => $"{e.Scheme}|{e.Host}|{e.Port}|{e.Path}"))
         {
             var first = group.First();
-            var operations = group.GroupBy(e => $"{e.OperationType}|{e.OperationName}").Select(g => new ApiReviewOperation
-            {
-                Method = "POST", Path = first.Path, OperationType = g.First().OperationType == GraphQlOperationType.None ? GraphQlOperationType.Query : g.First().OperationType, OperationName = g.First().OperationName,
-                ObservedCount = g.Sum(e => e.Count), AuthObserved = g.Any(e => e.AuthObserved), LastStatus = g.OrderByDescending(e => e.LastObservedAt).First().LastStatus,
-                Source = ApiReviewTargetSource.DiscoveredTraffic, Confidence = (ObservedEndpointConfidence)g.Max(e => (int)e.Confidence),
-            }).OrderByDescending(o => o.ObservedCount).ToList();
+            var endpointHistory = history.Where(e => $"{e.Scheme}|{e.Host}|{e.Port}|{e.Path}" == group.Key).ToList();
+            var operations = group.GroupBy(e => $"{e.OperationType}|{e.OperationName}")
+                .SelectMany(g => GraphQlOperations(g.ToList(), first.Path, endpointHistory.Where(h => $"{h.OperationType}|{h.OperationName}" == g.Key).ToList()))
+                .OrderBy(o => o.Historical).ThenByDescending(o => o.ObservedCount).ToList();
             var confidence = (ObservedEndpointConfidence)group.Max(e => (int)e.Confidence);
             targets.Add(new ApiReviewTarget
             {
@@ -154,6 +157,31 @@ public static class ApiReviewTargetResolver
     }
 
     /// <summary>Stable id from type + origin + base path (no query, no credential): 16 hex chars.</summary>
+    /// <summary>
+    /// One operation per observed document VARIANT: the same name with a different selection is a different contract, while the same
+    /// document observed 37 times is one operation with 37 observations. An operation whose document was never captured stays one
+    /// name-only operation (compatibility then reports it Not assessed). Variants only in the retained history are added as Historical.
+    /// </summary>
+    private static IEnumerable<ApiReviewOperation> GraphQlOperations(List<ObservedNetworkEndpoint> observations, string path, List<ObservedNetworkEndpoint> history)
+    {
+        var sample = observations[0];
+        var baseOperation = new ApiReviewOperation
+        {
+            Method = "POST", Path = path, OperationType = sample.OperationType == GraphQlOperationType.None ? GraphQlOperationType.Query : sample.OperationType,
+            OperationName = sample.OperationName, AuthObserved = observations.Any(e => e.AuthObserved),
+            LastStatus = observations.OrderByDescending(e => e.LastObservedAt).First().LastStatus,
+            Source = ApiReviewTargetSource.DiscoveredTraffic, Confidence = (ObservedEndpointConfidence)observations.Max(e => (int)e.Confidence),
+        };
+        var variants = ObservedGraphQlDocuments.Union([], observations.SelectMany(e => e.GraphQlDocuments).ToList());
+        if (variants.Count == 0)
+            yield return baseOperation with { ObservedCount = observations.Sum(e => e.Count), FirstObservedAt = observations.Min(e => e.FirstObservedAt), LastObservedAt = observations.Max(e => e.LastObservedAt) };
+        foreach (var variant in variants)
+            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt };
+        var current = variants.Select(v => v.Hash).ToHashSet(StringComparer.Ordinal);
+        foreach (var variant in ObservedGraphQlDocuments.Union([], history.SelectMany(e => e.GraphQlDocuments).ToList()).Where(v => !current.Contains(v.Hash)))
+            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt, Historical = true };
+    }
+
     public static string Id(ApiReviewTargetType type, string origin, string basePath) =>
         type.ToString().ToLowerInvariant() + "-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{type}|{origin.ToLowerInvariant()}|{Normalize(basePath).ToLowerInvariant()}")))[..16].ToLowerInvariant();
 

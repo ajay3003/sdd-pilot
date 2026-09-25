@@ -308,6 +308,48 @@ public sealed record ObservedAuthenticatedEndpoint
     public string Display => $"{Origin}{Path}";
 }
 
+/// <summary>One observed GraphQL operation document variant: normalized, literal-redacted text and how often it was seen.</summary>
+public sealed record ObservedGraphQlDocument
+{
+    public string Hash { get; init; } = "";
+    public string Document { get; init; } = "";
+    public int Count { get; init; } = 1;
+    public DateTimeOffset FirstObservedAt { get; init; }
+    public DateTimeOffset LastObservedAt { get; init; }
+}
+
+/// <summary>Merging document variants: per hash, bounded, so a noisy client cannot grow evidence without limit.</summary>
+public static class ObservedGraphQlDocuments
+{
+    public const int MaxVariants = 8;
+
+    /// <summary>Incremental merge (live registry): counts add up.</summary>
+    public static List<ObservedGraphQlDocument> Add(IReadOnlyList<ObservedGraphQlDocument> existing, IReadOnlyList<ObservedGraphQlDocument> incoming) =>
+        Merge(existing, incoming, (a, b) => a + b);
+
+    /// <summary>Snapshot merge (a cumulative registry re-read into persisted evidence): the larger count wins.</summary>
+    public static List<ObservedGraphQlDocument> Union(IReadOnlyList<ObservedGraphQlDocument> existing, IReadOnlyList<ObservedGraphQlDocument> incoming) =>
+        Merge(existing, incoming, Math.Max);
+
+    private static List<ObservedGraphQlDocument> Merge(IReadOnlyList<ObservedGraphQlDocument> existing, IReadOnlyList<ObservedGraphQlDocument> incoming, Func<int, int, int> count)
+    {
+        var merged = existing.ToDictionary(d => d.Hash, StringComparer.Ordinal);
+        foreach (var document in incoming)
+        {
+            if (merged.TryGetValue(document.Hash, out var current))
+                merged[document.Hash] = current with
+                {
+                    Count = count(current.Count, document.Count),
+                    FirstObservedAt = document.FirstObservedAt < current.FirstObservedAt ? document.FirstObservedAt : current.FirstObservedAt,
+                    LastObservedAt = document.LastObservedAt > current.LastObservedAt ? document.LastObservedAt : current.LastObservedAt,
+                };
+            else if (merged.Count < MaxVariants)
+                merged[document.Hash] = document;
+        }
+        return merged.Values.OrderByDescending(d => d.LastObservedAt).ToList();
+    }
+}
+
 /// <summary>
 /// Conservative classification of one piece of browser-observed traffic. Not every request is forced into REST or GraphQL: static
 /// assets, telemetry, WebSockets, authentication hops and other HTTP are kept distinct so the page tables stay honest.
@@ -345,6 +387,11 @@ public sealed record ObservedNetworkEndpoint
     public DateTimeOffset LastObservedAt { get; init; }
     public GraphQlOperationType OperationType { get; init; }
     public string? OperationName { get; init; }
+    /// <summary>
+    /// GraphQL only: the distinct operation documents observed for this operation, each normalized with every literal value redacted
+    /// (no variables, no raw body). Bounded; the same name with a different selection is a separate variant with its own hash.
+    /// </summary>
+    public List<ObservedGraphQlDocument> GraphQlDocuments { get; init; } = [];
     /// <summary>Scheme+host[:port] of the page (document) that made this request, from the Referer. Null when it cannot be safely correlated.</summary>
     public string? PageOrigin { get; init; }
     /// <summary>Path of the correlating page (query stripped). Null when it cannot be safely correlated → Shared / background traffic.</summary>

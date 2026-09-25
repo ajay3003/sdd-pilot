@@ -75,6 +75,9 @@ internal sealed class ProxyExchange
     public string? ResponseContentType { get; init; }
     public GraphQlOperationType GraphQlOperationType { get; init; }
     public string? GraphQlOperationName { get; init; }
+    /// <summary>Normalized, literal-redacted operation document; never variables, never the raw body.</summary>
+    public string? GraphQlDocument { get; init; }
+    public string? GraphQlDocumentHash { get; init; }
     /// <summary>The request Referer, used only to correlate the request to a page. Never persisted or logged.</summary>
     public string? Referer { get; init; }
     /// <summary>True for a WebSocket upgrade (HTTP 101). No message bytes are ever inspected.</summary>
@@ -338,6 +341,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
         public string? Bearer { get; set; } = bearer;
         public GraphQlOperationType GraphQlOperation { get; } = graphQlOperation;
         public string? GraphQlOperationName { get; } = graphQlOperationName;
+        public GraphQlDocumentNormalizer.Normalized? GraphQlDocument { get; init; }
         public string? Referer { get; } = referer;
         public bool IsUpgrade { get; } = upgrade;
         public TaskCompletionSource<bool> UpgradeDecision { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -363,20 +367,22 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
                 if (!HttpHead.TryParse(raw, out var request) || !request.IsRequest) break;
                 var requestContentType = request.Header("Content-Type");
                 await server.WriteAsync(raw, cts.Token);
-                // The request body is relayed verbatim. Only a bounded JSON POST body is transiently captured, purely to classify a
-                // GraphQL operation (query vs mutation vs subscription); its bytes are never stored, logged or returned.
+                // The request body is relayed verbatim. Only a bounded JSON POST body is transiently captured, to classify a GraphQL
+                // operation and keep its document in normalized, literal-redacted form; the raw bytes (and any variables) are never
+                // stored, logged or returned.
                 var framing = BodyFraming.ForRequest(request);
                 var graphQlOperation = GraphQlOperationType.None;
                 string? graphQlOperationName = null;
+                GraphQlDocumentNormalizer.Normalized? graphQlDocument = null;
                 if (framing.Kind == BodyKind.ContentLength && framing.Length <= MaxCapturedBodyBytes
                     && ObservedTrafficClassifier.IsGraphQlBodyCandidate(request.Method, requestContentType))
                 {
                     var body = await clientReader.CopyExactCapturingAsync(server, framing.Length, cts.Token);
-                    try { (graphQlOperation, graphQlOperationName) = GraphQlBodyInspector.Classify(Encoding.UTF8.GetString(body)); }
+                    try { (graphQlOperation, graphQlOperationName, graphQlDocument) = GraphQlBodyInspector.ClassifyWithDocument(Encoding.UTF8.GetString(body)); }
                     finally { Array.Clear(body); }
                 }
                 else await clientReader.CopyBodyAsync(server, framing, cts.Token);
-                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.Header("Referer"), request.IsUpgrade, startedTimestamp) { Provenance = NetworkEvidencePolicy.FromMarker(request.Header(NetworkEvidencePolicy.ProvenanceHeader), request.Header("Sec-Fetch-Mode") is not null || request.Header("Referer") is not null) };
+                var record = new PendingRequest(request.Method, request.Target, requestContentType, ExtractBearer(request), graphQlOperation, graphQlOperationName, request.Header("Referer"), request.IsUpgrade, startedTimestamp) { Provenance = NetworkEvidencePolicy.FromMarker(request.Header(NetworkEvidencePolicy.ProvenanceHeader), request.Header("Sec-Fetch-Mode") is not null || request.Header("Referer") is not null), GraphQlDocument = graphQlDocument };
                 await pending.Writer.WriteAsync(record, cts.Token);
                 await server.FlushAsync(cts.Token);
                 if (record.IsUpgrade)
@@ -450,6 +456,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             Host = host, Port = port, Method = request.Method, StatusCode = statusCode, BearerToken = request.Bearer,
             Path = request.Path, RequestContentType = request.RequestContentType, ResponseContentType = responseContentType,
             GraphQlOperationType = request.GraphQlOperation, GraphQlOperationName = request.GraphQlOperationName,
+            GraphQlDocument = request.GraphQlDocument?.Document, GraphQlDocumentHash = request.GraphQlDocument?.Hash,
             Provenance = request.Provenance, Referer = request.Referer, IsWebSocket = statusCode == 101,
             DurationMs = Math.Round(Stopwatch.GetElapsedTime(request.StartedTimestamp).TotalMilliseconds, 1),
             CacheDirectives = CacheHeaderMetadata.NormalizeCacheControl(response?.Header("Cache-Control")),

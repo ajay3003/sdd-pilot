@@ -26,7 +26,7 @@ public sealed class ApiReviewPostRunCleanupTests
 
     private static ApiReviewOperationResult TypenameQuery => new() { Display = "query { __typename }", Executed = true, StatusCode = 200, Result = ApiReviewCheckResult.Pass };
 
-    private static ApiReviewTargetResult GraphQl(int observed, bool schema, int matched = 0, int manual = 0)
+    private static ApiReviewTargetResult GraphQl(int observed, bool schema, int compatible = 0, int incompatible = 0)
     {
         var target = Target("Autorisasjon GraphQL", ApiReviewTargetType.GraphQl, "/api/autorisasjon/graphql", observedGql: observed);
         return new ApiReviewTargetResult
@@ -35,9 +35,19 @@ public sealed class ApiReviewPostRunCleanupTests
             Contract = new ApiReviewContractSummary { Kind = "GraphQL schema", Available = schema, IntrospectionEnabled = schema, Status = schema ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.NotApplicable, Note = schema ? "" : "HTTP 400; introspection disabled or rejected." },
             Operations = schema ? [TypenameQuery]
                 : [TypenameQuery, .. Names.Take(observed).Select(n => new ApiReviewOperationResult { Display = $"Query {n}", Executed = false, Result = ApiReviewCheckResult.NotTested })],
-            GraphQlOperationMatches = !schema ? []
-                : Names.Take(observed).Select((n, i) => new ApiReviewGraphQlOperationMatch(n, i < matched ? n : null,
-                    i < matched ? ApiReviewCheckResult.Pass : i < matched + manual ? ApiReviewCheckResult.ManualReview : ApiReviewCheckResult.NotTested, "")).ToList(),
+            GraphQlCompatibility = new ApiReviewGraphQlCompatibility
+            {
+                SchemaSource = schema ? GraphQlSchemaSource.RuntimeIntrospection : GraphQlSchemaSource.None,
+                NotAssessedReason = schema ? null : "No GraphQL schema was available for validation.",
+                Operations = Names.Take(observed).Select((n, i) => new GraphQlOperationCompatibilityResult
+                {
+                    OperationName = n, OperationType = GraphQlOperationType.Query, ObservationCount = 3,
+                    Status = !schema ? GraphQlCompatibilityStatus.NotAssessed
+                        : i < compatible ? GraphQlCompatibilityStatus.Compatible
+                        : i < compatible + incompatible ? GraphQlCompatibilityStatus.Incompatible : GraphQlCompatibilityStatus.NotAssessed,
+                    Issues = i >= compatible && i < compatible + incompatible ? [new GraphQlValidationIssue("FIELD_NOT_FOUND", "The field `navn` does not exist on the type `Rolle`.")] : [],
+                }).ToList(),
+            },
         };
     }
 
@@ -55,24 +65,25 @@ public sealed class ApiReviewPostRunCleanupTests
     // ── A. GraphQL counts ─────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void SixObservedOperationsWithoutASchemaAreSixObserved_AndMatchingIsNotAssessed()
+    public void SixObservedOperationsWithoutASchemaAreSixObserved_AndCompatibilityIsNotAssessed()
     {
         var counts = ApiReviewPresentation.GraphQlCounts(GraphQl(6, schema: false));
 
         counts.Observed.Should().Be(6);
-        counts.MatchingAssessed.Should().BeFalse("matching needs a runtime schema and none was retrieved");
-        counts.Summary.Should().Be("6 observed operations · schema matching not assessed (runtime schema unavailable)");
-        counts.Summary.Should().NotContain("0 observed").And.NotContain("0 matched");
+        counts.CompatibilityAssessed.Should().BeFalse("compatibility needs a schema and none was available");
+        counts.NotAssessed.Should().Be(6);
+        counts.Summary.Should().Be("6 observed operations · compatibility not assessed — schema unavailable");
+        counts.Summary.Should().NotContain("0 observed").And.NotContain("0 compatible");
     }
 
     [Fact]
-    public void WithASchema_MatchedAndManualReviewAreCountedSeparately()
+    public void WithASchema_CompatibleIncompatibleAndNotAssessedAreCountedSeparately()
     {
-        var counts = ApiReviewPresentation.GraphQlCounts(GraphQl(6, schema: true, matched: 4, manual: 2));
+        var counts = ApiReviewPresentation.GraphQlCounts(GraphQl(6, schema: true, compatible: 5, incompatible: 1));
 
-        counts.MatchingAssessed.Should().BeTrue();
-        (counts.Observed, counts.Matched, counts.NeedManualReview).Should().Be((6, 4, 2));
-        counts.Summary.Should().Be("6 observed operations · 4 matched to the runtime schema · 2 need manual review");
+        counts.CompatibilityAssessed.Should().BeTrue();
+        (counts.Observed, counts.Compatible, counts.Incompatible, counts.NotAssessed).Should().Be((6, 5, 1, 0));
+        counts.Summary.Should().Be("5 of 6 observed operations compatible · 1 incompatible");
     }
 
     [Fact]
@@ -91,12 +102,12 @@ public sealed class ApiReviewPostRunCleanupTests
     }
 
     [Fact]
-    public void OverviewMatchingLineIsNotAssessedWhenNoServiceHadASchema_AndACountWhenOneDid()
+    public void OverviewCompatibilityLineIsNotAssessedWhenNoServiceHadASchema_AndCountsWhenOneDid()
     {
         ApiReviewPresentation.GraphQlMatchingSummary(Report([GraphQl(6, schema: false)], coverage: new() { GraphQlOperationsObserved = 6 }))
-            .Should().Be("Schema matching not assessed — runtime schema unavailable");
-        ApiReviewPresentation.GraphQlMatchingSummary(Report([GraphQl(6, schema: true, matched: 4)], coverage: new() { GraphQlOperationsObserved = 6, GraphQlOperationsMatched = 4 }))
-            .Should().Be("4 / 6 matched to the runtime schema");
+            .Should().Be("Compatibility not assessed — schema unavailable");
+        ApiReviewPresentation.GraphQlMatchingSummary(Report([GraphQl(6, schema: true, compatible: 5, incompatible: 1)], coverage: new() { GraphQlOperationsObserved = 6, GraphQlOperationsMatched = 5 }))
+            .Should().Be("Compatibility: 5 compatible · 1 incompatible");
     }
 
     // ── B. Logical issues over preserved source findings ──────────────────────────────────────────────────────────────
@@ -263,7 +274,7 @@ public sealed class ApiReviewPostRunCleanupTests
         var html = new ReportExportService().ExportApiReview(report, "BirkNext");
 
         html.Should().Contain("GraphQL observed operations").And.Contain("Not assessed")
-            .And.Contain("6 observed operations · schema matching not assessed (runtime schema unavailable)")
+            .And.Contain("6 observed operations · compatibility not assessed — schema unavailable")
             .And.Contain("2 logical issues from 3 source findings").And.Contain("Source findings")
             .And.Contain("Issue detected").And.Contain("Observed");
         html.Should().NotContain("0 / 6").And.NotContain("GraphQL operations matched");

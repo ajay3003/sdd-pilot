@@ -708,6 +708,8 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
                 IsWebSocket = exchange.IsWebSocket,
                 GraphQlOperationType = exchange.GraphQlOperationType,
                 GraphQlOperationName = exchange.GraphQlOperationName,
+                GraphQlDocument = exchange.GraphQlDocument,
+                GraphQlDocumentHash = exchange.GraphQlDocumentHash,
                 Referer = exchange.Referer,
                 DurationMs = exchange.DurationMs,
                 CacheDirectives = exchange.CacheDirectives,

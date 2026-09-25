@@ -255,6 +255,9 @@ public static class ApiReviewPresentation
             // checks are simply not performed (observed operations are recorded as not matched, not as manual review).
             items.Add(new("GraphQL schema unavailable on the previous attempt — retried during this review; if it is still unavailable, schema-dependent checks are not performed, and with a schema only unmatched operations need manual review", ApiReviewReadinessItemState.Warning));
         }
+        // Whether client/server compatibility CAN be assessed for the selected GraphQL targets (never a result pre-run).
+        items.AddRange(ApiReviewGraphQlCompatibilityPresentation.Readiness(
+            chosen.Where(t => t.ApiType == ApiReviewTargetType.GraphQl).ToList(), gqlContract == ApiReviewContractState.IntrospectionUnavailable));
         // Listed, never counted: see the rule above.
         if (contracts is { BaselineCount: 0 } && chosen.Count > 0)
             items.Add(new("No previous baseline — this review records the first one, so there is nothing to compare yet", ApiReviewReadinessItemState.Missing));
@@ -484,33 +487,19 @@ public static class ApiReviewPresentation
     /// <summary>GraphQL counts for one service, from one canonical source each (see <see cref="ApiReviewGraphQlCounts"/>).</summary>
     public static ApiReviewGraphQlCounts GraphQlCounts(ApiReviewTargetResult result)
     {
-        // Same rule as the engine's coverage count: the target's observed business operations.
+        // Same rule as the engine's coverage count: the target's observed business operations (one per document variant).
         var observed = result.Target.Operations.Count(o => o.OperationType != GraphQlOperationType.None);
         var executed = result.Operations.Count(o => o.Executed);
-        // Matching ran only if a schema was retrieved, or some operation was actually matched or referred to manual review.
-        var assessed = result.Contract is { Available: true }
-            || result.GraphQlOperationMatches.Any(m => m.Result is ApiReviewCheckResult.Pass or ApiReviewCheckResult.ManualReview);
-        var matched = result.GraphQlOperationMatches.Count(m => m.Result == ApiReviewCheckResult.Pass);
-        var manual = result.GraphQlOperationMatches.Count(m => m.Result == ApiReviewCheckResult.ManualReview);
-        var noun = $"{observed} observed operation{(observed == 1 ? "" : "s")}";
-        var summary = observed == 0 ? "No observed operations"
-            : !assessed ? $"{noun} · schema matching not assessed (runtime schema unavailable)"
-            : $"{noun} · {matched} matched to the runtime schema{(manual > 0 ? $" · {manual} need manual review" : "")}";
-        return new(observed, executed, assessed, matched, manual, summary);
+        var compatibility = result.GraphQlCompatibility;
+        if (compatibility is null)
+            return new(observed, executed, false, 0, 0, observed, observed == 0 ? "No observed operations"
+                : $"{observed} observed operation{(observed == 1 ? "" : "s")} · compatibility not assessed");
+        return new(Math.Max(observed, compatibility.Observed), executed, compatibility.Assessed > 0, compatibility.Compatible, compatibility.Incompatible,
+            compatibility.NotAssessed, ApiReviewGraphQlCompatibilityPresentation.Summary(compatibility));
     }
 
-    /// <summary>The Overview's matching line across GraphQL services. Never a "0 / N matched" when matching did not run.</summary>
-    public static string? GraphQlMatchingSummary(ApiReviewReport report)
-    {
-        var counts = report.Targets.Where(t => t.Target.ApiType == ApiReviewTargetType.GraphQl).Select(GraphQlCounts).Where(c => c.Observed > 0).ToList();
-        if (counts.Count == 0) return null;
-        var assessed = counts.Where(c => c.MatchingAssessed).ToList();
-        if (assessed.Count == 0) return "Schema matching not assessed — runtime schema unavailable";
-        // The engine's coverage count is the canonical matched total (matches with a Pass result, as per service).
-        var line = $"{report.Coverage.GraphQlOperationsMatched} / {assessed.Sum(c => c.Observed)} matched to the runtime schema";
-        var notAssessed = counts.Count - assessed.Count;
-        return notAssessed == 0 ? line : $"{line} · matching not assessed for {notAssessed} service{(notAssessed == 1 ? "" : "s")} without a runtime schema";
-    }
+    /// <summary>The Overview's compatibility line across GraphQL services. Never "0 compatible" when nothing could be assessed.</summary>
+    public static string? GraphQlMatchingSummary(ApiReviewReport report) => ApiReviewGraphQlCompatibilityPresentation.OverviewSummary(report);
 
     public static string ServiceNameOf(ApiReviewReport report, string targetId) =>
         report.Targets.FirstOrDefault(t => t.Target.TargetId == targetId) is { } t ? DisplayName(t.Target) : "";

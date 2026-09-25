@@ -446,14 +446,15 @@ public sealed record ApiReviewLogicalIssue(
 /// <list type="bullet">
 /// <item><see cref="Observed"/> — business operations seen in discovered traffic (the target's inventory).</item>
 /// <item><see cref="SafeQueriesExecuted"/> — the review's own safe requests (e.g. <c>query { __typename }</c>); never part of the inventory.</item>
-/// <item><see cref="MatchingAssessed"/> — whether schema matching ran at all. Without a runtime schema it did not, and
-/// <see cref="Matched"/> is then not a count of anything (never shown as "0 matched").</item>
+/// <item><see cref="CompatibilityAssessed"/> — whether client/server compatibility validated anything. Without a schema (or
+/// without captured documents) it did not, and <see cref="Compatible"/> is then not a count of anything (never "0 compatible").</item>
 /// </list>
 /// </summary>
 public sealed record ApiReviewGraphQlCounts(
     int Observed,
     int SafeQueriesExecuted,
-    bool MatchingAssessed,
-    int Matched,
-    int NeedManualReview,
+    bool CompatibilityAssessed,
+    int Compatible,
+    int Incompatible,
+    int NotAssessed,
     string Summary);

@@ -432,11 +432,18 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         var endpoint = target.Url;
         var observed = target.Operations.Where(o => o.OperationType != GraphQlOperationType.None).ToList();
         if (mode is ApiReviewAccessMode.Unavailable or ApiReviewAccessMode.ManualOnly or ApiReviewAccessMode.Blocked)
+        {
+            // Compatibility needs a schema and the documents, not access: a configured artifact still lets it run.
+            var (artifact, artifactDetail) = await FetchSchemaArtifactAsync(target, ct);
+            var blockedCompatibility = GraphQlOperationCompatibility.Assess(artifact, GraphQlSchemaSource.ConfiguredArtifact, artifactDetail, artifact is null ? null : DateTimeOffset.UtcNow, observed, endpoint, logger);
+            foreach (var f in GraphQlOperationCompatibility.Findings(blockedCompatibility, target.TargetId)) Add(targetFindings, findings, f);
             return new ApiReviewTargetResult
             {
                 Target = target, AccessMode = mode, AccessReason = reason, RequiredAction = action, Status = ApiReviewTargetStatus.Blocked, FindingCount = null,
-                Operations = observed.Select(o => new ApiReviewOperationResult { Display = o.Display, Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = false, Result = ApiReviewCheckResult.Blocked, Note = reason }).ToList(),
+                Operations = CompatibilityRows(blockedCompatibility, target, mode, ApiReviewCheckResult.Blocked, reason),
+                GraphQlCompatibility = blockedCompatibility, GraphQlOperationMatches = Matches(blockedCompatibility),
             };
+        }
 
         // 1. Safe query: __typename against the discovered/configured endpoint (never an assumed path).
         var probe = await ExecuteGraphQlAsync(request, mode, endpoint, TypenameProbe, ct);
@@ -444,7 +451,15 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (!probe.Executed)
         {
             checks.Add(Check("gql-reachability", ApiReviewFindingType.GraphQl, "Endpoint answers a safe query", probe.Timeout ? ApiReviewCheckResult.NotTested : ApiReviewCheckResult.Blocked, probe.Message));
-            return new ApiReviewTargetResult { Target = target, AccessMode = mode, AccessReason = reason, Status = ApiReviewTargetStatus.NotTested, Checks = checks, FindingCount = null, RequiredAction = probe.Message };
+            var (artifact, artifactDetail) = await FetchSchemaArtifactAsync(target, ct);
+            var unreachedCompatibility = GraphQlOperationCompatibility.Assess(artifact, GraphQlSchemaSource.ConfiguredArtifact, artifactDetail, artifact is null ? null : DateTimeOffset.UtcNow, observed, endpoint, logger);
+            foreach (var f in GraphQlOperationCompatibility.Findings(unreachedCompatibility, target.TargetId)) Add(targetFindings, findings, f);
+            return new ApiReviewTargetResult
+            {
+                Target = target, AccessMode = mode, AccessReason = reason, Status = ApiReviewTargetStatus.NotTested, Checks = checks, FindingCount = null, RequiredAction = probe.Message,
+                Operations = CompatibilityRows(unreachedCompatibility, target, mode, ApiReviewCheckResult.NotTested, "Observed operation; not executed."),
+                GraphQlCompatibility = unreachedCompatibility, GraphQlOperationMatches = Matches(unreachedCompatibility),
+            };
         }
         var json = JsonBodyInspector.IsJsonMediaType(probe.ContentType);
         var ok = probe.StatusCode is >= 200 and < 300 && probe.GraphQlHasData == true;
@@ -473,12 +488,14 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         // 3. Schema via introspection (query-only). Disabled introspection is a policy observation, not a failure.
         GraphQlSchemaReviewResult? schemaReview = null;
         ApiReviewContractSummary contractSummary;
+        GraphQlNormalizedContract? runtimeSchema = null;
         var (schemaJson, introspectionDisabled, introspectionMessage) = await FetchSchemaAsync(request, mode, endpoint, ct);
         if (schemaJson is not null)
         {
             var extraction = graphQl.Extract(schemaJson);
             if (extraction.Success && extraction.Contract is not null)
             {
+                runtimeSchema = extraction.Contract;
                 schemaReview = GraphQlSchemaReview.Review(extraction.Contract, observed, endpoint, target.TargetId);
                 checks.AddRange(schemaReview.Checks);
                 foreach (var f in schemaReview.Findings) Add(targetFindings, findings, f);
@@ -509,13 +526,27 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             contractSummary = new ApiReviewContractSummary { Kind = "GraphQL schema", Source = endpoint, Available = false, Status = introspectionDisabled ? ApiReviewCheckResult.NotApplicable : ApiReviewCheckResult.NotTested, IntrospectionEnabled = introspectionDisabled ? false : null, Note = introspectionMessage };
             checks.Add(Check("gql-introspection", ApiReviewFindingType.Security, "Introspection policy", introspectionDisabled ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.NotTested, introspectionDisabled ? "Disabled (policy-based; schema checks need an SDL/introspection source)." : introspectionMessage));
             checks.Add(Check("gql-schema", ApiReviewFindingType.GraphQl, "Schema available", ApiReviewCheckResult.NotTested, "No schema: schema, nullability, deprecation and drift checks were not performed."));
-            foreach (var o in observed)
-                operations.Add(new ApiReviewOperationResult { Display = o.Display, Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = false, Result = ApiReviewCheckResult.NotTested, Note = "Observed operation; schema unavailable so it could not be matched." });
         }
-        if (schemaReview is not null)
-            foreach (var match in schemaReview.OperationMatches)
-                operations.Add(new ApiReviewOperationResult { Display = match.Operation, Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = false, Result = match.Result, Note = match.Note, ContractMatched = match.Result == ApiReviewCheckResult.Pass });
-        foreach (var o in observed.Where(o => o.OperationType == GraphQlOperationType.Mutation))
+
+        // Client/server compatibility: the observed documents against the best trusted schema of THIS endpoint. Runtime introspection
+        // first; a configured schema artifact when introspection is unavailable; otherwise Not assessed — never a fabricated schema.
+        var (compatibilitySchema, schemaSource, schemaDetail) = runtimeSchema is not null
+            ? (runtimeSchema, GraphQlSchemaSource.RuntimeIntrospection, $"Introspection of {endpoint}")
+            : await FetchSchemaArtifactAsync(target, ct) is ({ } configured, var configuredDetail) ? (configured, GraphQlSchemaSource.ConfiguredArtifact, configuredDetail)
+            : ((GraphQlNormalizedContract?)null, GraphQlSchemaSource.None, (string?)null);
+        var compatibility = GraphQlOperationCompatibility.Assess(compatibilitySchema, schemaSource, schemaDetail, compatibilitySchema is null ? null : DateTimeOffset.UtcNow, observed, endpoint, logger);
+        foreach (var f in GraphQlOperationCompatibility.Findings(compatibility, target.TargetId)) Add(targetFindings, findings, f);
+        compatibility = compatibility with { SchemaChangeImpact = SchemaChangeImpact(targetFindings, compatibility) };
+        checks.Add(Check("gql-compatibility", ApiReviewFindingType.Contract, "Observed operations compatible with the schema",
+            compatibility.Observed == 0 ? ApiReviewCheckResult.NotApplicable
+            : compatibility.Assessed == 0 ? ApiReviewCheckResult.NotTested
+            : compatibility.Incompatible > 0 ? ApiReviewCheckResult.Fail : ApiReviewCheckResult.Pass,
+            compatibility.Observed == 0 ? "No observed business operation."
+            : compatibility.Assessed == 0 ? $"{compatibility.Observed} observed operation(s) not assessed: {compatibility.NotAssessedReason ?? compatibility.Operations[0].NotAssessedReason}"
+            : $"{compatibility.Compatible} compatible, {compatibility.Incompatible} incompatible, {compatibility.NotAssessed} not assessed of {compatibility.Observed} observed ({GraphQlOperationCompatibility.SourceLabel(compatibility.SchemaSource)}).",
+            compatibility.Operations.Where(o => o.Status == GraphQlCompatibilityStatus.Incompatible).Select(o => o.Display).Take(20).ToList()));
+        operations.AddRange(CompatibilityRows(compatibility, target, mode, ApiReviewCheckResult.NotTested, "Observed operation; not executed by the review."));
+        foreach (var o in observed.Where(o => o.OperationType == GraphQlOperationType.Mutation).GroupBy(o => o.OperationName).Select(g => g.First()))
             Add(targetFindings, findings, Finding(target, "gql-observed-mutation", ApiReviewSeverity.Info, ApiReviewFindingType.GraphQl, endpoint, "Mutations", $"Observed mutation {o.OperationName ?? "(anonymous)"} requires manual review", "Mutations are never executed by the automated review.", "Verify mutation behaviour and authorization manually.", [o.Display], ApiReviewCheckResult.ManualReview));
 
         // 4. Error handling: invalid field (query-only, safe). Disabled in production policy.
@@ -543,9 +574,76 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         return new ApiReviewTargetResult
         {
             Target = target, AccessMode = mode, AccessReason = reason, Status = ApiReviewTargetStatus.Completed, Operations = operations, Contract = contractSummary, Checks = checks,
-            GraphQlOperationMatches = schemaReview?.OperationMatches ?? [], FindingCount = targetFindings.Count,
+            GraphQlOperationMatches = Matches(compatibility), GraphQlCompatibility = compatibility, FindingCount = targetFindings.Count,
             Baseline = new ApiReviewBaseline { TargetId = target.TargetId, RecordedAt = DateTimeOffset.UtcNow, GraphQlSchemaHash = schemaReview?.Hash, GraphQlRootFields = schemaReview?.RootQueryFields ?? [], GraphQlDeprecatedFields = schemaReview?.DeprecatedFields ?? [] },
         };
+    }
+
+    /// <summary>
+    /// The configured, trusted schema artifact of a GraphQL target (<see cref="ApiReviewTarget.ContractSource"/>): SDL or an introspection
+    /// result, fetched read-only. Null when none is configured or it cannot be read — never a schema inferred from observed operations.
+    /// </summary>
+    private async Task<(GraphQlNormalizedContract? Schema, string? Detail)> FetchSchemaArtifactAsync(ApiReviewTarget target, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(target.ContractSource)) return (null, null);
+        try
+        {
+            using var response = await publicClient.GetAsync(target.ContractSource, HttpCompletionOption.ResponseHeadersRead, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                logger.LogInformation("GraphQL schema artifact {Source} returned HTTP {Status}; compatibility falls back to Not assessed.", target.ContractSource, (int)response.StatusCode);
+                return (null, null);
+            }
+            var text = await ReadBoundedTextAsync(response, 10 * 1024 * 1024, ct);
+            var schema = text.TrimStart().StartsWith('{')
+                ? graphQl.Extract(text) is { Success: true, Contract: { } contract } ? contract : null
+                : GraphQlSdlSchema.FromSdl(text, out _);
+            logger.LogInformation("GraphQL schema artifact {Source}: {Outcome}.", target.ContractSource, schema is null ? "unreadable" : "parsed");
+            return schema is null ? (null, null) : (schema, $"Configured schema artifact {target.ContractSource}");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            logger.LogInformation("GraphQL schema artifact {Source} not reachable ({Error}).", target.ContractSource, ex.GetType().Name);
+            return (null, null);
+        }
+    }
+
+    /// <summary>One row per observed operation variant: execution (never, for observed operations) and compatibility, side by side.</summary>
+    private static List<ApiReviewOperationResult> CompatibilityRows(ApiReviewGraphQlCompatibility compatibility, ApiReviewTarget target, ApiReviewAccessMode mode, ApiReviewCheckResult execution, string executionNote) =>
+        compatibility.Operations.Select(o => new ApiReviewOperationResult
+        {
+            Display = o.Display, Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = false, Result = execution,
+            OperationType = o.OperationType, ObservationCount = o.ObservationCount, Historical = o.Historical, Compatibility = o.Status,
+            ContractMatched = o.Status switch { GraphQlCompatibilityStatus.Compatible => true, GraphQlCompatibilityStatus.Incompatible => false, _ => null },
+            Note = (o.OperationType == GraphQlOperationType.Mutation ? "Contract validation only — mutation was not executed. " : executionNote + " ")
+                + o.Status switch
+                {
+                    GraphQlCompatibilityStatus.Compatible => $"Compatible with the {GraphQlOperationCompatibility.SourceLabel(compatibility.SchemaSource)}.",
+                    GraphQlCompatibilityStatus.Incompatible => $"Incompatible: {o.Issues[0].Message}",
+                    _ => $"Compatibility not assessed: {o.NotAssessedReason}",
+                },
+        }).ToList();
+
+    /// <summary>The existing per-operation match list, now from document validation rather than an operation-name heuristic.</summary>
+    private static List<ApiReviewGraphQlOperationMatch> Matches(ApiReviewGraphQlCompatibility compatibility) =>
+        compatibility.Operations.Select(o => new ApiReviewGraphQlOperationMatch(o.Display, o.RootFields.FirstOrDefault(),
+            o.Status switch { GraphQlCompatibilityStatus.Compatible => ApiReviewCheckResult.Pass, GraphQlCompatibilityStatus.Incompatible => ApiReviewCheckResult.Fail, _ => ApiReviewCheckResult.NotTested },
+            o.Status switch
+            {
+                GraphQlCompatibilityStatus.Compatible => "Compatible with the schema.",
+                GraphQlCompatibilityStatus.Incompatible => string.Join(" ", o.Issues.Take(3).Select(i => i.Message)),
+                _ => o.NotAssessedReason ?? "Not assessed.",
+            })).ToList();
+
+    /// <summary>Removed root fields (the drift engine's stable field identity) that observed operations still select.</summary>
+    private static List<string> SchemaChangeImpact(IEnumerable<ApiReviewFinding> targetFindings, ApiReviewGraphQlCompatibility compatibility)
+    {
+        const string prefix = "Removed root field: ";
+        return targetFindings.Where(f => f.RuleId == "drift-gql-root-field-removed")
+            .SelectMany(f => f.Evidence).Where(e => e.StartsWith(prefix, StringComparison.Ordinal)).Select(e => e[prefix.Length..])
+            .Select(field => (field, ops: compatibility.Operations.Where(o => o.RootFields.Contains(field, StringComparer.Ordinal)).Select(o => o.Display).Distinct().ToList()))
+            .Where(x => x.ops.Count > 0)
+            .Select(x => $"Removed root field `{x.field}` — used by {string.Join(", ", x.ops)}").ToList();
     }
 
     private async Task<(string? SchemaJson, bool Disabled, string Message)> FetchSchemaAsync(ApiReviewRunRequest request, ApiReviewAccessMode mode, string endpoint, CancellationToken ct)

@@ -434,6 +434,16 @@ public sealed class GraphQlNormalizedContract
 
     [JsonPropertyName("graphql_types")]
     public List<GraphQlType> Types { get; set; } = [];
+
+    /// <summary>Root operation type names as the schema declares them (a root without fields has no entry in <see cref="Operations"/>).</summary>
+    [JsonPropertyName("query_type")]
+    public string? QueryTypeName { get; set; }
+
+    [JsonPropertyName("mutation_type")]
+    public string? MutationTypeName { get; set; }
+
+    [JsonPropertyName("subscription_type")]
+    public string? SubscriptionTypeName { get; set; }
 }
 
 public enum GraphQlExtractionStatus

@@ -7,7 +7,9 @@ namespace BirkNext.ApiReview;
 /// Contracts of the API Quality Review shared by the Blazor frontend and the backend engine. The review is API-centric: it answers
 /// whether an API is correct, safe, robust, contractually sound and performant. Targets come from Endpoint Discovery (observed traffic),
 /// saved configuration or a published contract — never from guessed paths. Nothing here carries a credential, a header value that could
-/// hold one, a request/response body or a GraphQL query body: only structural evidence (JSON paths and types, status codes, sizes, timings).
+/// hold one, a request/response body or GraphQL variables: only structural evidence (JSON paths and types, status codes, sizes, timings).
+/// The one document carried is an observed GraphQL operation in Endpoint Discovery's normalized form — every literal value redacted, no
+/// variables — so client/server compatibility can be checked without the traffic that produced it.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ApiReviewTargetType { Rest, GraphQl }
@@ -47,9 +49,17 @@ public enum ApiReviewDriftClassification { Breaking, PotentiallyBreaking, NonBre
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ApiReviewTargetStatus { Completed, PartiallyCompleted, Blocked, NotTested }
 
-/// <summary>One operation of a target: REST method+path or a GraphQL operation (type + client operation name). No query body.</summary>
+/// <summary>One operation of a target: REST method+path or a GraphQL operation (type + client operation name + document variant).</summary>
 public sealed record ApiReviewOperation
 {
+    /// <summary>GraphQL: the observed document, literal values redacted (see Endpoint Discovery). Null when it was not captured.</summary>
+    public string? Document { get; init; }
+    /// <summary>GraphQL: identity of the document variant. Same name, different selection → different hash.</summary>
+    public string? DocumentHash { get; init; }
+    public DateTimeOffset? FirstObservedAt { get; init; }
+    public DateTimeOffset? LastObservedAt { get; init; }
+    /// <summary>Only in retained history (an earlier analysis generation), not in the current evidence.</summary>
+    public bool Historical { get; init; }
     public string Method { get; init; } = "GET";
     /// <summary>REST path (query stripped). For GraphQL the endpoint path.</summary>
     public string Path { get; init; } = "/";
@@ -176,6 +186,11 @@ public sealed record ApiReviewOperationResult
     public ApiReviewCheckResult Result { get; init; }
     public string? Note { get; init; }
     public bool? ContractMatched { get; init; }
+    /// <summary>GraphQL observed operations: contract compatibility, kept apart from execution (<see cref="Executed"/>/<see cref="Result"/>).</summary>
+    public GraphQlCompatibilityStatus? Compatibility { get; init; }
+    public GraphQlOperationType OperationType { get; init; }
+    public int ObservationCount { get; init; }
+    public bool Historical { get; init; }
     public int ShapeEntryCount { get; init; }
     public List<ApiReviewCheck> Checks { get; init; } = [];
 }
@@ -223,6 +238,67 @@ public sealed record ApiReviewContractSummary
 
 public sealed record ApiReviewGraphQlOperationMatch(string Operation, string? MatchedRootField, ApiReviewCheckResult Result, string Note);
 
+/// <summary>Where the schema used for client/server compatibility came from. Observed operations are never a schema source.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GraphQlSchemaSource { None, RuntimeIntrospection, ConfiguredArtifact }
+
+/// <summary>
+/// Contract compatibility of one observed operation. Deliberately not Pass/Fail: "could not assess" is NotAssessed, never a failure,
+/// and a structurally valid operation is Compatible whatever its runtime outcome (auth, business errors) was.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum GraphQlCompatibilityStatus { Compatible, Incompatible, NotAssessed }
+
+/// <summary>One structural violation. Codes are stable: FIELD_NOT_FOUND, ARGUMENT_NOT_FOUND, REQUIRED_ARGUMENT_MISSING, TYPE_MISMATCH,
+/// UNKNOWN_TYPE, INVALID_FRAGMENT_TYPE, UNKNOWN_FRAGMENT, SELECTION_NOT_ALLOWED, SELECTION_SET_REQUIRED, ENUM_VALUE_INVALID,
+/// VARIABLE_NOT_DEFINED, INPUT_FIELD_NOT_FOUND, REQUIRED_INPUT_FIELD_MISSING, OPERATION_TYPE_NOT_SUPPORTED.</summary>
+public sealed record GraphQlValidationIssue(string Code, string Message, string? Path = null);
+
+public sealed record GraphQlOperationCompatibilityResult
+{
+    /// <summary>Stable identity: endpoint + operation type + name + document hash.</summary>
+    public string OperationId { get; init; } = "";
+    public string? OperationName { get; init; }
+    public GraphQlOperationType OperationType { get; init; }
+    public string Endpoint { get; init; } = "";
+    public string? DocumentHash { get; init; }
+    public GraphQlCompatibilityStatus Status { get; init; } = GraphQlCompatibilityStatus.NotAssessed;
+    public string? NotAssessedReason { get; init; }
+    public List<GraphQlValidationIssue> Issues { get; init; } = [];
+    /// <summary>Root fields the document selects (for schema-change impact).</summary>
+    public List<string> RootFields { get; init; } = [];
+    public int ObservationCount { get; init; }
+    public DateTimeOffset? FirstObservedAt { get; init; }
+    public DateTimeOffset? LastObservedAt { get; init; }
+    public bool Historical { get; init; }
+    public string EvidenceSource { get; init; } = "Endpoint Discovery";
+    [JsonIgnore] public string Display => $"{OperationType} {OperationName ?? "(anonymous)"}";
+}
+
+/// <summary>
+/// GraphQL client/server compatibility of one endpoint: do the operations the frontend actually sends still validate against the
+/// best trusted schema? Separate from schema drift ("did the schema change?") and from runtime execution ("did it succeed?").
+/// </summary>
+public sealed record ApiReviewGraphQlCompatibility
+{
+    public GraphQlSchemaSource SchemaSource { get; init; }
+    public string? SchemaSourceDetail { get; init; }
+    public DateTimeOffset? SchemaRetrievedAt { get; init; }
+    /// <summary>Why nothing could be assessed (no schema); null when validation ran.</summary>
+    public string? NotAssessedReason { get; init; }
+    public List<GraphQlOperationCompatibilityResult> Operations { get; init; } = [];
+    public double DurationMs { get; init; }
+    /// <summary>Schema changes since the baseline that touch root fields observed operations select ("Removed root field `user` — GetUser").</summary>
+    public List<string> SchemaChangeImpact { get; init; } = [];
+    [JsonIgnore] public int Observed => Operations.Count;
+    [JsonIgnore] public int Assessed => Operations.Count(o => o.Status != GraphQlCompatibilityStatus.NotAssessed);
+    [JsonIgnore] public int Compatible => Operations.Count(o => o.Status == GraphQlCompatibilityStatus.Compatible);
+    [JsonIgnore] public int Incompatible => Operations.Count(o => o.Status == GraphQlCompatibilityStatus.Incompatible);
+    [JsonIgnore] public int NotAssessed => Operations.Count(o => o.Status == GraphQlCompatibilityStatus.NotAssessed);
+    [JsonIgnore] public int Current => Operations.Count(o => !o.Historical);
+    [JsonIgnore] public int HistoricalOnly => Operations.Count(o => o.Historical);
+}
+
 public sealed record ApiReviewTargetResult
 {
     public ApiReviewTarget Target { get; init; } = new();
@@ -234,6 +310,8 @@ public sealed record ApiReviewTargetResult
     public ApiReviewContractSummary? Contract { get; init; }
     public List<ApiReviewCheck> Checks { get; init; } = [];
     public List<ApiReviewGraphQlOperationMatch> GraphQlOperationMatches { get; init; } = [];
+    /// <summary>GraphQL targets only: client/server compatibility of the observed operations. Null for REST.</summary>
+    public ApiReviewGraphQlCompatibility? GraphQlCompatibility { get; init; }
     /// <summary>Null when the target was blocked/not tested; 0 when completed with no findings.</summary>
     public int? FindingCount { get; init; }
     public ApiReviewBaseline? Baseline { get; init; }

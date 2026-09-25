@@ -26,29 +26,42 @@ internal sealed record ObservedRequestMetadata
 
 /// <summary>
 /// Parses the transient, bounded prefix of a request body to decide whether it is a GraphQL operation and, if so, its kind and name.
-/// The body text is never stored or logged; only the derived <see cref="GraphQlOperationType"/> and optional name are kept. Fully guarded:
+/// The body is never stored or logged. What is kept: the derived <see cref="GraphQlOperationType"/>, the optional name and the operation
+/// document normalized with every literal value redacted (never the variables), for client/server compatibility checks. Fully guarded:
 /// any malformed or non-GraphQL body yields <see cref="GraphQlOperationType.None"/> without throwing.
 /// </summary>
 internal static class GraphQlBodyInspector
 {
     public static (GraphQlOperationType Type, string? Name) Classify(ReadOnlySpan<char> body)
     {
+        var (type, name, _) = ClassifyWithDocument(body);
+        return (type, name);
+    }
+
+    /// <summary>
+    /// Kind, name and — for contract compatibility — the operation document in Endpoint Discovery's normalized form: literal values
+    /// redacted, no variables (the <c>variables</c> member is never read), comments and formatting dropped. Null document when the
+    /// query cannot be parsed or is too large; the operation is still recorded by kind and name.
+    /// </summary>
+    public static (GraphQlOperationType Type, string? Name, GraphQlDocumentNormalizer.Normalized? Document) ClassifyWithDocument(ReadOnlySpan<char> body)
+    {
         var text = body.Trim();
-        if (text.IsEmpty || text[0] != '{') return (GraphQlOperationType.None, null);
+        if (text.IsEmpty || text[0] != '{') return (GraphQlOperationType.None, null, null);
         string? query;
         string? operationName = null;
         try
         {
             using var document = JsonDocument.Parse(text.ToString());
-            if (document.RootElement.ValueKind != JsonValueKind.Object) return (GraphQlOperationType.None, null);
+            if (document.RootElement.ValueKind != JsonValueKind.Object) return (GraphQlOperationType.None, null, null);
             if (!document.RootElement.TryGetProperty("query", out var queryElement) || queryElement.ValueKind != JsonValueKind.String)
-                return (GraphQlOperationType.None, null);
+                return (GraphQlOperationType.None, null, null);
             query = queryElement.GetString();
             if (document.RootElement.TryGetProperty("operationName", out var nameElement) && nameElement.ValueKind == JsonValueKind.String)
                 operationName = nameElement.GetString();
         }
-        catch (JsonException) { return (GraphQlOperationType.None, null); }
-        return ClassifyQuery(query, operationName);
+        catch (JsonException) { return (GraphQlOperationType.None, null, null); }
+        var (type, name) = ClassifyQuery(query, operationName);
+        return type == GraphQlOperationType.None ? (type, null, null) : (type, name, GraphQlDocumentNormalizer.Normalize(query));
     }
 
     /// <summary>Derives the operation kind from the GraphQL document text: the leading keyword (shorthand <c>{ ... }</c> is a query), and the operation name when present.</summary>
@@ -247,6 +260,9 @@ internal sealed record NetworkRequestMetadata
     public bool IsWebSocket { get; init; }
     public GraphQlOperationType GraphQlOperationType { get; init; }
     public string? GraphQlOperationName { get; init; }
+    /// <summary>Normalized, literal-redacted operation document (see <see cref="GraphQlDocumentNormalizer"/>).</summary>
+    public string? GraphQlDocument { get; init; }
+    public string? GraphQlDocumentHash { get; init; }
     /// <summary>The request Referer header, if any. Used only to derive the correlating page origin/path; the value is never persisted.</summary>
     public string? Referer { get; init; }
     // ── performance metadata (timing, allow-listed cache directives, presence flags, declared size) ──
@@ -332,6 +348,9 @@ internal static class NetworkTrafficClassifier
             LastObservedAt = observedAt,
             OperationType = metadata.GraphQlOperationType,
             OperationName = metadata.GraphQlOperationName,
+            GraphQlDocuments = category == ObservedTrafficCategory.GraphQl && metadata.GraphQlDocument is { } doc && metadata.GraphQlDocumentHash is { } hash
+                ? [new ObservedGraphQlDocument { Hash = hash, Document = doc, Count = 1, FirstObservedAt = observedAt, LastObservedAt = observedAt }]
+                : [],
             PageOrigin = pageOrigin,
             PagePath = pagePath,
             LastDurationMs = metadata.DurationMs,
@@ -362,6 +381,7 @@ internal static class NetworkTrafficClassifier
             Confidence = (ObservedEndpointConfidence)Math.Max((int)existing.Confidence, (int)incoming.Confidence),
             OperationType = incoming.OperationType != GraphQlOperationType.None ? incoming.OperationType : existing.OperationType,
             OperationName = incoming.OperationName ?? existing.OperationName,
+            GraphQlDocuments = ObservedGraphQlDocuments.Add(existing.GraphQlDocuments, incoming.GraphQlDocuments),
             LastDurationMs = incoming.LastDurationMs ?? existing.LastDurationMs,
             MinDurationMs = Min(existing.MinDurationMs, incoming.MinDurationMs),
             MaxDurationMs = Max(existing.MaxDurationMs, incoming.MaxDurationMs),

@@ -299,6 +299,8 @@ public static class EndpointDiscoveryMerge
     /// </summary>
     public static ObservedNetworkEndpoint RestrictToGeneration(ObservedNetworkEndpoint endpoint, DateTimeOffset boundary)
     {
+        // A document variant last seen before the refresh belongs to the previous generation (it stays in the network history).
+        endpoint = endpoint with { GraphQlDocuments = endpoint.GraphQlDocuments.Where(d => d.LastObservedAt >= boundary).ToList() };
         if (endpoint.Samples.Count == 0) return endpoint with { FirstObservedAt = endpoint.FirstObservedAt < boundary ? boundary : endpoint.FirstObservedAt };
         var samples = endpoint.Samples.Where(s => s.At >= boundary).ToList();
         if (samples.Count == 0) return endpoint with { Samples = [], Count = 0, FirstObservedAt = boundary, TotalDurationMs = 0, MinDurationMs = null, MaxDurationMs = null, LastDurationMs = null, ErrorCount = 0, AuthRejectedCount = 0, NotModifiedCount = 0 };
@@ -375,6 +377,8 @@ public static class EndpointDiscoveryMerge
             LastObservedAt = incoming.LastObservedAt > existing.LastObservedAt ? incoming.LastObservedAt : existing.LastObservedAt,
             OperationType = incoming.OperationType != GraphQlOperationType.None ? incoming.OperationType : existing.OperationType,
             OperationName = incoming.OperationName ?? existing.OperationName,
+            // The live registry is cumulative per document too, so the larger count per variant wins.
+            GraphQlDocuments = ObservedGraphQlDocuments.Union(existing.GraphQlDocuments, incoming.GraphQlDocuments),
             Samples = takeIncoming && incoming.Samples.Count > 0 ? incoming.Samples : existing.Samples,
             LastDurationMs = incoming.LastDurationMs ?? existing.LastDurationMs,
             MinDurationMs = takeIncoming && incoming.MinDurationMs is not null ? incoming.MinDurationMs : existing.MinDurationMs,
