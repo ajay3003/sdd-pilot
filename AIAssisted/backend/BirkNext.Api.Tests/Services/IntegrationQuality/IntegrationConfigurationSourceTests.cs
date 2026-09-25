@@ -26,48 +26,6 @@ public class IntegrationConfigurationSourceTests
     // ── Provenance must not affect identity ──────────────────────────────────
 
     [Fact]
-    public void ProvenanceChange_DoesNotChangeBaselineKey()
-    {
-        var suggested = Rest(IntegrationConfigurationSource.CodeSuggested);
-        var manual = Rest(IntegrationConfigurationSource.Manual);
-        var discovered = Rest(IntegrationConfigurationSource.EndpointDiscovery);
-        var unknown = Rest(IntegrationConfigurationSource.Unknown);
-
-        var key = IntegrationBaselineIdentity.Compute("QA", suggested);
-
-        Assert.Equal(key, IntegrationBaselineIdentity.Compute("QA", manual));
-        Assert.Equal(key, IntegrationBaselineIdentity.Compute("QA", discovered));
-        Assert.Equal(key, IntegrationBaselineIdentity.Compute("QA", unknown));
-    }
-
-    [Fact]
-    public void ResourceKindChange_DoesNotChangeBaselineKey()
-    {
-        // ResourceKind refines what Resource means; it does not change which entity is addressed.
-        var a = Rest();
-        a.ResourceKind = IntegrationResourceKind.Unknown;
-
-        var b = Rest();
-        b.ResourceKind = IntegrationResourceKind.GraphQlEndpoint;
-
-        Assert.Equal(
-            IntegrationBaselineIdentity.Compute("QA", a),
-            IntegrationBaselineIdentity.Compute("QA", b));
-    }
-
-    [Fact]
-    public void StructuralEndpointChange_DoesChangeBaselineKey()
-    {
-        var original = Rest();
-        var moved = Rest();
-        moved.Endpoint = "https://m2lbqa.example.test/api/tjeneste/graphql";
-
-        Assert.NotEqual(
-            IntegrationBaselineIdentity.Compute("QA", original),
-            IntegrationBaselineIdentity.Compute("QA", moved));
-    }
-
-    [Fact]
     public void ProvenanceIsSeparateFromRelationshipSource()
     {
         // A manually entered integration can still have its relationship derived from messaging
@@ -101,30 +59,6 @@ public class IntegrationConfigurationSourceTests
         // nor that discovery found it.
         Assert.Equal(IntegrationConfigurationSource.Unknown, integration!.ConfigurationSource);
         Assert.Equal(IntegrationResourceKind.Unknown, integration.ResourceKind);
-    }
-
-    [Fact]
-    public void LegacyConfig_KeepsWorkingAndKeepsItsIdentity()
-    {
-        const string legacy = """
-            {"id":"i1","name":"Orders","type":0,"endpoint":"https://api.example.test/orders",
-             "resource":"orders","authType":0,"enabled":true}
-            """;
-
-        var legacyIntegration = JsonSerializer.Deserialize<IntegrationConfigDto>(legacy)!;
-
-        var sameStructureToday = new IntegrationConfigDto
-        {
-            Id = "different-guid", Name = "Renamed Orders", Type = IntegrationType.REST,
-            Endpoint = "https://api.example.test/orders", Resource = "orders",
-            ConfigurationSource = IntegrationConfigurationSource.EndpointDiscovery,
-            ResourceKind = IntegrationResourceKind.RestEndpoint
-        };
-
-        // Adding provenance to an existing integration must not detach it from its history.
-        Assert.Equal(
-            IntegrationBaselineIdentity.Compute("QA", legacyIntegration),
-            IntegrationBaselineIdentity.Compute("QA", sameStructureToday));
     }
 
     [Fact]

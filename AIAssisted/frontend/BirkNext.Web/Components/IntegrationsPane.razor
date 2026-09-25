@@ -1,12 +1,13 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
 @inject IIntegrationCatalogApiService Api
 
 @* Target Environment → Integrations: the configured, expected integrations Integration Quality Review runs from. Persisted
-   by the backend. Shared platform values sit once on the platform card, not repeated in every row; platform-support topics
-   (schema history, Kafka Connect) are listed apart and never counted as business integrations. Configuration status here is
-   completeness only — never runtime health and never review readiness. *@
+   by the backend and saved immediately per change — the surrounding Target Environment Edit/Save/Cancel does not stage or roll
+   them back. Shared platform values sit once on the platform card; platform-support topics are listed apart and never counted as
+   business integrations. Configuration status here is completeness only — never runtime health and never review readiness. *@
 <div class="ip" data-testid="ip">
     @if (_loadError is { } error)
     {
@@ -25,6 +26,8 @@
             <p class="ip-muted" data-testid="ip-intro">Configured integrations used by Integration Quality Review. Observed REST and GraphQL traffic is shown in Endpoint Discovery and is never added here automatically.</p>
             <button type="button" class="btn-secondary" data-testid="ip-add" @onclick="BeginAdd" disabled="@(_editing is not null)">+ Add integration</button>
         </div>
+        <p class="ip-save-note" data-testid="ip-save-note"><strong>Integration changes are saved immediately.</strong> The Target Environment's Edit / Save / Cancel does not apply to them.</p>
+        <p class="ip-save-status ip-save-status-@_saveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="ip-save-status" data-state="@_saveState">@_saveMessage</p>
 
         <dl class="ip-summary" data-testid="ip-summary">
             <div><dt>Environment</dt><dd data-testid="ip-summary-env">@(string.IsNullOrWhiteSpace(Profile.Name) ? Profile.Id : Profile.Name)</dd></div>
@@ -44,6 +47,7 @@
 
         @foreach (var platform in _catalog.Platforms)
         {
+            var runtime = platform.RuntimeEvidence;
             <section class="ip-card ip-platform" data-testid="ip-platform" aria-labelledby="@($"ip-platform-{Slug(platform.Id)}")">
                 <h3 id="@($"ip-platform-{Slug(platform.Id)}")">@platform.Name <span class="ip-pill ip-pill-muted">@IntegrationConfigurationRules.KindLabel(platform.Kind)</span></h3>
                 <dl class="ip-dl">
@@ -66,6 +70,39 @@
                         <div><dt>Runbook URL</dt><dd>@(platform.RunbookUrl ?? "Not configured")</dd></div>
                         <div><dt>Default partitions / retention</dt><dd>@(platform.DefaultPartitionCount?.ToString() ?? "—") / @(platform.DefaultRetentionDays is { } days ? $"{days} days" : "—")</dd></div>
                     </dl>
+                </ReviewDisclosure>
+                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@RuntimeHint(runtime)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
+                    <p class="ip-muted">Read-only sources Integration Quality Review may use for this platform. Identifiers only — the BirkNext instance's Azure identity reads them; no key or connection string is stored here.</p>
+                    @if (_editingRuntime == platform.Id)
+                    {
+                        <div class="ip-runtime-form" data-testid="ip-runtime-form">
+                            <label class="ip-check"><input type="checkbox" @bind="_runtime.EventHubMetadata" data-testid="ip-runtime-metadata" /> Read Event Hub metadata (existence, partitions, last enqueued position)</label>
+                            <label class="ip-field">Azure subscription id (consumer-group list) <input class="form-control ip-mono" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
+                            <label class="ip-field">Checkpoint store container URL <input class="form-control ip-mono" @bind="_runtime.CheckpointContainerUrl" placeholder="https://account.blob.core.windows.net/checkpoints" data-testid="ip-runtime-checkpoint" /></label>
+                            <label class="ip-field">Log Analytics workspace id (Application Insights) <input class="form-control ip-mono" @bind="_runtime.TelemetryWorkspaceId" data-testid="ip-runtime-workspace" /></label>
+                            <label class="ip-field">Review window (hours) <input type="number" min="1" max="168" class="form-control" @bind="_runtime.ReviewWindowHours" data-testid="ip-runtime-window" /></label>
+                            <label class="ip-field">Consumer lag threshold (events, optional) <input type="number" min="0" class="form-control" @bind="_runtime.MaxConsumerLagEvents" data-testid="ip-runtime-lag" /></label>
+                            <label class="ip-field">Checkpoint age threshold (minutes, optional) <input type="number" min="1" class="form-control" @bind="_runtime.MaxCheckpointAgeMinutes" data-testid="ip-runtime-age" /></label>
+                            <p class="ip-muted">Without a threshold, measured lag and checkpoint age are reported as Observed, never judged.</p>
+                            @if (_runtimeError is { } runtimeError) { <p class="ip-field-error" role="alert" data-testid="ip-runtime-error">@runtimeError</p> }
+                            <div class="ip-editor-actions">
+                                <button type="button" class="btn-primary" data-testid="ip-runtime-save" @onclick="() => SaveRuntimeAsync(platform)">Save runtime evidence sources</button>
+                                <button type="button" class="btn-secondary" @onclick="() => _editingRuntime = null">Cancel</button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <dl class="ip-dl ip-dl-technical" data-testid="ip-runtime-summary">
+                            <div><dt>Event Hub metadata</dt><dd>@(runtime?.EventHubMetadata == true ? "Enabled" : "Not enabled")</dd></div>
+                            <div><dt>Consumer-group list</dt><dd class="ip-mono">@(runtime?.SubscriptionId ?? "Not configured")</dd></div>
+                            <div><dt>Checkpoint store</dt><dd class="ip-mono">@(runtime?.CheckpointContainerUrl ?? "Not configured")</dd></div>
+                            <div><dt>Telemetry workspace</dt><dd class="ip-mono">@(runtime?.TelemetryWorkspaceId ?? "Not configured")</dd></div>
+                            <div><dt>Review window</dt><dd>@(runtime?.ReviewWindowHours ?? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours) h</dd></div>
+                            <div><dt>Thresholds</dt><dd>@(runtime?.MaxConsumerLagEvents is { } lag ? $"lag ≤ {lag} events" : "no lag threshold") · @(runtime?.MaxCheckpointAgeMinutes is { } age ? $"checkpoint ≤ {age} min" : "no checkpoint-age threshold")</dd></div>
+                        </dl>
+                        <button type="button" class="ip-link" data-testid="ip-runtime-edit" @onclick="() => BeginRuntime(platform)">Edit runtime evidence sources</button>
+                    }
                 </ReviewDisclosure>
             </section>
         }
@@ -115,27 +152,77 @@
                                 </tr>
                                 @if (open)
                                 {
-                                    <tr class="ip-detail-row" id="@($"ip-detail-{Slug(row.Definition.Id)}")" data-testid="ip-row-detail">
+                                    var definition = row.Definition;
+                                    <tr class="ip-detail-row" id="@($"ip-detail-{Slug(definition.Id)}")" data-testid="ip-row-detail">
                                         <td colspan="7">
                                             <dl class="ip-dl ip-dl-technical">
-                                                <div><dt>Display name</dt><dd>@row.Definition.DisplayName</dd></div>
+                                                <div><dt>Display name</dt><dd>@definition.DisplayName</dd></div>
                                                 <div><dt>Topic</dt><dd class="ip-mono">@(row.Topic ?? "Not configured")</dd></div>
-                                                <div><dt>Source</dt><dd class="ip-mono">@(row.Definition.SourceResource ?? "Not configured")</dd></div>
-                                                <div><dt>Consumer group</dt><dd class="ip-mono" data-testid="ip-detail-consumer-group">@(row.Definition.ConsumerGroup ?? "Unknown / not configured")</dd></div>
-                                                <div><dt>Consumer mapping</dt><dd>@IntegrationConfigurationRules.MappingLabel(row.MappingState)@(row.Definition.Consumer.MappingSource is { } src ? $" · {src}" : "")</dd></div>
-                                                @if (row.Definition.Consumer.ContainerApp is { } app) { <div><dt>Container app</dt><dd class="ip-mono">@app</dd></div> }
-                                                @if (row.Definition.Consumer.ManagedIdentity is { } mi) { <div><dt>Managed identity</dt><dd class="ip-mono">@mi</dd></div> }
-                                                <div><dt>Producer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(row.Definition.ProducerAuthentication)</dd></div>
-                                                <div><dt>Consumer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(row.Definition.ConsumerAuthentication)</dd></div>
-                                                <div><dt>Contract</dt><dd>@IntegrationConfigurationRules.ContractLabel(row.Definition.ContractRelationship)</dd></div>
-                                                <div><dt>Health / worker URL</dt><dd>@(row.Definition.HealthUrl ?? "Not configured") / @(row.Definition.WorkerUrl ?? "Not configured")</dd></div>
+                                                <div><dt>Source</dt><dd class="ip-mono">@(definition.SourceResource ?? "Not configured")</dd></div>
+                                                <div><dt>Consumer group</dt><dd class="ip-mono" data-testid="ip-detail-consumer-group">@(definition.ConsumerGroup ?? "Unknown / not configured")</dd></div>
+                                                <div><dt>Consumer mapping</dt><dd data-testid="ip-detail-mapping">@IntegrationConfigurationRules.MappingLabel(row.MappingState)@(definition.Consumer.MappingSource is { } src ? $" · {src}" : "")@(definition.Consumer.MappingConfirmedAt is { } at ? $" · {at.ToUniversalTime():yyyy-MM-dd HH:mm} UTC" : "")</dd></div>
+                                                @if (definition.Consumer.ContainerApp is { } app) { <div><dt>Container app</dt><dd class="ip-mono">@app</dd></div> }
+                                                @if (definition.Consumer.ManagedIdentity is { } mi) { <div><dt>Managed identity</dt><dd class="ip-mono">@mi</dd></div> }
+                                                <div><dt>Producer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(definition.ProducerAuthentication)</dd></div>
+                                                <div><dt>Consumer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(definition.ConsumerAuthentication)</dd></div>
+                                                <div><dt>Contract</dt><dd>@IntegrationConfigurationRules.ContractLabel(definition.ContractRelationship)</dd></div>
+                                                <div><dt>Health / worker URL</dt><dd>@(definition.HealthUrl ?? "Not configured") / @(definition.WorkerUrl ?? "Not configured")</dd></div>
                                                 <div><dt>Configuration</dt><dd>@row.ConfigurationDetail</dd></div>
                                                 <div><dt>IQR readiness</dt><dd>@row.ReviewReadinessDetail</dd></div>
                                             </dl>
+
+                                            @if (definition.Consumer.MappingState == ConsumerMappingState.Suggested && definition.Consumer.DisplayName is { } suggested)
+                                            {
+                                                <div class="ip-mapping" data-testid="ip-mapping-suggested">
+                                                    <p class="ip-muted">Suggested consumer: <strong>@suggested</strong> — @(definition.Consumer.MappingSource ?? "suggested source"). Receiver rights never confirm a mapping; a person does.</p>
+                                                    <div class="ip-mapping-actions">
+                                                        <button type="button" class="btn-secondary ip-btn-sm" data-testid="ip-mapping-confirm" @onclick="() => ConfirmMappingAsync(definition)">Confirm @suggested</button>
+                                                        <button type="button" class="ip-link" data-testid="ip-mapping-change" @onclick="() => BeginEdit(definition)">Change</button>
+                                                    </div>
+                                                </div>
+                                            }
+
+                                            <div class="ip-contracts" data-testid="ip-contracts" role="group" aria-label="@($"Event contracts for {definition.DisplayName}")">
+                                                <h4>Event contracts (JSON Schema)</h4>
+                                                @foreach (var role in new[] { IntegrationContractRole.Producer, IntegrationContractRole.Consumer })
+                                                {
+                                                    var artifact = _contracts.FirstOrDefault(c => c.IntegrationId == definition.Id && c.Role == role);
+                                                    var errorId = $"ip-contract-error-{Slug(definition.Id)}-{role.ToString().ToLowerInvariant()}";
+                                                    var contractError = _contractErrors.TryGetValue((definition.Id, role), out var ce) ? ce : null;
+                                                    <div class="ip-contract" data-testid="ip-contract" data-role="@role" data-configured="@(artifact is not null ? "true" : "false")">
+                                                        <span class="ip-contract-role">@role contract</span>
+                                                        @if (artifact is not null)
+                                                        {
+                                                            <span class="ip-contract-file" data-testid="ip-contract-file">@artifact.FileName</span>
+                                                            <span class="ip-muted ip-mono">sha256 @artifact.ShortHash · @artifact.FieldCount field(s)@(artifact.Version is { } v ? $" · {v}" : "")</span>
+                                                        }
+                                                        else { <span class="ip-muted">None</span> }
+                                                        <label class="ip-file-button">
+                                                            <InputFile class="ip-file-input" accept=".json" OnChange="args => UploadContractAsync(definition, role, args)" aria-describedby="@(contractError is not null ? errorId : null)" aria-label="@($"{(artifact is null ? "Upload" : "Replace")} {role.ToString().ToLowerInvariant()} contract")" data-testid="ip-contract-input" />
+                                                            <span aria-hidden="true">@(artifact is null ? "Upload" : "Replace")</span>
+                                                        </label>
+                                                        @if (artifact is not null) { <button type="button" class="ip-link ip-link-danger" data-testid="ip-contract-remove" @onclick="() => RemoveContractAsync(definition, role)" aria-label="@($"Remove {role.ToString().ToLowerInvariant()} contract {artifact.FileName}")">Remove</button> }
+                                                        @if (contractError is not null) { <p class="ip-field-error" id="@errorId" role="alert" data-testid="ip-contract-error">Invalid contract: @contractError</p> }
+                                                    </div>
+                                                }
+                                                <p class="ip-muted">Compatibility needs both contracts. Uploading both marks the relationship "Both available" — never "Verified" automatically.</p>
+                                            </div>
+
                                             <p class="ip-detail-actions">
-                                                <button type="button" class="ip-link" data-testid="ip-row-toggle-enabled" @onclick="() => ToggleEnabledAsync(row.Definition)">@(row.Definition.Enabled ? "Disable" : "Enable")</button>
+                                                <button type="button" class="ip-link" data-testid="ip-row-toggle-enabled" @onclick="() => ToggleEnabledAsync(definition)">@(definition.Enabled ? "Disable" : "Enable")</button>
                                                 <span aria-hidden="true">·</span>
-                                                <button type="button" class="ip-link ip-link-danger" data-testid="ip-row-delete" @onclick="() => DeleteAsync(row.Definition)">Delete</button>
+                                                @if (_confirmingDelete == definition.Id)
+                                                {
+                                                    <span class="ip-confirm" role="group" aria-label="Confirm delete" data-testid="ip-delete-confirm">
+                                                        <span>Delete <strong>@definition.DisplayName</strong>? Review history keeps its snapshots.</span>
+                                                        <button type="button" class="ip-link ip-link-danger" data-testid="ip-row-delete-confirm" @onclick="() => DeleteAsync(definition)">Delete</button>
+                                                        <button type="button" class="ip-link" data-testid="ip-row-delete-cancel" @onclick="() => _confirmingDelete = null">Cancel</button>
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="ip-link ip-link-danger" data-testid="ip-row-delete" @onclick="() => _confirmingDelete = definition.Id">Delete</button>
+                                                }
                                             </p>
                                         </td>
                                     </tr>
@@ -162,7 +249,11 @@
 @code {
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = new();
 
+    private enum SaveState { Idle, Saving, Saved, Failed }
+
     private IntegrationCatalog? _catalog;
+    private IReadOnlyList<IntegrationContractArtifact> _contracts = [];
+    private readonly Dictionary<(string, IntegrationContractRole), string> _contractErrors = [];
     private string? _loadError;
     private string? _saveError;
     private readonly List<string> _notices = [];
@@ -170,9 +261,26 @@
     private string _stateFilter = "";
     private string? _viewing;
     private string? _loadedFor;
+    private string? _confirmingDelete;
+    private string? _editingRuntime;
+    private RuntimeModel _runtime = new();
+    private string? _runtimeError;
     private EditState? _editing;
+    private SaveState _saveState = SaveState.Idle;
+    private string _saveMessage = "";
 
     private sealed record EditState(IntegrationDefinition? Original);
+
+    private sealed class RuntimeModel
+    {
+        public bool EventHubMetadata { get; set; }
+        public string? SubscriptionId { get; set; }
+        public string? CheckpointContainerUrl { get; set; }
+        public string? TelemetryWorkspaceId { get; set; }
+        public int? ReviewWindowHours { get; set; }
+        public long? MaxConsumerLagEvents { get; set; }
+        public int? MaxCheckpointAgeMinutes { get; set; }
+    }
 
     protected override async Task OnParametersSetAsync()
     {
@@ -193,11 +301,34 @@
                 if (imported > 0) _notices.Add($"Imported {imported} integration{(imported == 1 ? "" : "s")} previously stored in this browser.");
             }
             _catalog = await Api.GetCatalogAsync(Profile);
-            _notices.AddRange(_catalog.Notices);
+            _notices.AddRange(_catalog.Notices.Except(_notices).ToList());
+            _contracts = await Api.ContractsAsync(Profile.Id);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             _loadError = "the BirkNext backend did not answer. Integrations are stored by the backend.";
+        }
+    }
+
+    /// <summary>Every change is stored at once; the status line says what happened (Saving… / Saved / Save failed).</summary>
+    private async Task<bool> TrackAsync(string done, Func<Task> action)
+    {
+        _saveState = SaveState.Saving;
+        _saveMessage = "Saving…";
+        StateHasChanged();
+        try
+        {
+            await action();
+            _saveState = SaveState.Saved;
+            _saveMessage = $"Saved. {done}";
+            await LoadAsync(importLegacy: false);
+            return true;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _saveState = SaveState.Failed;
+            _saveMessage = "Save failed: the change was not stored. The backend did not accept it.";
+            return false;
         }
     }
 
@@ -207,28 +338,103 @@
 
     private async Task SaveAsync(IntegrationDefinition definition)
     {
-        try
+        var isNew = _editing?.Original is null;
+        var ok = await TrackAsync(isNew ? $"{definition.DisplayName} added." : $"{definition.DisplayName} updated.", async () =>
         {
-            if (_editing?.Original is null) await Api.CreateAsync(Profile.Id, definition);
+            if (isNew) await Api.CreateAsync(Profile.Id, definition);
             else await Api.UpdateAsync(Profile.Id, definition);
-            _editing = null;
-            _saveError = null;
-            await LoadAsync(importLegacy: false);
-        }
-        catch (HttpRequestException ex) { _saveError = $"The integration could not be saved ({ex.Message})."; }
+        });
+        if (ok) { _editing = null; _saveError = null; }
+        else _saveError = "The integration could not be saved. Your edits are still in the form.";
     }
 
-    private async Task ToggleEnabledAsync(IntegrationDefinition definition)
-    {
-        await Api.SetEnabledAsync(Profile.Id, definition.Id, !definition.Enabled);
-        await LoadAsync(importLegacy: false);
-    }
+    private Task ToggleEnabledAsync(IntegrationDefinition definition) =>
+        TrackAsync($"{definition.DisplayName} {(definition.Enabled ? "disabled" : "enabled")}.", () => Api.SetEnabledAsync(Profile.Id, definition.Id, !definition.Enabled));
 
     private async Task DeleteAsync(IntegrationDefinition definition)
     {
-        await Api.DeleteAsync(Profile.Id, definition.Id);
-        _viewing = null;
-        await LoadAsync(importLegacy: false);
+        _confirmingDelete = null;
+        if (await TrackAsync($"{definition.DisplayName} deleted.", () => Api.DeleteAsync(Profile.Id, definition.Id))) _viewing = null;
+    }
+
+    /// <summary>A person confirms the suggested consumer; the provenance records that it was a person and when. Never automatic.</summary>
+    private Task ConfirmMappingAsync(IntegrationDefinition definition) =>
+        TrackAsync($"{definition.Consumer.DisplayName} confirmed as the consumer of {definition.DisplayName}.", () => Api.UpdateAsync(Profile.Id, definition with
+        {
+            Consumer = definition.Consumer with
+            {
+                MappingState = ConsumerMappingState.Confirmed,
+                MappingEvidence = $"Confirmed by a person in BirkNext Integrations (suggested by: {definition.Consumer.MappingSource ?? "unknown source"})",
+                MappingSource = "Confirmed in Target Environment → Integrations",
+                MappingConfirmedAt = DateTimeOffset.UtcNow,
+            },
+        }));
+
+    private const long MaxContractBytes = 2 * 1024 * 1024;
+
+    private async Task UploadContractAsync(IntegrationDefinition definition, IntegrationContractRole role, InputFileChangeEventArgs args)
+    {
+        var key = (definition.Id, role);
+        _contractErrors.Remove(key);
+        var file = args.File;
+        if (file.Size > MaxContractBytes) { _contractErrors[key] = "the file is larger than the 2 MB contract limit."; return; }
+        string content;
+        try
+        {
+            await using var stream = file.OpenReadStream(MaxContractBytes);
+            using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+            content = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException) { _contractErrors[key] = "the file could not be read."; return; }
+
+        string? rejected = null;
+        await TrackAsync($"{role} contract {file.Name} stored for {definition.DisplayName}.", async () =>
+        {
+            var (_, error) = await Api.SaveContractAsync(new IntegrationContractUpload { EnvironmentId = Profile.Id, IntegrationId = definition.Id, Role = role, FileName = file.Name, Content = content });
+            rejected = error;
+        });
+        if (rejected is not null)
+        {
+            _contractErrors[key] = rejected;
+            _saveState = SaveState.Failed;
+            _saveMessage = $"Save failed: the {role.ToString().ToLowerInvariant()} contract was rejected and nothing was stored.";
+        }
+    }
+
+    private Task RemoveContractAsync(IntegrationDefinition definition, IntegrationContractRole role) =>
+        TrackAsync($"{role} contract removed from {definition.DisplayName}.", () => Api.RemoveContractAsync(Profile.Id, definition.Id, role));
+
+    private void BeginRuntime(IntegrationPlatform platform)
+    {
+        var r = platform.RuntimeEvidence;
+        _runtime = new RuntimeModel
+        {
+            EventHubMetadata = r?.EventHubMetadata ?? false, SubscriptionId = r?.SubscriptionId, CheckpointContainerUrl = r?.CheckpointContainerUrl, TelemetryWorkspaceId = r?.TelemetryWorkspaceId,
+            ReviewWindowHours = r?.ReviewWindowHours, MaxConsumerLagEvents = r?.MaxConsumerLagEvents, MaxCheckpointAgeMinutes = r?.MaxCheckpointAgeMinutes,
+        };
+        _runtimeError = null;
+        _editingRuntime = platform.Id;
+    }
+
+    private async Task SaveRuntimeAsync(IntegrationPlatform platform)
+    {
+        static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+        var settings = new IntegrationRuntimeEvidenceSettings
+        {
+            EventHubMetadata = _runtime.EventHubMetadata, SubscriptionId = Clean(_runtime.SubscriptionId), CheckpointContainerUrl = Clean(_runtime.CheckpointContainerUrl)?.TrimEnd('/'),
+            TelemetryWorkspaceId = Clean(_runtime.TelemetryWorkspaceId), ReviewWindowHours = _runtime.ReviewWindowHours,
+            MaxConsumerLagEvents = _runtime.MaxConsumerLagEvents, MaxCheckpointAgeMinutes = _runtime.MaxCheckpointAgeMinutes,
+        };
+        _runtimeError = settings.Validate();
+        if (_runtimeError is not null) return;
+        if (await TrackAsync($"Runtime evidence sources of {platform.Name} updated.", () => Api.UpdatePlatformAsync(Profile.Id, platform with { RuntimeEvidence = settings })))
+            _editingRuntime = null;
+    }
+
+    private static string RuntimeHint(IntegrationRuntimeEvidenceSettings? runtime)
+    {
+        var configured = new[] { runtime?.EventHubMetadata == true, runtime?.SubscriptionId is not null, runtime?.CheckpointContainerUrl is not null, runtime?.TelemetryWorkspaceId is not null }.Count(x => x);
+        return configured == 0 ? "None configured" : $"{configured} of 4 configured";
     }
 
     private string TechnicalHint()

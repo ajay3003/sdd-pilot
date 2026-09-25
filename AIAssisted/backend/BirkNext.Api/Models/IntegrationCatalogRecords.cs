@@ -49,3 +49,15 @@ public class IntegrationReviewRunRecord
     public string Outcome { get; set; } = string.Empty;
     public string ResultJson { get; set; } = string.Empty;
 }
+
+/// <summary>A trusted event contract (JSON Schema) for one side of one integration. Key: (EnvironmentId, IntegrationId, Role).</summary>
+public class IntegrationContractArtifactRecord
+{
+    public string EnvironmentId { get; set; } = string.Empty;
+    public string IntegrationId { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string ContentHash { get; set; } = string.Empty;
+    public string DocumentJson { get; set; } = string.Empty;
+    public DateTimeOffset ImportedAt { get; set; } = DateTimeOffset.UtcNow;
+}

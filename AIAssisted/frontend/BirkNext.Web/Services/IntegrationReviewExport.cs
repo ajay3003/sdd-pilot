@@ -20,7 +20,24 @@ public static class IntegrationReviewExport
         sb.Append($"<dt>Integration systems reviewed</dt><dd>{headline.Systems}</dd><dt>Topics reviewed</dt><dd>{headline.Topics}</dd>");
         sb.Append($"<dt>Domains assessed</dt><dd>{headline.DomainsAssessed} of {headline.DomainsTotal}</dd><dt>Findings</dt><dd>{headline.Findings}</dd>");
         sb.Append($"<dt>Checks not assessed</dt><dd>{headline.NotAssessedChecks}</dd><dt>Evidence freshness</dt><dd>{esc(headline.Freshness)}</dd>");
-        sb.Append($"<dt>Evidence sources</dt><dd>{esc(headline.Sources)}</dd><dt>Completed</dt><dd>{result.CompletedAt:u}</dd></dl></section>\n");
+        sb.Append($"<dt>Evidence sources</dt><dd>{esc(headline.Sources)}</dd><dt>Review window</dt><dd>{esc(headline.Window)}</dd><dt>Completed</dt><dd>{result.CompletedAt:u}</dd></dl></section>\n");
+
+        sb.Append("<section class=\"block\"><h2>Runtime evidence sources</h2>");
+        sb.Append(result.EvidenceAdapters.Count == 0 ? "<p>No runtime evidence source was consulted.</p>" :
+            table(["Source", "State", "Reason", "Captured"], result.EvidenceAdapters.Select(a => new[]
+            {
+                esc(a.Adapter), badge(IntegrationReviewLabels.EvidenceState(a.State)), esc(a.Reason), $"{a.CapturedAt:u}",
+            })));
+        sb.Append("</section>\n");
+
+        sb.Append("<section class=\"block\"><h2>Contract snapshot</h2>");
+        sb.Append(result.ContractSnapshot.Count == 0 ? "<p>No contract artifact was configured for this run.</p>" :
+            table(["Integration", "Role", "File", "Version", "Fields", "SHA-256"], result.ContractSnapshot.Select(c => new[]
+            {
+                esc(result.ConfigurationSnapshot.Integrations.FirstOrDefault(i => i.Id == c.IntegrationId)?.DisplayName ?? c.IntegrationId), esc(c.Role.ToString()), esc(c.FileName),
+                esc(c.Version ?? "—"), c.FieldCount.ToString(), esc(c.ShortHash),
+            })));
+        sb.Append("</section>\n");
 
         foreach (var platform in result.ConfigurationSnapshot.Platforms)
         {
@@ -54,10 +71,10 @@ public static class IntegrationReviewExport
             var rows = IntegrationReviewResultPresentation.Rows(result, domain);
             if (rows.Count == 0) continue;
             sb.Append($"<section class=\"block\"><h2>{esc(IntegrationReviewLabels.Domain(domain))} checks</h2>");
-            sb.Append(table(["Subject", "Check", "Status", "Evidence", "Explanation", "Provenance"], rows.Select(r => new[]
+            sb.Append(table(["Subject", "Check", "Status", "Evidence", "Explanation", "Provenance", "Freshness"], rows.Select(r => new[]
             {
                 esc(r.Subject), esc(r.Check.Title), badge(IntegrationReviewLabels.Status(r.Check.Status)), esc(r.Check.Evidence), esc(r.Check.Explanation),
-                esc($"{IntegrationReviewLabels.Source(r.Check.Provenance)} · {r.Check.CapturedAt:u}"),
+                esc($"{IntegrationReviewLabels.Source(r.Check.Provenance)} · {r.Check.CapturedAt:u}"), esc(IntegrationReviewResultPresentation.Freshness(r.Check)),
             })));
             sb.Append("</section>\n");
         }

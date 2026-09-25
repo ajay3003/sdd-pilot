@@ -25,6 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationEnvironmentStateRecord> IntegrationEnvironmentStates => Set<IntegrationEnvironmentStateRecord>();
     public DbSet<IntegrationReviewRunRecord> IntegrationReviewRuns => Set<IntegrationReviewRunRecord>();
     public DbSet<GraphQlSchemaArtifactRecord> GraphQlSchemaArtifacts => Set<GraphQlSchemaArtifactRecord>();
+    public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -581,6 +582,19 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Outcome).HasColumnName("outcome").HasMaxLength(50).IsRequired();
             entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.CompletedAt }).HasDatabaseName("ix_integration_review_runs_environment_completed");
+        });
+
+        modelBuilder.Entity<IntegrationContractArtifactRecord>(entity =>
+        {
+            entity.ToTable("integration_contract_artifacts");
+            entity.HasKey(a => new { a.EnvironmentId, a.IntegrationId, a.Role });
+            entity.Property(a => a.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200);
+            entity.Property(a => a.IntegrationId).HasColumnName("integration_id").HasMaxLength(300);
+            entity.Property(a => a.Role).HasColumnName("role").HasMaxLength(20);
+            entity.Property(a => a.Content).HasColumnName("content").HasColumnType("text").IsRequired();
+            entity.Property(a => a.ContentHash).HasColumnName("content_hash").HasMaxLength(64).IsRequired();
+            entity.Property(a => a.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(a => a.ImportedAt).HasColumnName("imported_at");
         });
 
         modelBuilder.Entity<GraphQlSchemaArtifactRecord>(entity =>

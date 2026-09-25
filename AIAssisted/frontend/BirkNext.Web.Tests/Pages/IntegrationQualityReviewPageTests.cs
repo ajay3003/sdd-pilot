@@ -27,6 +27,7 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
         Services.AddSingleton(context.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
         Services.AddSingleton<IReportExportService, ReportExportService>();
+        Services.AddSingleton<RuntimeReviewSessionService>();
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 

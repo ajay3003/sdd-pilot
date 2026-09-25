@@ -14,6 +14,14 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public Exception? LoadFailure { get; set; }
     public List<string> Calls { get; } = [];
     public List<IntegrationDefinition> Saved { get; } = [];
+    public List<IntegrationContractArtifact> Contracts { get; } = [];
+    public List<IntegrationPlatform> SavedPlatforms { get; } = [];
+    /// <summary>When set, every mutation fails with this exception (Save failed path).</summary>
+    public Exception? SaveFailure { get; set; }
+    /// <summary>When set, contract uploads are rejected with this validation reason.</summary>
+    public string? ContractRejection { get; set; }
+
+    private void Mutating() { if (SaveFailure is not null) throw SaveFailure; }
 
     public Task<IntegrationCatalog> GetCatalogAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)
     {
@@ -24,6 +32,7 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default)
     {
         Calls.Add("create");
+        Mutating();
         var created = definition with { Id = $"{environmentId}:manual:{Catalog.Integrations.Count + 1}", EnvironmentId = environmentId, Origin = IntegrationRecordOrigin.Manual };
         Catalog = Catalog with { Integrations = [.. Catalog.Integrations, created] };
         Saved.Add(created);
@@ -33,6 +42,7 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public Task<IntegrationDefinition> UpdateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default)
     {
         Calls.Add("update");
+        Mutating();
         var updated = definition with { UserModified = true };
         Catalog = Catalog with { Integrations = Catalog.Integrations.Select(i => i.Id == definition.Id ? updated : i).ToList() };
         Saved.Add(updated);
@@ -42,6 +52,7 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public Task<IntegrationDefinition> SetEnabledAsync(string environmentId, string id, bool enabled, CancellationToken ct = default)
     {
         Calls.Add($"enabled:{id}:{enabled}");
+        Mutating();
         var target = Catalog.Integrations.Single(i => i.Id == id) with { Enabled = enabled };
         Catalog = Catalog with { Integrations = Catalog.Integrations.Select(i => i.Id == id ? target : i).ToList() };
         return Task.FromResult(target);
@@ -50,6 +61,7 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public Task DeleteAsync(string environmentId, string id, CancellationToken ct = default)
     {
         Calls.Add($"delete:{id}");
+        Mutating();
         Catalog = Catalog with { Integrations = Catalog.Integrations.Where(i => i.Id != id).ToList() };
         return Task.CompletedTask;
     }
@@ -57,7 +69,36 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public Task<IntegrationPlatform> UpdatePlatformAsync(string environmentId, IntegrationPlatform platform, CancellationToken ct = default)
     {
         Calls.Add("platform");
+        Mutating();
+        SavedPlatforms.Add(platform);
+        Catalog = Catalog with { Platforms = Catalog.Platforms.Select(x => x.Id == platform.Id ? platform : x).ToList() };
         return Task.FromResult(platform);
+    }
+
+    public Task<IReadOnlyList<IntegrationContractArtifact>> ContractsAsync(string environmentId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<IntegrationContractArtifact>>(Contracts.ToList());
+
+    public Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveContractAsync(IntegrationContractUpload upload, CancellationToken ct = default)
+    {
+        Calls.Add($"contract:{upload.IntegrationId}:{upload.Role}");
+        Mutating();
+        if (ContractRejection is { } reason) return Task.FromResult<(IntegrationContractArtifact?, string?)>((null, reason));
+        var artifact = new IntegrationContractArtifact
+        {
+            EnvironmentId = upload.EnvironmentId, IntegrationId = upload.IntegrationId, Role = upload.Role, FileName = upload.FileName,
+            ContentHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", FieldCount = 3, ImportedAt = DateTimeOffset.UtcNow,
+        };
+        Contracts.RemoveAll(c => c.IntegrationId == upload.IntegrationId && c.Role == upload.Role);
+        Contracts.Add(artifact);
+        return Task.FromResult<(IntegrationContractArtifact?, string?)>((artifact, null));
+    }
+
+    public Task RemoveContractAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default)
+    {
+        Calls.Add($"contract-remove:{integrationId}:{role}");
+        Mutating();
+        Contracts.RemoveAll(c => c.IntegrationId == integrationId && c.Role == role);
+        return Task.CompletedTask;
     }
 
     public Task<int> ImportLegacyAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)

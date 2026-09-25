@@ -54,3 +54,13 @@
     .iqr-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .iqr-card { padding: .7rem .75rem; }
 }
+
+.iqr-adapters { list-style: none; margin: .4rem 0 0; padding: 0; display: grid; gap: .35rem; }
+.iqr-adapter { display: grid; grid-template-columns: minmax(10rem, 14rem) auto 1fr; gap: .2rem .7rem; align-items: baseline; font-size: .86rem; min-width: 0; }
+.iqr-adapter-name { font-weight: 600; }
+.iqr-adapter-reason { overflow-wrap: anywhere; }
+.iqr-nowrap { white-space: nowrap; }
+@media (max-width: 767px) {
+    .iqr-adapter { grid-template-columns: 1fr auto; }
+    .iqr-adapter-reason { grid-column: 1 / -1; }
+}

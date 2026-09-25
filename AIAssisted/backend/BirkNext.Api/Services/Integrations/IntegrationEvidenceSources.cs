@@ -1,147 +1,116 @@
-using System.Diagnostics;
 using System.Net.Security;
 using System.Net.Sockets;
-using System.Text.Json;
 using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.Integrations;
 
-// Evidence ports of Integration Quality Review. Each one is read-only by contract: nothing publishes, consumes, moves a
-// checkpoint, creates a consumer group or changes Azure configuration. A port that has no adapter reports "not available"
-// with a reason — it never returns a default that reads like a measurement.
+// Read-only evidence for Integration Quality Review. Every adapter returns a typed EvidenceResult: Available with a value, or a precise
+// state (NotConfigured, NotAuthorized, NotFound, Error…) with the reason — never a fabricated or zero value. No adapter can publish,
+// receive, checkpoint, create consumer groups or change Azure configuration (see IntegrationEvidenceSafetyTests).
 
-/// <summary>Result of probing a messaging namespace endpoint: DNS, TCP and TLS only. Never an AMQP session, never data.</summary>
-public sealed record NamespaceProbeResult(bool Resolved, bool Reachable, bool TlsEstablished, string Detail, double ElapsedMs, DateTimeOffset CapturedAt);
+/// <summary>A runtime fact with its provenance: which source, when it was captured, and why it is missing when it is.</summary>
+public sealed record EvidenceResult<T>(IntegrationEvidenceState State, IntegrationEvidenceSource Source, string Reason, DateTimeOffset CapturedAt, T? Value) where T : class
+{
+    public bool IsAvailable => State == IntegrationEvidenceState.Available && Value is not null;
+    public static EvidenceResult<T> Available(IntegrationEvidenceSource source, T value, string reason = "") => new(IntegrationEvidenceState.Available, source, reason, DateTimeOffset.UtcNow, value);
+    public static EvidenceResult<T> Missing(IntegrationEvidenceState state, IntegrationEvidenceSource source, string reason) => new(state, source, reason, DateTimeOffset.UtcNow, null);
+}
+
+// ── Namespace probe (DNS / TCP 443 / TLS) ─────────────────────────────────────────────────────────────────────────────
+
+public sealed record NamespaceProbeResult(bool Resolved, bool Reachable, bool TlsEstablished, string Detail, double ElapsedMs, DateTimeOffset CapturedAt, string? TlsProtocol = null);
 
 public interface IIntegrationNamespaceProbe
 {
     Task<NamespaceProbeResult> ProbeAsync(string fqdn, CancellationToken ct);
 }
 
-/// <summary>DNS resolution, TCP connect to 443 and a TLS handshake to the namespace FQDN. Sends no application data.</summary>
+/// <summary>DNS resolution, a TCP connection on 443 and a TLS handshake — nothing is sent over the connection.</summary>
 public sealed class TlsNamespaceProbe : IIntegrationNamespaceProbe
 {
     public async Task<NamespaceProbeResult> ProbeAsync(string fqdn, CancellationToken ct)
     {
-        var started = Stopwatch.StartNew();
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var at = DateTimeOffset.UtcNow;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(8));
         try
         {
             var addresses = await System.Net.Dns.GetHostAddressesAsync(fqdn, timeout.Token);
-            if (addresses.Length == 0) return new(false, false, false, "The namespace name did not resolve.", started.Elapsed.TotalMilliseconds, DateTimeOffset.UtcNow);
-            using var client = new TcpClient();
-            await client.ConnectAsync(addresses, 443, timeout.Token);
-            await using var tls = new SslStream(client.GetStream(), leaveInnerStreamOpen: false);
-            await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = fqdn }, timeout.Token);
-            return new(true, true, true, $"Resolved, TCP 443 connected and TLS established ({tls.SslProtocol}).", started.Elapsed.TotalMilliseconds, DateTimeOffset.UtcNow);
+            if (addresses.Length == 0) return new(false, false, false, "DNS returned no address.", started.Elapsed.TotalMilliseconds, at);
+            using var tcp = new TcpClient();
+            await tcp.ConnectAsync(fqdn, 443, timeout.Token);
+            await using var ssl = new SslStream(tcp.GetStream(), false);
+            await ssl.AuthenticateAsClientAsync(new SslClientAuthenticationOptions { TargetHost = fqdn }, timeout.Token);
+            return new(true, true, true, $"Resolved, TCP 443 connected and TLS established ({ssl.SslProtocol}).", started.Elapsed.TotalMilliseconds, at, ssl.SslProtocol.ToString());
         }
-        catch (Exception ex) when (ex is SocketException or OperationCanceledException or System.Security.Authentication.AuthenticationException or IOException)
-        {
-            var resolved = ex is not SocketException { SocketErrorCode: SocketError.HostNotFound or SocketError.NoData };
-            return new(resolved, false, false, ex is OperationCanceledException ? "Timed out while connecting." : $"Not reachable ({ex.GetType().Name}).", started.Elapsed.TotalMilliseconds, DateTimeOffset.UtcNow);
-        }
+        catch (SocketException ex) { return new(true, false, false, $"TCP connection failed ({ex.SocketErrorCode}).", started.Elapsed.TotalMilliseconds, at); }
+        catch (System.Security.Authentication.AuthenticationException) { return new(true, true, false, "TLS handshake failed.", started.Elapsed.TotalMilliseconds, at); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return new(false, false, false, "Timed out after 8 s.", started.Elapsed.TotalMilliseconds, at); }
+        catch (Exception ex) when (ex is IOException or ArgumentException) { return new(false, false, false, $"Probe failed ({ex.GetType().Name}).", started.Elapsed.TotalMilliseconds, at); }
     }
 }
 
-/// <summary>
-/// Runtime evidence for one integration. Every field is nullable: null means "no evidence", never zero or false. Provenance
-/// and freshness travel with it.
-/// </summary>
-public sealed record IntegrationRuntimeEvidence
+// ── Event Hub metadata ───────────────────────────────────────────────────────────────────────────────────────────────
+
+public sealed record PartitionRuntime(string PartitionId, long LastEnqueuedSequenceNumber, DateTimeOffset? LastEnqueuedTime, bool IsEmpty);
+
+/// <summary>Hub existence and per-partition last-enqueued position. <see cref="Exists"/> false only when the service said "not found".</summary>
+public sealed record EventHubRuntimeMetadata(bool Exists, IReadOnlyList<PartitionRuntime> Partitions)
 {
-    public IntegrationEvidenceSource Source { get; init; }
-    public DateTimeOffset CapturedAt { get; init; }
-    /// <summary>Metadata lookup result: true exists, false explicitly not found, null not looked up.</summary>
-    public bool? HubExists { get; init; }
-    public DateTimeOffset? LastEnqueuedAt { get; init; }
-    public DateTimeOffset? LastConsumerProgressAt { get; init; }
-    public long? CheckpointEventsBehind { get; init; }
-    public int? DeserializationFailures { get; init; }
-    public int? ConsumerExceptions { get; init; }
-    public int? AuthorizationFailures { get; init; }
-    public double? ProcessingLatencyMs { get; init; }
-    public bool? EnvelopeObserved { get; init; }
-    public List<string>? OperationTypesObserved { get; init; }
-    public List<string>? RequiredFieldsMissing { get; init; }
+    public DateTimeOffset? LastEnqueuedTime => Partitions.Where(p => !p.IsEmpty).Select(p => p.LastEnqueuedTime).Max();
 }
 
-/// <summary>What a runtime evidence adapter can supply. Drives pre-run readiness; an absent capability is "Not assessable".</summary>
-public sealed record IntegrationEvidenceCapabilities(bool HubMetadata, bool MessageActivity, bool ConsumerCheckpoints, bool ConsumerErrors, bool Timing, bool PayloadStructure, string Description)
+public interface IEventHubMetadataSource
 {
-    public static readonly IntegrationEvidenceCapabilities None = new(false, false, false, false, false, false,
-        "No runtime evidence adapter is configured in this build (no Event Hub metadata, Application Insights or checkpoint access).");
+    /// <summary>Configuration-only readiness (nothing is contacted).</summary>
+    IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform);
+    Task<EvidenceResult<EventHubRuntimeMetadata>> GetHubAsync(IntegrationPlatform platform, string hubName, CancellationToken ct);
 }
 
-public interface IIntegrationRuntimeEvidenceSource
+// ── Consumer groups (Azure Resource Manager, read-only list) ─────────────────────────────────────────────────────────
+
+public sealed record ConsumerGroupList(IReadOnlyList<string> Names);
+
+public interface IEventHubConsumerGroupSource
 {
-    IntegrationEvidenceCapabilities Capabilities { get; }
-    Task<IReadOnlyDictionary<string, IntegrationRuntimeEvidence>> GetAsync(IntegrationPlatform platform, IReadOnlyList<IntegrationDefinition> integrations, CancellationToken ct);
+    IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform);
+    Task<EvidenceResult<ConsumerGroupList>> ListAsync(IntegrationPlatform platform, string hubName, CancellationToken ct);
 }
 
-/// <summary>The build's default: no runtime adapter. Every runtime domain is then Not assessed with this reason.</summary>
-public sealed class NoRuntimeEvidenceSource : IIntegrationRuntimeEvidenceSource
+// ── Checkpoints (EventProcessorClient blob checkpoint store, read-only list) ──────────────────────────────────────────
+
+public sealed record PartitionCheckpoint(string PartitionId, long? SequenceNumber, long? Offset, DateTimeOffset? UpdatedAt);
+
+public sealed record CheckpointEvidence(string ConsumerGroup, IReadOnlyList<PartitionCheckpoint> Partitions, int OwnershipRecords)
 {
-    public IntegrationEvidenceCapabilities Capabilities => IntegrationEvidenceCapabilities.None;
-    public Task<IReadOnlyDictionary<string, IntegrationRuntimeEvidence>> GetAsync(IntegrationPlatform platform, IReadOnlyList<IntegrationDefinition> integrations, CancellationToken ct) =>
-        Task.FromResult<IReadOnlyDictionary<string, IntegrationRuntimeEvidence>>(new Dictionary<string, IntegrationRuntimeEvidence>());
+    public DateTimeOffset? LastUpdated => Partitions.Select(p => p.UpdatedAt).Max();
 }
 
-/// <summary>Producer and consumer contract documents (JSON Schema-like) for one integration, when an adapter can retrieve them.</summary>
-public sealed record IntegrationContractEvidence(string? ProducerSchemaJson, string? ConsumerSchemaJson, string Source);
-
-public interface IIntegrationContractSource
+public interface ICheckpointEvidenceSource
 {
-    bool CanRetrieve { get; }
-    Task<IntegrationContractEvidence?> GetAsync(IntegrationDefinition definition, CancellationToken ct);
+    IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform);
+    Task<EvidenceResult<CheckpointEvidence>> GetAsync(IntegrationPlatform platform, string hubName, string consumerGroup, CancellationToken ct);
 }
 
-/// <summary>The build's default: contract references are pointers only; nothing retrieves event contracts yet.</summary>
-public sealed class NoContractSource : IIntegrationContractSource
+// ── Telemetry (Application Insights / Log Analytics, bounded aggregate queries) ───────────────────────────────────────
+
+/// <summary>Aggregates only — counts and timestamps for one consumer role in the review window. No row, message or payload is kept.</summary>
+public sealed record ConsumerTelemetry(
+    long Exceptions, long DeserializationErrors, long AuthorizationErrors, long RetryIndicators, long DeadLetterIndicators,
+    long ProcessingTraces, long CorrelatedRows, long DependencyCalls, long DependencyFailures, double? DependencyMedianMs,
+    DateTimeOffset? LastActivity, DateTimeOffset? LastException, int WindowHours);
+
+public interface ITelemetryEvidenceSource
 {
-    public bool CanRetrieve => false;
-    public Task<IntegrationContractEvidence?> GetAsync(IntegrationDefinition definition, CancellationToken ct) => Task.FromResult<IntegrationContractEvidence?>(null);
+    IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform);
+    Task<EvidenceResult<ConsumerTelemetry>> GetConsumerAsync(IntegrationPlatform platform, string roleName, int windowHours, CancellationToken ct);
 }
 
-/// <summary>
-/// Structural producer/consumer comparison of two JSON Schema-like documents ({ "properties": {...}, "required": [...] }):
-/// a field the consumer requires that the producer does not provide, or a type that differs, is incompatible. Additions by
-/// the producer are compatible. No payload values are read.
-/// </summary>
-public static class EventContractComparer
+// ── Null adapters (tests and instances without Azure access) ─────────────────────────────────────────────────────────
+
+public static class NotConfiguredEvidence
 {
-    public sealed record Difference(string Code, string Field, string Detail);
-
-    public static List<Difference> Compare(string producerSchemaJson, string consumerSchemaJson)
-    {
-        var producer = Fields(producerSchemaJson);
-        var consumer = Fields(consumerSchemaJson);
-        var differences = new List<Difference>();
-        foreach (var (field, (type, required)) in consumer)
-        {
-            if (!producer.TryGetValue(field, out var provided))
-            {
-                if (required) differences.Add(new("REQUIRED_FIELD_MISSING", field, $"The consumer requires `{field}`, which the producer contract does not define."));
-                continue;
-            }
-            if (type is not null && provided.Type is not null && !string.Equals(type, provided.Type, StringComparison.Ordinal))
-                differences.Add(new("TYPE_MISMATCH", field, $"`{field}` is `{provided.Type}` in the producer contract but `{type}` in the consumer contract."));
-            if (required && !provided.Required)
-                differences.Add(new("NULLABILITY_MISMATCH", field, $"The consumer requires `{field}`, but the producer contract marks it optional."));
-        }
-        return differences;
-    }
-
-    private static Dictionary<string, (string? Type, bool Required)> Fields(string schemaJson)
-    {
-        using var document = JsonDocument.Parse(schemaJson);
-        var root = document.RootElement;
-        var required = root.TryGetProperty("required", out var r) && r.ValueKind == JsonValueKind.Array
-            ? r.EnumerateArray().Select(e => e.GetString()).OfType<string>().ToHashSet(StringComparer.Ordinal) : [];
-        var fields = new Dictionary<string, (string?, bool)>(StringComparer.Ordinal);
-        if (root.TryGetProperty("properties", out var properties) && properties.ValueKind == JsonValueKind.Object)
-            foreach (var property in properties.EnumerateObject())
-                fields[property.Name] = (property.Value.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String ? t.GetString() : null, required.Contains(property.Name));
-        return fields;
-    }
+    public static IntegrationEvidenceAdapterStatus Status(string adapter, IntegrationEvidenceSource source, IntegrationEvidenceState state, string reason) =>
+        new() { Adapter = adapter, Source = source, State = state, Reason = reason, CapturedAt = DateTimeOffset.UtcNow };
 }

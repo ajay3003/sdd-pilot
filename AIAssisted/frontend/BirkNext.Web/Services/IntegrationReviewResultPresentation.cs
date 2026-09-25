@@ -5,7 +5,7 @@ namespace BirkNext.Web.Services;
 /// <summary>One row of a domain table: a platform check, one topic's check, or one check shared identically by several topics.</summary>
 public sealed record IntegrationCheckRow(string Subject, IntegrationCheck Check, int TopicCount);
 
-public sealed record IntegrationReviewHeadline(string Outcome, int Systems, int Topics, int DomainsAssessed, int DomainsTotal, int Findings, int NotAssessedChecks, string Freshness, string Sources);
+public sealed record IntegrationReviewHeadline(string Outcome, int Systems, int Topics, int DomainsAssessed, int DomainsTotal, int Findings, int NotAssessedChecks, string Freshness, string Sources, string Window);
 
 /// <summary>
 /// Presentation of an Integration Quality Review result. Reads only the result (and its own configuration snapshot), never the
@@ -44,8 +44,31 @@ public static class IntegrationReviewResultPresentation
                 IntegrationEvidenceFreshness.Mixed => "Mixed",
                 _ => $"Current (captured {result.CompletedAt:yyyy-MM-dd HH:mm} UTC)",
             },
-            string.Join(", ", result.EvidenceSources.Select(IntegrationReviewLabels.Source)));
+            string.Join(", ", result.EvidenceSources.Select(IntegrationReviewLabels.Source)),
+            Window(result));
     }
+
+    /// <summary>The runtime review window the result was measured over; stated, never implied.</summary>
+    public static string Window(IntegrationReviewResult result) =>
+        result.ReviewWindowHours is { } hours ? $"Last {hours} h before {result.CompletedAt:yyyy-MM-dd HH:mm} UTC" : "Not recorded (configuration and probe evidence only)";
+
+    /// <summary>Freshness of one check's evidence. Configuration and contract checks have no source time, so "—" rather than a guess.</summary>
+    public static string Freshness(IntegrationCheck check) =>
+        check.Provenance is IntegrationEvidenceSource.Configuration or IntegrationEvidenceSource.ContractArtifact ? "—"
+        : check.SourceTimestamp is { } at ? $"{IntegrationReviewLabels.ItemFreshness(check.Freshness)} · {at:yyyy-MM-dd HH:mm} UTC"
+        : IntegrationReviewLabels.IsAssessed(check.Status) ? $"Captured {check.CapturedAt:yyyy-MM-dd HH:mm} UTC" : "—";
+
+    public static string AdapterTone(IntegrationEvidenceState state) => state switch
+    {
+        IntegrationEvidenceState.Available => "ready",
+        IntegrationEvidenceState.NotConfigured or IntegrationEvidenceState.NotSupported => "muted",
+        IntegrationEvidenceState.Stale or IntegrationEvidenceState.NotFound => "attention",
+        _ => "fail",
+    };
+
+    /// <summary>"2 of 5 available" — pre-run and post-run evidence coverage in one phrase.</summary>
+    public static string AdapterSummary(IReadOnlyCollection<IntegrationEvidenceAdapterStatus> adapters) =>
+        adapters.Count == 0 ? "No runtime evidence sources" : $"{adapters.Count(a => a.State == IntegrationEvidenceState.Available)} of {adapters.Count} available";
 
     /// <summary>
     /// A domain's rows: platform checks once, then topic checks — where every topic of a system has the same check with the same

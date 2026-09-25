@@ -7,8 +7,8 @@ namespace BirkNext.Api.Controllers;
 
 /// <summary>
 /// Target Environment → Integrations: the configured, expected integrations of one environment. Configuration only — no
-/// secret is accepted or returned (authentication is a mechanism name). <paramref name="environmentType"/> and
-/// <paramref name="targetUrl"/> identify whether the known M2LB DEV seed applies to the environment being read.
+/// secret is accepted or returned (authentication is a mechanism name). <c>environmentType</c> and
+/// <c>targetUrl</c> identify whether the known M2LB DEV seed applies to the environment being read.
 /// </summary>
 [ApiController]
 [Route("api/integrations")]
@@ -38,8 +38,29 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
         await catalog.DeleteAsync(environmentId, id, ct) ? NoContent() : NotFound();
 
     [HttpPut("platforms/{id}")]
-    public async Task<ActionResult<IntegrationPlatform>> UpdatePlatform([FromQuery] string environmentId, string id, [FromBody] IntegrationPlatform platform, CancellationToken ct) =>
-        await catalog.UpdatePlatformAsync(environmentId, id, platform, ct) is { } updated ? Ok(updated) : NotFound();
+    public async Task<ActionResult<IntegrationPlatform>> UpdatePlatform([FromQuery] string environmentId, string id, [FromBody] IntegrationPlatform platform, CancellationToken ct)
+    {
+        // Runtime evidence settings are identifiers only; a SAS URL or a malformed id is rejected before it can be stored.
+        if (platform.RuntimeEvidence?.Validate() is { } invalid) return BadRequest(new { message = invalid });
+        return await catalog.UpdatePlatformAsync(environmentId, id, platform, ct) is { } updated ? Ok(updated) : NotFound();
+    }
+
+    // Trusted event contracts (JSON Schema) per integration and role. Metadata only is returned — never the schema text.
+    [HttpGet("contracts")]
+    public async Task<ActionResult<IReadOnlyList<IntegrationContractArtifact>>> Contracts([FromQuery] string environmentId, [FromServices] IIntegrationContractStore store, CancellationToken ct) =>
+        Ok(await store.ListAsync(environmentId, ct));
+
+    [HttpPut("contracts")]
+    [RequestSizeLimit(JsonSchemaContract.MaxBytes * 2 + 64 * 1024)]
+    public async Task<ActionResult<IntegrationContractArtifact>> SaveContract([FromBody] IntegrationContractUpload upload, [FromServices] IIntegrationContractStore store, CancellationToken ct)
+    {
+        var (artifact, error) = await store.SaveAsync(upload, ct);
+        return artifact is null ? BadRequest(new { message = error }) : Ok(artifact);
+    }
+
+    [HttpDelete("contracts")]
+    public async Task<IActionResult> DeleteContract([FromQuery] string environmentId, [FromQuery] string integrationId, [FromQuery] IntegrationContractRole role, [FromServices] IIntegrationContractStore store, CancellationToken ct) =>
+        await store.DeleteAsync(environmentId, integrationId, role, ct) ? NoContent() : NotFound();
 
     /// <summary>One-time import of integrations that were stored in the browser Target Environment profile.</summary>
     [HttpPost("import-legacy")]

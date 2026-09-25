@@ -806,20 +806,17 @@
                 </div>
                 @if (_iqrReport is { } iqrCard)
                 {
-                    <div class="db-analysis-score @ScoreClass(iqrCard.OverallScore)">@iqrCard.OverallScore</div>
-                    <span class="db-analysis-status @KpiStatusClass(iqrCard.OverallScore, true)">@KpiStatusLabel(iqrCard.OverallScore, true)</span>
+                    @* The review has no score by design: outcome, domain coverage and findings, never "healthy". *@
+                    <span class="db-analysis-status" data-testid="db-iqr-outcome">@BirkNext.Integrations.IntegrationReviewLabels.Outcome(iqrCard.Outcome)</span>
                     @if (iqrCard.Findings.OrderBy(f => f.Severity).FirstOrDefault() is { } topIqrFinding)
                     {
                         <div class="db-analysis-finding">@topIqrFinding.Title</div>
                     }
                     <div class="db-analysis-chips">
-                        @{ var iqrCritical = iqrCard.Findings.Count(f => f.Severity == IntegrationFindingSeverity.Critical); }
-                        @{ var iqrHigh     = iqrCard.Findings.Count(f => f.Severity == IntegrationFindingSeverity.High); }
-                        @if (iqrCritical > 0) { <span class="db-count-chip db-count-poor">@iqrCritical critical</span> }
-                        @if (iqrHigh > 0)     { <span class="db-count-chip db-count-poor">@iqrHigh high</span> }
-                        @if (iqrCritical == 0 && iqrHigh == 0)
-                        { <span class="db-count-chip db-count-good">@(iqrCard.IsReadyForDeployment ? "Deployment Ready" : "No critical findings")</span> }
-                        <span class="db-count-chip">@iqrCard.EnabledCount/@iqrCard.IntegrationCount enabled</span>
+                        @{ var iqrHighOrWorse = iqrCard.Findings.Count(f => f.Severity is BirkNext.Integrations.IntegrationFindingSeverityV2.Critical or BirkNext.Integrations.IntegrationFindingSeverityV2.High); }
+                        @if (iqrHighOrWorse > 0) { <span class="db-count-chip db-count-poor">@iqrHighOrWorse high or critical</span> }
+                        <span class="db-count-chip" data-testid="db-iqr-coverage">@iqrCard.Domains.Count(d => d.ChecksAssessed > 0)/@iqrCard.Domains.Count domains assessed</span>
+                        <span class="db-count-chip">@iqrCard.TopicsReviewed topics</span>
                     </div>
                 }
                 else if (RuntimeReviews.IntegrationQualityReview.Status != RuntimeReviewStatus.NotRun)
@@ -944,7 +941,7 @@
     private WasmPerformanceReviewReport? _perfReport     => RuntimeReviews.PerformanceReview.Report;
     private FrontendQualityReviewReport? _fqrReport      => RuntimeReviews.QualityReview.Report;
     private BirkNext.ApiReview.ApiReviewReport? _aqrReport => RuntimeReviews.ApiQualityReview.Report;
-    private IntegrationQualityReport?    _iqrReport      => RuntimeReviews.IntegrationQualityReview.Report;
+    private BirkNext.Integrations.IntegrationReviewResult? _iqrReport => RuntimeReviews.IntegrationQualityReview.Report;
 
     // ── Snapshot aliases ──────────────────────────────────────────────────────
 
@@ -1043,7 +1040,6 @@
             if (Snapshot.DeliveryReport is not null)     scores.Add(_deliveryScore);
             if (_securityReport is not null)             scores.Add(_securityReport.Health.Score);
             if (_perfReport?.ReadinessReport is { HasData: true } perf) scores.Add(perf.OverallScore);
-            if (_iqrReport is not null)                  scores.Add(_iqrReport.OverallScore);
             return scores.Count > 0 ? scores.Average() : 0;
         }
     }
@@ -1053,7 +1049,7 @@
         Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
         QualitySession.HasResult                ||
         Snapshot.ReadinessReport is not null    || _securityReport is not null ||
-        _perfReport?.ReadinessReport is { HasData: true } || _iqrReport is not null;
+        _perfReport?.ReadinessReport is { HasData: true };
 
     private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
 

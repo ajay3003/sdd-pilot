@@ -7,6 +7,7 @@
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IWorkspaceSessionService Workspace
 @inject IReportExportService ExportService
+@inject RuntimeReviewSessionService RuntimeReviews
 @inject IJSRuntime JS
 
 <PageTitle>Integration Quality Review</PageTitle>
@@ -104,6 +105,28 @@
                 }
             </section>
 
+            <section class="iqr-card" aria-labelledby="iqr-evidence-heading" data-testid="iqr-evidence-sources">
+                <h2 id="iqr-evidence-heading">Runtime evidence sources <span class="iqr-muted">· @IntegrationReviewResultPresentation.AdapterSummary(readiness.EvidenceAdapters)</span></h2>
+                <p class="iqr-muted">Read-only. Each source is read with the BirkNext instance's own Azure identity; a source that is not configured or not authorized limits its checks to Not assessed.</p>
+                @if (readiness.EvidenceAdapters.Count == 0)
+                {
+                    <p class="iqr-muted" data-testid="iqr-no-evidence-sources">No platform is configured, so no runtime evidence source applies.</p>
+                }
+                else
+                {
+                    <ul class="iqr-adapters" data-testid="iqr-evidence-list">
+                        @foreach (var adapter in readiness.EvidenceAdapters)
+                        {
+                            <li class="iqr-adapter" data-testid="iqr-evidence-source" data-source="@adapter.Source" data-state="@adapter.State">
+                                <span class="iqr-adapter-name">@adapter.Adapter</span>
+                                <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.AdapterTone(adapter.State)">@IntegrationReviewLabels.EvidenceState(adapter.State)</span>
+                                <span class="iqr-muted iqr-adapter-reason">@adapter.Reason</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            </section>
+
             <section class="iqr-card" aria-labelledby="iqr-domains-heading" data-testid="iqr-domain-readiness">
                 <h2 id="iqr-domains-heading">What can be reviewed</h2>
                 <ul class="iqr-domain-grid">
@@ -143,6 +166,7 @@
                 <div><dt>Findings</dt><dd data-testid="iqr-result-findings">@headline.Findings</dd></div>
                 <div><dt>Checks not assessed</dt><dd data-testid="iqr-result-not-assessed">@headline.NotAssessedChecks</dd></div>
                 <div><dt>Evidence freshness</dt><dd data-testid="iqr-result-freshness">@headline.Freshness</dd></div>
+                <div><dt>Review window</dt><dd data-testid="iqr-result-window">@headline.Window</dd></div>
             </dl>
             <p class="iqr-muted" data-testid="iqr-result-sources">Evidence sources: @headline.Sources. Configuration snapshot from @result.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC — later edits in Integrations do not change this result.</p>
         </section>
@@ -167,6 +191,30 @@
                         </li>
                     }
                 </ul>
+                <section class="iqr-card" aria-labelledby="iqr-adapters-heading" data-testid="iqr-result-adapters">
+                    <h3 id="iqr-adapters-heading">Runtime evidence sources <span class="iqr-muted">· @IntegrationReviewResultPresentation.AdapterSummary(result.EvidenceAdapters)</span></h3>
+                    @if (result.EvidenceAdapters.Count == 0)
+                    {
+                        <p class="iqr-muted">No runtime evidence source was consulted in this run.</p>
+                    }
+                    else
+                    {
+                        <ul class="iqr-adapters">
+                            @foreach (var adapter in result.EvidenceAdapters)
+                            {
+                                <li class="iqr-adapter" data-testid="iqr-result-adapter" data-source="@adapter.Source" data-state="@adapter.State">
+                                    <span class="iqr-adapter-name">@adapter.Adapter</span>
+                                    <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.AdapterTone(adapter.State)">@IntegrationReviewLabels.EvidenceState(adapter.State)</span>
+                                    <span class="iqr-muted iqr-adapter-reason">@adapter.Reason</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (result.ContractSnapshot.Count > 0)
+                    {
+                        <p class="iqr-muted" data-testid="iqr-result-contracts">Contracts used: @string.Join("; ", result.ContractSnapshot.Select(c => $"{c.FileName} ({c.Role.ToString().ToLowerInvariant()}, sha256 {c.ShortHash})"))</p>
+                    }
+                </section>
                 <section class="iqr-card" aria-labelledby="iqr-manual-heading" data-testid="iqr-manual">
                     <h3 id="iqr-manual-heading">Manual follow-up</h3>
                     <p class="iqr-muted">Tasks and gaps for a person — not defects.</p>
@@ -213,7 +261,7 @@
                 <h3 class="iqr-checks-heading" data-testid="iqr-checks-heading">@(domain == IntegrationReviewDomain.ErrorHandling ? "Error-handling checks" : $"{IntegrationReviewLabels.Domain(domain)} checks") (@rows.Count)</h3>
                 <div class="iqr-tablewrap" tabindex="0" role="region" aria-label="@($"{IntegrationReviewLabels.Domain(domain)} checks")">
                     <table class="iqr-table" data-testid="iqr-checks-table">
-                        <thead><tr><th scope="col">Subject</th><th scope="col">Check</th><th scope="col">Status</th><th scope="col">Evidence</th><th scope="col">Explanation</th><th scope="col">Source</th></tr></thead>
+                        <thead><tr><th scope="col">Subject</th><th scope="col">Check</th><th scope="col">Status</th><th scope="col">Evidence</th><th scope="col">Explanation</th><th scope="col">Source</th><th scope="col">Freshness</th></tr></thead>
                         <tbody>
                             @foreach (var row in rows)
                             {
@@ -224,6 +272,7 @@
                                     <td>@(string.IsNullOrWhiteSpace(row.Check.Evidence) ? "—" : row.Check.Evidence)</td>
                                     <td>@row.Check.Explanation@if (row.Check.Recommendation is { } rec) { <span class="iqr-muted"> Action: @rec</span> }</td>
                                     <td class="iqr-muted">@IntegrationReviewLabels.Source(row.Check.Provenance)</td>
+                                    <td class="iqr-muted iqr-nowrap" data-testid="iqr-check-freshness">@IntegrationReviewResultPresentation.Freshness(row.Check)</td>
                                 </tr>
                             }
                         </tbody>
@@ -236,6 +285,7 @@
 
 @code {
     private FrontendAnalysisProfile? _profile;
+    private FrontendAnalysisContext? _context;
     private IntegrationReviewReadiness? _readiness;
     private IntegrationCatalog? _catalog;
     private IntegrationReviewResult? _result;
@@ -248,6 +298,7 @@
     {
         var context = await ContextFactory.GetActiveContextAsync();
         if (context.ActiveTargetError is { } targetError) { _error = targetError; return; }
+        _context = context;
         _profile = context.ActiveProfile;
         await LoadReadinessAsync();
     }
@@ -272,14 +323,18 @@
     {
         _running = true;
         _error = null;
+        if (_context is not null) RuntimeReviews.MarkIntegrationQualityRunning(_context);
         try
         {
             _result = await Api.RunAsync(_profile!);
             _tab = "Overview";
+            // The Dashboard card reads the session result; it shows outcome and coverage, never a score.
+            if (_context is not null) RuntimeReviews.SaveIntegrationQualityResult(_result, _context);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
             _error = "The review could not be completed: the BirkNext backend did not answer.";
+            if (_context is not null) RuntimeReviews.MarkIntegrationQualityFailed(_context, _error);
         }
         finally { _running = false; }
     }

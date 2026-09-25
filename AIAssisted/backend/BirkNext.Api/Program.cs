@@ -363,15 +363,8 @@ builder.Services.AddHttpClient<IApiReviewEngine, ApiReviewEngine>(client =>
     client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-ApiReview/2.0");
 }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { UseCookies = false, AllowAutoRedirect = false, AutomaticDecompression = System.Net.DecompressionMethods.None, PooledConnectionLifetime = TimeSpan.FromMinutes(5) });
 
-// Integration Quality Review & Contract Analysis (Phase 3)
-builder.Services.AddScoped<BirkNext.Api.Services.IntegrationRelationshipPopulationService>();
-builder.Services.AddScoped<BirkNext.Api.Services.IntegrationQuality.RuntimeEvidencePopulationService>();
+// Contract Analysis — messaging schema discovery
 builder.Services.AddScoped<BirkNext.Api.Services.ContractAnalysis.IMessageSchemaDiscoveryService, BirkNext.Api.Services.ContractAnalysis.MessageSchemaDiscoveryService>();
-builder.Services.AddHttpClient<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualityReviewService, BirkNext.Api.Services.IntegrationQuality.IntegrationQualityReviewService>(client =>
-{
-    client.Timeout = TimeSpan.FromSeconds(60);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("BirkNext-IntegrationQualityScanner/1.0");
-});
 
 // Contract Analysis (Phase 3-4)
 builder.Services.AddHttpClient<IOpenApiSourceFetcher, OpenApiSourceFetcher>(client =>
@@ -390,15 +383,18 @@ builder.Services.AddHttpClient<IGraphQlSourceFetcher, GraphQlSourceFetcher>(clie
 builder.Services.AddScoped<IGraphQlExtractor, GraphQlExtractor>();
 
 builder.Services.AddScoped<IContractComparer, ContractComparer>();
-builder.Services.AddScoped<BirkNext.Api.Services.IntegrationQuality.IIntegrationQualitySnapshotRepository,
-                           BirkNext.Api.Services.IntegrationQuality.IntegrationQualitySnapshotRepository>();
 
 // Integration catalog (Target Environment → Integrations) and Integration Quality Review over it. Read-only evidence ports:
 // a DNS/TCP/TLS namespace probe; no runtime or contract adapter exists in this build, so those domains report Not assessed.
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationCatalogService, BirkNext.Api.Services.Integrations.IntegrationCatalogService>();
 builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationNamespaceProbe, BirkNext.Api.Services.Integrations.TlsNamespaceProbe>();
-builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationRuntimeEvidenceSource, BirkNext.Api.Services.Integrations.NoRuntimeEvidenceSource>();
-builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationContractSource, BirkNext.Api.Services.Integrations.NoContractSource>();
+// Runtime evidence adapters are read-only and off unless IntegrationReview:Azure:Enabled is true (instance identity; no secrets in config/UI).
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationAzureCredential, BirkNext.Api.Services.Integrations.IntegrationAzureCredential>();
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IEventHubMetadataSource, BirkNext.Api.Services.Integrations.AzureEventHubMetadataSource>();
+builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IEventHubConsumerGroupSource, BirkNext.Api.Services.Integrations.ArmConsumerGroupSource>(client => client.Timeout = TimeSpan.FromSeconds(20));
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ICheckpointEvidenceSource, BirkNext.Api.Services.Integrations.BlobCheckpointEvidenceSource>();
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ITelemetryEvidenceSource, BirkNext.Api.Services.Integrations.LogAnalyticsTelemetrySource>();
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationContractStore, BirkNext.Api.Services.Integrations.IntegrationContractStore>();
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationReviewEngine>(client => client.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();

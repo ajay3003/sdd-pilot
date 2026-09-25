@@ -59,3 +59,30 @@
     .ip-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ip-field-inline { max-width: none; }
 }
+
+.ip-save-note { margin: 0; font-size: .84rem; padding: .4rem .6rem; border-left: 3px solid var(--clr-link, #2563eb); background: var(--clr-surface); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.ip-save-status { margin: 0; font-size: .82rem; min-height: 1.1em; color: var(--clr-text-muted); }
+.ip-save-status-saved { color: #065f46; }
+.ip-save-status-failed { color: #991b1b; font-weight: 600; }
+.ip-mapping, .ip-contracts { margin: .5rem 0 0; padding: .5rem .6rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface-white, #fff); display: grid; gap: .35rem; min-width: 0; }
+.ip-contracts h4 { margin: 0; font-size: .86rem; }
+.ip-contract { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; font-size: .84rem; min-width: 0; }
+.ip-contract-role { font-weight: 600; min-width: 8.5rem; }
+.ip-contract-file { overflow-wrap: anywhere; }
+.ip-contract .ip-field-error { flex-basis: 100%; }
+.ip-file-button { position: relative; display: inline-flex; align-items: center; padding: .15rem .6rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); font-size: .8rem; font-weight: 600; cursor: pointer; }
+.ip-file-button:focus-within { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+::deep .ip-file-input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.ip-btn-sm { padding: .2rem .6rem; font-size: .8rem; }
+.ip-confirm { display: inline-flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: center; font-size: .84rem; }
+.ip-runtime-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .45rem .9rem; margin: .4rem 0; min-width: 0; }
+.ip-runtime-form > .ip-check, .ip-runtime-form > .ip-muted, .ip-runtime-form > .ip-field-error, .ip-runtime-form > .ip-editor-actions { grid-column: 1 / -1; }
+.ip-runtime-form .ip-field { display: grid; gap: .2rem; font-size: .8rem; min-width: 0; }
+.ip-runtime-form .ip-check { display: flex; align-items: center; gap: .4rem; font-size: .84rem; }
+.ip-runtime-form .ip-editor-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ip-runtime-form .ip-field-error { color: #b91c1c; font-size: .8rem; margin: 0; }
+.ip-detail-actions .ip-confirm strong { overflow-wrap: anywhere; }
+.ip-mapping-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+/* The table keeps its 44rem minimum and scrolls; the expanded detail stays within the visible part of the scroll region. */
+.ip-tablewrap { container-type: inline-size; }
+.ip-detail-row > td > * { position: sticky; left: .6rem; max-width: calc(100cqw - 1.2rem); box-sizing: border-box; }

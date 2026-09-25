@@ -50,9 +50,9 @@
         </label>
         @if (Show("topic") && string.IsNullOrWhiteSpace(_model.EndpointOrTopic)) { <span class="ip-field-error" role="status">This field is required.</span> }
         <label class="ip-field">Consumer group
-            <input class="form-control ip-mono" data-testid="ip-edit-consumer-group" @bind="_model.ConsumerGroup" placeholder="Unknown / not configured" />
+            <input class="form-control ip-mono" data-testid="ip-edit-consumer-group" @bind="_model.ConsumerGroup" placeholder="Unknown / not configured" aria-describedby="ip-edit-consumer-group-help" />
         </label>
-        <p class="ip-muted">Leave empty when unknown. <code>$Default</code> is never assumed; only checkpoint/lag review needs it.</p>
+        <p class="ip-muted" id="ip-edit-consumer-group-help" data-testid="ip-edit-consumer-group-help">Consumer group is required for checkpoint/lag review. Leave blank if not confirmed — <code>$Default</code> is never assumed.</p>
     </fieldset>
 
     <fieldset class="ip-fieldset">
@@ -68,6 +68,14 @@
         <label class="ip-field">Consumer application (logical) <input class="form-control ip-mono" @bind="_model.ConsumerLogicalName" /></label>
         <label class="ip-field">Container app <input class="form-control ip-mono" @bind="_model.ConsumerContainerApp" /></label>
         <label class="ip-field">Managed identity <input class="form-control ip-mono" @bind="_model.ConsumerManagedIdentity" /></label>
+        <label class="ip-field">Delete / tombstone expectation
+            <select class="form-control" data-testid="ip-edit-delete-expectation" @bind="_model.DeleteExpectation">
+                <option value="@CdcDeleteExpectation.NotSpecified">Not specified</option>
+                <option value="@CdcDeleteExpectation.DeleteEventOnly">Delete event only (no tombstone)</option>
+                <option value="@CdcDeleteExpectation.DeleteEventAndTombstone">Delete event followed by a tombstone</option>
+                <option value="@CdcDeleteExpectation.TombstoneNotExpected">Tombstones not expected</option>
+            </select>
+        </label>
     </fieldset>
 
     <fieldset class="ip-fieldset">
@@ -198,6 +206,7 @@
         public string? TechnicalOwner { get; set; }
         public int? PartitionCount { get; set; }
         public int? RetentionDays { get; set; }
+        public CdcDeleteExpectation DeleteExpectation { get; set; }
 
         /// <summary>A new integration starts from the environment's platform defaults (auth mechanisms), never from a guessed topic or consumer.</summary>
         public static Model From(IntegrationDefinition? d, IntegrationPlatform? platform) => d is null
@@ -217,7 +226,7 @@
                 ProducerAuthentication = d.ProducerAuthentication, ConsumerAuthentication = d.ConsumerAuthentication, ContractRelationship = d.ContractRelationship,
                 ProducerContractReference = d.ProducerContractReference, ConsumerContractReference = d.ConsumerContractReference,
                 HealthUrl = d.HealthUrl, WorkerUrl = d.WorkerUrl, MonitoringUrl = d.MonitoringUrl, RunbookUrl = d.RunbookUrl, TechnicalOwner = d.TechnicalOwner,
-                PartitionCount = d.PartitionCount, RetentionDays = d.RetentionDays,
+                PartitionCount = d.PartitionCount, RetentionDays = d.RetentionDays, DeleteExpectation = d.DeleteExpectation,
             };
 
         private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -232,11 +241,15 @@
                 MappingState = Clean(ConsumerName) is null ? ConsumerMappingState.NeedsConfirmation : MappingState,
                 MappingSource = original?.Consumer.MappingState == MappingState && original.Consumer.DisplayName == Clean(ConsumerName) ? original.Consumer.MappingSource
                     : MappingState == ConsumerMappingState.Confirmed ? "Confirmed in Target Environment → Integrations" : original?.Consumer.MappingSource,
+                MappingEvidence = original?.Consumer.MappingState == MappingState && original.Consumer.DisplayName == Clean(ConsumerName) ? original.Consumer.MappingEvidence
+                    : MappingState == ConsumerMappingState.Confirmed ? "Confirmed by a person in BirkNext Integrations" : null,
+                MappingConfirmedAt = original?.Consumer.MappingState == MappingState && original.Consumer.DisplayName == Clean(ConsumerName) ? original.Consumer.MappingConfirmedAt
+                    : MappingState == ConsumerMappingState.Confirmed ? DateTimeOffset.UtcNow : null,
             },
             ProducerAuthentication = ProducerAuthentication, ConsumerAuthentication = ConsumerAuthentication, ContractRelationship = ContractRelationship,
             ProducerContractReference = Clean(ProducerContractReference), ConsumerContractReference = Clean(ConsumerContractReference),
             HealthUrl = Clean(HealthUrl), WorkerUrl = Clean(WorkerUrl), MonitoringUrl = Clean(MonitoringUrl), RunbookUrl = Clean(RunbookUrl), TechnicalOwner = Clean(TechnicalOwner),
-            PartitionCount = PartitionCount, RetentionDays = RetentionDays,
+            PartitionCount = PartitionCount, RetentionDays = RetentionDays, DeleteExpectation = DeleteExpectation,
         };
     }
 }

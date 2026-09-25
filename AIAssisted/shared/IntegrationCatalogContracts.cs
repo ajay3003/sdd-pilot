@@ -32,6 +32,56 @@ public enum IntegrationConfigurationState { Ready, NeedsConfirmation, NeedsConfi
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile }
 
+/// <summary>What the consumer of a CDC topic expects for deletes. Tombstones are only judged against an explicit expectation.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CdcDeleteExpectation { NotSpecified, DeleteEventOnly, DeleteEventAndTombstone, TombstoneNotExpected }
+
+/// <summary>
+/// Where IQR may read read-only runtime evidence for one platform. Non-secret identifiers only — credentials come from the BirkNext
+/// instance's Azure identity (Managed Identity / workload identity), never from this record. Every field is optional; a missing one
+/// makes its evidence "Not configured", never assumed.
+/// </summary>
+public sealed record IntegrationRuntimeEvidenceSettings
+{
+    /// <summary>Read Event Hub metadata (hub existence, partitions, last enqueued position) with the instance's Azure identity.</summary>
+    public bool EventHubMetadata { get; init; }
+    /// <summary>Azure subscription of the namespace — enables the read-only consumer-group list (Azure Resource Manager).</summary>
+    public string? SubscriptionId { get; init; }
+    /// <summary>Blob container of the consumers' EventProcessorClient checkpoint store, e.g. https://acct.blob.core.windows.net/checkpoints.</summary>
+    public string? CheckpointContainerUrl { get; init; }
+    /// <summary>Log Analytics workspace id (GUID) of the workspace-based Application Insights resource.</summary>
+    public string? TelemetryWorkspaceId { get; init; }
+    /// <summary>Telemetry/runtime review window in hours. Explicit and recorded in every result; 24 h when not set.</summary>
+    public int? ReviewWindowHours { get; init; }
+    /// <summary>Optional IQR thresholds. Null = measured values are reported as Observed, never judged.</summary>
+    public long? MaxConsumerLagEvents { get; init; }
+    public int? MaxCheckpointAgeMinutes { get; init; }
+    public const int DefaultReviewWindowHours = 24;
+    public const int MaxReviewWindowHours = 168;
+
+    /// <summary>The first reason these settings cannot be stored, or null. Shared by the UI and the backend so a SAS URL, key or
+    /// connection string can never be saved as an "identifier".</summary>
+    public string? Validate()
+    {
+        if (SubscriptionId is { } subscription && !Guid.TryParse(subscription.Trim(), out _)) return "The Azure subscription id is a GUID.";
+        if (TelemetryWorkspaceId is { } workspace && !Guid.TryParse(workspace.Trim(), out _)) return "The Log Analytics workspace id is a GUID.";
+        if (CheckpointContainerUrl is { } container)
+        {
+            if (!Uri.TryCreate(container.Trim(), UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+                return "The checkpoint store must be an https blob container URL.";
+            if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.UserInfo))
+                return "The checkpoint store URL must not carry a query string or credentials — never a SAS URL. BirkNext reads it with its own Azure identity.";
+            var path = uri.AbsolutePath.Trim('/');
+            if (path.Length == 0 || path.Contains('/'))
+                return "The checkpoint store URL names one container: https://account.blob.core.windows.net/container.";
+        }
+        if (ReviewWindowHours is { } window && (window < 1 || window > MaxReviewWindowHours)) return $"The review window is 1–{MaxReviewWindowHours} hours.";
+        if (MaxConsumerLagEvents is < 0) return "The consumer lag threshold cannot be negative.";
+        if (MaxCheckpointAgeMinutes is < 1) return "The checkpoint age threshold is at least 1 minute.";
+        return null;
+    }
+}
+
 public sealed record TechnicalTopic
 {
     public string Name { get; init; } = "";
@@ -67,6 +117,8 @@ public sealed record IntegrationPlatform
     public int? DefaultRetentionDays { get; init; }
     /// <summary>Platform-support topics (schema changes, schema history, Kafka Connect). Not business integrations and never reviewed as such.</summary>
     public List<TechnicalTopic> TechnicalTopics { get; init; } = [];
+    /// <summary>Read-only runtime evidence sources of this platform. Null = none configured.</summary>
+    public IntegrationRuntimeEvidenceSettings? RuntimeEvidence { get; init; }
     public IntegrationRecordOrigin Origin { get; init; } = IntegrationRecordOrigin.Manual;
     public bool UserModified { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
@@ -81,6 +133,9 @@ public sealed record IntegrationConsumer
     public ConsumerMappingState MappingState { get; init; } = ConsumerMappingState.NeedsConfirmation;
     /// <summary>Where a Suggested/Confirmed mapping came from ("Audited M2LB source (QA-context audit)", "Confirmed by test lead").</summary>
     public string? MappingSource { get; init; }
+    /// <summary>What the mapping rests on ("Confirmed in BirkNext Integrations"). Receiver rights alone never confirm a mapping.</summary>
+    public string? MappingEvidence { get; init; }
+    public DateTimeOffset? MappingConfirmedAt { get; init; }
 }
 
 /// <summary>One configured, expected integration (for Event Hubs: one business topic and its producer/consumer relationship).</summary>
@@ -117,9 +172,43 @@ public sealed record IntegrationDefinition
     public string? TechnicalOwner { get; init; }
     public int? PartitionCount { get; init; }
     public int? RetentionDays { get; init; }
+    /// <summary>CDC: what the consumer expects for deletes. NotSpecified = tombstone handling is not judged.</summary>
+    public CdcDeleteExpectation DeleteExpectation { get; init; }
     public IntegrationRecordOrigin Origin { get; init; } = IntegrationRecordOrigin.Manual;
     public bool UserModified { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationContractRole { Producer, Consumer }
+
+/// <summary>
+/// A trusted event contract (JSON Schema) uploaded for one side of one integration. Metadata only; the schema text stays in the backend.
+/// Replacing it never changes an earlier review, which keeps its own snapshot of what it compared.
+/// </summary>
+public sealed record IntegrationContractArtifact
+{
+    public string EnvironmentId { get; init; } = "";
+    public string IntegrationId { get; init; } = "";
+    public IntegrationContractRole Role { get; init; }
+    public string FileName { get; init; } = "";
+    public string Format { get; init; } = "JSON Schema";
+    /// <summary>SHA-256 of the UTF-8 content, lowercase hex.</summary>
+    public string ContentHash { get; init; } = "";
+    /// <summary>The schema's own version/$id when it declares one.</summary>
+    public string? Version { get; init; }
+    public int FieldCount { get; init; }
+    public DateTimeOffset ImportedAt { get; init; }
+    [JsonIgnore] public string ShortHash => ContentHash.Length > 12 ? ContentHash[..12] : ContentHash;
+}
+
+public sealed record IntegrationContractUpload
+{
+    public string EnvironmentId { get; init; } = "";
+    public string IntegrationId { get; init; } = "";
+    public IntegrationContractRole Role { get; init; }
+    public string FileName { get; init; } = "";
+    public string Content { get; init; } = "";
 }
 
 /// <summary>The catalog of one environment, as the Integrations pane and IQR read it.</summary>
@@ -214,7 +303,25 @@ public enum IntegrationDomainReadiness { Ready, Available, Limited, NotAssessabl
 public enum IntegrationCheckStatus { Pass, Warning, Fail, NotAssessed, Unavailable, NoIndicatorsObserved, Observed, NeedsConfirmation, NotConfigured, NoRecentEvidence }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery }
+public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery, CheckpointStore, AzureResourceManager }
+
+/// <summary>Why a runtime evidence source did or did not deliver. Failures are never collapsed into one "unavailable".</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationEvidenceState { Available, Unavailable, NotConfigured, NotAuthorized, NotSupported, NotFound, Stale, Error }
+
+/// <summary>How current one piece of evidence is, relative to the review window.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationEvidenceItemFreshness { Current, Recent, Historical, Stale, Unknown }
+
+/// <summary>One runtime evidence adapter's outcome for one platform in one run (shown pre-run as readiness and post-run as provenance).</summary>
+public sealed record IntegrationEvidenceAdapterStatus
+{
+    public string Adapter { get; init; } = "";
+    public IntegrationEvidenceSource Source { get; init; }
+    public IntegrationEvidenceState State { get; init; }
+    public string Reason { get; init; } = "";
+    public DateTimeOffset CapturedAt { get; init; }
+}
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum IntegrationCheckScope { Platform, Topic }
@@ -259,6 +366,8 @@ public sealed record IntegrationReviewReadiness
     /// <summary>"Ready", "Can run with limitations" or "Cannot run".</summary>
     public string Headline { get; init; } = "";
     public List<string> Reasons { get; init; } = [];
+    /// <summary>Configured state of each runtime evidence adapter per platform (configuration only; nothing is contacted pre-run).</summary>
+    public List<IntegrationEvidenceAdapterStatus> EvidenceAdapters { get; init; } = [];
 }
 
 public sealed record IntegrationCheck
@@ -276,6 +385,9 @@ public sealed record IntegrationCheck
     public string? Recommendation { get; init; }
     public IntegrationEvidenceSource Provenance { get; init; }
     public DateTimeOffset CapturedAt { get; init; }
+    /// <summary>When the underlying fact happened (last enqueued event, checkpoint update, last telemetry row), if known.</summary>
+    public DateTimeOffset? SourceTimestamp { get; init; }
+    public IntegrationEvidenceItemFreshness Freshness { get; init; } = IntegrationEvidenceItemFreshness.Unknown;
 }
 
 public sealed record IntegrationReviewFinding
@@ -316,6 +428,9 @@ public sealed record IntegrationTopicResult
     public ConsumerMappingState MappingState { get; init; }
     public IntegrationConfigurationState ConfigurationState { get; init; }
     public List<IntegrationCheck> Checks { get; init; } = [];
+    /// <summary>A consumer group discovered read-only (e.g. the only non-default group Azure lists for the hub). A suggestion, never saved.</summary>
+    public string? SuggestedConsumerGroup { get; init; }
+    public string? SuggestedConsumerGroupSource { get; init; }
 }
 
 public sealed record IntegrationSystemResult
@@ -345,6 +460,12 @@ public sealed record IntegrationReviewResult
     public List<string> Limitations { get; init; } = [];
     public IntegrationEvidenceFreshness Freshness { get; init; }
     public List<IntegrationEvidenceSource> EvidenceSources { get; init; } = [];
+    /// <summary>The runtime/telemetry window this run used (hours). Null in results recorded before the window was explicit.</summary>
+    public int? ReviewWindowHours { get; init; }
+    /// <summary>What every runtime evidence adapter returned in this run, per platform.</summary>
+    public List<IntegrationEvidenceAdapterStatus> EvidenceAdapters { get; init; } = [];
+    /// <summary>Contract artifacts compared in this run (file, hash, version) — a later replacement never reinterprets this result.</summary>
+    public List<IntegrationContractArtifact> ContractSnapshot { get; init; } = [];
     [JsonIgnore] public int TopicsReviewed => Systems.Where(s => s.DomainReviewSupported).Sum(s => s.Topics.Count);
     [JsonIgnore] public IEnumerable<IntegrationCheck> AllChecks => Systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks)));
 }
@@ -401,8 +522,38 @@ public static class IntegrationReviewLabels
         IntegrationEvidenceSource.LogEvidence => "Log evidence",
         IntegrationEvidenceSource.ContractArtifact => "Contract artifact",
         IntegrationEvidenceSource.EndpointDiscovery => "Endpoint Discovery",
+        IntegrationEvidenceSource.CheckpointStore => "Checkpoint store",
+        IntegrationEvidenceSource.AzureResourceManager => "Azure Resource Manager",
         _ => "Configuration",
     };
+
+    public static string EvidenceState(IntegrationEvidenceState state) => state switch
+    {
+        IntegrationEvidenceState.NotConfigured => "Not configured",
+        IntegrationEvidenceState.NotAuthorized => "Not authorized",
+        IntegrationEvidenceState.NotSupported => "Not supported",
+        IntegrationEvidenceState.NotFound => "Not found",
+        _ => state.ToString(),
+    };
+
+    public static string ItemFreshness(IntegrationEvidenceItemFreshness freshness) => freshness switch
+    {
+        IntegrationEvidenceItemFreshness.Current => "Current (last hour)",
+        IntegrationEvidenceItemFreshness.Recent => "Recent (in review window)",
+        IntegrationEvidenceItemFreshness.Historical => "Older than review window",
+        IntegrationEvidenceItemFreshness.Stale => "Stale",
+        _ => "Unknown",
+    };
+
+    /// <summary>
+    /// One freshness rule for every runtime fact: within the last hour = Current, within the review window = Recent, older = Historical.
+    /// No timestamp = Unknown — old telemetry never appears live.
+    /// </summary>
+    public static IntegrationEvidenceItemFreshness FreshnessOf(DateTimeOffset? sourceTimestamp, DateTimeOffset capturedAt, int windowHours) =>
+        sourceTimestamp is not { } at ? IntegrationEvidenceItemFreshness.Unknown
+        : capturedAt - at <= TimeSpan.FromHours(1) ? IntegrationEvidenceItemFreshness.Current
+        : capturedAt - at <= TimeSpan.FromHours(windowHours) ? IntegrationEvidenceItemFreshness.Recent
+        : IntegrationEvidenceItemFreshness.Historical;
 
     /// <summary>Assessed means the check produced a statement about the subject, not that evidence was missing.</summary>
     public static bool IsAssessed(IntegrationCheckStatus status) =>

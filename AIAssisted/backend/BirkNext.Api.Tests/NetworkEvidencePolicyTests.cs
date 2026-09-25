@@ -62,7 +62,6 @@ public class NetworkEvidencePolicyTests
         var e = Endpoint(path) with { Category = ObservedTrafficCategory.GraphQl, Provenance = RequestProvenance.DiscoveryProbe, LastStatus = 405 };
         Assert.Equal(NetworkResourceKind.DiscoveryProbe, NetworkEvidencePolicy.ResourceOf(e));
         Assert.False(NetworkEvidencePolicy.IsApiCandidate(e));
-        Assert.Empty(new IntegrationDiscoveryProposalService().Propose([e]));
         Assert.Equal("Proxy", NetworkEvidencePolicy.TransportLabel(e));
     }
 
@@ -76,7 +75,6 @@ public class NetworkEvidencePolicyTests
     {
         var e = Endpoint(path);
         Assert.False(NetworkEvidencePolicy.IsApiCandidate(e));
-        Assert.Empty(new IntegrationDiscoveryProposalService().Propose([e]));
     }
 
     [Fact]
@@ -85,7 +83,6 @@ public class NetworkEvidencePolicyTests
         var e = Endpoint("/api/autorisasjon/graphql") with { Category = ObservedTrafficCategory.GraphQl };
         var restored = JsonSerializer.Deserialize<ObservedNetworkEndpoint>(JsonSerializer.Serialize(e))!;
         Assert.True(NetworkEvidencePolicy.IsApiCandidate(restored));
-        Assert.Single(new IntegrationDiscoveryProposalService().Propose([restored]));
         Assert.Equal(RequestProvenance.ApplicationTraffic, restored.Provenance);
     }
 

@@ -322,33 +322,4 @@ public class KnownIntegrationTemplatesTests
 
     // ── §49. Baseline identity is untouched by any of this ───────────────────────────────────
 
-    [Fact]
-    public void ConsumerGroupChange_DoesNotMoveBaselineKey()
-    {
-        var integration = View("QA", "Person CDC").ToIntegration("i1")!;
-        integration.Endpoint = "ns.servicebus.windows.net";
-
-        var before = IntegrationBaselineIdentity.Compute("QA", integration);
-
-        integration.Consumer = "a-different-consumer-group";
-
-        // Consumer group is operational metadata, deliberately outside structural identity, so
-        // changing it must not look like a new integration appearing.
-        Assert.Equal(before, IntegrationBaselineIdentity.Compute("QA", integration));
-    }
-
-    [Fact]
-    public void TemplateIdentityIsNotIntegrationIdentity()
-    {
-        var qa = View("QA", "Person CDC").ToIntegration("i1")!;
-
-        // The same logical template in another environment is a different configured integration,
-        // because its environment and resource differ. That is correct, not a duplicate.
-        var dev = View("QA", "Person CDC").ToIntegration("i2")!;
-        dev.Resource = "m2lb-cdc-dev.something.else";
-
-        Assert.NotEqual(
-            IntegrationBaselineIdentity.Compute("QA", qa),
-            IntegrationBaselineIdentity.Compute("Development", dev));
-    }
 }

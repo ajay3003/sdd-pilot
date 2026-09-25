@@ -425,175 +425,6 @@ public sealed class ReportExportService : IReportExportService
 
     public string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName) => IntegrationReviewExport.Build(result, projectName, Table, Badge, Esc, BuildHtml);
 
-    public string ExportIntegrationQualityReview(IntegrationQualityReport report, string? projectName)
-    {
-        var sb = new StringBuilder();
-
-        sb.Append("<div class=\"kpi-row\">");
-        sb.Append(Kpi(report.OverallScore.ToString(), "Readiness Score"));
-        sb.Append(Kpi(report.IntegrationCount.ToString(), "Integrations"));
-        sb.Append(Kpi(report.EnabledCount.ToString(), "Enabled"));
-        sb.Append(Kpi(report.MissingConfigCount.ToString(), "Missing Config"));
-        sb.Append(Kpi(report.IsReadyForDeployment ? "Ready" : "Not Ready", "Deployment"));
-        sb.Append("</div>\n");
-
-            // History. Same presenter as the UI; export never recomputes history state.
-            sb.Append("<section class=\"block\">\n<h2>History</h2>\n");
-            sb.Append($"<p>{Esc(ContractStatePresenter.History(report))}</p>\n");
-
-            var persistenceNote = ContractStatePresenter.HistoryPersistenceNote(report);
-            if (!string.IsNullOrWhiteSpace(persistenceNote))
-                sb.Append($"<p>{Esc(persistenceNote)}</p>\n");
-
-            sb.Append(Table(
-                ["Previous review", "Current review", "Baseline available", "Changes since previous"],
-                [[
-                    Esc(report.PreviousSnapshotCapturedAt?.UtcDateTime.ToString("yyyy-MM-dd HH:mm") ?? "Not recorded"),
-                    Esc(report.GeneratedAt.ToString("yyyy-MM-dd HH:mm")),
-                    report.BaselineAvailable ? "Yes" : "No",
-                    report.HistoricalChangeCount.ToString()
-                ]]));
-
-            if (report.HistoricalChanges.Count > 0)
-                sb.Append(Table(
-                    ["Integration", "Change", "Previous", "Current"],
-                    report.HistoricalChanges.Select(c => new[]
-                    {
-                        Esc(c.IntegrationName),
-                        Esc(ContractStatePresenter.HistoricalChangeLabel(c.Type)),
-                        Esc(c.OldValue ?? "Not recorded"),
-                        Esc(c.NewValue ?? "Not recorded")
-                    })));
-
-            sb.Append("</section>\n");
-
-        if (report.Statuses.Count > 0)
-        {
-            sb.Append("<section class=\"block\">\n<h2>Configured Integrations</h2>\n");
-            sb.Append(Table(
-                ["Integration", "Type", "Enabled", "Score", "Health", "Worker", "Missing Fields"],
-                report.Statuses.Select(s => new[]
-                {
-                    Esc(s.Name),
-                    Esc(s.Type.ToString()),
-                    s.Enabled ? "Yes" : "No",
-                    s.Score.ToString(),
-                    Esc(StatusLabel(s.HealthReachable)),
-                    Esc(StatusLabel(s.WorkerReachable)),
-                    Esc(string.Join(", ", s.MissingFields))
-                })));
-            sb.Append("</section>\n");
-
-            // Contract evidence. Wording comes from the shared presenter, identical to the UI;
-            // export never recomputes compatibility or drift state.
-            sb.Append("<section class=\"block\">\n<h2>Contract Evidence</h2>\n");
-            sb.Append(Table(
-                ["Integration", "Producer", "Consumer", "Producer contract", "Consumer contract",
-                 "Compatibility", "Compared at", "Previous baseline", "Drift"],
-                report.Statuses.Select(s => new[]
-                {
-                    Esc(s.Name),
-                    Esc(s.ProducerService ?? "Not recorded"),
-                    Esc(s.ConsumerService ?? "Not recorded"),
-                    Esc(s.ProducerContractSource ?? "Not recorded"),
-                    Esc(s.ConsumerContractSource ?? "Not recorded"),
-                    Esc(ContractStatePresenter.Compatibility(s)),
-                    Esc(s.CompatibilityComparedAt?.ToString("yyyy-MM-dd HH:mm") ?? "Not recorded"),
-                    Esc(s.PreviousBaselineTimestamp?.ToString("yyyy-MM-dd HH:mm") ?? "Not recorded"),
-                    Esc(ContractStatePresenter.Drift(s))
-                })));
-            sb.Append("</section>\n");
-
-            // Performance. Same presenter as the UI; nothing is recomputed here.
-            sb.Append("<section class=\"block\">\n<h2>Performance</h2>\n");
-            sb.Append(Table(
-                ["Integration", "Evidence", "p50", "p95", "p99", "Errors", "Throughput", "Observation window"],
-                report.Statuses.Select(s => new[]
-                {
-                    Esc(s.Name),
-                    Esc(ContractStatePresenter.Performance(s)),
-                    Esc(ContractStatePresenter.Metric(s.Performance?.P50DurationMs, "ms")),
-                    Esc(ContractStatePresenter.Metric(s.Performance?.P95DurationMs, "ms")),
-                    Esc(ContractStatePresenter.Metric(s.Performance?.P99DurationMs, "ms")),
-                    Esc(ContractStatePresenter.ErrorRate(s)),
-                    Esc(ContractStatePresenter.Metric(s.Performance?.RequestsPerSecond, "req/s")),
-                    Esc(ContractStatePresenter.ObservationWindow(s))
-                })));
-
-            var performanceChanges = report.Statuses.Where(s => s.PerformanceChanges.Count > 0).ToList();
-            if (performanceChanges.Count > 0)
-                sb.Append(Table(
-                    ["Integration", "Change since previous review"],
-                    performanceChanges.SelectMany(s => s.PerformanceChanges.Select(c => new[]
-                    {
-                        Esc(s.Name), Esc(ContractStatePresenter.PerformanceChangeLabel(c))
-                    }))));
-
-            sb.Append("</section>\n");
-
-            var withDifferences = report.Statuses
-                .Where(s => s.CompatibilityDifferences.Count > 0 || s.DriftDifferences.Count > 0)
-                .ToList();
-
-            if (withDifferences.Count > 0)
-            {
-                sb.Append("<section class=\"block\">\n<h2>Contract Differences</h2>\n");
-                sb.Append(Table(
-                    ["Integration", "Kind", "Severity", "Detail"],
-                    withDifferences.SelectMany(s =>
-                        s.CompatibilityDifferences.Select(d => new[]
-                        {
-                            Esc(s.Name), "Compatibility",
-                            Esc(ContractStatePresenter.SeverityLabel(d.Severity)), Esc(d.Explanation)
-                        })
-                        .Concat(s.DriftDifferences.Select(d => new[]
-                        {
-                            Esc(s.Name), "Drift",
-                            Esc(ContractStatePresenter.SeverityLabel(d.Severity)), Esc(d.Explanation)
-                        })))));
-                sb.Append("</section>\n");
-            }
-        }
-
-        if (report.Findings.Count > 0)
-        {
-            sb.Append("<section class=\"block\">\n<h2>Findings</h2>\n");
-            sb.Append(Table(
-                ["Severity", "Integration", "Title", "Description", "Recommendation"],
-                report.Findings
-                    .OrderBy(f => f.Severity)
-                    .ThenBy(f => f.IntegrationName)
-                    .Select(f => new[]
-                    {
-                        Badge(f.Severity.ToString()),
-                        Esc(f.IntegrationName),
-                        Esc(f.Title),
-                        Esc(f.Description),
-                        Esc(f.Recommendation)
-                    })));
-            sb.Append("</section>\n");
-        }
-
-        if (report.Recommendations.Count > 0)
-        {
-            sb.Append("<section class=\"block\">\n<h2>Recommendations</h2>\n");
-            sb.Append(RecommendationList(report.Recommendations));
-            sb.Append("</section>\n");
-        }
-
-        if (report.Limitations.Count > 0)
-        {
-            sb.Append("<section class=\"block\">\n<h2>Limitations</h2>\n");
-            sb.Append("<ul style=\"margin-left:1.2rem;font-size:.85rem;color:#374151\">\n");
-            foreach (var l in report.Limitations)
-                sb.Append($"<li>{Esc(l)}</li>\n");
-            sb.Append("</ul>\n</section>\n");
-        }
-
-        var subtitle = $"Environment: {report.EnvironmentName}  Generated: {report.GeneratedAt:yyyy-MM-dd HH:mm} UTC";
-        return BuildHtml("Integration Quality Review Report", projectName, subtitle, sb.ToString());
-    }
-
     private static string StatusLabel(bool? value) => value switch
     {
         true => "Reachable",
@@ -1155,7 +986,7 @@ public sealed class ReportExportService : IReportExportService
         DeliveryReadinessReport? delivery,
         QAReadinessReport? readiness,
         WasmPerformanceReviewReport? performance,
-        IntegrationQualityReport? integrationQuality)
+        BirkNext.Integrations.IntegrationReviewResult? integrationQuality)
     {
         var sb = new StringBuilder();
 
@@ -1174,7 +1005,7 @@ public sealed class ReportExportService : IReportExportService
         if (performance?.ReadinessReport is { HasData: true } pr)
             sb.Append(Kpi(pr.OverallScore.ToString(), "Performance"));
         if (integrationQuality is not null)
-            sb.Append(Kpi(integrationQuality.OverallScore.ToString(), "Integrations"));
+            sb.Append(Kpi(BirkNext.Integrations.IntegrationReviewLabels.Outcome(integrationQuality.Outcome), "Integrations"));
         sb.Append("</div>\n");
 
         // Governance status
@@ -1206,7 +1037,7 @@ public sealed class ReportExportService : IReportExportService
         if (performance is not null)   ran.Add($"Performance Review — target {Esc(performance.TargetUrl)}");
 
         if (integrationQuality is not null)
-            ran.Add($"Integration Quality Review - score {integrationQuality.OverallScore}, {integrationQuality.EnabledCount}/{integrationQuality.IntegrationCount} enabled integrations");
+            ran.Add($"Integration Quality Review - {BirkNext.Integrations.IntegrationReviewLabels.Outcome(integrationQuality.Outcome)}, {integrationQuality.Domains.Count(d => d.ChecksAssessed > 0)} of {integrationQuality.Domains.Count} domains assessed, {integrationQuality.Findings.Count} finding(s), {integrationQuality.TopicsReviewed} topics");
 
         if (ran.Count > 0)
         {

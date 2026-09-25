@@ -19,6 +19,10 @@ public interface IIntegrationCatalogApiService
     Task<IntegrationPlatform> UpdatePlatformAsync(string environmentId, IntegrationPlatform platform, CancellationToken ct = default);
     /// <summary>Imports integrations still stored in the browser Target Environment profile. The backend imports once per environment.</summary>
     Task<int> ImportLegacyAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
+    Task<IReadOnlyList<IntegrationContractArtifact>> ContractsAsync(string environmentId, CancellationToken ct = default);
+    /// <summary>Uploads a trusted JSON Schema for one side of an integration. Returns the stored metadata, or the validation reason.</summary>
+    Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveContractAsync(IntegrationContractUpload upload, CancellationToken ct = default);
+    Task RemoveContractAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default);
     Task<IntegrationReviewReadiness> ReadinessAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IntegrationReviewResult> RunAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IReadOnlyList<IntegrationReviewRunSummary>> HistoryAsync(string environmentId, CancellationToken ct = default);
@@ -52,6 +56,27 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
 
     public async Task<IntegrationPlatform> UpdatePlatformAsync(string environmentId, IntegrationPlatform platform, CancellationToken ct = default) =>
         await Read<IntegrationPlatform>(await http.PutAsJsonAsync($"api/integrations/platforms/{Uri.EscapeDataString(platform.Id)}?{Env(environmentId)}", platform, Json, ct), ct);
+
+    public async Task<IReadOnlyList<IntegrationContractArtifact>> ContractsAsync(string environmentId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<List<IntegrationContractArtifact>>($"api/integrations/contracts?{Env(environmentId)}", Json, ct) ?? [];
+
+    public async Task<(IntegrationContractArtifact? Artifact, string? Error)> SaveContractAsync(IntegrationContractUpload upload, CancellationToken ct = default)
+    {
+        using var response = await http.PutAsJsonAsync("api/integrations/contracts", upload, Json, ct);
+        if (response.IsSuccessStatusCode) return (await response.Content.ReadFromJsonAsync<IntegrationContractArtifact>(Json, ct), null);
+        if ((int)response.StatusCode == 400)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>(Json, ct);
+            return (null, problem.TryGetProperty("message", out var message) ? message.GetString() : "The contract was rejected.");
+        }
+        return (null, $"The contract could not be saved (HTTP {(int)response.StatusCode}).");
+    }
+
+    public async Task RemoveContractAsync(string environmentId, string integrationId, IntegrationContractRole role, CancellationToken ct = default)
+    {
+        using var response = await http.DeleteAsync($"api/integrations/contracts?{Env(environmentId)}&integrationId={Uri.EscapeDataString(integrationId)}&role={role}", ct);
+        if (!response.IsSuccessStatusCode && (int)response.StatusCode != 404) response.EnsureSuccessStatusCode();
+    }
 
     public async Task<int> ImportLegacyAsync(FrontendAnalysisProfile profile, CancellationToken ct = default)
     {

@@ -79,7 +79,7 @@ public sealed class RuntimeReviewSessionService
     public RuntimeReviewSessionState<WasmPerformanceReviewReport>  PerformanceReview { get; } = new();
     public RuntimeReviewSessionState<FrontendQualityReviewReport>  QualityReview     { get; } = new();
     public RuntimeReviewSessionState<ApiReviewReport>       ApiQualityReview  { get; } = new();
-    public RuntimeReviewSessionState<IntegrationQualityReport>      IntegrationQualityReview { get; } = new();
+    public RuntimeReviewSessionState<BirkNext.Integrations.IntegrationReviewResult> IntegrationQualityReview { get; } = new();
 
     public void MarkSecurityRunning(FrontendAnalysisContext context) =>
         SecurityReview.MarkRunning(CreateSnapshot(context));
@@ -128,8 +128,8 @@ public sealed class RuntimeReviewSessionService
     public void MarkIntegrationQualityRunning(FrontendAnalysisContext context) =>
         IntegrationQualityReview.MarkRunning(CreateIntegrationQualitySnapshot(context));
 
-    public void SaveIntegrationQualityResult(IntegrationQualityReport report, FrontendAnalysisContext context) =>
-        IntegrationQualityReview.Complete(report, CreateIntegrationQualitySnapshot(context), ToOffset(report.GeneratedAt));
+    public void SaveIntegrationQualityResult(BirkNext.Integrations.IntegrationReviewResult result, FrontendAnalysisContext context) =>
+        IntegrationQualityReview.Complete(result, new RuntimeReviewContextSnapshot($"{result.TopicsReviewed} topics", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString()), result.CompletedAt);
 
     public void MarkIntegrationQualityFailed(FrontendAnalysisContext context, string errorMessage) =>
         IntegrationQualityReview.Fail(CreateIntegrationQualitySnapshot(context), errorMessage);
@@ -162,10 +162,7 @@ public sealed class RuntimeReviewSessionService
             context.ActiveProfile.EnvironmentType.ToString());
 
     private static RuntimeReviewContextSnapshot CreateIntegrationQualitySnapshot(FrontendAnalysisContext context) =>
-        new(
-            $"{context.Integrations.Count(i => i.Enabled)}/{context.Integrations.Count} integrations",
-            context.ActiveProfile.Name,
-            context.ActiveProfile.EnvironmentType.ToString());
+        new("Configured integrations", context.ActiveProfile.Name, context.ActiveProfile.EnvironmentType.ToString());
 
     private static DateTimeOffset ToOffset(DateTime timestamp)
     {
