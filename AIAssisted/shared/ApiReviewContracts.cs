@@ -282,6 +282,46 @@ public sealed record ApiReviewCheck
     public List<string> Evidence { get; init; } = [];
 }
 
+/// <summary>How a response body's transfer representation became its content (Content-Encoding removal).</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ApiResponseBodyDecoding
+{
+    /// <summary>No Content-Encoding: transfer bytes are the payload.</summary>
+    NotEncoded,
+    /// <summary>Content-Encoding removed successfully (gzip / br, including a supported chain).</summary>
+    Decoded,
+    /// <summary>A Content-Encoding BirkNext does not implement: no decoded payload, nothing analysed.</summary>
+    UnsupportedEncoding,
+    /// <summary>The body did not decode as its Content-Encoding claims: no decoded payload, nothing analysed.</summary>
+    DecodeFailed,
+    /// <summary>The body was not received completely: no size is trusted.</summary>
+    Incomplete,
+    /// <summary>No body (e.g. 204 / HEAD / empty).</summary>
+    NoBody,
+    /// <summary>The authenticated gateway does not remove Content-Encoding; the body was not analysed.</summary>
+    NotDecoded,
+}
+
+/// <summary>
+/// Response body evidence with transfer size and decoded payload size kept apart. Content-Length describes the transferred (possibly
+/// compressed) representation, so it is transfer evidence — never the decoded payload of a compressed response.
+/// </summary>
+public sealed record ApiReviewResponseBody
+{
+    public string? ContentEncoding { get; init; }
+    /// <summary>Encoded bytes on the wire (counted from the captured body; Content-Length only when counting was not possible). Null = unknown.</summary>
+    public long? TransferBytes { get; init; }
+    /// <summary>Payload bytes after Content-Encoding removal. Null = unknown (never 0 for "unknown").</summary>
+    public long? DecodedBytes { get; init; }
+    /// <summary>Decoding stopped at the counting limit: <see cref="DecodedBytes"/> is a lower bound, not the exact size.</summary>
+    public bool DecodedBytesIsLowerBound { get; init; }
+    public ApiResponseBodyDecoding Decoding { get; init; }
+    /// <summary>The complete decoded body was available and analysed (JSON, ProblemDetails, internal-detail scan).</summary>
+    public bool Inspected { get; init; }
+    /// <summary>Why the payload or the body analysis was not possible; null when both were.</summary>
+    public string? Reason { get; init; }
+}
+
 public sealed record ApiReviewOperationResult
 {
     public string Display { get; init; } = "";
@@ -292,7 +332,14 @@ public sealed record ApiReviewOperationResult
     public int StatusCode { get; init; }
     public string? ContentType { get; init; }
     public double? ElapsedMs { get; init; }
+    /// <summary>
+    /// The size the REST payload threshold evaluated. Reports with <see cref="Body"/>: the exact DECODED payload (after Content-Encoding
+    /// removal), null when it is not known. Older reports (no <see cref="Body"/>): the legacy value — declared Content-Length, which for a
+    /// compressed response was the encoded transfer size. Never re-interpreted.
+    /// </summary>
     public long? ContentLength { get; init; }
+    /// <summary>Transfer vs decoded evidence of the response body. Null on reports recorded before it existed.</summary>
+    public ApiReviewResponseBody? Body { get; init; }
     public ApiReviewCheckResult Result { get; init; }
     public string? Note { get; init; }
     public bool? ContractMatched { get; init; }

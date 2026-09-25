@@ -441,7 +441,7 @@
                             @if (type == ApiReviewTargetType.GraphQl) { <h4 class="aqr-group-title">@ApiReviewPresentation.DisplayName(t.Target) · review requests executed</h4> }
                             <div class="aqr-tablewrap" tabindex="0" role="region" aria-label="Review evidence table">
                                 <table class="aqr-table">
-                                    <thead><tr><th scope="col">Operation</th><th scope="col">Execution</th><th scope="col">Status</th><th scope="col">Content type</th><th scope="col">Response time</th><th scope="col">Bytes</th><th scope="col">Review checks</th><th scope="col">Contract</th><th scope="col">Note</th></tr></thead>
+                                    <thead><tr><th scope="col">Operation</th><th scope="col">Execution</th><th scope="col">Status</th><th scope="col">Content type</th><th scope="col">Response time</th><th scope="col">Payload size</th><th scope="col">Review checks</th><th scope="col">Contract</th><th scope="col">Note</th></tr></thead>
                                     <tbody>
                                         @foreach (var o in requestRows)
                                         {
@@ -451,7 +451,8 @@
                                                 <td>@(o.Executed ? o.StatusCode.ToString() : "—")</td>
                                                 <td>@(o.ContentType ?? "—")</td>
                                                 <td>@(o.ElapsedMs is { } ms ? $"{ms:0} ms" : "—")</td>
-                                                <td>@(o.ContentLength?.ToString() ?? "—")</td>
+                                                @{ var payloadCell = ApiReviewEvidencePresentation.PayloadSize(o); }
+                                                <td data-testid="aqr-operation-payload">@payloadCell.Primary@if (payloadCell.Secondary is { } payloadDetail) { <span class="aqr-muted aqr-payload-detail">@payloadDetail</span> }</td>
                                                 <td><span class="aqr-state">@(o.Executed ? $"Warnings: {o.Checks.Count(c => c.Result == ApiReviewCheckResult.Warning)} · Failed checks: {o.Checks.Count(c => c.Result == ApiReviewCheckResult.Fail)}" : ApiReviewStatusLabels.ResultLabel(o.Result))</span></td>
                                                 <td>@(o.ContractMatched is null ? "—" : o.ContractMatched.Value ? "Matched" : "Not documented")</td>
                                                 <td class="aqr-muted">@o.Note</td>

@@ -20,10 +20,60 @@ public static class ApiReviewEvidencePresentation
     public static IEnumerable<ApiReviewCheck> Checks(ApiReviewReport report) =>
         report.Targets.SelectMany(t => t.Checks.Concat(t.Operations.SelectMany(o => o.Checks)));
 
+    /// <summary>
+    /// Legacy reports (no body evidence) with no recorded size show the payload check as Not tested. Newer reports carry their own
+    /// Not tested reason (decode failure, unsupported encoding…), which is kept.
+    /// </summary>
     public static IEnumerable<ApiReviewCheck> OperationChecks(ApiReviewOperationResult operation) =>
-        operation.Checks.Select(c => c.CheckId == "rest-payload" && operation.ContentLength is null
+        operation.Checks.Select(c => c.CheckId == "rest-payload" && operation.ContentLength is null && operation.Body is null
             ? c with { Result = ApiReviewCheckResult.NotTested, Detail = "Payload size was not recorded." }
             : c);
+
+    /// <summary>
+    /// The payload column: the decoded payload — the REST payload threshold's basis — with transfer size and Content-Encoding as
+    /// secondary text when the response was encoded. Reports recorded before body evidence existed show their own value unchanged.
+    /// </summary>
+    public static (string Primary, string? Secondary) PayloadSize(ApiReviewOperationResult operation)
+    {
+        if (!operation.Executed) return ("—", null);
+        if (operation.Body is not { } body) return (operation.ContentLength?.ToString() ?? "—", null);
+        var transfer = body.ContentEncoding is { } coding ? $"Transfer: {(body.TransferBytes is { } t ? Size(t) : "unknown")} · {coding}" : null;
+        return body.Decoding switch
+        {
+            ApiResponseBodyDecoding.NoBody => ("No body", null),
+            ApiResponseBodyDecoding.NotEncoded or ApiResponseBodyDecoding.Decoded when operation.ContentLength is { } exact =>
+                (body.ContentEncoding is null ? Size(exact) : $"{Size(exact)} decoded", transfer),
+            ApiResponseBodyDecoding.NotEncoded or ApiResponseBodyDecoding.Decoded when body.DecodedBytesIsLowerBound && body.DecodedBytes is { } atLeast =>
+                ($"At least {Size(atLeast)} decoded", transfer),
+            _ => ("Not tested", body.Reason ?? transfer),
+        };
+    }
+
+    /// <summary>Payload evaluation basis in words, for exports and technical detail.</summary>
+    public static string PayloadBasis(ApiReviewResponseBody body) => body.Decoding switch
+    {
+        ApiResponseBodyDecoding.Decoded => body.DecodedBytesIsLowerBound ? "Decoded payload (lower bound)" : "Decoded payload",
+        ApiResponseBodyDecoding.NotEncoded => "Payload (not encoded: transfer = decoded)",
+        ApiResponseBodyDecoding.NoBody => "No body",
+        _ => "Not evaluated",
+    };
+
+    public static string DecodingLabel(ApiResponseBodyDecoding decoding) => decoding switch
+    {
+        ApiResponseBodyDecoding.NotEncoded => "Not encoded",
+        ApiResponseBodyDecoding.Decoded => "Decoded",
+        ApiResponseBodyDecoding.UnsupportedEncoding => "Unsupported encoding",
+        ApiResponseBodyDecoding.DecodeFailed => "Decoding failed",
+        ApiResponseBodyDecoding.Incomplete => "Incomplete body",
+        ApiResponseBodyDecoding.NoBody => "No body",
+        _ => "Not decoded (gateway)",
+    };
+
+    /// <summary>"48 KB" — KB = 1024 bytes, as the thresholds are stored.</summary>
+    public static string Size(long bytes) =>
+        bytes < 1024 ? $"{bytes.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes"
+        : bytes < 1024 * 1024 ? $"{(bytes / 1024.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} KB"
+        : $"{(bytes / (1024.0 * 1024)).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} MB";
 
     public static string ContractCheckCoverage(ApiReviewReport report)
     {

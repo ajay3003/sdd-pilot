@@ -17,7 +17,7 @@ namespace BirkNext.Api.Tests.Services.ApiQuality;
 /// detects drift, reviews GraphQL via the learned endpoint (mutations listed, never executed), flags CORS/error-leak/security issues, and
 /// keeps Blocked/Not tested distinct from a zero-finding pass.
 /// </summary>
-public sealed class ApiReviewEngineTests
+public sealed partial class ApiReviewEngineTests
 {
     private const string Fp = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
@@ -76,7 +76,7 @@ public sealed class ApiReviewEngineTests
     {
         var fixture = new Fixture { Respond = (req, _) => req.RequestUri!.AbsolutePath switch
         {
-            "/api/children" when req.Method == HttpMethod.Get => Json(HttpStatusCode.OK, "{\"items\":[{\"id\":1,\"name\":\"x\"}],\"totalCount\":1}", headers: r => r.Content.Headers.TryAddWithoutValidation("Content-Encoding", "br")),
+            "/api/children" when req.Method == HttpMethod.Get => Encoded(HttpStatusCode.OK, "{\"items\":[{\"id\":1,\"name\":\"x\"}],\"totalCount\":1}", "br"),
             "/api/children" when req.Method == HttpMethod.Options => Json(HttpStatusCode.NoContent, "", headers: r => { r.Headers.TryAddWithoutValidation("Access-Control-Allow-Origin", "https://m2lbdev.example.test"); r.Headers.TryAddWithoutValidation("Access-Control-Allow-Credentials", "true"); }),
             _ => Json(HttpStatusCode.NotFound, "{\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404}", "application/problem+json"),
         } };

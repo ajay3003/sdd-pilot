@@ -26,12 +26,20 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     public const string TypenameProbe = "query { __typename }";
     public const string InvalidFieldProbe = "query { __birkNextUnknownFieldProbe }";
     private const string UnknownRouteSegment = "birknext-unknown-route-probe-7f3a";
-    private const long MaxPublicBodyBytes = 1024 * 1024;
     private const int MaxOperationsPerTarget = 40;
 
-    private sealed record Exec(bool Executed, ApiReviewAccessMode Mode, int StatusCode, string? ContentType, double? ElapsedMs, long? ContentLength,
+    /// <summary>
+    /// One executed request. <paramref name="PayloadBytes"/> is the exact DECODED payload size (what the REST payload threshold evaluates),
+    /// null when unknown; <paramref name="Body"/> keeps transfer size, Content-Encoding and decoding state apart from it.
+    /// </summary>
+    private sealed record Exec(bool Executed, ApiReviewAccessMode Mode, int StatusCode, string? ContentType, double? ElapsedMs, long? PayloadBytes,
         IReadOnlyDictionary<string, string> Headers, IReadOnlyList<JsonShapeEntry> Shape, IReadOnlyList<string> Leaks, bool ProblemDetails, bool? JsonValid,
-        int? GraphQlErrors, bool? GraphQlHasData, string Message, bool Timeout = false, IReadOnlyList<string>? ServerFingerprints = null);
+        int? GraphQlErrors, bool? GraphQlHasData, string Message, bool Timeout = false, IReadOnlyList<string>? ServerFingerprints = null, ApiReviewResponseBody? Body = null)
+    {
+        /// <summary>The body's content was analysed (or there was none): JSON/ProblemDetails/leak results are real, not "nothing seen".</summary>
+        public bool BodyInspected => Body is null or { Inspected: true };
+        public string BodyNotInspectedReason => Body?.Reason ?? "The response body was not analysed.";
+    }
 
     // Per run: the frontend's GraphQL client technology (app-level) and each GraphQL target's server fingerprints.
     private GraphQlTechnologyFinding clientTechnology = new();
@@ -216,11 +224,14 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             // Content type & JSON validity
             var json = JsonBodyInspector.IsJsonMediaType(exec.ContentType);
             opChecks.Add(Check("rest-content-type", ApiReviewFindingType.Rest, "JSON content type", exec.StatusCode == 204 || op.Method == "HEAD" ? ApiReviewCheckResult.NotApplicable : json ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, exec.ContentType ?? "no Content-Type"));
-            if (exec.StatusCode is >= 200 and < 300 && !json && exec.StatusCode != 204 && exec.ContentLength is > 0)
+            if (exec.StatusCode is >= 200 and < 300 && !json && exec.StatusCode != 204 && (exec.PayloadBytes is > 0 || exec.Body?.TransferBytes is > 0))
                 Add(targetFindings, findings, Finding(target, "rest-non-json", ApiReviewSeverity.Medium, ApiReviewFindingType.Rest, display, "Content type", "Success response is not JSON", $"Content-Type: {exec.ContentType ?? "absent"}. An HTML response usually means the API host serves the SPA shell for unknown API routes.", "Return application/json for API operations (or application/problem+json for errors).", [$"Content-Type: {exec.ContentType ?? "absent"}"], ApiReviewCheckResult.Warning));
             if (json && exec.JsonValid == false)
                 Add(targetFindings, findings, Finding(target, "rest-invalid-json", ApiReviewSeverity.High, ApiReviewFindingType.Rest, display, "JSON validity", "Response claims JSON but does not parse", "The body could not be parsed as JSON.", "Fix serialization; clients will fail to parse the response.", [$"Content-Type: {exec.ContentType}"]));
-            opChecks.Add(Check("rest-json-valid", ApiReviewFindingType.Rest, "JSON parses", exec.JsonValid is null ? ApiReviewCheckResult.NotApplicable : exec.JsonValid.Value ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, exec.JsonValid is null ? "No JSON body." : exec.JsonValid.Value ? $"{exec.Shape.Count} structural path(s)." : "Invalid JSON."));
+            opChecks.Add(!exec.BodyInspected
+                ? Check("rest-json-valid", ApiReviewFindingType.Rest, "JSON parses", ApiReviewCheckResult.NotTested, $"Not tested: {exec.BodyNotInspectedReason}")
+                : Check("rest-json-valid", ApiReviewFindingType.Rest, "JSON parses", exec.JsonValid is null ? ApiReviewCheckResult.NotApplicable : exec.JsonValid.Value ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail,
+                    exec.JsonValid is null ? "No JSON body." : exec.JsonValid.Value ? $"{exec.Shape.Count} structural path(s){(exec.Body?.Decoding == ApiResponseBodyDecoding.Decoded ? $", parsed after removing Content-Encoding {exec.Body.ContentEncoding}" : "")}." : "Invalid JSON."));
 
             // Latency & payload. An unmeasured value is Not tested — never "0 ms" or "0 bytes" and never Pass.
             var latency = exec.ElapsedMs ?? 0;
@@ -229,12 +240,15 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 exec.ElapsedMs is null ? "Not tested: the response time was not measured." : $"{latency:0} ms ({request.Policy.LatencyPolicyText})."));
             if (latencyResult is ApiReviewCheckResult.Warning or ApiReviewCheckResult.Fail)
                 Add(targetFindings, findings, Finding(target, "rest-slow", latencyResult == ApiReviewCheckResult.Fail ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Response time", $"Slow response: {latency:0} ms", $"Single-sample latency of the review request ({request.Policy.LatencyPolicyText}). Page-level API impact is reviewed by Performance Quality.", "Profile the endpoint server-side.", [$"Observed: {latency:0} ms", $"Policy: {request.Policy.LatencyPolicyText}"], latencyResult == ApiReviewCheckResult.Fail ? ApiReviewCheckResult.Fail : ApiReviewCheckResult.Warning));
-            if (request.Policy.RestPayloadResult(exec.ContentLength) == ApiReviewCheckResult.Warning && exec.ContentLength is { } size)
-                Add(targetFindings, findings, Finding(target, "rest-large-payload", ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Payload size", $"Large response payload ({size / 1024} KB)", "The response exceeds the large-payload threshold; check pagination.", "Paginate or filter the collection.", [$"Bytes: {size}", $"Threshold: {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)}"], ApiReviewCheckResult.Warning));
-            opChecks.Add(exec.ContentLength is { } measured
-                ? Check("rest-payload", ApiReviewFindingType.Performance, "Payload size", request.Policy.RestPayloadResult(measured),
-                    $"{measured.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes (REST payload warning > {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)}).")
-                : Check("rest-payload", ApiReviewFindingType.Performance, "Payload size", ApiReviewCheckResult.NotTested, "Not tested: the response size is unknown (no Content-Length was returned)."));
+            var payloadCheck = RestPayloadCheck(exec, request.Policy);
+            opChecks.Add(payloadCheck);
+            if (payloadCheck.Result == ApiReviewCheckResult.Warning)
+            {
+                var size = exec.PayloadBytes ?? exec.Body?.DecodedBytes ?? 0;
+                Add(targetFindings, findings, Finding(target, "rest-large-payload", ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Payload size",
+                    $"Large response payload ({(exec.PayloadBytes is null ? "at least " : "")}{size / 1024} KB decoded)", "The decoded response exceeds the large-payload threshold; check pagination.", "Paginate or filter the collection.",
+                    [.. payloadCheck.Evidence, $"Threshold: {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)}"], ApiReviewCheckResult.Warning));
+            }
 
             // Pagination hints on collection responses (structural: items/totalCount or top-level array)
             var paths = exec.Shape.Select(s => s.Path).ToHashSet(StringComparer.Ordinal);
@@ -242,8 +256,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             var pagedShape = paths.Any(p => p is "$.totalCount" or "$.total" or "$.pageSize" or "$.page" or "$.nextCursor" or "$.continuationToken" or "$.hasMore" or "$.pageInfo" or "$.count" or "$.@odata.nextLink" or "$.@odata.count");
             opChecks.Add(Check("rest-pagination", ApiReviewFindingType.Rest, "Pagination pattern", !isCollection ? ApiReviewCheckResult.NotApplicable : pagedShape || !paths.Contains("$[*]") ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning,
                 !isCollection ? "Not a collection response." : pagedShape ? "Paging metadata present." : paths.Contains("$[*]") ? "Top-level array without paging metadata." : "Wrapped collection."));
-            if (isCollection && paths.Contains("$[*]") && !pagedShape && contract is null && exec.ContentLength is > 64 * 1024)
-                Add(targetFindings, findings, Finding(target, "rest-unbounded-collection", ApiReviewSeverity.Low, ApiReviewFindingType.Rest, display, "Pagination", "Large top-level array without pagination metadata", "A large bare-array response suggests an unbounded collection.", "Introduce paging (page/pageSize, limit/offset or cursor) and expose totals.", [$"Bytes: {exec.ContentLength}"], ApiReviewCheckResult.Warning));
+            if (isCollection && paths.Contains("$[*]") && !pagedShape && contract is null && exec.PayloadBytes is > 64 * 1024)
+                Add(targetFindings, findings, Finding(target, "rest-unbounded-collection", ApiReviewSeverity.Low, ApiReviewFindingType.Rest, display, "Pagination", "Large top-level array without pagination metadata", "A large bare-array response suggests an unbounded collection.", "Introduce paging (page/pageSize, limit/offset or cursor) and expose totals.", [$"Decoded bytes: {exec.PayloadBytes}"], ApiReviewCheckResult.Warning));
 
             // Contract validation
             bool? contractMatched = null;
@@ -292,7 +306,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             operations.Add(new ApiReviewOperationResult
             {
                 Display = display, Method = op.Method, Path = op.Path, AccessMode = mode, Executed = true, StatusCode = exec.StatusCode, ContentType = exec.ContentType, ElapsedMs = exec.ElapsedMs,
-                ContentLength = exec.ContentLength, Result = overall, Checks = opChecks, ContractMatched = contractMatched, ShapeEntryCount = exec.Shape.Count,
+                ContentLength = exec.PayloadBytes, Body = exec.Body, Result = overall, Checks = opChecks, ContractMatched = contractMatched, ShapeEntryCount = exec.Shape.Count,
             });
         }
         foreach (var op in unsafeOps.Take(20))
@@ -308,8 +322,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             else checks.Add(Check("errors-unknown-route", ApiReviewFindingType.Errors, "Unknown route handling", ApiReviewCheckResult.NotTested, "Error probes disabled by policy."));
             var rateLimit = primary.Headers.Keys.Any(k => k.StartsWith("x-ratelimit", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ratelimit", StringComparison.OrdinalIgnoreCase) || k == "retry-after");
             checks.Add(Check("rest-rate-limit-headers", ApiReviewFindingType.Security, "Rate-limit headers", rateLimit ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.ManualReview, rateLimit ? "Rate-limit headers exposed." : "No rate-limit headers observed; rate limiting is not load-tested here (informational)."));
-            checks.Add(CompressionCheck(executedRequests.Select(e => new CompressionSample(e.Display, e.Exec.Mode, e.Exec.ContentType, e.Exec.ContentLength,
-                e.Exec.Headers.TryGetValue("content-encoding", out var encoding) ? encoding : null)).ToList(), request.Policy));
+            checks.Add(CompressionCheck(executedRequests.Select(e => new CompressionSample(e.Display, e.Exec.Mode, e.Exec.ContentType, e.Exec.PayloadBytes,
+                e.Exec.Headers.TryGetValue("content-encoding", out var encoding) ? encoding : null, e.Exec.Body?.TransferBytes)).ToList(), request.Policy));
             if (AverageLatencyCheck(executedRequests.Select(e => e.Exec.ElapsedMs).ToList(), request.Policy, "review request") is { } average)
             {
                 checks.Add(average);
@@ -339,7 +353,9 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             using var response = await publicClient.GetAsync(source, HttpCompletionOption.ResponseHeadersRead, ct);
             if (!response.IsSuccessStatusCode)
                 return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = response.StatusCode is System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden ? ApiReviewCheckResult.Blocked : ApiReviewCheckResult.Fail, Note = $"Contract fetch returned HTTP {(int)response.StatusCode}." });
-            var json = await ReadBoundedTextAsync(response, 10 * 1024 * 1024, ct);
+            var body = await ResponseBodyReader.ReadAsync(response, ct, maxInspected: 10 * 1024 * 1024);
+            if (body.Text is not { } json)
+                return (null, null, new ApiReviewContractSummary { Kind = "OpenAPI", Source = source, Available = false, Status = ApiReviewCheckResult.NotTested, Note = $"Contract could not be read: {body.Evidence.Reason}" });
             var review = OpenApiDocumentReview.Review(json, source, target.TargetId);
             var extraction = review.Valid && review.Version is { } v && v.StartsWith("3.", StringComparison.Ordinal) ? openApi.Extract(json) : null;
             var summary = new ApiReviewContractSummary
@@ -452,6 +468,12 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             Add(targetFindings, findings, Finding(target, "errors-unknown-route-200", ApiReviewSeverity.Medium, ApiReviewFindingType.Errors, display, "Unknown route", "Unknown route answers 2xx", $"An unknown API route returned HTTP {status}{(JsonBodyInspector.IsJsonMediaType(exec.ContentType) ? "" : " with a non-JSON body (SPA fallback?)")}.", "Return 404 with a problem document for unknown API routes; exclude /api from SPA fallback.", [$"HTTP {status}", $"Content-Type: {exec.ContentType ?? "absent"}"], ApiReviewCheckResult.Warning));
         else if (status >= 500)
             Add(targetFindings, findings, Finding(target, "errors-unknown-route-5xx", ApiReviewSeverity.High, ApiReviewFindingType.Errors, display, "Unknown route", $"Unknown route causes HTTP {status}", "Routing errors surface as server errors.", "Handle unknown routes with 404.", [$"HTTP {status}"]));
+        if (!exec.BodyInspected)
+        {
+            checks.Add(Check("errors-format", ApiReviewFindingType.Errors, "Consistent error format (ProblemDetails)", ApiReviewCheckResult.NotTested, $"Not tested: {exec.BodyNotInspectedReason}"));
+            checks.Add(Check("errors-leak", ApiReviewFindingType.Errors, "No internal details in error responses", ApiReviewCheckResult.NotTested, $"Not tested: {exec.BodyNotInspectedReason}"));
+            return checks;
+        }
         var structured = exec.ProblemDetails || (exec.JsonValid == true && exec.Shape.Any(s => s.Path is "$.title" or "$.message" or "$.error" or "$.errors" or "$.code"));
         checks.Add(Check("errors-format", ApiReviewFindingType.Errors, "Consistent error format (ProblemDetails)", status >= 400 ? (exec.ProblemDetails ? ApiReviewCheckResult.Pass : structured ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Warning) : ApiReviewCheckResult.NotApplicable,
             exec.ProblemDetails ? "RFC 7807 ProblemDetails." : structured ? "Structured JSON error without ProblemDetails." : "Unstructured error body."));
@@ -523,7 +545,7 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             Add(targetFindings, findings, Finding(target, "gql-slow", gqlLatency == ApiReviewCheckResult.Fail ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, endpoint, "Response time", $"Slow GraphQL endpoint: {latency:0} ms for __typename", "Even a trivial query is slow; the endpoint or its middleware is the bottleneck. Per-operation latency from real traffic is reviewed by Performance Quality.", "Profile the GraphQL pipeline.", [$"Observed: {latency:0} ms"], ApiReviewCheckResult.Warning));
         if (probe.Leaks.Count > 0)
             Add(targetFindings, findings, Finding(target, "gql-leak", ApiReviewSeverity.High, ApiReviewFindingType.Errors, endpoint, "Error leakage", "GraphQL response leaks internal details", "Indicators of stack traces/exceptions were found in the response (content redacted).", "Mask exceptions in the GraphQL error filter.", probe.Leaks.Select(l => $"Indicator: {l}").ToList()));
-        operations.Add(new ApiReviewOperationResult { Display = "query { __typename }", Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = true, StatusCode = probe.StatusCode, ContentType = probe.ContentType, ElapsedMs = probe.ElapsedMs, ContentLength = probe.ContentLength, Result = ok ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, ShapeEntryCount = probe.Shape.Count });
+        operations.Add(new ApiReviewOperationResult { Display = "query { __typename }", Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = true, StatusCode = probe.StatusCode, ContentType = probe.ContentType, ElapsedMs = probe.ElapsedMs, ContentLength = probe.PayloadBytes, Body = probe.Body, Result = ok ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, ShapeEntryCount = probe.Shape.Count });
 
         // 2. Security headers / CORS on the endpoint
         checks.AddRange(SecurityChecks(target, probe, targetFindings, findings));
@@ -608,7 +630,9 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                     Add(targetFindings, findings, Finding(target, "gql-error-shape", ApiReviewSeverity.Low, ApiReviewFindingType.Errors, endpoint, "Error shape", "Invalid query did not return a GraphQL errors array", $"HTTP {invalid.StatusCode} without a spec-compliant errors array.", "Return { errors: [...] } for validation failures.", [$"HTTP {invalid.StatusCode}"], ApiReviewCheckResult.Warning));
                 if (invalid.StatusCode >= 500)
                     Add(targetFindings, findings, Finding(target, "gql-error-5xx", ApiReviewSeverity.Medium, ApiReviewFindingType.Errors, endpoint, "Error handling", $"Invalid query causes HTTP {invalid.StatusCode}", "Validation errors should not surface as server errors.", "Handle validation errors in the GraphQL pipeline.", [$"HTTP {invalid.StatusCode}"]));
-                checks.Add(Check("gql-error-leak", ApiReviewFindingType.Errors, "No internal details in errors", invalid.Leaks.Count == 0 ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, invalid.Leaks.Count == 0 ? "No indicators." : string.Join(", ", invalid.Leaks)));
+                checks.Add(!invalid.BodyInspected
+                    ? Check("gql-error-leak", ApiReviewFindingType.Errors, "No internal details in errors", ApiReviewCheckResult.NotTested, $"Not tested: {invalid.BodyNotInspectedReason}")
+                    : Check("gql-error-leak", ApiReviewFindingType.Errors, "No internal details in errors", invalid.Leaks.Count == 0 ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, invalid.Leaks.Count == 0 ? "No indicators." : string.Join(", ", invalid.Leaks)));
                 if (invalid.Leaks.Count > 0)
                     Add(targetFindings, findings, Finding(target, "gql-error-leak", ApiReviewSeverity.High, ApiReviewFindingType.Errors, endpoint, "Error leakage", "GraphQL error response leaks internal details", "Stack trace/exception indicators in the error response (content redacted).", "Mask exception details in the error filter.", invalid.Leaks.Select(l => $"Indicator: {l}").ToList()));
             }
@@ -656,8 +680,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
     /// authenticated gateway does not send Accept-Encoding), the response is a compressible text type and it is at least Compression Minimum
     /// Payload. A small uncompressed response is Not applicable, never a Warning. Evaluated over every executed response of the target.
     /// </summary>
-    /// <summary>One executed response as the compression check sees it: who sent it (public requests advertise gzip/br), type, size, encoding.</summary>
-    internal sealed record CompressionSample(string Display, ApiReviewAccessMode Mode, string? ContentType, long? Bytes, string? ContentEncoding);
+    /// <summary>
+    /// One executed response as the compression check sees it: who sent it (public requests advertise gzip/br), type, DECODED size (the
+    /// minimum-payload rule is about content size, not the compressed transfer), encoding and — evidence only — transfer size.
+    /// </summary>
+    internal sealed record CompressionSample(string Display, ApiReviewAccessMode Mode, string? ContentType, long? Bytes, string? ContentEncoding, long? TransferBytes = null);
 
     internal static ApiReviewCheck CompressionCheck(IReadOnlyList<CompressionSample> executed, ApiReviewPolicy policy)
     {
@@ -669,8 +696,9 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 : Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotTested, "Not assessed: the authenticated gateway request does not advertise Accept-Encoding, so an uncompressed response is expected.");
         var minimum = policy.CompressionMinimumBytes ?? 0;
         var minimumText = policy.CompressionMinimumBytes is { } m ? ApiReviewPolicy.Bytes(m) : "none (older policy)";
-        static string Size(CompressionSample e) => e.Bytes is { } b ? $"{b.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes" : "size unknown";
-        var evidence = advertised.Take(8).Select(e => $"{e.Display}: {e.ContentType ?? "no content type"} · {Size(e)} · encoding {e.ContentEncoding ?? "none"}")
+        static string Size(CompressionSample e) => e.Bytes is { } b ? $"{b.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes{(e.ContentEncoding is null ? "" : " decoded")}" : "size unknown";
+        static string Transfer(CompressionSample e) => e.ContentEncoding is not null && e.TransferBytes is { } t ? $" · transfer {t.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes" : "";
+        var evidence = advertised.Take(8).Select(e => $"{e.Display}: {e.ContentType ?? "no content type"} · {Size(e)}{Transfer(e)} · encoding {e.ContentEncoding ?? "none"}")
             .Prepend("Request advertised: gzip, br").Append($"Compression minimum payload: {minimumText}").ToList();
 
         var encoded = advertised.Where(e => e.ContentEncoding is not null).ToList();
@@ -783,7 +811,12 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 logger.LogInformation("GraphQL schema artifact {Source} returned HTTP {Status}; compatibility falls back to Not assessed.", target.ContractSource, (int)response.StatusCode);
                 return (null, null);
             }
-            var text = await ReadBoundedTextAsync(response, 10 * 1024 * 1024, ct);
+            var body = await ResponseBodyReader.ReadAsync(response, ct, maxInspected: 10 * 1024 * 1024);
+            if (body.Text is not { } text)
+            {
+                logger.LogInformation("GraphQL schema artifact {Source} could not be read ({Decoding}); compatibility falls back to Not assessed.", target.ContractSource, body.Evidence.Decoding);
+                return (null, null);
+            }
             var schema = text.TrimStart().StartsWith('{')
                 ? graphQl.Extract(text) is { Success: true, Contract: { } contract } ? contract : null
                 : GraphQlSdlSchema.FromSdl(text, out _);
@@ -847,7 +880,8 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             using var message = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = new StringContent(JsonSerializer.Serialize(new { query = AuthenticatedApiExecutionService.IntrospectionQuery }), Encoding.UTF8, "application/json") };
             message.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             using var response = await publicClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, ct);
-            var text = await ReadBoundedTextAsync(response, 4 * 1024 * 1024, ct);
+            var body = await ResponseBodyReader.ReadAsync(response, ct, maxInspected: 4 * 1024 * 1024);
+            if (body.Text is not { } text) return (null, false, $"HTTP {(int)response.StatusCode}; the introspection response could not be analysed: {body.Evidence.Reason}", []);
             try
             {
                 using var doc = JsonDocument.Parse(text);
@@ -876,9 +910,10 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             var stopwatch = Stopwatch.StartNew();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct); cts.CancelAfter(TimeSpan.FromSeconds(20));
             using var response = await publicClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            var text = await ReadBoundedTextAsync(response, MaxPublicBodyBytes, cts.Token);
+            var body = await ResponseBodyReader.ReadAsync(response, cts.Token);
             stopwatch.Stop();
-            return Inspect(response, text, stopwatch.Elapsed.TotalMilliseconds, mode, graphQl: false);
+            LogBody(method, url, body.Evidence);
+            return Inspect(response, body, stopwatch.Elapsed.TotalMilliseconds, mode, graphQl: false);
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return new Exec(false, mode, 0, null, null, null, new Dictionary<string, string>(), [], [], false, null, null, null, "The request did not complete within 20 s.", Timeout: true); }
         catch (HttpRequestException ex) { return new Exec(false, mode, 0, null, null, null, new Dictionary<string, string>(), [], [], false, null, null, null, $"Connection failed ({ex.HttpRequestError})."); }
@@ -896,9 +931,10 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             var stopwatch = Stopwatch.StartNew();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct); cts.CancelAfter(TimeSpan.FromSeconds(20));
             using var response = await publicClient.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-            var text = await ReadBoundedTextAsync(response, MaxPublicBodyBytes, cts.Token);
+            var body = await ResponseBodyReader.ReadAsync(response, cts.Token);
             stopwatch.Stop();
-            return Inspect(response, text, stopwatch.Elapsed.TotalMilliseconds, mode, graphQl: true);
+            LogBody("POST", endpoint, body.Evidence);
+            return Inspect(response, body, stopwatch.Elapsed.TotalMilliseconds, mode, graphQl: true);
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested) { return new Exec(false, mode, 0, null, null, null, new Dictionary<string, string>(), [], [], false, null, null, null, "The request did not complete within 20 s.", Timeout: true); }
         catch (HttpRequestException ex) { return new Exec(false, mode, 0, null, null, null, new Dictionary<string, string>(), [], [], false, null, null, null, $"Connection failed ({ex.HttpRequestError})."); }
@@ -909,13 +945,24 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         if (!outcome.Executed || outcome.Result is null)
             return new Exec(false, mode, 0, null, null, null, new Dictionary<string, string>(), [], [], false, null, null, null, outcome.Message);
         var r = outcome.Result;
-        return new Exec(true, mode, r.StatusCode, r.ContentType, r.ElapsedMs, r.ContentLength, new Dictionary<string, string>(r.SecurityHeaders, StringComparer.OrdinalIgnoreCase), r.BodyShape, r.LeakIndicators, r.ProblemDetails, r.JsonValid, r.GraphQlErrorCount, r.GraphQlHasData, r.Outcome,
-            ServerFingerprints: r.GraphQlServerFingerprints);
+        var headers = new Dictionary<string, string>(r.SecurityHeaders, StringComparer.OrdinalIgnoreCase);
+        // The gateway sends no Accept-Encoding and does not decode. A response encoded anyway was not analysed: its size is transfer
+        // size only and its body results are not evidence.
+        if (headers.TryGetValue("content-encoding", out var encoding) && !string.Equals(encoding.Trim(), "identity", StringComparison.OrdinalIgnoreCase))
+            return new Exec(true, mode, r.StatusCode, r.ContentType, r.ElapsedMs, null, headers, [], [], false, null, null, null, r.Outcome, ServerFingerprints: [],
+                Body: new ApiReviewResponseBody { ContentEncoding = encoding, TransferBytes = r.ContentLength, Decoding = ApiResponseBodyDecoding.NotDecoded, Reason = $"The authenticated gateway does not remove Content-Encoding ({encoding}); body analysis and payload size not tested." });
+        return new Exec(true, mode, r.StatusCode, r.ContentType, r.ElapsedMs, r.ContentLength, headers, r.BodyShape, r.LeakIndicators, r.ProblemDetails, r.JsonValid, r.GraphQlErrorCount, r.GraphQlHasData, r.Outcome,
+            ServerFingerprints: r.GraphQlServerFingerprints,
+            Body: new ApiReviewResponseBody { TransferBytes = r.ContentLength, DecodedBytes = r.ContentLength, Decoding = r.ContentLength == 0 ? ApiResponseBodyDecoding.NoBody : ApiResponseBodyDecoding.NotEncoded, Inspected = true });
     }
 
-    /// <summary>Public response → structural evidence. The text is scanned for leak indicators and parsed for its shape, then discarded.</summary>
-    private static Exec Inspect(HttpResponseMessage response, string text, double elapsedMs, ApiReviewAccessMode mode, bool graphQl)
+    /// <summary>
+    /// Public response → structural evidence. Only the DECODED body is analysed: it is scanned for leak indicators and parsed for its shape,
+    /// then discarded. A body that could not be decoded or exceeded the inspection limit yields no body results (Not tested), never "clean".
+    /// </summary>
+    private static Exec Inspect(HttpResponseMessage response, ResponseBodyRead body, double elapsedMs, ApiReviewAccessMode mode, bool graphQl)
     {
+        var text = body.Text ?? "";
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var name in AuthenticatedApiExecutionResult.SecurityHeaderAllowList)
             if (response.Headers.TryGetValues(name, out var values) || response.Content.Headers.TryGetValues(name, out values))
@@ -940,23 +987,47 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             }
             catch (JsonException) { jsonValid = false; }
         }
-        var length = response.Content.Headers.ContentLength ?? Encoding.UTF8.GetByteCount(text);
-        return new Exec(true, mode, (int)response.StatusCode, contentType, Math.Round(elapsedMs, 1), length, headers, shape, leaks, JsonBodyInspector.IsProblemDetails(contentType, shape), jsonValid, errors, hasData, $"HTTP {(int)response.StatusCode}",
-            ServerFingerprints: graphQl ? GraphQlServerFingerprints.From(text) : null);
+        // The threshold basis is the exact decoded payload; Content-Length describes the (possibly compressed) transfer representation.
+        var payload = body.Evidence.DecodedBytesIsLowerBound ? null : body.Evidence.DecodedBytes;
+        return new Exec(true, mode, (int)response.StatusCode, contentType, Math.Round(elapsedMs, 1), payload, headers, shape, leaks, JsonBodyInspector.IsProblemDetails(contentType, shape), jsonValid, errors, hasData, $"HTTP {(int)response.StatusCode}",
+            ServerFingerprints: graphQl ? GraphQlServerFingerprints.From(text) : null, Body: body.Evidence);
     }
 
-    private static async Task<string> ReadBoundedTextAsync(HttpResponseMessage response, long max, CancellationToken ct)
+    /// <summary>Body evidence of one public response — sizes, coding and state only; never the body, never the query string.</summary>
+    private void LogBody(string method, string url, ApiReviewResponseBody body)
     {
-        await using var stream = await response.Content.ReadAsStreamAsync(ct);
-        using var buffer = new MemoryStream();
-        var chunk = new byte[16384];
-        while (buffer.Length < max)
+        var path = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.AbsolutePath : "(invalid url)";
+        var level = body.Decoding is ApiResponseBodyDecoding.NotEncoded or ApiResponseBodyDecoding.NoBody && body.Inspected ? LogLevel.Debug : LogLevel.Information;
+        logger.Log(level, "API review response {Method} {Path}: encoding {Encoding}, transfer {TransferBytes} bytes, decoded {DecodedBytes} bytes{LowerBound}, decoding {Decoding}, inspected {Inspected}.",
+            method, path, body.ContentEncoding ?? "none", body.TransferBytes?.ToString() ?? "unknown", body.DecodedBytes?.ToString() ?? "unknown", body.DecodedBytesIsLowerBound ? " (lower bound)" : "", body.Decoding, body.Inspected);
+    }
+
+    /// <summary>
+    /// REST payload against the decoded size. Transfer size is evidence only; an unknown decoded size is Not tested with its reason; a
+    /// counting-limit lower bound can still prove a Warning, never a Pass.
+    /// </summary>
+    private static ApiReviewCheck RestPayloadCheck(Exec exec, ApiReviewPolicy policy)
+    {
+        const string id = "rest-payload", title = "Payload size";
+        var limitText = $"REST payload warning > {ApiReviewPolicy.Bytes(policy.RestPayloadThreshold)}";
+        static string N(long v) => v.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
+        var body = exec.Body;
+        var transfer = body is { ContentEncoding: { } coding, TransferBytes: { } t } ? $"transfer {N(t)} bytes, {coding}" : body is { ContentEncoding: { } c } ? $"transfer size unknown, {c}" : null;
+        if (body?.Decoding == ApiResponseBodyDecoding.NoBody)
+            return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotApplicable, "Not applicable: the response has no body.");
+        if (exec.PayloadBytes is { } measured)
         {
-            var read = await stream.ReadAsync(chunk, ct);
-            if (read <= 0) break;
-            buffer.Write(chunk, 0, read);
+            var evidence = new List<string> { $"Decoded payload: {N(measured)} bytes" };
+            if (body?.ContentEncoding is not null) evidence.Add($"Transfer size: {(body.TransferBytes is { } tb ? $"{N(tb)} bytes" : "unknown")} ({body.ContentEncoding})");
+            return Check(id, ApiReviewFindingType.Performance, title, policy.RestPayloadResult(measured),
+                $"{N(measured)} bytes{(body?.ContentEncoding is null ? "" : $" decoded ({transfer})")} ({limitText}).", evidence);
         }
-        return Encoding.UTF8.GetString(buffer.ToArray());
+        if (body is { DecodedBytesIsLowerBound: true, DecodedBytes: { } atLeast })
+            return policy.RestPayloadThreshold > 0 && atLeast > policy.RestPayloadThreshold
+                ? Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.Warning, $"At least {N(atLeast)} bytes decoded — decoding stopped at the counting limit ({limitText}).", [$"Decoded payload: at least {N(atLeast)} bytes"])
+                : Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotTested, $"Not tested: decoding stopped at the counting limit after {N(atLeast)} bytes; the exact payload size is unknown.");
+        return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotTested,
+            $"Not tested: {(body?.Reason is { } reason ? reason : "the response size is unknown (no Content-Length was returned).")}{(transfer is null ? "" : $" ({transfer})")}");
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────

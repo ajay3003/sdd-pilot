@@ -61,11 +61,30 @@ public static class ApiReviewExport
             // GraphQL: the review's own requests and the observed inventory are separate sets, each listed once.
             var requestRows = isGraphQl ? t.Operations.Where(o => o.Executed).ToList() : t.Operations;
             if (requestRows.Count > 0)
-                sb.Append(table(["Operation", "Access", "Executed", "Status", "Content type", "Latency", "Bytes", "Result", "Contract", "Note"], requestRows.Select(o => new[]
+            {
+                sb.Append(table(["Operation", "Access", "Executed", "Status", "Content type", "Latency", "Payload size", "Result", "Contract", "Note"], requestRows.Select(o =>
                 {
-                    esc(o.Display), esc(o.AccessMode.ToString()), o.Executed ? "yes" : "no", o.Executed ? o.StatusCode.ToString() : "—", esc(o.ContentType ?? "—"),
-                    o.ElapsedMs is { } ms ? $"{ms:0} ms" : "—", o.ContentLength?.ToString() ?? "—", badge(o.Result.ToString()), esc(o.ContractMatched is null ? "—" : o.ContractMatched.Value ? "matched" : "not documented"), esc(o.Note ?? ""),
+                    var payload = ApiReviewEvidencePresentation.PayloadSize(o);
+                    return new[]
+                    {
+                        esc(o.Display), esc(o.AccessMode.ToString()), o.Executed ? "yes" : "no", o.Executed ? o.StatusCode.ToString() : "—", esc(o.ContentType ?? "—"),
+                        o.ElapsedMs is { } ms ? $"{ms:0} ms" : "—", esc(payload.Secondary is null ? payload.Primary : $"{payload.Primary} ({payload.Secondary})"), badge(o.Result.ToString()), esc(o.ContractMatched is null ? "—" : o.ContractMatched.Value ? "matched" : "not documented"), esc(o.Note ?? ""),
+                    };
                 })));
+                // Detailed body evidence only where it matters: encoded responses and bodies that could not be evaluated.
+                var bodies = requestRows.Where(o => o.Body is { } b && (b.ContentEncoding is not null || b.Decoding is not (ApiResponseBodyDecoding.NotEncoded or ApiResponseBodyDecoding.NoBody) || !b.Inspected)).ToList();
+                if (bodies.Count > 0)
+                    sb.Append("<h3>Response body evidence</h3>").Append(table(["Operation", "Content encoding", "Transfer size", "Decoded payload", "Decoding", "Payload evaluation basis", "Reason"], bodies.Select(o =>
+                    {
+                        var b = o.Body!;
+                        return new[]
+                        {
+                            esc(o.Display), esc(b.ContentEncoding ?? "none"), b.TransferBytes is { } t ? $"{t.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes" : "unknown",
+                            b.DecodedBytes is { } d ? $"{(b.DecodedBytesIsLowerBound ? "at least " : "")}{d.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes" : "unknown", esc(ApiReviewEvidencePresentation.DecodingLabel(b.Decoding)),
+                            esc(ApiReviewEvidencePresentation.PayloadBasis(b)), esc(b.Reason ?? ""),
+                        };
+                    })));
+            }
             var checks = t.Checks.Concat(t.Operations.SelectMany(o => o.Checks.Select(ch => ch with { Title = $"{o.Display}: {ch.Title}" }))).ToList();
             if (checks.Count > 0)
                 sb.Append(table(["Area", "Check", "Result", "Detail", "Evidence"], checks.Select(ch => new[] { esc(ApiReviewStatusLabels.AreaLabel(ch.Area)), esc(ch.Title), badge(ApiReviewEvidencePresentation.CheckLabel(ch, report.Policy)), esc(ch.Detail), esc(string.Join("; ", ch.Evidence)) })));
