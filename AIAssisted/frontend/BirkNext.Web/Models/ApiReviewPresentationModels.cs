@@ -285,6 +285,15 @@ public static class ApiReviewStatusLabels
         return contract.Available ? "OpenAPI" : "OpenAPI unavailable";
     }
 
+    /// <summary>Result-area label. "Errors" is the error-HANDLING domain (behavioural checks), never a list of errors found.</summary>
+    public static string AreaLabel(ApiReviewFindingType area) => area switch
+    {
+        ApiReviewFindingType.Errors => "Error handling",
+        ApiReviewFindingType.GraphQl => "GraphQL",
+        ApiReviewFindingType.AccessControl => "Access control",
+        _ => area.ToString(),
+    };
+
     public static string DriftLabel(ApiReviewDriftClassification drift) => drift switch
     {
         ApiReviewDriftClassification.Breaking => "Breaking",
@@ -316,6 +325,9 @@ public sealed record ApiReviewSummaryModel(
 /// What the next run will cover, counted from the SELECTED targets. Configuration counts only — nothing here says
 /// anything about what a review found, because none has run yet.
 /// </summary>
+/// <summary>One selected target's access for the next run: its own requirement, and whether that requirement can be met now.</summary>
+public sealed record ApiReviewTargetAccessRow(string Name, string Type, string Requirement, bool Ready, string State);
+
 public sealed record ApiReviewScopeSummary(int Selected, int Rest, int GraphQl, int AuthRequired, int Operations)
 {
     public string Headline => Selected == 0
@@ -329,10 +341,11 @@ public sealed record ApiReviewScopeSummary(int Selected, int Rest, int GraphQl, 
         GraphQl > 0 ? $"{GraphQl} GraphQL" : null,
     }.Where(p => p is not null));
 
-    /// <summary>Stated only when it is true; an all-public scope says nothing about authentication.</summary>
+    /// <summary>Stated only when it is true; an all-public scope says nothing about authentication. Counts the selected
+    /// targets' own requirements — never the frontend's sign-in rule.</summary>
     public string? AuthNote => AuthRequired == 0
         ? null
-        : $"{AuthRequired} require{(AuthRequired == 1 ? "s" : "")} authenticated access";
+        : $"Access requirements: {AuthRequired} authenticated · {Selected - AuthRequired} public";
 }
 
 /// <summary>

@@ -110,13 +110,27 @@
                     @* One vocabulary for the two access paths; the exact internal state stays in the details disclosure. *@
                     <ul class="aqr-access-rows">
                         <li class="aqr-access-row">
-                            <span class="aqr-access-label">Public access</span>
-                            <span class="aqr-pill aqr-pill-ready" data-testid="aqr-public-access"><span aria-hidden="true">✓</span> Available</span>
-                        </li>
-                        <li class="aqr-access-row">
                             <span class="aqr-access-label">Authenticated API context</span>
                             <span class="aqr-pill aqr-pill-@ApiReviewAccessAvailabilities.Tone(access.Availability)" data-testid="aqr-access-mode" data-availability="@access.Availability">@ApiReviewAccessAvailabilities.Label(access.Availability)</span>
                         </li>
+                        @* Readiness is judged per selected target against ITS requirement: public reachability never stands in for an
+                           authenticated target, and "Public access: Available" was a constant with no evidence behind it. *@
+                        @if (ApiReviewPresentation.TargetAccess(_targets, _selected, access.Availability) is { Count: > 0 } targetAccess)
+                        {
+                            var ready = targetAccess.Count(t => t.Ready);
+                            <li class="aqr-access-row">
+                                <span class="aqr-access-label">Selected target access</span>
+                                <span class="aqr-pill aqr-pill-@(ready == targetAccess.Count ? "ready" : "attention")" data-testid="aqr-target-access-summary">@ready of @targetAccess.Count ready</span>
+                            </li>
+                            <li class="aqr-access-targets">
+                                <ul class="aqr-target-access-list" data-testid="aqr-target-access-list">
+                                    @foreach (var t in targetAccess)
+                                    {
+                                        <li data-testid="aqr-target-access-row" data-ready="@(t.Ready ? "true" : "false")"><span class="aqr-target-access-name">@t.Name</span> <span class="aqr-muted">@t.Type · @t.Requirement</span> <span class="aqr-state aqr-state-@(t.Ready ? "pass" : "blocked")">@t.State</span></li>
+                                    }
+                                </ul>
+                            </li>
+                        }
                     </ul>
                     @* How many targets need it is Review scope's fact, and while the readiness card offers the way to
                        Authentication, this card does not offer it a second time. *@
@@ -335,7 +349,7 @@
             <div class="aqr-tabs" role="tablist" aria-label="Review result areas">
                 @foreach (var tab in Tabs)
                 {
-                    <button type="button" class="aqr-tab @(_tab == tab ? "aqr-tab-active" : "")" role="tab" id="aqr-tab-btn-@tab.ToLowerInvariant()" aria-selected="@(_tab == tab ? "true" : "false")" aria-controls="aqr-tabpanel" tabindex="@(_tab == tab ? "0" : "-1")" data-testid="aqr-tab-@tab.ToLowerInvariant()" @onclick="() => _tab = tab" @onkeydown="e => OnTabKey(e, tab)">@tab</button>
+                    <button type="button" class="aqr-tab @(_tab == tab ? "aqr-tab-active" : "")" role="tab" id="aqr-tab-btn-@tab.ToLowerInvariant()" aria-selected="@(_tab == tab ? "true" : "false")" aria-controls="aqr-tabpanel" tabindex="@(_tab == tab ? "0" : "-1")" data-testid="aqr-tab-@tab.ToLowerInvariant()" @onclick="() => _tab = tab" @onkeydown="e => OnTabKey(e, tab)">@ApiReviewPresentation.TabLabel(tab)</button>
                 }
             </div>
 
@@ -457,7 +471,12 @@
                     _ => new[] { ApiReviewFindingType.Performance },
                 };
                 @if (_tab == "Security") { <p class="aqr-scope-note" data-testid="aqr-security-note">@ApiReviewPresentation.SecurityScopeNote</p> }
-                @if (_tab == "Performance") { <p class="aqr-scope-note" data-testid="aqr-performance-note">@ApiReviewPresentation.PerformanceScopeNote</p> }
+                @if (_tab == "Performance")
+                {
+                    <p class="aqr-scope-note" data-testid="aqr-performance-note">@ApiReviewPresentation.PerformanceScopeNote</p>
+                    @* The thresholds THIS review was evaluated with, from its own policy snapshot — never today's settings. *@
+                    <p class="aqr-muted" data-testid="aqr-performance-thresholds">@ApiReviewPresentation.PerformanceThresholdsNote(report.Policy)</p>
+                }
                 @if (_tab == "Contracts")
                 {
                     <h3>Contract availability</h3>
@@ -731,8 +750,13 @@
             Identity = identity, Targets = selectedTargets,
             Policy = new ApiReviewPolicy
             {
-                ReadOnly = true, ErrorHandlingProbes = !production, SlowWarningMs = context.PerformanceThresholds.ApiResponseWarningMs, SlowPoorMs = context.PerformanceThresholds.ApiResponsePoorMs,
-                LargePayloadBytes = Math.Max(context.PerformanceThresholds.MaxRestPayloadBytes, context.PerformanceThresholds.MaxGraphQlPayloadBytes), IntrospectionExpectedDisabled = production,
+                ReadOnly = true, ErrorHandlingProbes = !production, IntrospectionExpectedDisabled = production,
+                // One setting per check (see ApiReviewPolicy): per-request response time → Single Request Latency (one threshold, so no
+                // poor tier); REST payload → REST Payload; GraphQL payload → GraphQL Payload. The payload threshold used to be the larger
+                // of REST and GraphQL, so a 500 KB REST setting was evaluated — and shown — as 1,048,576 bytes.
+                SlowWarningMs = context.PerformanceThresholds.MaxSingleRequestLatencyMs, SlowPoorMs = null, LatencySource = ApiReviewPresentation.LatencySourceLabel,
+                RestPayloadWarningBytes = context.PerformanceThresholds.MaxRestPayloadBytes, GraphQlPayloadWarningBytes = context.PerformanceThresholds.MaxGraphQlPayloadBytes,
+                LargePayloadBytes = context.PerformanceThresholds.MaxRestPayloadBytes,
             },
             Baselines = history is null ? [] : selectedTargets.Where(t => history.Baselines.ContainsKey(t.TargetId)).Select(t => history.Baselines[t.TargetId]).ToList(),
             FrontendOrigin = Uri.TryCreate(context.TargetUrl, UriKind.Absolute, out var origin) ? origin.GetLeftPart(UriPartial.Authority) : null,
@@ -787,7 +811,7 @@
                     <tbody>
                         @foreach (var c in checks)
                         {
-                            <tr data-testid="aqr-check-row" data-check-id="@c.CheckId" data-result="@c.Result"><td>@c.Area</td><td>@ApiReviewEvidencePresentation.CheckTitle(c)</td><td><span class="aqr-state">@ApiReviewEvidencePresentation.CheckLabel(c, _report!.Policy)</span></td><td>@ApiReviewEvidencePresentation.CheckDetail(c, _report!.Policy)</td><td class="aqr-mono aqr-muted">@string.Join(" · ", c.Evidence.Take(5))</td></tr>
+                            <tr data-testid="aqr-check-row" data-check-id="@c.CheckId" data-result="@c.Result"><td>@ApiReviewStatusLabels.AreaLabel(c.Area)</td><td>@ApiReviewEvidencePresentation.CheckTitle(c)</td><td><span class="aqr-state">@ApiReviewEvidencePresentation.CheckLabel(c, _report!.Policy)</span></td><td>@ApiReviewEvidencePresentation.CheckDetail(c, _report!.Policy)</td><td class="aqr-mono aqr-muted">@string.Join(" · ", c.Evidence.Take(5))</td></tr>
                         }
                     </tbody>
                 </table>
@@ -908,7 +932,7 @@
                             <tr data-testid="aqr-finding-row" data-finding-id="@f.Id" data-severity="@f.Severity">
                                 <td><span class="aqr-sev aqr-sev-@f.Severity.ToString().ToLowerInvariant()"><span class="aqr-sev-label">@f.Severity</span></span></td>
                                 <td>@ApiReviewPresentation.ServiceNameOf(report, f.TargetId)</td>
-                                <td>@f.Type@(f.Drift is { } d ? $" · {ApiReviewStatusLabels.DriftLabel(d)}" : "")</td>
+                                <td>@ApiReviewStatusLabels.AreaLabel(f.Type)@(f.Drift is { } d ? $" · {ApiReviewStatusLabels.DriftLabel(d)}" : "")</td>
                                 <td class="aqr-mono">@f.Endpoint</td>
                                 <td><strong>@f.Title</strong></td>
                                 <td><button type="button" class="aqr-row-toggle" aria-expanded="@(expanded ? "true" : "false")" aria-controls="@detailId" aria-label="@($"{(expanded ? "Hide" : "Show")} evidence for {f.Title} on {ApiReviewPresentation.ServiceNameOf(report, f.TargetId)}")" data-testid="aqr-finding-toggle" @onclick="() => ToggleFinding(f.Id)">@(expanded ? "Hide details" : "Details")</button></td>

@@ -268,7 +268,8 @@ public sealed class ApiReviewTargetResolverTests
         request.Environment.Should().Match<ApiReviewEnvironmentSnapshot>(e => e.EnvironmentId == "dev" && e.Name == "DEV" && e.TargetUrl == Origin + "/" && e.RequiresAuthentication && e.ContextIdentityDigest == "FP" && !e.IsProduction);
         request.Targets.Should().ContainSingle().Which.BasePath.Should().Be("/api/children");
         request.Baselines.Should().ContainSingle().Which.ContractHash.Should().Be("h");
-        request.Policy.Should().Match<ApiReviewPolicy>(p => p.ReadOnly && p.ErrorHandlingProbes && !p.IntrospectionExpectedDisabled && p.SlowWarningMs == 500 && p.SlowPoorMs == 1000);
+        request.Policy.Should().Match<ApiReviewPolicy>(p => p.ReadOnly && p.ErrorHandlingProbes && !p.IntrospectionExpectedDisabled && p.SlowWarningMs == 1500 && p.SlowPoorMs == null
+            && p.RestPayloadWarningBytes == 500L * 1024 && p.GraphQlPayloadWarningBytes == 1024L * 1024);
         request.FrontendOrigin.Should().Be(Origin);
         // Mutating the live context afterwards does not affect the captured snapshot.
         context.ActiveProfile.Name = "CHANGED"; context.TargetUrl = "https://qa.example.test/";

@@ -120,15 +120,54 @@ public sealed record ApiReviewEnvironmentSnapshot
     public DateTimeOffset CapturedAt { get; init; }
 }
 
-/// <summary>Review policy captured at Run. Read-only always; production additionally disables active error-handling probes.</summary>
+/// <summary>
+/// Review policy captured at Run and stored in the report, so a result is always shown against the thresholds it was evaluated
+/// with — never against whatever the Target Environment says today. Read-only always; production additionally disables active
+/// error-handling probes.
+///
+/// Threshold ownership (Target Environment → Performance Thresholds): per-request response time uses <b>Single Request Latency</b>
+/// (the generic per-request API threshold, also used for FQR's own gateway requests); REST payload uses <b>REST Payload</b>; GraphQL
+/// payload uses <b>GraphQL Payload</b>. "API Response Warning / Poor" belongs to BirkNext Performance Quality (proxy-observed traffic)
+/// and is not read here. Sizes: 1 KB = 1024 bytes, as the settings store them.
+/// </summary>
 public sealed record ApiReviewPolicy
 {
     public bool ReadOnly { get; init; } = true;
     /// <summary>Unknown-route / invalid-query probes (safe GET/OPTIONS/GraphQL query). Off in production by default.</summary>
     public bool ErrorHandlingProbes { get; init; } = true;
+    /// <summary>Response time above this is a Warning.</summary>
     public int SlowWarningMs { get; init; } = 500;
-    public int SlowPoorMs { get; init; } = 1000;
+    /// <summary>Response time above this is Poor (reported as Fail). Null: the policy has one threshold and no poor tier —
+    /// Single Request Latency is one number, so none is invented. Reports recorded before this had 1000.</summary>
+    public int? SlowPoorMs { get; init; }
+    /// <summary>Which setting the latency thresholds came from, for display.</summary>
+    public string? LatencySource { get; init; }
+    /// <summary>Legacy single payload threshold (REST and GraphQL shared the larger of the two). Read only when the per-type values are absent.</summary>
     public long LargePayloadBytes { get; init; } = 1024 * 1024;
+    /// <summary>REST response size above this is a Warning (REST Payload setting).</summary>
+    public long? RestPayloadWarningBytes { get; init; }
+    /// <summary>GraphQL response size above this is a Warning (GraphQL Payload setting). No GraphQL payload check runs today: the review's
+    /// only GraphQL request is the safe __typename probe, whose size says nothing; recorded so the policy snapshot is complete.</summary>
+    public long? GraphQlPayloadWarningBytes { get; init; }
+
+    public ApiReviewCheckResult LatencyResult(double elapsedMs) =>
+        SlowPoorMs is { } poor && elapsedMs > poor ? ApiReviewCheckResult.Fail
+        : elapsedMs > SlowWarningMs ? ApiReviewCheckResult.Warning
+        : ApiReviewCheckResult.Pass;
+
+    /// <summary>"warning > 1500 ms" or "warning > 500 ms · poor > 1000 ms" — the exact values <see cref="LatencyResult"/> used.</summary>
+    [JsonIgnore] public string LatencyPolicyText => SlowPoorMs is { } poor ? $"warning > {SlowWarningMs} ms · poor > {poor} ms" : $"warning > {SlowWarningMs} ms";
+
+    [JsonIgnore] public long RestPayloadThreshold => RestPayloadWarningBytes ?? LargePayloadBytes;
+
+    public ApiReviewCheckResult RestPayloadResult(long? bytes) =>
+        RestPayloadThreshold <= 0 || bytes is null ? ApiReviewCheckResult.Pass : bytes > RestPayloadThreshold ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass;
+
+    /// <summary>"512,000 bytes (500 KB)". KB = 1024 bytes, as Performance Thresholds stores them.</summary>
+    public static string Bytes(long bytes) =>
+        bytes >= 1024 * 1024 && bytes % (1024 * 1024) == 0 ? $"{bytes.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes ({bytes / (1024 * 1024)} MB)"
+        : bytes % 1024 == 0 ? $"{bytes.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes ({bytes / 1024} KB)"
+        : $"{bytes.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes";
     /// <summary>Introspection enabled is a policy question: warn only for production-like environments.</summary>
     public bool IntrospectionExpectedDisabled { get; init; }
 }

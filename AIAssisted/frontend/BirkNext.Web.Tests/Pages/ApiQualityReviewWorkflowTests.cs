@@ -197,7 +197,7 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
 
         page.Find("[data-testid=aqr-scope-headline]").TextContent.Should().Be("2 API targets selected");
         page.Find("[data-testid=aqr-scope-protocols]").TextContent.Should().Be("1 REST · 1 GraphQL");
-        page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("1 requires authenticated access");
+        page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("Access requirements: 1 authenticated · 1 public");
 
         // Derived, not hard-coded: the counts follow the selected targets.
         var targets = page.FindAll("[data-testid=aqr-target]");
@@ -243,8 +243,12 @@ public sealed class ApiQualityReviewWorkflowTests : BunitContext
         var page = Landing(authenticated: false);
 
         var accessCard = page.Find("[data-testid=aqr-access]");
-        accessCard.TextContent.Should().Contain("Public access").And.Contain("Authenticated API context");
-        page.Find("[data-testid=aqr-public-access]").TextContent.Should().Contain("Available");
+        accessCard.TextContent.Should().Contain("Authenticated API context").And.Contain("Selected target access");
+        // Mixed scope: the public target is ready, the authenticated one is not — public reachability never makes it ready.
+        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("1 of 2 ready");
+        var rows = page.FindAll("[data-testid=aqr-target-access-row]");
+        rows.Single(r => r.TextContent.Contains("· Public")).GetAttribute("data-ready").Should().Be("true");
+        rows.Single(r => r.TextContent.Contains("· Authenticated")).GetAttribute("data-ready").Should().Be("false");
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
         accessCard.TextContent.Should().NotContain("Not connected", "there is no connection concept behind this state");
         // The readiness card owns the one action toward Authentication; the access card does not repeat it.

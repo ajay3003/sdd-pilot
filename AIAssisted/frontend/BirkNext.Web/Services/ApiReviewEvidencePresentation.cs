@@ -35,7 +35,7 @@ public static class ApiReviewEvidencePresentation
 
     public static string CheckLabel(ApiReviewCheck check, ApiReviewPolicy policy)
     {
-        if (check.CheckId == "rest-payload" && check.Result == ApiReviewCheckResult.Pass && policy.LargePayloadBytes <= 0)
+        if (check.CheckId == "rest-payload" && check.Result == ApiReviewCheckResult.Pass && policy.RestPayloadThreshold <= 0)
             return "Observed";
         // Header checks that detected something produce a finding with its own severity; the check says what it saw,
         // not a second severity-like word. Other results (threshold warnings, failures) keep their real meaning.
@@ -72,7 +72,8 @@ public static class ApiReviewEvidencePresentation
                 ? $"Drift checks · {completed} completed · 0 changes detected"
                 : $"Drift checks · {completed} completed · " + string.Join(" · ", checks.GroupBy(c => CheckLabel(c, policy)).Select(g => $"{g.Key}: {g.Count()}"));
         }
-        return $"Checks ({checks.Count}) · " + string.Join(" · ", checks.GroupBy(c => CheckLabel(c, policy)).Select(g => $"{g.Key}: {g.Count()}"));
+        var noun = checks.Count > 0 && checks.All(c => c.Area == ApiReviewFindingType.Errors) ? "Error-handling checks" : "Checks";
+        return $"{noun} ({checks.Count}) · " + string.Join(" · ", checks.GroupBy(c => CheckLabel(c, policy)).Select(g => $"{g.Key}: {g.Count()}"));
     }
 
     public static string CheckTitle(ApiReviewCheck check) => check.CheckId is "errors-leak" or "gql-error-leak"
@@ -87,9 +88,13 @@ public static class ApiReviewEvidencePresentation
         "cors-policy" => $"{check.Detail} Observed response headers only; this is not a complete CORS assessment.",
         "gql-introspection" => $"{check.Detail} Introspection response observed; this does not validate schema coverage or authorization.",
         "errors-leak" or "gql-error-leak" when check.Result == ApiReviewCheckResult.Pass => "No internal-detail indicators observed in the sampled error response.",
-        "rest-payload" when policy.LargePayloadBytes > 0 => $"{check.Detail} Review policy: warning > {policy.LargePayloadBytes} bytes.",
+        // Newer results carry the policy in their own detail (the values the engine evaluated); older ones get it from the report's
+        // policy snapshot. Either way it is the policy of THAT run, never today's settings.
+        "rest-payload" when check.Detail.Contains("warning >", StringComparison.Ordinal) => check.Detail,
+        "rest-payload" when policy.RestPayloadThreshold > 0 => $"{check.Detail} Review policy: warning > {ApiReviewPolicy.Bytes(policy.RestPayloadThreshold)}.",
         "rest-payload" => $"{check.Detail} No positive payload threshold recorded; size is observational only.",
-        "rest-latency" or "gql-latency" => $"{check.Detail} Review policy: warning > {policy.SlowWarningMs} ms; poor > {policy.SlowPoorMs} ms.",
+        "rest-latency" or "gql-latency" when check.Detail.Contains("warning >", StringComparison.Ordinal) => check.Detail,
+        "rest-latency" or "gql-latency" => $"{check.Detail} Review policy: {policy.LatencyPolicyText}.",
         _ => check.Detail,
     };
 }

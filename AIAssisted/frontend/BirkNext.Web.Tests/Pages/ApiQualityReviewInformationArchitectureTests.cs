@@ -145,7 +145,8 @@ public sealed partial class ApiQualityReviewLandingUITests
         page.Find("[data-testid=aqr-tab-errors]").Click();
         page.Find("[data-check-id=errors-leak]").TextContent.Should().Contain("No internal-detail indicators observed").And.NotContain("No internal details in error responses");
         page.Find("[data-testid=aqr-tab-performance]").Click();
-        page.Find("[data-check-id=rest-payload]").TextContent.Should().Contain("Pass").And.Contain("warning > 1048576 bytes");
+        // The REST Payload setting (500 KB), not the larger GraphQL one it used to share.
+        page.Find("[data-check-id=rest-payload]").TextContent.Should().Contain("Pass").And.Contain("warning > 512,000 bytes (500 KB)").And.NotContain("1048576").And.NotContain("1,048,576");
         page.Find("[data-testid=aqr-performance-note]").TextContent.Should().Contain("backend gateway to the API").And.Contain("Not end-user");
     }
 

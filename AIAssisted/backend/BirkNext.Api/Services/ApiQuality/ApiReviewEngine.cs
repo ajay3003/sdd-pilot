@@ -144,7 +144,6 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         var unsafeOps = target.Operations.Where(o => !o.IsSafe).ToList();
         if (safeOps.Count == 0) safeOps.Add(new ApiReviewOperation { Method = "GET", Path = target.BasePath, Source = target.Source, Confidence = target.Confidence });
         Exec? primary = null;
-        var slowThreshold = request.Policy.SlowWarningMs;
         foreach (var op in safeOps)
         {
             var url = $"{target.Origin}{op.Path}";
@@ -193,13 +192,14 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
 
             // Latency & payload
             var latency = exec.ElapsedMs ?? 0;
-            var latencyResult = latency > request.Policy.SlowPoorMs ? ApiReviewCheckResult.Fail : latency > slowThreshold ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass;
-            opChecks.Add(Check("rest-latency", ApiReviewFindingType.Performance, "Response time", latencyResult, $"{latency:0} ms (warning > {slowThreshold} ms, poor > {request.Policy.SlowPoorMs} ms)."));
+            var latencyResult = request.Policy.LatencyResult(latency);
+            opChecks.Add(Check("rest-latency", ApiReviewFindingType.Performance, "Response time", latencyResult, $"{latency:0} ms ({request.Policy.LatencyPolicyText})."));
             if (latencyResult != ApiReviewCheckResult.Pass)
-                Add(targetFindings, findings, Finding(target, "rest-slow", latencyResult == ApiReviewCheckResult.Fail ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Response time", $"Slow response: {latency:0} ms", $"Single-sample latency of the review request (threshold {slowThreshold} ms warning / {request.Policy.SlowPoorMs} ms poor). Page-level API impact is reviewed by Performance Quality.", "Profile the endpoint server-side.", [$"Observed: {latency:0} ms", $"Threshold: {slowThreshold} / {request.Policy.SlowPoorMs} ms"], latencyResult == ApiReviewCheckResult.Fail ? ApiReviewCheckResult.Fail : ApiReviewCheckResult.Warning));
-            if (exec.ContentLength is { } size && size > request.Policy.LargePayloadBytes)
-                Add(targetFindings, findings, Finding(target, "rest-large-payload", ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Payload size", $"Large response payload ({size / 1024} KB)", "The response exceeds the large-payload threshold; check pagination.", "Paginate or filter the collection.", [$"Bytes: {size}", $"Threshold: {request.Policy.LargePayloadBytes}"], ApiReviewCheckResult.Warning));
-            opChecks.Add(Check("rest-payload", ApiReviewFindingType.Performance, "Payload size", exec.ContentLength is { } s2 && s2 > request.Policy.LargePayloadBytes ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass, $"{exec.ContentLength ?? 0} bytes."));
+                Add(targetFindings, findings, Finding(target, "rest-slow", latencyResult == ApiReviewCheckResult.Fail ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Response time", $"Slow response: {latency:0} ms", $"Single-sample latency of the review request ({request.Policy.LatencyPolicyText}). Page-level API impact is reviewed by Performance Quality.", "Profile the endpoint server-side.", [$"Observed: {latency:0} ms", $"Policy: {request.Policy.LatencyPolicyText}"], latencyResult == ApiReviewCheckResult.Fail ? ApiReviewCheckResult.Fail : ApiReviewCheckResult.Warning));
+            if (request.Policy.RestPayloadResult(exec.ContentLength) == ApiReviewCheckResult.Warning && exec.ContentLength is { } size)
+                Add(targetFindings, findings, Finding(target, "rest-large-payload", ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Payload size", $"Large response payload ({size / 1024} KB)", "The response exceeds the large-payload threshold; check pagination.", "Paginate or filter the collection.", [$"Bytes: {size}", $"Threshold: {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)}"], ApiReviewCheckResult.Warning));
+            opChecks.Add(Check("rest-payload", ApiReviewFindingType.Performance, "Payload size", request.Policy.RestPayloadResult(exec.ContentLength),
+                $"{(exec.ContentLength ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes (REST payload warning > {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)})."));
 
             // Pagination hints on collection responses (structural: items/totalCount or top-level array)
             var paths = exec.Shape.Select(s => s.Path).ToHashSet(StringComparer.Ordinal);
@@ -273,7 +273,13 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             else checks.Add(Check("errors-unknown-route", ApiReviewFindingType.Errors, "Unknown route handling", ApiReviewCheckResult.NotTested, "Error probes disabled by policy."));
             var rateLimit = primary.Headers.Keys.Any(k => k.StartsWith("x-ratelimit", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ratelimit", StringComparison.OrdinalIgnoreCase) || k == "retry-after");
             checks.Add(Check("rest-rate-limit-headers", ApiReviewFindingType.Security, "Rate-limit headers", rateLimit ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.ManualReview, rateLimit ? "Rate-limit headers exposed." : "No rate-limit headers observed; rate limiting is not load-tested here (informational)."));
-            checks.Add(Check("rest-compression", ApiReviewFindingType.Performance, "Compression", primary.Headers.ContainsKey("content-encoding") ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning, primary.Headers.TryGetValue("content-encoding", out var enc) ? $"Content-Encoding: {enc}" : "No Content-Encoding on the primary response (request advertised gzip/br)."));
+            // Rule-based, no threshold: compression is expected when the request advertised it. Only the public request advertises
+            // gzip/br; the authenticated gateway request does not (it reads the body for structure), so an uncompressed answer there
+            // says nothing about the server and is not assessed. The rule does not consider payload size (no minimum-size rule exists).
+            checks.Add(primary.Mode == ApiReviewAccessMode.AuthenticatedHttp && !primary.Headers.ContainsKey("content-encoding")
+                ? Check("rest-compression", ApiReviewFindingType.Performance, "Compression", ApiReviewCheckResult.NotTested, "Not assessed: the authenticated gateway request does not advertise Accept-Encoding, so an uncompressed response is expected.")
+                : Check("rest-compression", ApiReviewFindingType.Performance, "Compression", primary.Headers.ContainsKey("content-encoding") ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning,
+                    primary.Headers.TryGetValue("content-encoding", out var enc) ? $"Content-Encoding: {enc}" : "Compression not observed: the request advertised gzip/br, but the response was not encoded."));
         }
         else checks.Add(Check("rest-reachability", ApiReviewFindingType.Rest, "Reachability", ApiReviewCheckResult.Fail, "No operation could be executed."));
 
@@ -474,9 +480,10 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         else if (probe.StatusCode >= 500)
             Add(targetFindings, findings, Finding(target, "gql-5xx", ApiReviewSeverity.High, ApiReviewFindingType.GraphQl, endpoint, "Status code", $"GraphQL endpoint returned HTTP {probe.StatusCode}", "A trivial query caused a server error.", "Investigate the GraphQL server.", [$"HTTP {probe.StatusCode}"]));
         var latency = probe.ElapsedMs ?? 0;
-        checks.Add(Check("gql-latency", ApiReviewFindingType.Performance, "Response time (safe query)", latency > request.Policy.SlowPoorMs ? ApiReviewCheckResult.Fail : latency > request.Policy.SlowWarningMs ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass, $"{latency:0} ms."));
-        if (latency > request.Policy.SlowWarningMs)
-            Add(targetFindings, findings, Finding(target, "gql-slow", latency > request.Policy.SlowPoorMs ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, endpoint, "Response time", $"Slow GraphQL endpoint: {latency:0} ms for __typename", "Even a trivial query is slow; the endpoint or its middleware is the bottleneck. Per-operation latency from real traffic is reviewed by Performance Quality.", "Profile the GraphQL pipeline.", [$"Observed: {latency:0} ms"], ApiReviewCheckResult.Warning));
+        var gqlLatency = request.Policy.LatencyResult(latency);
+        checks.Add(Check("gql-latency", ApiReviewFindingType.Performance, "Response time (safe query)", gqlLatency, $"{latency:0} ms ({request.Policy.LatencyPolicyText})."));
+        if (gqlLatency != ApiReviewCheckResult.Pass)
+            Add(targetFindings, findings, Finding(target, "gql-slow", gqlLatency == ApiReviewCheckResult.Fail ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, endpoint, "Response time", $"Slow GraphQL endpoint: {latency:0} ms for __typename", "Even a trivial query is slow; the endpoint or its middleware is the bottleneck. Per-operation latency from real traffic is reviewed by Performance Quality.", "Profile the GraphQL pipeline.", [$"Observed: {latency:0} ms"], ApiReviewCheckResult.Warning));
         if (probe.Leaks.Count > 0)
             Add(targetFindings, findings, Finding(target, "gql-leak", ApiReviewSeverity.High, ApiReviewFindingType.Errors, endpoint, "Error leakage", "GraphQL response leaks internal details", "Indicators of stack traces/exceptions were found in the response (content redacted).", "Mask exceptions in the GraphQL error filter.", probe.Leaks.Select(l => $"Indicator: {l}").ToList()));
         operations.Add(new ApiReviewOperationResult { Display = "query { __typename }", Method = "POST", Path = target.BasePath, AccessMode = mode, Executed = true, StatusCode = probe.StatusCode, ContentType = probe.ContentType, ElapsedMs = probe.ElapsedMs, ContentLength = probe.ContentLength, Result = ok ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, ShapeEntryCount = probe.Shape.Count });

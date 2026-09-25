@@ -141,7 +141,9 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
 
         // Not a network state, not a failure.
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Waiting for authenticated traffic");
-        page.Find("[data-testid=aqr-public-access]").TextContent.Should().Contain("Available", "public access and authenticated context stay separate");
+        // Per-target readiness, never a constant "Public access: Available" standing in for an authenticated target.
+        page.FindAll("[data-testid=aqr-public-access]").Should().BeEmpty();
+        page.FindAll("[data-testid=aqr-target-access-row]").Should().OnlyContain(r => r.GetAttribute("data-ready") == "false" && r.TextContent.Contains("Authenticated context unavailable"));
         page.Markup.Should().NotContain("Not connected").And.NotContain("authentication failed").And.NotContain("unreachable");
     }
 
@@ -192,10 +194,10 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
         var page = Render(AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic);
 
         var signIn = page.Find("[data-testid=aqr-env-auth]");
-        signIn.TextContent.Should().Be("Not required", "the value is the frontend's own configuration, unchanged");
+        signIn.TextContent.Should().Be("Not required for frontend entry point", "a fact about the frontend, never read as the APIs' requirement");
         signIn.GetAttribute("aria-describedby").Should().Be("aqr-frontend-signin-help");
         page.Find("#aqr-frontend-signin-help").TextContent.Should().Be("Frontend access does not require sign-in; selected APIs may still require authenticated access.");
-        page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("2 require authenticated access");
+        page.Find("[data-testid=aqr-scope-auth]").TextContent.Should().Be("Access requirements: 2 authenticated · 0 public");
         page.FindAll("[data-testid=aqr-target-access]").Should().OnlyContain(a => a.TextContent == "Auth required");
     }
 
@@ -520,8 +522,8 @@ public sealed class ApiQualityReviewPreRunCleanupTests : BunitContext
     {
         var page = Render(AuthenticatedApiContextStatus.Available);
         page.Find("[data-testid=aqr-frontend-signin-help]").TextContent.Should().Contain("selected APIs may still require authenticated access");
-        page.Find("[data-testid=aqr-public-access]").TextContent.Should().Contain("Available");
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Be("Available");
+        page.Find("[data-testid=aqr-target-access-summary]").TextContent.Should().Be("2 of 2 ready");
     }
 }
 

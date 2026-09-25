@@ -20,6 +20,37 @@ public static class ApiReviewPresentation
     public const string TimingScopeNote = "Response timing is measured from the backend gateway to the API. It is not end-user or browser latency.";
     /// <summary>The same fact under a "Timing note" label in Read-only review.</summary>
     public const string TimingScopeShort = "Measured backend gateway → API, not browser or end-user latency.";
+    public const string LatencySourceLabel = "Single Request Latency";
+
+    /// <summary>Visible tab label. Keys stay stable ("Errors"); the label names the domain: error HANDLING, not errors found.</summary>
+    public static string TabLabel(string tab) => tab == "Errors" ? "Error handling" : tab;
+
+    /// <summary>The thresholds this review was evaluated with, from the report's own policy snapshot.</summary>
+    public static string PerformanceThresholdsNote(ApiReviewPolicy policy) =>
+        $"Thresholds used by this review — response time: {policy.LatencyPolicyText}{(policy.LatencySource is { } source ? $" ({source})" : "")}"
+        + $" · REST payload: warning > {ApiReviewPolicy.Bytes(policy.RestPayloadThreshold)}"
+        + (policy.GraphQlPayloadWarningBytes is { } gql ? $" · GraphQL payload: warning > {ApiReviewPolicy.Bytes(gql)} (no GraphQL payload check runs; the safe query is not a business payload)" : "")
+        + ". Source: Target Environment → Performance Thresholds, captured when the review ran.";
+
+    /// <summary>
+    /// Per selected target: its own access requirement and whether it can be met now. A public target is ready; an authenticated
+    /// target is ready only with an available authenticated API context — public reachability never makes it ready.
+    /// </summary>
+    public static IReadOnlyList<ApiReviewTargetAccessRow> TargetAccess(IReadOnlyList<ApiReviewTarget> targets, IReadOnlyCollection<string> selected, ApiReviewAccessAvailability availability) =>
+        targets.Where(t => selected.Contains(t.TargetId)).Select(t =>
+        {
+            var ready = !t.AuthRequired || availability == ApiReviewAccessAvailability.Available;
+            return new ApiReviewTargetAccessRow(DisplayName(t), t.ApiType == ApiReviewTargetType.GraphQl ? "GraphQL" : "REST",
+                t.AuthRequired ? "Authenticated" : "Public", ready,
+                ready ? "Ready" : availability == ApiReviewAccessAvailability.Loading ? "Checking…" : "Authenticated context unavailable");
+        }).ToList();
+
+    /// <summary>The frontend entry point's sign-in rule — a fact about the frontend, never about the APIs.</summary>
+    public static string FrontendSignInLabel(FrontendAnalysisContext context) =>
+        context.RequiresAuthentication
+            ? $"Required ({AuthenticationPresentation.ProviderLabel(context.AuthenticationType)})"
+            : "Not required for frontend entry point";
+
     public const string PerformanceScopeNote = "API response timing observed by the review's own requests (backend gateway to the API). Not end-user or production performance.";
 
     /// <summary>
@@ -99,7 +130,7 @@ public static class ApiReviewPresentation
             string.IsNullOrWhiteSpace(profile.Name) ? "Unnamed environment" : profile.Name,
             FrontendQualityLandingPresentation.EnvironmentTypeLabel(profile.EnvironmentType),
             string.IsNullOrWhiteSpace(context.TargetUrl) ? "Not configured" : context.TargetUrl,
-            FrontendQualityLandingPresentation.AuthenticationLabel(context.AuthenticationType, context.RequiresAuthentication),
+            FrontendSignInLabel(context),
             ApiAccessLabel(availability, anyAuth),
             availability,
             [
@@ -391,9 +422,11 @@ public static class ApiReviewPresentation
     public static ApiReviewSummaryModel Summary(ApiReviewReport report)
     {
         var c = report.Coverage;
-        var accessUsed = c.AuthenticatedExecuted > 0 && c.PublicExecuted > 0 ? "Mixed"
-            : c.AuthenticatedExecuted > 0 ? "Authenticated"
-            : c.PublicExecuted > 0 ? "Public only"
+        // What was actually used, counted against the selected targets — not an echo of the pre-run requirement.
+        var selectedTargets = report.Targets.Count;
+        var accessUsed = c.AuthenticatedExecuted > 0 && c.PublicExecuted > 0 ? $"Mixed — {c.AuthenticatedExecuted} authenticated · {c.PublicExecuted} public of {selectedTargets} selected targets"
+            : c.AuthenticatedExecuted > 0 ? $"Authenticated for {c.AuthenticatedExecuted} of {selectedTargets} selected target{(selectedTargets == 1 ? "" : "s")}"
+            : c.PublicExecuted > 0 ? $"Public for {c.PublicExecuted} of {selectedTargets} selected target{(selectedTargets == 1 ? "" : "s")}"
             : "None executed";
         var accessDetail = string.Join(" · ", new[]
         {

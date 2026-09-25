@@ -412,6 +412,86 @@ public sealed class ApiReviewEngineTests
         Assert.Null(GraphQlSchemaReview.MatchRootField(null, roots));
     }
 
+    // ── Performance thresholds: one setting per check, evaluated and displayed from the same values ─────────────
+
+    [Theory]
+    [InlineData(400 * 1024, ApiReviewCheckResult.Pass)]
+    [InlineData(600 * 1024, ApiReviewCheckResult.Warning)]
+    public void RestPayload_UsesTheRestPayloadSetting_NotTheLargerGraphQlOne(long bytes, ApiReviewCheckResult expected)
+    {
+        var policy = new ApiReviewPolicy { RestPayloadWarningBytes = 500L * 1024, GraphQlPayloadWarningBytes = 1024L * 1024 };
+        Assert.Equal(expected, policy.RestPayloadResult(bytes));
+        Assert.Equal(512_000, policy.RestPayloadThreshold);
+        Assert.Equal("512,000 bytes (500 KB)", ApiReviewPolicy.Bytes(policy.RestPayloadThreshold));
+        Assert.Equal("1,048,576 bytes (1 MB)", ApiReviewPolicy.Bytes(policy.GraphQlPayloadWarningBytes!.Value));
+    }
+
+    [Fact]
+    public void LegacyPolicy_WithoutPerTypeThresholds_StillReadsItsOwnSingleThreshold() =>
+        Assert.Equal(1024 * 1024, new ApiReviewPolicy { LargePayloadBytes = 1024 * 1024 }.RestPayloadThreshold);
+
+    [Theory]
+    [InlineData(1200, ApiReviewCheckResult.Pass)]
+    [InlineData(1600, ApiReviewCheckResult.Warning)]
+    [InlineData(9000, ApiReviewCheckResult.Warning)]
+    public void SingleRequestLatency_IsOneThreshold_NoPoorTierIsInvented(double ms, ApiReviewCheckResult expected)
+    {
+        var policy = new ApiReviewPolicy { SlowWarningMs = 1500, SlowPoorMs = null };
+        Assert.Equal(expected, policy.LatencyResult(ms));
+        Assert.Equal("warning > 1500 ms", policy.LatencyPolicyText);
+    }
+
+    [Theory]
+    [InlineData(400, ApiReviewCheckResult.Pass)]
+    [InlineData(700, ApiReviewCheckResult.Warning)]
+    [InlineData(1200, ApiReviewCheckResult.Fail)]
+    public void AHistoricalTwoTierPolicy_IsEvaluatedAndShownAsItWas(double ms, ApiReviewCheckResult expected)
+    {
+        var policy = new ApiReviewPolicy { SlowWarningMs = 500, SlowPoorMs = 1000 };
+        Assert.Equal(expected, policy.LatencyResult(ms));
+        Assert.Equal("warning > 500 ms · poor > 1000 ms", policy.LatencyPolicyText);
+    }
+
+    [Theory]
+    [InlineData(400 * 1024, ApiReviewCheckResult.Pass)]
+    [InlineData(600 * 1024, ApiReviewCheckResult.Warning)]
+    public async Task Engine_RestPayloadCheck_EvaluatesAndStatesTheSameThreshold(int bytes, ApiReviewCheckResult expected)
+    {
+        var body = "{\"a\":\"" + new string('x', bytes) + "\"}";
+        var fixture = new Fixture { Respond = (req, _) => req.RequestUri!.AbsolutePath == "/api/children" ? Json(HttpStatusCode.OK, body) : Json(HttpStatusCode.NotFound, "{}", "application/problem+json") };
+        var request = Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, Rest()) with
+        {
+            Policy = new ApiReviewPolicy { ErrorHandlingProbes = false, SlowWarningMs = 1500, RestPayloadWarningBytes = 500L * 1024, GraphQlPayloadWarningBytes = 1024L * 1024, LargePayloadBytes = 500L * 1024 },
+        };
+        var report = await Engine(fixture).RunAsync(request);
+        var payload = report.Targets.Single().Operations.SelectMany(o => o.Checks).Single(c => c.CheckId == "rest-payload");
+        var size = body.Length;
+        Assert.Equal(size > 512_000 ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass, payload.Result);
+        Assert.Equal(expected, payload.Result);
+        Assert.Contains("REST payload warning > 512,000 bytes (500 KB)", payload.Detail);
+        Assert.DoesNotContain("1,048,576", payload.Detail);
+        var latency = report.Targets.Single().Operations.SelectMany(o => o.Checks).Single(c => c.CheckId == "rest-latency");
+        Assert.Contains("(warning > 1500 ms)", latency.Detail);
+        Assert.DoesNotContain("poor", latency.Detail);
+    }
+
+    [Fact]
+    public async Task Compression_AuthenticatedGatewayRequestIsNotAssessed_PublicRequestKeepsTheRule()
+    {
+        var gateway = new FakeGateway(true);
+        var authenticated = await Engine(new Fixture(), gateway).RunAsync(Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, Rest(auth: true)));
+        var auth = authenticated.Targets.Single().Checks.Single(c => c.CheckId == "rest-compression");
+        Assert.Equal(ApiReviewCheckResult.NotTested, auth.Result);
+        Assert.Contains("does not advertise Accept-Encoding", auth.Detail);
+
+        var fixture = new Fixture { Respond = (req, _) => req.RequestUri!.AbsolutePath == "/api/children" ? Json(HttpStatusCode.OK, "{\"items\":[]}") : Json(HttpStatusCode.NotFound, "{}", "application/problem+json") };
+        var publicReport = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, Rest()));
+        var pub = publicReport.Targets.Single().Checks.Single(c => c.CheckId == "rest-compression");
+        Assert.Equal(ApiReviewCheckResult.Warning, pub.Result);
+        Assert.Equal("Compression not observed: the request advertised gzip/br, but the response was not encoded.", pub.Detail);
+        Assert.Contains(fixture.Requests, r => r.Headers.TryGetValues("Accept-Encoding", out var v) && string.Join(",", v).Contains("gzip"));
+    }
+
     private static string IntrospectionWith(string[] queryFields, string[] mutationFields, string[] deprecated)
     {
         static object Field(string name, bool deprecatedField, string type = "Child") => new { name, description = (string?)null, args = new object[] { new { name = "first", description = (string?)null, type = new { kind = "SCALAR", name = "Int", ofType = (object?)null }, defaultValue = (string?)null } }, type = new { kind = "LIST", name = (string?)null, ofType = new { kind = "OBJECT", name = type, ofType = (object?)null } }, isDeprecated = deprecatedField, deprecationReason = deprecatedField ? "old" : null };

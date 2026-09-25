@@ -22,7 +22,7 @@ public static class ApiReviewExport
         sb.Append($"<dt>Target URL</dt><dd>{esc(env.TargetUrl)}</dd>");
         sb.Append($"<dt>Authenticated testing method</dt><dd>{esc(env.AuthenticatedTestingMethod.ToString())}</dd>");
         sb.Append($"<dt>Access</dt><dd>{esc(AccessLabel(report))}</dd>");
-        sb.Append($"<dt>Policy</dt><dd>{(report.Policy.ReadOnly ? "Read-only" : "")}; error probes {(report.Policy.ErrorHandlingProbes && !env.IsProduction ? "enabled" : "disabled")}; slow &gt; {report.Policy.SlowWarningMs} / {report.Policy.SlowPoorMs} ms</dd>");
+        sb.Append($"<dt>Policy</dt><dd>{(report.Policy.ReadOnly ? "Read-only" : "")}; error probes {(report.Policy.ErrorHandlingProbes && !env.IsProduction ? "enabled" : "disabled")}; response time {esc(report.Policy.LatencyPolicyText)}{(report.Policy.LatencySource is { } src ? $" ({esc(src)})" : "")}; REST payload warning &gt; {esc(ApiReviewPolicy.Bytes(report.Policy.RestPayloadThreshold))}{(report.Policy.GraphQlPayloadWarningBytes is { } gql ? $"; GraphQL payload warning &gt; {esc(ApiReviewPolicy.Bytes(gql))}" : "")} — thresholds captured when the review ran</dd>");
         sb.Append($"<dt>Started / generated</dt><dd>{report.StartedAt:u} / {report.GeneratedAt:u}</dd></dl></section>\n");
 
         var c = report.Coverage;
@@ -66,7 +66,7 @@ public static class ApiReviewExport
                 })));
             var checks = t.Checks.Concat(t.Operations.SelectMany(o => o.Checks.Select(ch => ch with { Title = $"{o.Display}: {ch.Title}" }))).ToList();
             if (checks.Count > 0)
-                sb.Append(table(["Area", "Check", "Result", "Detail", "Evidence"], checks.Select(ch => new[] { esc(ch.Area.ToString()), esc(ch.Title), badge(ApiReviewEvidencePresentation.CheckLabel(ch, report.Policy)), esc(ch.Detail), esc(string.Join("; ", ch.Evidence)) })));
+                sb.Append(table(["Area", "Check", "Result", "Detail", "Evidence"], checks.Select(ch => new[] { esc(ApiReviewStatusLabels.AreaLabel(ch.Area)), esc(ch.Title), badge(ApiReviewEvidencePresentation.CheckLabel(ch, report.Policy)), esc(ch.Detail), esc(string.Join("; ", ch.Evidence)) })));
             if (isGraphQl)
             {
                 var counts = ApiReviewPresentation.GraphQlCounts(t);
@@ -112,7 +112,7 @@ public static class ApiReviewExport
         if (report.Findings.Count == 0) sb.Append("<p>No findings on the completed targets. Blocked/Not tested targets are not passes.</p>");
         else sb.Append(table(["Severity", "Type", "Endpoint / operation", "Check", "Check result", "Finding", "Evidence", "Recommendation", "Drift"], report.Findings.Select(f => new[]
         {
-            badge(f.Severity.ToString()), esc(f.Type.ToString()), esc(f.Endpoint), esc(f.Check), esc(ApiReviewStatusLabels.FindingCheckLabel(f)), $"<strong>{esc(f.Title)}</strong><br/>{esc(f.Description)}",
+            badge(f.Severity.ToString()), esc(ApiReviewStatusLabels.AreaLabel(f.Type)), esc(f.Endpoint), esc(f.Check), esc(ApiReviewStatusLabels.FindingCheckLabel(f)), $"<strong>{esc(f.Title)}</strong><br/>{esc(f.Description)}",
             esc(string.Join("; ", f.Evidence)), esc(f.Recommendation), esc(f.Drift?.ToString() ?? "—"),
         })));
         sb.Append("</section>\n");

@@ -168,7 +168,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         page.Find("[data-testid=aqr-env-url]").TextContent.Should().Be(Origin + "/");
         // The Target card states the environment's own sign-in policy. It is labelled as such, because "Authentication"
         // next to an API access card reporting authenticated access available read as a contradiction.
-        page.Find("[data-testid=aqr-env-auth]").TextContent.Should().Be("Microsoft Entra ID");
+        page.Find("[data-testid=aqr-env-auth]").TextContent.Should().Be("Required (Microsoft Entra ID)");
         page.Find("[data-testid=aqr-environment]").TextContent.Should().Contain("Frontend sign-in");
         // API access owns the access state and Readiness owns the review state; the Target card repeats neither.
         page.Find("[data-testid=aqr-access-mode]").TextContent.Should().Contain("Available");
@@ -411,7 +411,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         page.Find("#aqr-result-heading").TextContent.Should().Be("Review result");
         page.Find("[data-testid=aqr-result-env]").TextContent.Should().Be("M2LB DEV");
         page.Find("[data-testid=aqr-result-services]").TextContent.Should().Be("REST 1 · GraphQL 1");
-        page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("Authenticated");
+        page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("Authenticated for 2 of 2 selected targets");
         page.Find("[data-testid=aqr-coverage]").TextContent.Should().Contain("2 of 2 authentication-required targets reviewed with authenticated requests");
 
         var severities = page.FindAll("[data-testid=aqr-sev]");
@@ -471,7 +471,7 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         statuses.Should().BeEquivalentTo(["Authentication required", "Reviewed"]);
         // The blocked target is not tested; the public REST target carries the stub's two findings.
         page.FindAll("[data-testid=aqr-service-findings]").Select(e => e.TextContent).Should().BeEquivalentTo(["Not tested", "2"]);
-        page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("Public only");
+        page.Find("[data-testid=aqr-result-access]").TextContent.Should().Be("Public for 1 of 2 selected targets", "the blocked authenticated target was not reviewed with any access");
         page.Find("[data-testid=aqr-coverage]").TextContent.Should().Contain("0 of 1 authentication-required target reviewed").And.Contain("1 of 1 public target reviewed");
         page.Find("[data-testid=aqr-result-services]").TextContent.Should().Contain("1 not executed");
         page.FindAll("[data-testid=aqr-service-access]").Select(e => e.TextContent).Should().BeEquivalentTo(["Authentication required · not executed", "Public"]);
@@ -484,7 +484,8 @@ public sealed partial class ApiQualityReviewLandingUITests : BunitContext
         var page = await RenderAndRun();
 
         var tabs = page.FindAll("[role=tab]");
-        tabs.Select(t => t.TextContent).Should().Equal("Overview", "REST", "GraphQL", "Contracts", "Security", "Errors", "Performance", "Findings");
+        // "Error handling": the tab holds behavioural checks, not a list of errors found (Findings lists findings).
+        tabs.Select(t => t.TextContent).Should().Equal("Overview", "REST", "GraphQL", "Contracts", "Security", "Error handling", "Performance", "Findings");
         tabs.Should().OnlyContain(t => t.GetAttribute("aria-controls") == "aqr-tabpanel");
         page.Find("[data-testid=aqr-tab-overview]").GetAttribute("aria-selected").Should().Be("true");
         page.Find("[data-testid=aqr-tab-overview]").GetAttribute("tabindex").Should().Be("0");
