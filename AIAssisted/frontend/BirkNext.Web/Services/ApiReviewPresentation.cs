@@ -27,7 +27,8 @@ public static class ApiReviewPresentation
 
     /// <summary>The thresholds this review was evaluated with, from the report's own policy snapshot.</summary>
     public static string PerformanceThresholdsNote(ApiReviewPolicy policy) =>
-        $"Thresholds used by this review — response time: {policy.LatencyPolicyText}{(policy.LatencySource is { } source ? $" ({source})" : "")}"
+        (policy.LatencySource == LatencySourceLabel ? "API response timing is evaluated against the target's Single Request Latency threshold. " : "")
+        + $"Thresholds used by this review — response time: {policy.LatencyPolicyText}{(policy.LatencySource is { } source ? $" ({source})" : "")}"
         + $" · REST payload: warning > {ApiReviewPolicy.Bytes(policy.RestPayloadThreshold)}"
         + (policy.GraphQlPayloadWarningBytes is { } gql ? $" · GraphQL payload: warning > {ApiReviewPolicy.Bytes(gql)} (no GraphQL payload check runs; the safe query is not a business payload)" : "")
         + ". Source: Target Environment → Performance Thresholds, captured when the review ran.";

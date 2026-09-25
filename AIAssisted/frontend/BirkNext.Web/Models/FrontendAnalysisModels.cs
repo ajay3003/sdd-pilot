@@ -345,7 +345,15 @@ public sealed class FrontendPerformanceThresholds
     [JsonPropertyName("maxStartupApiCalls")]              public int                   MaxStartupApiCalls              { get; set; } = 10;
     [JsonPropertyName("maxRestPayloadBytes")]             public long                  MaxRestPayloadBytes             { get; set; } = 500L * 1024;
     [JsonPropertyName("maxGraphQlPayloadBytes")]          public long                  MaxGraphQlPayloadBytes          { get; set; } = 1024L * 1024;
+    /// <summary>
+    /// Aggregate (average) API latency. Currently UNOWNED: no review reads it — API Quality Review deliberately does not. Kept for
+    /// stored profiles; assign an owner or remove it in a dedicated settings cleanup.
+    /// </summary>
     [JsonPropertyName("maxAverageApiLatencyMs")]          public int                   MaxAverageApiLatencyMs          { get; set; } = 500;
+    /// <summary>
+    /// Latency of ONE API request. Owners: API Quality Review per-request response time (single tier: above = Warning, captured in
+    /// the report's policy snapshot), FQR authenticated API-surface probes and Browser Quality browser-observed API calls.
+    /// </summary>
     [JsonPropertyName("maxSingleRequestLatencyMs")]       public int                   MaxSingleRequestLatencyMs       { get; set; } = 1500;
     [JsonPropertyName("maxWasmRuntimeSizeBytes")]         public long                  MaxWasmRuntimeSizeBytes         { get; set; } = 3L * 1024 * 1024;
     [JsonPropertyName("maxFrameworkSizeBytes")]           public long                  MaxFrameworkSizeBytes           { get; set; } = 5L * 1024 * 1024;
@@ -353,7 +361,8 @@ public sealed class FrontendPerformanceThresholds
     [JsonPropertyName("maxIndividualAssetSizeBytes")]     public long                  MaxIndividualAssetSizeBytes     { get; set; } = 2L * 1024 * 1024;
 
     // ── BirkNext Performance Quality (native engine) thresholds. Documented defaults; a Target Environment may override each one. ──
-    /// <summary>Proxy-observed API response time above which a call is "needs improvement" (warning).</summary>
+    /// <summary>Proxy-observed API response time above which a call is "needs improvement" (warning). BirkNext Performance Quality only;
+    /// API Quality Review uses <see cref="MaxSingleRequestLatencyMs"/>, never this pair.</summary>
     [JsonPropertyName("apiResponseWarningMs")]            public int                   ApiResponseWarningMs            { get; set; } = 500;
     /// <summary>Proxy-observed API response time above which a call is "poor".</summary>
     [JsonPropertyName("apiResponsePoorMs")]               public int                   ApiResponsePoorMs               { get; set; } = 1000;

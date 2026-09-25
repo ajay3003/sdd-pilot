@@ -37,11 +37,19 @@ public sealed class ApiReviewAccessThresholdCleanupTests
         {
             SlowWarningMs = 1500, LatencySource = ApiReviewPresentation.LatencySourceLabel, RestPayloadWarningBytes = 500L * 1024, GraphQlPayloadWarningBytes = 1024L * 1024,
         });
+        note.Should().StartWith("API response timing is evaluated against the target's Single Request Latency threshold.");
         note.Should().Contain("response time: warning > 1500 ms (Single Request Latency)")
             .And.Contain("REST payload: warning > 512,000 bytes (500 KB)")
             .And.Contain("GraphQL payload: warning > 1,048,576 bytes (1 MB)")
             .And.Contain("captured when the review ran")
             .And.NotContain("poor");
+    }
+
+    [Fact]
+    public void AnOldResult_PerformanceNote_KeepsItsTwoTierPolicy_AndNoSingleRequestSentence()
+    {
+        var note = ApiReviewPresentation.PerformanceThresholdsNote(new ApiReviewPolicy { SlowWarningMs = 500, SlowPoorMs = 1000, LargePayloadBytes = 1024 * 1024 });
+        note.Should().Contain("response time: warning > 500 ms · poor > 1000 ms").And.NotContain("Single Request Latency");
     }
 
     // ── Error handling ──────────────────────────────────────────────────────────────────────────────────────────────

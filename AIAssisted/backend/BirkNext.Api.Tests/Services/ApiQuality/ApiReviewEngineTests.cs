@@ -182,6 +182,8 @@ public sealed class ApiReviewEngineTests
         // No document was captured for these operations, so compatibility is Not assessed — never guessed from the operation name.
         Assert.All(target.GraphQlOperationMatches, m => Assert.Equal(ApiReviewCheckResult.NotTested, m.Result));
         Assert.All(target.GraphQlCompatibility!.Operations, o => Assert.Equal(GraphQlOperationCompatibility.NoDocumentReason, o.NotAssessedReason));
+        // GraphQL Payload is recorded in the policy but never evaluated: the only executed request is the safe __typename probe.
+        Assert.DoesNotContain(target.Checks.Concat(target.Operations.SelectMany(o => o.Checks)), c => c.CheckId.Contains("payload", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(report.Findings, f => f.Id.StartsWith("gql-observed-mutation") && f.Result == ApiReviewCheckResult.ManualReview);
         // Every finding names its typed rule without the per-observation suffix, so the UI can group by rule.
         Assert.All(report.Findings, f => Assert.True(f.RuleId.Length > 0 && f.Id.StartsWith(f.RuleId + "-", StringComparison.Ordinal), f.Id));
@@ -432,8 +434,11 @@ public sealed class ApiReviewEngineTests
 
     [Theory]
     [InlineData(1200, ApiReviewCheckResult.Pass)]
+    [InlineData(1499, ApiReviewCheckResult.Pass)]
+    [InlineData(1500, ApiReviewCheckResult.Pass)]   // within threshold: "warning > 1500 ms"
+    [InlineData(1501, ApiReviewCheckResult.Warning)]
     [InlineData(1600, ApiReviewCheckResult.Warning)]
-    [InlineData(9000, ApiReviewCheckResult.Warning)]
+    [InlineData(9000, ApiReviewCheckResult.Warning)]   // still Warning: one threshold, no Poor/Fail tier
     public void SingleRequestLatency_IsOneThreshold_NoPoorTierIsInvented(double ms, ApiReviewCheckResult expected)
     {
         var policy = new ApiReviewPolicy { SlowWarningMs = 1500, SlowPoorMs = null };
@@ -490,6 +495,9 @@ public sealed class ApiReviewEngineTests
         Assert.Equal(ApiReviewCheckResult.Warning, pub.Result);
         Assert.Equal("Compression not observed: the request advertised gzip/br, but the response was not encoded.", pub.Detail);
         Assert.Contains(fixture.Requests, r => r.Headers.TryGetValues("Accept-Encoding", out var v) && string.Join(",", v).Contains("gzip"));
+        // A performance Warning is a check result, not automatically a finding — on either path.
+        Assert.DoesNotContain(authenticated.Findings, f => f.RuleId.Contains("compression", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(publicReport.Findings, f => f.RuleId.Contains("compression", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string IntrospectionWith(string[] queryFields, string[] mutationFields, string[] deprecated)

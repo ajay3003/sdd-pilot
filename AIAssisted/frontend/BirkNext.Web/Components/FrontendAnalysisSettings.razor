@@ -949,15 +949,21 @@
                         <div class="fa-threshold-group">
                             <div class="fa-threshold-group-title">Latency</div>
                             <div class="fa-threshold-row">
-                                <label class="fa-threshold-label">Maximum Average API Latency</label>
-                                <input type="number" class="form-control fa-threshold-input" min="1"
+                                <span class="fa-threshold-label">
+                                    <label for="fa-thr-avg-latency">Maximum Average API Latency</label>
+                                    <span class="fa-threshold-hint" id="fa-thr-avg-latency-hint" data-testid="fa-threshold-owner-avg-latency">Aggregate threshold · not used by any review yet</span>
+                                </span>
+                                <input type="number" class="form-control fa-threshold-input" min="1" id="fa-thr-avg-latency" aria-describedby="fa-thr-avg-latency-hint"
                                        @bind="_editProfile.Performance.MaxAverageApiLatencyMs"
                                        @bind:after="MarkThresholdsCustom" />
                                 <span class="fa-threshold-unit">ms</span>
                             </div>
                             <div class="fa-threshold-row">
-                                <label class="fa-threshold-label">Maximum Single Request Latency</label>
-                                <input type="number" class="form-control fa-threshold-input" min="1"
+                                <span class="fa-threshold-label">
+                                    <label for="fa-thr-single-latency">Maximum Single Request Latency</label>
+                                    <span class="fa-threshold-hint" id="fa-thr-single-latency-hint" data-testid="fa-threshold-owner-single-latency">Each API request · API Quality Review response time</span>
+                                </span>
+                                <input type="number" class="form-control fa-threshold-input" min="1" id="fa-thr-single-latency" aria-describedby="fa-thr-single-latency-hint"
                                        @bind="_editProfile.Performance.MaxSingleRequestLatencyMs"
                                        @bind:after="MarkThresholdsCustom" />
                                 <span class="fa-threshold-unit">ms</span>
@@ -996,6 +1002,7 @@
                         </div>
                         <div class="fa-threshold-group" data-testid="fa-performance-quality-thresholds">
                             <div class="fa-threshold-group-title">BirkNext Performance Quality</div>
+                            <p class="fa-threshold-hint fa-threshold-group-hint" data-testid="fa-threshold-owner-performance-quality">Proxy/browser-observed traffic only; not used by API Quality Review.</p>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">API Response Warning</label>
                                 <input type="number" class="form-control fa-threshold-input" min="1" @bind="_editProfile.Performance.ApiResponseWarningMs" @bind:after="MarkThresholdsCustom" />
@@ -1066,8 +1073,8 @@
                         </div>
                         <div class="fa-threshold-card">
                             <div class="fa-threshold-card-title">Latency</div>
-                            <div class="fa-threshold-display-row"><span>Average API Latency</span><strong>@perf.MaxAverageApiLatencyMs ms</strong></div>
-                            <div class="fa-threshold-display-row"><span>Single Request Latency</span><strong>@perf.MaxSingleRequestLatencyMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>Average API Latency <small class="fa-threshold-hint">not used by any review yet</small></span><strong>@perf.MaxAverageApiLatencyMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>Single Request Latency <small class="fa-threshold-hint">API Quality Review, per request</small></span><strong>@perf.MaxSingleRequestLatencyMs ms</strong></div>
                         </div>
                         <div class="fa-threshold-card">
                             <div class="fa-threshold-card-title">Blazor Runtime</div>
@@ -1078,7 +1085,7 @@
                         </div>
                         <div class="fa-threshold-card" data-testid="fa-performance-quality-thresholds-display">
                             <div class="fa-threshold-card-title">BirkNext Performance Quality</div>
-                            <div class="fa-threshold-display-row"><span>API Response Warning / Poor</span><strong>@perf.ApiResponseWarningMs / @perf.ApiResponsePoorMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>API Response Warning / Poor <small class="fa-threshold-hint">proxy/browser-observed</small></span><strong>@perf.ApiResponseWarningMs / @perf.ApiResponsePoorMs ms</strong></div>
                             <div class="fa-threshold-display-row"><span>Page Stabilization Good / Poor</span><strong>@perf.PageStabilizationGoodMs / @perf.PageStabilizationPoorMs ms</strong></div>
                             <div class="fa-threshold-display-row"><span>JavaScript Transfer</span><strong>@ToMB(perf.MaxJsTransferBytes) MB</strong></div>
                             <div class="fa-threshold-display-row"><span>Slow Resource</span><strong>@perf.SlowResourceMs ms</strong></div>
