@@ -717,6 +717,7 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
                 HasEtag = exchange.HasEtag,
                 HasLastModified = exchange.HasLastModified,
                 ResponseBytes = exchange.ResponseBytes,
+                ResponseEncoded = exchange.ResponseEncoded,
             }, clock()));
         }
 

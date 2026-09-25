@@ -486,6 +486,14 @@
                     <p class="aqr-scope-note" data-testid="aqr-performance-note">@ApiReviewPresentation.PerformanceScopeNote</p>
                     @* The thresholds THIS review was evaluated with, from its own policy snapshot — never today's settings. *@
                     <p class="aqr-muted" data-testid="aqr-performance-thresholds">@ApiReviewPresentation.PerformanceThresholdsNote(report.Policy)</p>
+                    <ReviewDisclosure Text="Performance policy used" CollapseText="Hide performance policy" Hint="@ApiReviewPresentation.ProfileLabel(report.Policy.PerformanceProfile)" TestId="aqr-performance-policy" Class="disclosure-inline disclosure-small">
+                        <dl class="aqr-dl aqr-performance-policy" data-testid="aqr-performance-policy-list">
+                            @foreach (var (label, value) in ApiReviewPresentation.PerformancePolicy(report.Policy))
+                            {
+                                <div><dt>@label</dt><dd>@value</dd></div>
+                            }
+                        </dl>
+                    </ReviewDisclosure>
                 }
                 @if (_tab == "Contracts")
                 {
@@ -786,6 +794,9 @@
                 // poor tier); REST payload → REST Payload; GraphQL payload → GraphQL Payload. The payload threshold used to be the larger
                 // of REST and GraphQL, so a 500 KB REST setting was evaluated — and shown — as 1,048,576 bytes.
                 SlowWarningMs = context.PerformanceThresholds.MaxSingleRequestLatencyMs, SlowPoorMs = null, LatencySource = ApiReviewPresentation.LatencySourceLabel,
+                PerformanceProfile = ApiReviewPresentation.ProfileOf(context.PerformanceThresholds.Mode),
+                AverageLatencyWarningMs = context.PerformanceThresholds.MaxAverageApiLatencyMs,
+                CompressionMinimumBytes = context.PerformanceThresholds.CompressionMinPayloadBytes,
                 RestPayloadWarningBytes = context.PerformanceThresholds.MaxRestPayloadBytes, GraphQlPayloadWarningBytes = context.PerformanceThresholds.MaxGraphQlPayloadBytes,
                 LargePayloadBytes = context.PerformanceThresholds.MaxRestPayloadBytes,
             },

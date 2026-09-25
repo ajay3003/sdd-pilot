@@ -172,6 +172,16 @@ public static class ApiReviewTargetResolver
             LastStatus = observations.OrderByDescending(e => e.LastObservedAt).First().LastStatus,
             Source = ApiReviewTargetSource.DiscoveredTraffic, Confidence = (ObservedEndpointConfidence)observations.Max(e => (int)e.Confidence),
         };
+        // Response size evidence for the GraphQL payload check: declared sizes of 2xx responses known NOT to be content-encoded, so the
+        // number is the payload rather than a compressed transfer. Samples recorded before the encoding flag existed are not used.
+        static (long? Bytes, int Samples) Sizes(IEnumerable<ObservedNetworkEndpoint> endpoints)
+        {
+            var sizes = endpoints.SelectMany(e => e.Samples).Where(s => s.Status is >= 200 and < 300 && s.ResponseEncoded == false && s.ResponseBytes is > 0).Select(s => s.ResponseBytes!.Value).ToList();
+            return sizes.Count == 0 ? (null, 0) : (sizes.Max(), sizes.Count);
+        }
+        var (currentBytes, currentSamples) = Sizes(observations);
+        var (historyBytes, historySamples) = Sizes(history);
+        baseOperation = baseOperation with { ObservedResponseBytes = currentBytes, ObservedResponseSamples = currentSamples };
         var variants = ObservedGraphQlDocuments.Union([], observations.SelectMany(e => e.GraphQlDocuments).ToList());
         if (variants.Count == 0)
             yield return baseOperation with { ObservedCount = observations.Sum(e => e.Count), FirstObservedAt = observations.Min(e => e.FirstObservedAt), LastObservedAt = observations.Max(e => e.LastObservedAt) };
@@ -179,7 +189,7 @@ public static class ApiReviewTargetResolver
             yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, DocumentOmission = variant.Omission, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt };
         var current = variants.Select(v => v.Hash).ToHashSet(StringComparer.Ordinal);
         foreach (var variant in ObservedGraphQlDocuments.Union([], history.SelectMany(e => e.GraphQlDocuments).ToList()).Where(v => !current.Contains(v.Hash)))
-            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, DocumentOmission = variant.Omission, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt, Historical = true };
+            yield return baseOperation with { Document = variant.Document, DocumentHash = variant.Hash, DocumentOmission = variant.Omission, ObservedCount = variant.Count, FirstObservedAt = variant.FirstObservedAt, LastObservedAt = variant.LastObservedAt, Historical = true, ObservedResponseBytes = historyBytes, ObservedResponseSamples = historySamples };
     }
 
     public static string Id(ApiReviewTargetType type, string origin, string basePath) =>

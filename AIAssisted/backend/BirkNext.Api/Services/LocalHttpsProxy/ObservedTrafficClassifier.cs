@@ -272,6 +272,7 @@ internal sealed record NetworkRequestMetadata
     public bool HasEtag { get; init; }
     public bool HasLastModified { get; init; }
     public long? ResponseBytes { get; init; }
+    public bool ResponseEncoded { get; init; }
 }
 
 /// <summary>
@@ -358,7 +359,7 @@ internal static class NetworkTrafficClassifier
             MinDurationMs = metadata.DurationMs,
             MaxDurationMs = metadata.DurationMs,
             TotalDurationMs = metadata.DurationMs ?? 0,
-            Samples = metadata.DurationMs is { } d ? [new ObservedRequestSample(observedAt, d, metadata.ResponseStatus, metadata.ResponseBytes)] : [],
+            Samples = metadata.DurationMs is { } d ? [new ObservedRequestSample(observedAt, d, metadata.ResponseStatus, metadata.ResponseBytes, metadata.ResponseEncoded)] : [],
             ErrorCount = metadata.ResponseStatus >= 400 ? 1 : 0,
             AuthRejectedCount = metadata.ResponseStatus is 401 or 403 ? 1 : 0,
             NotModifiedCount = metadata.ResponseStatus == 304 ? 1 : 0,

@@ -116,6 +116,17 @@ public sealed class PageOrientedDiscoveryTests
     // ── Performance metadata (BirkNext Performance Quality) ─────────────────────────────────────────
 
     [Fact]
+    public void SamplesRecordWhetherTheResponseWasEncoded_AsAPresenceFlagOnly()
+    {
+        var registry = new ObservedNetworkRegistry();
+        registry.Record(NetworkTrafficClassifier.Classify(Meta("GET", "/api/children", bearer: true, referer: "https://m2lbdev.bufetat.no/barn/1") with { DurationMs = 40, ResponseBytes = 900, ResponseEncoded = true }, Now));
+        registry.Record(NetworkTrafficClassifier.Classify(Meta("GET", "/api/children", bearer: true, referer: "https://m2lbdev.bufetat.no/barn/1") with { DurationMs = 50, ResponseBytes = 4096, ResponseEncoded = false }, Now.AddSeconds(1)));
+        var samples = registry.Snapshot().Single().Samples;
+        Assert.Equal([false, true], samples.Select(s => s.ResponseEncoded));   // most recent first
+        Assert.Equal(4096, samples[0].ResponseBytes);
+    }
+
+    [Fact]
     public void RegistryAccumulatesLatencySamplesStatusesAndCacheMetadataWithoutHeaderValues()
     {
         var registry = new ObservedNetworkRegistry();

@@ -11,7 +11,7 @@ namespace BirkNext.Web.Tests.Components;
 /// <summary>
 /// Target Environment → Performance Thresholds states which review owns each latency setting, so the two latency groups do not read
 /// as competing policies: Single Request Latency (API Quality Review, per request), API Response Warning/Poor (BirkNext Performance
-/// Quality, proxy/browser-observed), Average API Latency (no owner yet).
+/// Quality, proxy/browser-observed), Average API Latency (API Quality Review aggregate), payloads and Compression Minimum Payload.
 /// </summary>
 public sealed class PerformanceThresholdOwnershipTests : BunitContext
 {
@@ -40,9 +40,26 @@ public sealed class PerformanceThresholdOwnershipTests : BunitContext
     {
         var text = OpenThresholds().Markup;
         text.Should().Contain("Average API Latency <small class=\"fa-threshold-hint\"")
-            .And.Contain("not used by any review yet")
+            .And.Contain("API Quality Review, aggregate")
             .And.Contain("API Quality Review, per request")
-            .And.Contain("proxy/browser-observed");
+            .And.Contain("observed business responses")
+            .And.Contain("proxy/browser-observed")
+            .And.NotContain("not used by any review");
+        OpenThresholdsDisplay(text);
+    }
+
+    private static void OpenThresholdsDisplay(string markup) =>
+        markup.Should().Contain("data-testid=\"fa-threshold-compression-min-display\"");
+
+    [Fact]
+    public void EditingCompressionMinimum_MakesTheProfileCustom()
+    {
+        var cut = OpenThresholds();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Edit Environment").Click();
+        cut.FindAll("[role=tab]").Single(t => t.TextContent.Trim() == "Performance Thresholds").Click();
+        cut.Find(".fa-threshold-mode-label").TextContent.Should().Contain("Default");
+        cut.Find("#fa-thr-compression-min").Change("4");
+        cut.Find(".fa-threshold-mode-label").TextContent.Should().Contain("Custom", "editing any threshold switches the profile to Custom (existing behaviour)");
     }
 
     [Fact]
@@ -54,11 +71,14 @@ public sealed class PerformanceThresholdOwnershipTests : BunitContext
 
         var single = cut.Find("#fa-thr-single-latency");
         single.GetAttribute("aria-describedby").Should().Be("fa-thr-single-latency-hint");
-        cut.Find("#fa-thr-single-latency-hint").TextContent.Should().Be("Each API request · API Quality Review response time");
+        cut.Find("#fa-thr-single-latency-hint").TextContent.Should().Be("Each API request · API Quality Review, FQR API checks");
         cut.Find("label[for=fa-thr-single-latency]").TextContent.Should().Be("Maximum Single Request Latency");
 
         cut.Find("#fa-thr-avg-latency").GetAttribute("aria-describedby").Should().Be("fa-thr-avg-latency-hint");
-        cut.Find("[data-testid=fa-threshold-owner-avg-latency]").TextContent.Should().Contain("not used by any review yet");
+        cut.Find("[data-testid=fa-threshold-owner-avg-latency]").TextContent.Should().Be("API Quality Review · mean of a target's requests (2+ samples)");
+        cut.Find("#fa-thr-compression-min").GetAttribute("aria-describedby").Should().Be("fa-thr-compression-min-hint");
+        cut.Find("#fa-thr-compression-min").GetAttribute("value").Should().Be("1", "the default is 1 KB");
+        cut.Find("#fa-thr-graphql-payload-hint").TextContent.Should().Be("API Quality Review · observed GraphQL business responses");
         cut.Find("[data-testid=fa-threshold-owner-performance-quality]").TextContent.Should().Be("Proxy/browser-observed traffic only; not used by API Quality Review.");
     }
 }

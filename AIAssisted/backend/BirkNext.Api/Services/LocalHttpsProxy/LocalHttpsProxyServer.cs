@@ -91,6 +91,8 @@ internal sealed class ProxyExchange
     public bool HasLastModified { get; init; }
     /// <summary>Declared response Content-Length, when present.</summary>
     public long? ResponseBytes { get; init; }
+    /// <summary>The response carried a Content-Encoding (presence only; the value is never kept).</summary>
+    public bool ResponseEncoded { get; init; }
     public override string ToString() => $"{Method} {Host}:{Port} -> HTTP {StatusCode}";
 }
 
@@ -464,6 +466,7 @@ internal sealed class LocalHttpsProxyServer(ApprovedHostSet scope, IProxyCertifi
             HasEtag = response?.Header("ETag") is { Length: > 0 },
             HasLastModified = response?.Header("Last-Modified") is { Length: > 0 },
             ResponseBytes = response?.ContentLength,
+            ResponseEncoded = response?.Header("Content-Encoding") is { Length: > 0 },
         };
         request.Bearer = null;
         try { observer.OnExchange(exchange); }

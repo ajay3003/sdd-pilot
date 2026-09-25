@@ -489,15 +489,175 @@ public sealed class ApiReviewEngineTests
         Assert.Equal(ApiReviewCheckResult.NotTested, auth.Result);
         Assert.Contains("does not advertise Accept-Encoding", auth.Detail);
 
-        var fixture = new Fixture { Respond = (req, _) => req.RequestUri!.AbsolutePath == "/api/children" ? Json(HttpStatusCode.OK, "{\"items\":[]}") : Json(HttpStatusCode.NotFound, "{}", "application/problem+json") };
-        var publicReport = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, Rest()));
+        // Public path, response above the compression minimum and not encoded → Warning (the rule), with the evidence stated.
+        var large = "{\"items\":\"" + new string('x', 4096) + "\"}";
+        var fixture = new Fixture { Respond = (req, _) => req.RequestUri!.AbsolutePath == "/api/children" ? Json(HttpStatusCode.OK, large) : Json(HttpStatusCode.NotFound, "{}", "application/problem+json") };
+        var publicReport = await Engine(fixture).RunAsync(Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, Rest()) with { Policy = new ApiReviewPolicy { ErrorHandlingProbes = false, CompressionMinimumBytes = 1024 } });
         var pub = publicReport.Targets.Single().Checks.Single(c => c.CheckId == "rest-compression");
         Assert.Equal(ApiReviewCheckResult.Warning, pub.Result);
-        Assert.Equal("Compression not observed: the request advertised gzip/br, but the response was not encoded.", pub.Detail);
+        Assert.StartsWith("Request advertised gzip/br; 1 compressible response was not encoded at or above the compression minimum payload (1,024 bytes (1 KB)).", pub.Detail);
+        Assert.Contains("Request advertised: gzip, br", pub.Evidence);
         Assert.Contains(fixture.Requests, r => r.Headers.TryGetValues("Accept-Encoding", out var v) && string.Join(",", v).Contains("gzip"));
         // A performance Warning is a check result, not automatically a finding — on either path.
         Assert.DoesNotContain(authenticated.Findings, f => f.RuleId.Contains("compression", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(publicReport.Findings, f => f.RuleId.Contains("compression", StringComparison.OrdinalIgnoreCase));
+    }
+
+    // ── Compression minimum payload (§42–45) ─────────────────────────────────────────────────────────────────────
+
+    private static readonly ApiReviewPolicy CompressionPolicy = new() { CompressionMinimumBytes = 1024 };
+
+    private static ApiReviewCheck Compress(params ApiReviewEngine.CompressionSample[] samples) => ApiReviewEngine.CompressionCheck(samples, CompressionPolicy);
+
+    [Fact]
+    public void Compression_NotRequested_IsNotTested() =>
+        Assert.Equal(ApiReviewCheckResult.NotTested, Compress(new ApiReviewEngine.CompressionSample("GET /a", ApiReviewAccessMode.AuthenticatedHttp, "application/json", 50_000, null)).Result);
+
+    [Fact]
+    public void Compression_TinyUncompressedPayload_IsNotApplicable_NeverWarning()
+    {
+        var check = Compress(new ApiReviewEngine.CompressionSample("GET /a", ApiReviewAccessMode.PublicHttp, "application/json", 61, null));
+        Assert.Equal(ApiReviewCheckResult.NotApplicable, check.Result);
+        Assert.Contains("61 bytes", check.Detail);
+        Assert.Contains("below the compression minimum payload (1,024 bytes (1 KB))", check.Detail);
+    }
+
+    [Fact]
+    public void Compression_LargeUncompressedPayload_IsWarning() =>
+        Assert.Equal(ApiReviewCheckResult.Warning, Compress(new ApiReviewEngine.CompressionSample("GET /a", ApiReviewAccessMode.PublicHttp, "application/json", 1024, null)).Result);
+
+    [Fact]
+    public void Compression_LargeCompressedPayload_IsPass()
+    {
+        var check = Compress(new ApiReviewEngine.CompressionSample("GET /a", ApiReviewAccessMode.PublicHttp, "application/json", 800, "br"), new ApiReviewEngine.CompressionSample("GET /b", ApiReviewAccessMode.PublicHttp, "application/json", 90, null));
+        Assert.Equal(ApiReviewCheckResult.Pass, check.Result);
+        Assert.StartsWith("Content-Encoding: br on 1 of 2 responses", check.Detail);
+    }
+
+    [Fact]
+    public void Compression_IsEvaluatedOverEveryResponse_NotOnlyTheFirst() =>
+        Assert.Equal(ApiReviewCheckResult.Warning, Compress(new ApiReviewEngine.CompressionSample("GET /small", ApiReviewAccessMode.PublicHttp, "application/json", 40, null), new ApiReviewEngine.CompressionSample("GET /big", ApiReviewAccessMode.PublicHttp, "application/json", 90_000, null)).Result);
+
+    [Fact]
+    public void Compression_AlreadyCompressedContentTypes_AreNotApplicable()
+    {
+        var check = Compress(new ApiReviewEngine.CompressionSample("GET /img", ApiReviewAccessMode.PublicHttp, "image/png", 500_000, null), new ApiReviewEngine.CompressionSample("GET /zip", ApiReviewAccessMode.PublicHttp, "application/zip", 500_000, null));
+        Assert.Equal(ApiReviewCheckResult.NotApplicable, check.Result);
+        Assert.Contains("image/png", check.Detail);
+    }
+
+    [Fact]
+    public void Compression_UnknownSize_IsNotTested() =>
+        Assert.Equal(ApiReviewCheckResult.NotTested, Compress(new ApiReviewEngine.CompressionSample("GET /a", ApiReviewAccessMode.PublicHttp, "application/json", null, null)).Result);
+
+    // ── Average API Latency (§35–38) ─────────────────────────────────────────────────────────────────────────────
+
+    private static readonly ApiReviewPolicy AveragePolicy = new() { SlowWarningMs = 1500, AverageLatencyWarningMs = 500 };
+
+    [Fact]
+    public void AverageLatency_BelowThreshold_IsPass()
+    {
+        var check = ApiReviewEngine.AverageLatencyCheck([200, 300, 400], AveragePolicy, "review request")!;
+        Assert.Equal(ApiReviewCheckResult.Pass, check.Result);
+        Assert.StartsWith("Mean 300 ms over 3 review requests (warning > 500 ms, Average API Latency).", check.Detail);
+    }
+
+    [Fact]
+    public void AverageLatency_AboveThreshold_IsWarning_NoPoorTier()
+    {
+        Assert.Equal(ApiReviewCheckResult.Warning, ApiReviewEngine.AverageLatencyCheck([400, 700], AveragePolicy, "review request")!.Result);
+        Assert.Equal(ApiReviewCheckResult.Warning, ApiReviewEngine.AverageLatencyCheck([9000, 9000], AveragePolicy, "review request")!.Result);
+    }
+
+    [Fact]
+    public void AverageLatency_OneSample_IsNotAssessed_AndUnmeasuredTimingsAreNotSamples()
+    {
+        var check = ApiReviewEngine.AverageLatencyCheck([420, null], AveragePolicy, "review request")!;
+        Assert.Equal(ApiReviewCheckResult.NotTested, check.Result);
+        Assert.Contains("at least two request samples are required", check.Detail);
+    }
+
+    [Fact]
+    public void AverageLatency_OlderPolicyWithoutTheThreshold_AddsNoCheck() =>
+        Assert.Null(ApiReviewEngine.AverageLatencyCheck([100, 200], new ApiReviewPolicy { SlowWarningMs = 500, SlowPoorMs = 1000 }, "review request"));
+
+    [Fact]
+    public async Task AverageAndSingleRequestLatency_AreEvaluatedIndependently()
+    {
+        // Two operations at gateway timing 12 ms each; an average threshold of 5 ms warns while each request passes 1500 ms.
+        var gateway = new FakeGateway(true);
+        var request = Request(AuthenticatedTestingMethod.LocalHttpsProxy, false, Rest(auth: true, ops: [("GET", "/api/children"), ("GET", "/api/children/1")])) with
+        {
+            Policy = new ApiReviewPolicy { ErrorHandlingProbes = false, SlowWarningMs = 1500, AverageLatencyWarningMs = 5, RestPayloadWarningBytes = 500L * 1024 },
+        };
+        var target = (await Engine(new Fixture(), gateway).RunAsync(request)).Targets.Single();
+        var perRequest = target.Operations.Where(o => o.Executed).SelectMany(o => o.Checks).Where(c => c.CheckId == "rest-latency").ToList();
+        Assert.Equal(2, perRequest.Count);
+        Assert.All(perRequest, c => Assert.Equal(ApiReviewCheckResult.Pass, c.Result));
+        var average = target.Checks.Single(c => c.CheckId == "rest-average-latency");
+        Assert.Equal(ApiReviewCheckResult.Warning, average.Result);
+        Assert.StartsWith("Mean 12 ms over 2 review requests (warning > 5 ms", average.Detail);
+        Assert.DoesNotContain(target.Checks.Concat(target.Operations.SelectMany(o => o.Checks)), c => c.CheckId == "rest-latency" && c.Detail.Contains("Average"));
+    }
+
+    // ── GraphQL payload (§39–41) ─────────────────────────────────────────────────────────────────────────────────
+
+    private static async Task<ApiReviewTargetResult> GraphQlPayloadTarget(params ApiReviewOperation[] ops)
+    {
+        var fixture = new Fixture { Respond = (req, body) => body?.Contains("__schema") == true
+            ? Json(HttpStatusCode.OK, "{\"errors\":[{\"message\":\"Introspection disabled\"}]}") : Json(HttpStatusCode.OK, "{\"data\":{\"__typename\":\"Query\"}}") };
+        var target = GraphQl() with { Operations = ops.Select(o => o with { Path = GraphQl().BasePath }).ToList() };
+        var request = Request(AuthenticatedTestingMethod.ManagedEdgeCdp, false, target) with
+        {
+            Policy = new ApiReviewPolicy { ErrorHandlingProbes = false, SlowWarningMs = 1500, GraphQlPayloadWarningBytes = 1024L * 1024, AverageLatencyWarningMs = 500 },
+        };
+        return (await Engine(fixture).RunAsync(request)).Targets.Single();
+    }
+
+    private static ApiReviewOperation Gql(string name, long? bytes, bool historical = false) =>
+        new() { Method = "POST", OperationType = GraphQlOperationType.Query, OperationName = name, ObservedCount = 3, ObservedResponseBytes = bytes, ObservedResponseSamples = bytes is null ? 0 : 3, Historical = historical };
+
+    [Theory]
+    [InlineData(900 * 1024, ApiReviewCheckResult.Pass)]
+    [InlineData(1100 * 1024, ApiReviewCheckResult.Warning)]
+    public async Task GraphQlPayload_UsesObservedBusinessResponses(long bytes, ApiReviewCheckResult expected)
+    {
+        var target = await GraphQlPayloadTarget(Gql("HentRoller", bytes), Gql("HentBarn", 2048));
+        var check = target.Checks.Single(c => c.CheckId == "gql-payload");
+        Assert.Equal(expected, check.Result);
+        Assert.Contains("(Query HentRoller)", check.Detail);
+        Assert.Contains("GraphQL payload warning > 1,048,576 bytes (1 MB)", check.Detail);
+        Assert.Contains(check.Evidence, e => e.StartsWith("Source: Endpoint Discovery"));
+    }
+
+    [Fact]
+    public async Task GraphQlPayload_OnlyTheTypenameProbe_IsNotAssessed_WithTheReason()
+    {
+        var target = await GraphQlPayloadTarget(Gql("HentRoller", null));
+        var check = target.Checks.Single(c => c.CheckId == "gql-payload");
+        Assert.Equal(ApiReviewCheckResult.NotTested, check.Result);
+        Assert.Contains("The safe __typename probe is not used for payload-quality assessment.", check.Detail);
+        Assert.Equal(ApiReviewCheckResult.NotTested, target.Checks.Single(c => c.CheckId == "gql-average-latency").Result);
+    }
+
+    [Fact]
+    public async Task GraphQlPayload_HistoricalOnlyEvidence_IsNotACurrentMeasurement()
+    {
+        var target = await GraphQlPayloadTarget(Gql("HentRoller", null), Gql("GammelSok", 5L * 1024 * 1024, historical: true));
+        var check = target.Checks.Single(c => c.CheckId == "gql-payload");
+        Assert.Equal(ApiReviewCheckResult.NotTested, check.Result);
+        Assert.Contains("1 operation(s) have historical evidence only", check.Detail);
+    }
+
+    [Fact]
+    public void ProfileIdentity_IsItsOwnValue_AndDefaultsToNotRecordedForOlderReports()
+    {
+        var legacy = JsonSerializer.Deserialize<ApiReviewPolicy>("{\"slowWarningMs\":500,\"slowPoorMs\":1000}", new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal(ApiReviewPerformanceProfile.NotRecorded, legacy.PerformanceProfile);
+        Assert.Null(legacy.AverageLatencyWarningMs);
+        Assert.Null(legacy.CompressionMinimumBytes);
+        var roundTrip = JsonSerializer.Deserialize<ApiReviewPolicy>(JsonSerializer.Serialize(new ApiReviewPolicy { PerformanceProfile = ApiReviewPerformanceProfile.Strict }), new JsonSerializerOptions(JsonSerializerDefaults.Web))!;
+        Assert.Equal(ApiReviewPerformanceProfile.Strict, roundTrip.PerformanceProfile);
     }
 
     private static string IntrospectionWith(string[] queryFields, string[] mutationFields, string[] deprecated)

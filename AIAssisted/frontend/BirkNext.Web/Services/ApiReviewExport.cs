@@ -23,6 +23,8 @@ public static class ApiReviewExport
         sb.Append($"<dt>Authenticated testing method</dt><dd>{esc(env.AuthenticatedTestingMethod.ToString())}</dd>");
         sb.Append($"<dt>Access</dt><dd>{esc(AccessLabel(report))}</dd>");
         sb.Append($"<dt>Policy</dt><dd>{(report.Policy.ReadOnly ? "Read-only" : "")}; error probes {(report.Policy.ErrorHandlingProbes && !env.IsProduction ? "enabled" : "disabled")}; response time {esc(report.Policy.LatencyPolicyText)}{(report.Policy.LatencySource is { } src ? $" ({esc(src)})" : "")}; REST payload warning &gt; {esc(ApiReviewPolicy.Bytes(report.Policy.RestPayloadThreshold))}{(report.Policy.GraphQlPayloadWarningBytes is { } gql ? $"; GraphQL payload warning &gt; {esc(ApiReviewPolicy.Bytes(gql))}" : "")} — thresholds captured when the review ran</dd>");
+        foreach (var (label, value) in ApiReviewPresentation.PerformancePolicy(report.Policy))
+            sb.Append($"<dt>Performance policy · {esc(label)}</dt><dd>{esc(value)}</dd>");
         sb.Append($"<dt>Started / generated</dt><dd>{report.StartedAt:u} / {report.GeneratedAt:u}</dd></dl></section>\n");
 
         var c = report.Coverage;

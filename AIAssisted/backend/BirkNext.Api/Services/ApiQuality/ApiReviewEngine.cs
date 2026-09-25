@@ -47,6 +47,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             "GraphQL operation names are client-defined; mapping to schema root fields is a normalized heuristic and unmatched operations are marked Manual Review.",
         };
         if (request.Environment.IsProduction) limitations.Add("Production policy: passive read-only review; unknown-route/invalid-query error probes are disabled.");
+        var policy = request.Policy;
+        logger.LogInformation(
+            "API review policy: profile {Profile}; single request {Single} ({LatencySource}); average {Average} ms; REST payload {RestPayload} bytes; GraphQL payload {GraphQlPayload} bytes; compression minimum {CompressionMinimum} bytes.",
+            policy.PerformanceProfile, policy.LatencyPolicyText, policy.LatencySource ?? "not recorded", policy.AverageLatencyWarningMs?.ToString() ?? "n/a",
+            policy.RestPayloadThreshold, policy.GraphQlPayloadWarningBytes?.ToString() ?? "n/a", policy.CompressionMinimumBytes?.ToString() ?? "n/a");
         var manual = new List<string>
         {
             "Write operations (POST/PUT/PATCH/DELETE, GraphQL mutations): behaviour, idempotency and side effects.",
@@ -145,11 +150,13 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         var unsafeOps = target.Operations.Where(o => !o.IsSafe).ToList();
         if (safeOps.Count == 0) safeOps.Add(new ApiReviewOperation { Method = "GET", Path = target.BasePath, Source = target.Source, Confidence = target.Confidence });
         Exec? primary = null;
+        var executedRequests = new List<(string Display, Exec Exec)>();
         foreach (var op in safeOps)
         {
             var url = $"{target.Origin}{op.Path}";
             var exec = await ExecuteRestAsync(request, mode, op.Method == "HEAD" || op.Method == "OPTIONS" ? "GET" : op.Method, url, ct);
             primary ??= exec.Executed ? exec : null;
+            if (exec.Executed) executedRequests.Add(($"{op.Method} {op.Path}", exec));
             var opChecks = new List<ApiReviewCheck>();
             var key = $"{op.Method} {op.Path}";
             var display = key;
@@ -191,16 +198,19 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
                 Add(targetFindings, findings, Finding(target, "rest-invalid-json", ApiReviewSeverity.High, ApiReviewFindingType.Rest, display, "JSON validity", "Response claims JSON but does not parse", "The body could not be parsed as JSON.", "Fix serialization; clients will fail to parse the response.", [$"Content-Type: {exec.ContentType}"]));
             opChecks.Add(Check("rest-json-valid", ApiReviewFindingType.Rest, "JSON parses", exec.JsonValid is null ? ApiReviewCheckResult.NotApplicable : exec.JsonValid.Value ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Fail, exec.JsonValid is null ? "No JSON body." : exec.JsonValid.Value ? $"{exec.Shape.Count} structural path(s)." : "Invalid JSON."));
 
-            // Latency & payload
+            // Latency & payload. An unmeasured value is Not tested — never "0 ms" or "0 bytes" and never Pass.
             var latency = exec.ElapsedMs ?? 0;
-            var latencyResult = request.Policy.LatencyResult(latency);
-            opChecks.Add(Check("rest-latency", ApiReviewFindingType.Performance, "Response time", latencyResult, $"{latency:0} ms ({request.Policy.LatencyPolicyText})."));
-            if (latencyResult != ApiReviewCheckResult.Pass)
+            var latencyResult = exec.ElapsedMs is null ? ApiReviewCheckResult.NotTested : request.Policy.LatencyResult(latency);
+            opChecks.Add(Check("rest-latency", ApiReviewFindingType.Performance, "Response time", latencyResult,
+                exec.ElapsedMs is null ? "Not tested: the response time was not measured." : $"{latency:0} ms ({request.Policy.LatencyPolicyText})."));
+            if (latencyResult is ApiReviewCheckResult.Warning or ApiReviewCheckResult.Fail)
                 Add(targetFindings, findings, Finding(target, "rest-slow", latencyResult == ApiReviewCheckResult.Fail ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Response time", $"Slow response: {latency:0} ms", $"Single-sample latency of the review request ({request.Policy.LatencyPolicyText}). Page-level API impact is reviewed by Performance Quality.", "Profile the endpoint server-side.", [$"Observed: {latency:0} ms", $"Policy: {request.Policy.LatencyPolicyText}"], latencyResult == ApiReviewCheckResult.Fail ? ApiReviewCheckResult.Fail : ApiReviewCheckResult.Warning));
             if (request.Policy.RestPayloadResult(exec.ContentLength) == ApiReviewCheckResult.Warning && exec.ContentLength is { } size)
                 Add(targetFindings, findings, Finding(target, "rest-large-payload", ApiReviewSeverity.Low, ApiReviewFindingType.Performance, display, "Payload size", $"Large response payload ({size / 1024} KB)", "The response exceeds the large-payload threshold; check pagination.", "Paginate or filter the collection.", [$"Bytes: {size}", $"Threshold: {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)}"], ApiReviewCheckResult.Warning));
-            opChecks.Add(Check("rest-payload", ApiReviewFindingType.Performance, "Payload size", request.Policy.RestPayloadResult(exec.ContentLength),
-                $"{(exec.ContentLength ?? 0).ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes (REST payload warning > {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)})."));
+            opChecks.Add(exec.ContentLength is { } measured
+                ? Check("rest-payload", ApiReviewFindingType.Performance, "Payload size", request.Policy.RestPayloadResult(measured),
+                    $"{measured.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes (REST payload warning > {ApiReviewPolicy.Bytes(request.Policy.RestPayloadThreshold)}).")
+                : Check("rest-payload", ApiReviewFindingType.Performance, "Payload size", ApiReviewCheckResult.NotTested, "Not tested: the response size is unknown (no Content-Length was returned)."));
 
             // Pagination hints on collection responses (structural: items/totalCount or top-level array)
             var paths = exec.Shape.Select(s => s.Path).ToHashSet(StringComparer.Ordinal);
@@ -274,13 +284,13 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             else checks.Add(Check("errors-unknown-route", ApiReviewFindingType.Errors, "Unknown route handling", ApiReviewCheckResult.NotTested, "Error probes disabled by policy."));
             var rateLimit = primary.Headers.Keys.Any(k => k.StartsWith("x-ratelimit", StringComparison.OrdinalIgnoreCase) || k.StartsWith("ratelimit", StringComparison.OrdinalIgnoreCase) || k == "retry-after");
             checks.Add(Check("rest-rate-limit-headers", ApiReviewFindingType.Security, "Rate-limit headers", rateLimit ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.ManualReview, rateLimit ? "Rate-limit headers exposed." : "No rate-limit headers observed; rate limiting is not load-tested here (informational)."));
-            // Rule-based, no threshold: compression is expected when the request advertised it. Only the public request advertises
-            // gzip/br; the authenticated gateway request does not (it reads the body for structure), so an uncompressed answer there
-            // says nothing about the server and is not assessed. The rule does not consider payload size (no minimum-size rule exists).
-            checks.Add(primary.Mode == ApiReviewAccessMode.AuthenticatedHttp && !primary.Headers.ContainsKey("content-encoding")
-                ? Check("rest-compression", ApiReviewFindingType.Performance, "Compression", ApiReviewCheckResult.NotTested, "Not assessed: the authenticated gateway request does not advertise Accept-Encoding, so an uncompressed response is expected.")
-                : Check("rest-compression", ApiReviewFindingType.Performance, "Compression", primary.Headers.ContainsKey("content-encoding") ? ApiReviewCheckResult.Pass : ApiReviewCheckResult.Warning,
-                    primary.Headers.TryGetValue("content-encoding", out var enc) ? $"Content-Encoding: {enc}" : "Compression not observed: the request advertised gzip/br, but the response was not encoded."));
+            checks.Add(CompressionCheck(executedRequests.Select(e => new CompressionSample(e.Display, e.Exec.Mode, e.Exec.ContentType, e.Exec.ContentLength,
+                e.Exec.Headers.TryGetValue("content-encoding", out var encoding) ? encoding : null)).ToList(), request.Policy));
+            if (AverageLatencyCheck(executedRequests.Select(e => e.Exec.ElapsedMs).ToList(), request.Policy, "review request") is { } average)
+            {
+                checks.Add(average);
+                logger.LogInformation("Average API latency for target {TargetId}: {Result} ({Samples} sample(s)).", target.TargetId, average.Result, executedRequests.Count(e => e.Exec.ElapsedMs is not null));
+            }
         }
         else checks.Add(Check("rest-reachability", ApiReviewFindingType.Rest, "Reachability", ApiReviewCheckResult.Fail, "No operation could be executed."));
 
@@ -481,9 +491,10 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         else if (probe.StatusCode >= 500)
             Add(targetFindings, findings, Finding(target, "gql-5xx", ApiReviewSeverity.High, ApiReviewFindingType.GraphQl, endpoint, "Status code", $"GraphQL endpoint returned HTTP {probe.StatusCode}", "A trivial query caused a server error.", "Investigate the GraphQL server.", [$"HTTP {probe.StatusCode}"]));
         var latency = probe.ElapsedMs ?? 0;
-        var gqlLatency = request.Policy.LatencyResult(latency);
-        checks.Add(Check("gql-latency", ApiReviewFindingType.Performance, "Response time (safe query)", gqlLatency, $"{latency:0} ms ({request.Policy.LatencyPolicyText})."));
-        if (gqlLatency != ApiReviewCheckResult.Pass)
+        var gqlLatency = probe.ElapsedMs is null ? ApiReviewCheckResult.NotTested : request.Policy.LatencyResult(latency);
+        checks.Add(Check("gql-latency", ApiReviewFindingType.Performance, "Response time (safe query)", gqlLatency,
+            probe.ElapsedMs is null ? "Not tested: the response time was not measured." : $"{latency:0} ms ({request.Policy.LatencyPolicyText})."));
+        if (gqlLatency is ApiReviewCheckResult.Warning or ApiReviewCheckResult.Fail)
             Add(targetFindings, findings, Finding(target, "gql-slow", gqlLatency == ApiReviewCheckResult.Fail ? ApiReviewSeverity.Medium : ApiReviewSeverity.Low, ApiReviewFindingType.Performance, endpoint, "Response time", $"Slow GraphQL endpoint: {latency:0} ms for __typename", "Even a trivial query is slow; the endpoint or its middleware is the bottleneck. Per-operation latency from real traffic is reviewed by Performance Quality.", "Profile the GraphQL pipeline.", [$"Observed: {latency:0} ms"], ApiReviewCheckResult.Warning));
         if (probe.Leaks.Count > 0)
             Add(targetFindings, findings, Finding(target, "gql-leak", ApiReviewSeverity.High, ApiReviewFindingType.Errors, endpoint, "Error leakage", "GraphQL response leaks internal details", "Indicators of stack traces/exceptions were found in the response (content redacted).", "Mask exceptions in the GraphQL error filter.", probe.Leaks.Select(l => $"Indicator: {l}").ToList()));
@@ -578,6 +589,11 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
         }
         else checks.Add(Check("gql-error-shape", ApiReviewFindingType.Errors, "Invalid query yields GraphQL errors", ApiReviewCheckResult.NotTested, "Error probes disabled by policy."));
         checks.Add(Check("gql-depth-complexity", ApiReviewFindingType.Security, "Query depth / complexity controls", ApiReviewCheckResult.ManualReview, "Not probed automatically (no deep or expensive queries are sent); verify server-side limits manually."));
+        if (GraphQlPayloadCheck(target, observed, request.Policy, targetFindings, findings) is { } payloadCheck) checks.Add(payloadCheck);
+        // Average API Latency needs comparable business requests; the only GraphQL request the review sends is the safe probe.
+        if (request.Policy.AverageLatencyWarningMs is not null)
+            checks.Add(Check("gql-average-latency", ApiReviewFindingType.Performance, "Average API response time", ApiReviewCheckResult.NotTested,
+                "Not assessed: the review sends only the safe __typename probe to GraphQL — no business requests to average. At least two request samples are required."));
 
         return new ApiReviewTargetResult
         {
@@ -585,6 +601,99 @@ public sealed class ApiReviewEngine(HttpClient publicClient, IAuthenticatedRevie
             GraphQlOperationMatches = Matches(compatibility), GraphQlCompatibility = compatibility, FindingCount = targetFindings.Count,
             Baseline = new ApiReviewBaseline { TargetId = target.TargetId, RecordedAt = DateTimeOffset.UtcNow, GraphQlSchemaHash = schemaReview?.Hash, GraphQlRootFields = schemaReview?.RootQueryFields ?? [], GraphQlDeprecatedFields = schemaReview?.DeprecatedFields ?? [] },
         };
+    }
+
+    // ── Aggregate latency, compression, GraphQL payload ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Average API Latency over this target's real review requests (the safe REST operations actually executed — never probes, preflights or
+    /// the unknown-route check). Needs at least two measured samples; one sample is not an average. Independent of the per-request check:
+    /// every request can Pass Single Request Latency while the mean still exceeds Average API Latency.
+    /// </summary>
+    internal static ApiReviewCheck? AverageLatencyCheck(IReadOnlyList<double?> timings, ApiReviewPolicy policy, string sampleNoun)
+    {
+        if (policy.AverageLatencyWarningMs is not { } limit) return null;   // reports recorded before this policy existed
+        var samples = timings.OfType<double>().ToList();
+        if (samples.Count < 2)
+            return Check("rest-average-latency", ApiReviewFindingType.Performance, "Average API response time", ApiReviewCheckResult.NotTested,
+                $"Not assessed: at least two request samples are required for average latency ({samples.Count} measured {sampleNoun}{(samples.Count == 1 ? "" : "s")}).");
+        var mean = samples.Average();
+        var result = policy.AverageLatencyResult(mean);
+        return Check("rest-average-latency", ApiReviewFindingType.Performance, "Average API response time", result,
+            $"Mean {mean:0} ms over {samples.Count} {sampleNoun}s (warning > {limit} ms, Average API Latency). Aggregate of the review's own requests, not end-user latency.",
+            [$"Samples: {samples.Count}", $"Min {samples.Min():0} ms · max {samples.Max():0} ms", $"Threshold: {limit} ms"]);
+    }
+
+    /// <summary>
+    /// Compression is expected only when it was requested and worth doing: the request advertised gzip/br (only the public request does; the
+    /// authenticated gateway does not send Accept-Encoding), the response is a compressible text type and it is at least Compression Minimum
+    /// Payload. A small uncompressed response is Not applicable, never a Warning. Evaluated over every executed response of the target.
+    /// </summary>
+    /// <summary>One executed response as the compression check sees it: who sent it (public requests advertise gzip/br), type, size, encoding.</summary>
+    internal sealed record CompressionSample(string Display, ApiReviewAccessMode Mode, string? ContentType, long? Bytes, string? ContentEncoding);
+
+    internal static ApiReviewCheck CompressionCheck(IReadOnlyList<CompressionSample> executed, ApiReviewPolicy policy)
+    {
+        const string id = "rest-compression", title = "Compression";
+        var advertised = executed.Where(e => e.Mode != ApiReviewAccessMode.AuthenticatedHttp).ToList();
+        if (advertised.Count == 0)
+            return executed.FirstOrDefault(e => e.ContentEncoding is not null) is { } unrequested
+                ? Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.Pass, $"Content-Encoding: {unrequested.ContentEncoding} (sent although not requested).")
+                : Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotTested, "Not assessed: the authenticated gateway request does not advertise Accept-Encoding, so an uncompressed response is expected.");
+        var minimum = policy.CompressionMinimumBytes ?? 0;
+        var minimumText = policy.CompressionMinimumBytes is { } m ? ApiReviewPolicy.Bytes(m) : "none (older policy)";
+        static string Size(CompressionSample e) => e.Bytes is { } b ? $"{b.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} bytes" : "size unknown";
+        var evidence = advertised.Take(8).Select(e => $"{e.Display}: {e.ContentType ?? "no content type"} · {Size(e)} · encoding {e.ContentEncoding ?? "none"}")
+            .Prepend("Request advertised: gzip, br").Append($"Compression minimum payload: {minimumText}").ToList();
+
+        var encoded = advertised.Where(e => e.ContentEncoding is not null).ToList();
+        var candidates = advertised.Where(e => e.ContentEncoding is null && ApiReviewPolicy.IsCompressible(e.ContentType)).ToList();
+        var large = candidates.Where(e => e.Bytes is { } b && b >= minimum).OrderByDescending(e => e.Bytes).ToList();
+        if (large.Count > 0)
+            return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.Warning,
+                $"Request advertised gzip/br; {large.Count} compressible response{(large.Count == 1 ? " was" : "s were")} not encoded at or above the compression minimum payload ({minimumText}). Largest: {large[0].Display}, {Size(large[0])}.", evidence);
+        if (encoded.Count > 0)
+            return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.Pass,
+                $"Content-Encoding: {encoded[0].ContentEncoding} on {encoded.Count} of {advertised.Count} response{(advertised.Count == 1 ? "" : "s")}; no uncompressed response at or above {minimumText}.", evidence);
+        if (candidates.Count == 0)
+            return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotApplicable,
+                $"Not applicable: no response was a compressible text type ({string.Join(", ", advertised.Select(e => e.ContentType ?? "none").Distinct())}).", evidence);
+        if (candidates.All(e => e.Bytes is null))
+            return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotTested, "Not tested: the response size is unknown, so the compression minimum payload cannot be applied.", evidence);
+        var largest = candidates.Where(e => e.Bytes is not null).MaxBy(e => e.Bytes)!;
+        return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotApplicable,
+            $"Not applicable: the largest uncompressed response ({largest.Display}, {Size(largest)}) is below the compression minimum payload ({minimumText}); compressing it would not help.", evidence);
+    }
+
+    /// <summary>
+    /// GraphQL payload from representative evidence only: the response sizes Endpoint Discovery observed for this endpoint's real business
+    /// operations (declared, uncompressed, 2xx; current evidence). The review's own __typename probe is never payload evidence, and
+    /// history-only sizes are not a current measurement.
+    /// </summary>
+    private ApiReviewCheck? GraphQlPayloadCheck(ApiReviewTarget target, IReadOnlyList<ApiReviewOperation> observed, ApiReviewPolicy policy, List<ApiReviewFinding> targetFindings, List<ApiReviewFinding> findings)
+    {
+        if (policy.GraphQlPayloadWarningBytes is not { } limit) return null;   // reports recorded before GraphQL payload was a separate policy
+        const string id = "gql-payload", title = "Payload size (observed business responses)";
+        static string NameOf(ApiReviewOperation o) => $"{o.OperationType} {o.OperationName ?? "(anonymous)"}";
+        // Sizes are per operation (not per document variant); only current rows count, history never stands in for a current measurement.
+        var current = observed.Where(o => !o.Historical && o.ObservedResponseBytes is not null).GroupBy(NameOf)
+            .Select(g => (Name: g.Key, Bytes: g.Max(o => o.ObservedResponseBytes!.Value), Samples: g.Max(o => o.ObservedResponseSamples))).OrderByDescending(s => s.Bytes).ToList();
+        var currentNames = current.Select(c => c.Name).ToHashSet(StringComparer.Ordinal);
+        var historicalOnly = observed.Where(o => o.Historical && o.ObservedResponseBytes is not null).Select(NameOf).Distinct().Count(n => !currentNames.Contains(n));
+        logger.LogInformation("GraphQL payload for target {TargetId}: evidence Endpoint Discovery, {Current} operation(s) with current uncompressed sizes, {Historical} historical-only.", target.TargetId, current.Count, historicalOnly);
+        if (current.Count == 0)
+            return Check(id, ApiReviewFindingType.Performance, title, ApiReviewCheckResult.NotTested,
+                "Not assessed: no representative GraphQL business response was available — Endpoint Discovery has no current, uncompressed response size for an observed operation. The safe __typename probe is not used for payload-quality assessment."
+                + (historicalOnly > 0 ? $" {historicalOnly} operation(s) have historical evidence only, which is not used as a current measurement." : ""));
+        var largest = current[0];
+        var result = policy.GraphQlPayloadResult(largest.Bytes);
+        var evidence = current.Take(10).Select(s => $"{s.Name}: {ApiReviewPolicy.Bytes(s.Bytes)} (largest of {s.Samples} observed response{(s.Samples == 1 ? "" : "s")})")
+            .Append("Source: Endpoint Discovery (proxy-observed frontend traffic, current evidence)").ToList();
+        if (result == ApiReviewCheckResult.Warning)
+            Add(targetFindings, findings, Finding(target, "gql-large-payload", ApiReviewSeverity.Low, ApiReviewFindingType.Performance, largest.Name, "Payload size", $"Large GraphQL response payload ({largest.Bytes / 1024} KB)",
+                "An observed business operation's response exceeds the GraphQL payload threshold.", "Select fewer fields or paginate the connection.", [$"Bytes: {largest.Bytes}", $"Threshold: {ApiReviewPolicy.Bytes(limit)}", "Source: Endpoint Discovery"], ApiReviewCheckResult.Warning));
+        return Check(id, ApiReviewFindingType.Performance, title, result,
+            $"Largest observed response {ApiReviewPolicy.Bytes(largest.Bytes)} ({largest.Name}) across {current.Count} operation{(current.Count == 1 ? "" : "s")} (GraphQL payload warning > {ApiReviewPolicy.Bytes(limit)}). Measured from real frontend traffic, not by the review.", evidence);
     }
 
     /// <summary>A configured schema for one target: the parsed schema (or why it is unusable) and, for a stored artifact, its metadata.</summary>

@@ -939,10 +939,23 @@
                                 <span class="fa-threshold-unit">KB</span>
                             </div>
                             <div class="fa-threshold-row">
-                                <label class="fa-threshold-label">Maximum GraphQL Payload</label>
-                                <input type="number" class="form-control fa-threshold-input" step="10" min="0"
+                                <span class="fa-threshold-label">
+                                    <label for="fa-thr-graphql-payload">Maximum GraphQL Payload</label>
+                                    <span class="fa-threshold-hint" id="fa-thr-graphql-payload-hint" data-testid="fa-threshold-owner-graphql-payload">API Quality Review · observed GraphQL business responses</span>
+                                </span>
+                                <input type="number" class="form-control fa-threshold-input" step="10" min="0" id="fa-thr-graphql-payload" aria-describedby="fa-thr-graphql-payload-hint"
                                        value="@ToKB(_editProfile.Performance.MaxGraphQlPayloadBytes)"
                                        @onchange="e => SetMaxGraphQlPayloadKb(e.Value)" />
+                                <span class="fa-threshold-unit">KB</span>
+                            </div>
+                            <div class="fa-threshold-row">
+                                <span class="fa-threshold-label">
+                                    <label for="fa-thr-compression-min">Compression Minimum Payload</label>
+                                    <span class="fa-threshold-hint" id="fa-thr-compression-min-hint" data-testid="fa-threshold-owner-compression-min">Smallest response API Quality Review expects compressed</span>
+                                </span>
+                                <input type="number" class="form-control fa-threshold-input" step="1" min="0" id="fa-thr-compression-min" aria-describedby="fa-thr-compression-min-hint" data-testid="fa-threshold-compression-min"
+                                       value="@ToKB(_editProfile.Performance.CompressionMinPayloadBytes)"
+                                       @onchange="e => SetCompressionMinPayloadKb(e.Value)" />
                                 <span class="fa-threshold-unit">KB</span>
                             </div>
                         </div>
@@ -951,7 +964,7 @@
                             <div class="fa-threshold-row">
                                 <span class="fa-threshold-label">
                                     <label for="fa-thr-avg-latency">Maximum Average API Latency</label>
-                                    <span class="fa-threshold-hint" id="fa-thr-avg-latency-hint" data-testid="fa-threshold-owner-avg-latency">Aggregate threshold · not used by any review yet</span>
+                                    <span class="fa-threshold-hint" id="fa-thr-avg-latency-hint" data-testid="fa-threshold-owner-avg-latency">API Quality Review · mean of a target's requests (2+ samples)</span>
                                 </span>
                                 <input type="number" class="form-control fa-threshold-input" min="1" id="fa-thr-avg-latency" aria-describedby="fa-thr-avg-latency-hint"
                                        @bind="_editProfile.Performance.MaxAverageApiLatencyMs"
@@ -961,7 +974,7 @@
                             <div class="fa-threshold-row">
                                 <span class="fa-threshold-label">
                                     <label for="fa-thr-single-latency">Maximum Single Request Latency</label>
-                                    <span class="fa-threshold-hint" id="fa-thr-single-latency-hint" data-testid="fa-threshold-owner-single-latency">Each API request · API Quality Review response time</span>
+                                    <span class="fa-threshold-hint" id="fa-thr-single-latency-hint" data-testid="fa-threshold-owner-single-latency">Each API request · API Quality Review, FQR API checks</span>
                                 </span>
                                 <input type="number" class="form-control fa-threshold-input" min="1" id="fa-thr-single-latency" aria-describedby="fa-thr-single-latency-hint"
                                        @bind="_editProfile.Performance.MaxSingleRequestLatencyMs"
@@ -1068,12 +1081,13 @@
                         </div>
                         <div class="fa-threshold-card">
                             <div class="fa-threshold-card-title">Payload</div>
-                            <div class="fa-threshold-display-row"><span>REST Payload</span><strong>@ToKB(perf.MaxRestPayloadBytes) KB</strong></div>
-                            <div class="fa-threshold-display-row"><span>GraphQL Payload</span><strong>@ToKB(perf.MaxGraphQlPayloadBytes) KB</strong></div>
+                            <div class="fa-threshold-display-row"><span>REST Payload <small class="fa-threshold-hint">API Quality Review</small></span><strong>@ToKB(perf.MaxRestPayloadBytes) KB</strong></div>
+                            <div class="fa-threshold-display-row"><span>GraphQL Payload <small class="fa-threshold-hint">observed business responses</small></span><strong>@ToKB(perf.MaxGraphQlPayloadBytes) KB</strong></div>
+                            <div class="fa-threshold-display-row" data-testid="fa-threshold-compression-min-display"><span>Compression Minimum <small class="fa-threshold-hint">API Quality Review</small></span><strong>@ToKB(perf.CompressionMinPayloadBytes) KB</strong></div>
                         </div>
                         <div class="fa-threshold-card">
                             <div class="fa-threshold-card-title">Latency</div>
-                            <div class="fa-threshold-display-row"><span>Average API Latency <small class="fa-threshold-hint">not used by any review yet</small></span><strong>@perf.MaxAverageApiLatencyMs ms</strong></div>
+                            <div class="fa-threshold-display-row"><span>Average API Latency <small class="fa-threshold-hint">API Quality Review, aggregate</small></span><strong>@perf.MaxAverageApiLatencyMs ms</strong></div>
                             <div class="fa-threshold-display-row"><span>Single Request Latency <small class="fa-threshold-hint">API Quality Review, per request</small></span><strong>@perf.MaxSingleRequestLatencyMs ms</strong></div>
                         </div>
                         <div class="fa-threshold-card">
@@ -2858,6 +2872,7 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private void SetMaxStartupSizeMb(object? v)     { if (_editProfile is not null) { _editProfile.Performance.MaxStartupSizeBytes             = MB(v); MarkThresholdsCustom(); } }
     private void SetMaxRestPayloadKb(object? v)     { if (_editProfile is not null) { _editProfile.Performance.MaxRestPayloadBytes             = KB(v); MarkThresholdsCustom(); } }
     private void SetMaxGraphQlPayloadKb(object? v)  { if (_editProfile is not null) { _editProfile.Performance.MaxGraphQlPayloadBytes          = KB(v); MarkThresholdsCustom(); } }
+    private void SetCompressionMinPayloadKb(object? v) { if (_editProfile is not null) { _editProfile.Performance.CompressionMinPayloadBytes  = KB(v); MarkThresholdsCustom(); } }
     private void SetMaxWasmRuntimeSizeMb(object? v) { if (_editProfile is not null) { _editProfile.Performance.MaxWasmRuntimeSizeBytes         = MB(v); MarkThresholdsCustom(); } }
     private void SetMaxFrameworkSizeMb(object? v)   { if (_editProfile is not null) { _editProfile.Performance.MaxFrameworkSizeBytes           = MB(v); MarkThresholdsCustom(); } }
     private void SetMaxAppAssemblySizeMb(object? v) { if (_editProfile is not null) { _editProfile.Performance.MaxApplicationAssemblySizeBytes = MB(v); MarkThresholdsCustom(); } }

@@ -26,11 +26,40 @@ public static class ApiReviewPresentation
     public static string TabLabel(string tab) => tab == "Errors" ? "Error handling" : tab;
 
     /// <summary>The thresholds this review was evaluated with, from the report's own policy snapshot.</summary>
+    public static ApiReviewPerformanceProfile ProfileOf(FrontendThresholdMode mode) => mode switch
+    {
+        FrontendThresholdMode.Default => ApiReviewPerformanceProfile.Default,
+        FrontendThresholdMode.Strict => ApiReviewPerformanceProfile.Strict,
+        _ => ApiReviewPerformanceProfile.Custom,
+    };
+
+    public static string ProfileLabel(ApiReviewPerformanceProfile profile) => profile switch
+    {
+        ApiReviewPerformanceProfile.Default => "Default",
+        ApiReviewPerformanceProfile.Strict => "Strict",
+        ApiReviewPerformanceProfile.Custom => "Custom",
+        _ => "Profile not recorded",
+    };
+
+    /// <summary>
+    /// The performance policy a result was evaluated with, from its own snapshot. Values an older report did not record read "Not recorded"
+    /// — never today's settings, and the profile is never inferred from matching values.
+    /// </summary>
+    public static IReadOnlyList<(string Label, string Value)> PerformancePolicy(ApiReviewPolicy policy) =>
+    [
+        ("Profile", ProfileLabel(policy.PerformanceProfile)),
+        ("Single request latency", $"{policy.LatencyPolicyText}{(policy.LatencySource is { } source ? $" ({source})" : "")}"),
+        ("Average API latency", policy.AverageLatencyWarningMs is { } average ? $"warning > {average} ms (mean of a target's review requests, 2+ samples)" : "Not recorded"),
+        ("REST payload", $"warning > {ApiReviewPolicy.Bytes(policy.RestPayloadThreshold)}"),
+        ("GraphQL payload", policy.GraphQlPayloadWarningBytes is { } gql ? $"warning > {ApiReviewPolicy.Bytes(gql)} (observed business responses)" : "Not recorded"),
+        ("Compression minimum payload", policy.CompressionMinimumBytes is { } min ? ApiReviewPolicy.Bytes(min) : "Not recorded (every advertised response was evaluated)"),
+    ];
+
     public static string PerformanceThresholdsNote(ApiReviewPolicy policy) =>
         (policy.LatencySource == LatencySourceLabel ? "API response timing is evaluated against the target's Single Request Latency threshold. " : "")
         + $"Thresholds used by this review — response time: {policy.LatencyPolicyText}{(policy.LatencySource is { } source ? $" ({source})" : "")}"
         + $" · REST payload: warning > {ApiReviewPolicy.Bytes(policy.RestPayloadThreshold)}"
-        + (policy.GraphQlPayloadWarningBytes is { } gql ? $" · GraphQL payload: warning > {ApiReviewPolicy.Bytes(gql)} (no GraphQL payload check runs; the safe query is not a business payload)" : "")
+        + (policy.GraphQlPayloadWarningBytes is { } gql ? $" · GraphQL payload: warning > {ApiReviewPolicy.Bytes(gql)} (observed business responses only; the safe query is not a business payload)" : "")
         + ". Source: Target Environment → Performance Thresholds, captured when the review ran.";
 
     /// <summary>

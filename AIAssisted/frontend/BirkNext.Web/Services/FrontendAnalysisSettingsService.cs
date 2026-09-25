@@ -235,6 +235,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         MaxGraphQlPayloadBytes          = 1024L * 1024,
         MaxAverageApiLatencyMs          = 500,
         MaxSingleRequestLatencyMs       = 1500,
+        CompressionMinPayloadBytes      = 1024,
         MaxWasmRuntimeSizeBytes         = 3L  * 1024 * 1024,
         MaxFrameworkSizeBytes           = 5L  * 1024 * 1024,
         MaxApplicationAssemblySizeBytes = 3L  * 1024 * 1024,
@@ -251,6 +252,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         MaxGraphQlPayloadBytes          = 500L * 1024,
         MaxAverageApiLatencyMs          = 300,
         MaxSingleRequestLatencyMs       = 1000,
+        CompressionMinPayloadBytes      = 1024,
         MaxWasmRuntimeSizeBytes         = 2L  * 1024 * 1024,
         MaxFrameworkSizeBytes           = 3L  * 1024 * 1024,
         MaxApplicationAssemblySizeBytes = 2L  * 1024 * 1024,
@@ -375,6 +377,7 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         if (perf.MaxSingleRequestLatencyMs       <= 0) errors.Add("Maximum Single Request Latency must be a positive value.");
         if (perf.MaxRestPayloadBytes             <= 0) errors.Add("Maximum REST Payload must be a positive value.");
         if (perf.MaxGraphQlPayloadBytes          <= 0) errors.Add("Maximum GraphQL Payload must be a positive value.");
+        if (perf.CompressionMinPayloadBytes      <  0) errors.Add("Compression Minimum Payload cannot be negative.");
         if (perf.MaxStartupSizeBytes             <= 0) errors.Add("Maximum Startup Size must be a positive value.");
         if (perf.MaxStartupRequests              <= 0) errors.Add("Maximum Startup Requests must be a positive value.");
         if (perf.MaxStartupApiCalls              <= 0) errors.Add("Maximum Startup API Calls must be a positive value.");

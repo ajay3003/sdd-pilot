@@ -428,8 +428,12 @@ public sealed record ObservedNetworkEndpoint
     public string Display => $"{Origin}{Path}";
 }
 
-/// <summary>One observed exchange of an endpoint: when it completed, how long it took, its status and declared response size. No header value, body or query.</summary>
-public sealed record ObservedRequestSample(DateTimeOffset At, double DurationMs, int Status, long? ResponseBytes);
+/// <summary>
+/// One observed exchange of an endpoint: when it completed, how long it took, its status, declared response size and whether the response
+/// was content-encoded (a presence flag, never the header value). Null <see cref="ResponseEncoded"/> = recorded before the flag existed,
+/// so the declared size may be a compressed transfer size. No header value, body or query.
+/// </summary>
+public sealed record ObservedRequestSample(DateTimeOffset At, double DurationMs, int Status, long? ResponseBytes, bool? ResponseEncoded = null);
 
 /// <summary>Bounds for the performance metadata carried per observed endpoint (memory-only on the backend, persisted per page on the frontend).</summary>
 public static class ObservedNetworkPerformanceLimits

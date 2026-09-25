@@ -346,8 +346,8 @@ public sealed class FrontendPerformanceThresholds
     [JsonPropertyName("maxRestPayloadBytes")]             public long                  MaxRestPayloadBytes             { get; set; } = 500L * 1024;
     [JsonPropertyName("maxGraphQlPayloadBytes")]          public long                  MaxGraphQlPayloadBytes          { get; set; } = 1024L * 1024;
     /// <summary>
-    /// Aggregate (average) API latency. Currently UNOWNED: no review reads it — API Quality Review deliberately does not. Kept for
-    /// stored profiles; assign an owner or remove it in a dedicated settings cleanup.
+    /// Average API Latency. Owner: API Quality Review's aggregate check — the mean of one target's real review request timings (safe REST
+    /// operations; needs ≥ 2 samples). Never applied to an individual request (that is <see cref="MaxSingleRequestLatencyMs"/>).
     /// </summary>
     [JsonPropertyName("maxAverageApiLatencyMs")]          public int                   MaxAverageApiLatencyMs          { get; set; } = 500;
     /// <summary>
@@ -355,6 +355,11 @@ public sealed class FrontendPerformanceThresholds
     /// the report's policy snapshot), FQR authenticated API-surface probes and Browser Quality browser-observed API calls.
     /// </summary>
     [JsonPropertyName("maxSingleRequestLatencyMs")]       public int                   MaxSingleRequestLatencyMs       { get; set; } = 1500;
+    /// <summary>
+    /// Compression Minimum Payload. Owner: API Quality Review's compression check — an uncompressed response smaller than this is Not
+    /// applicable, not a Warning. 1 KB default: Azure Front Door / CDN (where M2LB is hosted) only compress responses from 1 KB.
+    /// </summary>
+    [JsonPropertyName("compressionMinPayloadBytes")]      public long                  CompressionMinPayloadBytes      { get; set; } = 1024;
     [JsonPropertyName("maxWasmRuntimeSizeBytes")]         public long                  MaxWasmRuntimeSizeBytes         { get; set; } = 3L * 1024 * 1024;
     [JsonPropertyName("maxFrameworkSizeBytes")]           public long                  MaxFrameworkSizeBytes           { get; set; } = 5L * 1024 * 1024;
     [JsonPropertyName("maxApplicationAssemblySizeBytes")] public long                  MaxApplicationAssemblySizeBytes { get; set; } = 3L * 1024 * 1024;

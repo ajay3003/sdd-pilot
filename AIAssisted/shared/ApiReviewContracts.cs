@@ -58,6 +58,13 @@ public sealed record ApiReviewOperation
     public string? DocumentHash { get; init; }
     /// <summary>GraphQL: why no document is available although the operation was observed (persisted-query hash only, over the retention limit).</summary>
     public GraphQlDocumentOmission DocumentOmission { get; init; }
+    /// <summary>
+    /// GraphQL: the largest response size Endpoint Discovery observed for this operation in real frontend traffic — declared Content-Length
+    /// of 2xx responses that were NOT content-encoded (so the size is the payload, not a compressed transfer). Null when no such sample exists.
+    /// </summary>
+    public long? ObservedResponseBytes { get; init; }
+    /// <summary>How many uncompressed, sized 2xx samples <see cref="ObservedResponseBytes"/> was taken from.</summary>
+    public int ObservedResponseSamples { get; init; }
     public DateTimeOffset? FirstObservedAt { get; init; }
     public DateTimeOffset? LastObservedAt { get; init; }
     /// <summary>Only in retained history (an earlier analysis generation), not in the current evidence.</summary>
@@ -144,6 +151,15 @@ public sealed record ApiReviewPolicy
     public int? SlowPoorMs { get; init; }
     /// <summary>Which setting the latency thresholds came from, for display.</summary>
     public string? LatencySource { get; init; }
+    /// <summary>The Target Environment's threshold profile when the review ran. <see cref="ApiReviewPerformanceProfile.NotRecorded"/> for reports
+    /// recorded before profiles were captured — never inferred from the values.</summary>
+    public ApiReviewPerformanceProfile PerformanceProfile { get; init; }
+    /// <summary>Average API Latency: the mean of this target's real review request timings above this is a Warning. Aggregate only — each
+    /// request is still evaluated against <see cref="SlowWarningMs"/>. Null in reports recorded before it was owned (not assessed).</summary>
+    public int? AverageLatencyWarningMs { get; init; }
+    /// <summary>Compression Minimum Payload: an uncompressed response smaller than this is not expected to be compressed. Null in older
+    /// reports (they evaluated every advertised response regardless of size).</summary>
+    public long? CompressionMinimumBytes { get; init; }
     /// <summary>Legacy single payload threshold (REST and GraphQL shared the larger of the two). Read only when the per-type values are absent.</summary>
     public long LargePayloadBytes { get; init; } = 1024 * 1024;
     /// <summary>REST response size above this is a Warning (REST Payload setting).</summary>
@@ -156,6 +172,19 @@ public sealed record ApiReviewPolicy
         SlowPoorMs is { } poor && elapsedMs > poor ? ApiReviewCheckResult.Fail
         : elapsedMs > SlowWarningMs ? ApiReviewCheckResult.Warning
         : ApiReviewCheckResult.Pass;
+
+    /// <summary>Mean ≤ threshold = Pass, above = Warning. One threshold, so no poor tier.</summary>
+    public ApiReviewCheckResult AverageLatencyResult(double meanMs) =>
+        AverageLatencyWarningMs is { } limit && meanMs > limit ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass;
+
+    /// <summary>Response size ≤ GraphQL Payload = Pass, above = Warning.</summary>
+    public ApiReviewCheckResult GraphQlPayloadResult(long bytes) =>
+        GraphQlPayloadWarningBytes is { } limit && bytes > limit ? ApiReviewCheckResult.Warning : ApiReviewCheckResult.Pass;
+
+    /// <summary>Text formats worth compressing. Images, archives and other already-compressed binaries are not compression candidates.</summary>
+    public static bool IsCompressible(string? mediaType) => mediaType is { Length: > 0 } m
+        && (m.StartsWith("text/", StringComparison.OrdinalIgnoreCase) || m.Contains("json", StringComparison.OrdinalIgnoreCase)
+            || m.Contains("xml", StringComparison.OrdinalIgnoreCase) || m.Contains("javascript", StringComparison.OrdinalIgnoreCase) || m.Contains("graphql", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>"warning > 1500 ms" or "warning > 500 ms · poor > 1000 ms" — the exact values <see cref="LatencyResult"/> used.</summary>
     [JsonIgnore] public string LatencyPolicyText => SlowPoorMs is { } poor ? $"warning > {SlowWarningMs} ms · poor > {poor} ms" : $"warning > {SlowWarningMs} ms";
@@ -173,6 +202,10 @@ public sealed record ApiReviewPolicy
     /// <summary>Introspection enabled is a policy question: warn only for production-like environments.</summary>
     public bool IntrospectionExpectedDisabled { get; init; }
 }
+
+/// <summary>Target Environment → Performance Thresholds profile captured with a review. NotRecorded = the report predates profile capture.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ApiReviewPerformanceProfile { NotRecorded, Default, Strict, Custom }
 
 /// <summary>Structural JSON shape entry: path (JSONPath-like, arrays as [*]) and observed type. Never a value.</summary>
 public sealed record JsonShapeEntry(string Path, string Type, bool Nullable);
