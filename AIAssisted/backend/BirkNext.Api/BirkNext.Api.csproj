@@ -18,6 +18,8 @@
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
     <PackageReference Include="Azure.Monitor.Query" Version="1.7.1" />
+    <!-- Syntax-only parsing of uploaded application source (Wolverine evidence); same version the EF Core design tools already resolve. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.5.0" />
     <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageReference Include="HotChocolate.AspNetCore" Version="14.*" />
     <PackageReference Include="HotChocolate.Data.EntityFramework" Version="14.*" />
@@ -51,6 +53,7 @@
     <Compile Include="../../shared/ApiReviewContracts.cs" Link="Models/ApiReviewContracts.cs" />
     <Compile Include="../../shared/CriticalE2EContracts.cs" Link="Models/CriticalE2EContracts.cs" />
     <Compile Include="../../shared/IntegrationCatalogContracts.cs" Link="Models/IntegrationCatalogContracts.cs" />
+    <Compile Include="../../shared/ApplicationMessagingContracts.cs" Link="Models/ApplicationMessagingContracts.cs" />
     <Compile Include="../../shared/GraphQlSchemaArtifactContracts.cs" Link="Models/GraphQlSchemaArtifactContracts.cs" />
   </ItemGroup>
   <Target Name="PackageBrowserCompanion" BeforeTargets="AssignTargetPaths">

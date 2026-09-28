@@ -51,6 +51,14 @@ public class IntegrationReviewRunRecord
 }
 
 /// <summary>A trusted event contract (JSON Schema) for one side of one integration. Key: (EnvironmentId, IntegrationId, Role).</summary>
+/// <summary>Application messaging evidence set of an environment (facts extracted from uploaded source; never the source itself).</summary>
+public class ApplicationMessagingEvidenceRecord
+{
+    public string EnvironmentId { get; set; } = string.Empty;
+    public DateTimeOffset AnalyzedAt { get; set; } = DateTimeOffset.UtcNow;
+    public string EvidenceJson { get; set; } = string.Empty;
+}
+
 public class IntegrationContractArtifactRecord
 {
     public string EnvironmentId { get; set; } = string.Empty;

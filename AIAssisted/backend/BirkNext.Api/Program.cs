@@ -399,6 +399,9 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IntegrationMappingEvidenceService>();
+// Application messaging (Wolverine) evidence: syntax-only analysis of uploaded source + read-only handler telemetry (Azure-gated).
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ApplicationMessaging.IApplicationMessagingStore, BirkNext.Api.Services.Integrations.ApplicationMessaging.ApplicationMessagingStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ApplicationMessaging.IApplicationMessagingTelemetrySource, BirkNext.Api.Services.Integrations.ApplicationMessaging.LogAnalyticsApplicationMessagingSource>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

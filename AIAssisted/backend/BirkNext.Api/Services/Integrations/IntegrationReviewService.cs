@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
+using BirkNext.Api.Services.Integrations.ApplicationMessaging;
 using BirkNext.Integrations;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,12 +16,14 @@ public interface IIntegrationReviewService
     Task<IntegrationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
 }
 
-public sealed class IntegrationReviewService(IIntegrationCatalogService catalog, IntegrationReviewEngine engine, IIntegrationContractStore contracts, AppDbContext db, ILogger<IntegrationReviewService> logger) : IIntegrationReviewService
+public sealed class IntegrationReviewService(IIntegrationCatalogService catalog, IntegrationReviewEngine engine, IIntegrationContractStore contracts, AppDbContext db, ILogger<IntegrationReviewService> logger,
+    IApplicationMessagingStore? messaging = null) : IIntegrationReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public async Task<IntegrationReviewReadiness> ReadinessAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default) =>
-        engine.Readiness(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct), new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)));
+        engine.Readiness(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct), new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)),
+            messaging is null ? null : await messaging.GetAsync(environmentId, ct));
 
     public async Task<IntegrationReviewResult> RunAsync(IntegrationReviewRunRequest request, string? environmentType, string? targetUrl, CancellationToken ct = default)
     {
@@ -28,7 +31,8 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
         // Contract drift compares with what the PREVIOUS run recorded, not with whatever is stored now.
         var previous = await db.IntegrationReviewRuns.AsNoTracking().Where(r => r.EnvironmentId == request.EnvironmentId).OrderByDescending(r => r.CompletedAt).Select(r => r.ResultJson).FirstOrDefaultAsync(ct);
         var previousContracts = previous is null ? [] : JsonSerializer.Deserialize<IntegrationReviewResult>(previous, Json)?.ContractSnapshot ?? [];
-        var result = await engine.RunAsync(configured, request, new IntegrationContractSet(await contracts.LoadAsync(request.EnvironmentId, ct)), previousContracts, ct);
+        var result = await engine.RunAsync(configured, request, new IntegrationContractSet(await contracts.LoadAsync(request.EnvironmentId, ct)), previousContracts,
+            messaging is null ? null : await messaging.GetAsync(request.EnvironmentId, ct), ct);
         // The run stores its own configuration snapshot: editing Integrations later never re-renders this result.
         db.IntegrationReviewRuns.Add(new IntegrationReviewRunRecord
         {

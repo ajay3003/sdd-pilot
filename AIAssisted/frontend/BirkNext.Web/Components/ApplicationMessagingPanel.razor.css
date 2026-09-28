@@ -1,0 +1,23 @@
+.am { border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: .75rem .9rem; background: var(--clr-surface-white, #fff); min-width: 0; display: grid; gap: .45rem; }
+.am h3 { margin: 0; font-size: .98rem; }
+.am h4 { margin: .6rem 0 .25rem; font-size: .86rem; }
+.am-muted { color: var(--clr-text-muted); font-size: .84rem; margin: 0; }
+.am-mono { font-family: var(--font-mono); font-size: .76rem; overflow-wrap: anywhere; }
+.am-status { margin: 0; font-size: .82rem; color: var(--clr-text-muted); min-height: 1em; }
+.am-error { margin: 0; font-size: .84rem; color: var(--clr-danger, #b91c1c); }
+.am-upload { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; }
+.am-file-button { position: relative; display: inline-flex; align-items: center; padding: .3rem .7rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); cursor: pointer; font-size: .84rem; background: var(--clr-surface); }
+.am-file-button:focus-within { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+::deep .am-file-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.am-apps { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.am-app { border-top: 1px solid var(--clr-border-subtle, #eef2f7); padding-top: .5rem; min-width: 0; display: grid; gap: .35rem; }
+.am-app-head { display: flex; flex-wrap: wrap; gap: .35rem; align-items: baseline; overflow-wrap: anywhere; }
+.am-states { display: flex; flex-wrap: wrap; gap: .35rem 1.2rem; margin: 0; }
+.am-states dt { font-size: .72rem; color: var(--clr-text-muted); }
+.am-states dd { margin: .1rem 0 0; }
+.am-badge { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid var(--clr-border); white-space: nowrap; }
+.am-badge-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.am-badge-attention { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.am-badge-muted { background: var(--clr-surface); color: var(--clr-text-muted); }
+.am-bind { display: grid; gap: .2rem; font-size: .8rem; color: var(--clr-text-muted); max-width: 22rem; }
+.am-facts { margin: 0; padding-left: 1.1rem; font-size: .83rem; display: grid; gap: .25rem; overflow-wrap: anywhere; }

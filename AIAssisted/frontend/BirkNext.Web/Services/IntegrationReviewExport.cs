@@ -30,6 +30,33 @@ public static class IntegrationReviewExport
             })));
         sb.Append("</section>\n");
 
+        if (result.ApplicationMessagingSnapshot is { } messaging && messaging.Applications.Any(a => a.BoundConsumer is not null))
+        {
+            // Application messaging (Wolverine): the source evidence and runtime reads this run used. Facts and provenance only — no source code,
+            // no configuration value, no message body.
+            sb.Append("<section class=\"block\"><h2>Application messaging</h2>");
+            sb.Append($"<p>Source analyzed {messaging.AnalyzedAt:u} from {esc(string.Join(", ", messaging.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..12]})")))}. Configuration evidence is not runtime evidence.</p>");
+            sb.Append(table(["Application", "Bound consumer", "Technology", "Detection", "Handler mapping", "Retry policy", "Outbox", "Error handling", "Runtime processing"],
+                messaging.Applications.Where(a => a.BoundConsumer is not null).Select(a =>
+                {
+                    var runtime = result.ApplicationMessagingRuntime.FirstOrDefault(r => r.ApplicationId == a.ApplicationId);
+                    return new[]
+                    {
+                        esc(a.ApplicationId), esc(a.BoundConsumer), esc(a.Technology.ToString()), badge(ApplicationMessagingLabels.Detection(a.Detection)),
+                        badge(ApplicationMessagingLabels.Fact(a.HandlerMapping)), badge(ApplicationMessagingLabels.Fact(a.RetryPolicy)), badge(ApplicationMessagingLabels.Fact(a.Outbox)),
+                        badge(ApplicationMessagingLabels.Fact(a.ErrorHandling)),
+                        runtime is { State: BirkNext.Integrations.IntegrationEvidenceState.Available } ? badge("Observed") : $"{badge("Not assessed")} {esc(runtime?.Reason ?? "No runtime read in this run.")}",
+                    };
+                })));
+            sb.Append(table(["Application", "Fact", "State", "Detail", "Provenance"], messaging.Applications.Where(a => a.BoundConsumer is not null)
+                .SelectMany(a => a.Facts.Select(f => new[]
+                {
+                    esc(a.ApplicationId), esc(f.Label), badge(ApplicationMessagingLabels.Fact(f.State)), esc(f.Detail),
+                    esc($"{IntegrationReviewLabels.Source(f.Source)}{(f.Locations.Count == 0 ? "" : ": " + string.Join(", ", f.Locations.Take(3).Select(l => $"{l.File}:{l.Line}")))}"),
+                }))));
+            sb.Append("</section>\n");
+        }
+
         sb.Append("<section class=\"block\"><h2>Contract snapshot</h2>");
         sb.Append(result.ContractSnapshot.Count == 0 ? "<p>No contract artifact was configured for this run.</p>" :
             table(["Integration", "Role", "File", "Version", "Fields", "SHA-256"], result.ContractSnapshot.Select(c => new[]

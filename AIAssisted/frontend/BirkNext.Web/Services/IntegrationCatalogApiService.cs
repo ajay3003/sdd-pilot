@@ -12,6 +12,11 @@ namespace BirkNext.Web.Services;
 public interface IIntegrationCatalogApiService
 {
     Task<IntegrationMappingEvidenceCheck> CheckMappingAsync(string environmentId, string integrationId, CancellationToken ct = default);
+    /// <summary>The environment's application-messaging (Wolverine) evidence, or null when no source was analyzed.</summary>
+    Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default);
+    /// <summary>Uploads source archives for read-only analysis; returns the new evidence or the reason nothing was stored.</summary>
+    Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeApplicationMessagingAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default);
+    Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default);
     Task<IntegrationCatalog> GetCatalogAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
     Task<IntegrationDefinition> UpdateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
@@ -35,6 +40,31 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
     public async Task<IntegrationMappingEvidenceCheck> CheckMappingAsync(string environmentId, string integrationId, CancellationToken ct = default) =>
         await Read<IntegrationMappingEvidenceCheck>(await http.PostAsync($"api/integrations/{Uri.EscapeDataString(integrationId)}/mapping-evidence?{Env(environmentId)}", null, ct), ct);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public async Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync($"api/integrations/application-messaging?{Env(environmentId)}", ct);
+        response.EnsureSuccessStatusCode();
+        return response.StatusCode == System.Net.HttpStatusCode.NoContent ? null : await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct);
+    }
+
+    public async Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeApplicationMessagingAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    {
+        using var form = new MultipartFormDataContent();
+        foreach (var (name, content) in archives)
+        {
+            var part = new StreamContent(content);
+            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
+            form.Add(part, "archives", name);
+        }
+        using var response = await http.PostAsync($"api/integrations/application-messaging?{Env(environmentId)}", form, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct), null);
+    }
+
+    public async Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default) =>
+        await Read<ApplicationMessagingEvidenceSet>(await http.PutAsJsonAsync($"api/integrations/application-messaging/{Uri.EscapeDataString(applicationId)}/binding?{Env(environmentId)}", new { consumer }, Json, ct), ct);
 
     /// <summary>Environment identity plus the two facts the backend uses to decide whether the known M2LB DEV seed applies.</summary>
     private static string Scope(FrontendAnalysisProfile profile) =>

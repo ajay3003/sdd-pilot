@@ -185,6 +185,26 @@
                 }
             </section>
 
+            @if (readiness.ApplicationMessaging.Count > 0)
+            {
+                @* Application messaging (Wolverine) is source evidence beside the transport runtime sources — never counted among them. *@
+                <section class="iqr-card" aria-labelledby="iqr-messaging-heading" data-testid="iqr-messaging">
+                    <h2 id="iqr-messaging-heading">Application messaging</h2>
+                    <ul class="iqr-sources iqr-messaging-list">
+                        @foreach (var app in readiness.ApplicationMessaging)
+                        {
+                            <li class="iqr-messaging-item" data-testid="iqr-messaging-app" data-application="@app.ApplicationId">
+                                <span><strong>@app.ApplicationId</strong> · @app.Technology · <span class="iqr-pill iqr-pill-@(app.Detection == MessagingDetection.Confirmed ? "observed" : "muted")" data-testid="iqr-messaging-detection">@(app.Detection == MessagingDetection.Confirmed ? "Configured" : ApplicationMessagingLabels.Detection(app.Detection))</span></span>
+                                <span class="iqr-muted">Handler mapping @ApplicationMessagingLabels.Fact(app.HandlerMapping) · Retry policy @ApplicationMessagingLabels.Fact(app.RetryPolicy) · Outbox @ApplicationMessagingLabels.Fact(app.Outbox) · Error handling @ApplicationMessagingLabels.Fact(app.ErrorHandling)</span>
+                                <span class="iqr-muted">@(app.BoundConsumer is { } consumer ? $"Bound to {consumer} ({app.BoundTopics} topic{(app.BoundTopics == 1 ? "" : "s")})." : "Not bound to an Integrations consumer, so it contributes no review checks.")</span>
+                                <span class="iqr-muted" data-testid="iqr-messaging-copy">@ApplicationMessagingPresentation.PrerunCopy(app)</span>
+                            </li>
+                        }
+                    </ul>
+                    <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-messaging-manage">Manage in Target Environment → Integrations</a>
+                </section>
+            }
+
             <section class="iqr-card" aria-labelledby="iqr-domains-heading" data-testid="iqr-domain-readiness">
                 <h2 id="iqr-domains-heading">What can be reviewed</h2>
                 <ul class="iqr-domain-grid">
@@ -276,6 +296,20 @@
                         <p class="iqr-muted" data-testid="iqr-result-contracts">Contracts used: @string.Join("; ", result.ContractSnapshot.Select(c => $"{c.FileName} ({c.Role.ToString().ToLowerInvariant()}, sha256 {c.ShortHash})"))</p>
                     }
                 </section>
+                @if (result.ApplicationMessagingSnapshot is { } messaging && messaging.Applications.Any(a => a.BoundConsumer is not null))
+                {
+                    <section class="iqr-card" aria-labelledby="iqr-result-messaging-heading" data-testid="iqr-result-messaging">
+                        <h3 id="iqr-result-messaging-heading">Application messaging</h3>
+                        <p class="iqr-muted">Source analyzed @messaging.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC (snapshot used by this run). Configuration evidence is not runtime evidence.</p>
+                        <ul>
+                            @foreach (var app in messaging.Applications.Where(a => a.BoundConsumer is not null))
+                            {
+                                var runtime = result.ApplicationMessagingRuntime.FirstOrDefault(r => r.ApplicationId == app.ApplicationId);
+                                <li data-testid="iqr-result-messaging-app"><strong>@app.ApplicationId</strong> (@app.BoundConsumer) — Wolverine @ApplicationMessagingLabels.Detection(app.Detection) · handler mapping @ApplicationMessagingLabels.Fact(app.HandlerMapping).ToLowerInvariant() · retry policy @ApplicationMessagingLabels.Fact(app.RetryPolicy).ToLowerInvariant() · runtime processing @(runtime is { State: IntegrationEvidenceState.Available } ? "observed" : $"not assessed ({runtime?.Reason ?? "no runtime read"})")</li>
+                            }
+                        </ul>
+                    </section>
+                }
                 <section class="iqr-card" aria-labelledby="iqr-manual-heading" data-testid="iqr-manual">
                     <h3 id="iqr-manual-heading">Manual follow-up</h3>
                     <p class="iqr-muted">Tasks and gaps for a person — not defects.</p>

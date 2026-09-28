@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationReviewRunRecord> IntegrationReviewRuns => Set<IntegrationReviewRunRecord>();
     public DbSet<GraphQlSchemaArtifactRecord> GraphQlSchemaArtifacts => Set<GraphQlSchemaArtifactRecord>();
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
+    public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -595,6 +596,15 @@ public class AppDbContext : DbContext
             entity.Property(a => a.ContentHash).HasColumnName("content_hash").HasMaxLength(64).IsRequired();
             entity.Property(a => a.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.Property(a => a.ImportedAt).HasColumnName("imported_at");
+        });
+
+        modelBuilder.Entity<ApplicationMessagingEvidenceRecord>(entity =>
+        {
+            entity.ToTable("application_messaging_evidence");
+            entity.HasKey(r => r.EnvironmentId);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200);
+            entity.Property(r => r.AnalyzedAt).HasColumnName("analyzed_at");
+            entity.Property(r => r.EvidenceJson).HasColumnName("evidence_json").HasColumnType("text").IsRequired();
         });
 
         modelBuilder.Entity<GraphQlSchemaArtifactRecord>(entity =>

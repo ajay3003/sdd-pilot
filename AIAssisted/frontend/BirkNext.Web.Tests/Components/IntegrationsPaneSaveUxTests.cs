@@ -34,6 +34,10 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     private string SuggestedId => _api.Catalog.Integrations.First(i => i.Consumer.MappingState == ConsumerMappingState.Suggested).Id;
     private string PersonId => "dev:eventhub:birk-cdc:dbo.Person";
 
+    /// <summary>Contract upload inputs only (the Application messaging panel has its own source-archive input).</summary>
+    private static List<IRenderedComponent<InputFile>> ContractInputs(IRenderedComponent<IntegrationsPane> cut) =>
+        cut.FindComponents<InputFile>().Where(c => c.Instance.AdditionalAttributes?.TryGetValue("data-testid", out var id) == true && (string?)id == "ip-contract-input").ToList();
+
     [Fact]
     public void ThePaneStatesThatChangesAreSavedImmediately()
     {
@@ -124,7 +128,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         contracts.Select(c => c.GetAttribute("data-role")).Should().Equal("Producer", "Consumer");
         contracts.Should().OnlyContain(c => c.GetAttribute("data-configured") == "false");
 
-        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromText("""{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"type":"integer"}}}""", "person-producer.json"));
+        ContractInputs(cut)[0].UploadFiles(InputFileContent.CreateFromText("""{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"id":{"type":"integer"}}}""", "person-producer.json"));
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=ip-contract]")[0].GetAttribute("data-configured").Should().Be("true"));
         _api.Calls.Should().Contain($"contract:{PersonId}:Producer");
         cut.Find("[data-testid=ip-contract-file]").TextContent.Should().Be("person-producer.json");
@@ -141,7 +145,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         _api.ContractRejection = "Sample JSON is not a JSON Schema.";
         var cut = Open();
         View(cut, PersonId);
-        cut.FindComponents<InputFile>()[1].UploadFiles(InputFileContent.CreateFromText("""{"id":1}""", "sample.json"));
+        ContractInputs(cut)[1].UploadFiles(InputFileContent.CreateFromText("""{"id":1}""", "sample.json"));
         cut.WaitForAssertion(() => cut.Find("[data-testid=ip-contract-error]").TextContent.Should().Contain("not a JSON Schema"));
         cut.Find("[data-testid=ip-contract-error]").GetAttribute("role").Should().Be("alert");
         cut.Find("[data-testid=ip-save-status]").GetAttribute("data-state").Should().Be("Failed");

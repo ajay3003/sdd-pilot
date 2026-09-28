@@ -8,6 +8,22 @@ namespace BirkNext.Web.Tests.Integration;
 public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
 {
     public Func<string, Task<IntegrationMappingEvidenceCheck>>? MappingCheck { get; set; }
+    public ApplicationMessagingEvidenceSet? Messaging { get; set; }
+    public List<(string Application, string? Consumer)> Bindings { get; } = [];
+    public List<string> Analyzed { get; } = [];
+    public Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(Messaging);
+    public Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeApplicationMessagingAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    {
+        Analyzed.AddRange(archives.Select(a => a.FileName));
+        Calls.Add("analyze-messaging");
+        return Task.FromResult<(ApplicationMessagingEvidenceSet?, string?)>(Messaging is null ? (null, "No archive analyzed (test).") : (Messaging, null));
+    }
+    public Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default)
+    {
+        Bindings.Add((applicationId, consumer));
+        Messaging = Messaging! with { Applications = Messaging.Applications.Select(a => a.ApplicationId == applicationId ? a with { BoundConsumer = consumer } : a).ToList() };
+        return Task.FromResult(Messaging);
+    }
     public Task<IntegrationMappingEvidenceCheck> CheckMappingAsync(string environmentId, string integrationId, CancellationToken ct = default)
     {
         Calls.Add("mapping-evidence:" + integrationId);

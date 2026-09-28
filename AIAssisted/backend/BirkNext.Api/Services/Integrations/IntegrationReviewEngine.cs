@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using BirkNext.Api.Services.Integrations.ApplicationMessaging;
 using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.Integrations;
@@ -24,7 +25,9 @@ public sealed class IntegrationReviewEngine(
     ICheckpointEvidenceSource checkpoints,
     ITelemetryEvidenceSource telemetry,
     HttpClient http,
-    ILogger<IntegrationReviewEngine> logger)
+    ILogger<IntegrationReviewEngine> logger,
+    IApplicationMessagingTelemetrySource? messagingTelemetry = null,
+    IIntegrationAzureCredential? azure = null)
 {
     private const string NoSafeEventSource = "No safe runtime event-structure source is configured; events are never consumed to inspect them.";
 
@@ -35,7 +38,13 @@ public sealed class IntegrationReviewEngine(
         metadata.Describe(platform), consumerGroups.Describe(platform), checkpoints.Describe(platform), telemetry.Describe(platform),
     ];
 
-    public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts)
+    public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts) => Readiness(catalog, contracts, null);
+
+    /// <summary>Pre-run readiness. Application messaging evidence is summarized beside it and never changes a domain's readiness.</summary>
+    public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging) =>
+        ReadinessCore(catalog, contracts) with { ApplicationMessaging = ApplicationMessagingReview.Summaries(catalog, messaging, azure) };
+
+    private IntegrationReviewReadiness ReadinessCore(IntegrationCatalog catalog, IntegrationContractSet contracts)
     {
         var enabled = catalog.Integrations.Where(i => i.Enabled).ToList();
         var systems = Systems(catalog, enabled);
@@ -153,9 +162,13 @@ public sealed class IntegrationReviewEngine(
     public async Task<IntegrationReviewResult> RunAsync(IntegrationCatalog catalog, IntegrationReviewRunRequest request, CancellationToken ct) =>
         await RunAsync(catalog, request, IntegrationContractSet.Empty, [], ct);
 
+    public Task<IntegrationReviewResult> RunAsync(IntegrationCatalog catalog, IntegrationReviewRunRequest request, IntegrationContractSet contracts,
+        IReadOnlyList<IntegrationContractArtifact> previousContracts, CancellationToken ct) => RunAsync(catalog, request, contracts, previousContracts, null, ct);
+
     public async Task<IntegrationReviewResult> RunAsync(IntegrationCatalog catalog, IntegrationReviewRunRequest request, IntegrationContractSet contracts,
-        IReadOnlyList<IntegrationContractArtifact> previousContracts, CancellationToken ct)
+        IReadOnlyList<IntegrationContractArtifact> previousContracts, ApplicationMessagingEvidenceSet? messaging, CancellationToken ct)
     {
+        var messagingRuntime = new Dictionary<string, ApplicationMessagingRuntime>(StringComparer.Ordinal);
         var started = DateTimeOffset.UtcNow;
         var stopwatch = Stopwatch.StartNew();
         var enabled = catalog.Integrations.Where(i => i.Enabled).ToList();
@@ -243,6 +256,16 @@ public sealed class IntegrationReviewEngine(
                     checks.AddRange(await HealthEndpointChecksAsync(e.Topic, ct));
                     checks.AddRange(PerformanceChecks(e, findings));
                     checks.AddRange(DataQualityChecks(e, findings));
+                    if (messaging is not null && ApplicationMessagingReview.For(e.Topic, messaging) is { } app)
+                    {
+                        if (!messagingRuntime.TryGetValue(app.ApplicationId, out var appRuntime))
+                            messagingRuntime[app.ApplicationId] = appRuntime = messagingTelemetry is null
+                                ? new ApplicationMessagingRuntime { ApplicationId = app.ApplicationId, State = IntegrationEvidenceState.NotConfigured, Reason = "No application-messaging telemetry source in this instance.", CapturedAt = DateTimeOffset.UtcNow, WindowHours = window }
+                                : await messagingTelemetry.GetAsync(platform, app, window, ct);
+                        checks.AddRange(ApplicationMessagingReview.Checks(e.Topic, app, appRuntime, messaging.AnalyzedAt));
+                        logger.LogInformation("IQR application messaging for {IntegrationId}: {Application} Wolverine {Detection}, handlers {Handlers}, retry policy {Retry}, runtime {Runtime}.",
+                            e.Topic.Id, app.ApplicationId, app.Detection, app.Handlers.Count, app.RetryPolicy, appRuntime.State);
+                    }
                 }
                 else
                 {
@@ -266,7 +289,9 @@ public sealed class IntegrationReviewEngine(
         var grouped = findings.GroupBy(f => f.Key).Select(g => g.First() with { AffectedIntegrations = g.SelectMany(f => f.AffectedIntegrations).Distinct().ToList() }).ToList();
         var allChecks = systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks))).ToList();
         var domains = Enum.GetValues<IntegrationReviewDomain>().Select(domain => DomainResult(domain, allChecks, grouped)).ToList();
-        var runtimeAssessed = allChecks.Where(c => c.Provenance is not (IntegrationEvidenceSource.Configuration or IntegrationEvidenceSource.ContractArtifact) && IntegrationReviewLabels.IsAssessed(c.Status)).ToList();
+        // Source/build facts (application messaging) are configuration evidence, never runtime evidence.
+        var runtimeAssessed = allChecks.Where(c => c.Provenance is not (IntegrationEvidenceSource.Configuration or IntegrationEvidenceSource.ContractArtifact
+            or IntegrationEvidenceSource.SourceCode or IntegrationEvidenceSource.PackageManifest or IntegrationEvidenceSource.Infrastructure) && IntegrationReviewLabels.IsAssessed(c.Status)).ToList();
         var outcome = allChecks.Count == 0 || !allChecks.Any(c => IntegrationReviewLabels.IsAssessed(c.Status)) ? IntegrationReviewOutcome.NothingAssessed
             : grouped.Count > 0 ? IntegrationReviewOutcome.ManualReviewRequired
             : domains.Any(d => d.ChecksAssessed < d.ChecksTotal) ? IntegrationReviewOutcome.CompletedWithLimitations
@@ -281,6 +306,8 @@ public sealed class IntegrationReviewEngine(
             ManualFollowUp = ManualFollowUp(enabled, catalog, systems, allChecks), Limitations = Limitations(enabled, catalog, adapterStatuses, allChecks),
             Freshness = freshness, EvidenceSources = sources, ReviewWindowHours = windows.Count == 0 ? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours : windows.Max(),
             EvidenceAdapters = adapterStatuses, ContractSnapshot = contracts.Items.Where(i => enabled.Any(e => e.Id == i.Artifact.IntegrationId)).Select(i => i.Artifact).ToList(),
+            // The evidence as used: a later re-analysis or re-binding never changes this result.
+            ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(),
         };
         logger.LogInformation(
             "Integration Quality Review for {EnvironmentId}: {Integrations} integration(s) in {Systems} system(s), window {WindowHours} h, sources {Sources}, {Assessed} of {Checks} check(s) assessed, {Findings} finding(s), {DurationMs:0} ms.",

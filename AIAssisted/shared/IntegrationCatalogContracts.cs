@@ -342,10 +342,11 @@ public enum IntegrationDomainReadiness { Ready, Available, Limited, NotAssessabl
 
 /// <summary>Result of one check. Fail only when an explicit expected rule was violated; unavailable evidence is never Fail.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationCheckStatus { Pass, Warning, Fail, NotAssessed, Unavailable, NoIndicatorsObserved, Observed, NeedsConfirmation, NotConfigured, NoRecentEvidence }
+/// <remarks>Detected and Configured are source/build facts (application messaging): evidence of configuration, never a Pass and never runtime.</remarks>
+public enum IntegrationCheckStatus { Pass, Warning, Fail, NotAssessed, Unavailable, NoIndicatorsObserved, Observed, NeedsConfirmation, NotConfigured, NoRecentEvidence, Detected, Configured }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery, CheckpointStore, AzureResourceManager }
+public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery, CheckpointStore, AzureResourceManager, SourceCode, PackageManifest, Infrastructure }
 
 /// <summary>Why a runtime evidence source did or did not deliver. Failures are never collapsed into one "unavailable".</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -410,6 +411,8 @@ public sealed record IntegrationReviewReadiness
     public List<string> Reasons { get; init; } = [];
     /// <summary>Configured state of each runtime evidence adapter per platform (configuration only; nothing is contacted pre-run).</summary>
     public List<IntegrationEvidenceAdapterStatus> EvidenceAdapters { get; init; } = [];
+    /// <summary>Application messaging (Wolverine) evidence from analyzed source — a separate layer, never counted as a runtime evidence source.</summary>
+    public List<ApplicationMessagingSummary> ApplicationMessaging { get; init; } = [];
 }
 
 public sealed record IntegrationCheck
@@ -508,6 +511,9 @@ public sealed record IntegrationReviewResult
     public List<IntegrationEvidenceAdapterStatus> EvidenceAdapters { get; init; } = [];
     /// <summary>Contract artifacts compared in this run (file, hash, version) — a later replacement never reinterprets this result.</summary>
     public List<IntegrationContractArtifact> ContractSnapshot { get; init; } = [];
+    /// <summary>Application messaging evidence exactly as this run used it (source analysis + runtime reads). Never re-evaluated later.</summary>
+    public ApplicationMessagingEvidenceSet? ApplicationMessagingSnapshot { get; init; }
+    public List<ApplicationMessagingRuntime> ApplicationMessagingRuntime { get; init; } = [];
     [JsonIgnore] public int TopicsReviewed => Systems.Where(s => s.DomainReviewSupported).Sum(s => s.Topics.Count);
     [JsonIgnore] public IEnumerable<IntegrationCheck> AllChecks => Systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks)));
 }
@@ -566,6 +572,9 @@ public static class IntegrationReviewLabels
         IntegrationEvidenceSource.EndpointDiscovery => "Endpoint Discovery",
         IntegrationEvidenceSource.CheckpointStore => "Checkpoint store",
         IntegrationEvidenceSource.AzureResourceManager => "Azure Resource Manager",
+        IntegrationEvidenceSource.SourceCode => "Source code",
+        IntegrationEvidenceSource.PackageManifest => "Package reference",
+        IntegrationEvidenceSource.Infrastructure => "Terraform / infrastructure",
         _ => "Configuration",
     };
 

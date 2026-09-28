@@ -118,6 +118,8 @@
             </section>
         }
 
+        <ApplicationMessagingPanel EnvironmentId="@Profile.Id" Catalog="_catalog" Evidence="_messaging" EvidenceChanged="set => _messaging = set" />
+
         <div class="ip-workflow"><a class="ip-link" href="/integration-quality-review" data-testid="ip-open-iqr">Open Integration Quality Review</a><span class="ip-muted">Review can run with limitations while mapping or runtime evidence is unavailable.</span></div>
 
         var readinessCounts = _catalog.Integrations.GroupBy(i => IntegrationsPanePresentation.Row(_catalog, i).ReviewReadiness).ToDictionary(g => g.Key, g => g.Count());
@@ -216,6 +218,10 @@
                                                 <div><dt>Source</dt><dd class="ip-mono">@(definition.SourceResource ?? "Not configured")</dd></div>
                                                 <div><dt>Consumer group</dt><dd class="ip-mono" data-testid="ip-detail-consumer-group">@(definition.ConsumerGroup ?? "Unknown / not configured")</dd></div>
                                                 <div><dt>Consumer mapping</dt><dd data-testid="ip-detail-mapping">@IntegrationConfigurationRules.MappingLabel(row.MappingState)@(definition.Consumer.MappingSource is { } src ? $" · {src}" : "")@(definition.Consumer.MappingConfirmedAt is { } at ? $" · {at.ToUniversalTime():yyyy-MM-dd HH:mm} UTC" : "")</dd></div>
+                                                @if (ApplicationMessagingPresentation.BoundTo(definition, _messaging) is { } messagingApp)
+                                                {
+                                                    <div><dt>Application messaging</dt><dd data-testid="ip-detail-messaging">@messagingApp.ApplicationId · Wolverine @ApplicationMessagingLabels.Detection(messagingApp.Detection)@(messagingApp.Detection == MessagingDetection.NotDetected ? "" : $" · Handler mapping {ApplicationMessagingLabels.Fact(messagingApp.HandlerMapping)} · Retry policy {ApplicationMessagingLabels.Fact(messagingApp.RetryPolicy)}") · Runtime processing Not assessed</dd></div>
+                                                }
                                                 @if (definition.Consumer.ContainerApp is { } app) { <div><dt>Container app</dt><dd class="ip-mono">@app</dd></div> }
                                                 @if (definition.Consumer.ManagedIdentity is { } mi) { <div><dt>Managed identity</dt><dd class="ip-mono">@mi</dd></div> }
                                                 <div><dt>Producer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(definition.ProducerAuthentication)</dd></div>
@@ -311,6 +317,7 @@
 
     private IntegrationCatalog? _catalog;
     private IReadOnlyList<IntegrationContractArtifact> _contracts = [];
+    private ApplicationMessagingEvidenceSet? _messaging;
     private readonly Dictionary<(string, IntegrationContractRole), string> _contractErrors = [];
     private string? _loadError;
     private string? _saveError;
@@ -460,6 +467,7 @@
             _catalog = await Api.GetCatalogAsync(Profile);
             _notices.AddRange(_catalog.Notices.Except(_notices).ToList());
             _contracts = await Api.ContractsAsync(Profile.Id);
+            _messaging = await Api.ApplicationMessagingAsync(Profile.Id);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
