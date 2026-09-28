@@ -165,6 +165,9 @@ public static class FrontendQualityResultPresentation
         IReadOnlyList<FrontendQualityDomainResult> domains,
         FrontendQualityAccessibilityResult? accessibility)
     {
+        if (report.CoveragePasses.Any(p => FrontendQualityReviewScopes.PassStatus(p) != "Completed")
+            && report.CoveragePasses.Any(p => p.Report.EngineOutcomes.Any(o => o.ExecutionState == FrontendQualityEngineExecutionState.Assessed)))
+            return FrontendQualityResultState.Incomplete;
         if (!string.IsNullOrWhiteSpace(report.ErrorMessage))
             return FrontendQualityResultState.FailedToRun;
 

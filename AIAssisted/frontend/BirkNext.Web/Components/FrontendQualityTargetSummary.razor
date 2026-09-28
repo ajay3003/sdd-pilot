@@ -14,8 +14,9 @@
         <div><dt>URL</dt><dd class="fqr-target-url" data-testid="fqr-target-url">@Summary.Url</dd></div>
         @* The review's scope and the authenticated path, never "Authentication: Not required" — that read as a fact about
            the application. Whether a sign-in provider is configured is in Technical details. *@
-        <div><dt>Review scope</dt><dd data-testid="fqr-target-scope">@Summary.ReviewScope</dd></div>
+        <div><dt>Review scope</dt><dd><span data-testid="fqr-target-scope">@Summary.ReviewScope</span> @ScopeControl</dd></div>
         <div><dt>Authenticated access</dt><dd data-testid="fqr-target-authenticated-access">@Summary.AuthenticatedAccess</dd></div>
+        @if (Verification is not null) { <div><dt>Authentication verification</dt><dd>@Verification</dd></div> }
         <div><dt>Target status</dt><dd data-testid="fqr-target-status"><span class="fqr-pill fqr-pill-@(Summary.TargetReady ? "ready" : "attention")">@Summary.TargetStatus</span></dd></div>
     </dl>
     @if (TechnicalFields.Count > 0)
@@ -32,6 +33,8 @@
 </section>
 
 @code {
+    [Parameter] public RenderFragment? ScopeControl { get; set; }
+    [Parameter] public string? Verification { get; set; }
     [Parameter, EditorRequired] public FrontendQualityTargetSummaryModel Summary { get; set; } = new("", "", "", "", "", "", false);
     [Parameter] public IReadOnlyList<FrontendQualityTechnicalField> TechnicalFields { get; set; } = [];
     [Parameter] public string ChangeHref { get; set; } = "/admin/system-settings?section=target-environments";

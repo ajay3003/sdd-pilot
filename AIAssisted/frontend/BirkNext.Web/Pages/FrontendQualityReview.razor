@@ -54,7 +54,16 @@
                 <div class="fqr-decide-cards">
                     @* No technical disclosure here: the exact source values live in the ONE Technical details
                        disclosure at the end of Review details, so there is a single place to look for them. *@
-                    <FrontendQualityTargetSummary Summary="landing.Target" ChangeHref="@TargetEnvironmentsHref" />
+                    <FrontendQualityTargetSummary Summary="landing.Target" ChangeHref="@TargetEnvironmentsHref" Verification="@ScopeVerification">
+                        <ScopeControl>
+                            @if (_context is not null)
+                            {
+                                <FrontendQualityScopePicker Selected="@(_context.ReviewScope ?? FrontendReviewAccessScope.PublicOnly)"
+                                    SelectedChanged="ApplyReviewScope" TestingContext="@ScopeTestingContext" Configuration="@(_context.AuthenticationConfiguration ?? "Not assessed")"
+                                    Provider="@FrontendQualityReviewScopes.ConfiguredProviderLabel(_context.AuthenticationType)" Verification="@ScopeVerification" />
+                            }
+                        </ScopeControl>
+                    </FrontendQualityTargetSummary>
                     @* Review scope, stated before the run: which criteria accessibility is judged against. *@
                     <FrontendQualityProfileCard Selected="SelectedWcagProfile" ProfileChanged="OnWcagProfileChanged" />
                     <FrontendQualityReadinessPanel Readiness="landing.Readiness" />
@@ -272,6 +281,31 @@
 
         @* ── 1. The result itself: what ran, against what, and how it ended. ────────────────────────────────── *@
         <FrontendQualityResultSummary Result="result" RunAgain="RunReview" />
+        @if (report.CoveragePasses.Count > 0)
+        {
+            <section class="fqr-section" aria-label="Review access coverage" data-testid="fqr-access-coverage">
+                <h2>Coverage</h2>
+                <p>Review scope at run time: @FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(report.TargetAccess!))</p>
+                <dl>
+                    @foreach (var pass in report.CoveragePasses)
+                    {
+                        <dt>@(pass.Mode == FrontendReviewAccessScope.PublicOnly ? "Public" : "Authenticated")</dt>
+                        <dd>@FrontendQualityReviewScopes.PassStatus(pass)</dd>
+                        <dd>
+                            <details>
+                                <summary>Engine results for this coverage mode</summary>
+                                <ul>
+                                    @foreach (var outcome in pass.Report.EngineOutcomes.Where(o => o.Enabled && o.ExecutionState != FrontendQualityEngineExecutionState.Disabled))
+                                    {
+                                        <li>@outcome.DisplayName: @FrontendQualityEngineOutcomePresentation.StateLabel(outcome) — @outcome.AccessLabel</li>
+                                    }
+                                </ul>
+                            </details>
+                        </dd>
+                    }
+                </dl>
+            </section>
+        }
 
         @if (report.PreflightStatus == PreflightStatus.AuthenticationRequired)
         {
@@ -719,6 +753,21 @@
     /// </summary>
     private WcagAssessmentProfile SelectedWcagProfile => WcagSnapshot.Wcag.Profile;
 
+    private string ScopeVerification => FrontendQualityReviewScopes.VerificationLabel(_access);
+    private string ScopeTestingContext => FrontendQualityReviewScopes.TestingContextLabel(_access);
+
+    private async Task ApplyReviewScope(FrontendReviewAccessScope scope)
+    {
+        if (_context is null || ServiceProvider.GetService(typeof(IFrontendAnalysisSettingsService)) is not IFrontendAnalysisSettingsService settings)
+            throw new InvalidOperationException("Target Environment settings are unavailable.");
+        var profile = settings.Settings.Profiles.Single(p => p.Id == _context.ActiveProfile.Id);
+        var original = profile.FrontendReviewScope;
+        profile.FrontendReviewScope = scope;
+        try { await settings.SaveAsync(JS); }
+        catch { profile.FrontendReviewScope = original; throw; }
+        await RefreshContext();
+    }
+
     private async Task OnWcagProfileChanged(string profileId)
     {
         if (_context is null) return;
@@ -894,6 +943,7 @@
     {
         _companionRuntime = ServiceProvider.GetService(typeof(BrowserCompanionRuntime)) as BrowserCompanionRuntime;
         _context = await ContextFactory.GetActiveContextAsync();
+        _context = _context.ForReviewScope(_context.ActiveProfile.FrontendReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(_context.RequiresAuthentication));
         _report  = RuntimeReviews.QualityReview.Report;
         ResolveActiveEngines();
 
@@ -1085,6 +1135,7 @@
         var previousContext = _context;
         _runNotStartedReason = null;
         _context = await ContextFactory.GetActiveContextAsync();
+        _context = _context.ForReviewScope(_context.ActiveProfile.FrontendReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(_context.RequiresAuthentication));
         if (_context.ActiveTargetError is not null || !_context.HasTargetUrl)
         {
             // The run attempt itself is reported, not only the landing configuration state: the
@@ -1152,6 +1203,7 @@
         // Enhance report with timing and completion info.
         var completedReport = new FrontendQualityReviewReport
         {
+            CoveragePasses = qualityReport.CoveragePasses,
             TargetEnvironment = targetIdentity,
             TargetUrl = qualityReport.TargetUrl,
             FinalUrl = qualityReport.FinalUrl,
@@ -1230,6 +1282,7 @@
         if (_running) return;
         _runNotStartedReason = null;
         _context = await ContextFactory.GetActiveContextAsync();
+        _context = _context.ForReviewScope(_context.ActiveProfile.FrontendReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(_context.RequiresAuthentication));
         ResolveActiveEngines();
         await ResolveAuthenticatedCapabilities();
         StartEngineStatusFetch();

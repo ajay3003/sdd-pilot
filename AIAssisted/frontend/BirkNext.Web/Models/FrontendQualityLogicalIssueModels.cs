@@ -4,6 +4,7 @@ namespace BirkNext.Web.Models;
 
 public sealed record FrontendQualityFindingInstance
 {
+    public FrontendReviewAccessScope? CoverageMode { get; init; }
     [JsonPropertyName("engineId")] public required FrontendQualityEngineId EngineId { get; init; }
     [JsonPropertyName("sourceSystem")] public required string SourceSystem { get; init; }
     [JsonPropertyName("sourceFindingId")] public required string SourceFindingId { get; init; }

@@ -2,6 +2,17 @@ namespace BirkNext.Web.Models;
 
 public sealed class FrontendAnalysisContext
 {
+    public FrontendReviewAccessScope? ReviewScope { get; set; }
+    public string? AuthenticationConfiguration { get; set; }
+
+    /// <summary>Detached execution context; never changes Target Environment authentication settings.</summary>
+    public FrontendAnalysisContext ForReviewScope(FrontendReviewAccessScope scope)
+    {
+        var copy = (FrontendAnalysisContext)MemberwiseClone();
+        copy.ReviewScope = scope;
+        copy.RequiresAuthentication = scope != FrontendReviewAccessScope.PublicOnly;
+        return copy;
+    }
     public string? ActiveTargetError { get; init; }
     public FrontendAnalysisProfile           ActiveProfile              { get; set; } = new();
 

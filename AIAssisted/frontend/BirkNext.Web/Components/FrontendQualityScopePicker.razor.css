@@ -1,0 +1,10 @@
+.fqr-scope-dialog { width: min(32rem, calc(100vw - 2rem)); max-height: calc(100dvh - 2rem); box-sizing: border-box; overflow: auto; border: 1px solid #64748b; border-radius: .75rem; padding: 1.5rem; color: #172033; background: white; }
+.fqr-scope-dialog::backdrop { background: #0f172a88; }
+fieldset { border: 0; padding: 0; margin: 0; }
+legend { margin-bottom: .75rem; }
+.scope-choice { display: flex; gap: .75rem; padding: .75rem 0; cursor: pointer; }
+.scope-choice input { align-self: flex-start; margin-top: .3rem; }
+.scope-choice small { display: block; margin-top: .3rem; line-height: 1.5; }
+dt { font-weight: 600; margin-top: .7rem; }
+dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.scope-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.5rem; }

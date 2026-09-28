@@ -266,7 +266,7 @@ public sealed class FrontendQualityReviewScopeTests
         var html = new ReportExportService().ExportFrontendQualityReview(report, "Test");
         html.Should().Contain("<strong>Review scope:</strong></dt><dd>Public + authenticated</dd>")
             .And.Contain("<strong>Access used:</strong></dt><dd>Public only (partial: the configured scope was not fully assessed)</dd>")
-            .And.Contain("<strong>Signed-in pages reviewed by:</strong></dt><dd>No engine assessed this path</dd>");
+            .And.Contain("<strong>Authenticated coverage reviewed by:</strong></dt><dd>No engine assessed this path</dd>");
     }
 
     [Fact]

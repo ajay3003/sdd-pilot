@@ -22,7 +22,7 @@
                 @* Configured provider, configured scope and (after a run) the access actually used are separate rows:
                    "Authentication: Not required" beside a configured provider read as a fact about the application. *@
                 <div><dt>Authentication configured</dt><dd data-testid="fqr-access-auth">@FrontendQualityReviewScopes.ConfiguredProviderLabel(Access.AuthenticationType)</dd></div>
-                <div><dt>Review scope</dt><dd data-testid="fqr-access-scope">@FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(Access.RequiresAuthentication))</dd></div>
+                <div><dt>Review scope</dt><dd data-testid="fqr-access-scope">@FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(Access))</dd></div>
                 @if (Executed is { } executed)
                 {
                     <div>

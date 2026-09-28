@@ -58,6 +58,7 @@ public enum FrontendQualityFindingOrigin
 
 public sealed class FrontendQualityFinding
 {
+    [JsonPropertyName("coverageMode")] public FrontendReviewAccessScope? CoverageMode { get; set; }
     [JsonPropertyName("id")]             public string                   Id             { get; init; } = "";
     [JsonPropertyName("title")]          public string                   Title          { get; init; } = "";
     [JsonPropertyName("severity")]       public FrontendQualitySeverity  Severity       { get; init; }
@@ -84,8 +85,9 @@ public sealed class FrontendQualityCategoryScore
     [JsonPropertyName("notAssessedReason")] public string?            NotAssessedReason { get; init; }
 }
 
-public sealed class FrontendQualityReviewReport
+public sealed record FrontendQualityReviewReport
 {
+    [JsonPropertyName("coveragePasses")] public List<FrontendQualityCoveragePass> CoveragePasses { get; init; } = [];
     public WcagAssessment? Wcag { get; init; }
     [JsonPropertyName("targetEnvironment")] public FrontendReviewTargetIdentity? TargetEnvironment { get; init; }
     private List<string> _legacyAssessedEngines = [];

@@ -260,6 +260,8 @@ public sealed class TargetApiCredentials
 
 public sealed class FrontendAnalysisProfile
 {
+    /// <summary>FQR access scope, independent of the target's authentication configuration. Null preserves legacy behavior.</summary>
+    [JsonPropertyName("frontendReviewScope")] public FrontendReviewAccessScope? FrontendReviewScope { get; set; }
     [JsonPropertyName("manualVerification")] public ManualAuthenticationVerificationEvidence? ManualVerification { get; set; }
 
     [JsonPropertyName("id")]              public string                    Id              { get; set; } = "";

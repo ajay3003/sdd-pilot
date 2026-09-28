@@ -362,9 +362,9 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         page.FindAll("[data-testid=fqr-auth-steps] li").Should().HaveCount(3);
         page.Find("[data-testid=fqr-auth-evidence]").TextContent.Should().Contain("Browser session").And.Contain("Authenticated DOM").And.Contain("Not connected");
         page.Find("[data-testid=fqr-auth-sign-in]").TextContent.Should().Be("Sign in for review");
-        // Sign-in required, no session: the Target card states the reachable part of the scope and why the rest is not.
-        page.Find("[data-testid=fqr-target-scope]").TextContent.Should().Be("Public only · authenticated scope unavailable");
-        page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Unavailable");
+        // The requested scope stays visible even when one path is unavailable.
+        page.Find("[data-testid=fqr-target-scope]").TextContent.Should().Be("Public + authenticated");
+        page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Requested but unavailable");
         page.Find("[data-testid=fqr-target-status]").TextContent.Should().Be("Ready with limitations");
         // Raw capability rows are behind a collapsed disclosure.
         page.Find("[data-testid=fqr-auth-technical-toggle]").GetAttribute("aria-expanded").Should().Be("false");
@@ -491,17 +491,17 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         Capability(page, id).QuerySelector("[data-testid=fqr-capability-state]")!.TextContent;
 
     [Fact]
-    public void ManagedEdgeWithoutSession_DomEngineRequiresBrowserSession_HttpEnginesStayEnabled()
+    public void BothScopesWithoutSession_PublicEnginesStayReady_AuthenticatedAccessRemainsUnavailable()
     {
         Register(Context(requiresAuth: true), [Engine(FrontendQualityEngineIdDto.Accessibility), Engine(FrontendQualityEngineIdDto.Lighthouse), Engine(FrontendQualityEngineIdDto.PassiveSecurity)]);
 
         var page = Render<FrontendQualityReview>();
 
-        page.WaitForAssertion(() => State(page, FrontendQualityEngineId.Accessibility).Should().Be("Requires browser session"));
-        Capability(page, FrontendQualityEngineId.Accessibility).QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Contain("Sign in for review");
+        page.WaitForAssertion(() => State(page, FrontendQualityEngineId.Accessibility).Should().Be("Ready"));
+        page.Find("[data-testid=fqr-target-authenticated-access]").TextContent.Should().Be("Requested but unavailable");
         State(page, FrontendQualityEngineId.StaticSecurity).Should().Be("Available");
         Capability(page, FrontendQualityEngineId.StaticSecurity).QuerySelector("[data-testid=fqr-capability-summary]")!.TextContent.Should().Contain("public frontend");
-        State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Not supported for this target");
+        State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Ready");
     }
 
     // 12. Review results are not shown as successful before execution.
@@ -548,7 +548,7 @@ public sealed class FrontendQualityReviewLandingUITests : BunitContext
         // 18. Per-RUN inclusion, named so it cannot be confused with the saved Enabled toggle beside it.
         include.GetAttribute("aria-label").Should().Be("Include Lighthouse in this review run");
         include.Change(false);
-        context.ReviewEngineSelection.LighthouseSelected.Should().BeFalse();
+        context.ReviewEngineSelection.LighthouseSelected.Should().BeTrue("per-run changes use a detached context");
         State(page, FrontendQualityEngineId.Lighthouse).Should().Be("Not selected");
         Capability(page, FrontendQualityEngineId.Lighthouse).QuerySelector("[data-testid=fqr-capability-include]").Should().NotBeNull("a deselected engine can be re-included");
         Capability(page, FrontendQualityEngineId.BrowserRuntime).QuerySelector("[data-testid=fqr-capability-include]").Should().BeNull("a disabled engine cannot be selected into the review");

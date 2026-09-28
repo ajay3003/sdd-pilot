@@ -474,12 +474,23 @@ public sealed class ReportExportService : IReportExportService
             sb.Append($"<dt><strong>Target:</strong></dt><dd>{Esc(access.EnvironmentName)} ({Esc(access.EnvironmentType)})</dd>\n");
             sb.Append($"<dt><strong>URL:</strong></dt><dd>{Esc(access.TargetUrl)}</dd>\n");
             var executed = FrontendQualityReviewScopes.Executed(report);
+            sb.Append($"<dt>Authentication configuration at run time:</dt><dd>{Esc(access.AuthenticationConfiguration ?? "Not assessed")}</dd>");
+            sb.Append($"<dt>Authentication verification at run time:</dt><dd>{Esc(FrontendQualityReviewScopes.VerificationLabel(access))}</dd>");
+            sb.Append($"<dt>Testing context at run time:</dt><dd>{Esc(FrontendQualityReviewScopes.TestingContextLabel(access))}</dd>");
+            foreach (var pass in report.CoveragePasses)
+            {
+                sb.Append($"<dt>{(pass.Mode == FrontendReviewAccessScope.PublicOnly ? "Public" : "Authenticated")} coverage:</dt><dd>{Esc(FrontendQualityReviewScopes.PassStatus(pass))}</dd>");
+                foreach (var outcome in pass.Report.EngineOutcomes.Where(o => o.Enabled && o.ExecutionState != FrontendQualityEngineExecutionState.Disabled))
+                    sb.Append($"<dt>{Esc(outcome.DisplayName)} ({Esc(FrontendQualityReviewScopes.Label(pass.Mode))}):</dt><dd>{Esc(FrontendQualityEngineOutcomePresentation.StateLabel(outcome))} — {Esc(outcome.AccessLabel)}</dd>");
+            }
+            if (FrontendQualityReviewScopes.ConfiguredScope(access) == FrontendReviewAccessScope.PublicOnly)
+                sb.Append("<dt>Authenticated coverage:</dt><dd>Not included in this review</dd>");
             sb.Append($"<dt><strong>Authentication configured:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.ConfiguredProviderLabel(access.AuthenticationType))}</dd>\n");
-            sb.Append($"<dt><strong>Review scope:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(access.RequiresAuthentication)))}</dd>\n");
+            sb.Append($"<dt><strong>Review scope:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(access)))}</dd>\n");
             sb.Append($"<dt><strong>Access used:</strong></dt><dd>{Esc(FrontendQualityReviewScopes.ExecutedLabel(executed))}{(executed.Partial ? " (partial: the configured scope was not fully assessed)" : "")}</dd>\n");
             sb.Append($"<dt><strong>Public frontend reviewed by:</strong></dt><dd>{Esc(executed.PublicEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.PublicEngines))}</dd>\n");
             if (access.RequiresAuthentication || executed.AuthenticatedEngines.Count > 0)
-                sb.Append($"<dt><strong>Signed-in pages reviewed by:</strong></dt><dd>{Esc(executed.AuthenticatedEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.AuthenticatedEngines))}</dd>\n");
+                sb.Append($"<dt><strong>Authenticated coverage reviewed by:</strong></dt><dd>{Esc(executed.AuthenticatedEngines.Count == 0 ? "No engine assessed this path" : string.Join(", ", executed.AuthenticatedEngines))}</dd>\n");
             sb.Append($"<dt><strong>Testing method:</strong></dt><dd>{Esc(AuthenticatedTestingMethodLabels.Option(access.Method))}</dd>\n");
             sb.Append($"<dt><strong>Access mode:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ModeLabel(access.Mode))}</dd>\n");
             sb.Append($"<dt><strong>Authenticated context:</strong></dt><dd>{Esc(FrontendQualityTargetAccess.ApiContextLabel(access))}</dd>\n");
@@ -565,11 +576,12 @@ public sealed class ReportExportService : IReportExportService
             sb.Append($"<p><strong>Sources:</strong> {Esc(string.Join(", ", issue.Sources.Select(FrontendQualityDecisionSupportService.SourceLabel)))}</p>\n");
             sb.Append($"<p><strong>Evidence strength:</strong> {Esc(issue.EvidenceStrength.ToString())} &nbsp; <strong>Confidence:</strong> {Esc(issue.Confidence?.ToString() ?? "Not assigned")}</p>\n");
             sb.Append($"<p><strong>Review disposition:</strong> {Esc(issue.ReviewDisposition.ToString())}</p><p><strong>Next step:</strong> {Esc(SanitizePassive(issue.Recommendation))}</p>\n");
-            sb.Append(Table(["Source", "Original severity", "Source finding / rule", "Sanitized evidence", "Source recommendation"], issue.FindingInstances.Select(instance => new[]
+            sb.Append(Table(["Source", "Original severity", "Source finding / rule", "Sanitized evidence", "Source recommendation", "Coverage mode"], issue.FindingInstances.Select(instance => new[]
             {
                 Esc(FrontendQualityDecisionSupportService.SourceLabel(instance.EngineId)), Esc(instance.Severity.ToString()),
                 Esc($"{instance.SourceFindingId} / {instance.SourceRuleId ?? "—"}"),
-                Esc(SanitizePassive(string.Join(" | ", instance.SanitizedEvidence))), Esc(SanitizePassive(instance.Recommendation))
+                Esc(SanitizePassive(string.Join(" | ", instance.SanitizedEvidence))), Esc(SanitizePassive(instance.Recommendation)),
+                Esc(instance.CoverageMode is { } mode ? FrontendQualityReviewScopes.Label(mode) : "Scope-independent or unclassified evidence")
             })));
             sb.Append("</article>\n");
         }

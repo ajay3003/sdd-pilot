@@ -25,7 +25,7 @@ public sealed class FrontendQualityTargetAccessResolver(
         // Identity and fingerprints come from the saved profile (computed by the context factory), never re-derived from the
         // data-minimized profile copy: a mismatched fingerprint would hide an available proxy context and report "Stale".
         var identity = ReviewAuthenticationIdentity.ForContext(context);
-        var caps = context.RequiresAuthentication && identity.Method == AuthenticatedTestingMethod.LocalHttpsProxy
+        var caps = context.AuthenticationType != FrontendAuthenticationType.None && identity.Method == AuthenticatedTestingMethod.LocalHttpsProxy
             ? await SafeResolveCapabilitiesAsync(identity, cancellationToken)
             : null;
         var sessionAuthenticated = context.IsAuthenticatedSessionAvailable || await SafeSessionAuthenticatedAsync();
@@ -120,6 +120,8 @@ public static class FrontendQualityTargetAccess
 
         return new FrontendQualityTargetAccessContext
         {
+            ReviewScope = context.ReviewScope,
+            AuthenticationConfiguration = context.AuthenticationConfiguration,
             EnvironmentName = profile.Name,
             EnvironmentType = profile.EnvironmentType.ToString(),
             TargetUrl = context.TargetUrl,
@@ -167,8 +169,18 @@ public static class FrontendQualityTargetAccess
                 "Browser metrics come from the BirkNext Browser Companion in your managed Edge; API/network metrics from the Local HTTPS proxy. No Playwright, CDP, Lighthouse or token handoff.");
 
         var publicKind = engine.PublicAccess;
+        if (access.ReviewScope == FrontendReviewAccessScope.PublicAndAuthenticated
+            && (!engine.SupportsAuthenticatedBrowserSession || !access.AuthenticatedBrowserDomAvailable))
+            return Ready(engine, publicKind, "Public coverage; authenticated coverage assessed separately");
         if (!access.RequiresAuthentication)
             return Ready(engine, publicKind, publicKind == FrontendQualityEngineAccessKind.PublicHttp ? "Public HTTP" : "Browser runtime (public)");
+
+        if (access.ReviewScope == FrontendReviewAccessScope.AuthenticatedOnly && engine.RequiresPublicHttp)
+            return engine.SupportsProxyAuthenticatedContext && access.AuthenticatedApiAvailable
+                ? Ready(engine, FrontendQualityEngineAccessKind.AuthenticatedHttp, "Authenticated API")
+                : Blocked(engine, FrontendQualityEngineAccessKind.AuthenticatedHttp, "Authenticated API",
+                    FrontendQualityEngineOutcomeReason.AuthenticatedContextUnavailable,
+                    "Authenticated API coverage cannot currently run. Public requests are outside this review scope.");
 
         // Engines that only need the public frontend document/assets keep running for a protected application: the SPA shell is
         // served publicly and the engine analyses exactly that. The reachability probe reports a host-level authentication gate.

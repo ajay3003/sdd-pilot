@@ -98,7 +98,7 @@ public static class FrontendQualityLandingPresentation
             string.IsNullOrWhiteSpace(profile.Name) ? "Unnamed environment" : profile.Name,
             EnvironmentTypeLabel(profile.EnvironmentType),
             context.HasTargetUrl ? context.TargetUrl : "Not configured",
-            scope is null ? FrontendQualityReviewScopes.Label(FrontendQualityReviewScopes.ConfiguredScope(context.RequiresAuthentication))
+            scope is null ? FrontendQualityReviewScopes.Label(context.ReviewScope ?? FrontendQualityReviewScopes.ConfiguredScope(context.RequiresAuthentication))
                 : FrontendQualityReviewScopes.ScopeSummary(scope),
             scope is null ? (context.RequiresAuthentication ? "Checking…" : "Not included in this review")
                 : FrontendQualityReviewScopes.AuthenticatedAccessLabel(scope),

@@ -119,6 +119,7 @@
                                 <p>
                                     <strong>@FrontendQualityDecisionSupportService.SourceLabel(instance.EngineId):</strong>
                                     @instance.Title (@instance.Severity)
+                                    @if (instance.CoverageMode is { } mode) { <span> · @FrontendQualityReviewScopes.Label(mode)</span> }
                                 </p>
                                 @if (instance.SanitizedEvidence.Count > 0)
                                 {

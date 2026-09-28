@@ -186,6 +186,7 @@ public static class FrontendQualityLogicalIssueGrouper
         var page = FrontendQualityIssueIdentity.Page(finding);
         return new FrontendQualityFindingInstance
         {
+            CoverageMode = finding.CoverageMode,
             EngineId = engineId,
             SourceSystem = ReportExportService.SanitizePassive(finding.SourceSystem),
             SourceFindingId = ReportExportService.SanitizePassive(finding.Id),

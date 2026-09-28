@@ -149,6 +149,8 @@ public static class FrontendQualityEngineAccessRegistry
 /// </summary>
 public sealed record FrontendQualityTargetAccessContext
 {
+    [JsonPropertyName("reviewScope")] public FrontendReviewAccessScope? ReviewScope { get; init; }
+    [JsonPropertyName("authenticationConfiguration")] public string? AuthenticationConfiguration { get; init; }
     [JsonPropertyName("environmentName")] public string EnvironmentName { get; init; } = "";
     [JsonPropertyName("environmentType")] public string EnvironmentType { get; init; } = "";
     [JsonPropertyName("targetUrl")] public string TargetUrl { get; init; } = "";

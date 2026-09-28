@@ -1,0 +1,72 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<button @ref="_trigger" type="button" class="btn-secondary" data-testid="fqr-change-scope" @onclick="Open">Change scope</button>
+<dialog @ref="_dialog" class="fqr-scope-dialog" aria-labelledby="fqr-scope-title">
+    <h2 id="fqr-scope-title">Review scope</h2>
+    <fieldset disabled="@_saving">
+        <legend>Choose the access to include in this review</legend>
+        @foreach (var scope in Enum.GetValues<FrontendReviewAccessScope>())
+        {
+            <label class="scope-choice">
+                <input type="radio" name="fqr-review-scope" value="@scope" checked="@(_draft == scope)" @onchange="() => _draft = scope" />
+                <span><strong>@FrontendQualityReviewScopes.Label(scope)</strong><small>@Description(scope)</small></span>
+            </label>
+        }
+    </fieldset>
+    <dl>
+        <dt>Authentication configuration</dt><dd>@Configuration</dd>
+        <dt>Authentication testing context</dt><dd>@TestingContext</dd>
+        <dt>Provider</dt><dd>@Provider</dd>
+        <dt>Verification</dt><dd>@Verification</dd>
+    </dl>
+    @if (_error is not null) { <p role="alert">@_error</p> }
+    <div class="scope-actions">
+        <button type="button" class="btn-secondary" disabled="@_saving" @onclick="Close">Cancel</button>
+        <button type="button" class="btn-primary" disabled="@_saving" @onclick="Apply">Apply</button>
+    </div>
+</dialog>
+
+@code {
+    [Parameter] public FrontendReviewAccessScope Selected { get; set; }
+    [Parameter] public EventCallback<FrontendReviewAccessScope> SelectedChanged { get; set; }
+    [Parameter] public string TestingContext { get; set; } = "Not ready";
+    [Parameter] public string Provider { get; set; } = "Not configured";
+    [Parameter] public string Configuration { get; set; } = "Not assessed";
+    [Parameter] public string Verification { get; set; } = "Not assessed";
+    private FrontendReviewAccessScope _draft;
+    private ElementReference _dialog, _trigger;
+    private IJSObjectReference? _module;
+    private bool _saving;
+    private string? _error;
+    private static string Description(FrontendReviewAccessScope scope) => scope switch
+    {
+        FrontendReviewAccessScope.PublicOnly => "Test only publicly accessible pages and requests. Authentication is not used.",
+        FrontendReviewAccessScope.AuthenticatedOnly => "Run the review only with the configured authenticated testing context.",
+        _ => "Review both public and authenticated application surfaces."
+    };
+    private async Task Open()
+    {
+        _draft = Selected;
+        _error = null;
+        _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/frontendReviewScope.js");
+        await _module.InvokeVoidAsync("open", _dialog);
+    }
+    private async Task Close()
+    {
+        if (_module is not null) await _module.InvokeVoidAsync("close", _dialog, _trigger);
+    }
+    private async Task Apply()
+    {
+        _saving = true;
+        try { await SelectedChanged.InvokeAsync(_draft); await Close(); }
+        catch { _error = "The review scope could not be saved. Try again."; }
+        finally { _saving = false; }
+    }
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null) try { await _module.DisposeAsync(); } catch (JSDisconnectedException) { }
+    }
+}

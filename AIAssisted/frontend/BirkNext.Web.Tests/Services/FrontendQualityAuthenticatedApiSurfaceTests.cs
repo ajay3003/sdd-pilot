@@ -139,6 +139,36 @@ public sealed class FrontendQualityAuthenticatedApiSurfaceTests : BunitContext
             OrchestrationTestHelpers.CreateAlwaysReadyMockService(), new FixedResolver(Access), surface);
     }
 
+    [Theory]
+    [InlineData(FrontendReviewAccessScope.PublicOnly, 0)]
+    [InlineData(FrontendReviewAccessScope.AuthenticatedOnly, 1)]
+    [InlineData(FrontendReviewAccessScope.PublicAndAuthenticated, 1)]
+    public async Task ExplicitScope_UsesApprovedApiContextOnlyWhenIncluded(FrontendReviewAccessScope scope, int calls)
+    {
+        var fixture = new Fixture(true, AuthenticatedTestingMethod.LocalHttpsProxy, AuthenticatedApiContextStatus.Available);
+        var spy = new SurfaceSpy(Surface(Check("REST API", 200, 900)));
+        var result = await fixture.Orchestrator(spy).RunAsync(Target, fixture.Context.ForReviewScope(scope));
+        spy.Requests.Should().HaveCount(calls);
+        var executed = FrontendQualityReviewScopes.Executed(result.QualityReport!);
+        executed.Configured.Should().Be(scope);
+        if (calls > 0)
+        {
+            executed.AuthenticatedEngines.Should().NotBeEmpty();
+            result.QualityReport!.Findings.Where(f => f.SourceSystem == FrontendQualityAuthenticatedApiSurfaceFindings.SourceSystem)
+                .Should().OnlyContain(f => f.CoverageMode == FrontendReviewAccessScope.AuthenticatedOnly);
+        }
+    }
+
+    [Fact]
+    public async Task AvailableContextWithoutSuccessfulExecution_IsNotAuthenticatedCoverage()
+    {
+        var fixture = new Fixture(true, AuthenticatedTestingMethod.LocalHttpsProxy, AuthenticatedApiContextStatus.Available);
+        var result = await fixture.Orchestrator(new SurfaceSpy(Surface(Check("REST API", 401, 1))))
+            .RunAsync(Target, fixture.Context.ForReviewScope(FrontendReviewAccessScope.PublicAndAuthenticated));
+        FrontendQualityReviewScopes.Executed(result.QualityReport!).AuthenticatedEngines.Should().BeEmpty();
+        result.QualityReport!.ReleaseDisposition.Should().NotBe(FrontendQualityReleaseDisposition.NoAutomatedBlockDetected);
+    }
+
     [Fact]
     public async Task ProxyEnvironmentWithContext_ProbesOnce_FindingsAndProvenanceOnReport()
     {

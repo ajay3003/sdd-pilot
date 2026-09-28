@@ -345,6 +345,49 @@ public sealed class FrontendQualityAccessOrchestrationTests
 
     // ── Spies ─────────────────────────────────────────────────────────────────
 
+    [Theory]
+    [InlineData(FrontendReviewAccessScope.PublicOnly, 1, 1)]
+    [InlineData(FrontendReviewAccessScope.AuthenticatedOnly, 0, 1)]
+    [InlineData(FrontendReviewAccessScope.PublicAndAuthenticated, 1, 2)]
+    public async Task ExplicitScope_SelectsActualExecutionWithoutDuplicatingHttpEngines(FrontendReviewAccessScope scope, int httpCalls, int browserCalls)
+    {
+        var fixture = new Fixture(true, AuthenticatedTestingMethod.ManagedEdgeCdp, enableRuntime: true, sessionAvailable: true);
+        var context = fixture.Context.ForReviewScope(scope);
+        fixture.Access = FrontendQualityTargetAccess.Build(fixture.Context, null, true, null, null);
+        var result = await fixture.Orchestrator.RunAsync(Target, context, fixture.AuthenticatedSnapshot());
+        fixture.Security.Calls.Should().Be(httpCalls);
+        fixture.Performance.Calls.Should().Be(httpCalls);
+        fixture.Runtime.Calls.Should().Be(browserCalls);
+        (fixture.Runtime.LastRequest is not null).Should().Be(scope != FrontendReviewAccessScope.PublicOnly);
+        result.QualityReport!.TargetAccess!.ReviewScope.Should().Be(scope);
+        result.QualityReport.CoveragePasses.Should().HaveCount(scope == FrontendReviewAccessScope.PublicAndAuthenticated ? 2 : 1);
+        fixture.Context.ActiveProfile.Authentication.RequiresAuthentication.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExplicitBoth_MissingAuthenticatedContext_PreservesPublicResultsAndLimitation()
+    {
+        var fixture = new Fixture(true, enableRuntime: true);
+        fixture.Access = ProxyAccess(fixture.Context, AuthenticatedApiContextStatus.WaitingForAuthenticatedTraffic);
+        var result = await fixture.Orchestrator.RunAsync(Target, fixture.Context.ForReviewScope(FrontendReviewAccessScope.PublicAndAuthenticated));
+        fixture.Security.Calls.Should().Be(1);
+        result.PreflightBlocked.Should().BeFalse();
+        result.QualityReport!.CoveragePasses.Should().HaveCount(2);
+        FrontendQualityReviewScopes.PassStatus(result.QualityReport.CoveragePasses[1]).Should().StartWith("Not run");
+        result.QualityReport.ReleaseDisposition.Should().NotBe(FrontendQualityReleaseDisposition.NoAutomatedBlockDetected);
+    }
+
+    [Fact]
+    public async Task ExplicitAuthenticatedOnly_MissingContext_DoesNotFallBackToPublic()
+    {
+        var fixture = new Fixture(true, enableRuntime: true);
+        var result = await fixture.Orchestrator.RunAsync(Target, fixture.Context.ForReviewScope(FrontendReviewAccessScope.AuthenticatedOnly));
+        fixture.Security.Calls.Should().Be(0);
+        fixture.Performance.Calls.Should().Be(0);
+        fixture.Runtime.Calls.Should().Be(0);
+        result.PreflightBlocked.Should().BeTrue();
+    }
+
     private sealed class SpySecurity : ISecurityScanner
     {
         public int Calls { get; private set; }

@@ -79,6 +79,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
             RequestTimeoutSeconds       = profile.RequestTimeoutSeconds,
             RetryCount                  = profile.RetryCount,
             AuthenticationType          = profile.Authentication.AuthenticationType,
+            AuthenticationConfiguration = AuthenticationPaneStates.ConfigurationLabel(AuthenticationPaneStates.Configuration(profile.Authentication)),
             RequiresAuthentication      = profile.Authentication.RequiresAuthentication,
             UseExistingBrowserSession   = profile.Authentication.UseExistingBrowserSession,
             AutomaticallyOpenLoginPage  = profile.Authentication.AutomaticallyOpenLoginPage,
@@ -129,6 +130,7 @@ public sealed class FrontendAnalysisContextFactory : IFrontendAnalysisContextFac
         {
             Id = profile.Id,
             Name = profile.Name,
+            FrontendReviewScope = profile.FrontendReviewScope,
             EnvironmentType = profile.EnvironmentType,
             Description = profile.Description,
             Notes = profile.Notes,

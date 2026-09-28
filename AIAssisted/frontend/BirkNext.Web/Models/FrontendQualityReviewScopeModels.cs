@@ -1,5 +1,8 @@
 namespace BirkNext.Web.Models;
 
+/// <summary>Historical mode provenance. Contains only the already sanitized engine report.</summary>
+public sealed record FrontendQualityCoveragePass(FrontendReviewAccessScope Mode, FrontendQualityReviewReport Report);
+
 /// <summary>
 /// Which access paths a Frontend Quality Review covers. What the review COVERS, never whether the target application uses
 /// sign-in: a public review of an application with Microsoft Entra ID configured is PublicOnly, and that is not a claim
@@ -55,6 +58,8 @@ public sealed record FrontendQualityReviewScope(
     FrontendReviewAccessScope? Effective,
     IReadOnlyList<FrontendQualityEngineScopeEntry> Engines)
 {
+    public bool ExplicitSelection { get; init; }
+    public bool ManualVerificationRequired { get; init; }
     /// <summary>The configured scope is only partly reachable: the authenticated part is out of reach for this run.</summary>
     public bool Narrowed => Effective is { } effective && effective != Configured;
 
