@@ -55,7 +55,12 @@
             var runtime = platform.RuntimeEvidence;
             <section class="ip-card ip-platform" data-testid="ip-platform" aria-labelledby="@($"ip-platform-{Slug(platform.Id)}")">
                 <h3 id="@($"ip-platform-{Slug(platform.Id)}")">@platform.Name <span class="ip-pill ip-pill-muted">@IntegrationConfigurationRules.KindLabel(platform.Kind)</span></h3>
-                @if (platform.Kind == IntegrationKind.ServiceBus)
+                @if (platform.Kind == IntegrationKind.IdentityProvisioning)
+                {
+                    @* Identity provisioning (SCIM) is its own flow — never Event Hub CDC: stages with source and runtime evidence kept apart. *@
+                    <ScimProvisioningPanel Profile="Profile" Platform="platform" Catalog="_catalog" SaveSettings="settings => SaveScimAsync(platform, settings)" />
+                }
+                else if (platform.Kind == IntegrationKind.ServiceBus)
                 {
                     @* Service Bus is its own transport: topology, runtime metadata and application routes — no Event Hub fields. *@
                     <ServiceBusPlatformPanel EnvironmentId="@Profile.Id" Platform="platform" Messaging="_messaging" OnConfigure="() => BeginRuntime(platform)" />
@@ -90,6 +95,8 @@
                     <button type="button" class="ip-link" data-testid="ip-configure-runtime" @onclick="() => BeginRuntime(platform)">Configure runtime evidence</button>
                 </div>
                 }
+                @if (platform.Kind != IntegrationKind.IdentityProvisioning)
+                {
                 <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@(platform.Kind == IntegrationKind.ServiceBus ? ServiceBusPresentation.RuntimeConfiguration(platform).Label : RuntimeHint(runtime))" Expanded="@(_runtimeExpanded == platform.Id)" ExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
                     <p class="ip-muted">Read-only sources Integration Quality Review may use for this platform. Identifiers only — the BirkNext instance's Azure identity reads them; no key or connection string is stored here.</p>
                     @if (_editingRuntime == platform.Id)
@@ -145,6 +152,7 @@
                         <button type="button" class="ip-link" data-testid="ip-runtime-edit" @onclick="() => BeginRuntime(platform)">Edit runtime evidence sources</button>
                     }
                 </ReviewDisclosure>
+                }
             </section>
         }
 
@@ -629,6 +637,12 @@
         if (_runtimeError is not null) return;
         if (await TrackAsync($"Runtime evidence sources of {platform.Name} updated.", () => Api.UpdatePlatformAsync(Profile.Id, platform with { RuntimeEvidence = settings })))
             _editingRuntime = null;
+    }
+
+    private async Task<bool> SaveScimAsync(IntegrationPlatform platform, ScimProvisioningSettings settings)
+    {
+        if (settings.Validate() is { } invalid) { _saveState = SaveState.Failed; _saveMessage = invalid; return false; }
+        return await TrackAsync($"SCIM settings of {platform.Name} updated.", () => Api.UpdatePlatformAsync(Profile.Id, platform with { ScimProvisioning = settings }));
     }
 
     private static string RuntimeHint(IntegrationRuntimeEvidenceSettings? runtime)

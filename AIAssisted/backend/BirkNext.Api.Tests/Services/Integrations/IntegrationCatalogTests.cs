@@ -110,7 +110,7 @@ public sealed class IntegrationCatalogTests
         // "Restart": a fresh context reading the same store attaches nothing new and keeps the edit.
         var again = await DevCatalog(Service(Db(name)));
         again.Integrations.Should().HaveCount(16);
-        again.Platforms.Should().HaveCount(2, "one Event Hub and one Service Bus platform, never duplicated");
+        again.Platforms.Should().HaveCount(3, "one Event Hub, one Service Bus and one SCIM identity provisioning platform, never duplicated");
         again.Notices.Should().BeEmpty();
         var edited = again.Integrations.Single(i => i.Id == person.Id);
         edited.ConsumerGroup.Should().Be("person-adapter-cg");

@@ -17,13 +17,17 @@ public interface IIntegrationReviewService
 }
 
 public sealed class IntegrationReviewService(IIntegrationCatalogService catalog, IntegrationReviewEngine engine, IIntegrationContractStore contracts, AppDbContext db, ILogger<IntegrationReviewService> logger,
-    IApplicationMessagingStore? messaging = null) : IIntegrationReviewService
+    IApplicationMessagingStore? messaging = null, BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null) : IIntegrationReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public async Task<IntegrationReviewReadiness> ReadinessAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default) =>
-        engine.Readiness(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct), new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)),
-            messaging is null ? null : await messaging.GetAsync(environmentId, ct));
+    public async Task<IntegrationReviewReadiness> ReadinessAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default)
+    {
+        var configured = await catalog.GetAsync(environmentId, environmentType, targetUrl, ct);
+        var readiness = engine.Readiness(configured, new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)), messaging is null ? null : await messaging.GetAsync(environmentId, ct));
+        // SCIM identity provisioning is summarized beside the other layers; it never changes whether the review can run.
+        return scim is null ? readiness : readiness with { Scim = [.. await scim.ReadinessAsync(configured, ct)] };
+    }
 
     public async Task<IntegrationReviewResult> RunAsync(IntegrationReviewRunRequest request, string? environmentType, string? targetUrl, CancellationToken ct = default)
     {
@@ -31,6 +35,7 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
         // Contract drift compares with what the PREVIOUS run recorded, not with whatever is stored now.
         var previous = await db.IntegrationReviewRuns.AsNoTracking().Where(r => r.EnvironmentId == request.EnvironmentId).OrderByDescending(r => r.CompletedAt).Select(r => r.ResultJson).FirstOrDefaultAsync(ct);
         var previousContracts = previous is null ? [] : JsonSerializer.Deserialize<IntegrationReviewResult>(previous, Json)?.ContractSnapshot ?? [];
+        request = request with { EnvironmentType = environmentType ?? request.EnvironmentType };
         var result = await engine.RunAsync(configured, request, new IntegrationContractSet(await contracts.LoadAsync(request.EnvironmentId, ct)), previousContracts,
             messaging is null ? null : await messaging.GetAsync(request.EnvironmentId, ct), ct);
         // The run stores its own configuration snapshot: editing Integrations later never re-renders this result.

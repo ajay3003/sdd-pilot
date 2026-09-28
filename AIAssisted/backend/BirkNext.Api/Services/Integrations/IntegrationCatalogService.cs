@@ -65,8 +65,11 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
                 added++;
             }
         }
+        // v2 added the Service Bus platform and v3 the SCIM identity provisioning platform: each is added once, never re-added after deletion.
         var serviceBus = M2lbDevIntegrationSeed.ServiceBusPlatform(environmentId, now);
-        if (!existingPlatforms.Contains(serviceBus.Id)) { db.IntegrationPlatforms.Add(ToRecord(serviceBus)); added++; }
+        if (state is not { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: >= 2 } && !existingPlatforms.Contains(serviceBus.Id)) { db.IntegrationPlatforms.Add(ToRecord(serviceBus)); added++; }
+        var scim = M2lbDevIntegrationSeed.ScimPlatform(environmentId, now);
+        if (!existingPlatforms.Contains(scim.Id)) { db.IntegrationPlatforms.Add(ToRecord(scim)); added++; }
         if (state is null) db.IntegrationEnvironmentStates.Add(new IntegrationEnvironmentStateRecord { EnvironmentId = environmentId, SeedVersion = M2lbDevIntegrationSeed.Version, SeedName = M2lbDevIntegrationSeed.Name, UpdatedAt = now });
         else { state.SeedVersion = M2lbDevIntegrationSeed.Version; state.SeedName = M2lbDevIntegrationSeed.Name; state.UpdatedAt = now; }
         await db.SaveChangesAsync(ct);

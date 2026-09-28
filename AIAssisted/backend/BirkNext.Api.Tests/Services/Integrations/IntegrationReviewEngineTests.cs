@@ -533,4 +533,30 @@ public sealed class IntegrationReviewEngineTests
         foreach (var forbidden in new[] { "SharedAccessKey", "Endpoint=sb://", "AccountKey=", "client_secret", "Bearer " })
             json.Should().NotContain(forbidden);
     }
+
+    [Fact]
+    public async Task ScimIdentityProvisioningContributesPlatformChecksAndASnapshotWithoutRuntimeClaims()
+    {
+        await using var db = Db();
+        var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
+        var probe = new StubScimRuntimeProbe();
+        var scim = new BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService(db, catalogService, probe, NullLogger<BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService>.Instance);
+        var engine = new IntegrationReviewEngine(new Probe(true), new Metadata(null), new Groups(null), new Checkpoints(null), new Telemetry(null), new HttpClient(), NullLogger<IntegrationReviewEngine>.Instance, scim: scim);
+        var service = new IntegrationReviewService(catalogService, engine, new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance, scim: scim);
+        await catalogService.GetAsync(DevId, "Development", DevUrl);
+
+        var readiness = await service.ReadinessAsync(DevId, "Development", DevUrl);
+        var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV" }, "Development", DevUrl);
+
+        readiness.Scim.Should().ContainSingle().Which.SourceAnalyzed.Should().BeFalse();
+        readiness.Scim[0].RuntimeState.Should().Be(IntegrationEvidenceState.NotConfigured, "the seeded DEV base URL is unknown");
+        probe.EnvironmentTypes.Should().Equal("Development");
+        var system = run.Systems.Single(s => s.Kind == IntegrationKind.IdentityProvisioning);
+        system.PlatformChecks.Should().Contain(c => c.Domain == IntegrationReviewDomain.MessageFlow && c.Status == IntegrationCheckStatus.NotAssessed);
+        system.PlatformChecks.Should().Contain(c => c.Domain == IntegrationReviewDomain.Performance && c.Status == IntegrationCheckStatus.NotAssessed);
+        system.PlatformChecks.Should().NotContain(c => c.Status == IntegrationCheckStatus.Pass);
+        run.ScimSnapshot.Should().ContainSingle().Which.OverallState.Should().Be(ScimOverallState.NotTestable, "no source was analyzed and nothing was contacted");
+        run.EvidenceAdapters.Should().Contain(a => a.Adapter.StartsWith("SCIM safe checks") && a.State == IntegrationEvidenceState.NotConfigured);
+        (await service.GetRunAsync(run.RunId))!.ScimSnapshot.Should().ContainSingle();
+    }
 }

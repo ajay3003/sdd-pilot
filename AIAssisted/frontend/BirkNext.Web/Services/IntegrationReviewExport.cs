@@ -75,6 +75,9 @@ public static class IntegrationReviewExport
             sb.Append("</section>\n");
         }
 
+        // SCIM identity provisioning: stages, checks, findings and the specification comparison as recorded by this run. No token or user data.
+        foreach (var scim in result.ScimSnapshot) sb.Append(ScimExport.Section(scim, table, badge, esc));
+
         sb.Append("<section class=\"block\"><h2>Contract snapshot</h2>");
         sb.Append(result.ContractSnapshot.Count == 0 ? "<p>No contract artifact was configured for this run.</p>" :
             table(["Integration", "Role", "File", "Version", "Fields", "SHA-256"], result.ContractSnapshot.Select(c => new[]

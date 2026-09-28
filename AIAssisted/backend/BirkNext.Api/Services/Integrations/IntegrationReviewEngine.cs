@@ -29,7 +29,8 @@ public sealed class IntegrationReviewEngine(
     ILogger<IntegrationReviewEngine> logger,
     IApplicationMessagingTelemetrySource? messagingTelemetry = null,
     IIntegrationAzureCredential? azure = null,
-    ServiceBusEvidenceService? serviceBus = null)
+    ServiceBusEvidenceService? serviceBus = null,
+    BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null)
 {
     private const string NoSafeEventSource = "No safe runtime event-structure source is configured; events are never consumed to inspect them.";
 
@@ -310,6 +311,24 @@ public sealed class IntegrationReviewEngine(
                 });
             }
 
+        // Identity provisioning (SCIM): source facts, safe GET checks and Service Bus correlation as platform-scope checks in the existing domains.
+        var scimSnapshot = new List<ScimEvidenceCheck>();
+        if (scim is not null)
+            foreach (var platform in catalog.Platforms.Where(p => p.Enabled && BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService.IsScim(p)))
+            {
+                var bus = serviceBusSnapshot.FirstOrDefault(s => s.PlatformId == platform.ScimProvisioning?.OutboundPlatformId);
+                var check = await scim.ReviewAsync(catalog, platform, request.EnvironmentType, bus, ct);
+                var (platformChecks, platformFindings) = BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService.ReviewChecks(platform, check);
+                systems.Add(new IntegrationSystemResult { SystemName = platform.Name, PlatformId = platform.Id, Kind = IntegrationKind.IdentityProvisioning, DomainReviewSupported = true, PlatformChecks = platformChecks });
+                findings.AddRange(platformFindings);
+                scimSnapshot.Add(check);
+                adapterStatuses.Add(new IntegrationEvidenceAdapterStatus
+                {
+                    Adapter = $"{BirkNext.Api.Services.Integrations.Scim.HttpScimRuntimeProbe.Adapter} · {platform.Name}", Source = IntegrationEvidenceSource.NetworkProbe,
+                    State = check.Runtime.State, Reason = check.Runtime.Reason, CapturedAt = check.Runtime.CapturedAt == default ? check.CompletedAt : check.Runtime.CapturedAt,
+                });
+            }
+
         var grouped = findings.GroupBy(f => f.Key).Select(g => g.First() with { AffectedIntegrations = g.SelectMany(f => f.AffectedIntegrations).Distinct().ToList() }).ToList();
         var allChecks = systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks))).ToList();
         var domains = Enum.GetValues<IntegrationReviewDomain>().Select(domain => DomainResult(domain, allChecks, grouped)).ToList();
@@ -331,7 +350,7 @@ public sealed class IntegrationReviewEngine(
             Freshness = freshness, EvidenceSources = sources, ReviewWindowHours = windows.Count == 0 ? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours : windows.Max(),
             EvidenceAdapters = adapterStatuses, ContractSnapshot = contracts.Items.Where(i => enabled.Any(e => e.Id == i.Artifact.IntegrationId)).Select(i => i.Artifact).ToList(),
             // The evidence as used: a later re-analysis or re-binding never changes this result.
-            ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(), ServiceBusSnapshot = serviceBusSnapshot,
+            ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(), ServiceBusSnapshot = serviceBusSnapshot, ScimSnapshot = scimSnapshot,
         };
         logger.LogInformation(
             "Integration Quality Review for {EnvironmentId}: {Integrations} integration(s) in {Systems} system(s), window {WindowHours} h, sources {Sources}, {Assessed} of {Checks} check(s) assessed, {Findings} finding(s), {DurationMs:0} ms.",

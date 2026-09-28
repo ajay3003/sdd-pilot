@@ -10,7 +10,8 @@ namespace BirkNext.Integrations;
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationKind { EventHub, ServiceBus, HttpApi, Database, File, Other }
+/// <remarks>IdentityProvisioning = inbound user provisioning (SCIM from Microsoft Entra ID) — its own flow, never Event Hub CDC.</remarks>
+public enum IntegrationKind { EventHub, ServiceBus, HttpApi, Database, File, Other, IdentityProvisioning }
 
 /// <summary>How a party authenticates. The mechanism only — never the credential.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -163,6 +164,8 @@ public sealed record IntegrationPlatform
     public IntegrationRuntimeEvidenceSettings? RuntimeEvidence { get; init; }
     /// <summary>Service Bus platforms only: the configured, expected topology (queues, topics, subscriptions and their properties).</summary>
     public ServiceBusTopology? ServiceBusTopology { get; init; }
+    /// <summary>Identity provisioning platforms only: the configured SCIM provisioning integration (never a secret or token).</summary>
+    public ScimProvisioningSettings? ScimProvisioning { get; init; }
     public IntegrationRecordOrigin Origin { get; init; } = IntegrationRecordOrigin.Manual;
     public bool UserModified { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
@@ -326,6 +329,7 @@ public static class IntegrationConfigurationRules
         IntegrationKind.EventHub => "Event Hub",
         IntegrationKind.ServiceBus => "Service Bus",
         IntegrationKind.HttpApi => "HTTP/API",
+        IntegrationKind.IdentityProvisioning => "Identity provisioning",
         _ => kind.ToString(),
     };
 }
@@ -417,6 +421,8 @@ public sealed record IntegrationReviewReadiness
     public List<ApplicationMessagingSummary> ApplicationMessaging { get; init; } = [];
     /// <summary>Service Bus platforms: configured topology and whether runtime metadata can be read. Never an Event Hub runtime source.</summary>
     public List<ServiceBusReadiness> ServiceBus { get; init; } = [];
+    /// <summary>Identity provisioning (SCIM) platforms: configured flow and stored source evidence. Nothing is contacted before a run.</summary>
+    public List<ScimReadiness> Scim { get; init; } = [];
 }
 
 public sealed record IntegrationCheck
@@ -520,6 +526,8 @@ public sealed record IntegrationReviewResult
     public List<ApplicationMessagingRuntime> ApplicationMessagingRuntime { get; init; } = [];
     /// <summary>Service Bus evidence exactly as this run read it (topology comparison, runtime metadata, route correlation). Never re-queried.</summary>
     public List<ServiceBusEvidenceCheck> ServiceBusSnapshot { get; init; } = [];
+    /// <summary>SCIM provisioning evidence exactly as this run established it (source analysis, safe GET checks, correlations). Never re-queried.</summary>
+    public List<ScimEvidenceCheck> ScimSnapshot { get; init; } = [];
     [JsonIgnore] public int TopicsReviewed => Systems.Where(s => s.DomainReviewSupported).Sum(s => s.Topics.Count);
     [JsonIgnore] public IEnumerable<IntegrationCheck> AllChecks => Systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks)));
 }
@@ -528,6 +536,8 @@ public sealed record IntegrationReviewRunRequest
 {
     public string EnvironmentId { get; init; } = "";
     public string EnvironmentName { get; init; } = "";
+    /// <summary>The Target Environment type (Development, QA, Production …). Runtime checks that contact an endpoint refuse Production and unknown types.</summary>
+    public string? EnvironmentType { get; init; }
 }
 
 public sealed record IntegrationReviewRunSummary(Guid RunId, DateTimeOffset CompletedAt, IntegrationReviewOutcome Outcome, int Topics, int Findings);

@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
+    public DbSet<ScimEvidenceRecord> ScimEvidence => Set<ScimEvidenceRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -597,6 +598,19 @@ public class AppDbContext : DbContext
             entity.Property(a => a.ContentHash).HasColumnName("content_hash").HasMaxLength(64).IsRequired();
             entity.Property(a => a.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.Property(a => a.ImportedAt).HasColumnName("imported_at");
+        });
+
+        modelBuilder.Entity<ScimEvidenceRecord>(entity =>
+        {
+            entity.ToTable("scim_evidence");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Kind).HasColumnName("kind").HasMaxLength(20).IsRequired();
+            entity.Property(r => r.PlatformId).HasColumnName("platform_id").HasMaxLength(200);
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.Property(r => r.Json).HasColumnName("json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.Kind, r.CreatedAt }).HasDatabaseName("ix_scim_evidence_environment_kind_created");
         });
 
         modelBuilder.Entity<DependencyReviewRunRecord>(entity =>

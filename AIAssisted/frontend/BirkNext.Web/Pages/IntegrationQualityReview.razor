@@ -205,6 +205,27 @@
                 </section>
             }
 
+            @if (readiness.Scim.Count > 0)
+            {
+                @* Identity provisioning (SCIM): configured flow and stored source evidence. The run adds safe GET checks only — never a user write. *@
+                <section class="iqr-card" aria-labelledby="iqr-scim-heading" data-testid="iqr-scim">
+                    <h2 id="iqr-scim-heading">Identity provisioning — SCIM</h2>
+                    <ul class="iqr-sources iqr-messaging-list">
+                        @foreach (var scim in readiness.Scim)
+                        {
+                            <li class="iqr-messaging-item" data-testid="iqr-scim-platform" data-platform="@scim.PlatformId">
+                                <span><strong>@scim.PlatformName</strong> · SCIM <span class="iqr-pill iqr-pill-observed" data-testid="iqr-scim-source">@(scim.Detected ? "Source verified" : scim.SourceAnalyzed ? "Not found in source" : "Source not analyzed")</span>
+                                    · Safe runtime checks <span class="iqr-pill iqr-pill-muted" data-testid="iqr-scim-runtime">@(scim.RuntimeState == IntegrationEvidenceState.Available ? "Available" : IntegrationReviewLabels.EvidenceState(scim.RuntimeState))</span>
+                                    · Synthetic mutation test <span class="iqr-pill iqr-pill-muted" data-testid="iqr-scim-mutation">@ScimLabels.Mutation(scim.SyntheticMutation)</span></span>
+                                @if (scim.SourceAnalyzed) { <span class="iqr-muted">@scim.Operations operation(s) · @scim.RequirementsImplemented of @scim.RequirementsTotal specification requirement(s) implemented · @scim.NeedsReview source observation(s) need review</span> }
+                                @if (scim.RuntimeState != IntegrationEvidenceState.Available) { <span class="iqr-muted" data-testid="iqr-scim-reason">@scim.RuntimeReason</span> }
+                            </li>
+                        }
+                    </ul>
+                    <p class="iqr-muted">Configuration and source evidence are not runtime success. The review never creates, changes, deletes or lists a user.</p>
+                </section>
+            }
+
             @if (readiness.ApplicationMessaging.Count > 0)
             {
                 @* Application messaging (Wolverine) is source evidence beside the transport runtime sources — never counted among them. *@
@@ -331,6 +352,20 @@
                             }
                         </ul>
                         <p class="iqr-muted">Snapshot of this run; opening an old run never re-reads Azure.</p>
+                    </section>
+                }
+                @if (result.ScimSnapshot.Count > 0)
+                {
+                    <section class="iqr-card" aria-labelledby="iqr-result-scim-heading" data-testid="iqr-result-scim">
+                        <h3 id="iqr-result-scim-heading">Identity provisioning — SCIM</h3>
+                        <ul>
+                            @foreach (var scim in result.ScimSnapshot)
+                            {
+                                <li data-testid="iqr-result-scim-platform"><strong>@scim.PlatformName</strong> — @ScimPresentation.Headline(scim) ·
+                                    @string.Join(" · ", scim.Stages.Select(s => $"{s.Title}: {ScimLabels.State(s.Source)} / runtime {ScimLabels.State(s.Runtime)}"))</li>
+                            }
+                        </ul>
+                        <p class="iqr-muted">Snapshot of this run: source facts, configuration and safe GET observations only; a published deactivation is not revoked access.</p>
                     </section>
                 }
                 @if (result.ApplicationMessagingSnapshot is { } messaging && messaging.Applications.Any(a => a.BoundConsumer is not null))

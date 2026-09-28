@@ -15,6 +15,28 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         Calls.Add("servicebus-evidence:" + platformId);
         return Task.FromResult(ServiceBusCheck?.Invoke(platformId) ?? new ServiceBusEvidenceCheck { PlatformId = platformId, OverallState = ServiceBusEvidenceState.NotTestable });
     }
+    // SCIM identity provisioning (records calls; no HTTP).
+    public ScimEvidenceOverview ScimOverview { get; set; } = new();
+    public Func<string, ScimEvidenceCheck?>? ScimCheck { get; set; }
+    public string? ScimCheckError { get; set; }
+    public List<string?> ScimCheckEnvironmentTypes { get; } = [];
+    public Task<ScimEvidenceOverview> ScimOverviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(ScimOverview);
+    public Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeScimSourceAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    {
+        Analyzed.AddRange(archives.Select(a => a.FileName));
+        Calls.Add("analyze-scim");
+        return Task.FromResult<(ScimSourceEvidence?, string?)>(ScimOverview.Source is { } source ? (source, null) : (null, "No archive analyzed (test)."));
+    }
+    public Task<(ScimEvidenceCheck? Check, string? Error)> RunScimChecksAsync(FrontendAnalysisProfile profile, string platformId, CancellationToken ct = default)
+    {
+        Calls.Add("scim-checks:" + platformId);
+        ScimCheckEnvironmentTypes.Add(profile.EnvironmentType.ToString());
+        if (ScimCheckError is { } error) return Task.FromResult<(ScimEvidenceCheck?, string?)>((null, error));
+        var check = ScimCheck?.Invoke(platformId);
+        if (check is not null) ScimOverview = ScimOverview with { Latest = check, History = [new(check.RunId, check.CompletedAt, check.PlatformId, check.OverallState, check.Findings.Count), .. ScimOverview.History] };
+        return Task.FromResult<(ScimEvidenceCheck?, string?)>((check, check is null ? "No SCIM check (test)." : null));
+    }
+    public Task<ScimEvidenceCheck?> ScimCheckAsync(Guid runId, CancellationToken ct = default) => Task.FromResult(ScimOverview.Latest?.RunId == runId ? ScimOverview.Latest : null);
     public List<(string Application, string? Consumer)> Bindings { get; } = [];
     public List<string> Analyzed { get; } = [];
     public Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(Messaging);

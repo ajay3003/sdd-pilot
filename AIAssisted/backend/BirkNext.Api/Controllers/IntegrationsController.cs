@@ -69,6 +69,7 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
     {
         // Runtime evidence settings are identifiers only; a SAS URL or a malformed id is rejected before it can be stored.
         if (platform.RuntimeEvidence?.Validate() is { } invalid) return BadRequest(new { message = invalid });
+        if (platform.ScimProvisioning?.Validate() is { } invalidScim) return BadRequest(new { message = invalidScim });
         return await catalog.UpdatePlatformAsync(environmentId, id, platform, ct) is { } updated ? Ok(updated) : NotFound();
     }
 

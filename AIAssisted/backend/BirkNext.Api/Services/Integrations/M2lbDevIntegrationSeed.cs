@@ -20,7 +20,7 @@ namespace BirkNext.Api.Services.Integrations;
 public static partial class M2lbDevIntegrationSeed
 {
     /// <summary>v2 adds the M2LB DEV Service Bus platform (see <see cref="ServiceBusPlatform"/>); v1 environments receive only that platform.</summary>
-    public const int Version = 2;
+    public const int Version = 3;
     public const string Name = "m2lb-dev-eventhub";
     public const string FrontendHost = "m2lbdev.bufetat.no";
     public const string PlatformId = "dev:eventhub:m2lb";

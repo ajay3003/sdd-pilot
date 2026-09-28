@@ -35,6 +35,17 @@ public interface IIntegrationCatalogApiService
     Task<IntegrationReviewResult> RunAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IReadOnlyList<IntegrationReviewRunSummary>> HistoryAsync(string environmentId, CancellationToken ct = default);
     Task<IntegrationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
+
+    // SCIM identity provisioning. Default members keep other implementations (test fakes) valid; the backend client overrides them.
+    /// <summary>The environment's latest SCIM source analysis and stored safe-check history.</summary>
+    Task<ScimEvidenceOverview> ScimOverviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(new ScimEvidenceOverview());
+    /// <summary>Uploads repository archives for read-only SCIM source analysis.</summary>
+    Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeScimSourceAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default) =>
+        Task.FromResult<(ScimSourceEvidence?, string?)>((null, "SCIM source analysis is not available."));
+    /// <summary>"Run safe SCIM checks": GET-only runtime checks plus source/configuration evidence. Never mutates or lists users.</summary>
+    Task<(ScimEvidenceCheck? Check, string? Error)> RunScimChecksAsync(FrontendAnalysisProfile profile, string platformId, CancellationToken ct = default) =>
+        Task.FromResult<(ScimEvidenceCheck?, string?)>((null, "SCIM checks are not available."));
+    Task<ScimEvidenceCheck?> ScimCheckAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<ScimEvidenceCheck?>(null);
 }
 
 public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegrationCatalogApiService
@@ -63,6 +74,40 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct), null);
+    }
+
+    public async Task<ScimEvidenceOverview> ScimOverviewAsync(string environmentId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<ScimEvidenceOverview>($"api/integrations/scim?{Env(environmentId)}", Json, ct) ?? new ScimEvidenceOverview();
+
+    public async Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeScimSourceAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    {
+        using var form = new MultipartFormDataContent();
+        foreach (var (name, content) in archives)
+        {
+            var part = new StreamContent(content);
+            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
+            form.Add(part, "archives", name);
+        }
+        using var response = await http.PostAsync($"api/integrations/scim/source?{Env(environmentId)}", form, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<ScimSourceEvidence>(Json, ct), null);
+    }
+
+    public async Task<(ScimEvidenceCheck? Check, string? Error)> RunScimChecksAsync(FrontendAnalysisProfile profile, string platformId, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsync($"api/integrations/scim/{Uri.EscapeDataString(platformId)}/checks?{Scope(profile)}", null, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<ScimEvidenceCheck>(Json, ct), null);
+    }
+
+    public async Task<ScimEvidenceCheck?> ScimCheckAsync(Guid runId, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync($"api/integrations/scim/checks/{runId}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ScimEvidenceCheck>(Json, ct);
     }
 
     public async Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default) =>

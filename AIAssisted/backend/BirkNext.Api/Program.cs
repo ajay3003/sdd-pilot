@@ -406,6 +406,10 @@ builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ApplicationMess
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.ServiceBus.IServiceBusMetadataSource, BirkNext.Api.Services.Integrations.ServiceBus.ArmServiceBusMetadataSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ServiceBus.ServiceBusEvidenceService>();
+// SCIM identity provisioning evidence: source analysis + safe GET-only runtime checks (never a user write, list or publish; no redirects followed).
+builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.Scim.IScimRuntimeProbe, BirkNext.Api.Services.Integrations.Scim.HttpScimRuntimeProbe>(client => client.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService, BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService>();
 // Dependency / supply-chain review (Renovate policy): offline, read-only analysis of uploaded repository archives.
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();

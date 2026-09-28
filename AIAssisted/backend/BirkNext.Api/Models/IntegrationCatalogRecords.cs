@@ -51,6 +51,17 @@ public class IntegrationReviewRunRecord
 }
 
 /// <summary>A trusted event contract (JSON Schema) for one side of one integration. Key: (EnvironmentId, IntegrationId, Role).</summary>
+/// <summary>One immutable SCIM evidence row: a source analysis (kind "source") or a safe check (kind "check"). Facts only — never source, tokens or user data.</summary>
+public class ScimEvidenceRecord
+{
+    public Guid Id { get; set; }
+    public string EnvironmentId { get; set; } = string.Empty;
+    public string Kind { get; set; } = string.Empty;
+    public string? PlatformId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public string Json { get; set; } = string.Empty;
+}
+
 /// <summary>One immutable dependency-review run (facts, hashes, redacted normalized config, simulations — never source files or secrets).</summary>
 public class DependencyReviewRunRecord
 {

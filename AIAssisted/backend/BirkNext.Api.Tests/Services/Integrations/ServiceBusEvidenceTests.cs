@@ -379,7 +379,7 @@ public sealed class ServiceBusEvidenceTests
         var catalog = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
         const string url = "https://m2lbdev.bufetat.no/";
         var first = await catalog.GetAsync("dev", "Development", url);
-        first.Platforms.Select(p => p.Id).Should().BeEquivalentTo([M2lbDevIntegrationSeed.PlatformId, M2lbDevIntegrationSeed.ServiceBusPlatformId]);
+        first.Platforms.Select(p => p.Id).Should().BeEquivalentTo([M2lbDevIntegrationSeed.PlatformId, M2lbDevIntegrationSeed.ServiceBusPlatformId, M2lbDevIntegrationSeed.ScimPlatformId]);
         // Simulate an environment seeded by v1 in which a person deleted an integration and the Service Bus platform does not exist yet.
         var deleted = first.Integrations.First().Id;
         await catalog.DeleteAsync("dev", deleted);
