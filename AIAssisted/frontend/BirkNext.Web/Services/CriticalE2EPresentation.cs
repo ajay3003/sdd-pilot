@@ -13,7 +13,18 @@ public sealed record CriticalE2EHeadline(string Label, CriticalE2ETone Tone, str
 /// </summary>
 public enum CriticalE2EHistoryKind { Critical, Smoke, Removed }
 
-public sealed record CriticalE2EHistoryRow(CriticalE2ERunResult Run, CriticalE2EHistoryKind Kind, bool ReleaseEvidence, string? Problem);
+/// <param name="Archivable">
+/// Whether the row offers Archive: an active run of an existing flow that is neither the flow's latest run nor the run the
+/// release verdict uses for the named build. The backend applies the same rule; this only decides whether to offer it.
+/// </param>
+public sealed record CriticalE2EHistoryRow(CriticalE2ERunResult Run, CriticalE2EHistoryKind Kind, bool ReleaseEvidence, string? Problem,
+    bool Archivable = false)
+{
+    public bool Archived => Run.Archived;
+}
+
+/// <summary>"12 recent runs · 4 archived · 3 smoke/diagnostic hidden", for the runs in scope (all flows, or one).</summary>
+public sealed record CriticalE2EHistoryCounts(int Recent, int Archived, int SmokeHidden);
 
 /// <summary>
 /// One flow row. Configuration (Enabled, Required, runnable) and outcome (Result) are separate columns, because a disabled
@@ -203,23 +214,80 @@ public static class CriticalE2EPresentation
     /// History rows, newest first. A run is release evidence only when its flow is a required critical flow and it was
     /// recorded against the build currently named — the same match the backend uses for a named build. Smoke runs,
     /// runs without a build and runs of optional flows are never shown as evidence.
+    /// Archived runs are hidden unless asked for, independently of the smoke/diagnostic switch; <paramref name="flowId"/>
+    /// narrows the rows to one flow.
     /// </summary>
-    public static List<CriticalE2EHistoryRow> History(CriticalE2EOverview overview, string? buildId, bool includeDiagnostic)
+    public static List<CriticalE2EHistoryRow> History(CriticalE2EOverview overview, string? buildId, bool includeDiagnostic,
+        bool includeArchived = false, string? flowId = null) =>
+        AllHistory(overview, buildId, flowId)
+            .Where(r => includeDiagnostic || r.Kind != CriticalE2EHistoryKind.Smoke)
+            .Where(r => includeArchived || !r.Archived)
+            .ToList();
+
+    public static CriticalE2EHistoryCounts HistoryCounts(CriticalE2EOverview overview, string? buildId, bool includeDiagnostic,
+        bool includeArchived, string? flowId = null)
     {
-        var kinds = overview.Flows.ToDictionary(f => f.FlowId, f => f.Kind, StringComparer.Ordinal);
-        return overview.History
+        var all = AllHistory(overview, buildId, flowId);
+        return new(
+            all.Count(r => !r.Archived && (includeDiagnostic || r.Kind != CriticalE2EHistoryKind.Smoke)),
+            // Across all flows the backend's total counts archived runs beyond the ones it sent.
+            string.IsNullOrWhiteSpace(flowId) ? Math.Max(overview.ArchivedRunCount, all.Count(r => r.Archived)) : all.Count(r => r.Archived),
+            includeDiagnostic ? 0 : all.Count(r => r.Kind == CriticalE2EHistoryKind.Smoke && (includeArchived || !r.Archived)));
+    }
+
+    public static string HistoryHint(CriticalE2EHistoryCounts counts) =>
+        $"{counts.Recent} recent {Plural(counts.Recent, "run", "runs")}"
+        + (counts.Archived > 0 ? $" · {counts.Archived} archived" : "")
+        + (counts.SmokeHidden > 0 ? $" · {counts.SmokeHidden} smoke/diagnostic hidden" : "");
+
+    private static List<CriticalE2EHistoryRow> AllHistory(CriticalE2EOverview overview, string? buildId, string? flowId)
+    {
+        var flows = overview.Flows.ToDictionary(f => f.FlowId, StringComparer.Ordinal);
+        var runs = overview.History.OrderByDescending(r => r.StartedAt).ToList();
+        // Per flow: its latest run, and the run the release verdict reads for the named build. Neither is offered for archive.
+        var kept = runs.GroupBy(r => r.FlowId).SelectMany(g =>
+        {
+            var ids = new List<string> { g.First().RunId };
+            if (flows.TryGetValue(g.Key, out var f) && f.Enabled && f.RequiredForRelease && f.Kind == CriticalE2EFlowKind.Critical
+                && g.FirstOrDefault(r => OnBuild(r, buildId)) is { } evidence)
+                ids.Add(evidence.RunId);
+            return ids;
+        }).ToHashSet(StringComparer.Ordinal);
+
+        return runs
+            .Where(run => string.IsNullOrWhiteSpace(flowId) || run.FlowId == flowId)
             .Select(run =>
             {
-                var kind = !kinds.TryGetValue(run.FlowId, out var k) ? CriticalE2EHistoryKind.Removed
-                    : k == CriticalE2EFlowKind.Diagnostic ? CriticalE2EHistoryKind.Smoke : CriticalE2EHistoryKind.Critical;
-                var evidence = kind == CriticalE2EHistoryKind.Critical && run.RequiredForRelease
-                    && !string.IsNullOrWhiteSpace(run.BuildId) && !string.IsNullOrWhiteSpace(buildId)
-                    && string.Equals(run.BuildId.Trim(), buildId.Trim(), StringComparison.OrdinalIgnoreCase);
-                return new CriticalE2EHistoryRow(run, kind, evidence, run.Status == CriticalE2EStatus.Passed ? null : ShortProblem(run));
+                var kind = !flows.TryGetValue(run.FlowId, out var f) ? CriticalE2EHistoryKind.Removed
+                    : f.Kind == CriticalE2EFlowKind.Diagnostic ? CriticalE2EHistoryKind.Smoke : CriticalE2EHistoryKind.Critical;
+                var evidence = kind == CriticalE2EHistoryKind.Critical && run.RequiredForRelease && OnBuild(run, buildId);
+                return new CriticalE2EHistoryRow(run, kind, evidence, run.Status == CriticalE2EStatus.Passed ? null : ShortProblem(run),
+                    Archivable: kind != CriticalE2EHistoryKind.Removed && !run.Archived && !kept.Contains(run.RunId));
             })
-            .Where(r => includeDiagnostic || r.Kind != CriticalE2EHistoryKind.Smoke)
             .ToList();
     }
+
+    private static bool OnBuild(CriticalE2ERunResult run, string? buildId) =>
+        !string.IsNullOrWhiteSpace(run.BuildId) && !string.IsNullOrWhiteSpace(buildId)
+        && string.Equals(run.BuildId.Trim(), buildId.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    // ── Archive vs clear ──────────────────────────────────────────────────────────────────────────────────────────
+
+    public const string ArchiveExplanation =
+        "Archive hides old runs from this list and keeps them. Results, the latest run, coverage and release evidence do not change, and archived runs can be restored.";
+    public const string ClearExplanation =
+        "Clear permanently deletes this flow's runs. The flow itself is kept. Flows with build-linked release evidence cannot be cleared.";
+
+    /// <summary>Would a clear in this scope remove release evidence? The backend refuses it; the dialog says so first.</summary>
+    public static bool ClearBlocked(CriticalE2EHistoryPreview preview, bool includeArchived) =>
+        (includeArchived ? preview.ReleaseEvidenceRuns : preview.ActiveReleaseEvidenceRuns) > 0;
+
+    public static int ClearCount(CriticalE2EHistoryPreview preview, bool includeArchived) =>
+        preview.ActiveRuns + (includeArchived ? preview.ArchivedRuns : 0);
+
+    public static bool ClearConfirmed(string? typed) => string.Equals(typed?.Trim(), CriticalE2EHistoryPolicy.ClearConfirmation, StringComparison.Ordinal);
+
+    public static string RunCount(int n) => $"{n} {Plural(n, "run", "runs")}";
 
     public static string KindLabel(CriticalE2EHistoryKind kind) => kind switch
     {

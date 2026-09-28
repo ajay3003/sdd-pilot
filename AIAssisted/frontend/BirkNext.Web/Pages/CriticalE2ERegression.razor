@@ -5,7 +5,8 @@
 @using BirkNext.Web.Shared.Components.Common
 @inject ICriticalE2EApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
-@implements IDisposable
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <PageTitle>Critical E2E Regression</PageTitle>
 
@@ -29,9 +30,11 @@
         var rows = CriticalE2EPresentation.Rows(overview, _showDiagnostic);
         var criticalCount = CriticalE2EPresentation.Count(overview, CriticalE2EFlowKind.Critical);
         var diagnosticCount = CriticalE2EPresentation.Count(overview, CriticalE2EFlowKind.Diagnostic);
-        var history = CriticalE2EPresentation.History(overview, _buildId, _showDiagnosticRuns);
-        var hiddenRuns = overview.History.Count - history.Count;
-        var smokeRuns = CriticalE2EPresentation.History(overview, _buildId, true).Count(h => h.Kind == CriticalE2EHistoryKind.Smoke);
+        var historyFlow = overview.Flows.FirstOrDefault(f => f.FlowId == _historyFlowId);
+        var history = CriticalE2EPresentation.History(overview, _buildId, _showDiagnosticRuns, _showArchivedRuns, historyFlow?.FlowId);
+        var counts = CriticalE2EPresentation.HistoryCounts(overview, _buildId, _showDiagnosticRuns, _showArchivedRuns, historyFlow?.FlowId);
+        var smokeRuns = CriticalE2EPresentation.History(overview, _buildId, true, true).Count(h => h.Kind == CriticalE2EHistoryKind.Smoke);
+        var archivedRuns = CriticalE2EPresentation.History(overview, _buildId, true, true).Count(h => h.Archived);
 
         @* ── Where, what build, how much is covered, can a browser flow run. One fact per card: quiet label, large value,
                at most one short line under it. ── *@
@@ -271,27 +274,66 @@
 
             @if (overview.History.Count > 0)
             {
-                <ReviewDisclosure Text="Run history" CollapseText="Hide run history" Hint="@HistoryHint(history.Count, hiddenRuns)" TestId="e2e-history" Class="e2e-disclosure">
-                    @if (smokeRuns > 0)
-                    {
-                        <label class="e2e-toggle" data-testid="e2e-show-diagnostic-runs-label">
-                            <input type="checkbox" data-testid="e2e-show-diagnostic-runs" @bind="_showDiagnosticRuns" /> Show smoke / diagnostic runs
+                <ReviewDisclosure Text="Run history" CollapseText="Hide run history" Hint="@CriticalE2EPresentation.HistoryHint(counts)" TestId="e2e-history" Class="e2e-disclosure">
+                    @* Managing history is per flow, and lives here rather than next to Run: it changes what is listed, never what ran. *@
+                    <div class="e2e-history-tools" data-testid="e2e-history-tools">
+                        <label class="e2e-history-flow">
+                            <span>Manage history for</span>
+                            <select data-testid="e2e-history-flow" @bind="_historyFlowId">
+                                <option value="">All flows</option>
+                                @foreach (var f in overview.Flows.OrderBy(f => f.Kind).ThenBy(f => f.Module).ThenBy(f => f.Name))
+                                {
+                                    <option value="@f.FlowId">@f.Module · @f.Name@(f.Kind == CriticalE2EFlowKind.Diagnostic ? " (smoke)" : "")</option>
+                                }
+                            </select>
                         </label>
+                        <div class="e2e-history-actions">
+                            <button type="button" class="btn-primary btn-small" data-testid="e2e-archive-open" @ref="_archiveTrigger"
+                                    disabled="@(historyFlow is null || _historyBusy)" aria-describedby="e2e-history-explain"
+                                    @onclick="() => OpenHistoryDialogAsync(HistoryDialog.Archive)">Archive old runs…</button>
+                            <button type="button" class="btn-small e2e-btn-destructive" data-testid="e2e-clear-open" @ref="_clearTrigger"
+                                    disabled="@(historyFlow is null || _historyBusy)" aria-describedby="e2e-history-explain"
+                                    @onclick="() => OpenHistoryDialogAsync(HistoryDialog.Clear)"><span aria-hidden="true">⚠</span> Clear test history…</button>
+                        </div>
+                    </div>
+                    <p class="e2e-muted e2e-history-explain" id="e2e-history-explain" data-testid="e2e-history-explain">
+                        @(historyFlow is null ? "Choose a flow to archive or clear its history. " : "")@CriticalE2EPresentation.ArchiveExplanation @CriticalE2EPresentation.ClearExplanation
+                    </p>
+                    <div class="e2e-history-filters">
+                        @if (smokeRuns > 0)
+                        {
+                            <label class="e2e-toggle" data-testid="e2e-show-diagnostic-runs-label">
+                                <input type="checkbox" data-testid="e2e-show-diagnostic-runs" @bind="_showDiagnosticRuns" /> Show smoke / diagnostic runs
+                            </label>
+                        }
+                        @if (archivedRuns > 0 || overview.ArchivedRunCount > 0)
+                        {
+                            <label class="e2e-toggle" data-testid="e2e-show-archived-runs-label">
+                                <input type="checkbox" data-testid="e2e-show-archived-runs" @bind="_showArchivedRuns" /> Show archived runs
+                            </label>
+                        }
+                        <span class="e2e-toggle-count" data-testid="e2e-history-counts">@CriticalE2EPresentation.HistoryHint(counts)</span>
+                    </div>
+                    <p class="e2e-history-status" role="status" tabindex="-1" data-testid="e2e-history-status" @ref="_historyStatusElement">@_historyStatus</p>
+                    @if (_dialog == HistoryDialog.None && _historyError is { Length: > 0 } historyError)
+                    {
+                        <p class="e2e-error" role="alert" data-testid="e2e-history-error">@historyError</p>
                     }
                     @if (history.Count == 0)
                     {
-                        <p class="e2e-muted" data-testid="e2e-history-empty">No critical runs yet. @hiddenRuns smoke/diagnostic @(hiddenRuns == 1 ? "run is" : "runs are") hidden.</p>
+                        <p class="e2e-muted" data-testid="e2e-history-empty">No runs to show. @CriticalE2EPresentation.HistoryHint(counts).</p>
                     }
                     else
                     {
                         <div class="e2e-tablewrap">
                             <table class="e2e-table e2e-table-compact" data-testid="e2e-history-table">
-                                <thead><tr><th scope="col">Flow</th><th scope="col">Type</th><th scope="col">Module</th><th scope="col">Build</th><th scope="col">Started</th><th scope="col">Result</th><th scope="col">Steps</th><th scope="col">Duration</th></tr></thead>
+                                <thead><tr><th scope="col">Flow</th><th scope="col">Type</th><th scope="col">Module</th><th scope="col">Build</th><th scope="col">Started</th><th scope="col">Result</th><th scope="col">Steps</th><th scope="col">Duration</th><th scope="col"><span class="e2e-visually-hidden">Actions</span></th></tr></thead>
                                 <tbody>
                                     @foreach (var h in history)
                                     {
                                         var past = h.Run;
-                                        <tr class="@(h.Kind == CriticalE2EHistoryKind.Smoke ? "e2e-row-diagnostic" : null)" data-testid="e2e-run-@past.RunId" data-kind="@h.Kind" data-evidence="@(h.ReleaseEvidence ? "true" : "false")">
+                                        var rowClass = string.Join(' ', new[] { h.Kind == CriticalE2EHistoryKind.Smoke ? "e2e-row-diagnostic" : null, h.Archived ? "e2e-row-archived" : null }.Where(c => c is not null));
+                                        <tr class="@(rowClass.Length > 0 ? rowClass : null)" data-testid="e2e-run-@past.RunId" data-kind="@h.Kind" data-evidence="@(h.ReleaseEvidence ? "true" : "false")" data-archived="@(h.Archived ? "true" : "false")">
                                             <td data-label="Flow"><span class="e2e-flow-name">@past.FlowName</span>
                                                 @if (h.Problem is { Length: > 0 } why) { <span class="e2e-row-detail e2e-clamp" title="@why" data-testid="e2e-run-problem-@past.RunId">@why</span> }
                                             </td>
@@ -301,9 +343,27 @@
                                                 @if (!h.ReleaseEvidence) { <span class="e2e-row-detail" data-testid="e2e-run-not-evidence-@past.RunId">Not release evidence</span> }
                                             </td>
                                             <td data-label="Started">@past.StartedAt.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture)</td>
-                                            <td data-label="Result"><span class="e2e-pill e2e-tone-@ResultTone(past.Status)">@CriticalE2EPresentation.StatusLabel(past.Status)</span></td>
+                                            <td data-label="Result" data-testid="e2e-run-result-@past.RunId">
+                                                @* Archived is shown beside the recorded result, never instead of it. *@
+                                                @if (h.Archived) { <span class="e2e-badge e2e-badge-archived" data-testid="e2e-run-archived-@past.RunId" title="@past.ArchiveReason">Archived ·</span>@(" ") }
+                                                <span class="e2e-pill e2e-tone-@ResultTone(past.Status)">@CriticalE2EPresentation.StatusLabel(past.Status)</span>
+                                            </td>
                                             <td data-label="Steps">@past.PassedSteps / @past.TotalSteps</td>
                                             <td data-label="Duration">@CriticalE2EPresentation.Duration(past.DurationMs)</td>
+                                            <td class="e2e-row-actions">
+                                                @if (h.Archived)
+                                                {
+                                                    <button type="button" class="btn-secondary btn-small" data-testid="e2e-restore-@past.RunId" disabled="@_historyBusy"
+                                                            aria-label="@($"Restore run of {past.FlowName} from {past.StartedAt.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture)}")"
+                                                            @onclick="() => RestoreAsync(past.RunId)">Restore</button>
+                                                }
+                                                else if (h.Archivable)
+                                                {
+                                                    <button type="button" class="btn-secondary btn-small" data-testid="e2e-archive-run-@past.RunId" disabled="@_historyBusy"
+                                                            aria-label="@($"Archive run of {past.FlowName} from {past.StartedAt.ToLocalTime().ToString("d MMM HH:mm", System.Globalization.CultureInfo.InvariantCulture)}")"
+                                                            @onclick="() => ArchiveOneAsync(past.FlowId, past.RunId)">Archive</button>
+                                                }
+                                            </td>
                                         </tr>
                                     }
                                 </tbody>
@@ -322,6 +382,105 @@
                 </div>
             </ReviewDisclosure>
         </section>
+
+        @if (_dialog != HistoryDialog.None && _preview is { } preview)
+        {
+            var titleId = "e2e-history-dialog-title";
+            var descId = "e2e-history-dialog-desc";
+            <dialog @ref="_dialogElement" class="e2e-dialog @(_dialog == HistoryDialog.Clear ? "e2e-dialog-destructive" : null)" data-testid="e2e-@(_dialog == HistoryDialog.Clear ? "clear" : "archive")-dialog"
+                    aria-labelledby="@titleId" aria-describedby="@descId">
+                @if (_dialog == HistoryDialog.Archive)
+                {
+                    var candidates = _archiveSelection == CriticalE2EArchiveSelection.NotOnCurrentBuild ? preview.ArchiveCandidatesNotOnCurrentBuild ?? 0 : preview.ArchiveCandidates;
+                    <h2 id="@titleId" class="e2e-dialog-title">Archive old runs — @preview.FlowName</h2>
+                    <p id="@descId" class="e2e-dialog-text">@CriticalE2EPresentation.ArchiveExplanation</p>
+                    <fieldset class="e2e-dialog-options">
+                        <legend>Which runs</legend>
+                        <label class="e2e-toggle">
+                            <input type="radio" name="e2e-archive-selection" data-testid="e2e-archive-all-except-latest" checked="@(_archiveSelection == CriticalE2EArchiveSelection.AllExceptLatest)"
+                                   @onchange="() => _archiveSelection = CriticalE2EArchiveSelection.AllExceptLatest" />
+                            All runs except the latest (@CriticalE2EPresentation.RunCount(preview.ArchiveCandidates))
+                        </label>
+                        @if (preview.ArchiveCandidatesNotOnCurrentBuild is { } notOnBuild)
+                        {
+                            <label class="e2e-toggle">
+                                <input type="radio" name="e2e-archive-selection" data-testid="e2e-archive-not-on-build" checked="@(_archiveSelection == CriticalE2EArchiveSelection.NotOnCurrentBuild)"
+                                       @onchange="() => _archiveSelection = CriticalE2EArchiveSelection.NotOnCurrentBuild" />
+                                Runs not on build @CriticalE2EPresentation.BuildLabel(_buildId) (@CriticalE2EPresentation.RunCount(notOnBuild))
+                            </label>
+                        }
+                    </fieldset>
+                    <ul class="e2e-dialog-kept" data-testid="e2e-archive-kept">
+                        <li>The latest run is kept.</li>
+                        @if (preview.CurrentEvidenceRunId is not null)
+                        {
+                            <li>The current release evidence for build @CriticalE2EPresentation.BuildLabel(_buildId) is kept.</li>
+                        }
+                        <li>@CriticalE2EPresentation.RunCount(preview.ArchivedRuns) already archived.</li>
+                    </ul>
+                    @if (_historyError is { Length: > 0 } dialogError)
+                    {
+                        <p class="e2e-error" role="alert" data-testid="e2e-dialog-error">@dialogError</p>
+                    }
+                    <div class="e2e-dialog-actions">
+                        <button type="button" class="btn-secondary" data-testid="e2e-dialog-cancel" @onclick="CloseHistoryDialogAsync">Cancel</button>
+                        <button type="button" class="btn-primary" data-testid="e2e-archive-confirm" disabled="@(candidates == 0 || _historyBusy)" @onclick="ArchiveAsync">
+                            @(candidates == 0 ? "Nothing to archive" : $"Archive {CriticalE2EPresentation.RunCount(candidates)}")
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    var blocked = CriticalE2EPresentation.ClearBlocked(preview, _clearIncludeArchived);
+                    var clearCount = CriticalE2EPresentation.ClearCount(preview, _clearIncludeArchived);
+                    <h2 id="@titleId" class="e2e-dialog-title"><span aria-hidden="true">⚠</span> Clear test history — @preview.FlowName</h2>
+                    <p id="@descId" class="e2e-dialog-text">
+                        @(blocked ? "This flow has build-linked release evidence, so its history cannot be cleared." : $"This permanently deletes {CriticalE2EPresentation.RunCount(clearCount)} of this flow. It cannot be undone. The flow definition is kept.")
+                    </p>
+                    <dl class="e2e-dialog-facts" data-testid="e2e-clear-facts">
+                        <div><dt>Flow</dt><dd>@preview.FlowName</dd></div>
+                        <div><dt>Module</dt><dd>@preview.Module</dd></div>
+                        <div><dt>Active runs</dt><dd data-testid="e2e-clear-active">@preview.ActiveRuns</dd></div>
+                        <div><dt>Archived runs</dt><dd data-testid="e2e-clear-archived">@preview.ArchivedRuns</dd></div>
+                        <div><dt>Build-linked runs</dt><dd data-testid="e2e-clear-build-linked">@preview.BuildLinkedRuns</dd></div>
+                        <div><dt>Release evidence runs</dt><dd data-testid="e2e-clear-evidence">@preview.ReleaseEvidenceRuns</dd></div>
+                    </dl>
+                    <label class="e2e-toggle">
+                        <input type="checkbox" data-testid="e2e-clear-include-archived" @bind="_clearIncludeArchived" /> Include archived runs
+                    </label>
+                    @if (blocked)
+                    {
+                        <p class="e2e-dialog-blocked" role="alert" data-testid="e2e-clear-blocked">Release evidence is protected. Archive old runs instead: that hides them and keeps the evidence.</p>
+                    }
+                    else
+                    {
+                        <label class="e2e-dialog-field">
+                            <span>Type <strong>@CriticalE2EHistoryPolicy.ClearConfirmation</strong> to confirm</span>
+                            <input data-testid="e2e-clear-confirmation" autocomplete="off" spellcheck="false" aria-describedby="@descId"
+                                   @bind="_clearTyped" @bind:event="oninput" />
+                        </label>
+                    }
+                    @if (_historyError is { Length: > 0 } dialogError)
+                    {
+                        <p class="e2e-error" role="alert" data-testid="e2e-dialog-error">@dialogError</p>
+                    }
+                    <div class="e2e-dialog-actions">
+                        <button type="button" class="btn-secondary" data-testid="e2e-dialog-cancel" @onclick="CloseHistoryDialogAsync">Cancel</button>
+                        @if (blocked)
+                        {
+                            <button type="button" class="btn-primary" data-testid="e2e-clear-archive-instead" @onclick="() => SwitchHistoryDialogAsync(HistoryDialog.Archive)">Archive old runs instead</button>
+                        }
+                        else
+                        {
+                            <button type="button" class="e2e-btn-destructive" data-testid="e2e-clear-confirm"
+                                    disabled="@(!CriticalE2EPresentation.ClearConfirmed(_clearTyped) || clearCount == 0 || _historyBusy)" @onclick="ClearAsync">
+                                Permanently clear @CriticalE2EPresentation.RunCount(clearCount)
+                            </button>
+                        }
+                    </div>
+                }
+            </dialog>
+        }
     }
 </div>
 
@@ -333,6 +492,25 @@
     // reader chose. Deliberately not persisted anywhere.
     private bool _showDiagnostic;
     private bool _showDiagnosticRuns;
+    private bool _showArchivedRuns;
+    // Run history management: one flow at a time, through one dialog at a time.
+    private enum HistoryDialog { None, Archive, Clear }
+    private string _historyFlowId = "";
+    private HistoryDialog _dialog;
+    private bool _dialogOpenPending;
+    private CriticalE2EHistoryPreview? _preview;
+    private CriticalE2EArchiveSelection _archiveSelection;
+    private bool _clearIncludeArchived = true;
+    private string _clearTyped = "";
+    private bool _historyBusy;
+    private string? _historyStatus;
+    private string? _historyError;
+    private ElementReference _dialogElement, _archiveTrigger, _clearTrigger, _historyStatusElement;
+    // Where focus goes after the next render: the control that opened a closed dialog, or the status line after a row
+    // action removed the button that was pressed. Focusing before the render would hit a disabled or removed element.
+    private ElementReference? _focusAfterRender;
+    private IJSObjectReference? _dialogModule;
+    private DotNetObjectReference<CriticalE2ERegression>? _self;
     private ElementReference _addButton;
     private bool _focusAdd;
     private string? _error;
@@ -441,14 +619,127 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_dialogOpenPending && _dialog != HistoryDialog.None)
+        {
+            _dialogOpenPending = false;
+            await DialogJsAsync("open", _dialogElement, _self ??= DotNetObjectReference.Create(this));
+        }
+        if (_focusAfterRender is { } target)
+        {
+            _focusAfterRender = null;
+            try { await target.FocusAsync(); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
+        }
         // Closing the editor returns focus to the action that opened it.
         if (!_focusAdd) return;
         _focusAdd = false;
         try { await _addButton.FocusAsync(); } catch (InvalidOperationException) { }
     }
 
-    private static string HistoryHint(int shown, int hidden) =>
-        $"{shown} recent {(shown == 1 ? "run" : "runs")}" + (hidden > 0 ? $" · {hidden} smoke/diagnostic hidden" : "");
+    // ── Run history: archive, restore, clear. None of these runs a flow or touches the Browser Companion. ──────
+
+    private CriticalE2EOverviewRequest HistoryContext() => Request();
+
+    /// <summary>The dialog opens with its counts already known, so what it says (and where focus starts) never changes under the reader.</summary>
+    private async Task OpenHistoryDialogAsync(HistoryDialog dialog)
+    {
+        if (string.IsNullOrWhiteSpace(_historyFlowId) || _historyBusy) return;
+        _historyBusy = true;
+        _historyError = null;
+        try
+        {
+            _preview = await Api.HistoryPreviewAsync(new CriticalE2EHistoryPreviewRequest { Context = HistoryContext(), FlowId = _historyFlowId });
+            _dialog = dialog;
+            _dialogOpenPending = true;
+            _clearTyped = "";
+            _clearIncludeArchived = true;
+            _archiveSelection = CriticalE2EArchiveSelection.AllExceptLatest;
+        }
+        catch { _historyError = "This flow's history could not be checked. Nothing was changed."; }
+        finally { _historyBusy = false; }
+    }
+
+    private async Task SwitchHistoryDialogAsync(HistoryDialog dialog)
+    {
+        // Same modal, other action: the preview already covers both.
+        _dialog = dialog;
+        _historyError = null;
+        await Task.CompletedTask;
+    }
+
+    /// <summary>Esc in the browser. The dialog stays open until .NET closes it, so focus returns the same way every time.</summary>
+    [JSInvokable]
+    public async Task CancelHistoryDialog()
+    {
+        await CloseHistoryDialogAsync();
+        StateHasChanged();
+    }
+
+    private async Task CloseHistoryDialogAsync()
+    {
+        _focusAfterRender = _dialog == HistoryDialog.Clear ? _clearTrigger : _archiveTrigger;
+        await DialogJsAsync("close", _dialogElement);
+        _dialog = HistoryDialog.None;
+        _preview = null;
+        _clearTyped = "";
+    }
+
+    private async Task DialogJsAsync(string method, params object[] args)
+    {
+        try
+        {
+            _dialogModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/historyDialog.js");
+            await _dialogModule.InvokeVoidAsync(method, args);
+        }
+        // Prerender, tests, a torn-down circuit: the dialog still renders and its buttons still work, only focus handling is lost.
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or JSDisconnectedException or TaskCanceledException) { }
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (_preview is not { } preview) return;
+        await HistoryActionAsync(() => Api.ArchiveRunsAsync(new CriticalE2EArchiveRequest { Context = HistoryContext(), FlowId = preview.FlowId, Selection = _archiveSelection }), closeDialog: true);
+    }
+
+    private Task ArchiveOneAsync(string flowId, string runId) =>
+        HistoryActionAsync(() => Api.ArchiveRunsAsync(new CriticalE2EArchiveRequest
+        {
+            Context = HistoryContext(), FlowId = flowId, Selection = CriticalE2EArchiveSelection.Selected, RunIds = [runId],
+        }), closeDialog: false);
+
+    private Task RestoreAsync(string runId) =>
+        HistoryActionAsync(() => Api.RestoreRunsAsync(new CriticalE2ERestoreRequest { Context = HistoryContext(), RunIds = [runId] }), closeDialog: false);
+
+    private async Task ClearAsync()
+    {
+        if (_preview is not { } preview || !CriticalE2EPresentation.ClearConfirmed(_clearTyped)) return;
+        await HistoryActionAsync(() => Api.ClearHistoryAsync(new CriticalE2EClearRequest
+        {
+            Context = HistoryContext(), FlowId = preview.FlowId, IncludeArchived = _clearIncludeArchived, Confirmation = _clearTyped.Trim(),
+        }), closeDialog: true);
+    }
+
+    private async Task HistoryActionAsync(Func<Task<CriticalE2EHistoryActionResult>> action, bool closeDialog)
+    {
+        if (_historyBusy) return;
+        _historyBusy = true;
+        _historyError = null;
+        try
+        {
+            var result = await action();
+            _overview = result.Overview;
+            if (result.Blocked)
+            {
+                // The backend refused: say why where the reader is looking, and change nothing.
+                _historyError = result.Message;
+                return;
+            }
+            _historyStatus = result.Message + (result.Skipped.Count > 0 ? $" Kept: {string.Join("; ", result.Skipped)}." : "");
+            if (closeDialog) await CloseHistoryDialogAsync();
+            else _focusAfterRender = _historyStatusElement;
+        }
+        catch { _historyError = "The run history could not be changed. Nothing was changed."; }
+        finally { _historyBusy = false; }
+    }
 
     private static string ResultTone(CriticalE2EStatus status) => status switch
     {
@@ -461,9 +752,14 @@
     private static string Slug(CriticalE2EExecutionMode mode) =>
         mode == CriticalE2EExecutionMode.CompanionBrowser ? "browser" : "integration";
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _run?.Cancel();
         _run?.Dispose();
+        _self?.Dispose();
+        if (_dialogModule is not null)
+        {
+            try { await _dialogModule.DisposeAsync(); } catch (JSDisconnectedException) { }
+        }
     }
 }

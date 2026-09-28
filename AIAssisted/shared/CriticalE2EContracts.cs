@@ -492,9 +492,91 @@ public sealed record CriticalE2ERunResult
     public string? CommitSha { get; init; }
     public List<string> EvidenceReferences { get; init; } = [];
     public Dictionary<string, string> SafeDiagnosticMetadata { get; init; } = new();
+    /// <summary>
+    /// When the run was archived: hidden from the default history view, kept intact as evidence. Archive state is the only
+    /// thing that ever changes on a recorded run — its status, steps, timestamps and build stay exactly as recorded, and
+    /// release evidence and coverage read archived runs like any other. Null = active.
+    /// </summary>
+    public DateTimeOffset? ArchivedAt { get; init; }
+    public string? ArchiveReason { get; init; }
 
     public int PassedSteps => StepResults.Count(s => s.Status == CriticalE2EStatus.Passed);
     public int TotalSteps => StepResults.Count;
+    [JsonIgnore] public bool Archived => ArchivedAt is not null;
+}
+
+/// <summary>Which runs "Archive old runs" selects. The latest run and the current release-evidence run are never selected.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum CriticalE2EArchiveSelection { AllExceptLatest, NotOnCurrentBuild, Selected }
+
+/// <summary>What archive and clear would touch for one flow — shown before either action, computed by the backend.</summary>
+public sealed record CriticalE2EHistoryPreview
+{
+    public string FlowId { get; init; } = "";
+    public string FlowName { get; init; } = "";
+    public string Module { get; init; } = "";
+    public CriticalE2EFlowKind Kind { get; init; }
+    public int ActiveRuns { get; init; }
+    public int ArchivedRuns { get; init; }
+    /// <summary>Runs recorded against a build.</summary>
+    public int BuildLinkedRuns { get; init; }
+    /// <summary>Build-linked runs of a release-required critical flow: release evidence for their build. Clear never removes them.</summary>
+    public int ReleaseEvidenceRuns { get; init; }
+    /// <summary>Of <see cref="ReleaseEvidenceRuns"/>, those not archived: what blocks a clear that leaves archived runs alone.</summary>
+    public int ActiveReleaseEvidenceRuns { get; init; }
+    public string? LatestRunId { get; init; }
+    /// <summary>The run the release verdict currently uses for the named build, if any.</summary>
+    public string? CurrentEvidenceRunId { get; init; }
+    public int ArchiveCandidates { get; init; }
+    /// <summary>Null when no build is named (the build-aware option is then unavailable).</summary>
+    public int? ArchiveCandidatesNotOnCurrentBuild { get; init; }
+    public bool ClearBlocked { get; init; }
+    public string? ClearBlockedReason { get; init; }
+}
+
+public sealed record CriticalE2EHistoryPreviewRequest
+{
+    public CriticalE2EOverviewRequest Context { get; init; } = new();
+    public string FlowId { get; init; } = "";
+}
+
+public sealed record CriticalE2EArchiveRequest
+{
+    public CriticalE2EOverviewRequest Context { get; init; } = new();
+    public string FlowId { get; init; } = "";
+    public CriticalE2EArchiveSelection Selection { get; init; }
+    /// <summary>For <see cref="CriticalE2EArchiveSelection.Selected"/>: the runs to archive (they must belong to the flow).</summary>
+    public List<string> RunIds { get; init; } = [];
+}
+
+public sealed record CriticalE2ERestoreRequest
+{
+    public CriticalE2EOverviewRequest Context { get; init; } = new();
+    public List<string> RunIds { get; init; } = [];
+}
+
+public sealed record CriticalE2EClearRequest
+{
+    public CriticalE2EOverviewRequest Context { get; init; } = new();
+    public string FlowId { get; init; } = "";
+    public bool IncludeArchived { get; init; } = true;
+    /// <summary>Must equal <see cref="CriticalE2EHistoryPolicy.ClearConfirmation"/>; anything else changes nothing.</summary>
+    public string Confirmation { get; init; } = "";
+}
+
+/// <summary>Outcome of a history action, with the refreshed overview. History actions never run a flow or touch the companion.</summary>
+public sealed record CriticalE2EHistoryActionResult
+{
+    public int Changed { get; init; }
+    public bool Blocked { get; init; }
+    public string Message { get; init; } = "";
+    public List<string> Skipped { get; init; } = [];
+    public CriticalE2EOverview Overview { get; init; } = new();
+}
+
+public static class CriticalE2EHistoryPolicy
+{
+    public const string ClearConfirmation = "CLEAR";
 }
 
 /// <summary>Correlation ids are generated centrally so every flow and every log line spells them the same way.</summary>
@@ -670,7 +752,10 @@ public sealed record CriticalE2EOverview
     /// </summary>
     public CriticalE2EEngineStatus ElementPick { get; init; } = new();
     public CriticalE2EAttendedReadiness Attended { get; init; } = new();
+    /// <summary>The most recent active runs and the most recent archived runs, newest first. Archived ones are hidden by default.</summary>
     public List<CriticalE2ERunResult> History { get; init; } = [];
+    /// <summary>Archived runs stored for the environment, including any beyond the ones sent in <see cref="History"/>.</summary>
+    public int ArchivedRunCount { get; init; }
 }
 
 public sealed record CriticalE2ERunFlowRequest

@@ -14,6 +14,10 @@ public interface ICriticalE2EService
     bool DeleteFlow(string flowId);
     Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken cancellationToken);
     Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken cancellationToken);
+    CriticalE2EHistoryPreview HistoryPreview(CriticalE2EHistoryPreviewRequest request);
+    CriticalE2EHistoryActionResult ArchiveRuns(CriticalE2EArchiveRequest request);
+    CriticalE2EHistoryActionResult RestoreRuns(CriticalE2ERestoreRequest request);
+    CriticalE2EHistoryActionResult ClearHistory(CriticalE2EClearRequest request);
 }
 
 /// <summary>
@@ -42,9 +46,17 @@ public sealed class CriticalE2EService(
         // Opening this surface is the signal that a run may be coming, so the companion starts polling at step speed
         // now rather than after the user has already pressed Run and waited out a heartbeat.
         if (!string.IsNullOrWhiteSpace(request.ProfileId)) companion.OpenAutomationWindow(request.ProfileId);
+        return Snapshot(request);
+    }
 
+    /// <summary>Most recent runs sent with the overview, per archive state.</summary>
+    public const int ActiveHistoryShown = 100, ArchivedHistoryShown = 50;
+
+    /// <summary>The overview without its side effects: what history actions return, so managing history never wakes the companion.</summary>
+    private CriticalE2EOverview Snapshot(CriticalE2EOverviewRequest request)
+    {
         var flows = store.Flows(request.EnvironmentId);
-        var history = store.History(request.EnvironmentId);
+        var history = store.History(request.EnvironmentId, CriticalE2EStore.MaxHistoryPerEnvironment);
         var modules = store.Modules(request.EnvironmentId);
 
         return new CriticalE2EOverview
@@ -60,7 +72,93 @@ public sealed class CriticalE2EService(
             ElementPick = PickBlockedReason(request.ProfileId, request.EnvironmentType) is { } reason
                 ? new CriticalE2EEngineStatus { State = CriticalE2EEngineState.RequiresBrowserSession, Message = reason }
                 : new CriticalE2EEngineStatus { State = CriticalE2EEngineState.Ready, Message = "Select an element in the paired browser." },
-            History = history.Take(25).ToList(),
+            History = history.Where(r => !r.Archived).Take(ActiveHistoryShown)
+                .Concat(history.Where(r => r.Archived).Take(ArchivedHistoryShown))
+                .OrderByDescending(r => r.StartedAt).ToList(),
+            ArchivedRunCount = history.Count(r => r.Archived),
+        };
+    }
+
+    // ── Run history: archive, restore, clear ────────────────────────────────────────────────────────────────────
+    // None of these runs a flow, dispatches a command or opens the companion's automation window. They change stored
+    // history only, and each leaves an audit line with what changed and what was kept.
+
+    private (CriticalE2EFlowDefinition Flow, IReadOnlyList<CriticalE2ERunResult> Runs) FlowAndRuns(CriticalE2EOverviewRequest context, string flowId)
+    {
+        var flow = store.Flow(flowId) ?? throw new ArgumentException("Unknown flow.");
+        if (!string.IsNullOrWhiteSpace(context.EnvironmentId) && !string.Equals(flow.EnvironmentId, context.EnvironmentId, StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("The flow belongs to another environment.");
+        return (flow, store.FlowHistory(flow.Id));
+    }
+
+    public CriticalE2EHistoryPreview HistoryPreview(CriticalE2EHistoryPreviewRequest request)
+    {
+        var (flow, runs) = FlowAndRuns(request.Context, request.FlowId);
+        return CriticalE2EHistoryRules.Preview(flow, runs, request.Context.BuildId);
+    }
+
+    public CriticalE2EHistoryActionResult ArchiveRuns(CriticalE2EArchiveRequest request)
+    {
+        var (flow, runs) = FlowAndRuns(request.Context, request.FlowId);
+        var selection = CriticalE2EHistoryRules.SelectForArchive(flow, runs, request.Selection, request.RunIds, request.Context.BuildId);
+        var reason = request.Selection switch
+        {
+            CriticalE2EArchiveSelection.AllExceptLatest => "Archived: all runs except the latest",
+            CriticalE2EArchiveSelection.NotOnCurrentBuild => $"Archived: not on build {request.Context.BuildId}",
+            _ => "Archived manually",
+        };
+        var changed = store.SetArchived(flow.Id, selection.Archive.Select(r => r.RunId).ToList(), time.GetUtcNow(), reason);
+        logger.LogInformation("Critical E2E history audit: archive flow {FlowId} in {EnvironmentId} ({Selection}): {Changed} run(s) archived, {Skipped} kept",
+            flow.Id, flow.EnvironmentId, request.Selection, changed, selection.Skipped.Count);
+        return new CriticalE2EHistoryActionResult
+        {
+            Changed = changed,
+            Skipped = selection.Skipped,
+            Message = changed == 0 ? "No runs to archive. The latest run and current release evidence are always kept." : $"{changed} run(s) archived for {flow.Name}. They are kept and can be restored.",
+            Overview = Snapshot(request.Context),
+        };
+    }
+
+    public CriticalE2EHistoryActionResult RestoreRuns(CriticalE2ERestoreRequest request)
+    {
+        var ids = request.RunIds.ToHashSet(StringComparer.Ordinal);
+        var changed = 0;
+        foreach (var flowId in store.History(request.Context.EnvironmentId, CriticalE2EStore.MaxHistoryPerEnvironment)
+                     .Where(r => ids.Contains(r.RunId)).Select(r => r.FlowId).Distinct())
+            changed += store.SetArchived(flowId, ids, archivedAt: null, reason: null);
+        logger.LogInformation("Critical E2E history audit: restore in {EnvironmentId}: {Changed} of {Requested} run(s) restored",
+            request.Context.EnvironmentId, changed, ids.Count);
+        return new CriticalE2EHistoryActionResult
+        {
+            Changed = changed,
+            Message = changed == 0 ? "Nothing to restore." : $"{changed} run(s) restored to the run history.",
+            Overview = Snapshot(request.Context),
+        };
+    }
+
+    public CriticalE2EHistoryActionResult ClearHistory(CriticalE2EClearRequest request)
+    {
+        var (flow, runs) = FlowAndRuns(request.Context, request.FlowId);
+        CriticalE2EHistoryActionResult Refused(string message)
+        {
+            logger.LogInformation("Critical E2E history audit: clear flow {FlowId} in {EnvironmentId} refused: {Reason}", flow.Id, flow.EnvironmentId, message);
+            return new CriticalE2EHistoryActionResult { Blocked = true, Message = message, Overview = Snapshot(request.Context) };
+        }
+
+        // The typed confirmation is checked here too: the page's disabled button is a convenience, not the control.
+        if (!string.Equals(request.Confirmation?.Trim(), CriticalE2EHistoryPolicy.ClearConfirmation, StringComparison.Ordinal))
+            return Refused($"Type {CriticalE2EHistoryPolicy.ClearConfirmation} to confirm.");
+        var scope = CriticalE2EHistoryRules.ClearScope(runs, request.IncludeArchived);
+        if (CriticalE2EHistoryRules.ClearBlocked(flow, scope) is { } blocked) return Refused(blocked);
+
+        var removed = store.RemoveRuns(flow.Id, scope.Select(r => r.RunId).ToList());
+        logger.LogWarning("Critical E2E history audit: cleared flow {FlowId} ({FlowName}) in {EnvironmentId}: {Removed} run(s) permanently removed ({Archived} archived), archived included: {IncludeArchived}",
+            flow.Id, flow.Name, flow.EnvironmentId, removed, scope.Count(r => r.Archived), request.IncludeArchived);
+        return new CriticalE2EHistoryActionResult
+        {
+            Changed = removed,
+            Message = $"{removed} run(s) permanently removed for {flow.Name}.",
+            Overview = Snapshot(request.Context),
         };
     }
 

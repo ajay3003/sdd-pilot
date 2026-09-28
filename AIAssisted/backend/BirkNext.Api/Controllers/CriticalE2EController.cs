@@ -27,6 +27,21 @@ public sealed class CriticalE2EController(ICriticalE2EService service) : Control
     [HttpDelete("flows/{flowId}")]
     public IActionResult DeleteFlow(string flowId) => Run(() => service.DeleteFlow(flowId) ? Ok(new { deleted = true }) : NotFound());
 
+    /// <summary>What archiving or clearing one flow's history would touch. Read-only.</summary>
+    [HttpPost("history/preview")]
+    public IActionResult HistoryPreview(CriticalE2EHistoryPreviewRequest request) => Run(() => Ok(service.HistoryPreview(request)));
+
+    /// <summary>Hides old runs of one flow from the default history. Reversible; never changes a result or release evidence.</summary>
+    [HttpPost("history/archive")]
+    public IActionResult ArchiveRuns(CriticalE2EArchiveRequest request) => Run(() => Ok(service.ArchiveRuns(request)));
+
+    [HttpPost("history/restore")]
+    public IActionResult RestoreRuns(CriticalE2ERestoreRequest request) => Run(() => Ok(service.RestoreRuns(request)));
+
+    /// <summary>Permanently removes one flow's runs. Needs the typed confirmation; refused while the flow holds release evidence.</summary>
+    [HttpPost("history/clear")]
+    public IActionResult ClearHistory(CriticalE2EClearRequest request) => Run(() => Ok(service.ClearHistory(request)));
+
     /// <summary>Runs one flow, or every enabled flow of one mode. Returns the runs and the refreshed overview together.</summary>
     [HttpPost("run")]
     public async Task<IActionResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken cancellationToken)

@@ -13,6 +13,13 @@ public interface ICriticalE2EApiService
     Task<CriticalE2ERunBatchResult> RunAsync(CriticalE2ERunFlowRequest request, CancellationToken cancellationToken = default);
     /// <summary>Authoring: waits while the tester picks one element in the paired browser.</summary>
     Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken cancellationToken = default);
+
+    // Run history. None of these runs a flow or touches the Browser Companion.
+    Task<CriticalE2EHistoryPreview> HistoryPreviewAsync(CriticalE2EHistoryPreviewRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<CriticalE2EHistoryActionResult> ArchiveRunsAsync(CriticalE2EArchiveRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<CriticalE2EHistoryActionResult> RestoreRunsAsync(CriticalE2ERestoreRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    /// <summary>Permanent. The backend re-checks the typed confirmation and the release-evidence rule.</summary>
+    Task<CriticalE2EHistoryActionResult> ClearHistoryAsync(CriticalE2EClearRequest request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiService
@@ -41,6 +48,18 @@ public sealed class CriticalE2EApiService(HttpClient http) : ICriticalE2EApiServ
 
     public Task<CriticalE2EElementPickResult> PickElementAsync(CriticalE2EElementPickRequest request, CancellationToken ct = default) =>
         PostAsync<CriticalE2EElementPickResult>("api/critical-e2e/pick-element", request, ct);
+
+    public Task<CriticalE2EHistoryPreview> HistoryPreviewAsync(CriticalE2EHistoryPreviewRequest request, CancellationToken ct = default) =>
+        PostAsync<CriticalE2EHistoryPreview>("api/critical-e2e/history/preview", request, ct);
+
+    public Task<CriticalE2EHistoryActionResult> ArchiveRunsAsync(CriticalE2EArchiveRequest request, CancellationToken ct = default) =>
+        PostAsync<CriticalE2EHistoryActionResult>("api/critical-e2e/history/archive", request, ct);
+
+    public Task<CriticalE2EHistoryActionResult> RestoreRunsAsync(CriticalE2ERestoreRequest request, CancellationToken ct = default) =>
+        PostAsync<CriticalE2EHistoryActionResult>("api/critical-e2e/history/restore", request, ct);
+
+    public Task<CriticalE2EHistoryActionResult> ClearHistoryAsync(CriticalE2EClearRequest request, CancellationToken ct = default) =>
+        PostAsync<CriticalE2EHistoryActionResult>("api/critical-e2e/history/clear", request, ct);
 
     private async Task<T> PostAsync<T>(string path, object body, CancellationToken ct)
     {

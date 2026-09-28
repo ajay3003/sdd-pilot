@@ -16,6 +16,12 @@ public interface ICriticalE2EStore
     /// <summary>Modules BirkNext knows about for an environment, so coverage can report a module with no flow at all.</summary>
     IReadOnlyList<string> Modules(string environmentId);
     void SetModules(string environmentId, IReadOnlyList<string> modules);
+    /// <summary>Every recorded run of one flow, newest first, archived included.</summary>
+    IReadOnlyList<CriticalE2ERunResult> FlowHistory(string flowId);
+    /// <summary>Sets (or, with null, removes) the archive marker on the named runs of one flow and nothing else. Returns how many changed.</summary>
+    int SetArchived(string flowId, IReadOnlyCollection<string> runIds, DateTimeOffset? archivedAt, string? reason);
+    /// <summary>Permanently removes the named runs of one flow. Returns how many were removed.</summary>
+    int RemoveRuns(string flowId, IReadOnlyCollection<string> runIds);
 }
 
 /// <summary>
@@ -128,6 +134,41 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
                 foreach (var stale in group.OrderByDescending(r => r.StartedAt).Skip(MaxHistoryPerEnvironment).ToList())
                     _history.Remove(stale);
             Write(_historyPath, _history);
+        }
+    }
+
+    public IReadOnlyList<CriticalE2ERunResult> FlowHistory(string flowId)
+    {
+        lock (_gate) return _history.Where(r => r.FlowId == flowId).OrderByDescending(r => r.StartedAt).ToList();
+    }
+
+    public int SetArchived(string flowId, IReadOnlyCollection<string> runIds, DateTimeOffset? archivedAt, string? reason)
+    {
+        var ids = runIds.ToHashSet(StringComparer.Ordinal);
+        lock (_gate)
+        {
+            var changed = 0;
+            for (var i = 0; i < _history.Count; i++)
+            {
+                var run = _history[i];
+                if (run.FlowId != flowId || !ids.Contains(run.RunId) || run.Archived == (archivedAt is not null)) continue;
+                // Only the archive marker moves. Status, steps, timestamps and build are the evidence and stay as recorded.
+                _history[i] = run with { ArchivedAt = archivedAt, ArchiveReason = archivedAt is null ? null : reason };
+                changed++;
+            }
+            if (changed > 0) Write(_historyPath, _history);
+            return changed;
+        }
+    }
+
+    public int RemoveRuns(string flowId, IReadOnlyCollection<string> runIds)
+    {
+        var ids = runIds.ToHashSet(StringComparer.Ordinal);
+        lock (_gate)
+        {
+            var removed = _history.RemoveAll(r => r.FlowId == flowId && ids.Contains(r.RunId));
+            if (removed > 0) Write(_historyPath, _history);
+            return removed;
         }
     }
 
