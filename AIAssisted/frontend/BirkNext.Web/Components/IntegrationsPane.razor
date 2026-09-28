@@ -3,6 +3,8 @@
 @using BirkNext.Web.Services
 @using Microsoft.AspNetCore.Components.Forms
 @inject IIntegrationCatalogApiService Api
+@inject IntegrationMappingEvidenceSession MappingEvidence
+@implements IDisposable
 
 @* Target Environment → Integrations: the configured, expected integrations Integration Quality Review runs from. Persisted
    by the backend and saved immediately per change — the surrounding Target Environment Edit/Save/Cancel does not stage or roll
@@ -26,15 +28,18 @@
             <p class="ip-muted" data-testid="ip-intro">Configured integrations used by Integration Quality Review. Observed REST and GraphQL traffic is shown in Endpoint Discovery and is never added here automatically.</p>
             <button type="button" class="btn-secondary" data-testid="ip-add" @onclick="BeginAdd" disabled="@(_editing is not null)">+ Add integration</button>
         </div>
-        <p class="ip-save-note" data-testid="ip-save-note"><strong>Integration changes are saved immediately.</strong> The Target Environment's Edit / Save / Cancel does not apply to them.</p>
+        <p class="ip-save-note" data-testid="ip-save-note">Integration changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.</p>
         <p class="ip-save-status ip-save-status-@_saveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="ip-save-status" data-state="@_saveState">@_saveMessage</p>
 
         <dl class="ip-summary" data-testid="ip-summary">
-            <div><dt>Environment</dt><dd data-testid="ip-summary-env">@(string.IsNullOrWhiteSpace(Profile.Name) ? Profile.Id : Profile.Name)</dd></div>
-            <div><dt>Configured business integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
-            <div><dt>Enabled</dt><dd data-testid="ip-summary-enabled">@summary.Enabled</dd></div>
+            <div><dt>Business integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
             <div><dt>Ready</dt><dd data-testid="ip-summary-ready">@summary.Ready</dd></div>
-            <div><dt>Needs confirmation</dt><dd data-testid="ip-summary-confirm">@summary.NeedsConfirmation</dd></div>
+            <div><dt>Need confirmation</dt><dd data-testid="ip-summary-confirm">@summary.NeedsConfirmation</dd><button type="button" class="ip-link" data-testid="ip-review-mappings" @onclick="ReviewMappings">Review @summary.NeedsConfirmation mappings</button></div>
+            <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-attention" data-testid="ip-summary-runtime">@RuntimeStatus(_catalog.Platforms.Select(p => p.RuntimeEvidence))</span></dd></div>
+        </dl>
+        <dl class="ip-secondary" data-testid="ip-secondary">
+            <div><dt>Environment</dt><dd data-testid="ip-summary-env">@(string.IsNullOrWhiteSpace(Profile.Name) ? Profile.Id : Profile.Name)</dd></div>
+            <div><dt>Enabled</dt><dd data-testid="ip-summary-enabled">@summary.Enabled</dd></div>
             <div><dt>Needs configuration</dt><dd data-testid="ip-summary-configure">@summary.NeedsConfiguration</dd></div>
             <div><dt>Platform</dt><dd data-testid="ip-summary-platform">@(summary.Platforms.Count == 0 ? "None" : string.Join(", ", summary.Platforms))</dd></div>
         </dl>
@@ -53,13 +58,13 @@
                 <dl class="ip-dl">
                     <div><dt>Namespace</dt><dd class="ip-mono" data-testid="ip-platform-namespace">@(platform.Namespace ?? "Not configured")</dd></div>
                     <div><dt>Producer</dt><dd>@(platform.ProducerTechnology ?? "Not configured")</dd></div>
-                    <div><dt>Source DB</dt><dd>@(platform.SourceDatabase ?? "Not configured")</dd></div>
-                    <div><dt>Producer auth</dt><dd data-testid="ip-platform-producer-auth">@IntegrationConfigurationRules.AuthLabel(platform.ProducerAuthentication)</dd></div>
                     <div><dt>Default consumer auth</dt><dd data-testid="ip-platform-consumer-auth">@IntegrationConfigurationRules.AuthLabel(platform.DefaultConsumerAuthentication)</dd></div>
                     <div><dt>Monitoring</dt><dd>@(platform.MonitoringProvider ?? "Not configured")</dd></div>
                 </dl>
                 <ReviewDisclosure Text="View platform details" CollapseText="Hide platform details" TestId="@($"ip-platform-details-{Slug(platform.Id)}")" Class="disclosure-inline">
                     <dl class="ip-dl ip-dl-technical">
+                        <div><dt>Source DB</dt><dd>@(platform.SourceDatabase ?? "Not configured")</dd></div>
+                        <div><dt>Producer auth</dt><dd data-testid="ip-platform-producer-auth">@IntegrationConfigurationRules.AuthLabel(platform.ProducerAuthentication)</dd></div>
                         <div><dt>FQDN</dt><dd class="ip-mono">@(platform.NamespaceFqdn ?? "Not configured")</dd></div>
                         <div><dt>Resource group</dt><dd class="ip-mono">@(platform.ResourceGroup ?? "Not configured")</dd></div>
                         <div><dt>Region</dt><dd>@(platform.Region ?? "Not configured")</dd></div>
@@ -71,12 +76,18 @@
                         <div><dt>Default partitions / retention</dt><dd>@(platform.DefaultPartitionCount?.ToString() ?? "—") / @(platform.DefaultRetentionDays is { } days ? $"{days} days" : "—")</dd></div>
                     </dl>
                 </ReviewDisclosure>
-                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@RuntimeHint(runtime)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
+                <div class="ip-runtime-status" data-testid="ip-runtime-status">
+                    <strong>Runtime evidence</strong> <span class="ip-pill ip-pill-attention">@RuntimeStatus([runtime])</span>
+                    @if (RuntimeStatus([runtime]) == "Not configured") { <p class="ip-muted">Event Hub metadata, consumer groups, checkpoints and Application Insights are not configured for this platform.</p> }
+                    <p class="ip-muted">@RuntimeHint(runtime). Configure runtime evidence to enable richer mapping checks and Message Flow, Reliability, Error handling, Observability and Performance checks in Integration Quality Review.</p>
+                    <button type="button" class="ip-link" data-testid="ip-configure-runtime" @onclick="() => BeginRuntime(platform)">Configure runtime evidence</button>
+                </div>
+                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@RuntimeHint(runtime)" Expanded="@(_runtimeExpanded == platform.Id)" ExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
                     <p class="ip-muted">Read-only sources Integration Quality Review may use for this platform. Identifiers only — the BirkNext instance's Azure identity reads them; no key or connection string is stored here.</p>
                     @if (_editingRuntime == platform.Id)
                     {
                         <div class="ip-runtime-form" data-testid="ip-runtime-form">
-                            <label class="ip-check"><input type="checkbox" @bind="_runtime.EventHubMetadata" data-testid="ip-runtime-metadata" /> Read Event Hub metadata (existence, partitions, last enqueued position)</label>
+                            <label class="ip-check"><input type="checkbox" @ref="_runtimeFocus" @bind="_runtime.EventHubMetadata" data-testid="ip-runtime-metadata" /> Read Event Hub metadata (existence, partitions, last enqueued position)</label>
                             <label class="ip-field">Azure subscription id (consumer-group list) <input class="form-control ip-mono" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
                             <label class="ip-field">Checkpoint store container URL <input class="form-control ip-mono" @bind="_runtime.CheckpointContainerUrl" placeholder="https://account.blob.core.windows.net/checkpoints" data-testid="ip-runtime-checkpoint" /></label>
                             <label class="ip-field">Log Analytics workspace id (Application Insights) <input class="form-control ip-mono" @bind="_runtime.TelemetryWorkspaceId" data-testid="ip-runtime-workspace" /></label>
@@ -107,24 +118,39 @@
             </section>
         }
 
+        <div class="ip-workflow"><a class="ip-link" href="/integration-quality-review" data-testid="ip-open-iqr">Open Integration Quality Review</a><span class="ip-muted">Review can run with limitations while mapping or runtime evidence is unavailable.</span></div>
+
+        var readinessCounts = _catalog.Integrations.GroupBy(i => IntegrationsPanePresentation.Row(_catalog, i).ReviewReadiness).ToDictionary(g => g.Key, g => g.Count());
         <div class="ip-filters" role="group" aria-label="Filter integrations">
             <label class="ip-field-inline">Search <input type="search" class="form-control" data-testid="ip-search" @bind="_search" @bind:event="oninput" placeholder="Name, topic or consumer" /></label>
-            <label class="ip-field-inline">Configuration
+            <label class="ip-field-inline">Configuration status
                 <select class="form-control" data-testid="ip-filter-state" @bind="_stateFilter">
                     <option value="">All</option>
-                    @foreach (var s in Enum.GetValues<IntegrationConfigurationState>()) { <option value="@s">@IntegrationConfigurationRules.Label(s)</option> }
+                    @foreach (var s in Enum.GetValues<IntegrationConfigurationState>()) { <option value="@s">@IntegrationConfigurationRules.Label(s) (@_catalog.Integrations.Count(i => IntegrationConfigurationRules.Evaluate(i, IntegrationsPanePresentation.Platform(_catalog, i)).State == s))</option> }
+                </select>
+            </label>
+            <label class="ip-field-inline">Review readiness
+                <select class="form-control" data-testid="ip-filter-readiness" @bind="_readinessFilter">
+                    <option value="">All</option>
+                    @foreach (var r in IntegrationsPanePresentation.ReadinessLabels.Where(l => readinessCounts.ContainsKey(l))) { <option value="@r">@r (@readinessCounts[r])</option> }
                 </select>
             </label>
         </div>
+        @if (!string.IsNullOrWhiteSpace(_stateFilter) || !string.IsNullOrWhiteSpace(_readinessFilter) || !string.IsNullOrWhiteSpace(_search))
+        {
+            <p class="ip-muted" data-testid="ip-active-filter">Active filter: @ActiveFilter() <button type="button" class="ip-link" data-testid="ip-clear-filters" @onclick="ClearFilters">Clear filters</button></p>
+        }
+        <p class="ip-sr" role="status" aria-live="polite" data-testid="ip-mapping-announcement">@_mappingAnnouncement</p>
 
-        var groups = IntegrationsPanePresentation.Groups(_catalog, _search, Enum.TryParse<IntegrationConfigurationState>(_stateFilter, out var f) ? f : null);
+        var groups = IntegrationsPanePresentation.Groups(_catalog, _search, Enum.TryParse<IntegrationConfigurationState>(_stateFilter, out var f) ? f : null, _readinessFilter);
+        var mappingChecks = MappingEvidence.For(Profile.Id);
         @if (_catalog.Integrations.Count == 0)
         {
             <p class="ip-empty" data-testid="ip-empty">No integrations configured. Use <strong>+ Add integration</strong> to add one.</p>
         }
         else if (groups.Count == 0)
         {
-            <p class="ip-empty" data-testid="ip-no-match">No integration matches the filter.</p>
+            <p class="ip-empty" data-testid="ip-no-match">@(_stateFilter == nameof(IntegrationConfigurationState.NeedsConfirmation) && summary.NeedsConfirmation == 0 ? "No mappings require confirmation." : "No integration matches the filter.")</p>
         }
         @foreach (var group in groups)
         {
@@ -132,24 +158,53 @@
                 <h3 id="@($"ip-group-{Slug(group.SystemName)}")">@group.SystemName <span class="ip-muted">· @group.Rows.Count integration@(group.Rows.Count == 1 ? "" : "s")</span></h3>
                 <div class="ip-tablewrap" tabindex="0" role="region" aria-label="@($"{group.SystemName} integrations")">
                     <table class="ip-table" data-testid="ip-table">
-                        <thead><tr><th scope="col">Integration</th><th scope="col">Topic</th><th scope="col">Producer</th><th scope="col">Consumer</th><th scope="col">Configuration</th><th scope="col">IQR readiness</th><th scope="col"><span class="ip-sr">Actions</span></th></tr></thead>
+                        <thead><tr><th scope="col">Integration</th><th scope="col">Topic</th><th scope="col">Producer</th><th scope="col">Consumer</th><th scope="col">Configuration status</th><th scope="col">Review readiness</th><th scope="col"><span class="ip-sr">Actions</span></th></tr></thead>
                         <tbody>
                             @foreach (var row in group.Rows)
                             {
                                 var open = _viewing == row.Definition.Id;
-                                <tr data-testid="ip-row" data-integration-id="@row.Definition.Id" data-configuration="@row.Configuration">
+                                <tr @key="row.Definition.Id" data-testid="ip-row" data-integration-id="@row.Definition.Id" data-configuration="@row.Configuration">
                                     <td><strong>@row.ShortName</strong>@if (!row.Definition.Enabled) { <span class="ip-pill ip-pill-muted">Disabled</span> }</td>
                                     <td class="ip-mono ip-nowrap" title="@row.Topic">@row.TopicShort</td>
                                     <td>@row.Producer</td>
-                                    <td data-testid="ip-row-consumer" data-mapping="@row.MappingState">@row.Consumer</td>
-                                    <td><span class="ip-pill ip-pill-@IntegrationsPanePresentation.StateTone(row.Configuration)" data-testid="ip-row-configuration" title="@row.ConfigurationDetail">@IntegrationConfigurationRules.Label(row.Configuration)</span></td>
-                                    <td data-testid="ip-row-readiness" title="@row.ReviewReadinessDetail">@row.ReviewReadiness</td>
+                                    <td data-testid="ip-row-consumer" data-mapping="@row.MappingState">@row.Consumer
+                                        @if (row.MappingState is ConsumerMappingState.Suggested or ConsumerMappingState.Confirmed)
+                                        { <span class="ip-pill ip-pill-muted" title="@(row.MappingState == ConsumerMappingState.Suggested ? "Suggested mapping. Not yet confirmed." : "Explicitly confirmed mapping.")">@row.MappingState</span> }
+                                    </td>
+                                    <td><span class="ip-pill ip-pill-@IntegrationsPanePresentation.StateTone(row.Configuration)" data-testid="ip-row-configuration" title="@row.ConfigurationDetail">@IntegrationConfigurationRules.Label(row.Configuration)</span>
+                                        @if (row.Configuration == IntegrationConfigurationState.NeedsConfirmation)
+                                        { <small class="ip-status-help">@(row.Consumer == "Not assigned" ? "Consumer mapping has not been established." : "BirkNext has a suggested consumer mapping, but the relationship has not yet been verified.")</small> }
+                                    </td>
+                                    <td data-testid="ip-row-readiness" title="@row.ReviewReadinessDetail"><span class="ip-pill ip-pill-muted">@row.ReviewReadiness</span><details class="ip-readiness"><summary>Why @row.ReviewReadiness.ToLowerInvariant()?</summary><p>@row.ReviewReadinessDetail</p></details></td>
                                     <td class="ip-actions">
+                                        @if (row.Configuration == IntegrationConfigurationState.NeedsConfirmation)
+                                        {
+                                            <IconButton Title="Test mapping" AriaLabel="@(row.MappingState == ConsumerMappingState.Suggested ? $"Test suggested mapping for {row.ShortName} and {row.Consumer}" : $"Test mapping for {row.ShortName} (consumer not assigned)")" Class="ip-test" data-testid="ip-test-mapping" Disabled="@_mappingBusy.Contains(row.Definition.Id)" OnClick="() => TestMappingAsync(row.Definition)">
+                                                <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M4 2 L14 8 L4 14 Z" /></svg>
+                                            </IconButton>
+                                            @if (_mappingBusy.Contains(row.Definition.Id)) { <span class="ip-muted" data-testid="ip-mapping-loading">Testing mapping…</span> }
+                                        }
+                                        @if (row.MappingState == ConsumerMappingState.Suggested)
+                                        { <button type="button" class="ip-link" data-testid="ip-inline-confirm" aria-label="@($"Confirm {row.Consumer} as consumer for {row.ShortName}")" disabled="@(_saveState == SaveState.Saving || _mappingBusy.Contains(row.Definition.Id))" @onclick="() => ConfirmMappingAsync(row.Definition)">Confirm</button> }
+                                        @if (mappingChecks.TryGetValue(row.Definition.Id, out var mappingResult))
+                                        { <div class="ip-mapping-result"><span class="ip-pill ip-pill-@(mappingResult.OverallState == IntegrationMappingEvidenceState.Error ? "attention" : "muted")" data-testid="ip-mapping-result" data-state="@mappingResult.OverallState">@IntegrationMappingEvidenceCheck.Label(mappingResult.OverallState)</span><button type="button" class="ip-link" data-testid="ip-view-evidence" aria-expanded="@(_evidenceViewing == row.Definition.Id ? "true" : "false")" aria-controls="@($"ip-evidence-{Slug(row.Definition.Id)}")" @onclick="() => _evidenceViewing = _evidenceViewing == row.Definition.Id ? null : row.Definition.Id">View evidence</button></div> }
                                         <button type="button" class="ip-link" data-testid="ip-row-view" aria-expanded="@(open ? "true" : "false")" aria-controls="@($"ip-detail-{Slug(row.Definition.Id)}")" @onclick="() => _viewing = open ? null : row.Definition.Id">View</button>
-                                        <span aria-hidden="true">·</span>
-                                        <button type="button" class="ip-link" data-testid="ip-row-edit" disabled="@(_editing is not null)" @onclick="() => BeginEdit(row.Definition)">Edit</button>
+                                        <details class="ip-menu" data-testid="ip-actions-menu"><summary aria-label="@($"Actions for {row.ShortName}")" title="Actions">⋯</summary><div class="ip-menu-items">
+                                            <button type="button" class="ip-link" data-testid="ip-row-edit" disabled="@(_editing is not null)" @onclick="() => BeginEdit(row.Definition)">Edit</button>
+                                            @if (row.MappingState == ConsumerMappingState.Suggested) { <button type="button" class="ip-link" @onclick="() => ConfirmMappingAsync(row.Definition)">Confirm mapping</button> }
+                                            <button type="button" class="ip-link" @onclick="() => ToggleEnabledAsync(row.Definition)">@(row.Definition.Enabled ? "Disable" : "Enable")</button>
+                                            <button type="button" class="ip-link" @onclick="() => ManageContracts(row.Definition)">Manage contracts</button>
+                                            <button type="button" class="ip-link ip-link-danger" @onclick="() => { _viewing = row.Definition.Id; _confirmingDelete = row.Definition.Id; }">Delete</button>
+                                        </div></details>
                                     </td>
                                 </tr>
+                                @if (_evidenceViewing == row.Definition.Id && mappingChecks.TryGetValue(row.Definition.Id, out var evidence))
+                                {
+                                    <tr class="ip-detail-row" id="@($"ip-evidence-{Slug(row.Definition.Id)}")" data-testid="ip-evidence"><td colspan="7">
+                                        <IntegrationMappingEvidencePanel Result="evidence" OnConfigure="() => ConfigureFor(row.Definition)" CanConfigure="@(group.Platform is not null)"
+                                            ConsumerState="row.MappingState" CanConfirm="@(row.MappingState == ConsumerMappingState.Suggested && _saveState != SaveState.Saving)" OnConfirm="() => ConfirmMappingAsync(row.Definition)" />
+                                    </td></tr>
+                                }
                                 @if (open)
                                 {
                                     var definition = row.Definition;
@@ -167,8 +222,8 @@
                                                 <div><dt>Consumer auth</dt><dd>@IntegrationConfigurationRules.AuthLabel(definition.ConsumerAuthentication)</dd></div>
                                                 <div><dt>Contract</dt><dd>@IntegrationConfigurationRules.ContractLabel(definition.ContractRelationship)</dd></div>
                                                 <div><dt>Health / worker URL</dt><dd>@(definition.HealthUrl ?? "Not configured") / @(definition.WorkerUrl ?? "Not configured")</dd></div>
-                                                <div><dt>Configuration</dt><dd>@row.ConfigurationDetail</dd></div>
-                                                <div><dt>IQR readiness</dt><dd>@row.ReviewReadinessDetail</dd></div>
+                                                <div><dt>Configuration status</dt><dd>@IntegrationConfigurationRules.Label(row.Configuration) · @row.ConfigurationDetail</dd></div>
+                                                <div><dt>Review readiness</dt><dd>@row.ReviewReadiness · @row.ReviewReadinessDetail</dd></div>
                                             </dl>
 
                                             @if (definition.Consumer.MappingState == ConsumerMappingState.Suggested && definition.Consumer.DisplayName is { } suggested)
@@ -182,7 +237,7 @@
                                                 </div>
                                             }
 
-                                            <div class="ip-contracts" data-testid="ip-contracts" role="group" aria-label="@($"Event contracts for {definition.DisplayName}")">
+                                            <div class="ip-contracts" data-testid="ip-contracts" role="group" tabindex="-1" @ref="_contractsFocus" id="@($"ip-contracts-{Slug(definition.Id)}")" aria-label="@($"Event contracts for {definition.DisplayName}")">
                                                 <h4>Event contracts (JSON Schema)</h4>
                                                 @foreach (var role in new[] { IntegrationContractRole.Producer, IntegrationContractRole.Consumer })
                                                 {
@@ -236,8 +291,8 @@
 
         @if (_catalog.Platforms.Any(p => p.TechnicalTopics.Count > 0))
         {
-            <ReviewDisclosure Text="Technical infrastructure" CollapseText="Hide technical infrastructure" Hint="@TechnicalHint()" TestId="ip-technical" Class="disclosure-inline">
-                <p class="ip-muted">Platform-support topics. They are not business integrations and are not reviewed as such.</p>
+            <ReviewDisclosure Text="Technical Event Hub topics" CollapseText="Hide technical Event Hub topics" Hint="@TechnicalHint()" TestId="ip-technical" Class="disclosure-inline">
+                <p class="ip-muted">Used by Debezium/Kafka Connect. These are platform-support topics, not business integrations, and are excluded from IQR business-integration counts.</p>
                 <ul class="ip-technical-list" data-testid="ip-technical-list">
                     @foreach (var topic in _catalog.Platforms.SelectMany(p => p.TechnicalTopics)) { <li><span class="ip-mono">@topic.Name</span> — @topic.Purpose</li> }
                 </ul>
@@ -249,6 +304,9 @@
 @code {
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = new();
 
+    /// <summary>Deep-link target from Integration Quality Review ("focus=" key): mappings, runtime or contracts. Applied once per value after load.</summary>
+    [Parameter] public string? Focus { get; set; }
+
     private enum SaveState { Idle, Saving, Saved, Failed }
 
     private IntegrationCatalog? _catalog;
@@ -259,6 +317,9 @@
     private readonly List<string> _notices = [];
     private string _search = "";
     private string _stateFilter = "";
+    private string _readinessFilter = "";
+    private string? _appliedFocus;
+    private string? _focusElementId;
     private string? _viewing;
     private string? _loadedFor;
     private string? _confirmingDelete;
@@ -268,6 +329,97 @@
     private EditState? _editing;
     private SaveState _saveState = SaveState.Idle;
     private string _saveMessage = "";
+    private string? _runtimeExpanded;
+    private string? _evidenceViewing;
+    private string _mappingAnnouncement = "";
+    private readonly HashSet<string> _mappingBusy = [];
+    private CancellationTokenSource _mappingCancellation = new();
+    private ElementReference _runtimeFocus;
+    private ElementReference _contractsFocus;
+    private bool _focusContracts;
+    private bool _focusRuntime;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusRuntime) { _focusRuntime = false; await _runtimeFocus.FocusAsync(); }
+        if (_focusContracts) { _focusContracts = false; await _contractsFocus.FocusAsync(); }
+    }
+
+    private void ReviewMappings() { _search = ""; _readinessFilter = ""; _stateFilter = nameof(IntegrationConfigurationState.NeedsConfirmation); }
+    private void ClearFilters() { _search = ""; _stateFilter = ""; _readinessFilter = ""; }
+
+    private string ActiveFilter() => string.Join(" · ", new[]
+    {
+        Enum.TryParse<IntegrationConfigurationState>(_stateFilter, out var state) ? IntegrationConfigurationRules.Label(state) : null,
+        _readinessFilter.Length > 0 ? $"Review readiness: {_readinessFilter}" : null,
+        _search.Length > 0 ? $"Search: {_search}" : null,
+    }.Where(x => x is not null));
+
+    /// <summary>Opens the integration's detail and moves focus to its contracts group — the one place contracts are managed.</summary>
+    private void ManageContracts(IntegrationDefinition definition)
+    {
+        _viewing = definition.Id;
+        _focusContracts = true;
+    }
+
+    /// <summary>Applies an Integration Quality Review deep link: the exact corrective place, never an automatic change.</summary>
+    private void ApplyFocus()
+    {
+        if (_catalog is null || Focus is not { Length: > 0 } focus || _appliedFocus == focus) return;
+        _appliedFocus = focus;
+        switch (focus)
+        {
+            case IntegrationReviewPrerunPresentation.FocusMappings:
+                ReviewMappings();
+                break;
+            case IntegrationReviewPrerunPresentation.FocusRuntime when _catalog.Platforms.FirstOrDefault() is { } platform:
+                BeginRuntime(platform);
+                break;
+            case IntegrationReviewPrerunPresentation.FocusContracts:
+                var target = _catalog.Integrations.Where(i => i.Enabled)
+                    .OrderBy(i => i.ContractRelationship == ContractRelationshipState.BothContractsAvailable)
+                    .ThenBy(i => i.DisplayName, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                if (target is not null) ManageContracts(target);
+                break;
+        }
+    }
+    private void ConfigureFor(IntegrationDefinition definition)
+    {
+        if (_catalog is not null && IntegrationsPanePresentation.Platform(_catalog, definition) is { } platform) BeginRuntime(platform);
+    }
+    private async Task TestMappingAsync(IntegrationDefinition definition)
+    {
+        if (!_mappingBusy.Add(definition.Id)) return;
+        var environmentId = Profile.Id;
+        var token = _mappingCancellation.Token;
+        _mappingAnnouncement = $"Testing mapping for {definition.DisplayName}…";
+        try
+        {
+            var result = await Api.CheckMappingAsync(environmentId, definition.Id, token);
+            if (Profile.Id != environmentId) return;
+            MappingEvidence.Record(environmentId, result);
+            _evidenceViewing = definition.Id;
+            _mappingAnnouncement = $"{definition.DisplayName}: {IntegrationMappingEvidenceCheck.Label(result.OverallState)}. View evidence for missing sources. Mapping unchanged.";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (Profile.Id != environmentId) return;
+            MappingEvidence.Record(environmentId, new() { IntegrationId = definition.Id, Topic = definition.EndpointOrTopic, SuggestedConsumer = definition.Consumer.DisplayName,
+                CompletedAt = DateTimeOffset.UtcNow, OverallState = IntegrationMappingEvidenceState.NotTestable,
+                Checks = [new() { Label = "Evidence service", State = IntegrationEvidenceState.Unavailable, Summary = "The evidence service did not answer. Retry the check; the mapping is unchanged.", MissingReason = "The evidence service did not answer. Retry the check; the mapping is unchanged." }] });
+            _evidenceViewing = definition.Id;
+            _mappingAnnouncement = "Mapping evidence unavailable. The mapping is unchanged.";
+        }
+        finally { _mappingBusy.Remove(definition.Id); }
+    }
+    public void Dispose() { _mappingCancellation.Cancel(); _mappingCancellation.Dispose(); }
+
+    private static string RuntimeStatus(IEnumerable<IntegrationRuntimeEvidenceSettings?> settings)
+    {
+        var counts = settings.Select(r => new[] { r?.EventHubMetadata == true, !string.IsNullOrWhiteSpace(r?.SubscriptionId), !string.IsNullOrWhiteSpace(r?.CheckpointContainerUrl), !string.IsNullOrWhiteSpace(r?.TelemetryWorkspaceId) }.Count(x => x)).ToList();
+        return counts.Count == 0 || counts.All(c => c == 0) ? "Not configured" : counts.All(c => c == 4) ? "Configured" : "Partially configured";
+    }
 
     private sealed record EditState(IntegrationDefinition? Original);
 
@@ -284,9 +436,14 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (_loadedFor == Profile.Id) return;
+        if (_loadedFor == Profile.Id) { ApplyFocus(); return; }
+        _mappingCancellation.Cancel();
+        _mappingCancellation.Dispose();
+        _mappingCancellation = new();
+        _mappingBusy.Clear(); _evidenceViewing = null; _appliedFocus = null;
         _loadedFor = Profile.Id;
         await LoadAsync(importLegacy: true);
+        ApplyFocus();
     }
 
     private async Task LoadAsync(bool importLegacy)
@@ -406,6 +563,8 @@
 
     private void BeginRuntime(IntegrationPlatform platform)
     {
+        _runtimeExpanded = platform.Id;
+        _focusRuntime = true;
         var r = platform.RuntimeEvidence;
         _runtime = new RuntimeModel
         {

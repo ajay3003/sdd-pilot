@@ -1432,7 +1432,7 @@
                the profile are imported once. *@
             @if (_activeTab == "integrations")
             {
-                <IntegrationsPane Profile="profile" />
+                <IntegrationsPane Profile="profile" Focus="@(InitialTab == "integrations" ? InitialFocus : null)" />
             }
 
         </div>
@@ -1570,6 +1570,9 @@ else if (FaSettings.Settings.Profiles.Count == 0)
 
     /// <summary>Target Environment to select initially ("profile=" key). Ignored when no such profile exists.</summary>
     [Parameter] public string? InitialProfileId { get; set; }
+
+    /// <summary>Corrective place inside the initial tab ("focus=" key); only the Integrations tab uses it (mappings, runtime, contracts).</summary>
+    [Parameter] public string? InitialFocus { get; set; }
 
     /// <summary>Expands the Authentication diagnostics panel (deep link from the Browser Automation Diagnostic).</summary>
     [Parameter] public bool OpenHeadlessAuthDiagnostic { get; set; }

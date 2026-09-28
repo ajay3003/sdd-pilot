@@ -36,6 +36,7 @@ public sealed class IntegrationQualityReviewEvidenceTests : BunitContext
             ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "M2LB DEV", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.bufetat.no/" },
         });
         Services.AddSingleton<IIntegrationCatalogApiService>(_api);
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         Services.AddSingleton(context.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
         Services.AddSingleton<IReportExportService, ReportExportService>();

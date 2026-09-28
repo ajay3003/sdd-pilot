@@ -17,6 +17,7 @@ public sealed class IntegrationQualityReviewIntegrationsDeepLinkTests : BunitCon
         Services.AddSingleton(Mock.Of<ITargetEnvironmentDetectionApiService>());
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         Services.AddSingleton<IIntegrationCatalogApiService>(new FakeIntegrationCatalogApi());
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         JSInterop.Mode = JSRuntimeMode.Loose;
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult("""
             {"activeProfileId":"dev","profiles":[

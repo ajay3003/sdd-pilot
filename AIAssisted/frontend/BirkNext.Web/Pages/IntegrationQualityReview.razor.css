@@ -64,3 +64,21 @@
     .iqr-adapter { grid-template-columns: 1fr auto; }
     .iqr-adapter-reason { grid-column: 1 / -1; }
 }
+
+/* Pre-run: Needs attention — one row per limitation with the one action that fixes it. */
+.iqr-attention-list { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; gap: .45rem; }
+.iqr-attention-item { display: grid; grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr) auto; gap: .15rem .9rem; align-items: baseline; padding: .4rem 0; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); min-width: 0; font-size: .88rem; }
+.iqr-attention-item:last-child { border-bottom: none; }
+.iqr-attention-label { font-weight: 600; }
+.iqr-attention-value { overflow-wrap: anywhere; }
+.iqr-attention-detail { grid-column: 2 / -1; font-size: .8rem; }
+.iqr-system-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem 1rem; margin-top: .35rem; min-width: 0; }
+.iqr-sources { list-style: none; margin: .2rem 0 .45rem; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .35rem .9rem; }
+.iqr-source { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; font-size: .86rem; min-width: 0; }
+.iqr-domain-action { display: inline-block; margin-top: .35rem; font-size: .82rem; }
+.iqr-table-compact { min-width: 40rem; }
+@media (max-width: 767px) {
+    .iqr-attention-item { grid-template-columns: minmax(0, 1fr) auto; }
+    .iqr-attention-value { grid-column: 1 / -1; grid-row: 2; }
+    .iqr-attention-detail { grid-column: 1 / -1; }
+}

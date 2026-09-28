@@ -28,6 +28,7 @@ public sealed class TargetEnvironmentUiPolishTests : BunitContext
         Services.AddSingleton(_api.Object);
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         Services.AddSingleton<IIntegrationCatalogApiService>(new FakeIntegrationCatalogApi { Catalog = M2lbFixture.Catalog() });
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         JSInterop.Mode = JSRuntimeMode.Loose;
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult($$"""
         {"activeProfileId":"dev","profiles":[

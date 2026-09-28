@@ -816,7 +816,7 @@ else if (_settings is not null)
                     <p class="settings-card-note">
                         Configure the environments used for reviews. The active environment is used when a review runs. Select an environment below to inspect or edit it.
                     </p>
-                    <FrontendAnalysisSettings InitialTab="@_initialTab" InitialProfileId="@_initialProfileId"
+                    <FrontendAnalysisSettings InitialTab="@_initialTab" InitialProfileId="@_initialProfileId" InitialFocus="@_initialFocus"
                                               OpenHeadlessAuthDiagnostic="@(_openPanel == "headless-auth")" />
                 </div>
             }
@@ -1497,6 +1497,7 @@ else if (_settings is not null)
     private string? _initialTab;
     /// <summary>Optional "profile=" key: the Target Environment to open (e.g. from the Browser Automation Diagnostic).</summary>
     private string? _initialProfileId;
+    private string? _initialFocus;
     /// <summary>Optional "open=" key: a panel to expand inside the hosted section ("headless-auth").</summary>
     private string? _openPanel;
     private string _navSearch     = "";
@@ -2114,6 +2115,12 @@ else if (_settings is not null)
                     {
                         var value = part.Substring("profile=".Length);
                         _initialProfileId = string.IsNullOrWhiteSpace(value) ? null : Uri.UnescapeDataString(value);
+                    }
+                    // Corrective place inside the tab, e.g. "…&tab=integrations&focus=mappings" from Integration Quality Review.
+                    else if (part.StartsWith("focus="))
+                    {
+                        var value = part.Substring("focus=".Length);
+                        _initialFocus = string.IsNullOrWhiteSpace(value) ? null : Uri.UnescapeDataString(value);
                     }
                     else if (part.StartsWith("open="))
                     {

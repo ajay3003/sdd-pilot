@@ -1,0 +1,12 @@
+/* Sticky left: the panel sits in a full-width table cell of a horizontally scrolling table; the Test button is in the last column, so it stays in view. */
+.mapping-evidence { position: sticky; left: .5rem; box-sizing: border-box; width: min(65rem, calc(100cqw - 2rem)); max-width: calc(100vw - 6rem); white-space: normal; overflow-wrap: anywhere; padding: .5rem; }
+.mapping-evidence:focus { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+h4, h5 { margin: .7rem 0 .35rem; }
+h4 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+p, li { font-size: .85rem; }
+ul { padding-left: 1.2rem; margin: 0; }
+.mapping-badge { display: inline-block; padding: .05rem .5rem; border: 1px solid var(--clr-border); border-radius: 999px; font-size: .75rem; font-weight: 600; background: var(--clr-surface); color: var(--clr-text, inherit); margin-left: .35rem; }
+.mapping-subject { font-family: var(--font-mono); }
+.mapping-muted { color: var(--clr-text-muted); }
+.mapping-mono { font-family: var(--font-mono); }
+.mapping-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0 .3rem; }

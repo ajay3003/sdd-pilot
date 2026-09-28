@@ -21,6 +21,7 @@ public sealed class PerformanceThresholdOwnershipTests : BunitContext
         Services.AddSingleton(Mock.Of<ITargetEnvironmentDetectionApiService>());
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         Services.AddSingleton<IIntegrationCatalogApiService>(new FakeIntegrationCatalogApi());
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         JSInterop.Mode = JSRuntimeMode.Loose;
         JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult("""
             {"activeProfileId":"dev","profiles":[{"id":"dev","name":"M2LB DEV","environmentType":"Development","targetUrl":"https://m2lbdev.example.test/"}]}

@@ -18,6 +18,7 @@ public sealed class IntegrationsPaneTests : BunitContext
     public IntegrationsPaneTests()
     {
         Services.AddSingleton<IIntegrationCatalogApiService>(_api);
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -53,8 +54,8 @@ public sealed class IntegrationsPaneTests : BunitContext
         consumers.Count(c => c.GetAttribute("data-mapping") == nameof(ConsumerMappingState.Confirmed)).Should().Be(1);
         consumers.Count(c => c.GetAttribute("data-mapping") == nameof(ConsumerMappingState.Suggested)).Should().Be(8);
         consumers.Count(c => c.GetAttribute("data-mapping") == nameof(ConsumerMappingState.NeedsConfirmation)).Should().Be(7);
-        consumers.Where(c => c.GetAttribute("data-mapping") == nameof(ConsumerMappingState.Suggested)).Should().OnlyContain(c => c.TextContent.Contains("suggested"));
-        consumers.Where(c => c.GetAttribute("data-mapping") == nameof(ConsumerMappingState.NeedsConfirmation)).Should().OnlyContain(c => c.TextContent.Contains("Needs confirmation"));
+        consumers.Where(c => c.GetAttribute("data-mapping") == nameof(ConsumerMappingState.Suggested)).Should().OnlyContain(c => c.TextContent.Contains("Suggested"));
+        consumers.Where(c => c.GetAttribute("data-mapping") == nameof(ConsumerMappingState.NeedsConfirmation)).Should().OnlyContain(c => c.TextContent.Contains("Not assigned"));
     }
 
     [Fact]

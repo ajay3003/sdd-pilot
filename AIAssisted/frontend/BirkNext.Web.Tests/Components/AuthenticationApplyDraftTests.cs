@@ -34,6 +34,7 @@ public sealed partial class AuthenticationApplyDraftTests : BunitContext
         Services.AddSingleton(_api.Object);
         Services.AddSingleton<IEndpointDiscoveryService, EndpointDiscoveryService>();
         Services.AddSingleton<IIntegrationCatalogApiService>(_integrations);
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         JSInterop.SetupVoid("birkNextStorage.setItem", _ => true).SetVoidResult();
         JSInterop.SetupVoid("birkNextStorage.setDiscovery", _ => true).SetVoidResult();
         JSInterop.Setup<string?>("birkNextStorage.getDiscovery").SetResult(null);

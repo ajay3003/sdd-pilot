@@ -24,6 +24,7 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
             ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "M2LB DEV", EnvironmentType = FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.bufetat.no/" },
         });
         Services.AddSingleton<IIntegrationCatalogApiService>(_api);
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         Services.AddSingleton(context.Object);
         Services.AddSingleton(Mock.Of<IWorkspaceSessionService>());
         Services.AddSingleton<IReportExportService, ReportExportService>();
@@ -47,15 +48,16 @@ public sealed class IntegrationQualityReviewPageTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=iqr-summary-systems]").TextContent.Should().Be("1");
         cut.Find("[data-testid=iqr-summary-topics]").TextContent.Should().Be("16");
-        cut.Find("[data-testid=iqr-system-consumers]").TextContent.Should().Contain("1 confirmed").And.Contain("8 suggested").And.Contain("7 needing confirmation");
-        cut.Find("[data-testid=iqr-system]").TextContent.Should().Contain("Not configured for 16 topic(s)", "an unknown consumer group is stated, never invented");
+        cut.Find("[data-testid=iqr-system-consumers]").TextContent.Should().Contain("1 confirmed").And.Contain("8 suggested").And.Contain("7 unconfirmed");
+        cut.Find("[data-testid=iqr-system-groups]").TextContent.Should().Be("Not configured for 16 topics", "an unknown consumer group is stated, never invented");
     }
 
     [Fact]
     public void ReadinessIsCapabilitySpecificAndLimitationsDoNotBlock()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-readiness] h2").TextContent.Should().Be("Can run with limitations");
+        cut.Find("[data-testid=iqr-summary-readiness]").TextContent.Should().Be("Run with limitations");
+        cut.Find("[data-testid=iqr-readiness]").GetAttribute("data-headline").Should().Be("Can run with limitations");
         cut.Find("[data-testid=iqr-run]").HasAttribute("disabled").Should().BeFalse();
         cut.Find("[data-testid=iqr-run]").TextContent.Trim().Should().Be("Run with limitations");
         var cards = cut.FindAll("[data-testid=iqr-domain-readiness-card]");

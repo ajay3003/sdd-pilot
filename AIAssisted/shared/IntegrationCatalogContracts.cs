@@ -22,6 +22,48 @@ public enum IntegrationAuthMechanism { NotConfigured, Sas, ManagedIdentity, Entr
 public enum ConsumerMappingState { NeedsConfirmation, Suggested, Confirmed }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationMappingEvidenceState { StrongEvidence, PartialEvidence, NoSupportingEvidence, NotTestable, Error }
+
+/// <summary>A bounded evidence observation, never a configuration change or a mapping confirmation.</summary>
+public sealed record IntegrationMappingEvidenceItem
+{
+    public string CheckId { get; init; } = "";
+    public string Label { get; init; } = "";
+    public IntegrationEvidenceState State { get; init; }
+    public string Summary { get; init; } = "";
+    public IntegrationEvidenceSource Provenance { get; init; }
+    public DateTimeOffset CapturedAt { get; init; }
+    public IntegrationEvidenceItemFreshness Freshness { get; init; }
+    public string? MissingReason { get; init; }
+    public bool SupportsMapping { get; init; }
+    /// <summary>True only for evidence that ties this exact topic to this exact consumer (subscription, attributed checkpoint or topic-scoped
+    /// processing telemetry). The only kind of item that can make a check Strong evidence — and even then it never confirms the mapping.</summary>
+    public bool DirectRelationship { get; init; }
+}
+
+/// <summary>Session snapshot of a read-only mapping evidence check. Existing providers do not establish an exact topic-to-application
+/// relationship, so runtime reads cannot currently produce StrongEvidence. Evidence never changes Suggested → Confirmed.</summary>
+public sealed record IntegrationMappingEvidenceCheck
+{
+    public string IntegrationId { get; init; } = "";
+    public string? Topic { get; init; }
+    public string? SuggestedConsumer { get; init; }
+    public DateTimeOffset StartedAt { get; init; }
+    public DateTimeOffset CompletedAt { get; init; }
+    public IntegrationMappingEvidenceState OverallState { get; init; }
+    public List<IntegrationMappingEvidenceItem> Checks { get; init; } = [];
+    public List<string> ManualFollowUp { get; init; } = [];
+    public static string Label(IntegrationMappingEvidenceState state) => state switch
+    {
+        IntegrationMappingEvidenceState.StrongEvidence => "Strong evidence",
+        IntegrationMappingEvidenceState.PartialEvidence => "Partial evidence",
+        IntegrationMappingEvidenceState.NoSupportingEvidence => "No supporting evidence",
+        IntegrationMappingEvidenceState.NotTestable => "Not testable",
+        _ => "Error",
+    };
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ContractRelationshipState { NotConfigured, ProducerContractAvailable, ConsumerContractAvailable, BothContractsAvailable, RelationshipVerified }
 
 /// <summary>Configuration completeness only. Never runtime health and never IQR readiness; missing metadata is never "Failed".</summary>

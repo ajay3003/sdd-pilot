@@ -7,6 +7,17 @@ namespace BirkNext.Web.Tests.Integration;
 /// <summary>In-memory <see cref="IIntegrationCatalogApiService"/> for component tests; records calls, performs no HTTP.</summary>
 public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
 {
+    public Func<string, Task<IntegrationMappingEvidenceCheck>>? MappingCheck { get; set; }
+    public Task<IntegrationMappingEvidenceCheck> CheckMappingAsync(string environmentId, string integrationId, CancellationToken ct = default)
+    {
+        Calls.Add("mapping-evidence:" + integrationId);
+        return MappingCheck?.Invoke(integrationId) ?? Task.FromResult(new IntegrationMappingEvidenceCheck
+        {
+            IntegrationId = integrationId, CompletedAt = DateTimeOffset.UtcNow, OverallState = IntegrationMappingEvidenceState.NotTestable,
+            Checks = [new() { Label = "Runtime evidence", State = IntegrationEvidenceState.NotConfigured, MissingReason = "Runtime evidence sources are not enabled.", Summary = "Runtime evidence sources are not enabled." }],
+            ManualFollowUp = ["Confirm only from a trusted source."],
+        });
+    }
     public IntegrationCatalog Catalog { get; set; } = new();
     public IntegrationReviewReadiness Readiness { get; set; } = new() { Headline = "Cannot run", Reasons = ["No enabled integration is configured."] };
     public IntegrationReviewResult? Result { get; set; }
@@ -176,7 +187,12 @@ public static class M2lbFixture
             d == IntegrationReviewDomain.Configuration ? IntegrationDomainReadiness.Ready
             : d is IntegrationReviewDomain.Connectivity or IntegrationReviewDomain.Security or IntegrationReviewDomain.Observability ? IntegrationDomainReadiness.Limited
             : IntegrationDomainReadiness.NotAssessable, $"{d} explanation")).ToList(),
+        EvidenceAdapters = [.. new[] { ("Event Hub metadata", IntegrationEvidenceSource.AzureMetadata), ("Consumer groups (Azure Resource Manager)", IntegrationEvidenceSource.AzureResourceManager),
+            ("Consumer checkpoints (blob checkpoint store)", IntegrationEvidenceSource.CheckpointStore), ("Consumer telemetry (Application Insights)", IntegrationEvidenceSource.ApplicationInsights) }
+            .Select(a => new IntegrationEvidenceAdapterStatus { Adapter = a.Item1 + " · M2LB DEV Event Hubs", Source = a.Item2, State = IntegrationEvidenceState.NotConfigured, Reason = AzureDisabled })],
     };
+
+    public const string AzureDisabled = "Azure runtime evidence is disabled for this BirkNext instance (IntegrationReview:Azure:Enabled is not true).";
 
     private static IntegrationCheck Check(string id, IntegrationReviewDomain domain, IntegrationCheckScope scope, string subject, IntegrationCheckStatus status, string explanation, IntegrationEvidenceSource source = IntegrationEvidenceSource.Configuration) => new()
     {

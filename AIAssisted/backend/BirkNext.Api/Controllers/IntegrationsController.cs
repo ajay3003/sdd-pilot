@@ -14,6 +14,19 @@ namespace BirkNext.Api.Controllers;
 [Route("api/integrations")]
 public sealed class IntegrationsController(IIntegrationCatalogService catalog) : ControllerBase
 {
+    [HttpPost("{id}/mapping-evidence")]
+    public async Task<ActionResult<IntegrationMappingEvidenceCheck>> CheckMapping([FromQuery] string environmentId, string id,
+        [FromServices] IntegrationMappingEvidenceService evidence, [FromServices] IIntegrationContractStore contracts, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        // No environment type/URL: GetAsync must never attach seed records during a read-only check.
+        var configured = await catalog.GetAsync(environmentId, null, null, ct);
+        var definition = configured.Integrations.FirstOrDefault(i => i.Id == id);
+        if (definition is null) return NotFound();
+        return Ok(await evidence.CheckAsync(definition, configured.Platforms.FirstOrDefault(p => p.Id == definition.PlatformId),
+            new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)), ct));
+    }
+
     [HttpGet]
     public async Task<ActionResult<IntegrationCatalog>> Get([FromQuery] string environmentId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct));

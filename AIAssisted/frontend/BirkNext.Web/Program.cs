@@ -104,6 +104,7 @@ builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkfl
 builder.Services.AddScoped<IWorkflowReadinessService, WorkflowReadinessService>();
 builder.Services.AddScoped<IWorkspaceAutoSaveService, WorkspaceAutoSaveService>();
 builder.Services.AddScoped<RuntimeReviewSessionService>();
+builder.Services.AddScoped<IntegrationMappingEvidenceSession>();
 builder.Services.AddScoped<QualityReviewSessionService>();
 builder.Services.AddScoped<ApplicationRuntimeResetService>();
 builder.Services.AddScoped<TaskAlignmentSessionService>();

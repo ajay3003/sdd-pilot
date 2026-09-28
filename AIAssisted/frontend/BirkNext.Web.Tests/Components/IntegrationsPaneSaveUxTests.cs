@@ -22,6 +22,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     public IntegrationsPaneSaveUxTests()
     {
         Services.AddSingleton<IIntegrationCatalogApiService>(_api);
+        Services.AddSingleton(new IntegrationMappingEvidenceSession());
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -37,7 +38,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     public void ThePaneStatesThatChangesAreSavedImmediately()
     {
         var cut = Open();
-        cut.Find("[data-testid=ip-save-note]").TextContent.Should().Contain("Integration changes are saved immediately.");
+        cut.Find("[data-testid=ip-save-note]").TextContent.Should().Be("Integration changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.");
         var status = cut.Find("[data-testid=ip-save-status]");
         status.GetAttribute("role").Should().Be("status");
         status.GetAttribute("aria-live").Should().Be("polite");
@@ -151,7 +152,7 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     public void RuntimeEvidenceSourcesAreEditedAsIdentifiersAndASasUrlIsRejected()
     {
         var cut = Open();
-        cut.Find("[data-testid^=ip-runtime-] > button").Click();
+        cut.Find(".disclosure[data-testid^=ip-runtime-] > button").Click();
         cut.Find("[data-testid=ip-runtime-summary]").TextContent.Should().Contain("Not configured").And.Contain("no lag threshold");
         cut.Find("[data-testid=ip-runtime-edit]").Click();
         cut.Find("[data-testid=ip-runtime-checkpoint]").Change("https://acct.blob.core.windows.net/checkpoints?sv=2024&sig=abc");

@@ -1,0 +1,77 @@
+@using BirkNext.Integrations
+@* Result of a read-only mapping evidence check. Evidence strength and mapping provenance are shown side by side and never merged:
+   Strong evidence leaves a Suggested mapping Suggested until a person presses Confirm. *@
+<section class="mapping-evidence" tabindex="-1" @ref="_panel" aria-labelledby="@_headingId" data-testid="mapping-evidence" data-state="@Result.OverallState">
+    <h4 id="@_headingId">Mapping evidence <span class="mapping-badge" data-testid="mapping-state">@IntegrationMappingEvidenceCheck.Label(Result.OverallState)</span></h4>
+    <p>
+        <span class="mapping-subject">@(Result.Topic ?? "Topic not configured") → @(Result.SuggestedConsumer ?? "Consumer not assigned")</span>
+        @if (ConsumerState is ConsumerMappingState.Suggested or ConsumerMappingState.Confirmed) { <span class="mapping-badge" data-testid="mapping-provenance">@ConsumerState</span> }
+    </p>
+    <p class="mapping-muted" data-testid="mapping-meaning">@Meaning(Result.OverallState)</p>
+    <p class="mapping-muted">Checked <time datetime="@Result.CompletedAt.ToString("O")">@Result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") UTC</time> · session snapshot; nothing was changed.</p>
+
+    <h5>Evidence found</h5>
+    @if (_found.Count == 0) { <p class="mapping-muted" data-testid="mapping-found">No current evidence was found.</p> }
+    else
+    {
+        <ul data-testid="mapping-found">
+            @foreach (var check in _found)
+            { <li><strong>@check.Label:</strong> @check.Summary @if (check.Freshness != IntegrationEvidenceItemFreshness.Unknown) { <span class="mapping-muted">· @IntegrationReviewLabels.ItemFreshness(check.Freshness)</span> }</li> }
+        </ul>
+    }
+
+    <h5>What’s missing</h5>
+    <ul data-testid="mapping-missing">
+        @foreach (var check in _missing)
+        { <li><strong>@check.Label — @MissingState(check):</strong> @(check.MissingReason ?? check.Summary)</li> }
+    </ul>
+
+    <h5>Manual follow-up</h5>
+    <ul data-testid="mapping-follow-up">@foreach (var item in Result.ManualFollowUp) { <li>@item</li> }</ul>
+
+    <div class="mapping-actions">
+        @if (CanConfirm) { <button type="button" class="btn-secondary" data-testid="mapping-confirm" @onclick="OnConfirm">Confirm mapping</button> }
+        @if (CanConfigure && Result.OverallState is not IntegrationMappingEvidenceState.StrongEvidence)
+        { <button type="button" class="btn-secondary" data-testid="mapping-configure" @onclick="OnConfigure">Configure runtime evidence</button> }
+    </div>
+    @if (CanConfigure && Result.OverallState == IntegrationMappingEvidenceState.NotTestable) { <p class="mapping-muted">Configure runtime evidence and run the check again.</p> }
+
+    <ReviewDisclosure Text="Technical evidence" CollapseText="Hide technical evidence" TestId="mapping-technical" Class="disclosure-inline">
+        <ul>@foreach (var check in Result.Checks) { <li><span class="mapping-mono">@check.CheckId</span> · @check.Label · @IntegrationReviewLabels.EvidenceState(check.State) · @IntegrationReviewLabels.Source(check.Provenance) · captured @check.CapturedAt.ToUniversalTime().ToString("u") · @IntegrationReviewLabels.ItemFreshness(check.Freshness)</li> }</ul>
+    </ReviewDisclosure>
+</section>
+@code {
+    private ElementReference _panel;
+    private readonly string _headingId = "mapping-evidence-" + Guid.NewGuid().ToString("N")[..8];
+    private List<IntegrationMappingEvidenceItem> _found = [];
+    private List<IntegrationMappingEvidenceItem> _missing = [];
+
+    [Parameter, EditorRequired] public IntegrationMappingEvidenceCheck Result { get; set; } = new();
+    [Parameter] public ConsumerMappingState ConsumerState { get; set; }
+    [Parameter] public bool CanConfigure { get; set; }
+    [Parameter] public EventCallback OnConfigure { get; set; }
+    [Parameter] public bool CanConfirm { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        // Stale or historical items are missing CURRENT evidence; they are listed once, as stale, never also as found.
+        static bool Stale(IntegrationMappingEvidenceItem c) => c.Freshness is IntegrationEvidenceItemFreshness.Stale or IntegrationEvidenceItemFreshness.Historical;
+        _found = Result.Checks.Where(c => c.State == IntegrationEvidenceState.Available && !Stale(c)).ToList();
+        _missing = Result.Checks.Where(c => c.State != IntegrationEvidenceState.Available || Stale(c)).ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (firstRender) await _panel.FocusAsync(); }
+
+    private static string MissingState(IntegrationMappingEvidenceItem check) =>
+        check.State == IntegrationEvidenceState.Available ? "Stale" : IntegrationReviewLabels.EvidenceState(check.State);
+
+    private static string Meaning(IntegrationMappingEvidenceState state) => state switch
+    {
+        IntegrationMappingEvidenceState.StrongEvidence => "Direct evidence links this topic to this consumer. The mapping is not confirmed until you confirm it.",
+        IntegrationMappingEvidenceState.PartialEvidence => "Supporting evidence exists, but the direct topic → consumer relationship is not proven.",
+        IntegrationMappingEvidenceState.NoSupportingEvidence => "Available evidence does not establish the relationship. That does not mean the mapping is wrong.",
+        IntegrationMappingEvidenceState.NotTestable => "The evidence needed for this check is not available, so it could not be tested. This is not a failure.",
+        _ => "An evidence source failed unexpectedly; no conclusion was drawn about the mapping.",
+    };
+}

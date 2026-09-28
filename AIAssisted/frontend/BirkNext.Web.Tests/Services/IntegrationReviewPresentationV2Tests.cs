@@ -14,7 +14,8 @@ public sealed class IntegrationReviewPresentationV2Tests
         groups.Should().ContainSingle();
         var tiltak = groups[0].Rows.Single(r => r.Definition.Id.EndsWith("dbo.Tiltak"));
         tiltak.TopicShort.Should().Be("…dbo.Tiltak");
-        tiltak.Consumer.Should().Be("Tjeneste API (suggested)");
+        tiltak.Consumer.Should().Be("Tjeneste API");
+        tiltak.MappingState.Should().Be(ConsumerMappingState.Suggested);
     }
 
     [Fact]

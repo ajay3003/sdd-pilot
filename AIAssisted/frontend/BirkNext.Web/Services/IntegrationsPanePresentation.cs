@@ -22,8 +22,8 @@ public sealed record IntegrationRow(
 public sealed record IntegrationGroup(string SystemName, IntegrationPlatform? Platform, IReadOnlyList<IntegrationRow> Rows);
 
 /// <summary>
-/// Presentation of the integration catalog. Configuration status (is the record complete?) and IQR readiness (what can the
-/// review assess for it?) are computed separately and never substituted for one another.
+/// Presentation of the integration catalog. Configuration status (is the record complete?) and Review readiness (what can
+/// Integration Quality Review assess for it?) are computed separately and never substituted for one another.
 /// </summary>
 public static class IntegrationsPanePresentation
 {
@@ -40,14 +40,17 @@ public static class IntegrationsPanePresentation
         catalog.Platforms.FirstOrDefault(p => p.Id == definition.PlatformId);
 
     /// <summary>Rows grouped by integration system (16 CDC topics are one system), filtered by search text and configuration state.</summary>
-    public static IReadOnlyList<IntegrationGroup> Groups(IntegrationCatalog catalog, string? search = null, IntegrationConfigurationState? state = null)
+    public static IReadOnlyList<IntegrationGroup> Groups(IntegrationCatalog catalog, string? search = null, IntegrationConfigurationState? state = null, string? readiness = null)
     {
         var rows = catalog.Integrations.Select(i => Row(catalog, i))
             .Where(r => state is null || r.Configuration == state)
+            .Where(r => string.IsNullOrWhiteSpace(readiness) || r.ReviewReadiness == readiness)
             .Where(r => string.IsNullOrWhiteSpace(search)
                 || r.Definition.DisplayName.Contains(search, StringComparison.OrdinalIgnoreCase)
                 || (r.Topic ?? "").Contains(search, StringComparison.OrdinalIgnoreCase)
                 || r.Consumer.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(r => r.Configuration switch { IntegrationConfigurationState.NeedsConfiguration => 0, IntegrationConfigurationState.NeedsConfirmation => 1, IntegrationConfigurationState.Ready => 2, _ => 3 })
+            .ThenBy(r => r.Definition.DisplayName, StringComparer.OrdinalIgnoreCase).ThenBy(r => r.Definition.Id, StringComparer.Ordinal)
             .ToList();
         return rows.GroupBy(r => r.Definition.SystemName ?? (r.Definition.PlatformId is null ? "Other integrations" : Platform(catalog, r.Definition)?.Name ?? "Other integrations"))
             .Select(g => new IntegrationGroup(g.Key, Platform(catalog, g.First().Definition), g.ToList()))
@@ -64,10 +67,8 @@ public static class IntegrationsPanePresentation
             : platform?.TopicPrefix is { Length: > 0 } prefix && topic.StartsWith(prefix + ".", StringComparison.Ordinal) && topic.LastIndexOf(".dbo.", StringComparison.Ordinal) is var at and >= 0
                 ? "…" + topic[(at + 1)..]
             : topic;
-        var consumer = definition.Consumer.DisplayName is { Length: > 0 } name
-            ? definition.Consumer.MappingState == ConsumerMappingState.Suggested ? $"{name} (suggested)" : name
-            : "Needs confirmation";
-        var (readiness, readinessDetail) = ReviewReadiness(definition);
+        var consumer = definition.Consumer.DisplayName is { Length: > 0 } name ? name : "Not assigned";
+        var (readiness, readinessDetail) = ReviewReadiness(definition, platform, state);
         return new IntegrationRow(definition, shortName, topic, topicShort, ProducerShort(definition.Producer), consumer, definition.Consumer.MappingState, state,
             missing.Count > 0 ? $"Missing: {string.Join(", ", missing)}" : unconfirmed.Count > 0 ? $"To confirm: {string.Join(", ", unconfirmed)}" : "Configuration complete",
             readiness, readinessDetail);
@@ -77,7 +78,8 @@ public static class IntegrationsPanePresentation
     /// What Integration Quality Review can assess for this integration — not whether its configuration is complete. An unknown
     /// consumer group or missing contract limits only the checks that need them.
     /// </summary>
-    public static (string Label, string Detail) ReviewReadiness(IntegrationDefinition definition)
+    public static (string Label, string Detail) ReviewReadiness(IntegrationDefinition definition, IntegrationPlatform? platform = null,
+        IntegrationConfigurationState configuration = IntegrationConfigurationState.Ready)
     {
         if (!definition.Enabled) return ("Not included", "Disabled integrations are not reviewed.");
         if (definition.Kind != IntegrationKind.EventHub) return ("Configuration only", $"Domain review for {IntegrationConfigurationRules.KindLabel(definition.Kind)} is not implemented yet.");
@@ -85,8 +87,24 @@ public static class IntegrationsPanePresentation
         if (definition.Consumer.MappingState != ConsumerMappingState.Confirmed) limits.Add("consumer not confirmed");
         if (string.IsNullOrWhiteSpace(definition.ConsumerGroup)) limits.Add("consumer group unknown (no checkpoint review)");
         if (definition.ContractRelationship == ContractRelationshipState.NotConfigured) limits.Add("no contract (no compatibility review)");
-        return limits.Count == 0 ? ("Ready", "All configured prerequisites are present.") : ("Partial", "Can run with limitations: " + string.Join("; ", limits) + ".");
+        if (platform is not null)
+        {
+            var runtime = platform.RuntimeEvidence;
+            var missingRuntime = new List<string>();
+            if (runtime?.EventHubMetadata != true) missingRuntime.Add("Event Hub metadata");
+            if (string.IsNullOrWhiteSpace(runtime?.CheckpointContainerUrl)) missingRuntime.Add("checkpoint evidence");
+            if (string.IsNullOrWhiteSpace(runtime?.TelemetryWorkspaceId)) missingRuntime.Add("runtime telemetry");
+            if (missingRuntime.Count > 0) limits.Add("not configured: " + string.Join(", ", missingRuntime));
+        }
+        if (limits.Count == 0) return ("Ready", "All configured prerequisites are present.");
+        var lead = configuration == IntegrationConfigurationState.NeedsConfiguration
+            ? "Some configuration is missing, so the checks that need it are not assessed."
+            : "Configuration is usable, but some runtime, checkpoint, consumer or contract evidence is unavailable.";
+        return ("Partial", $"{lead} Missing: {string.Join("; ", limits)}. Partial is not a failure; the review runs with limitations.");
     }
+
+    /// <summary>Review readiness labels in filter order. Values are the ones <see cref="ReviewReadiness"/> produces — no extra states.</summary>
+    public static readonly string[] ReadinessLabels = ["Ready", "Partial", "Configuration only", "Not included"];
 
     private static string ProducerShort(string? producer) => producer switch
     {
@@ -99,6 +117,7 @@ public static class IntegrationsPanePresentation
     {
         IntegrationConfigurationState.Ready => "ready",
         IntegrationConfigurationState.Disabled => "muted",
+        IntegrationConfigurationState.NeedsConfiguration => "warning",
         _ => "attention",
     };
 
