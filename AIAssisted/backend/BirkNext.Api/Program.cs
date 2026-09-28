@@ -402,6 +402,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IntegrationMapping
 // Application messaging (Wolverine) evidence: syntax-only analysis of uploaded source + read-only handler telemetry (Azure-gated).
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ApplicationMessaging.IApplicationMessagingStore, BirkNext.Api.Services.Integrations.ApplicationMessaging.ApplicationMessagingStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ApplicationMessaging.IApplicationMessagingTelemetrySource, BirkNext.Api.Services.Integrations.ApplicationMessaging.LogAnalyticsApplicationMessagingSource>();
+// Service Bus transport evidence: read-only Azure Resource Manager GETs (Azure-gated); never the data plane.
+builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.ServiceBus.IServiceBusMetadataSource, BirkNext.Api.Services.Integrations.ServiceBus.ArmServiceBusMetadataSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ServiceBus.ServiceBusEvidenceService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

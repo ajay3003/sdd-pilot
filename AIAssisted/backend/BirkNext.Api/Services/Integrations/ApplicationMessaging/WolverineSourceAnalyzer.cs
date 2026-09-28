@@ -14,6 +14,9 @@ namespace BirkNext.Api.Services.Integrations.ApplicationMessaging;
 /// </summary>
 public static class WolverineSourceAnalyzer
 {
+    /// <summary>2 = routes carry resolved Service Bus entity names and direct Azure SDK routes are recorded.</summary>
+    public const int Version = 2;
+
     private static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);
     private static readonly string[] HandlerMethods = ["Handle", "HandleAsync", "Handles", "HandlesAsync", "Consume", "ConsumeAsync", "Consumes", "ConsumesAsync"];
     private static readonly string[] RetryActions = ["RetryWithCooldown", "RetryTimes", "RetryOnce", "ScheduleRetry", "ScheduleRetryIndefinitely", "RetryTwice"];
@@ -33,15 +36,16 @@ public static class WolverineSourceAnalyzer
             .Select(f => { var tree = CSharpSyntaxTree.ParseText(BlankPrimaryConstructors(f.Content), Parse, f.Path); return new Code(f.Path, tree, tree.GetCompilationUnitRoot(), Owner(projects, f.Path)); })
             .Where(c => c.Project is { IsTest: false })
             .ToList();
+        var settings = Settings(files, projects);
         var wrappers = Wrappers(code);
         var observability = ObservabilitySources(code);
         var applications = projects.Where(p => !p.IsTest && code.Any(c => c.Project == p && System.IO.Path.GetFileName(c.Path) == "Program.cs"))
             .OrderBy(p => p.Name, StringComparer.Ordinal)
-            .Select(p => Application(p, projects, code, wrappers, observability))
+            .Select(p => Application(p, projects, code, wrappers, observability, settings))
             .ToList();
         return new ApplicationMessagingEvidenceSet
         {
-            EnvironmentId = environmentId, AnalyzedAt = now, Archives = archives.ToList(), Applications = applications,
+            EnvironmentId = environmentId, AnalyzedAt = now, AnalyzerVersion = Version, Archives = archives.ToList(), Applications = applications,
             Limitations = SetLimitations(applications, projects, code),
         };
     }
@@ -92,6 +96,40 @@ public static class WolverineSourceAnalyzer
             result.Add(new Project(name, dir, file.Path, packages, references, xml.Descendants().FirstOrDefault(e => e.Name.LocalName == "Version")?.Value, isTest));
         }
         return result;
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex SecretKey = new("(connectionstring|key|secret|password|token|sas|credential|pwd)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    private static readonly System.Text.RegularExpressions.Regex SecretValue = new("(sharedaccesskey|accountkey|password=|pwd=|sig=|secret=)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>Non-secret string values of each project's base appsettings.json, flattened to "A:B:C". Used only to resolve entity names.</summary>
+    private static Dictionary<Project, Dictionary<string, (string Value, SourceLocation Where)>> Settings(IReadOnlyList<SourceFile> files, List<Project> projects)
+    {
+        var result = new Dictionary<Project, Dictionary<string, (string, SourceLocation)>>();
+        foreach (var file in files.Where(f => System.IO.Path.GetFileName(f.Path).Equals("appsettings.json", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (Owner(projects, file.Path) is not { } project) continue;
+            var values = new Dictionary<string, (string, SourceLocation)>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(file.Content, new System.Text.Json.JsonDocumentOptions { CommentHandling = System.Text.Json.JsonCommentHandling.Skip, AllowTrailingCommas = true });
+                void Walk(System.Text.Json.JsonElement e, string prefix)
+                {
+                    if (e.ValueKind == System.Text.Json.JsonValueKind.Object) foreach (var p in e.EnumerateObject()) Walk(p.Value, prefix.Length == 0 ? p.Name : $"{prefix}:{p.Name}");
+                    else if (e.ValueKind == System.Text.Json.JsonValueKind.String && e.GetString() is { Length: > 0 and <= 200 } v && !SecretKey.IsMatch(prefix) && !SecretValue.IsMatch(v))
+                        values[prefix] = (v, new SourceLocation(file.Path, LineOf(file.Content, prefix.Split(':').Last())));
+                }
+                Walk(doc.RootElement, "");
+            }
+            catch (System.Text.Json.JsonException) { continue; }
+            result[project] = values;
+        }
+        return result;
+    }
+
+    private static int LineOf(string content, string key)
+    {
+        var at = content.IndexOf($"\"{key}\"", StringComparison.Ordinal);
+        return at < 0 ? 1 : content[..at].Count(c => c == '\n') + 1;
     }
 
     private static XDocument? Xml(string content)
@@ -212,6 +250,7 @@ public static class WolverineSourceAnalyzer
         public readonly List<MessagingFailureRule> Rules = [];
         public readonly List<string> Limitations = [];
         public readonly HashSet<string> ScopeProjects = new(StringComparer.Ordinal);
+        public readonly Dictionary<string, (string Value, SourceLocation Where)> Settings = new(StringComparer.OrdinalIgnoreCase);
         public readonly List<(string Text, SourceLocation Where, bool Storage)> Persistence = [];
         public MessagingFact Fact(string id) => Facts.First(f => f.Id == id);
         public void Fact(string id, string label, MessagingFactState state, string detail, IntegrationEvidenceSource source, params SourceLocation[] where) =>
@@ -219,11 +258,14 @@ public static class WolverineSourceAnalyzer
     }
 
     private static ApplicationMessagingEvidence Application(Project app, List<Project> projects, List<Code> allCode, List<Wrapper> wrappers,
-        Dictionary<string, (List<string> Sources, SourceLocation Location)> observability)
+        Dictionary<string, (List<string> Sources, SourceLocation Location)> observability, Dictionary<Project, Dictionary<string, (string Value, SourceLocation Where)>> settings)
     {
         var closure = Closure(app, projects);
         var code = allCode.Where(c => c.Project is not null && closure.Contains(c.Project)).ToList();
         var b = new Builder();
+        // The application's own appsettings.json first, then its referenced projects'.
+        foreach (var p in closure) if (settings.TryGetValue(p, out var values)) foreach (var (k, v) in values) b.Settings.TryAdd(k, v);
+        var sdk = SdkRoutes(code, b);
         var wrapperNames = wrappers.Select(w => w.Name).ToHashSet(StringComparer.Ordinal);
         var invocations = code.SelectMany(c => c.Root.DescendantNodes().OfType<InvocationExpressionSyntax>()).ToList();
 
@@ -287,7 +329,7 @@ public static class WolverineSourceAnalyzer
             {
                 ApplicationId = app.Name, TelemetryRoleName = RoleName(invocations), Detection = detection, DetectionReason = reason,
                 HandlerMapping = MessagingFactState.NotApplicable, RetryPolicy = MessagingFactState.NotApplicable, Outbox = MessagingFactState.NotApplicable,
-                ErrorHandling = MessagingFactState.NotApplicable, Facts = b.Facts, Limitations = b.Limitations,
+                ErrorHandling = MessagingFactState.NotApplicable, Facts = b.Facts, Limitations = b.Limitations, SdkRoutes = sdk,
             };
         }
 
@@ -382,7 +424,7 @@ public static class WolverineSourceAnalyzer
             RetryPolicy = mediatorOnly && b.Rules.Count == 0 ? MessagingFactState.NotApplicable : b.Rules.Any(r => r.Actions.Any(a => RetryActions.Any(a.StartsWith))) ? MessagingFactState.Configured : MessagingFactState.NotFound,
             Outbox = mediatorOnly ? MessagingFactState.NotApplicable : OutboxState(b),
             ErrorHandling = mediatorOnly && b.Rules.Count == 0 ? MessagingFactState.NotApplicable : b.Rules.Any(r => r.Actions.Any(a => ErrorActions.Any(a.StartsWith))) ? MessagingFactState.Configured : MessagingFactState.NotFound,
-            Facts = b.Facts, Routes = b.Routes, Handlers = handlers, FailureRules = b.Rules, Limitations = b.Limitations,
+            Facts = b.Facts, Routes = b.Routes, Handlers = handlers, FailureRules = b.Rules, Limitations = b.Limitations, SdkRoutes = sdk,
         };
     }
 
@@ -477,11 +519,13 @@ public static class WolverineSourceAnalyzer
                 {
                     var message = link.TypeArguments.FirstOrDefault()?.ToString();
                     var target = rest.FirstOrDefault(l => l.Name is "ToAzureServiceBusQueue" or "ToAzureServiceBusTopic");
+                    var (entityName, entitySource) = Resolve(target?.Arguments.FirstOrDefault()?.Expression, code, b.Settings);
                     b.Routes.Add(new MessagingRoute
                     {
                         Direction = MessagingRouteDirection.Publish, MessageType = message,
                         EndpointKind = target?.Name == "ToAzureServiceBusTopic" ? MessagingEndpointKind.Topic : MessagingEndpointKind.Queue,
                         Endpoint = target is null ? "(no Azure Service Bus endpoint in source)" : Describe(target.Arguments.FirstOrDefault()?.Expression, code),
+                        EntityName = entityName, EntityNameSource = entitySource,
                         Condition = condition, Options = Options(rest), Location = where,
                     });
                     return;
@@ -492,10 +536,13 @@ public static class WolverineSourceAnalyzer
                     var defaultType = rest.FirstOrDefault(l => l.Name == "DefaultIncomingMessage")?.TypeArguments.FirstOrDefault()?.ToString();
                     var mapper = rest.FirstOrDefault(l => l.Name == "InteropWith")?.Arguments.FirstOrDefault()?.Expression is ObjectCreationExpressionSyntax created ? created.Type.ToString() : null;
                     var mapped = mapper is null ? null : MapperMessageType(mapper, code);
+                    var (entityName, entitySource) = Resolve(link.Arguments.FirstOrDefault()?.Expression, code, b.Settings);
+                    var (topicName, _) = subscription && rest.FirstOrDefault(l => l.Name == "FromTopic") is { } fromTopic ? Resolve(fromTopic.Arguments.FirstOrDefault()?.Expression, code, b.Settings) : (null, null);
                     b.Routes.Add(new MessagingRoute
                     {
                         Direction = MessagingRouteDirection.Listen, EndpointKind = subscription ? MessagingEndpointKind.Subscription : MessagingEndpointKind.Queue,
                         Endpoint = Describe(link.Arguments.FirstOrDefault()?.Expression, code),
+                        EntityName = entityName, EntityNameSource = entitySource, TopicName = topicName,
                         Topic = subscription ? rest.FirstOrDefault(l => l.Name == "FromTopic") is { } from ? Describe(from.Arguments.FirstOrDefault()?.Expression, code) : null : null,
                         MessageType = defaultType ?? mapped,
                         MappingReason = defaultType is not null ? "Message type from DefaultIncomingMessage<T>." : mapped is not null ? $"Message type set by {mapper}.MapIncomingToEnvelope." : null,
@@ -562,6 +609,112 @@ public static class WolverineSourceAnalyzer
                 return declarator?.Initializer is { } init ? Describe(init.Value, code, depth + 1) : identifier.Identifier.ValueText;
             default: return Short(expression.ToString(), 80);
         }
+    }
+
+    // Entity-shaped names: lower-case Service Bus entity characters. Constants must also contain '.' or '-' to avoid unrelated strings.
+    private static readonly System.Text.RegularExpressions.Regex EntityLike = new(@"^[a-z0-9][a-z0-9._\-]{2,}$");
+    private static readonly System.Text.RegularExpressions.Regex QualifiedEntityLike = new(@"^[a-z0-9][a-z0-9._\-]*[.\-][a-z0-9._\-]*$");
+
+    /// <summary>
+    /// A concrete entity name and where it comes from: a literal; a constant, field or property default; base appsettings.json; or the
+    /// "?? default" of a configuration lookup. Deployment settings can override configuration — the source says so and is kept.
+    /// </summary>
+    private static (string? Name, string? Source) Resolve(ExpressionSyntax? expression, List<Code> code, Dictionary<string, (string Value, SourceLocation Where)> settings, int depth = 0)
+    {
+        if (depth > 4) return (null, null);
+        switch (expression)
+        {
+            case null: return (null, null);
+            case LiteralExpressionSyntax literal when literal.IsKind(SyntaxKind.StringLiteralExpression):
+                return (literal.Token.ValueText, $"literal ({Location(literal).File.Split('/').Last()}:{Location(literal).Line})");
+            case PostfixUnaryExpressionSyntax suppressed when suppressed.IsKind(SyntaxKind.SuppressNullableWarningExpression): return Resolve(suppressed.Operand, code, settings, depth);
+            case ParenthesizedExpressionSyntax parenthesized: return Resolve(parenthesized.Expression, code, settings, depth);
+            case ElementAccessExpressionSyntax access when access.ArgumentList.Arguments.FirstOrDefault()?.Expression is LiteralExpressionSyntax key:
+                return settings.TryGetValue(key.Token.ValueText, out var set) ? (set.Value, $"appsettings.json {key.Token.ValueText} ({set.Where.File.Split('/').Last()}:{set.Where.Line}; deployment settings may override)")
+                    : (null, $"configuration {key.Token.ValueText} (value not in source)");
+            case BinaryExpressionSyntax coalesce when coalesce.IsKind(SyntaxKind.CoalesceExpression):
+            {
+                var left = Resolve(coalesce.Left, code, settings, depth + 1);
+                if (left.Name is not null) return left;
+                var right = Resolve(coalesce.Right, code, settings, depth + 1);
+                return right.Name is null ? left : (right.Name, $"default {right.Source} when {(left.Source ?? "the configuration value").Replace(" (value not in source)", "")} is not set");
+            }
+            case IdentifierNameSyntax identifier:
+            {
+                var name = identifier.Identifier.ValueText;
+                var declarator = code.Where(c => c.Tree == expression.SyntaxTree).Concat(code).SelectMany(c => c.Root.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+                    .FirstOrDefault(v => v.Identifier.ValueText == name && v.Initializer is not null);
+                if (declarator?.Initializer is { } init) return Resolve(init.Value, code, settings, depth + 1);
+                return PropertyDefault(name, code, settings, depth);
+            }
+            case MemberAccessExpressionSyntax member: return PropertyDefault(member.Name.Identifier.ValueText, code, settings, depth);
+            default: return (null, null);
+        }
+    }
+
+    private static (string? Name, string? Source) PropertyDefault(string name, List<Code> code, Dictionary<string, (string Value, SourceLocation Where)> settings, int depth)
+    {
+        var property = code.SelectMany(c => c.Root.DescendantNodes().OfType<PropertyDeclarationSyntax>()).FirstOrDefault(p => p.Identifier.ValueText == name && p.Initializer is not null);
+        if (property?.Initializer?.Value is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression))
+            return (literal.Token.ValueText, $"default of {property.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.ValueText}.{name} ({Location(literal).File.Split('/').Last()}:{Location(literal).Line}; configuration may override)");
+        var field = code.SelectMany(c => c.Root.DescendantNodes().OfType<FieldDeclarationSyntax>()).SelectMany(f => f.Declaration.Variables).FirstOrDefault(v => v.Identifier.ValueText == name && v.Initializer is not null);
+        return field?.Initializer is { } init && depth < 4 ? Resolve(init.Value, code, settings, depth + 1) : (null, null);
+    }
+
+    /// <summary>
+    /// Service Bus entities the application's own Azure SDK code uses outside Wolverine: CreateSender (publish), CreateProcessor /
+    /// CreateReceiver (listen), and entity-shaped values that source passes as topic names, declares as constants or uses as configuration
+    /// defaults (reference — direction not provable). Nothing here says a message was sent or received.
+    /// </summary>
+    private static List<MessagingRoute> SdkRoutes(List<Code> code, Builder b)
+    {
+        var routes = new List<MessagingRoute>();
+        void Add(MessagingRouteDirection direction, MessagingEndpointKind kind, ExpressionSyntax? entity, ExpressionSyntax? topic, SyntaxNode where, string endpoint, bool qualified = false)
+        {
+            var (name, source) = Resolve(entity, code, b.Settings);
+            var (topicName, _) = Resolve(topic, code, b.Settings);
+            if (direction == MessagingRouteDirection.Reference && (name is null || !(qualified ? QualifiedEntityLike : EntityLike).IsMatch(name))) return;
+            var location = Location(where);
+            // One reference per entity name is enough evidence; publish/listen sites are kept per location.
+            if (routes.Any(r => r.EntityName == name && r.TopicName == topicName && r.Direction == direction && (direction == MessagingRouteDirection.Reference || r.Location == location))) return;
+            routes.Add(new MessagingRoute
+            {
+                Direction = direction, EndpointKind = kind, Endpoint = endpoint, EntityName = name, EntityNameSource = source, TopicName = topicName,
+                Technology = "Azure SDK", Location = location,
+                Senders = where.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.ValueText is { } owner ? [owner] : [],
+            });
+        }
+        foreach (var c in code)
+        {
+            foreach (var call in c.Root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                var args = call.ArgumentList.Arguments;
+                switch (InvokedName(call))
+                {
+                    case "CreateSender" when args.Count > 0:
+                        Add(MessagingRouteDirection.Publish, MessagingEndpointKind.Queue, args[0].Expression, null, call, Short(args[0].Expression.ToString(), 80));
+                        break;
+                    case "CreateProcessor" or "CreateReceiver" or "CreateSessionProcessor" when args.Count > 0:
+                        var subscription = args.Count > 1 && args[1].Expression is not ObjectCreationExpressionSyntax && args[1].NameColon is null;
+                        Add(MessagingRouteDirection.Listen, subscription ? MessagingEndpointKind.Subscription : MessagingEndpointKind.Queue,
+                            subscription ? args[1].Expression : args[0].Expression, subscription ? args[0].Expression : null, call, Short(call.ArgumentList.ToString(), 80));
+                        break;
+                }
+                foreach (var named in args.Where(a => a.NameColon?.Name.Identifier.ValueText is "topicName" or "queueName" or "entityPath"))
+                    Add(MessagingRouteDirection.Reference, named.NameColon!.Name.Identifier.ValueText == "topicName" ? MessagingEndpointKind.Topic : MessagingEndpointKind.Queue,
+                        named.Expression, null, named, $"{named.NameColon.Name.Identifier.ValueText}: {Short(named.Expression.ToString(), 60)}");
+            }
+            // Configuration lookups with a default whose key names Service Bus settings.
+            foreach (var coalesce in c.Root.DescendantNodes().OfType<BinaryExpressionSyntax>().Where(x => x.IsKind(SyntaxKind.CoalesceExpression)
+                         && x.Left is ElementAccessExpressionSyntax { ArgumentList.Arguments: [{ Expression: LiteralExpressionSyntax key }] }
+                         && key.Token.ValueText.Contains("ServiceBus", StringComparison.OrdinalIgnoreCase)))
+                Add(MessagingRouteDirection.Reference, MessagingEndpointKind.Queue, coalesce, null, coalesce, Short(coalesce.ToString(), 80));
+            // Entity-name constants in classes that use the Service Bus SDK.
+            if (c.Root.Usings.Any(u => u.Name?.ToString() == "Azure.Messaging.ServiceBus"))
+                foreach (var constant in c.Root.DescendantNodes().OfType<FieldDeclarationSyntax>().Where(f => f.Modifiers.Any(SyntaxKind.ConstKeyword)).SelectMany(f => f.Declaration.Variables))
+                    Add(MessagingRouteDirection.Reference, MessagingEndpointKind.Topic, constant.Initializer?.Value, null, constant, $"const {constant.Identifier.ValueText}", qualified: true);
+        }
+        return routes.Where(r => r.EntityName is not null || r.Direction != MessagingRouteDirection.Reference).ToList();
     }
 
     private static string? TypeOfAssembly(ExpressionSyntax? expression) =>

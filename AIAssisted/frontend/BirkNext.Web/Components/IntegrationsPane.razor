@@ -35,7 +35,7 @@
             <div><dt>Business integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
             <div><dt>Ready</dt><dd data-testid="ip-summary-ready">@summary.Ready</dd></div>
             <div><dt>Need confirmation</dt><dd data-testid="ip-summary-confirm">@summary.NeedsConfirmation</dd><button type="button" class="ip-link" data-testid="ip-review-mappings" @onclick="ReviewMappings">Review @summary.NeedsConfirmation mappings</button></div>
-            <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-attention" data-testid="ip-summary-runtime">@RuntimeStatus(_catalog.Platforms.Select(p => p.RuntimeEvidence))</span></dd></div>
+            <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-attention" data-testid="ip-summary-runtime">@RuntimeStatus(_catalog.Platforms.Where(p => p.Kind != IntegrationKind.ServiceBus).Select(p => p.RuntimeEvidence))</span></dd></div>
         </dl>
         <dl class="ip-secondary" data-testid="ip-secondary">
             <div><dt>Environment</dt><dd data-testid="ip-summary-env">@(string.IsNullOrWhiteSpace(Profile.Name) ? Profile.Id : Profile.Name)</dd></div>
@@ -55,6 +55,13 @@
             var runtime = platform.RuntimeEvidence;
             <section class="ip-card ip-platform" data-testid="ip-platform" aria-labelledby="@($"ip-platform-{Slug(platform.Id)}")">
                 <h3 id="@($"ip-platform-{Slug(platform.Id)}")">@platform.Name <span class="ip-pill ip-pill-muted">@IntegrationConfigurationRules.KindLabel(platform.Kind)</span></h3>
+                @if (platform.Kind == IntegrationKind.ServiceBus)
+                {
+                    @* Service Bus is its own transport: topology, runtime metadata and application routes — no Event Hub fields. *@
+                    <ServiceBusPlatformPanel EnvironmentId="@Profile.Id" Platform="platform" Messaging="_messaging" OnConfigure="() => BeginRuntime(platform)" />
+                }
+                else
+                {
                 <dl class="ip-dl">
                     <div><dt>Namespace</dt><dd class="ip-mono" data-testid="ip-platform-namespace">@(platform.Namespace ?? "Not configured")</dd></div>
                     <div><dt>Producer</dt><dd>@(platform.ProducerTechnology ?? "Not configured")</dd></div>
@@ -82,11 +89,21 @@
                     <p class="ip-muted">@RuntimeHint(runtime). Configure runtime evidence to enable richer mapping checks and Message Flow, Reliability, Error handling, Observability and Performance checks in Integration Quality Review.</p>
                     <button type="button" class="ip-link" data-testid="ip-configure-runtime" @onclick="() => BeginRuntime(platform)">Configure runtime evidence</button>
                 </div>
-                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@RuntimeHint(runtime)" Expanded="@(_runtimeExpanded == platform.Id)" ExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
+                }
+                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@(platform.Kind == IntegrationKind.ServiceBus ? ServiceBusPresentation.RuntimeConfiguration(platform).Label : RuntimeHint(runtime))" Expanded="@(_runtimeExpanded == platform.Id)" ExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
                     <p class="ip-muted">Read-only sources Integration Quality Review may use for this platform. Identifiers only — the BirkNext instance's Azure identity reads them; no key or connection string is stored here.</p>
                     @if (_editingRuntime == platform.Id)
                     {
                         <div class="ip-runtime-form" data-testid="ip-runtime-form">
+                            @if (platform.Kind == IntegrationKind.ServiceBus)
+                            {
+                                @* Service Bus metadata is read through Azure Resource Manager: subscription + resource group + namespace. No connection string. *@
+                                <label class="ip-field">Azure subscription id (Service Bus namespace metadata) <input class="form-control ip-mono" @ref="_runtimeFocus" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
+                                <p class="ip-muted">Resource group @(platform.ResourceGroup ?? "not configured") · namespace @(platform.Namespace ?? "not configured"). Read-only metadata GETs with the instance's Azure identity (Reader); no message is read.</p>
+                                <label class="ip-field">Review window (hours) <input type="number" min="1" max="168" class="form-control" @bind="_runtime.ReviewWindowHours" data-testid="ip-runtime-window" /></label>
+                            }
+                            else
+                            {
                             <label class="ip-check"><input type="checkbox" @ref="_runtimeFocus" @bind="_runtime.EventHubMetadata" data-testid="ip-runtime-metadata" /> Read Event Hub metadata (existence, partitions, last enqueued position)</label>
                             <label class="ip-field">Azure subscription id (consumer-group list) <input class="form-control ip-mono" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
                             <label class="ip-field">Checkpoint store container URL <input class="form-control ip-mono" @bind="_runtime.CheckpointContainerUrl" placeholder="https://account.blob.core.windows.net/checkpoints" data-testid="ip-runtime-checkpoint" /></label>
@@ -95,6 +112,7 @@
                             <label class="ip-field">Consumer lag threshold (events, optional) <input type="number" min="0" class="form-control" @bind="_runtime.MaxConsumerLagEvents" data-testid="ip-runtime-lag" /></label>
                             <label class="ip-field">Checkpoint age threshold (minutes, optional) <input type="number" min="1" class="form-control" @bind="_runtime.MaxCheckpointAgeMinutes" data-testid="ip-runtime-age" /></label>
                             <p class="ip-muted">Without a threshold, measured lag and checkpoint age are reported as Observed, never judged.</p>
+                            }
                             @if (_runtimeError is { } runtimeError) { <p class="ip-field-error" role="alert" data-testid="ip-runtime-error">@runtimeError</p> }
                             <div class="ip-editor-actions">
                                 <button type="button" class="btn-primary" data-testid="ip-runtime-save" @onclick="() => SaveRuntimeAsync(platform)">Save runtime evidence sources</button>
@@ -104,6 +122,17 @@
                     }
                     else
                     {
+                        @if (platform.Kind == IntegrationKind.ServiceBus)
+                        {
+                            <dl class="ip-dl ip-dl-technical" data-testid="ip-runtime-summary">
+                                <div><dt>Azure subscription</dt><dd class="ip-mono">@(runtime?.SubscriptionId ?? "Not configured")</dd></div>
+                                <div><dt>Resource group / namespace</dt><dd class="ip-mono">@(platform.ResourceGroup ?? "—") / @(platform.Namespace ?? "—")</dd></div>
+                                <div><dt>Review window</dt><dd>@(runtime?.ReviewWindowHours ?? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours) h</dd></div>
+                                <div><dt>Thresholds</dt><dd>None — message counts are reported as Observed, never judged.</dd></div>
+                            </dl>
+                        }
+                        else
+                        {
                         <dl class="ip-dl ip-dl-technical" data-testid="ip-runtime-summary">
                             <div><dt>Event Hub metadata</dt><dd>@(runtime?.EventHubMetadata == true ? "Enabled" : "Not enabled")</dd></div>
                             <div><dt>Consumer-group list</dt><dd class="ip-mono">@(runtime?.SubscriptionId ?? "Not configured")</dd></div>
@@ -112,6 +141,7 @@
                             <div><dt>Review window</dt><dd>@(runtime?.ReviewWindowHours ?? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours) h</dd></div>
                             <div><dt>Thresholds</dt><dd>@(runtime?.MaxConsumerLagEvents is { } lag ? $"lag ≤ {lag} events" : "no lag threshold") · @(runtime?.MaxCheckpointAgeMinutes is { } age ? $"checkpoint ≤ {age} min" : "no checkpoint-age threshold")</dd></div>
                         </dl>
+                        }
                         <button type="button" class="ip-link" data-testid="ip-runtime-edit" @onclick="() => BeginRuntime(platform)">Edit runtime evidence sources</button>
                     }
                 </ReviewDisclosure>
@@ -379,8 +409,11 @@
             case IntegrationReviewPrerunPresentation.FocusMappings:
                 ReviewMappings();
                 break;
-            case IntegrationReviewPrerunPresentation.FocusRuntime when _catalog.Platforms.FirstOrDefault() is { } platform:
+            case IntegrationReviewPrerunPresentation.FocusRuntime when _catalog.Platforms.FirstOrDefault(p => p.Kind != IntegrationKind.ServiceBus) is { } platform:
                 BeginRuntime(platform);
+                break;
+            case ServiceBusPresentation.Focus when _catalog.Platforms.FirstOrDefault(p => p.Kind == IntegrationKind.ServiceBus) is { } serviceBus:
+                BeginRuntime(serviceBus);
                 break;
             case IntegrationReviewPrerunPresentation.FocusContracts:
                 var target = _catalog.Integrations.Where(i => i.Enabled)

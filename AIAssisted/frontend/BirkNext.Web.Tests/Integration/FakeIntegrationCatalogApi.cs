@@ -9,6 +9,12 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
 {
     public Func<string, Task<IntegrationMappingEvidenceCheck>>? MappingCheck { get; set; }
     public ApplicationMessagingEvidenceSet? Messaging { get; set; }
+    public Func<string, ServiceBusEvidenceCheck>? ServiceBusCheck { get; set; }
+    public Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default)
+    {
+        Calls.Add("servicebus-evidence:" + platformId);
+        return Task.FromResult(ServiceBusCheck?.Invoke(platformId) ?? new ServiceBusEvidenceCheck { PlatformId = platformId, OverallState = ServiceBusEvidenceState.NotTestable });
+    }
     public List<(string Application, string? Consumer)> Bindings { get; } = [];
     public List<string> Analyzed { get; } = [];
     public Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(Messaging);

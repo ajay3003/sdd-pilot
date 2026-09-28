@@ -8,8 +8,9 @@ namespace BirkNext.Api.Services.Integrations.ApplicationMessaging;
 public sealed record SourceFile(string Path, string Content);
 
 /// <summary>
-/// Reads an uploaded source archive (zip) in memory, bounded. Only C# sources, project files and central package files are read —
-/// appsettings, secrets files and binaries are skipped, so no configuration value (connection string, SAS key) ever enters the analysis.
+/// Reads an uploaded source archive (zip) in memory, bounded. Only C# sources, project files, central package files and the base
+/// appsettings.json are read — environment appsettings, secrets files and binaries are skipped. From appsettings.json only non-secret
+/// string values are kept (keys or values that look like credentials are dropped), and only to resolve messaging entity names.
 /// Nothing is extracted to disk; entry paths are only used as labels, so path traversal has no effect.
 /// </summary>
 public static class SourceArchiveReader
@@ -46,13 +47,15 @@ public static class SourceArchiveReader
         return (new SourceArchive(name, sha, files.Count), files, null);
     }
 
-    /// <summary>C# sources and MSBuild project/package files only; build output, migrations and dependencies are skipped.</summary>
+    /// <summary>C# sources, MSBuild project/package files and base appsettings.json; build output, migrations and dependencies are skipped.</summary>
     public static bool IsAnalyzable(string path)
     {
         var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length == 0 || segments[..^1].Any(s => SkippedSegments.Contains(s.ToLowerInvariant()))) return false;
         var file = segments[^1];
+        // Base appsettings.json only: entity names are read from it (secret-looking keys and values are dropped by the analyzer before use).
         return file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)
+            || file.Equals("appsettings.json", StringComparison.OrdinalIgnoreCase)
             || file.Equals("Directory.Packages.props", StringComparison.OrdinalIgnoreCase) || file.Equals("Directory.Build.props", StringComparison.OrdinalIgnoreCase);
     }
 }

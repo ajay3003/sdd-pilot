@@ -27,6 +27,20 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
             new IntegrationContractSet(await contracts.LoadAsync(environmentId, ct)), ct));
     }
 
+    /// <summary>Read-only "Test Service Bus": configured topology, code-route consistency and — when configured — runtime metadata GETs.</summary>
+    [HttpPost("platforms/{id}/servicebus-evidence")]
+    public async Task<ActionResult<ServiceBusEvidenceCheck>> CheckServiceBus([FromQuery] string environmentId, string id,
+        [FromServices] BirkNext.Api.Services.Integrations.ServiceBus.ServiceBusEvidenceService serviceBus,
+        [FromServices] BirkNext.Api.Services.Integrations.ApplicationMessaging.IApplicationMessagingStore messaging, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        // No environment type/URL: GetAsync must never attach seed records during a read-only check.
+        var platform = (await catalog.GetAsync(environmentId, null, null, ct)).Platforms.FirstOrDefault(p => p.Id == id);
+        if (platform is null) return NotFound();
+        if (!BirkNext.Api.Services.Integrations.ServiceBus.ServiceBusEvidenceService.IsServiceBus(platform)) return BadRequest("Not a Service Bus platform.");
+        return Ok(await serviceBus.CheckAsync(platform, await messaging.GetAsync(environmentId, ct), ct));
+    }
+
     [HttpGet]
     public async Task<ActionResult<IntegrationCatalog>> Get([FromQuery] string environmentId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct));

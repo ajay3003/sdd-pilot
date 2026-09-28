@@ -52,13 +52,21 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         var existingPlatforms = await db.IntegrationPlatforms.Where(p => p.EnvironmentId == environmentId).Select(p => p.Id).ToListAsync(ct);
         var existingIntegrations = await db.IntegrationDefinitions.Where(d => d.EnvironmentId == environmentId).Select(d => d.Id).ToListAsync(ct);
         var added = 0;
-        var platform = M2lbDevIntegrationSeed.Platform(environmentId, now);
-        if (!existingPlatforms.Contains(platform.Id)) { db.IntegrationPlatforms.Add(ToRecord(platform)); added++; }
-        foreach (var definition in M2lbDevIntegrationSeed.Integrations(environmentId, now).Where(d => !existingIntegrations.Contains(d.Id)))
+        // A v1 environment already had the Event Hub seed; it only gains what v2 adds (the Service Bus platform), so records a person
+        // deleted since are not brought back.
+        var upgrade = state is { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: >= 1 };
+        if (!upgrade)
         {
-            db.IntegrationDefinitions.Add(ToRecord(definition));
-            added++;
+            var platform = M2lbDevIntegrationSeed.Platform(environmentId, now);
+            if (!existingPlatforms.Contains(platform.Id)) { db.IntegrationPlatforms.Add(ToRecord(platform)); added++; }
+            foreach (var definition in M2lbDevIntegrationSeed.Integrations(environmentId, now).Where(d => !existingIntegrations.Contains(d.Id)))
+            {
+                db.IntegrationDefinitions.Add(ToRecord(definition));
+                added++;
+            }
         }
+        var serviceBus = M2lbDevIntegrationSeed.ServiceBusPlatform(environmentId, now);
+        if (!existingPlatforms.Contains(serviceBus.Id)) { db.IntegrationPlatforms.Add(ToRecord(serviceBus)); added++; }
         if (state is null) db.IntegrationEnvironmentStates.Add(new IntegrationEnvironmentStateRecord { EnvironmentId = environmentId, SeedVersion = M2lbDevIntegrationSeed.Version, SeedName = M2lbDevIntegrationSeed.Name, UpdatedAt = now });
         else { state.SeedVersion = M2lbDevIntegrationSeed.Version; state.SeedName = M2lbDevIntegrationSeed.Name; state.UpdatedAt = now; }
         await db.SaveChangesAsync(ct);

@@ -30,7 +30,7 @@ public sealed class IntegrationCatalogTests
     public async Task DevPlatform_HasTheKnownValues()
     {
         var catalog = await DevCatalog(Service(Db()));
-        var platform = catalog.Platforms.Should().ContainSingle().Subject;
+        var platform = catalog.Platforms.Should().ContainSingle(p => p.Kind == IntegrationKind.EventHub).Subject;
         platform.Name.Should().Be("M2LB DEV Event Hubs");
         platform.Id.Should().Be("dev:eventhub:m2lb");
         platform.Namespace.Should().Be("evhns-m2lb-dev-nwe-001");
@@ -56,7 +56,7 @@ public sealed class IntegrationCatalogTests
         catalog.Integrations.Should().HaveCount(16).And.OnlyContain(i => i.Kind == IntegrationKind.EventHub && i.Enabled && i.SystemName == "BIRK CDC / Debezium");
         catalog.Integrations.Select(i => i.EndpointOrTopic).Should().Contain("m2lb-cdc-dev.BirkM2LB.dbo.KjønnType").And.Contain("m2lb-cdc-dev.BirkM2LB.dbo.RomningKategoriType");
         var technical = new[] { "m2lb-cdc-dev", "schemahistory", "connect-configs", "connect-offsets", "connect-status" };
-        catalog.Platforms.Single().TechnicalTopics.Select(t => t.Name).Should().BeEquivalentTo(technical);
+        catalog.Platforms.Single(p => p.Kind == IntegrationKind.EventHub).TechnicalTopics.Select(t => t.Name).Should().BeEquivalentTo(technical);
         catalog.Integrations.Should().NotContain(i => technical.Contains(i.EndpointOrTopic));
         catalog.Integrations.Should().OnlyContain(i => i.PartitionCount == 1 && i.RetentionDays == 7);
     }
@@ -110,7 +110,7 @@ public sealed class IntegrationCatalogTests
         // "Restart": a fresh context reading the same store attaches nothing new and keeps the edit.
         var again = await DevCatalog(Service(Db(name)));
         again.Integrations.Should().HaveCount(16);
-        again.Platforms.Should().ContainSingle();
+        again.Platforms.Should().HaveCount(2, "one Event Hub and one Service Bus platform, never duplicated");
         again.Notices.Should().BeEmpty();
         var edited = again.Integrations.Single(i => i.Id == person.Id);
         edited.ConsumerGroup.Should().Be("person-adapter-cg");

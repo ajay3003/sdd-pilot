@@ -17,6 +17,8 @@ public interface IIntegrationCatalogApiService
     /// <summary>Uploads source archives for read-only analysis; returns the new evidence or the reason nothing was stored.</summary>
     Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeApplicationMessagingAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default);
     Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default);
+    /// <summary>Read-only "Test Service Bus" of one Service Bus platform (topology, code routes and — when configured — runtime metadata).</summary>
+    Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default);
     Task<IntegrationCatalog> GetCatalogAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
     Task<IntegrationDefinition> UpdateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
@@ -62,6 +64,9 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct), null);
     }
+
+    public async Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default) =>
+        await Read<ServiceBusEvidenceCheck>(await http.PostAsync($"api/integrations/platforms/{Uri.EscapeDataString(platformId)}/servicebus-evidence?{Env(environmentId)}", null, ct), ct);
 
     public async Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default) =>
         await Read<ApplicationMessagingEvidenceSet>(await http.PutAsJsonAsync($"api/integrations/application-messaging/{Uri.EscapeDataString(applicationId)}/binding?{Env(environmentId)}", new { consumer }, Json, ct), ct);

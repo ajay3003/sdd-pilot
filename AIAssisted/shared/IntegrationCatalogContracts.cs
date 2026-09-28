@@ -161,6 +161,8 @@ public sealed record IntegrationPlatform
     public List<TechnicalTopic> TechnicalTopics { get; init; } = [];
     /// <summary>Read-only runtime evidence sources of this platform. Null = none configured.</summary>
     public IntegrationRuntimeEvidenceSettings? RuntimeEvidence { get; init; }
+    /// <summary>Service Bus platforms only: the configured, expected topology (queues, topics, subscriptions and their properties).</summary>
+    public ServiceBusTopology? ServiceBusTopology { get; init; }
     public IntegrationRecordOrigin Origin { get; init; } = IntegrationRecordOrigin.Manual;
     public bool UserModified { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
@@ -413,6 +415,8 @@ public sealed record IntegrationReviewReadiness
     public List<IntegrationEvidenceAdapterStatus> EvidenceAdapters { get; init; } = [];
     /// <summary>Application messaging (Wolverine) evidence from analyzed source — a separate layer, never counted as a runtime evidence source.</summary>
     public List<ApplicationMessagingSummary> ApplicationMessaging { get; init; } = [];
+    /// <summary>Service Bus platforms: configured topology and whether runtime metadata can be read. Never an Event Hub runtime source.</summary>
+    public List<ServiceBusReadiness> ServiceBus { get; init; } = [];
 }
 
 public sealed record IntegrationCheck
@@ -514,6 +518,8 @@ public sealed record IntegrationReviewResult
     /// <summary>Application messaging evidence exactly as this run used it (source analysis + runtime reads). Never re-evaluated later.</summary>
     public ApplicationMessagingEvidenceSet? ApplicationMessagingSnapshot { get; init; }
     public List<ApplicationMessagingRuntime> ApplicationMessagingRuntime { get; init; } = [];
+    /// <summary>Service Bus evidence exactly as this run read it (topology comparison, runtime metadata, route correlation). Never re-queried.</summary>
+    public List<ServiceBusEvidenceCheck> ServiceBusSnapshot { get; init; } = [];
     [JsonIgnore] public int TopicsReviewed => Systems.Where(s => s.DomainReviewSupported).Sum(s => s.Topics.Count);
     [JsonIgnore] public IEnumerable<IntegrationCheck> AllChecks => Systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks)));
 }

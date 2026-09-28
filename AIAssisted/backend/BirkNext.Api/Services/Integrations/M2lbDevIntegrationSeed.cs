@@ -17,9 +17,10 @@ namespace BirkNext.Api.Services.Integrations;
 /// </list>
 /// Consumer group is left unknown everywhere: <c>$Default</c> is never assumed.
 /// </summary>
-public static class M2lbDevIntegrationSeed
+public static partial class M2lbDevIntegrationSeed
 {
-    public const int Version = 1;
+    /// <summary>v2 adds the M2LB DEV Service Bus platform (see <see cref="ServiceBusPlatform"/>); v1 environments receive only that platform.</summary>
+    public const int Version = 2;
     public const string Name = "m2lb-dev-eventhub";
     public const string FrontendHost = "m2lbdev.bufetat.no";
     public const string PlatformId = "dev:eventhub:m2lb";

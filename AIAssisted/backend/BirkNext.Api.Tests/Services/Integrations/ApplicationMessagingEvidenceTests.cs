@@ -305,6 +305,37 @@ public sealed class ApplicationMessagingEvidenceTests
         set.Archives.Should().OnlyContain(a => a.Sha256.Length == 64);
     }
 
+    [Fact]
+    public void EntityNamesResolveFromSourceAndBaseAppsettingsButNeverFromSecrets()
+    {
+        var files = Revisjon;
+        files["Revisjon/src/M2LB.Revisjon.Worker/appsettings.json"] = """
+            { "ConnectionStrings": { "ServiceBus": "Endpoint=sb://x;SharedAccessKey=SECRET" }, "ServiceBus": { "QueueName": "leselogg", "SasKey": "should-not-be-read" } }
+            """;
+        files["Revisjon/src/M2LB.Revisjon.Worker/Sdk.cs"] = """
+            using Azure.Messaging.ServiceBus;
+            public sealed class LeseloggOptions { public string KoeName { get; set; } = "leselogg-audit"; }
+            public sealed class Sender
+            {
+                public void Send(ServiceBusClient client, LeseloggOptions opts)
+                {
+                    var registrering = client.CreateSender("operasjonsregistrering");
+                    var audit = client.CreateSender(opts.KoeName);
+                    var processor = client.CreateProcessor("person.barn", "tjeneste-barnregistrert");
+                }
+            }
+            """;
+        var app = App(Analyze(files, Common), "M2LB.Revisjon.Worker");
+        var listen = app.Routes.Single(r => r.Direction == MessagingRouteDirection.Listen);
+        listen.EntityName.Should().Be("leselogg");
+        listen.EntityNameSource.Should().StartWith("appsettings.json ServiceBus:QueueName").And.Contain("deployment settings may override");
+        app.SdkRoutes.Should().Contain(r => r.Direction == MessagingRouteDirection.Publish && r.EntityName == "operasjonsregistrering" && r.EntityNameSource!.StartsWith("literal"));
+        app.SdkRoutes.Should().Contain(r => r.EntityName == "leselogg-audit" && r.EntityNameSource!.Contains("default of LeseloggOptions.KoeName"));
+        app.SdkRoutes.Should().Contain(r => r.Direction == MessagingRouteDirection.Listen && r.EntityName == "tjeneste-barnregistrert" && r.TopicName == "person.barn");
+        app.SdkRoutes.Should().OnlyContain(r => r.Technology == "Azure SDK");
+        System.Text.Json.JsonSerializer.Serialize(app).Should().NotContain("SECRET").And.NotContain("should-not-be-read");
+    }
+
     // ── IQR contribution ──────────────────────────────────────────────────────────────────────────────────────────
 
     private sealed class NoSources : IEventHubMetadataSource, IEventHubConsumerGroupSource, ICheckpointEvidenceSource, ITelemetryEvidenceSource, IIntegrationNamespaceProbe

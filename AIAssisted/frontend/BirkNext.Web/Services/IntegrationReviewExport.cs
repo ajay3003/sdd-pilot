@@ -57,6 +57,24 @@ public static class IntegrationReviewExport
             sb.Append("</section>\n");
         }
 
+        foreach (var serviceBus in result.ServiceBusSnapshot)
+        {
+            // Service Bus transport: configured topology, runtime metadata and route correlation as recorded by this run. No payload, no secret.
+            sb.Append($"<section class=\"block\"><h2>Service Bus · {esc(serviceBus.Namespace)}</h2>");
+            sb.Append($"<p>{badge(ServiceBusLabels.Overall(serviceBus.OverallState))} Configured topology: {serviceBus.Queues} queue(s), {serviceBus.Topics} topic(s), {serviceBus.Subscriptions} subscription(s). Runtime metadata: {esc(IntegrationReviewLabels.EvidenceState(serviceBus.Runtime?.State ?? IntegrationEvidenceState.NotConfigured))}{(serviceBus.Runtime?.State == IntegrationEvidenceState.Available ? $", captured {serviceBus.Runtime.CapturedAt:u}" : $" — {esc(serviceBus.Runtime?.Reason)}")}.</p>");
+            sb.Append(table(["Check", "Expected", "Observed", "State", "Detail"], serviceBus.Configuration.Concat(serviceBus.RuntimeChecks).Select(c => new[]
+            {
+                esc(c.Title), esc(c.Expected ?? "—"), esc(c.Observed ?? "—"), badge(ServiceBusLabels.State(c.State)), esc(c.Detail),
+            })));
+            sb.Append(table(["Application", "Technology", "Direction", "Entity", "Configuration", "Access", "Runtime entity", "Handler execution"], serviceBus.Routes.Select(r => new[]
+            {
+                esc(r.Application), esc(r.Technology), esc(r.Direction), esc($"{r.Entity} ({r.EntitySource})"), badge(ServiceBusLabels.State(r.Configuration)),
+                badge(ServiceBusLabels.State(r.Access)), badge(ServiceBusLabels.State(r.Runtime)), badge("Not assessed"),
+            })));
+            if (serviceBus.Missing.Count > 0) sb.Append("<ul>" + string.Concat(serviceBus.Missing.Select(m => $"<li>{esc(m)}</li>")) + "</ul>");
+            sb.Append("</section>\n");
+        }
+
         sb.Append("<section class=\"block\"><h2>Contract snapshot</h2>");
         sb.Append(result.ContractSnapshot.Count == 0 ? "<p>No contract artifact was configured for this run.</p>" :
             table(["Integration", "Role", "File", "Version", "Fields", "SHA-256"], result.ContractSnapshot.Select(c => new[]

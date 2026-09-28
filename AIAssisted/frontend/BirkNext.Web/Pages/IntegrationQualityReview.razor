@@ -185,6 +185,26 @@
                 }
             </section>
 
+            @if (readiness.ServiceBus.Count > 0)
+            {
+                @* Transport — Service Bus: configured topology and runtime metadata, separate from Event Hub sources and from Wolverine. *@
+                <section class="iqr-card" aria-labelledby="iqr-servicebus-heading" data-testid="iqr-servicebus">
+                    <h2 id="iqr-servicebus-heading">Transport — Service Bus</h2>
+                    <ul class="iqr-sources iqr-messaging-list">
+                        @foreach (var serviceBus in readiness.ServiceBus)
+                        {
+                            <li class="iqr-messaging-item" data-testid="iqr-servicebus-platform" data-platform="@serviceBus.PlatformId">
+                                <span><strong>@serviceBus.PlatformName</strong> · Topology <span class="iqr-pill iqr-pill-observed" data-testid="iqr-servicebus-topology">@(serviceBus.Queues + serviceBus.Topics + serviceBus.Subscriptions > 0 ? "Configured" : "Not configured")</span>
+                                    · Runtime metadata <span class="iqr-pill iqr-pill-muted" data-testid="iqr-servicebus-runtime">@(serviceBus.RuntimeState == IntegrationEvidenceState.Available ? "Available" : IntegrationReviewLabels.EvidenceState(serviceBus.RuntimeState))</span></span>
+                                <span class="iqr-muted">@serviceBus.Queues queue(s) · @serviceBus.Topics topic(s) · @serviceBus.Subscriptions subscription(s) · code routes @serviceBus.RoutesMatched of @serviceBus.RoutesTotal matched@(serviceBus.RoutesMismatched > 0 ? $", {serviceBus.RoutesMismatched} mismatch" : "")</span>
+                                @if (serviceBus.RuntimeState != IntegrationEvidenceState.Available) { <span class="iqr-muted" data-testid="iqr-servicebus-reason">@serviceBus.RuntimeReason</span> }
+                            </li>
+                        }
+                    </ul>
+                    <p class="iqr-muted">Transport evidence only: an entity that exists or a route that matches does not show that messages were processed.</p>
+                </section>
+            }
+
             @if (readiness.ApplicationMessaging.Count > 0)
             {
                 @* Application messaging (Wolverine) is source evidence beside the transport runtime sources — never counted among them. *@
@@ -296,6 +316,23 @@
                         <p class="iqr-muted" data-testid="iqr-result-contracts">Contracts used: @string.Join("; ", result.ContractSnapshot.Select(c => $"{c.FileName} ({c.Role.ToString().ToLowerInvariant()}, sha256 {c.ShortHash})"))</p>
                     }
                 </section>
+                @if (result.ServiceBusSnapshot.Count > 0)
+                {
+                    <section class="iqr-card" aria-labelledby="iqr-result-servicebus-heading" data-testid="iqr-result-servicebus">
+                        <h3 id="iqr-result-servicebus-heading">Transport — Service Bus</h3>
+                        <ul>
+                            @foreach (var serviceBus in result.ServiceBusSnapshot)
+                            {
+                                var (active, dead, scheduled) = ServiceBusPresentation.Counts(serviceBus);
+                                var routes = serviceBus.Routes.Where(r => r.Direction != nameof(MessagingRouteDirection.Reference)).ToList();
+                                <li data-testid="iqr-result-servicebus-platform"><strong>@serviceBus.Namespace</strong> — @ServiceBusLabels.Overall(serviceBus.OverallState) ·
+                                    configuration: topology configured, @routes.Count(r => r.Configuration == ServiceBusCheckState.Matched) of @routes.Count code route(s) matched ·
+                                    runtime metadata: @(serviceBus.Runtime?.State == IntegrationEvidenceState.Available ? $"available (captured {serviceBus.Runtime.CapturedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC)" : $"{IntegrationReviewLabels.EvidenceState(serviceBus.Runtime?.State ?? IntegrationEvidenceState.NotConfigured)} — {serviceBus.Runtime?.Reason}")@(serviceBus.Runtime?.State == IntegrationEvidenceState.Available ? $" · observed active {ServiceBusPresentation.Count(active)}, dead-letter {ServiceBusPresentation.Count(dead)}, scheduled {ServiceBusPresentation.Count(scheduled)}" : "")</li>
+                            }
+                        </ul>
+                        <p class="iqr-muted">Snapshot of this run; opening an old run never re-reads Azure.</p>
+                    </section>
+                }
                 @if (result.ApplicationMessagingSnapshot is { } messaging && messaging.Applications.Any(a => a.BoundConsumer is not null))
                 {
                     <section class="iqr-card" aria-labelledby="iqr-result-messaging-heading" data-testid="iqr-result-messaging">

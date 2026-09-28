@@ -1,0 +1,196 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IIntegrationCatalogApiService Api
+
+@* Service Bus platform (a transport of its own — not an Event Hub): configured topology, read-only runtime metadata, and the Wolverine/SDK
+   routes of analyzed applications, shown as separate layers. "Test Service Bus" is read-only: configuration comparison always, and Azure
+   Resource Manager GETs only when runtime evidence is configured. Nothing is sent, received, peeked, settled, created or changed. *@
+<div class="sb" data-testid="sb">
+    @{
+        var topology = Platform.ServiceBusTopology;
+        var (runtimeLabel, runtimeDetail) = ServiceBusPresentation.RuntimeConfiguration(Platform);
+        var (named, total) = ServiceBusPresentation.WolverineRoutes(topology, Messaging);
+    }
+    <dl class="sb-summary" data-testid="sb-summary">
+        <div><dt>Namespace</dt><dd class="sb-mono" data-testid="sb-namespace">@(Platform.Namespace ?? "Not configured")</dd></div>
+        <div><dt>Configuration</dt><dd><span class="sb-badge sb-badge-@(topology is { Entities.Count: > 0 } ? "info" : "muted")" data-testid="sb-configuration">@(topology is { Entities.Count: > 0 } ? "Configured" : "Not configured")</span></dd></div>
+        <div><dt>Queues</dt><dd data-testid="sb-queues">@(topology?.Queues.Count() ?? 0)</dd></div>
+        <div><dt>Topics</dt><dd data-testid="sb-topics">@(topology?.Topics.Count() ?? 0)</dd></div>
+        <div><dt>Subscriptions</dt><dd data-testid="sb-subscriptions">@(topology?.Subscriptions.Count() ?? 0)</dd></div>
+        <div><dt>Wolverine routes</dt><dd data-testid="sb-routes">@(Messaging is null ? "No analyzed source" : Messaging.AnalyzerVersion < 2 ? "Re-analyze source to compare" : $"{named} of {total} name a configured entity")</dd></div>
+        <div><dt>Runtime evidence</dt><dd><span class="sb-badge sb-badge-@(runtimeLabel == "Configured" ? "info" : "attention")" data-testid="sb-runtime">@runtimeLabel</span></dd></div>
+    </dl>
+    <p class="sb-muted">@runtimeDetail @(topology?.Source is { Length: > 0 } source ? $"Expected topology: {source}." : "")</p>
+    <div class="sb-actions">
+        <button type="button" class="btn-secondary" data-testid="sb-test" aria-label="@($"Test Service Bus {Platform.Name} (read-only)")" disabled="@_busy" @onclick="TestAsync">@(_busy ? "Testing Service Bus…" : "Test Service Bus")</button>
+        <button type="button" class="sb-link" data-testid="sb-configure-runtime" @onclick="OnConfigure">Configure runtime evidence</button>
+    </div>
+    <p class="sb-muted" role="status" aria-live="polite" data-testid="sb-status">@_status</p>
+
+    @if (topology is { Entities.Count: > 0 })
+    {
+        <ReviewDisclosure Text="View topology" CollapseText="Hide topology" TestId="sb-topology" Class="disclosure-inline">
+            <h4>Queues</h4>
+            <div class="sb-tablewrap" tabindex="0" role="region" aria-label="Configured queues">
+                <table class="sb-table" data-testid="sb-queue-table">
+                    <thead><tr><th scope="col">Queue</th><th scope="col">Publishers</th><th scope="col">Consumers</th><th scope="col">Expected properties</th></tr></thead>
+                    <tbody>
+                        @foreach (var queue in topology.Queues)
+                        {
+                            <tr><td class="sb-mono">@queue.Name</td><td>@Names(queue.Publishers)</td><td>@Names(queue.Consumers, topology.NamespaceReceivers.Count > 0)</td><td>@ServiceBusPresentation.Expected(queue)</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <h4>Topics and subscriptions</h4>
+            <ul class="sb-tree" data-testid="sb-topic-tree">
+                @foreach (var topic in topology.Topics)
+                {
+                    <li><span class="sb-mono">@topic.Name</span> <span class="sb-muted">· published by @Names(topic.Publishers) · @ServiceBusPresentation.Expected(topic)</span>
+                        @{ var subscriptions = topology.Subscriptions.Where(s => s.Topic == topic.Name).ToList(); }
+                        @if (subscriptions.Count == 0) { <span class="sb-muted"> · no subscription configured</span> }
+                        else
+                        {
+                            <ul>@foreach (var subscription in subscriptions) { <li><span class="sb-mono">@subscription.Name</span> <span class="sb-muted">· consumer @Names(subscription.Consumers) · @ServiceBusPresentation.Expected(subscription)</span></li> }</ul>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (topology.NamespaceReceivers.Count > 0) { <p class="sb-muted">Namespace-wide receivers: @string.Join(", ", topology.NamespaceReceivers).</p> }
+            @foreach (var note in topology.Notes) { <p class="sb-muted">@note</p> }
+        </ReviewDisclosure>
+    }
+
+    @if (_result is { } result)
+    {
+        var stale = ServiceBusPresentation.IsStale(result, DateTimeOffset.UtcNow);
+        <section class="sb-result" tabindex="-1" @ref="_resultRef" aria-labelledby="sb-result-heading" data-testid="sb-result" data-state="@result.OverallState">
+            <h4 id="sb-result-heading">Service Bus evidence <span class="sb-badge sb-badge-@ServiceBusPresentation.Tone(result.OverallState)" data-testid="sb-overall">@ServiceBusLabels.Overall(result.OverallState)</span>
+                @if (stale) { <span class="sb-badge sb-badge-attention" data-testid="sb-stale">Stale</span> }</h4>
+            <p class="sb-muted">Checked @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · read-only; nothing was sent, received or changed.</p>
+
+            <h5>Configuration</h5>
+            <ul class="sb-list" data-testid="sb-result-configuration">
+                @foreach (var item in result.Configuration.Where(c => c.CheckId != "sb-code-reference"))
+                { <li><span class="sb-badge sb-badge-@ServiceBusPresentation.Tone(item.State)">@ServiceBusLabels.State(item.State)</span> @item.Title — @item.Detail</li> }
+                @{ var routes = result.Routes.Where(r => r.Direction != nameof(MessagingRouteDirection.Reference)).ToList(); }
+                <li><span class="sb-badge sb-badge-@(routes.Any(r => r.Configuration == ServiceBusCheckState.Mismatch) ? "fail" : routes.Count == 0 ? "muted" : "ready")">@(routes.Any(r => r.Configuration == ServiceBusCheckState.Mismatch) ? "Mismatch" : routes.Count == 0 ? "Not assessed" : "Matched")</span>
+                    Code routes: @routes.Count(r => r.Configuration == ServiceBusCheckState.Matched) of @routes.Count match the configured topology@(routes.Any(r => r.Configuration == ServiceBusCheckState.NotAssessed) ? $"; {routes.Count(r => r.Configuration == ServiceBusCheckState.NotAssessed)} decided at runtime" : "").</li>
+                @{ var unreferenced = result.Configuration.Where(c => c.CheckId == "sb-code-reference" && c.State == ServiceBusCheckState.NotReferenced).ToList(); }
+                @if (unreferenced.Count > 0) { <li><span class="sb-badge sb-badge-attention">Not referenced</span> No code reference (possibly intentional): @string.Join(", ", unreferenced.Select(u => u.Entity)).</li> }
+            </ul>
+
+            <h5>Azure runtime</h5>
+            @if (result.Runtime is not { State: IntegrationEvidenceState.Available } runtime)
+            {
+                <p data-testid="sb-result-runtime"><span class="sb-badge sb-badge-muted">@IntegrationReviewLabels.EvidenceState(result.Runtime?.State ?? IntegrationEvidenceState.NotConfigured)</span> @result.Runtime?.Reason</p>
+            }
+            else
+            {
+                <ul class="sb-list" data-testid="sb-result-runtime">
+                    <li><span class="sb-badge sb-badge-info">Observed</span> Namespace @runtime.Namespace (status @(runtime.NamespaceStatus ?? "not reported"))</li>
+                    @foreach (var type in new[] { ServiceBusEntityType.Queue, ServiceBusEntityType.Topic, ServiceBusEntityType.Subscription })
+                    {
+                        var (seen, missing, all) = ServiceBusPresentation.Entities(result, type);
+                        <li><span class="sb-badge sb-badge-@(missing > 0 ? "fail" : "info")">@(missing > 0 ? "Not found" : "Observed")</span> @seen of @all @(type.ToString().ToLowerInvariant())s observed@(missing > 0 ? $"; not found: {string.Join(", ", result.RuntimeChecks.Where(c => c.CheckId == "sb-entity" && c.EntityType == type && c.State == ServiceBusCheckState.NotFound).Select(c => c.Entity))}" : "")</li>
+                    }
+                    @{ var mismatches = result.RuntimeChecks.Where(c => c.CheckId.StartsWith("sb-property-") && c.State == ServiceBusCheckState.Mismatch).ToList(); }
+                    <li><span class="sb-badge sb-badge-@(mismatches.Count > 0 ? "fail" : "ready")">@(mismatches.Count > 0 ? "Mismatch" : "Pass")</span> Properties: @result.RuntimeChecks.Count(c => c.CheckId.StartsWith("sb-property-") && c.State == ServiceBusCheckState.Pass) match the expectation@(mismatches.Count > 0 ? $"; {string.Join("; ", mismatches.Select(m => $"{m.Title}: expected {m.Expected}, observed {m.Observed}"))}" : "")</li>
+                </ul>
+                var (active, dead, scheduled) = ServiceBusPresentation.Counts(result);
+                <h5>Operational evidence</h5>
+                <dl class="sb-summary" data-testid="sb-result-counts">
+                    <div><dt>Active messages</dt><dd>Observed: @ServiceBusPresentation.Count(active)</dd></div>
+                    <div><dt>Dead-letter messages</dt><dd>Observed: @ServiceBusPresentation.Count(dead)@if (dead > 0) { <span class="sb-badge sb-badge-attention">Dead-letter messages observed</span> }</dd></div>
+                    <div><dt>Scheduled messages</dt><dd>Observed: @ServiceBusPresentation.Count(scheduled)</dd></div>
+                </dl>
+                <p class="sb-muted">Point-in-time counts with no configured threshold: zero is not a pass, and dead-letter messages are not judged a failure.</p>
+            }
+
+            @if (result.Routes.Count > 0)
+            {
+                var shown = result.Routes.Where(r => r.Direction != nameof(MessagingRouteDirection.Reference) || r.Configuration != ServiceBusCheckState.Matched).ToList();
+                <h5>Application messaging ↔ Service Bus</h5>
+                <p class="sb-muted" data-testid="sb-route-summary">@shown.Count(r => r.Configuration == ServiceBusCheckState.Matched) matched · @shown.Count(r => r.Configuration == ServiceBusCheckState.Mismatch) mismatch · @shown.Count(r => r.Configuration == ServiceBusCheckState.NotAssessed) decided at runtime · handler execution not assessed</p>
+                <ReviewDisclosure Text="@($"View {shown.Count} application route{(shown.Count == 1 ? "" : "s")}")" CollapseText="Hide application routes" TestId="sb-routes-detail" Class="disclosure-inline">
+                <div class="sb-tablewrap" tabindex="0" role="region" aria-label="Application routes and Service Bus entities">
+                    <table class="sb-table" data-testid="sb-result-routes">
+                        <thead><tr><th scope="col">Application route</th><th scope="col">Entity</th><th scope="col">Configuration</th><th scope="col">Access</th><th scope="col">Runtime entity</th><th scope="col">Handler execution</th></tr></thead>
+                        <tbody>
+                            @foreach (var route in shown)
+                            {
+                                <tr data-testid="sb-route" data-configuration="@route.Configuration">
+                                    <td>@route.Application · @route.Technology @route.Direction.ToLowerInvariant()@(route.MessageType is { } m ? $" {m}" : "")</td>
+                                    <td><span class="sb-mono">@route.Entity</span><span class="sb-source">@route.EntitySource</span></td>
+                                    <td><span class="sb-badge sb-badge-@ServiceBusPresentation.Tone(route.Configuration)">@ServiceBusLabels.State(route.Configuration)</span>@if (route.Configuration != ServiceBusCheckState.Matched) { <span class="sb-muted"> @route.Detail</span> }</td>
+                                    <td><span class="sb-badge sb-badge-@ServiceBusPresentation.Tone(route.Access)">@ServiceBusLabels.State(route.Access)</span></td>
+                                    <td><span class="sb-badge sb-badge-@ServiceBusPresentation.Tone(route.Runtime)">@ServiceBusLabels.State(route.Runtime)</span></td>
+                                    <td><span class="sb-badge sb-badge-muted">Not assessed</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                </ReviewDisclosure>
+                <p class="sb-muted">A matched route is configured infrastructure, not a message published or processed. Handler execution needs Application Insights evidence (Integration Quality Review).</p>
+            }
+
+            @if (result.Findings.Count > 0)
+            {
+                <h5>Findings</h5>
+                <ul class="sb-list" data-testid="sb-result-findings">@foreach (var finding in result.Findings) { <li>@finding</li> }</ul>
+            }
+            <h5>What’s missing</h5>
+            <ul class="sb-list" data-testid="sb-result-missing">@foreach (var item in result.Missing) { <li>@item</li> }</ul>
+            @if (result.RuntimeChecks.Count > 0)
+            {
+                <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="sb-technical" Class="disclosure-inline">
+                    <div class="sb-tablewrap" tabindex="0" role="region" aria-label="Service Bus runtime comparisons">
+                        <table class="sb-table">
+                            <thead><tr><th scope="col">Check</th><th scope="col">Expected</th><th scope="col">Observed</th><th scope="col">State</th></tr></thead>
+                            <tbody>@foreach (var c in result.RuntimeChecks) { <tr><td class="sb-mono">@c.Title</td><td>@(c.Expected ?? "—")</td><td>@(c.Observed ?? "—")</td><td>@ServiceBusLabels.State(c.State)</td></tr> }</tbody>
+                        </table>
+                    </div>
+                </ReviewDisclosure>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public IntegrationPlatform Platform { get; set; } = new();
+    [Parameter] public ApplicationMessagingEvidenceSet? Messaging { get; set; }
+    [Parameter] public EventCallback OnConfigure { get; set; }
+
+    private ServiceBusEvidenceCheck? _result;
+    private bool _busy;
+    private bool _focusResult;
+    private string _status = "";
+    private ElementReference _resultRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusResult) { _focusResult = false; await _resultRef.FocusAsync(); }
+    }
+
+    private async Task TestAsync()
+    {
+        _busy = true;
+        _status = "Testing Service Bus (read-only)…";
+        try
+        {
+            _result = await Api.CheckServiceBusAsync(EnvironmentId, Platform.Id);
+            _status = $"Service Bus evidence: {ServiceBusLabels.Overall(_result.OverallState)}. Nothing was changed.";
+            _focusResult = true;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            _status = "The Service Bus test could not run: the BirkNext backend did not answer. Nothing was changed.";
+        }
+        finally { _busy = false; }
+    }
+
+    private static string Names(List<string> names, bool namespaceReceivers = false) =>
+        names.Count == 0 ? namespaceReceivers ? "none per entity (namespace-wide receivers only)" : "none" : string.Join(", ", names);
+}

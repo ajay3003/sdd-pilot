@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BirkNext.Api.Services.Integrations.ApplicationMessaging;
+using BirkNext.Api.Services.Integrations.ServiceBus;
 using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.Integrations;
@@ -27,7 +28,8 @@ public sealed class IntegrationReviewEngine(
     HttpClient http,
     ILogger<IntegrationReviewEngine> logger,
     IApplicationMessagingTelemetrySource? messagingTelemetry = null,
-    IIntegrationAzureCredential? azure = null)
+    IIntegrationAzureCredential? azure = null,
+    ServiceBusEvidenceService? serviceBus = null)
 {
     private const string NoSafeEventSource = "No safe runtime event-structure source is configured; events are never consumed to inspect them.";
 
@@ -42,7 +44,12 @@ public sealed class IntegrationReviewEngine(
 
     /// <summary>Pre-run readiness. Application messaging evidence is summarized beside it and never changes a domain's readiness.</summary>
     public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging) =>
-        ReadinessCore(catalog, contracts) with { ApplicationMessaging = ApplicationMessagingReview.Summaries(catalog, messaging, azure) };
+        ReadinessCore(catalog, contracts) with
+        {
+            ApplicationMessaging = ApplicationMessagingReview.Summaries(catalog, messaging, azure),
+            // Service Bus is its own transport: summarized here, never counted among the Event Hub runtime sources.
+            ServiceBus = serviceBus is null ? [] : catalog.Platforms.Where(p => p.Enabled && ServiceBusEvidenceService.IsServiceBus(p)).Select(p => serviceBus.Readiness(p, messaging)).ToList(),
+        };
 
     private IntegrationReviewReadiness ReadinessCore(IntegrationCatalog catalog, IntegrationContractSet contracts)
     {
@@ -286,6 +293,23 @@ public sealed class IntegrationReviewEngine(
             systems.Add(new IntegrationSystemResult { SystemName = first.SystemName ?? first.DisplayName, PlatformId = platform?.Id, Kind = first.Kind, DomainReviewSupported = supported, PlatformChecks = platformChecks, Topics = topicResults });
         }
 
+        // Service Bus platforms: topology, runtime metadata and route correlation as platform-scope checks in the existing domains.
+        var serviceBusSnapshot = new List<ServiceBusEvidenceCheck>();
+        if (serviceBus is not null)
+            foreach (var platform in catalog.Platforms.Where(p => p.Enabled && ServiceBusEvidenceService.IsServiceBus(p)))
+            {
+                var check = await serviceBus.CheckAsync(platform, messaging, ct);
+                var (platformChecks, platformFindings) = ServiceBusEvidenceService.ReviewChecks(platform, check);
+                systems.Add(new IntegrationSystemResult { SystemName = platform.Name, PlatformId = platform.Id, Kind = IntegrationKind.ServiceBus, DomainReviewSupported = true, PlatformChecks = platformChecks });
+                findings.AddRange(platformFindings);
+                serviceBusSnapshot.Add(check);
+                adapterStatuses.Add(new IntegrationEvidenceAdapterStatus
+                {
+                    Adapter = $"{ArmServiceBusMetadataSource.Adapter} · {platform.Name}", Source = IntegrationEvidenceSource.AzureResourceManager,
+                    State = check.Runtime?.State ?? IntegrationEvidenceState.NotConfigured, Reason = check.Runtime?.Reason ?? "", CapturedAt = check.Runtime?.CapturedAt ?? check.CompletedAt,
+                });
+            }
+
         var grouped = findings.GroupBy(f => f.Key).Select(g => g.First() with { AffectedIntegrations = g.SelectMany(f => f.AffectedIntegrations).Distinct().ToList() }).ToList();
         var allChecks = systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks))).ToList();
         var domains = Enum.GetValues<IntegrationReviewDomain>().Select(domain => DomainResult(domain, allChecks, grouped)).ToList();
@@ -307,7 +331,7 @@ public sealed class IntegrationReviewEngine(
             Freshness = freshness, EvidenceSources = sources, ReviewWindowHours = windows.Count == 0 ? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours : windows.Max(),
             EvidenceAdapters = adapterStatuses, ContractSnapshot = contracts.Items.Where(i => enabled.Any(e => e.Id == i.Artifact.IntegrationId)).Select(i => i.Artifact).ToList(),
             // The evidence as used: a later re-analysis or re-binding never changes this result.
-            ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(),
+            ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(), ServiceBusSnapshot = serviceBusSnapshot,
         };
         logger.LogInformation(
             "Integration Quality Review for {EnvironmentId}: {Integrations} integration(s) in {Systems} system(s), window {WindowHours} h, sources {Sources}, {Assessed} of {Checks} check(s) assessed, {Findings} finding(s), {DurationMs:0} ms.",

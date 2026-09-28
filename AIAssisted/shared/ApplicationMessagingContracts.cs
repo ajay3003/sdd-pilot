@@ -17,8 +17,9 @@ public enum MessagingDetection { Confirmed, Likely, NotDetected }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MessagingFactState { Detected, Configured, Available, NotFound, NotAssessable, NotApplicable }
 
+/// <summary>Reference: source names a transport entity without a provable direction (e.g. a configuration default for an SDK client).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum MessagingRouteDirection { Publish, Listen }
+public enum MessagingRouteDirection { Publish, Listen, Reference }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum MessagingEndpointKind { Queue, Topic, Subscription }
@@ -43,7 +44,13 @@ public sealed record MessagingRoute
     public string? MessageType { get; init; }
     public MessagingEndpointKind EndpointKind { get; init; }
     public string Endpoint { get; init; } = "";
+    /// <summary>Concrete entity name when source (literal, configuration default or base appsettings.json value) establishes one; null otherwise.</summary>
+    public string? EntityName { get; init; }
+    public string? EntityNameSource { get; init; }
     public string? Topic { get; init; }
+    public string? TopicName { get; init; }
+    /// <summary>"Wolverine" or "Azure SDK" (Azure.Messaging.ServiceBus used directly).</summary>
+    public string Technology { get; init; } = "Wolverine";
     /// <summary>Configuration guard around the route (e.g. "unless AzureServiceBus:Disabled"), when source shows one.</summary>
     public string? Condition { get; init; }
     public List<string> Options { get; init; } = [];
@@ -97,6 +104,8 @@ public sealed record ApplicationMessagingEvidence
     public List<MessagingRoute> Routes { get; init; } = [];
     public List<MessagingHandler> Handlers { get; init; } = [];
     public List<MessagingFailureRule> FailureRules { get; init; } = [];
+    /// <summary>Service Bus entities the application's own Azure SDK code references (outside Wolverine) — senders, processors, configured defaults.</summary>
+    public List<MessagingRoute> SdkRoutes { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
     /// <summary>The Integrations consumer this application is explicitly bound to by a person; never inferred from names.</summary>
     public string? BoundConsumer { get; init; }
@@ -110,6 +119,8 @@ public sealed record ApplicationMessagingEvidenceSet
 {
     public string EnvironmentId { get; init; } = "";
     public DateTimeOffset AnalyzedAt { get; init; }
+    /// <summary>Version of the analysis that produced this set. 0 = before entity names were resolved (re-analysis needed for Service Bus comparison).</summary>
+    public int AnalyzerVersion { get; init; }
     public List<SourceArchive> Archives { get; init; } = [];
     public List<ApplicationMessagingEvidence> Applications { get; init; } = [];
     public List<string> Limitations { get; init; } = [];

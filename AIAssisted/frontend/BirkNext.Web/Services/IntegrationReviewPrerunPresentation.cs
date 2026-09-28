@@ -97,6 +97,14 @@ public static class IntegrationReviewPrerunPresentation
         var groups = readiness.Systems.Where(s => s.Kind == IntegrationKind.EventHub).Sum(s => s.ConsumerGroupsUnknown);
         if (groups > 0)
             items.Add(new("groups", "Consumer groups", $"Not configured for {groups} topic{(groups == 1 ? "" : "s")}", null, null));
+        // Service Bus is its own transport: its runtime metadata and route consistency are separate limitations (never Event Hub sources).
+        foreach (var serviceBus in readiness.ServiceBus)
+        {
+            if (serviceBus.RoutesMismatched > 0)
+                items.Add(new("servicebus-routes", "Service Bus routes", $"{serviceBus.RoutesMismatched} of {serviceBus.RoutesTotal} do not match the configured topology", "Review Service Bus", Href(profileId, ServiceBusPresentation.Focus)));
+            if (serviceBus.RuntimeState != IntegrationEvidenceState.Available)
+                items.Add(new("servicebus-runtime", "Service Bus runtime", IntegrationReviewLabels.EvidenceState(serviceBus.RuntimeState), "Configure Service Bus runtime evidence", Href(profileId, ServiceBusPresentation.Focus)));
+        }
         return items;
     }
 
