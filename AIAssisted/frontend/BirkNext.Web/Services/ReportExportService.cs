@@ -424,6 +424,7 @@ public sealed class ReportExportService : IReportExportService
     public string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName) => ApiReviewExport.Build(report, projectName, Table, Badge, Esc, BuildHtml);
 
     public string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName) => IntegrationReviewExport.Build(result, projectName, Table, Badge, Esc, BuildHtml);
+    public string ExportDependencyReview(BirkNext.Dependencies.DependencyReviewResult result) => DependencyReviewExport.Build(result, Table, Badge, Esc, BuildHtml);
 
     private static string StatusLabel(bool? value) => value switch
     {

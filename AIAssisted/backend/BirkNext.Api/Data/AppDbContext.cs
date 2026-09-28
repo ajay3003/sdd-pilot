@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
     public DbSet<GraphQlSchemaArtifactRecord> GraphQlSchemaArtifacts => Set<GraphQlSchemaArtifactRecord>();
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
+    public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -596,6 +597,17 @@ public class AppDbContext : DbContext
             entity.Property(a => a.ContentHash).HasColumnName("content_hash").HasMaxLength(64).IsRequired();
             entity.Property(a => a.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.Property(a => a.ImportedAt).HasColumnName("imported_at");
+        });
+
+        modelBuilder.Entity<DependencyReviewRunRecord>(entity =>
+        {
+            entity.ToTable("dependency_review_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.CompletedAt).HasColumnName("completed_at");
+            entity.Property(r => r.Label).HasColumnName("label").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => r.CompletedAt).HasDatabaseName("ix_dependency_review_runs_completed");
         });
 
         modelBuilder.Entity<ApplicationMessagingEvidenceRecord>(entity =>

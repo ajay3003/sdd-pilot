@@ -1,0 +1,32 @@
+@using BirkNext.Dependencies
+@using BirkNext.Web.Services
+
+@* Why a synthetic scenario produced its result: the explanation, each matched rule with what it matched on and what it set, the layer each
+   effective setting came from, and the limitations (e.g. presets not expanded). *@
+<div class="se" data-testid="dr-explanation">
+    <p>@Simulation.Explanation</p>
+    @if (Simulation.MatchedRules.Count > 0)
+    {
+        <ol class="se-rules">
+            @foreach (var rule in Simulation.MatchedRules)
+            {
+                <li value="@rule.RuleIndex"><strong>Rule #@rule.RuleIndex</strong> @rule.Description
+                    <div class="se-muted">Matched on: @string.Join("; ", rule.MatchedOn)</div>
+                    @if (rule.Applied.Count > 0) { <div class="se-muted">Sets: @string.Join("; ", rule.Applied.Where(a => a.Key is not "prBodyNotes").Select(a => $"{a.Key} = {a.Value}"))</div> }
+                </li>
+            }
+        </ol>
+    }
+    @if (Simulation.Effective.Sources.Count > 0)
+    {
+        <p class="se-muted">Effective: @string.Join("; ", Simulation.Effective.Sources.Select(s => $"{s.Key} from {s.Value}"))</p>
+    }
+    @if (Simulation.Limitations.Count > 0)
+    {
+        <p class="se-muted" data-testid="dr-limitations">Partial: @string.Join(" ", Simulation.Limitations)</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PolicySimulation Simulation { get; set; } = default!;
+}

@@ -406,6 +406,8 @@ builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ApplicationMess
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.ServiceBus.IServiceBusMetadataSource, BirkNext.Api.Services.Integrations.ServiceBus.ArmServiceBusMetadataSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ServiceBus.ServiceBusEvidenceService>();
+// Dependency / supply-chain review (Renovate policy): offline, read-only analysis of uploaded repository archives.
+builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

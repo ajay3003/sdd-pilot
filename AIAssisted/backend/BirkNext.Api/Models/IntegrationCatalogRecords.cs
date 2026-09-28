@@ -51,6 +51,15 @@ public class IntegrationReviewRunRecord
 }
 
 /// <summary>A trusted event contract (JSON Schema) for one side of one integration. Key: (EnvironmentId, IntegrationId, Role).</summary>
+/// <summary>One immutable dependency-review run (facts, hashes, redacted normalized config, simulations — never source files or secrets).</summary>
+public class DependencyReviewRunRecord
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset CompletedAt { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public string ResultJson { get; set; } = string.Empty;
+}
+
 /// <summary>Application messaging evidence set of an environment (facts extracted from uploaded source; never the source itself).</summary>
 public class ApplicationMessagingEvidenceRecord
 {

@@ -1,0 +1,4 @@
+.se { display: grid; gap: .3rem; font-size: .82rem; min-width: min(14rem, 100%); max-width: 40rem; overflow-wrap: anywhere; }
+.se p { margin: 0; }
+.se-rules { margin: 0; padding-left: 1.3rem; display: grid; gap: .3rem; }
+.se-muted { color: var(--clr-text-muted); font-size: .78rem; }
