@@ -188,6 +188,9 @@ builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
 // Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
 builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+// Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
+builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 // Dependency Review (Renovate policy): read-only analysis of uploaded repository archives; synthetic version simulation only.
 builder.Services.AddHttpClient<IDependencyReviewApiService, DependencyReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

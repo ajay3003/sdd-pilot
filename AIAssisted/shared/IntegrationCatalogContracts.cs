@@ -528,6 +528,8 @@ public sealed record IntegrationReviewResult
     public List<ServiceBusEvidenceCheck> ServiceBusSnapshot { get; init; } = [];
     /// <summary>SCIM provisioning evidence exactly as this run established it (source analysis, safe GET checks, correlations). Never re-queried.</summary>
     public List<ScimEvidenceCheck> ScimSnapshot { get; init; } = [];
+    /// <summary>Security classification (source + configuration only) as this run used it. Its own review owns live checks.</summary>
+    public ClassificationReviewResult? SecurityClassificationSnapshot { get; init; }
     [JsonIgnore] public int TopicsReviewed => Systems.Where(s => s.DomainReviewSupported).Sum(s => s.Topics.Count);
     [JsonIgnore] public IEnumerable<IntegrationCheck> AllChecks => Systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks)));
 }

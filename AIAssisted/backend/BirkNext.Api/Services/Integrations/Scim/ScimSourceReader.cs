@@ -32,7 +32,10 @@ public static class ScimSourceReader
         "AzureAd:Instance", "AzureAd:TenantId", "ServiceBus:Disabled", "Scim:PageSize", "AllowedHosts",
     ];
 
-    public static (SourceArchive? Archive, ScimSourceSet Files, string? Error) Read(string fileName, byte[] bytes)
+    public static (SourceArchive? Archive, ScimSourceSet Files, string? Error) Read(string fileName, byte[] bytes) => Read(fileName, bytes, null);
+
+    /// <summary>As <see cref="Read(string, byte[])"/>, with an extra predicate for which markdown files count as documents (e.g. all specs/docs).</summary>
+    public static (SourceArchive? Archive, ScimSourceSet Files, string? Error) Read(string fileName, byte[] bytes, Func<string, bool>? document)
     {
         var name = System.IO.Path.GetFileName((fileName ?? "").Replace('\\', '/'));
         var empty = new ScimSourceSet([], [], []);
@@ -49,7 +52,7 @@ public static class ScimSourceReader
             foreach (var entry in zip.Entries)
             {
                 var path = entry.FullName.Replace('\\', '/').TrimStart('/');
-                var kind = Classify(path);
+                var kind = Classify(path) ?? (document is not null && path.EndsWith(".md", StringComparison.OrdinalIgnoreCase) && document(path) && !IsSkipped(path) ? FileKind.Document : null);
                 if (kind is null || entry.Length > MaxFileBytes) continue;
                 total += entry.Length;
                 if (total > MaxTotalBytes) return (null, empty, $"{name} has more than {MaxTotalBytes / (1024 * 1024)} MB of source to analyze.");
@@ -69,6 +72,8 @@ public static class ScimSourceReader
     }
 
     private enum FileKind { Code, Document, Settings }
+
+    private static bool IsSkipped(string path) => path.Split('/', StringSplitOptions.RemoveEmptyEntries) is var s && s.Length > 0 && s[..^1].Any(x => SkippedSegments.Contains(x.ToLowerInvariant()));
 
     private static FileKind? Classify(string path)
     {

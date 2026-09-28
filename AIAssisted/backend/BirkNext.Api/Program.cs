@@ -410,6 +410,10 @@ builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ServiceBus.Service
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.Scim.IScimRuntimeProbe, BirkNext.Api.Services.Integrations.Scim.HttpScimRuntimeProbe>(client => client.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService, BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService>();
+// Security Classification / Gradert tilgang review: source analysis + fixed safe GraphQL queries for configured synthetic test children only.
+builder.Services.AddHttpClient<BirkNext.Api.Services.SecurityClassification.IClassificationLiveProbe, BirkNext.Api.Services.SecurityClassification.GraphQlClassificationProbe>(client => client.Timeout = TimeSpan.FromSeconds(15))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.IClassificationReviewService, BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>();
 // Dependency / supply-chain review (Renovate policy): offline, read-only analysis of uploaded repository archives.
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();

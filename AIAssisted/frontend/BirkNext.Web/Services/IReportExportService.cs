@@ -10,6 +10,7 @@ public interface IReportExportService
     string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName);
     string ExportDependencyReview(BirkNext.Dependencies.DependencyReviewResult result);
     string ExportScimCheck(BirkNext.Integrations.ScimEvidenceCheck check);
+    string ExportClassificationReview(BirkNext.Integrations.ClassificationReviewResult result);
     string ExportSecurityReview(WasmSecurityReviewReport report, string? projectName);
     string ExportPerformanceReview(WasmPerformanceReviewReport report, string? projectName);
     string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName);

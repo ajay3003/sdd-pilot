@@ -559,4 +559,42 @@ public sealed class IntegrationReviewEngineTests
         run.EvidenceAdapters.Should().Contain(a => a.Adapter.StartsWith("SCIM safe checks") && a.State == IntegrationEvidenceState.NotConfigured);
         (await service.GetRunAsync(run.RunId))!.ScimSnapshot.Should().ContainSingle();
     }
+
+    private sealed class NoLiveProbe : BirkNext.Api.Services.SecurityClassification.IClassificationLiveProbe
+    {
+        public int Calls { get; private set; }
+        public Task<ClassificationLiveEvidence> ProbeAsync(ClassificationTestContext context, ClassificationRunRequest request, IReadOnlyList<ClassificationLevel> levels, CancellationToken ct = default)
+        { Calls++; return Task.FromResult(new ClassificationLiveEvidence()); }
+    }
+
+    [Fact]
+    public async Task SecurityClassificationContributesSourceChecksWithoutLiveCalls()
+    {
+        await using var db = Db();
+        var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
+        var probe = new NoLiveProbe();
+        var classification = new BirkNext.Api.Services.SecurityClassification.ClassificationReviewService(db, probe, NullLogger<BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>.Instance);
+        var files = new List<BirkNext.Api.Services.Integrations.ApplicationMessaging.SourceFile>
+        {
+            new("P/src/Person/M2LB.Person.csproj", "<Project/>"),
+            new("P/src/Person/Level.cs", "public class SikkerhetsnivaaType { public int Nivaa { get; set; } public bool KreverGradertTilgang { get; set; } }"),
+            new("P/src/Person/Seed.cs", "class S { void M() { var a = new SikkerhetsnivaaType { Nivaa = 2, Verdi = \"Kode7\", KreverGradertTilgang = true }; } }"),
+        };
+        using var stream = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+            foreach (var f in files) { using var w = new StreamWriter(zip.CreateEntry(f.Path).Open()); w.Write(f.Content); }
+        (await classification.AnalyzeAsync(DevId, [("M2LB.zip", stream.ToArray())])).Error.Should().BeNull();
+        var engine = new IntegrationReviewEngine(new Probe(true), new Metadata(null), new Groups(null), new Checkpoints(null), new Telemetry(null), new HttpClient(), NullLogger<IntegrationReviewEngine>.Instance, classification: classification);
+        var service = new IntegrationReviewService(catalogService, engine, new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance);
+        await catalogService.GetAsync(DevId, "Development", DevUrl);
+
+        var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV" }, "Development", DevUrl);
+
+        probe.Calls.Should().Be(0, "IQR never runs live security checks");
+        run.SecurityClassificationSnapshot.Should().NotBeNull();
+        var system = run.Systems.Single(s => s.SystemName.StartsWith("Security classification"));
+        system.PlatformChecks.Should().Contain(c => c.CheckId == "classification-model-reference" && c.Status == IntegrationCheckStatus.Detected);
+        system.PlatformChecks.Should().Contain(c => c.Domain == IntegrationReviewDomain.MessageFlow && c.Status == IntegrationCheckStatus.NotAssessed);
+        system.PlatformChecks.Should().NotContain(c => c.Status == IntegrationCheckStatus.Pass);
+    }
 }

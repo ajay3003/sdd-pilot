@@ -57,6 +57,7 @@
     <Compile Include="../../shared/ServiceBusContracts.cs" Link="Models/ServiceBusContracts.cs" />
     <Compile Include="../../shared/DependencyReviewContracts.cs" Link="Models/DependencyReviewContracts.cs" />
     <Compile Include="../../shared/ScimProvisioningContracts.cs" Link="Models/ScimProvisioningContracts.cs" />
+    <Compile Include="../../shared/SecurityClassificationContracts.cs" Link="Models/SecurityClassificationContracts.cs" />
     <Compile Include="../../shared/GraphQlSchemaArtifactContracts.cs" Link="Models/GraphQlSchemaArtifactContracts.cs" />
   </ItemGroup>
   <Target Name="PackageBrowserCompanion" BeforeTargets="AssignTargetPaths">

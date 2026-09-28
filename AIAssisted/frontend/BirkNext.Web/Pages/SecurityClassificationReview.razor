@@ -1,0 +1,435 @@
+@page "/security-classification-review"
+@using BirkNext.Integrations
+@using BirkNext.Web.Components
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Forms
+@inject IClassificationReviewApiService Api
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
+
+<PageTitle>Security Classification</PageTitle>
+
+@* Security Classification / Gradert tilgang. The classification model comes from the analyzed source. Source evidence, the approved test
+   context and live observations are shown separately: a guard that exists is not a guard that receives the level, UI hiding is not
+   authorization, and a count match is not access control. Live checks are fixed GraphQL queries for configured synthetic test children in
+   DEV/QA only; Production is refused; tokens are used for one run and never stored; no mutation and no search for real classified children. *@
+<div class="sc-page">
+    <PageHeader Title="Security Classification / Gradert tilgang"
+                Description="Does the security classification survive the BiRK → Debezium → Event Hub → adapter pipeline, and is a Kode 6 / Kode 7 child protected from unauthorized access?">
+        @if (_result is not null) { <button type="button" class="btn-secondary" data-testid="sc-export" @onclick="ExportAsync">Export HTML</button> }
+    </PageHeader>
+
+    @if (_profile is null)
+    {
+        <p class="sc-muted" role="status" data-testid="sc-loading">@(_error ?? "Loading the active Target Environment…")</p>
+    }
+    else
+    {
+        <section class="sc-card" aria-labelledby="sc-setup-heading" data-testid="sc-setup">
+            <h2 id="sc-setup-heading">Evidence</h2>
+            <p class="sc-muted">Target Environment <strong>@_profile.Name</strong> (@_profile.EnvironmentType). @(_profile.EnvironmentType == FrontendEnvironmentType.Production ? "Production is never tested — only source and configuration checks run." : "")</p>
+            <div class="sc-actions">
+                <label class="sc-file-button">
+                    <InputFile class="sc-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze M2LB source archives (.zip)" data-testid="sc-upload" />
+                    <span aria-hidden="true">@(_overview?.Source is null ? "Analyze M2LB source" : "Re-analyze M2LB source")</span>
+                </label>
+                <button type="button" class="sc-link" data-testid="sc-configure" aria-expanded="@(_editing ? "true" : "false")" @onclick="BeginEdit">Configure test context</button>
+            </div>
+            @if (_overview?.Source is { } source)
+            {
+                <p class="sc-muted" data-testid="sc-source">Source analyzed @source.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @string.Join(", ", source.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..Math.Min(12, a.Sha256.Length)]})")) · @(source.Detected ? $"{source.Levels.Count} classification levels" : "no classification model found")</p>
+            }
+
+            @if (_editing)
+            {
+                <fieldset class="sc-form" data-testid="sc-context-form">
+                    <legend>Security classification test context</legend>
+                    <p class="sc-muted">Synthetic or approved test children only — never a real child found by searching. Opaque ids only (no name or national id). Live mutation tests (classification change, grant, revoke) are <strong>disabled</strong> and not offered.</p>
+                    <label class="sc-field">Environment
+                        <select class="form-control" @bind="_draft.Environment" @ref="_focus" data-testid="sc-context-environment">
+                            <option value="">Not configured</option>
+                            <option value="DEV">DEV</option>
+                            <option value="QA">QA</option>
+                        </select>
+                    </label>
+                    <label class="sc-field">Person GraphQL endpoint <input class="form-control sc-mono" @bind="_draft.Endpoint" placeholder="https://…/graphql" data-testid="sc-context-endpoint" /></label>
+                    @foreach (var level in Levels)
+                    {
+                        var row = _draft.Children[level.Nivaa];
+                        <div class="sc-child" data-testid="sc-context-child" data-level="@level.Nivaa">
+                            <span class="sc-child-title">@ClassificationPresentation.LevelName(level) test child</span>
+                            <label class="sc-field">Registration id (GUID) <input class="form-control sc-mono" @bind="row.Id" data-testid="@($"sc-context-child-id-{level.Nivaa}")" /></label>
+                            <label class="sc-field">BiRK id (exact-id search) <input class="form-control sc-mono" @bind="row.BirkId" data-testid="@($"sc-context-child-birk-{level.Nivaa}")" /></label>
+                        </div>
+                    }
+                    <label class="sc-field">Unauthorized test identity (label) <input class="form-control" @bind="_draft.Unauthorized" data-testid="sc-context-unauthorized" /></label>
+                    <label class="sc-field">Authorized graded identity (label) <input class="form-control" @bind="_draft.Authorized" data-testid="sc-context-authorized" /></label>
+                    <label class="sc-check"><input type="checkbox" @bind="_draft.Approved" data-testid="sc-context-approved" /> Approved by the test lead</label>
+                    @if (_formError is { } formError) { <p class="sc-error" role="alert" data-testid="sc-context-error">@formError</p> }
+                    <div class="sc-actions">
+                        <button type="button" class="btn-primary" data-testid="sc-context-save" disabled="@_busy" @onclick="SaveContextAsync">Save test context</button>
+                        <button type="button" class="btn-secondary" @onclick="() => _editing = false">Cancel</button>
+                    </div>
+                </fieldset>
+            }
+
+            <dl class="sc-context" data-testid="sc-context-summary">
+                <div><dt>Environment</dt><dd>@(Context.Environment ?? "Not configured")</dd></div>
+                @foreach (var level in Levels)
+                {
+                    <div data-testid="sc-context-level" data-level="@level.Nivaa"><dt>Level @level.Nivaa test child</dt><dd><span class="sc-badge sc-badge-@(Child(level.Nivaa) is null ? "muted" : "info")">@(Child(level.Nivaa) is null ? "Missing" : "Configured")</span></dd></div>
+                }
+                <div><dt>Unauthorized identity</dt><dd><span class="sc-badge sc-badge-@(Context.UnauthorizedIdentityLabel is null ? "muted" : "info")">@(Context.UnauthorizedIdentityLabel is null ? "Missing" : "Configured")</span></dd></div>
+                <div><dt>Authorized graded identity</dt><dd><span class="sc-badge sc-badge-@(Context.AuthorizedIdentityLabel is null ? "muted" : "info")">@(Context.AuthorizedIdentityLabel is null ? "Missing" : "Configured")</span></dd></div>
+                <div><dt>Live mutation tests</dt><dd><span class="sc-badge sc-badge-muted" data-testid="sc-mutation">Disabled</span></dd></div>
+            </dl>
+
+            <ReviewDisclosure Text="Run options (tokens, counts)" CollapseText="Hide run options" TestId="sc-run-options" Class="disclosure-inline">
+                <p class="sc-muted">Tokens are sent for this run only and cleared afterwards; BirkNext never stores them.</p>
+                <label class="sc-field">Unauthorized identity token <input type="password" autocomplete="off" class="form-control sc-mono" @bind="_unauthorizedToken" data-testid="sc-token-unauthorized" /></label>
+                <label class="sc-field">Authorized graded identity token <input type="password" autocomplete="off" class="form-control sc-mono" @bind="_authorizedToken" data-testid="sc-token-authorized" /></label>
+                <h3>Classification count evidence (optional)</h3>
+                <p class="sc-muted">Counts are observations at a time, from an approved read-only source — never expected values. Compared only when captured within an hour of each other.</p>
+                @foreach (var side in new[] { _sourceCounts, _targetCounts })
+                {
+                    <div class="sc-counts" data-testid="sc-counts" data-side="@side.Side">
+                        <span class="sc-child-title">@side.Side</span>
+                        <label class="sc-field">System <input class="form-control" @bind="side.System" data-testid="@($"sc-counts-system-{side.Side}")" /></label>
+                        <label class="sc-field">Captured at (UTC) <input type="datetime-local" class="form-control" @bind="side.CapturedAt" data-testid="@($"sc-counts-at-{side.Side}")" /></label>
+                        <label class="sc-field">Provenance <input class="form-control" @bind="side.Provenance" data-testid="@($"sc-counts-provenance-{side.Side}")" /></label>
+                        @foreach (var level in Levels.Where(l => l.KreverGradertTilgang))
+                        {
+                            <label class="sc-field">Level @level.Nivaa count <input type="number" min="0" class="form-control" @bind="side.Counts[level.Nivaa]" data-testid="@($"sc-counts-{side.Side}-{level.Nivaa}")" /></label>
+                        }
+                    </div>
+                }
+            </ReviewDisclosure>
+            @{ var (canRun, reason) = ClassificationPresentation.LiveReadiness(Context, _profile.EnvironmentType.ToString(), !string.IsNullOrWhiteSpace(_unauthorizedToken) || !string.IsNullOrWhiteSpace(_authorizedToken)); }
+            <p class="sc-muted" data-testid="sc-live-readiness"><strong>Live checks:</strong> @(canRun ? "Available" : "Not run") — @reason</p>
+            <div class="sc-actions">
+                <button type="button" class="btn-primary" data-testid="sc-run" disabled="@_busy" @onclick="RunAsync">@(_busy ? "Checking…" : "Run safe security checks")</button>
+            </div>
+            <p class="sc-status" role="status" aria-live="polite" data-testid="sc-status">@_status</p>
+            @if (_error is { } error) { <p class="sc-error" role="alert" data-testid="sc-error">@error</p> }
+            @if (_overview is { History.Count: > 0 } overview)
+            {
+                <label class="sc-field sc-history">Previous reviews
+                    <select class="form-control" data-testid="sc-history" value="@(_result?.RunId.ToString() ?? "")" @onchange="OpenAsync" disabled="@_busy">
+                        <option value="">Choose a stored review</option>
+                        @foreach (var run in overview.History) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @ClassificationLabels.Overall(run.Overall) · @run.Findings finding(s)</option> }
+                    </select>
+                </label>
+            }
+        </section>
+
+        @if (_result is { } result)
+        {
+            <section class="sc-card" aria-labelledby="sc-summary-heading" data-testid="sc-summary" tabindex="-1" @ref="_resultRef">
+                <h2 id="sc-summary-heading">Security classification <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(result.Overall)" data-testid="sc-overall">@ClassificationLabels.Overall(result.Overall)</span></h2>
+                <p class="sc-muted" data-testid="sc-headline">@ClassificationPresentation.Headline(result) · @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</p>
+                <ul class="sc-summary">
+                    @foreach (var row in result.Summary)
+                    {
+                        <li data-testid="sc-summary-row" data-area="@row.Area"><span class="sc-summary-title">@row.Title</span> <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(row.State)">@ClassificationLabels.State(row.State)</span> <span class="sc-muted">@row.Evidence</span></li>
+                    }
+                </ul>
+            </section>
+
+            <section class="sc-card" aria-labelledby="sc-model-heading" data-testid="sc-model">
+                <h2 id="sc-model-heading">Classification model (from source)</h2>
+                <ul class="sc-list">
+                    @foreach (var level in result.Levels)
+                    {
+                        <li data-testid="sc-level" data-level="@level.Nivaa"><span aria-hidden="true">✓</span> @ClassificationPresentation.LevelName(level)@(level.KreverGradertTilgang ? " — requires graded access" : "")</li>
+                    }
+                </ul>
+            </section>
+
+            <section class="sc-card" aria-labelledby="sc-pipeline-heading" data-testid="sc-pipeline">
+                <h2 id="sc-pipeline-heading">CDC pipeline</h2>
+                <ol class="sc-pipeline">
+                    @foreach (var stage in result.Pipeline)
+                    {
+                        <li data-testid="sc-stage" data-stage="@stage.Stage">
+                            <span class="sc-stage-title">@stage.Title</span>
+                            <span><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(stage.Source)" title="Source / configuration">@ClassificationLabels.State(stage.Source)</span> <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(stage.Runtime)">Runtime: @ClassificationLabels.State(stage.Runtime)</span></span>
+                            <span class="sc-muted">@stage.SourceDetail</span>
+                        </li>
+                    }
+                </ol>
+            </section>
+
+            <section class="sc-card" aria-labelledby="sc-matrix-heading" data-testid="sc-matrix">
+                <h2 id="sc-matrix-heading">Authorization tests</h2>
+                <p class="sc-muted">@IntegrationReviewLabels.EvidenceState(result.Live.State): @result.Live.Reason Unauthorized and authorized controls are separate columns; an unauthorized not-found is the expected anti-disclosure result.</p>
+                <div class="sc-tablewrap" tabindex="0" role="region" aria-label="Authorization matrix">
+                    <table class="sc-table" data-testid="sc-matrix-table">
+                        <thead>
+                            <tr><th scope="col">Test child</th>@foreach (var (identity, surface) in ClassificationPresentation.MatrixColumns) { <th scope="col">@identity · @ClassificationLabels.Surface(surface)</th> }</tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var level in result.Levels)
+                            {
+                                <tr data-testid="sc-matrix-row" data-level="@level.Nivaa">
+                                    <th scope="row">@ClassificationPresentation.LevelName(level)</th>
+                                    @foreach (var (identity, surface) in ClassificationPresentation.MatrixColumns)
+                                    {
+                                        var observation = ClassificationPresentation.Observation(result, level.Nivaa, identity, surface);
+                                        <td data-label="@($"{identity} · {ClassificationLabels.Surface(surface)}")"><span class="sc-badge sc-badge-@(observation is null ? "muted" : ClassificationPresentation.Tone(observation.State))" title="@(observation?.Detail ?? "")">@ClassificationPresentation.Cell(observation)</span></td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="sc-muted" data-testid="sc-browser">Browser storage / routes: <span class="sc-badge sc-badge-muted">Not tested</span> — browser evidence would not prove server authorization.</p>
+            </section>
+
+            @if (result.Findings.Count > 0)
+            {
+                <section class="sc-card" aria-labelledby="sc-findings-heading" data-testid="sc-findings">
+                    <h2 id="sc-findings-heading">Findings</h2>
+                    <ul class="sc-findings">
+                        @foreach (var finding in result.Findings)
+                        {
+                            <li data-testid="sc-finding" data-rule="@finding.RuleId"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(finding.Severity)">@finding.Severity</span> <strong>@finding.Title</strong> <span class="sc-muted">(@ClassificationLabels.Area(finding.Area))</span>
+                                <p>@finding.Detail</p>
+                                @if (finding.Evidence.Count > 0) { <p class="sc-muted sc-mono">@string.Join(" · ", finding.Evidence)</p> }
+                                <p class="sc-muted">Recommendation: @finding.Recommendation</p></li>
+                        }
+                    </ul>
+                </section>
+            }
+
+            <section class="sc-card" aria-labelledby="sc-consistency-heading" data-testid="sc-consistency">
+                <h2 id="sc-consistency-heading">Data consistency</h2>
+                <div class="sc-tablewrap" tabindex="0" role="region" aria-label="Classification counts">
+                    <table class="sc-table" data-testid="sc-count-table">
+                        <thead><tr><th scope="col">Level</th><th scope="col">@(result.SourceCounts?.System ?? "Source")</th><th scope="col">@(result.TargetCounts?.System ?? "Target")</th><th scope="col">Comparison</th></tr></thead>
+                        <tbody>
+                            @foreach (var c in result.CountComparisons)
+                            {
+                                <tr data-testid="sc-count-row"><th scope="row">@(c.Nivaa < 0 ? "—" : c.Nivaa.ToString())</th><td data-label="Source">@(c.Source?.ToString() ?? "—")</td><td data-label="Target">@(c.Target?.ToString() ?? "—")</td>
+                                    <td data-label="Comparison"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(c.State)">@ClassificationLabels.Comparison(c.State)</span> <span class="sc-muted">@c.Detail</span></td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (result.SourceCounts is { } sc) { <p class="sc-muted">Source captured @sc.CapturedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @sc.Provenance</p> }
+                @if (result.TargetCounts is { } tc) { <p class="sc-muted">Target captured @tc.CapturedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @tc.Provenance</p> }
+                <p class="sc-muted" data-testid="sc-count-note">Authorization result: not inferred from counts.</p>
+            </section>
+
+            <section class="sc-card" aria-labelledby="sc-checks-heading" data-testid="sc-checks">
+                <h2 id="sc-checks-heading">Evidence</h2>
+                <ReviewDisclosure Text="@($"All checks ({result.Checks.Count})")" CollapseText="Hide checks" TestId="sc-all-checks" Class="disclosure-inline">
+                    @foreach (var type in ClassificationPresentation.TestTypes)
+                    {
+                        var items = result.Checks.Where(c => c.TestType == type).ToList();
+                        if (items.Count == 0) continue;
+                        <h3>@ClassificationLabels.TestType(type)</h3>
+                        <ul class="sc-facts" data-testid="sc-check-group" data-type="@type">
+                            @foreach (var c in items)
+                            {
+                                <li><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(c.State)">@ClassificationLabels.State(c.State)</span> <strong>@c.Title</strong> <span class="sc-muted">(@ClassificationLabels.Area(c.Area) · @IntegrationReviewLabels.Source(c.Provenance))</span> @c.Detail
+                                    @if (c.Locations.Count > 0) { <span class="sc-muted sc-mono"> @ClassificationPresentation.Locations(c.Locations)</span> }</li>
+                            }
+                        </ul>
+                    }
+                </ReviewDisclosure>
+                <ReviewDisclosure Text="Repository tests (M2LB)" CollapseText="Hide repository tests" TestId="sc-coverage" Class="disclosure-inline">
+                    <p class="sc-muted">M2LB's own tests, shown separately from BirkNext's checks. A unit test with a constructed event is not production-path coverage.</p>
+                    <ul class="sc-facts" data-testid="sc-coverage-list">
+                        @foreach (var t in result.TestCoverage)
+                        {
+                            <li data-testid="sc-coverage-item"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(t.State)">@ClassificationLabels.Coverage(t.State)</span> @t.Scenario @if (t.Tests.Count > 0) { <span class="sc-muted sc-mono">· @string.Join(", ", t.Tests.Take(2))</span> } @if (t.Note.Length > 0) { <span class="sc-muted">· @t.Note</span> }</li>
+                        }
+                    </ul>
+                    @foreach (var p in result.ProposedTests)
+                    {
+                        <h3>Proposed regression test: <span class="sc-mono">@p.Name</span></h3>
+                        <p class="sc-muted">@p.Purpose Not run by BirkNext.</p>
+                        <pre class="sc-code" tabindex="0" data-testid="sc-proposed">@p.Code</pre>
+                    }
+                </ReviewDisclosure>
+                <h3>What’s missing</h3>
+                <ul class="sc-list" data-testid="sc-missing">@foreach (var m in result.Missing) { <li>@m</li> }</ul>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private const long MaxArchiveBytes = 50 * 1024 * 1024;
+    private FrontendAnalysisProfile? _profile;
+    private ClassificationOverview? _overview;
+    private ClassificationReviewResult? _result;
+    private bool _busy;
+    private string? _status;
+    private string? _error;
+    private bool _editing;
+    private string? _formError;
+    private string? _unauthorizedToken;
+    private string? _authorizedToken;
+    private ElementReference _focus;
+    private ElementReference _resultRef;
+    private bool _focusForm;
+    private bool _focusResult;
+    private ContextDraft _draft = new();
+    private readonly CountDraft _sourceCounts = new("Source") { System = "BiRK" };
+    private readonly CountDraft _targetCounts = new("Target") { System = "M2LB" };
+
+    private sealed class ChildDraft { public string? Id { get; set; } public string? BirkId { get; set; } }
+    private sealed class ContextDraft
+    {
+        public string? Environment { get; set; }
+        public string? Endpoint { get; set; }
+        public string? Unauthorized { get; set; }
+        public string? Authorized { get; set; }
+        public bool Approved { get; set; }
+        public Dictionary<int, ChildDraft> Children { get; } = Enumerable.Range(0, 4).ToDictionary(i => i, _ => new ChildDraft());
+    }
+    private sealed class CountDraft(string side)
+    {
+        public string Side { get; } = side;
+        public string? System { get; set; }
+        public DateTime? CapturedAt { get; set; }
+        public string? Provenance { get; set; }
+        public Dictionary<int, long?> Counts { get; } = Enumerable.Range(0, 4).ToDictionary(i => i, _ => (long?)null);
+        public ClassificationCountEvidence? ToEvidence() => CapturedAt is null || Counts.All(c => c.Value is null) ? null : new ClassificationCountEvidence
+        {
+            System = System ?? Side, CapturedAt = new DateTimeOffset(DateTime.SpecifyKind(CapturedAt.Value, DateTimeKind.Utc)), Provenance = Provenance ?? "operator-entered",
+            Counts = Counts.Where(c => c.Value is not null).ToDictionary(c => c.Key, c => c.Value!.Value),
+        };
+    }
+
+    private ClassificationTestContext Context => _overview?.Context ?? new();
+    private IReadOnlyList<ClassificationLevel> Levels => _overview?.Source?.Levels is { Count: > 0 } levels ? levels : _result?.Levels ?? [];
+    private ClassificationTestChild? Child(int level) => Context.TestChildren.FirstOrDefault(c => c.Nivaa == level && c.BarnRegistreringId is not null);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfile;
+            if (_profile is null) { _error = "No active Target Environment."; return; }
+            _overview = await Api.OverviewAsync(_profile.Id);
+            _result = _overview.Latest;
+        }
+        catch (HttpRequestException) { _error = "The review could not be loaded (backend not reachable)."; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusForm) { _focusForm = false; await _focus.FocusAsync(); }
+        if (_focusResult) { _focusResult = false; await _resultRef.FocusAsync(); }
+    }
+
+    private async Task AnalyzeAsync(InputFileChangeEventArgs args)
+    {
+        if (_profile is null) return;
+        _error = null;
+        var files = args.GetMultipleFiles(5);
+        if (files.Count > 4 || files.Any(f => f.Size > MaxArchiveBytes)) { _error = "Choose up to four archives of at most 50 MB; nothing was analyzed."; return; }
+        _busy = true;
+        _status = "Analyzing source…";
+        try
+        {
+            var streams = new List<(string, Stream)>();
+            foreach (var file in files)
+            {
+                var buffer = new MemoryStream();
+                await file.OpenReadStream(MaxArchiveBytes).CopyToAsync(buffer);
+                buffer.Position = 0;
+                streams.Add((file.Name, buffer));
+            }
+            var (evidence, error) = await Api.AnalyzeAsync(_profile.Id, streams);
+            if (error is not null) { _error = error; _status = null; return; }
+            _overview = (_overview ?? new ClassificationOverview()) with { Source = evidence };
+            _status = evidence!.Detected ? $"Saved. {evidence.Levels.Count} classification levels and {evidence.Facts.Count(f => f.State == ClassificationState.IssueDetected)} source issue(s) found. Run safe security checks to combine source, context and live evidence." : "Saved. No classification model was found in the analyzed source.";
+        }
+        catch (HttpRequestException) { _error = "The source could not be analyzed (backend not reachable)."; _status = null; }
+        finally { _busy = false; }
+    }
+
+    private void BeginEdit()
+    {
+        _draft = new ContextDraft { Environment = Context.Environment, Endpoint = Context.GraphQlEndpoint, Unauthorized = Context.UnauthorizedIdentityLabel, Authorized = Context.AuthorizedIdentityLabel, Approved = Context.ApprovedByTestLead };
+        foreach (var child in Context.TestChildren) { _draft.Children[child.Nivaa].Id = child.BarnRegistreringId?.ToString(); _draft.Children[child.Nivaa].BirkId = child.BirkId; }
+        _formError = null;
+        _editing = true;
+        _focusForm = true;
+    }
+
+    private async Task SaveContextAsync()
+    {
+        if (_profile is null) return;
+        static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
+        var children = new List<ClassificationTestChild>();
+        foreach (var (level, row) in _draft.Children)
+        {
+            if (Clean(row.Id) is null && Clean(row.BirkId) is null) continue;
+            if (Clean(row.Id) is { } id && !Guid.TryParse(id, out _)) { _formError = $"The level {level} registration id is not a GUID."; return; }
+            children.Add(new ClassificationTestChild { Nivaa = level, BarnRegistreringId = Clean(row.Id) is { } g ? Guid.Parse(g) : null, BirkId = Clean(row.BirkId) });
+        }
+        var context = new ClassificationTestContext
+        {
+            Environment = Clean(_draft.Environment), GraphQlEndpoint = Clean(_draft.Endpoint), UnauthorizedIdentityLabel = Clean(_draft.Unauthorized), AuthorizedIdentityLabel = Clean(_draft.Authorized),
+            ApprovedByTestLead = _draft.Approved, TestChildren = children,
+        };
+        _formError = context.Validate();
+        if (_formError is not null) return;
+        _busy = true;
+        try
+        {
+            var (saved, error) = await Api.SaveContextAsync(_profile.Id, context);
+            if (error is not null) { _formError = error; return; }
+            _overview = (_overview ?? new ClassificationOverview()) with { Context = saved! };
+            _editing = false;
+            _status = "Saved. Test context updated.";
+        }
+        catch (HttpRequestException) { _formError = "The test context could not be saved."; }
+        finally { _busy = false; }
+    }
+
+    private async Task RunAsync()
+    {
+        if (_profile is null) return;
+        _busy = true;
+        _error = null;
+        _status = "Running safe security checks…";
+        try
+        {
+            _result = await Api.RunAsync(_profile.Id, new ClassificationRunRequest
+            {
+                EnvironmentType = _profile.EnvironmentType.ToString(), UnauthorizedToken = _unauthorizedToken, AuthorizedToken = _authorizedToken,
+                SourceCounts = _sourceCounts.ToEvidence(), TargetCounts = _targetCounts.ToEvidence(),
+            });
+            _unauthorizedToken = null;
+            _authorizedToken = null;
+            _overview = await Api.OverviewAsync(_profile.Id);
+            _status = $"Checked. {ClassificationPresentation.Headline(_result)}.";
+            _focusResult = true;
+        }
+        catch (HttpRequestException) { _error = "The review could not be run (backend not reachable)."; _status = null; }
+        finally { _busy = false; }
+    }
+
+    private async Task OpenAsync(ChangeEventArgs e)
+    {
+        if (!Guid.TryParse(e.Value?.ToString(), out var id)) return;
+        try
+        {
+            if (await Api.GetRunAsync(id) is { } run) { _result = run; _status = $"Showing the stored review from {run.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC."; }
+        }
+        catch (HttpRequestException) { _error = "The stored review could not be loaded."; }
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_result is null) return;
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"security-classification-{DateTime.UtcNow:yyyy-MM-dd}.html", ExportService.ExportClassificationReview(_result));
+    }
+}

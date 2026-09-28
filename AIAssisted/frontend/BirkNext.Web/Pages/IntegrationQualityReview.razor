@@ -354,6 +354,14 @@
                         <p class="iqr-muted">Snapshot of this run; opening an old run never re-reads Azure.</p>
                     </section>
                 }
+                @if (result.SecurityClassificationSnapshot is { } classification)
+                {
+                    <section class="iqr-card" aria-labelledby="iqr-result-classification-heading" data-testid="iqr-result-classification">
+                        <h3 id="iqr-result-classification-heading">Security classification</h3>
+                        <p data-testid="iqr-result-classification-summary">@ClassificationLabels.Overall(classification.Overall) · @string.Join(" · ", classification.Pipeline.Select(p => $"{p.Title}: {ClassificationLabels.State(p.Source)}"))</p>
+                        <p class="iqr-muted">Source and configuration evidence only; live authorization checks belong to the <a href="security-classification-review">Security Classification review</a>.</p>
+                    </section>
+                }
                 @if (result.ScimSnapshot.Count > 0)
                 {
                     <section class="iqr-card" aria-labelledby="iqr-result-scim-heading" data-testid="iqr-result-scim">

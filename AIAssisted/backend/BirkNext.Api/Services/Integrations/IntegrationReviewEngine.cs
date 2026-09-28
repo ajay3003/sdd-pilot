@@ -30,7 +30,8 @@ public sealed class IntegrationReviewEngine(
     IApplicationMessagingTelemetrySource? messagingTelemetry = null,
     IIntegrationAzureCredential? azure = null,
     ServiceBusEvidenceService? serviceBus = null,
-    BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null)
+    BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null,
+    BirkNext.Api.Services.SecurityClassification.IClassificationReviewService? classification = null)
 {
     private const string NoSafeEventSource = "No safe runtime event-structure source is configured; events are never consumed to inspect them.";
 
@@ -329,6 +330,16 @@ public sealed class IntegrationReviewEngine(
                 });
             }
 
+        // Security classification: owned by its own review; IQR only takes its source/configuration checks into the existing domains.
+        ClassificationReviewResult? classificationSnapshot = null;
+        if (classification is not null && await classification.ReviewAsync(catalog.EnvironmentId, request.EnvironmentType, ct) is { } classified)
+        {
+            var (classificationChecks, classificationFindings) = BirkNext.Api.Services.SecurityClassification.ClassificationEvaluator.ReviewChecks(classified);
+            systems.Add(new IntegrationSystemResult { SystemName = "Security classification (BiRK CDC → Person)", Kind = IntegrationKind.Other, DomainReviewSupported = true, PlatformChecks = classificationChecks });
+            findings.AddRange(classificationFindings);
+            classificationSnapshot = classified;
+        }
+
         var grouped = findings.GroupBy(f => f.Key).Select(g => g.First() with { AffectedIntegrations = g.SelectMany(f => f.AffectedIntegrations).Distinct().ToList() }).ToList();
         var allChecks = systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks))).ToList();
         var domains = Enum.GetValues<IntegrationReviewDomain>().Select(domain => DomainResult(domain, allChecks, grouped)).ToList();
@@ -350,7 +361,7 @@ public sealed class IntegrationReviewEngine(
             Freshness = freshness, EvidenceSources = sources, ReviewWindowHours = windows.Count == 0 ? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours : windows.Max(),
             EvidenceAdapters = adapterStatuses, ContractSnapshot = contracts.Items.Where(i => enabled.Any(e => e.Id == i.Artifact.IntegrationId)).Select(i => i.Artifact).ToList(),
             // The evidence as used: a later re-analysis or re-binding never changes this result.
-            ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(), ServiceBusSnapshot = serviceBusSnapshot, ScimSnapshot = scimSnapshot,
+            ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(), ServiceBusSnapshot = serviceBusSnapshot, ScimSnapshot = scimSnapshot, SecurityClassificationSnapshot = classificationSnapshot,
         };
         logger.LogInformation(
             "Integration Quality Review for {EnvironmentId}: {Integrations} integration(s) in {Systems} system(s), window {WindowHours} h, sources {Sources}, {Assessed} of {Checks} check(s) assessed, {Findings} finding(s), {DurationMs:0} ms.",
