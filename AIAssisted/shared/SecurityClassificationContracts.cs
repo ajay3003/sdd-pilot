@@ -166,7 +166,29 @@ public sealed record ClassificationTestContext
     }
 }
 
-/// <summary>What a live run is given in addition to the stored context. Tokens are held in memory for the run only.</summary>
+/// <summary>Which parts of the temporary test context were available, never the values themselves.</summary>
+public sealed record ClassificationContextSummary
+{
+    public string? Environment { get; init; }
+    public bool Approved { get; init; }
+    public bool EndpointConfigured { get; init; }
+    public List<int> ConfiguredLevels { get; init; } = [];
+    public List<int> LevelsWithBirkId { get; init; } = [];
+    public bool UnauthorizedIdentityConfigured { get; init; }
+    public bool AuthorizedIdentityConfigured { get; init; }
+
+    public static ClassificationContextSummary From(ClassificationTestContext context) => new()
+    {
+        Environment = context.Environment is { Length: > 0 } env ? env.Trim().ToUpperInvariant() : null, Approved = context.ApprovedByTestLead,
+        EndpointConfigured = !string.IsNullOrWhiteSpace(context.GraphQlEndpoint),
+        ConfiguredLevels = context.TestChildren.Where(c => c.BarnRegistreringId is not null).Select(c => c.Nivaa).Distinct().Order().ToList(),
+        LevelsWithBirkId = context.TestChildren.Where(c => !string.IsNullOrWhiteSpace(c.BirkId)).Select(c => c.Nivaa).Distinct().Order().ToList(),
+        UnauthorizedIdentityConfigured = !string.IsNullOrWhiteSpace(context.UnauthorizedIdentityLabel),
+        AuthorizedIdentityConfigured = !string.IsNullOrWhiteSpace(context.AuthorizedIdentityLabel),
+    };
+}
+
+/// <summary>What a live run is given in addition to the temporary (in-memory) context. Tokens are held in memory for the run only.</summary>
 public sealed record ClassificationRunRequest
 {
     public string? EnvironmentType { get; init; }
@@ -284,8 +306,11 @@ public sealed record ClassificationReviewResult
     public List<ClassificationCountComparison> CountComparisons { get; init; } = [];
     public List<RepositoryTestCoverage> TestCoverage { get; init; } = [];
     public List<ProposedRegressionTest> ProposedTests { get; init; } = [];
-    /// <summary>The configured context exactly as this run used it (ids and labels only).</summary>
+    /// <summary>Only in runs recorded before the test context became in-memory only, if such a run carried context values. New runs
+    /// leave it empty and carry <see cref="ContextSummary"/> instead; this value is never shown or exported.</summary>
     public ClassificationTestContext Context { get; init; } = new();
+    /// <summary>What the temporary test context provided for this run, without any value (no id, BiRK id, label, token or endpoint).</summary>
+    public ClassificationContextSummary? ContextSummary { get; init; }
     public List<string> Missing { get; init; } = [];
     /// <summary>Structured, prioritized missing evidence as of this run (empty for runs recorded before it existed; <see cref="Missing"/> then applies).</summary>
     public List<ClassificationMissingItem> MissingItems { get; init; } = [];

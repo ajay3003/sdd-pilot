@@ -69,12 +69,20 @@
                     <label class="sc-check"><input type="checkbox" @bind="_draft.Approved" data-testid="sc-context-approved" /> Approved by the test lead</label>
                     @if (_formError is { } formError) { <p class="sc-error" role="alert" data-testid="sc-context-error">@formError</p> }
                     <div class="sc-actions">
-                        <button type="button" class="btn-primary" data-testid="sc-context-save" disabled="@_busy" @onclick="SaveContextAsync">Save test context</button>
+                        <button type="button" class="btn-primary" data-testid="sc-context-save" disabled="@_busy" @onclick="SaveContextAsync">Keep in memory</button>
                         <button type="button" class="btn-secondary" @onclick="() => _editing = false">Cancel</button>
                     </div>
                 </fieldset>
             }
 
+            <div class="sc-temp-context" data-testid="sc-temp-context">
+                <h3>Temporary security test context <span class="sc-badge sc-badge-@(ContextReady ? "info" : "muted")" data-testid="sc-context-status">@(ContextReady ? "Ready" : "Not configured")</span></h3>
+                <p class="sc-muted" data-testid="sc-context-memory">In memory only — this data is not saved to the database. It is cleared when the backend restarts or when you select Clear test context.</p>
+                @if (ContextReady)
+                {
+                    <button type="button" class="btn-secondary" data-testid="sc-context-clear" disabled="@_busy" @onclick="ClearContextAsync">Clear test context</button>
+                }
+            </div>
             <dl class="sc-context" data-testid="sc-context-summary">
                 <div><dt>Environment</dt><dd>@(Context.Environment ?? "Not configured")</dd></div>
                 @foreach (var level in Levels)
@@ -387,6 +395,24 @@
     };
 
     private ClassificationTestContext Context => _overview?.Context ?? new();
+    /// <summary>A temporary context is held in backend memory for this Target Environment (never a stored row).</summary>
+    private bool ContextReady => Context.UpdatedAt is not null || Context.Environment is { Length: > 0 } || Context.TestChildren.Count > 0;
+
+    private async Task ClearContextAsync()
+    {
+        if (_profile is null) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Api.ClearContextAsync(_profile.Id);
+            _overview = (_overview ?? new ClassificationOverview()) with { Context = new() };
+            _editing = false;
+            _status = "Temporary test context cleared from memory. Stored reviews are unchanged.";
+        }
+        catch (HttpRequestException) { _error = "The test context could not be cleared (backend not reachable)."; }
+        finally { _busy = false; }
+    }
     private IReadOnlyList<ClassificationLevel> Levels => _overview?.Source?.Levels is { Count: > 0 } levels ? levels : _result?.Levels ?? [];
     private ClassificationTestChild? Child(int level) => Context.TestChildren.FirstOrDefault(c => c.Nivaa == level && c.BarnRegistreringId is not null);
 
@@ -469,7 +495,7 @@
             if (error is not null) { _formError = error; return; }
             _overview = (_overview ?? new ClassificationOverview()) with { Context = saved! };
             _editing = false;
-            _status = "Saved. Test context updated.";
+            _status = "Test context kept in memory for this session (not saved to the database).";
         }
         catch (HttpRequestException) { _formError = "The test context could not be saved."; }
         finally { _busy = false; }
@@ -481,6 +507,7 @@
         _busy = true;
         _error = null;
         _status = "Running safe security checks…";
+        var hadContext = ContextReady;
         try
         {
             _result = await Api.RunAsync(_profile.Id, new ClassificationRunRequest
@@ -492,6 +519,8 @@
             _authorizedToken = null;
             _overview = await Api.OverviewAsync(_profile.Id);
             _status = $"Checked. {ClassificationPresentation.Headline(_result)}.";
+            // The context lives in backend memory only: after a backend restart it is gone and is never recovered from the database.
+            if (hadContext && !ContextReady) _error = "Test context is no longer available. Configure temporary test context again.";
             _focusResult = true;
         }
         catch (HttpRequestException) { _error = "The review could not be run (backend not reachable)."; _status = null; }

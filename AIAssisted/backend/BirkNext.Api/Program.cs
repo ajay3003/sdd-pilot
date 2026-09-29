@@ -413,7 +413,12 @@ builder.Services.AddScoped<BirkNext.Api.Services.Integrations.Scim.IScimEvidence
 // Security Classification / Gradert tilgang review: source analysis + fixed safe GraphQL queries for configured synthetic test children only.
 builder.Services.AddHttpClient<BirkNext.Api.Services.SecurityClassification.IClassificationLiveProbe, BirkNext.Api.Services.SecurityClassification.GraphQlClassificationProbe>(client => client.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
-builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.IClassificationReviewService, BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>();
+// The temporary security test context lives in process memory only (lost on restart, never in the database).
+builder.Services.AddSingleton<BirkNext.Api.Services.SecurityClassification.ClassificationTestContextStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.IClassificationReviewService>(sp => new BirkNext.Api.Services.SecurityClassification.ClassificationReviewService(
+    sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetRequiredService<BirkNext.Api.Services.SecurityClassification.IClassificationLiveProbe>(),
+    sp.GetRequiredService<BirkNext.Api.Services.SecurityClassification.ClassificationTestContextStore>(), sp.GetRequiredService<ILogger<BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>>(),
+    sp.GetService<IHttpContextAccessor>()?.HttpContext?.User.Identity is { IsAuthenticated: true, Name: { Length: > 0 } name } ? name : "local"));
 // Dependency / supply-chain review (Renovate policy): offline, read-only analysis of uploaded repository archives.
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
 // Dependency health over stored inventories (no source upload): nuget.org registry metadata (GET only) and OSV advisories, bounded and cached;

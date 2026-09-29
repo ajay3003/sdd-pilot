@@ -13,6 +13,8 @@ public interface IClassificationReviewService
     Task<ClassificationSourceEvidence?> SourceAsync(string environmentId, CancellationToken ct = default);
     Task<(ClassificationSourceEvidence? Evidence, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default);
     Task<(ClassificationTestContext? Context, string? Error)> SaveContextAsync(string environmentId, ClassificationTestContext context, CancellationToken ct = default);
+    /// <summary>Removes the temporary in-memory context of this environment. Touches no stored row.</summary>
+    void ClearContext(string environmentId);
     Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default);
     Task<ClassificationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
     /// <summary>The source/configuration part for Integration Quality Review (no live checks, not stored separately).</summary>
@@ -20,15 +22,23 @@ public interface IClassificationReviewService
 }
 
 /// <summary>
-/// Security Classification / Gradert tilgang review. Source analyses, test contexts and runs are immutable rows (facts, ids, labels,
-/// derived observations — never PII, tokens or raw payloads). Live checks are safe GraphQL queries for configured synthetic test children
-/// only; the default is no live check at all.
+/// Security Classification / Gradert tilgang review. Source analyses and runs are immutable rows (facts and derived observations — never PII,
+/// tokens or raw payloads). The test context is temporary: it lives in <see cref="ClassificationTestContextStore"/> (process memory) and is
+/// never written to the database; runs keep only a value-free <see cref="ClassificationContextSummary"/>. A row of kind "context" that an earlier
+/// version may have written is left untouched and is never read as the active context. Live checks are safe GraphQL queries for configured
+/// synthetic test children only; the default is no live check at all.
 /// </summary>
-public sealed class ClassificationReviewService(AppDbContext db, IClassificationLiveProbe probe, ILogger<ClassificationReviewService> logger) : IClassificationReviewService
+public sealed class ClassificationReviewService(AppDbContext db, IClassificationLiveProbe probe, ClassificationTestContextStore contexts, ILogger<ClassificationReviewService> logger,
+    string? scope = null) : IClassificationReviewService
 {
+    /// <summary>Caller scope of the in-memory context (the authenticated principal, or "local").</summary>
+    public string Scope { get; set; } = scope ?? "local";
+    private ClassificationTestContext ActiveContext(string environmentId) => contexts.Get(Scope, environmentId) ?? new();
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private const string SourceKind = "source";
-    private const string ContextKind = "context";
+    /// <summary>The kind earlier versions used for a stored context; never written or read as the active context any more.</summary>
+    public const string LegacyContextKind = "context";
     private const string RunKind = "run";
     /// <summary>Counts captured further apart than this are not compared (stale comparison), whatever they say.</summary>
     public static readonly TimeSpan CountAlignment = TimeSpan.FromHours(1);
@@ -53,7 +63,7 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
         var parsed = runs.Select(r => JsonSerializer.Deserialize<ClassificationReviewResult>(r.Json, Json)).OfType<ClassificationReviewResult>().ToList();
         return new ClassificationOverview
         {
-            Source = await SourceAsync(environmentId, ct), Context = await LatestAsync<ClassificationTestContext>(environmentId, ContextKind, ct) ?? new(), Latest = parsed.FirstOrDefault(),
+            Source = await SourceAsync(environmentId, ct), Context = ActiveContext(environmentId), Latest = parsed.FirstOrDefault(),
             History = parsed.Select(r => new ClassificationRunSummary(r.RunId, r.CompletedAt, r.Overall, r.Findings.Count, r.Live.Observations.Count)).ToList(),
         };
     }
@@ -86,16 +96,24 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
     {
         if (context.Validate() is { } invalid) return (null, invalid);
         var saved = context with { Environment = context.Environment?.Trim().ToUpperInvariant(), GraphQlEndpoint = context.GraphQlEndpoint?.Trim().TrimEnd('/'), UpdatedAt = DateTimeOffset.UtcNow };
-        await StoreAsync(environmentId, ContextKind, saved.UpdatedAt!.Value, saved, null, ct);
-        logger.LogInformation("Security classification test context for {EnvironmentId} saved: {Environment}, {Children} test child(ren), approved {Approved}.", environmentId, saved.Environment ?? "(none)", saved.TestChildren.Count, saved.ApprovedByTestLead);
+        contexts.Set(Scope, environmentId, saved);
+        logger.LogInformation("Security classification temporary test context for {EnvironmentId} set in memory: {Environment}, {Children} test child(ren), approved {Approved}.",
+            environmentId, saved.Environment ?? "(none)", saved.TestChildren.Count, saved.ApprovedByTestLead);
+        await Task.CompletedTask;
         return (saved, null);
+    }
+
+    public void ClearContext(string environmentId)
+    {
+        var removed = contexts.Clear(Scope, environmentId);
+        logger.LogInformation("Security classification temporary test context for {EnvironmentId} cleared from memory ({Removed}).", environmentId, removed ? "was set" : "was not set");
     }
 
     public async Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
     {
         var started = DateTimeOffset.UtcNow;
         var source = await SourceAsync(environmentId, ct);
-        var context = await LatestAsync<ClassificationTestContext>(environmentId, ContextKind, ct) ?? new();
+        var context = ActiveContext(environmentId);
         var live = await probe.ProbeAsync(context, request, source?.Levels ?? [], ct);
         var result = ClassificationEvaluator.Evaluate(environmentId, source, context, live, request.SourceCounts, request.TargetCounts, started, DateTimeOffset.UtcNow);
         await StoreAsync(environmentId, RunKind, result.CompletedAt, result, result.RunId, ct);
@@ -108,7 +126,7 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
     {
         var source = await SourceAsync(environmentId, ct);
         if (source is null) return null;
-        var context = await LatestAsync<ClassificationTestContext>(environmentId, ContextKind, ct) ?? new();
+        var context = ActiveContext(environmentId);
         var live = new ClassificationLiveEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "Integration Quality Review does not run live security checks (they need per-run test identities).", CapturedAt = DateTimeOffset.UtcNow };
         return ClassificationEvaluator.Evaluate(environmentId, source, context, live, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
     }
@@ -310,7 +328,7 @@ public static class ClassificationEvaluator
             RunId = Guid.NewGuid(), EnvironmentId = environmentId, StartedAt = started, CompletedAt = completed, Overall = overall,
             SourceAnalyzedAt = source?.AnalyzedAt, SourceArchives = source?.Archives ?? [], Levels = levels, Summary = summary, Pipeline = pipeline, Checks = checks,
             Findings = findings.OrderBy(f => f.Severity).ToList(), Live = live, SourceCounts = sourceCounts, TargetCounts = targetCounts, CountComparisons = comparisons,
-            TestCoverage = source?.TestCoverage ?? [], ProposedTests = source?.ProposedTests ?? [], Context = context, Missing = missing, MissingItems = missingItems,
+            TestCoverage = source?.TestCoverage ?? [], ProposedTests = source?.ProposedTests ?? [], ContextSummary = ClassificationContextSummary.From(context), Missing = missing, MissingItems = missingItems,
             Limitations =
             [
                 "Live checks are GraphQL queries for configured synthetic test children only; no mutation, classification change, grant or broad search is ever performed.",

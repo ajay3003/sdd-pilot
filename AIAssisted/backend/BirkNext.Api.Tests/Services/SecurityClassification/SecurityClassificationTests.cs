@@ -2,12 +2,14 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using BirkNext.Api.Data;
+using BirkNext.Api.Models;
 using BirkNext.Api.Services.Integrations.ApplicationMessaging;
 using BirkNext.Api.Services.Integrations.Scim;
 using BirkNext.Api.Services.SecurityClassification;
 using BirkNext.Integrations;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BirkNext.Api.Tests.Services.SecurityClassification;
@@ -774,7 +776,7 @@ public sealed class SecurityClassificationTests
     {
         await using var db = Db();
         var server = new FakePerson();
-        var service = new ClassificationReviewService(db, new GraphQlClassificationProbe(new HttpClient(server), NullLogger<GraphQlClassificationProbe>.Instance), NullLogger<ClassificationReviewService>.Instance);
+        var service = new ClassificationReviewService(db, new GraphQlClassificationProbe(new HttpClient(server), NullLogger<GraphQlClassificationProbe>.Instance), new ClassificationTestContextStore(), NullLogger<ClassificationReviewService>.Instance);
         (await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Fixture().Concat(Docs)))])).Error.Should().BeNull();
         (await service.SaveContextAsync("dev", Context())).Error.Should().BeNull();
 
@@ -787,6 +789,121 @@ public sealed class SecurityClassificationTests
         overview.History.Should().ContainSingle();
         overview.Context.TestChildren.Should().HaveCount(2);
         (await service.SaveContextAsync("dev", Context() with { Environment = "PROD" })).Error.Should().NotBeNull();
+    }
+
+    // ── Temporary test context: in memory only ──────────────────────────────────────────────────────────────────────
+
+    private sealed class CapturingLogger<T> : ILogger<T>
+    {
+        public List<string> Lines { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) => Lines.Add(formatter(state, exception));
+    }
+
+    private static readonly Guid SentinelChild = Guid.Parse("5e0711e1-c41d-4a2b-9c3d-000000000002");
+    private const string SentinelBirk = "BIRK-SENTINEL";
+    private const string SentinelIdentity = "IDENTITY-SENTINEL";
+    private const string SentinelToken = "TOKEN-SENTINEL";
+    private static readonly string[] Sentinels = [SentinelChild.ToString(), SentinelBirk, SentinelIdentity, SentinelToken, "person.dev.example.test/graphql"];
+
+    private static ClassificationTestContext SentinelContext() => Context() with
+    {
+        UnauthorizedIdentityLabel = SentinelIdentity, AuthorizedIdentityLabel = SentinelIdentity + "-2",
+        TestChildren = [new() { Nivaa = 0, BarnRegistreringId = Ungraded, BirkId = "B999-0000" }, new() { Nivaa = 2, BarnRegistreringId = SentinelChild, BirkId = SentinelBirk }],
+    };
+
+    private static SecurityClassificationEvidenceRecord LegacyContextFixtureRow(string environmentId) => new()
+    {
+        Id = Guid.NewGuid(), EnvironmentId = environmentId, Kind = ClassificationReviewService.LegacyContextKind, CreatedAt = DateTimeOffset.UtcNow.AddDays(-1),
+        Json = System.Text.Json.JsonSerializer.Serialize(Context() with { UnauthorizedIdentityLabel = "legacy-label" }, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
+    };
+
+    private static (ClassificationReviewService Service, CapturingLogger<ClassificationReviewService> Log) Service(AppDbContext db, ClassificationTestContextStore store, FakePerson? server = null, string scope = "local")
+    {
+        var log = new CapturingLogger<ClassificationReviewService>();
+        return (new ClassificationReviewService(db, new GraphQlClassificationProbe(new HttpClient(server ?? new FakePerson()), NullLogger<GraphQlClassificationProbe>.Instance), store, log, scope), log);
+    }
+
+    [Fact]
+    public async Task TemporaryContextWritesNoContextRowAndNewRunsCarryNoContextValues()
+    {
+        await using var db = Db();
+        var legacy = LegacyContextFixtureRow("dev");
+        db.SecurityClassificationEvidence.Add(legacy);
+        await db.SaveChangesAsync();
+        var legacyJson = legacy.Json;
+        var (service, log) = Service(db, new ClassificationTestContextStore());
+        (await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Fixture().Concat(Docs)))])).Error.Should().BeNull();
+        var contextRowsBefore = db.SecurityClassificationEvidence.Count(r => r.Kind == ClassificationReviewService.LegacyContextKind);
+
+        (await service.SaveContextAsync("dev", SentinelContext())).Error.Should().BeNull();
+        (await service.SaveContextAsync("dev", SentinelContext() with { ApprovedByTestLead = true })).Error.Should().BeNull();
+        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = SentinelToken, AuthorizedToken = SentinelToken + "-2" });
+        service.ClearContext("dev");
+
+        run.Live.State.Should().Be(IntegrationEvidenceState.Available, "the existing probes still run against the in-memory context");
+        db.SecurityClassificationEvidence.Count(r => r.Kind == ClassificationReviewService.LegacyContextKind).Should().Be(contextRowsBefore, "no new context row is written");
+        db.SecurityClassificationEvidence.AsNoTracking().Single(r => r.Id == legacy.Id).Json.Should().Be(legacyJson, "the seeded legacy-context fixture row is neither updated nor deleted");
+        var runJson = db.SecurityClassificationEvidence.AsNoTracking().Single(r => r.Id == run.RunId).Json;
+        foreach (var sentinel in Sentinels)
+        {
+            runJson.Should().NotContain(sentinel);
+            string.Join(" ", log.Lines).Should().NotContain(sentinel);
+        }
+        run.Context.Should().BeEquivalentTo(new ClassificationTestContext());
+        run.ContextSummary.Should().BeEquivalentTo(new ClassificationContextSummary
+        {
+            Environment = "DEV", Approved = true, EndpointConfigured = true, ConfiguredLevels = [0, 2], LevelsWithBirkId = [0, 2], UnauthorizedIdentityConfigured = true, AuthorizedIdentityConfigured = true,
+        });
+        (await service.GetRunAsync(run.RunId))!.Live.Observations.Should().NotBeEmpty("sanitized results are still stored");
+        (await service.OverviewAsync("dev")).Context.Should().BeEquivalentTo(new ClassificationTestContext(), "cleared from memory");
+    }
+
+    [Fact]
+    public async Task LegacyContextFixtureIsNeverLoadedAsTheActiveContext()
+    {
+        await using var db = Db();
+        db.SecurityClassificationEvidence.Add(LegacyContextFixtureRow("dev"));
+        await db.SaveChangesAsync();
+        var (service, _) = Service(db, new ClassificationTestContextStore());
+        (await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Fixture().Concat(Docs)))])).Error.Should().BeNull();
+
+        (await service.OverviewAsync("dev")).Context.Should().BeEquivalentTo(new ClassificationTestContext());
+        (await service.ReviewAsync("dev", "Development"))!.ContextSummary!.ConfiguredLevels.Should().BeEmpty();
+        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = "t" });
+        run.Live.State.Should().Be(IntegrationEvidenceState.NotConfigured, "a stored context row (seeded compatibility fixture) never makes live checks runnable");
+    }
+
+    [Fact]
+    public async Task ContextIsIsolatedByTargetAndScopeAndLostWithTheStore()
+    {
+        await using var db = Db();
+        var store = new ClassificationTestContextStore();
+        var (dev, _) = Service(db, store);
+        (await dev.SaveContextAsync("dev-env", Context())).Error.Should().BeNull();
+
+        (await dev.OverviewAsync("qa-env")).Context.TestChildren.Should().BeEmpty("a DEV context is never used for another Target Environment");
+        (await Service(db, store, scope: "someone-else").Service.OverviewAsync("dev-env")).Context.TestChildren.Should().BeEmpty("another caller scope does not see it");
+        (await dev.OverviewAsync("dev-env")).Context.TestChildren.Should().HaveCount(2);
+        (await Service(db, new ClassificationTestContextStore()).Service.OverviewAsync("dev-env")).Context.TestChildren.Should().BeEmpty("a restart (new process memory) loses it");
+        db.SecurityClassificationEvidence.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LegacyRunFixtureWithEmbeddedContextStillDeserializes()
+    {
+        await using var db = Db();
+        var legacyRun = Evaluate(Analyze()) with { Context = Context(), ContextSummary = null };
+        db.SecurityClassificationEvidence.Add(new SecurityClassificationEvidenceRecord { Id = legacyRun.RunId, EnvironmentId = "dev", Kind = "run", CreatedAt = legacyRun.CompletedAt,
+            Json = System.Text.Json.JsonSerializer.Serialize(legacyRun, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)) });
+        await db.SaveChangesAsync();
+
+        var loaded = await Service(db, new ClassificationTestContextStore()).Service.GetRunAsync(legacyRun.RunId);
+
+        loaded!.Context.TestChildren.Should().HaveCount(2);
+        loaded.ContextSummary.Should().BeNull();
+        ClassificationContextSummary.From(loaded.Context).ConfiguredLevels.Should().Equal(0, 2);
     }
 
     [Fact]

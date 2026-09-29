@@ -10,6 +10,8 @@ public interface IClassificationReviewApiService
     Task<ClassificationOverview> OverviewAsync(string environmentId, CancellationToken ct = default);
     Task<(ClassificationSourceEvidence? Evidence, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default);
     Task<(ClassificationTestContext? Context, string? Error)> SaveContextAsync(string environmentId, ClassificationTestContext context, CancellationToken ct = default);
+    /// <summary>Clears the temporary in-memory test context on the backend (no stored review is touched).</summary>
+    Task ClearContextAsync(string environmentId, CancellationToken ct = default);
     Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default);
     Task<ClassificationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
 }
@@ -43,6 +45,12 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ClassificationTestContext>(Json, ct), null);
+    }
+
+    public async Task ClearContextAsync(string environmentId, CancellationToken ct = default)
+    {
+        using var response = await http.DeleteAsync($"api/security-classification/context?{Env(environmentId)}", ct);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)

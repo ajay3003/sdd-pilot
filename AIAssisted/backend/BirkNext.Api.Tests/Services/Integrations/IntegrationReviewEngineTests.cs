@@ -573,7 +573,7 @@ public sealed class IntegrationReviewEngineTests
         await using var db = Db();
         var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
         var probe = new NoLiveProbe();
-        var classification = new BirkNext.Api.Services.SecurityClassification.ClassificationReviewService(db, probe, NullLogger<BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>.Instance);
+        var classification = new BirkNext.Api.Services.SecurityClassification.ClassificationReviewService(db, probe, new BirkNext.Api.Services.SecurityClassification.ClassificationTestContextStore(), NullLogger<BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>.Instance);
         var files = new List<BirkNext.Api.Services.Integrations.ApplicationMessaging.SourceFile>
         {
             new("P/src/Person/M2LB.Person.csproj", "<Project/>"),

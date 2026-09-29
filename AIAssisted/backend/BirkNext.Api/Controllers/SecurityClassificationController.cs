@@ -6,8 +6,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace BirkNext.Api.Controllers;
 
 /// <summary>
-/// Security Classification / Gradert tilgang review. Source archives are analyzed in memory; the test context holds synthetic ids and
-/// identity labels only; a run's tokens are used for that run and never stored. Live checks are fixed GraphQL queries against configured
+/// Security Classification / Gradert tilgang review. Source archives are analyzed in memory; the temporary test context (synthetic ids,
+/// identity labels, endpoint) is held in backend memory only — never in the database — and a run's tokens are used for that run and never stored. Live checks are fixed GraphQL queries against configured
 /// test children in an approved DEV/QA context — never Production, never a mutation, never a search for real classified children.
 /// </summary>
 [ApiController]
@@ -44,6 +44,15 @@ public sealed class SecurityClassificationController(IClassificationReviewServic
         if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
         var (saved, error) = await reviews.SaveContextAsync(environmentId, context, ct);
         return error is not null ? BadRequest(error) : Ok(saved);
+    }
+
+    /// <summary>Clears the temporary in-memory test context. Stored reviews and any context row an earlier version may have written are not touched.</summary>
+    [HttpDelete("context")]
+    public IActionResult ClearContext([FromQuery] string environmentId)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        reviews.ClearContext(environmentId);
+        return NoContent();
     }
 
     [HttpPost("runs")]

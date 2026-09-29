@@ -24,7 +24,8 @@ public static class ClassificationExport
             {
                 o.Nivaa.ToString(), esc(o.Identity.ToString()), esc(ClassificationLabels.Surface(o.Surface)), esc(ClassificationLabels.TestType(o.TestType)), badge(ClassificationPresentation.Cell(o)), esc(o.Expected), esc(o.Observed),
             })));
-        sb.Append($"<p>Test context: {esc(r.Context.Environment ?? "not configured")} · identities {esc(r.Context.UnauthorizedIdentityLabel ?? "—")} / {esc(r.Context.AuthorizedIdentityLabel ?? "—")} · {r.Context.TestChildren.Count} synthetic test child(ren) · live mutation tests disabled.</p></section>\n");
+        var summary = r.ContextSummary ?? ClassificationContextSummary.From(r.Context); // older runs: only what was configured, never the values
+        sb.Append($"<p>Temporary test context: {esc(summary.Environment ?? "not configured")} · unauthorized identity {(summary.UnauthorizedIdentityConfigured ? "configured" : "missing")} · authorized graded identity {(summary.AuthorizedIdentityConfigured ? "configured" : "missing")} · test children for level(s) {(summary.ConfiguredLevels.Count == 0 ? "none" : string.Join(", ", summary.ConfiguredLevels))} · live mutation tests disabled. Context values are not recorded.</p></section>\n");
         sb.Append("<section class=\"block\"><h2>Checks</h2>");
         sb.Append(table(["Area", "Test type", "Check", "State", "Detail", "Source"], r.Checks.Select(c => new[]
         {

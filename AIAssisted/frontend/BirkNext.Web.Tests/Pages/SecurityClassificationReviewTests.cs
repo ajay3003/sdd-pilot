@@ -36,9 +36,18 @@ public sealed class SecurityClassificationReviewTests : BunitContext
             Overview = Overview with { Context = context };
             return Task.FromResult<(ClassificationTestContext?, string?)>((context, null));
         }
+        public int Cleared { get; private set; }
+        public bool LoseContextOnRun { get; set; }
+        public Task ClearContextAsync(string environmentId, CancellationToken ct = default)
+        {
+            Cleared++;
+            Overview = Overview with { Context = new() };
+            return Task.CompletedTask;
+        }
         public Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
         {
             LastRun = request;
+            if (LoseContextOnRun) Overview = Overview with { Context = new() }; // e.g. the backend restarted: memory is gone
             Overview = Overview with { Latest = Result, History = [new(Result!.RunId, Result.CompletedAt, Result.Overall, Result.Findings.Count, Result.Live.Observations.Count)] };
             return Task.FromResult(Result!);
         }
@@ -481,5 +490,89 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         order.Should().Equal("sc-setup", "sc-needed");
         cut.Find("[data-testid='sc-needed-all']").Click();
         cut.FindAll("[data-item='counts']").Should().ContainSingle("no run has provided count evidence yet");
+    }
+
+    // ── Temporary (in-memory) test context ──────────────────────────────────────────────────────────────────────────
+
+    private static ClassificationTestContext Ready() => new()
+    {
+        Environment = "DEV", GraphQlEndpoint = "https://person.dev.example.test/graphql", ApprovedByTestLead = true, UpdatedAt = DateTimeOffset.UtcNow,
+        UnauthorizedIdentityLabel = "IDENTITY-SENTINEL", AuthorizedIdentityLabel = "IDENTITY-SENTINEL-2",
+        TestChildren = [new() { Nivaa = 2, BarnRegistreringId = Guid.Parse("5e0711e1-c41d-4a2b-9c3d-000000000002"), BirkId = "BIRK-SENTINEL" }],
+    };
+
+    [Fact]
+    public void TemporaryContextSaysInMemoryOnlyAndStartsNotConfigured()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source() };
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-context-status']").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid='sc-context-memory']").TextContent.Should().Contain("In memory only — this data is not saved to the database");
+        cut.FindAll("[data-testid='sc-context-clear']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ConfiguredContextIsReadyShowsNoValuesAndClearsToNotConfigured()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Context = Ready() };
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-context-status']").TextContent.Should().Be("Ready");
+        var card = cut.Find("[data-testid='sc-setup']").TextContent;
+        card.Should().NotContain("IDENTITY-SENTINEL").And.NotContain("BIRK-SENTINEL").And.NotContain("5e0711e1");
+
+        cut.Find("[data-testid='sc-context-clear']").Click();
+
+        _api.Cleared.Should().Be(1);
+        cut.Find("[data-testid='sc-context-status']").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid='sc-status']").TextContent.Should().Contain("cleared from memory").And.Contain("Stored reviews are unchanged");
+    }
+
+    [Fact]
+    public void KeepInMemorySetsReadyWithoutBrowserStorage()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source() };
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-configure']").Click();
+        cut.Find("[data-testid='sc-context-environment']").Change("DEV");
+        cut.Find("[data-testid='sc-context-child-id-2']").Change("5e0711e1-c41d-4a2b-9c3d-000000000002");
+        cut.Find("[data-testid='sc-context-child-birk-2']").Change("BIRK-SENTINEL");
+        cut.Find("[data-testid='sc-context-unauthorized']").Change("IDENTITY-SENTINEL");
+        cut.Find("[data-testid='sc-context-save']").TextContent.Should().Be("Keep in memory");
+        cut.Find("[data-testid='sc-context-save']").Click();
+
+        cut.Find("[data-testid='sc-context-status']").TextContent.Should().Be("Ready");
+        cut.Find("[data-testid='sc-status']").TextContent.Should().Contain("not saved to the database");
+        JSInterop.Invocations.Should().NotContain(i => i.Identifier.Contains("localStorage") || i.Identifier.Contains("sessionStorage") || i.Identifier.Contains("indexedDB"));
+        JSInterop.Invocations.SelectMany(i => i.Arguments).Select(a => a?.ToString() ?? "").Should().NotContain(a => a.Contains("SENTINEL") || a.Contains("5e0711e1"));
+    }
+
+    [Fact]
+    public void LostContextAfterRunAsksToConfigureAgain()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Context = Ready() };
+        _api.Result = Result();
+        _api.LoseContextOnRun = true;
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-run']").Click();
+
+        cut.Find("[data-testid='sc-error']").TextContent.Should().Be("Test context is no longer available. Configure temporary test context again.");
+        cut.Find("[data-testid='sc-context-status']").TextContent.Should().Be("Not configured");
+    }
+
+    [Fact]
+    public void ExportCarriesOnlyAContextSummaryEvenForLegacyRunFixtures()
+    {
+        var legacy = Result() with { Context = Ready(), ContextSummary = null };
+        var current = Result() with { ContextSummary = ClassificationContextSummary.From(Ready()) };
+
+        foreach (var html in new[] { new ReportExportService().ExportClassificationReview(legacy), new ReportExportService().ExportClassificationReview(current) })
+        {
+            html.Should().NotContain("IDENTITY-SENTINEL").And.NotContain("BIRK-SENTINEL").And.NotContain("5e0711e1").And.NotContain("person.dev.example.test");
+            html.Should().Contain("Temporary test context: DEV").And.Contain("unauthorized identity configured").And.Contain("level(s) 2").And.Contain("Context values are not recorded");
+        }
     }
 }
