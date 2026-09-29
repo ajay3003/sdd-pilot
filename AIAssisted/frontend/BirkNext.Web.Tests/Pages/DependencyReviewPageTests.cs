@@ -118,6 +118,14 @@ public sealed class DependencyReviewPageTests : BunitContext
     {
         Services.AddSingleton<IDependencyReviewApiService>(_api);
         Services.AddSingleton<IReportExportService, ReportExportService>();
+        var targets = new Moq.Mock<IFrontendAnalysisSettingsService>();
+        targets.SetupGet(t => t.IsLoaded).Returns(true);
+        targets.SetupGet(t => t.Settings).Returns(new BirkNext.Web.Models.FrontendAnalysisSettings { Profiles =
+        [
+            new BirkNext.Web.Models.FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = BirkNext.Web.Models.FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.example.test/" },
+            new BirkNext.Web.Models.FrontendAnalysisProfile { Id = "blank", Name = "No URL", EnvironmentType = BirkNext.Web.Models.FrontendEnvironmentType.QA },
+        ] });
+        Services.AddSingleton(targets.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 

@@ -6,6 +6,7 @@
 @inject IDependencyReviewApiService Api
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
+@inject BirkNext.Web.Services.IFrontendAnalysisSettingsService TargetSettings
 
 <PageTitle>Dependency Review</PageTitle>
 
@@ -14,22 +15,52 @@
      produced and Renovate is never triggered. Simulated versions are SYNTHETIC candidates — never "latest", "available" or "published".
    - Existing inventory / SBOM / deployed evidence: a source-free dependency health review (registry, advisories, licenses, comparisons,
      automation runtime) over a stored inventory. Each result is an immutable snapshot; refresh creates a new one.
-   Static Renovate configuration and Renovate runtime automation stay separate concepts. *@
+   Static Renovate configuration and Renovate runtime automation stay separate concepts.
+   Pre-run: the test lead chooses one workflow (a card) and only that panel is shown; other panels keep their selections (not exclusive).
+   Review readiness shows pre-run states only — never a result. Deployed evidence uses a Target Environment (URL/environment derived). *@
 <div class="dr-page">
     <PageHeader Title="Dependency Review"
-                Description="Review dependencies from source, stored inventory, SBOM or deployed evidence. Source review tests Renovate policy; dependency health checks registry, advisory, license and deployment evidence without uploading source.">
+                Description="Choose how you want to review dependencies. Review from source tests Renovate policy; the other sources run registry, security and license checks without uploading source.">
         @if (_view == ResultView.Source && _result is not null)
         {
             <button type="button" class="btn-secondary" data-testid="dr-export" @onclick="ExportHtml">Export HTML</button>
         }
     </PageHeader>
 
+    <section class="dr-modes" aria-labelledby="dr-modes-heading" data-testid="dr-modes">
+        <h2 id="dr-modes-heading" class="dr-modes-heading">Choose how you want to review dependencies</h2>
+        <div class="dr-mode-grid" role="group" aria-labelledby="dr-modes-heading">
+            @foreach (var mode in DependencyReviewReadiness.Modes)
+            {
+                <button type="button" class="dr-mode @(_mode == mode.Mode ? "active" : "")" aria-pressed="@(_mode == mode.Mode ? "true" : "false")" aria-controls="@($"dr-panel-{mode.Mode}")"
+                        data-testid="dr-mode" data-mode="@mode.Mode" @onclick="() => SelectModeAsync(mode.Mode)">
+                    <span class="dr-mode-title">@mode.Title</span>
+                    <span class="dr-mode-sub">@mode.Summary</span>
+                    <span class="dr-mode-action" aria-hidden="true">@mode.Action →</span>
+                </button>
+            }
+        </div>
+    </section>
+
+    @{ var readiness = Readiness; }
+    <section class="dr-card dr-readiness" aria-labelledby="dr-readiness-heading" data-testid="dr-readiness">
+        <h2 id="dr-readiness-heading">Review readiness <span class="dr-badge dr-badge-@readiness.Tone" data-testid="dr-readiness-state">@readiness.Headline</span></h2>
+        <dl class="dr-ready-grid">
+            @foreach (var row in readiness.Rows)
+            {
+                <div data-testid="dr-ready-row" data-row="@row.Key">
+                    <dt>@row.Name</dt>
+                    <dd><span class="dr-badge dr-badge-@row.Tone" data-testid="dr-ready-state">@row.State</span>@if (row.Detail.Length > 0) { <span class="dr-muted"> @row.Detail</span> }</dd>
+                </div>
+            }
+        </dl>
+    </section>
+
     <div class="dr-sources" data-testid="dr-sources">
-        <section class="dr-card dr-source" aria-labelledby="dr-setup-heading" data-testid="dr-setup">
-            <p class="dr-kicker">Source/configuration</p>
-            <h2 id="dr-setup-heading">Review from source</h2>
-            <p class="dr-muted">Renovate configuration, packageRules and declared dependencies, with synthetic patch/minor/major simulation. Upload one to four repository archives (.zip); each repository is evaluated separately. Read-only: nothing is written to any repository and Renovate is not run.</p>
-            <p class="dr-scope"><strong>Can assess:</strong> Renovate coverage and policy, declared dependencies. <strong>Cannot assess:</strong> registry state, advisories, what is packaged or deployed.</p>
+        <section class="dr-card dr-source" id="dr-panel-Source" aria-labelledby="dr-setup-heading" data-testid="dr-setup" hidden="@(_mode != DependencyReviewMode.Source)">
+            <h2 id="dr-setup-heading" tabindex="-1" @ref="_sourceHeading">Review from source</h2>
+            <p class="dr-muted">Renovate policy and declared dependencies from one to four repository archives (.zip), each evaluated separately. Read-only: nothing is written to any repository and Renovate is not run.</p>
+            <p class="dr-scope"><strong>Can assess:</strong> Renovate coverage and policy, declared dependencies.<br /><strong>Cannot assess:</strong> registry, advisories, packaged or deployed evidence.</p>
             <div class="dr-upload">
                 <label class="dr-file-button">
                     <InputFile class="dr-file-input" multiple accept=".zip" OnChange="PickArchives" disabled="@_busy" aria-label="Choose repository archives (.zip)" data-testid="dr-archives" />
@@ -37,8 +68,8 @@
                 </label>
                 <span class="dr-muted" data-testid="dr-picked">@(_archives.Count == 0 ? "No archive chosen." : string.Join(", ", _archives.Select(a => $"{a.Name} → {a.Repository}")))</span>
             </div>
-            <ReviewDisclosure Text="Use a separately supplied Renovate config" CollapseText="Hide supplied config" TestId="dr-override" Class="disclosure-inline">
-                <p class="dr-muted">Optional. The supplied file replaces the chosen repository's in-repository configuration for this review only; the repository is not changed.</p>
+            <ReviewDisclosure Text="Add Renovate config override" CollapseText="Hide Renovate config override" TestId="dr-override" Class="disclosure-inline" Hint="optional">
+                <p class="dr-muted">The supplied file replaces the chosen repository's in-repository configuration for this review only; the repository is not changed.</p>
                 <div class="dr-upload">
                     <label class="dr-field">Repository
                         <select class="form-control" data-testid="dr-override-repo" value="@_overrideRepository" @onchange="e => _overrideRepository = e.Value?.ToString() ?? string.Empty" disabled="@(_archives.Count == 0 || _busy)">
@@ -54,17 +85,17 @@
                 </div>
             </ReviewDisclosure>
             <div class="dr-actions">
-                <button type="button" class="btn-primary" data-testid="dr-run" disabled="@(_archives.Count == 0 || _busy)" @onclick="RunAsync">Test Renovate policy</button>
+                <button type="button" class="btn-primary" data-testid="dr-run" disabled="@(_archives.Count == 0 || _busy)" aria-describedby="dr-run-help" @onclick="RunAsync">Test Renovate policy</button>
+                @if (_archives.Count == 0) { <span class="dr-muted" id="dr-run-help" data-testid="dr-run-help">Choose one to four repository archives (.zip) to test the Renovate policy.</span> }
                 <p class="dr-status" role="status" aria-live="polite" data-testid="dr-status">@_status</p>
             </div>
             @if (_error is { } error) { <p class="dr-error" role="alert" data-testid="dr-error">@error</p> }
         </section>
 
-        <section class="dr-card dr-source" aria-labelledby="dh-inventory-heading" data-testid="dh-inventory-card">
-            <p class="dr-kicker">Inventory · Registry · Security · License</p>
-            <h2 id="dh-inventory-heading">Existing dependency inventory</h2>
-            <p class="dr-muted">Run dependency health and security checks without source upload, on a stored inventory: a previous source review, an SBOM, a lock file or deployed evidence.</p>
-            <p class="dr-scope"><strong>Can assess:</strong> registry availability, latest published stable, package age, deprecated/unlisted, advisories, license metadata. <strong>Cannot assess:</strong> runtime loading; Renovate policy unless a source review is chosen.</p>
+        <section class="dr-card dr-source" id="dr-panel-Inventory" aria-labelledby="dh-inventory-heading" data-testid="dh-inventory-card" hidden="@(_mode != DependencyReviewMode.Inventory)">
+            <h2 id="dh-inventory-heading" tabindex="-1" @ref="_inventoryHeading">Existing inventory</h2>
+            <p class="dr-muted">Run registry, security and license checks without uploading source, on a stored inventory: a previous source review, an SBOM, a lock file or deployed evidence.</p>
+            <p class="dr-scope"><strong>Can assess:</strong> registry, latest published stable, package age, deprecated/unlisted, advisories, license metadata.<br /><strong>Cannot assess:</strong> runtime loading; Renovate policy unless a source review is chosen.</p>
             <label class="dr-field">Inventory
                 <select class="form-control" data-testid="dh-inventory" value="@(_inventoryId?.ToString() ?? "")" @onchange="PickInventory" disabled="@_busy">
                     <option value="">@(_inventories.Count == 0 ? "No stored inventory yet" : "Choose an inventory")</option>
@@ -73,44 +104,61 @@
             </label>
             @if (SelectedInventory is { } chosen)
             {
-                <p class="dr-muted" data-testid="dh-inventory-freshness">
-                    <span class="dr-badge dr-badge-@(chosen.Freshness == InventoryFreshness.Stale ? "attention" : chosen.Freshness == InventoryFreshness.Current ? "info" : "muted")">@chosen.Freshness</span>
-                    @DependencyHealthLabels.Source(chosen.SourceType) · @DependencyHealthLabels.Stage(chosen.Stage) · captured @DependencyHealthPresentation.Utc(chosen.CapturedAt) · @chosen.FreshnessDetail
-                </p>
+                <dl class="dr-inventory-summary" data-testid="dh-inventory-summary">
+                    <div><dt>Inventory</dt><dd>@chosen.Name</dd></div>
+                    <div><dt>Source</dt><dd>@DependencyHealthLabels.Source(chosen.SourceType) · @DependencyHealthLabels.Stage(chosen.Stage)</dd></div>
+                    <div><dt>Captured</dt><dd>@DependencyHealthPresentation.Utc(chosen.CapturedAt)</dd></div>
+                    <div><dt>Dependencies</dt><dd>@chosen.Dependencies</dd></div>
+                    <div><dt>Freshness</dt><dd data-testid="dh-inventory-freshness"><span class="dr-badge dr-badge-@(chosen.Freshness == InventoryFreshness.Stale ? "attention" : chosen.Freshness == InventoryFreshness.Current ? "info" : "muted")">@chosen.Freshness</span> <span class="dr-muted">@chosen.FreshnessDetail</span></dd></div>
+                </dl>
+                <ReviewDisclosure Text="Comparison options" CollapseText="Hide comparison options" TestId="dh-options" Class="disclosure-inline" Hint="@OptionsHint">
+                    <div class="dr-option-grid">
+                        <label class="dr-field">Baseline (previous inventory)
+                            <select class="form-control" data-testid="dh-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="e => _baselineId = ParseId(e)" disabled="@_busy">
+                                <option value="">None</option>
+                                @foreach (var inventory in OtherInventories) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
+                            </select>
+                        </label>
+                        <label class="dr-field">Cross-source comparison (e.g. SBOM vs source)
+                            <select class="form-control" data-testid="dh-comparison" value="@(_comparisonId?.ToString() ?? "")" @onchange="e => _comparisonId = ParseId(e)" disabled="@_busy">
+                                <option value="">None</option>
+                                @foreach (var inventory in OtherInventories) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
+                            </select>
+                        </label>
+                    </div>
+                    @{ var policy = DependencyReviewReadiness.PolicyStatus(chosen, _inventories.FirstOrDefault(i => i.Id == _policyInventoryId)); }
+                    <div class="dr-status-line" data-testid="dh-policy-status">
+                        <span class="dr-status-name">Security-fix policy</span>
+                        <span class="dr-badge dr-badge-@policy.Tone">@policy.State</span>
+                        <span class="dr-muted">@policy.Detail</span>
+                    </div>
+                    @if (chosen.SourceType != InventorySourceType.SourceReview && _inventories.Any(i => i.SourceType == InventorySourceType.SourceReview && i.SourceRunId is not null))
+                    {
+                        <label class="dr-field">Use the Renovate policy of a source review
+                            <select class="form-control" data-testid="dh-policy" value="@(_policyInventoryId?.ToString() ?? "")" @onchange="e => _policyInventoryId = ParseId(e)" disabled="@_busy">
+                                <option value="">None</option>
+                                @foreach (var inventory in _inventories.Where(i => i.SourceType == InventorySourceType.SourceReview && i.SourceRunId is not null)) { <option value="@inventory.Id">@inventory.Name</option> }
+                            </select>
+                        </label>
+                    }
+                    <div class="dr-status-line" data-testid="dh-deployed-status">
+                        <span class="dr-status-name">Deployed evidence</span>
+                        <span class="dr-badge dr-badge-@(_deployedId is null ? "muted" : "info")">@(_deployedId is null ? "Not selected" : "Selected")</span>
+                        <span class="dr-muted">@(_inventories.FirstOrDefault(i => i.Id == _deployedId)?.Name ?? "Choose it in Deployed evidence.")</span>
+                    </div>
+                    <p class="dr-muted">Nothing is merged silently: each comparison is shown separately with both sources.</p>
+                </ReviewDisclosure>
             }
-            <ReviewDisclosure Text="Compare and cross-check (optional)" CollapseText="Hide comparison options" TestId="dh-options" Class="disclosure-inline" Hint="@OptionsHint">
-                <div class="dr-option-grid">
-                    <label class="dr-field">Baseline (previous inventory)
-                        <select class="form-control" data-testid="dh-baseline" value="@(_baselineId?.ToString() ?? "")" @onchange="e => _baselineId = ParseId(e)" disabled="@_busy">
-                            <option value="">None</option>
-                            @foreach (var inventory in OtherInventories) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
-                        </select>
-                    </label>
-                    <label class="dr-field">Cross-source comparison (e.g. SBOM vs source)
-                        <select class="form-control" data-testid="dh-comparison" value="@(_comparisonId?.ToString() ?? "")" @onchange="e => _comparisonId = ParseId(e)" disabled="@_busy">
-                            <option value="">None</option>
-                            @foreach (var inventory in OtherInventories) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
-                        </select>
-                    </label>
-                    <label class="dr-field">Renovate policy for security fixes
-                        <select class="form-control" data-testid="dh-policy" value="@(_policyInventoryId?.ToString() ?? "")" @onchange="e => _policyInventoryId = ParseId(e)" disabled="@_busy">
-                            <option value="">@(SelectedInventory?.SourceType == InventorySourceType.SourceReview ? "Its own source review" : "Not assessed")</option>
-                            @foreach (var inventory in _inventories.Where(i => i.SourceType == InventorySourceType.SourceReview && i.SourceRunId is not null)) { <option value="@inventory.Id">@inventory.Name</option> }
-                        </select>
-                    </label>
-                </div>
-                <p class="dr-muted">Deployed evidence is chosen in the Deployed evidence card. Nothing is merged silently: each comparison is shown separately with both sources.</p>
-            </ReviewDisclosure>
             <div class="dr-actions">
-                <button type="button" class="btn-primary" data-testid="dh-run" disabled="@(_inventoryId is null || _busy)" @onclick="RunHealthAsync">Run dependency health review</button>
+                <button type="button" class="btn-primary" data-testid="dh-run" disabled="@(_inventoryId is null || _busy)" aria-describedby="dh-run-help" @onclick="RunHealthAsync">Run dependency health review</button>
+                @if (_inventoryId is null) { <span class="dr-muted" id="dh-run-help" data-testid="dh-run-help">Choose an inventory to run the dependency health review.</span> }
             </div>
         </section>
 
-        <section class="dr-card dr-source" aria-labelledby="dh-sbom-heading" data-testid="dh-sbom-card">
-            <p class="dr-kicker">Inventory · Supply chain</p>
-            <h2 id="dh-sbom-heading">SBOM</h2>
-            <p class="dr-muted">CycloneDX JSON/XML or SPDX JSON (validated against the official schemas), or a NuGet packages.lock.json. An invalid document never becomes an inventory.</p>
-            <p class="dr-scope"><strong>Can assess:</strong> components, relationships, identifiers, hashes, licenses, then dependency health. <strong>Cannot assess:</strong> completeness of the SBOM, runtime loading.</p>
+        <section class="dr-card dr-source" id="dr-panel-Sbom" aria-labelledby="dh-sbom-heading" data-testid="dh-sbom-card" hidden="@(_mode != DependencyReviewMode.Sbom)">
+            <h2 id="dh-sbom-heading" tabindex="-1" @ref="_sbomHeading">Review SBOM</h2>
+            <p class="dr-muted">Supported: CycloneDX JSON/XML and SPDX JSON (validated against the official schemas), NuGet packages.lock.json. An invalid document never becomes an inventory.</p>
+            <p class="dr-scope"><strong>Can assess:</strong> components, relationships, identifiers, hashes, licenses, then dependency health.<br /><strong>Cannot assess:</strong> SBOM completeness, runtime loading.</p>
             <div class="dr-upload">
                 <label class="dr-file-button">
                     <InputFile class="dr-file-input" accept=".json,.xml,.cdx,.spdx" OnChange="PickSbom" disabled="@_busy" aria-label="Choose an SBOM or packages.lock.json" data-testid="dh-sbom-file" />
@@ -118,23 +166,26 @@
                 </label>
                 <span class="dr-muted" data-testid="dh-sbom-picked">@(_sbom is null ? "No document chosen." : _sbom.Value.Name)</span>
             </div>
-            <div class="dr-option-grid">
-                <label class="dr-field">The SBOM describes
-                    <select class="form-control" data-testid="dh-sbom-role" value="@_sbomRole" @onchange="e => _sbomRole = Enum.TryParse<SbomRole>(e.Value?.ToString(), out var r) ? r : SbomRole.BuildArtifact" disabled="@_busy">
-                        <option value="@SbomRole.BuildArtifact">A build artifact (packaged)</option>
-                        <option value="@SbomRole.DeployedArtifact">What is deployed to an environment</option>
-                    </select>
-                </label>
-                <label class="dr-field">Environment (optional)<input class="form-control" data-testid="dh-sbom-env" @bind="_sbomEnvironment" placeholder="e.g. qa" /></label>
-                <label class="dr-field">Name (optional)<input class="form-control" data-testid="dh-sbom-name" @bind="_sbomName" placeholder="e.g. Build 2026.09.28" /></label>
-            </div>
-            <div class="dr-actions">
-                <button type="button" class="btn-primary" data-testid="dh-sbom-run" disabled="@(_sbom is null || _busy)" @onclick="ReviewSbomAsync">Review SBOM</button>
-            </div>
+            @if (_sbom is not null)
+            {
+                <div class="dr-option-grid" data-testid="dh-sbom-metadata">
+                    <label class="dr-field">The SBOM describes (provenance)
+                        <select class="form-control" data-testid="dh-sbom-role" value="@_sbomRole" @onchange="e => _sbomRole = Enum.TryParse<SbomRole>(e.Value?.ToString(), out var r) ? r : SbomRole.BuildArtifact" disabled="@_busy">
+                            <option value="@SbomRole.BuildArtifact">A build artifact (packaged)</option>
+                            <option value="@SbomRole.DeployedArtifact">What is deployed to an environment</option>
+                        </select>
+                    </label>
+                    <label class="dr-field">Environment (optional)<input class="form-control" data-testid="dh-sbom-env" @bind="_sbomEnvironment" placeholder="e.g. qa" /></label>
+                    <label class="dr-field">Name (optional)<input class="form-control" data-testid="dh-sbom-name" @bind="_sbomName" placeholder="e.g. Build 2026.09.28" /></label>
+                </div>
+                <div class="dr-actions">
+                    <button type="button" class="btn-primary" data-testid="dh-sbom-run" disabled="@_busy" @onclick="ReviewSbomAsync">Review SBOM</button>
+                </div>
+            }
             @if (_validation is { } v)
             {
                 <div class="dr-validation" data-testid="dh-sbom-validation" data-valid="@(v.Valid ? "true" : "false")">
-                    <p><span class="dr-badge dr-badge-@(v.Valid ? "info" : "attention")">@(v.Valid ? "Valid" : "Not valid")</span> @DependencyHealthLabels.Format(v.Format)@(v.SpecVersion is null ? "" : $" {v.SpecVersion}")</p>
+                    <p><span class="dr-badge dr-badge-@(v.Valid ? "info" : "attention")">@(v.Valid ? "Validated" : "Invalid SBOM")</span> @DependencyHealthLabels.Format(v.Format)@(v.SpecVersion is null ? "" : $" {v.SpecVersion}")@(v.Valid ? $" · {v.Components} components" : "")</p>
                     @if (v.Valid)
                     {
                         <p class="dr-muted" data-testid="dh-sbom-coverage">@v.Components components · @v.Direct direct · @v.Transitive transitive · @v.UnknownRelationship unknown relationship · @(string.Join(", ", v.Ecosystems.Select(e => $"{e.Key} {e.Value}"))) · missing: @v.MissingVersions versions, @v.MissingIdentifiers identifiers, @v.MissingLicenses licenses · @v.WithHashes with hashes · dependency graph @(v.HasDependencyGraph ? "present" : "absent"). Completeness is not claimed.</p>
@@ -151,24 +202,45 @@
             }
         </section>
 
-        <section class="dr-card dr-source" aria-labelledby="dh-deployed-heading" data-testid="dh-deployed-card">
-            <p class="dr-kicker">Deployment</p>
-            <h2 id="dh-deployed-heading">Deployed evidence</h2>
-            <p class="dr-muted">Compare a known inventory with deployed evidence: a deployed-artifact SBOM, or the Blazor boot manifest of a target (assembly files and integrity hashes — not package versions).</p>
-            <p class="dr-scope"><strong>Can assess:</strong> expected vs deployed where versions are proven. <strong>Cannot assess:</strong> versions from a boot manifest, absence, runtime loading.</p>
-            <div class="dr-option-grid">
-                <label class="dr-field">Target URL<input class="form-control" type="url" data-testid="dh-deployed-url" @bind="_targetUrl" @bind:event="oninput" placeholder="https://…" /></label>
-                <label class="dr-field">Environment (optional)<input class="form-control" data-testid="dh-deployed-env" @bind="_targetEnvironment" placeholder="e.g. qa" /></label>
-            </div>
-            <div class="dr-actions">
-                <button type="button" class="btn-secondary" data-testid="dh-deployed-capture" disabled="@(string.IsNullOrWhiteSpace(_targetUrl) || _busy)" @onclick="CaptureDeployedAsync">Capture deployed evidence</button>
-            </div>
-            <label class="dr-field">Deployed evidence for the next health review
-                <select class="form-control" data-testid="dh-deployed" value="@(_deployedId?.ToString() ?? "")" @onchange="e => _deployedId = ParseId(e)" disabled="@_busy">
-                    <option value="">Not assessed</option>
-                    @foreach (var inventory in _inventories.Where(i => i.Stage == InventoryStage.Deployed && i.Id != _inventoryId)) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
+        <section class="dr-card dr-source" id="dr-panel-Deployed" aria-labelledby="dh-deployed-heading" data-testid="dh-deployed-card" hidden="@(_mode != DependencyReviewMode.Deployed)">
+            <h2 id="dh-deployed-heading" tabindex="-1" @ref="_deployedHeading">Deployed evidence</h2>
+            <p class="dr-muted">Compare a known inventory with what a Target Environment serves (its Blazor boot manifest), or use a deployed-artifact SBOM from Review SBOM.</p>
+            <p class="dr-scope"><strong>Can assess:</strong> expected vs deployed where versions are proven.<br /><strong>Cannot assess:</strong> versions from a boot manifest, absence unless proven, runtime loading.</p>
+            <label class="dr-field">Target Environment
+                <select class="form-control" data-testid="dh-deployed-target" value="@(_targetId ?? "")" @onchange="e => _targetId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()" disabled="@_busy">
+                    <option value="">@(Targets.Count == 0 ? "No Target Environment with a URL" : "Select target")</option>
+                    @foreach (var target in Targets) { <option value="@target.Id">@target.Name — @target.TargetUrl</option> }
                 </select>
             </label>
+            @if (SelectedTarget is { } t)
+            {
+                <dl class="dr-inventory-summary" data-testid="dh-target-summary">
+                    <div><dt>Target</dt><dd>@t.Name</dd></div>
+                    <div><dt>URL</dt><dd class="dr-mono" data-testid="dh-target-url">@t.TargetUrl</dd></div>
+                    <div><dt>Environment</dt><dd data-testid="dh-target-environment">@t.EnvironmentType</dd></div>
+                    <div><dt>Evidence method</dt><dd>Blazor boot manifest — assembly files and integrity hashes, not package versions</dd></div>
+                </dl>
+            }
+            <ReviewDisclosure Text="Advanced: use manual target URL" CollapseText="Hide manual target URL" TestId="dh-deployed-manual" Class="disclosure-inline">
+                <p class="dr-muted">Only when the target is not a Target Environment. A selected Target Environment takes precedence.</p>
+                <div class="dr-option-grid">
+                    <label class="dr-field">Target URL<input class="form-control" type="url" data-testid="dh-deployed-url" @bind="_targetUrl" @bind:event="oninput" placeholder="https://…" /></label>
+                    <label class="dr-field">Environment (optional)<input class="form-control" data-testid="dh-deployed-env" @bind="_targetEnvironment" placeholder="e.g. qa" /></label>
+                </div>
+            </ReviewDisclosure>
+            <div class="dr-actions">
+                <button type="button" class="btn-primary" data-testid="dh-deployed-capture" disabled="@(CaptureUrl is null || _busy)" aria-describedby="dh-deployed-help" @onclick="CaptureDeployedAsync">Capture deployed evidence</button>
+                @if (CaptureUrl is null) { <span class="dr-muted" id="dh-deployed-help" data-testid="dh-deployed-help">Select a Target Environment to capture deployed evidence.</span> }
+            </div>
+            @if (_inventories.Any(i => i.Stage == InventoryStage.Deployed && i.Id != _inventoryId))
+            {
+                <label class="dr-field">Deployed evidence for the next health review
+                    <select class="form-control" data-testid="dh-deployed" value="@(_deployedId?.ToString() ?? "")" @onchange="e => _deployedId = ParseId(e)" disabled="@_busy">
+                        <option value="">Not assessed</option>
+                        @foreach (var inventory in _inventories.Where(i => i.Stage == InventoryStage.Deployed && i.Id != _inventoryId)) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
+                    </select>
+                </label>
+            }
         </section>
     </div>
 
@@ -179,29 +251,31 @@
 
     @if (_history.Count > 0 || _healthHistory.Count > 0)
     {
-        <section class="dr-card" aria-labelledby="dr-previous-heading" data-testid="dr-previous">
+        <section class="dr-card dr-history-card" aria-labelledby="dr-previous-heading" data-testid="dr-previous">
             <h2 id="dr-previous-heading">Previous reviews</h2>
-            <p class="dr-muted">Stored snapshots open exactly as recorded — no registry or advisory source is queried when an old review is opened.</p>
-            <div class="dr-option-grid">
-                @if (_history.Count > 0)
-                {
-                    <label class="dr-field dr-history">Source reviews (Renovate policy)
-                        <select class="form-control" data-testid="dr-history" value="@(_result?.RunId.ToString() ?? "")" @onchange="OpenRunAsync" disabled="@_busy">
-                            <option value="">Choose a stored review</option>
-                            @foreach (var run in _history) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Findings findings)</option> }
-                        </select>
-                    </label>
-                }
-                @if (_healthHistory.Count > 0)
-                {
-                    <label class="dr-field dr-history">Dependency health reviews
-                        <select class="form-control" data-testid="dh-history" value="@(_health?.RunId.ToString() ?? "")" @onchange="OpenHealthAsync" disabled="@_busy">
-                            <option value="">Choose a stored review</option>
-                            @foreach (var run in _healthHistory) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Dependencies deps, @run.Findings findings)@(run.RefreshOf is not null ? " · refresh" : "")</option> }
-                        </select>
-                    </label>
-                }
-            </div>
+            <p class="dr-muted" data-testid="dr-previous-summary">@_history.Count source review@(_history.Count == 1 ? "" : "s") · @_healthHistory.Count dependency health review@(_healthHistory.Count == 1 ? "" : "s") — opened exactly as recorded, no registry or advisory source is queried.</p>
+            <ReviewDisclosure Text="Open history" CollapseText="Hide history" TestId="dr-history-disclosure" Class="disclosure-inline">
+                <div class="dr-option-grid">
+                    @if (_history.Count > 0)
+                    {
+                        <label class="dr-field dr-history">Source reviews (Renovate policy)
+                            <select class="form-control" data-testid="dr-history" value="@(_result?.RunId.ToString() ?? "")" @onchange="OpenRunAsync" disabled="@_busy">
+                                <option value="">Choose a stored review</option>
+                                @foreach (var run in _history) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Findings findings)</option> }
+                            </select>
+                        </label>
+                    }
+                    @if (_healthHistory.Count > 0)
+                    {
+                        <label class="dr-field dr-history">Dependency health reviews
+                            <select class="form-control" data-testid="dh-history" value="@(_health?.RunId.ToString() ?? "")" @onchange="OpenHealthAsync" disabled="@_busy">
+                                <option value="">Choose a stored review</option>
+                                @foreach (var run in _healthHistory) { <option value="@run.RunId">@run.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @run.Label (@run.Dependencies deps, @run.Findings findings)@(run.RefreshOf is not null ? " · refresh" : "")</option> }
+                            </select>
+                        </label>
+                    }
+                </div>
+            </ReviewDisclosure>
         </section>
     }
 
@@ -471,6 +545,46 @@
         try { _history = await Api.HistoryAsync(); }
         catch (HttpRequestException) { _status = "Stored reviews could not be loaded (backend not reachable)."; }
         await LoadHealthListsAsync();
+        try { if (!TargetSettings.IsLoaded) await TargetSettings.LoadAsync(JS); }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException) { /* no Target Environments: the manual URL remains */ }
+    }
+
+    // ── Pre-run workflow ────────────────────────────────────────────────────────────────────────────────────────────
+
+    private DependencyReviewMode _mode = DependencyReviewMode.None;
+    private ElementReference _sourceHeading;
+    private ElementReference _inventoryHeading;
+    private ElementReference _sbomHeading;
+    private ElementReference _deployedHeading;
+    private bool _focusMode;
+    private string? _targetId;
+
+    /// <summary>Target Environments with a URL (the Target Environment owns URL and environment; nothing is copied).</summary>
+    private IReadOnlyList<BirkNext.Web.Models.FrontendAnalysisProfile> Targets =>
+        TargetSettings.IsLoaded ? TargetSettings.Settings.Profiles.Where(p => !string.IsNullOrWhiteSpace(p.TargetUrl)).ToList() : [];
+    private BirkNext.Web.Models.FrontendAnalysisProfile? SelectedTarget => Targets.FirstOrDefault(t => t.Id == _targetId);
+    /// <summary>The selected Target Environment's URL; the manual URL (advanced) only when no target is selected.</summary>
+    private string? CaptureUrl => SelectedTarget?.TargetUrl ?? (string.IsNullOrWhiteSpace(_targetUrl) ? null : _targetUrl.Trim());
+
+    private ReadinessView Readiness => DependencyReviewReadiness.Evaluate(new ReadinessInput
+    {
+        Mode = _mode, Archives = _archives.Count, Inventory = SelectedInventory, PendingSbom = _sbom?.Name, SbomInvalid = _validation is { Valid: false },
+        PolicyInventory = _inventories.FirstOrDefault(i => i.Id == _policyInventoryId), Deployed = _inventories.FirstOrDefault(i => i.Id == _deployedId),
+        DeploymentTarget = SelectedTarget?.Name,
+    });
+
+    private void SelectModeAsync(DependencyReviewMode mode)
+    {
+        _mode = mode;
+        _focusMode = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusMode) return;
+        _focusMode = false;
+        var heading = _mode switch { DependencyReviewMode.Source => _sourceHeading, DependencyReviewMode.Inventory => _inventoryHeading, DependencyReviewMode.Sbom => _sbomHeading, _ => _deployedHeading };
+        try { await heading.FocusAsync(); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
     }
 
     /// <summary>The repository name the backend derives from the archive file name ("M2LB (1).zip" → "M2LB").</summary>
@@ -638,6 +752,7 @@
         if (_baselineId == _inventoryId) _baselineId = null;
         if (_comparisonId == _inventoryId) _comparisonId = null;
         if (_deployedId == _inventoryId) _deployedId = null;
+        if (_policyInventoryId == _inventoryId) _policyInventoryId = null; // the inventory's own source review applies
     }
 
     private async Task PickSbom(InputFileChangeEventArgs args)
@@ -711,13 +826,13 @@
 
     private async Task CaptureDeployedAsync()
     {
-        if (string.IsNullOrWhiteSpace(_targetUrl)) return;
+        if (CaptureUrl is not { } url) return;
         _busy = true;
         _healthError = null;
         _healthStatus = "Reading deployed metadata (read-only GET)…";
         try
         {
-            var capture = await Api.CaptureDeployedAsync(new DeployedCaptureRequest { TargetUrl = _targetUrl.Trim(), Environment = _targetEnvironment });
+            var capture = await Api.CaptureDeployedAsync(new DeployedCaptureRequest { TargetUrl = url, Environment = SelectedTarget?.EnvironmentType.ToString() ?? _targetEnvironment });
             if (capture.Inventory is null) { _healthError = capture.Error ?? "No deployed evidence was captured."; _healthStatus = null; return; }
             await LoadHealthListsAsync();
             _deployedId = capture.Inventory.Id;

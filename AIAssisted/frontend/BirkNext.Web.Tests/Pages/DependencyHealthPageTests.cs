@@ -144,6 +144,14 @@ public sealed class DependencyHealthPageTests : BunitContext
         _api.Inventories.AddRange([Build, OldSource]);
         Services.AddSingleton<IDependencyReviewApiService>(_api);
         Services.AddSingleton<IReportExportService, ReportExportService>();
+        var targets = new Moq.Mock<IFrontendAnalysisSettingsService>();
+        targets.SetupGet(t => t.IsLoaded).Returns(true);
+        targets.SetupGet(t => t.Settings).Returns(new BirkNext.Web.Models.FrontendAnalysisSettings { Profiles =
+        [
+            new BirkNext.Web.Models.FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = BirkNext.Web.Models.FrontendEnvironmentType.Development, TargetUrl = "https://m2lbdev.example.test/" },
+            new BirkNext.Web.Models.FrontendAnalysisProfile { Id = "blank", Name = "No URL", EnvironmentType = BirkNext.Web.Models.FrontendEnvironmentType.QA },
+        ] });
+        Services.AddSingleton(targets.Object);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
@@ -163,9 +171,9 @@ public sealed class DependencyHealthPageTests : BunitContext
 
         cut.FindAll("[data-testid='dr-sources'] > section").Select(s => s.GetAttribute("data-testid")).Should().Equal("dr-setup", "dh-inventory-card", "dh-sbom-card", "dh-deployed-card");
         cut.Find("[data-testid='dr-setup']").TextContent.Should().Contain("Review from source").And.Contain("Test Renovate policy");
-        cut.Find("[data-testid='dh-inventory-card']").TextContent.Should().Contain("without source upload").And.Contain("Cannot assess");
+        cut.Find("[data-testid='dh-inventory-card']").TextContent.Should().Contain("without uploading source").And.Contain("Cannot assess");
         cut.Find("[data-testid='dh-run']").HasAttribute("disabled").Should().BeTrue();
-        cut.Find("[data-testid='dh-sbom-run']").HasAttribute("disabled").Should().BeTrue();
+        cut.FindAll("[data-testid='dh-sbom-run']").Should().BeEmpty("the SBOM action appears once a document is chosen");
         cut.FindComponents<InputFile>().Select(f => f.Instance.AdditionalAttributes!["aria-label"]).Should().Equal("Choose repository archives (.zip)", "Choose a Renovate config file", "Choose an SBOM or packages.lock.json");
     }
 
@@ -291,7 +299,7 @@ public sealed class DependencyHealthPageTests : BunitContext
 
         cut.Find("[data-testid='dh-error']").GetAttribute("role").Should().Be("alert");
         cut.Find("[data-testid='dh-error']").TextContent.Should().Contain("no inventory was created");
-        cut.Find("[data-testid='dh-sbom-validation']").TextContent.Should().Contain("Not valid").And.Contain("Required properties");
+        cut.Find("[data-testid='dh-sbom-validation']").TextContent.Should().Contain("Invalid SBOM").And.Contain("Required properties");
         _api.LastRequest.Should().BeNull();
         cut.FindAll("[data-testid='dh-result']").Should().BeEmpty();
     }
@@ -377,5 +385,165 @@ public sealed class DependencyHealthPageTests : BunitContext
         DependencyHealthLabels.Stage(InventoryStage.Declared).Should().NotBe(DependencyHealthLabels.Stage(InventoryStage.Deployed));
         DependencyHealthLabels.LicensePolicy(LicensePolicyState.NotConfigured).Should().Be("Policy not configured");
         DependencyHealthPresentation.IsIssue(Item("Bar", "2.1.0", VersionStatus.MajorBehind, AdvisoryState.NoMatchedAdvisoryObserved, "3.0.0")).Should().BeFalse("being behind alone is not an issue");
+    }
+
+    // ── Pre-run workflow: mode cards, readiness, focused panels ─────────────────────────────────────────────────────
+
+    private static readonly string[] ResultStates = ["Pass", "Fail", "Issue detected", "Affected", "finding"];
+
+    [Fact]
+    public void InitialStateShowsFourModeCardsReadinessAndNoExpandedForm()
+    {
+        var cut = Render<DependencyReview>();
+
+        cut.FindAll("[data-testid='dr-mode']").Select(m => m.GetAttribute("data-mode")).Should().Equal("Source", "Inventory", "Sbom", "Deployed");
+        cut.FindAll("[data-testid='dr-mode']").Should().OnlyContain(m => m.GetAttribute("aria-pressed") == "false" && m.TagName == "BUTTON");
+        cut.FindAll("[data-testid='dr-sources'] > section").Should().OnlyContain(s => s.HasAttribute("hidden"));
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Not ready — choose a review source");
+        var rows = cut.FindAll("[data-testid='dr-ready-row']").ToDictionary(r => r.GetAttribute("data-row")!, r => r.QuerySelector("[data-testid='dr-ready-state']")!.TextContent);
+        rows.Should().Contain(new Dictionary<string, string>
+        {
+            ["source"] = "Not selected", ["inventory"] = "Not selected", ["registry"] = "Waiting for inventory", ["security"] = "Waiting for inventory",
+            ["license"] = "Waiting for inventory", ["policy"] = "Not assessed", ["deployment"] = "Not assessed",
+        });
+        cut.Find("[data-testid='dr-readiness']").TextContent.Should().NotContainAny(ResultStates);
+    }
+
+    [Fact]
+    public void ChoosingAModeShowsOnlyThatPanelAndKeepsTheOthersCompact()
+    {
+        var cut = Render<DependencyReview>();
+
+        cut.Find("[data-testid='dr-mode'][data-mode='Source']").Click();
+
+        cut.Find("[data-testid='dr-mode'][data-mode='Source']").GetAttribute("aria-pressed").Should().Be("true");
+        cut.Find("[data-testid='dr-setup']").HasAttribute("hidden").Should().BeFalse();
+        new[] { "dh-inventory-card", "dh-sbom-card", "dh-deployed-card" }.Should().OnlyContain(id => cut.Find($"[data-testid='{id}']").HasAttribute("hidden"));
+        cut.Find("[data-testid='dr-override-toggle']").TextContent.Should().Contain("Add Renovate config override");
+        cut.Find("[data-testid='dr-override-toggle']").GetAttribute("aria-expanded").Should().Be("false");
+        cut.Find("[data-testid='dr-run-help']").TextContent.Should().Contain("Choose one to four repository archives");
+        cut.Find("[data-testid='dr-ready-row'][data-row='source']").TextContent.Should().Contain("Review from source");
+        cut.Find("[data-testid='dr-ready-row'][data-row='renovate']").TextContent.Should().Contain("Waiting for repository archives");
+
+        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1], "M2LB (1).zip"));
+
+        cut.Find("[data-testid='dr-ready-row'][data-row='renovate']").TextContent.Should().Contain("Ready to test");
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready to test Renovate policy");
+        cut.FindAll("[data-testid='dr-run-help']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void InventoryComparisonOptionsAppearOnlyAfterAnInventoryIsChosen()
+    {
+        var cut = Render<DependencyReview>();
+        cut.Find("[data-testid='dr-mode'][data-mode='Inventory']").Click();
+
+        cut.FindAll("[data-testid='dh-options']").Should().BeEmpty();
+        cut.Find("[data-testid='dh-run-help']").TextContent.Should().Be("Choose an inventory to run the dependency health review.");
+
+        cut.Find("[data-testid='dh-inventory']").Change(Build.Id.ToString());
+
+        cut.Find("[data-testid='dh-inventory-summary']").TextContent.Should().Contain("Build 2026.09.28").And.Contain("SBOM").And.Contain("2").And.Contain("Current");
+        cut.Find("[data-testid='dh-options-toggle']").GetAttribute("aria-expanded").Should().Be("false");
+        cut.Find("[data-testid='dh-options-toggle']").TextContent.Should().Contain("none");
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready for dependency health review");
+        foreach (var row in new[] { "inventory", "registry", "security", "license" })
+            cut.Find($"[data-testid='dr-ready-row'][data-row='{row}'] [data-testid='dr-ready-state']").TextContent.Should().Be("Ready");
+        cut.Find("[data-testid='dr-readiness']").TextContent.Should().NotContainAny(ResultStates);
+        cut.FindAll("[data-testid='dh-result']").Should().BeEmpty("nothing has run yet");
+    }
+
+    [Fact]
+    public void SecurityFixPolicyIsAStatusNotAnInput()
+    {
+        var cut = Render<DependencyReview>();
+        cut.Find("[data-testid='dh-inventory']").Change(Build.Id.ToString());
+
+        var status = cut.Find("[data-testid='dh-policy-status']");
+        status.QuerySelector("select, input").Should().BeNull();
+        status.TextContent.Should().Contain("Security-fix policy").And.Contain("Not assessed").And.Contain("No source/Renovate review selected");
+
+        cut.Find("[data-testid='dh-policy']").Change(OldSource.Id.ToString());
+        cut.Find("[data-testid='dh-policy-status']").TextContent.Should().Contain("Available").And.Contain(OldSource.Name);
+        cut.Find("[data-testid='dr-ready-row'][data-row='policy']").TextContent.Should().Contain("Available");
+
+        cut.Find("[data-testid='dh-inventory']").Change(OldSource.Id.ToString());
+        cut.Find("[data-testid='dh-policy-status']").TextContent.Should().Contain("Available").And.Contain("source review this inventory comes from");
+    }
+
+    [Fact]
+    public void SbomMetadataAppearsAfterAFileIsChosenAndInvalidKeepsReadinessNotReady()
+    {
+        _api.ImportResult = new InventoryImportResult(new SbomValidation { Format = SbomFormat.CycloneDxJson, Valid = false, Errors = ["/: not a CycloneDX document"] }, null, "The document is not a valid CycloneDX JSON; no inventory was created.");
+        var cut = Render<DependencyReview>();
+        cut.Find("[data-testid='dr-mode'][data-mode='Sbom']").Click();
+
+        cut.FindAll("[data-testid='dh-sbom-metadata']").Should().BeEmpty();
+        cut.Find("[data-testid='dh-sbom-card']").TextContent.Should().Contain("CycloneDX JSON/XML").And.Contain("SPDX JSON").And.Contain("packages.lock.json");
+
+        cut.FindComponents<InputFile>()[2].UploadFiles(InputFileContent.CreateFromText("{}", "bad.cdx.json"));
+
+        cut.Find("[data-testid='dh-sbom-metadata']").TextContent.Should().Contain("The SBOM describes (provenance)");
+        cut.FindAll("[data-testid='dh-sbom-role'] option").Select(o => o.GetAttribute("value")).Should().Equal("BuildArtifact", "DeployedArtifact");
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready to review SBOM");
+        cut.Find("[data-testid='dh-sbom-run']").Click();
+
+        cut.Find("[data-testid='dh-sbom-validation']").TextContent.Should().Contain("Invalid SBOM");
+        cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Not ready — the SBOM is not valid");
+        cut.Find("[data-testid='dr-ready-row'][data-row='inventory']").TextContent.Should().Contain("no inventory was created");
+        _api.LastRequest.Should().BeNull();
+    }
+
+    [Fact]
+    public void DeployedEvidenceUsesTheTargetEnvironmentAndDerivesUrlAndEnvironment()
+    {
+        var deployed = Build with { Id = Guid.NewGuid(), Name = "m2lbdev.example.test (Development) · deployed assemblies", SourceType = InventorySourceType.Deployment, Stage = InventoryStage.Deployed };
+        _api.CaptureResult = new InventoryImportResult(null, deployed, null);
+        var cut = Render<DependencyReview>();
+        cut.Find("[data-testid='dr-mode'][data-mode='Deployed']").Click();
+
+        cut.Find("[data-testid='dh-deployed-capture']").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid='dh-deployed-help']").TextContent.Should().Be("Select a Target Environment to capture deployed evidence.");
+        cut.FindAll("[data-testid='dh-deployed-target'] option").Select(o => o.TextContent).Should().Equal("Select target", "Dev — https://m2lbdev.example.test/");
+        cut.Find("[data-testid='dh-deployed-manual-toggle']").GetAttribute("aria-expanded").Should().Be("false", "the manual URL is an advanced fallback");
+
+        cut.Find("[data-testid='dh-deployed-target']").Change("dev");
+
+        cut.Find("[data-testid='dh-target-url']").TextContent.Should().Be("https://m2lbdev.example.test/");
+        cut.Find("[data-testid='dh-target-environment']").TextContent.Should().Be("Development");
+        cut.Find("[data-testid='dh-target-summary']").TextContent.Should().Contain("not package versions");
+        cut.Find("[data-testid='dr-ready-row'][data-row='deployment']").TextContent.Should().Contain("Waiting for deployed evidence capture");
+        cut.Find("[data-testid='dh-deployed-capture']").Click();
+
+        _api.LastCapture.Should().BeEquivalentTo(new DeployedCaptureRequest { TargetUrl = "https://m2lbdev.example.test/", Environment = "Development" });
+        cut.Find("[data-testid='dr-ready-row'][data-row='deployment']").TextContent.Should().Contain("Waiting for inventory").And.Contain(deployed.Name);
+    }
+
+    [Fact]
+    public void HistoryIsCompactAndOpensTheStoredRunAsRecorded()
+    {
+        var cut = RunStored();
+        var first = _api.HealthRuns.Single().RunId;
+        var calls = _api.Stored.Count;
+
+        cut.Find("[data-testid='dr-previous-summary']").TextContent.Should().Contain("0 source reviews · 1 dependency health review");
+        cut.Find("[data-testid='dr-history-disclosure-toggle']").GetAttribute("aria-expanded").Should().Be("false");
+        cut.Find("[data-testid='dr-history-disclosure-toggle']").Click();
+        cut.Find("[data-testid='dh-history']").Change(first.ToString());
+
+        cut.Find("[data-testid='dh-result']").GetAttribute("data-run").Should().Be(first.ToString());
+        _api.Stored.Count.Should().Be(calls, "opening a stored review runs nothing");
+    }
+
+    [Fact]
+    public void ReadinessNeverShowsResultStates()
+    {
+        var inputs = new[]
+        {
+            new ReadinessInput(), new ReadinessInput { Mode = DependencyReviewMode.Source, Archives = 2 }, new ReadinessInput { Inventory = Build, Deployed = OldSource },
+            new ReadinessInput { PendingSbom = "x.json", SbomInvalid = true }, new ReadinessInput { Mode = DependencyReviewMode.Deployed, DeploymentTarget = "Dev" },
+        };
+        foreach (var view in inputs.Select(DependencyReviewReadiness.Evaluate))
+            view.Rows.Select(r => r.State).Append(view.Headline).Should().NotContain(s => ResultStates.Any(r => s.Contains(r, StringComparison.OrdinalIgnoreCase)));
     }
 }
