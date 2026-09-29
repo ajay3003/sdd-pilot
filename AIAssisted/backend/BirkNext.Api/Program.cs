@@ -405,6 +405,8 @@ builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ApplicationMess
 // Service Bus transport evidence: read-only Azure Resource Manager GETs (Azure-gated); never the data plane.
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.ServiceBus.IServiceBusMetadataSource, BirkNext.Api.Services.Integrations.ServiceBus.ArmServiceBusMetadataSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+// Azure Monitor metrics of the namespace: read-only, same instance-level Azure gate and credential as the Resource Manager metadata.
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ServiceBus.IServiceBusMetricsSource, BirkNext.Api.Services.Integrations.ServiceBus.AzureMonitorServiceBusMetricsSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ServiceBus.ServiceBusEvidenceService>();
 // SCIM identity provisioning evidence: source analysis + safe GET-only runtime checks (never a user write, list or publish; no redirects followed).
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.Scim.IScimRuntimeProbe, BirkNext.Api.Services.Integrations.Scim.HttpScimRuntimeProbe>(client => client.Timeout = TimeSpan.FromSeconds(15))

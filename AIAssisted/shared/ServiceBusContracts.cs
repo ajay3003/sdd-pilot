@@ -89,6 +89,28 @@ public sealed record ServiceBusRuntimeEvidence
     public Dictionary<string, string> ListFailures { get; init; } = [];
 }
 
+/// <summary>One Azure Monitor metric value over the window (Total for counters, Average/Maximum for gauges). Null = not reported, never 0.</summary>
+public sealed record ServiceBusMetricObservation(string Metric, string Aggregation, double? Value, string Unit);
+
+/// <summary>Azure Monitor metrics of the namespace. Observed only: no threshold, zero is not a pass. State is typed, never zeros.</summary>
+public sealed record ServiceBusMetricsEvidence
+{
+    public IntegrationEvidenceState State { get; init; } = IntegrationEvidenceState.NotConfigured;
+    public string Reason { get; init; } = "";
+    public IntegrationEvidenceSource Source { get; init; } = IntegrationEvidenceSource.AzureMonitor;
+    public DateTimeOffset CapturedAt { get; init; }
+    public int WindowHours { get; init; }
+    public List<ServiceBusMetricObservation> Metrics { get; init; } = [];
+}
+
+/// <summary>Whether analyzed application source can be compared with the topology.</summary>
+public static class ServiceBusRouteAnalysis
+{
+    public const string Current = "Current";
+    public const string NeedsReanalysis = "Needs re-analysis";
+    public const string NotAnalyzed = "Not analyzed";
+}
+
 public sealed record ServiceBusComparison
 {
     public string CheckId { get; init; } = "";
@@ -138,6 +160,10 @@ public sealed record ServiceBusEvidenceCheck
     public List<string> Missing { get; init; } = [];
     public List<string> Findings { get; init; } = [];
     public int WindowHours { get; init; }
+    /// <summary>Azure Monitor metrics of the namespace (null in runs recorded before metrics were read).</summary>
+    public ServiceBusMetricsEvidence? Metrics { get; init; }
+    /// <summary>Current / Needs re-analysis / Not analyzed (see <see cref="ServiceBusRouteAnalysis"/>); empty in older runs.</summary>
+    public string RouteAnalysis { get; init; } = "";
 }
 
 /// <summary>Pre-run summary of a Service Bus platform (configuration only; nothing is contacted before a run).</summary>
@@ -153,6 +179,8 @@ public sealed record ServiceBusReadiness
     public int RoutesTotal { get; init; }
     public IntegrationEvidenceState RuntimeState { get; init; }
     public string RuntimeReason { get; init; } = "";
+    public string RouteAnalysis { get; init; } = ServiceBusRouteAnalysis.NotAnalyzed;
+    public IntegrationEvidenceState MetricsState { get; init; } = IntegrationEvidenceState.NotConfigured;
 }
 
 public static class ServiceBusLabels

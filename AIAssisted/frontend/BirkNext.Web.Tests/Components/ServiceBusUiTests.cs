@@ -200,4 +200,48 @@ public sealed class ServiceBusUiTests : BunitContext
         html.Should().Contain("Service Bus · sbns-m2lb-dev-nwe-001").And.Contain("leselogg MaxDeliveryCount").And.Contain("Handler execution");
         html.Should().NotContain("SharedAccessKey").And.NotContain("Endpoint=sb://");
     }
+
+    // ── Azure Monitor metrics and route-analysis state on the evidence card ──────────────────────────────────────
+
+    [Fact]
+    public void ObservedMetricsShowValuesProvenanceAndNoPass()
+    {
+        _api.ServiceBusCheck = _ => Observed(DateTimeOffset.UtcNow) with
+        {
+            RouteAnalysis = ServiceBusRouteAnalysis.Current,
+            Metrics = new ServiceBusMetricsEvidence
+            {
+                State = IntegrationEvidenceState.Available, WindowHours = 24, CapturedAt = DateTimeOffset.UtcNow,
+                Metrics = [new("IncomingMessages", "Total", 120, "Count"), new("OutgoingMessages", "Total", 118, "Count"), new("ServerErrors", "Total", 0, "Count"),
+                           new("ActiveMessages", "Average", 3.5, "Count"), new("ActiveMessages", "Maximum", 9, "Count")],
+            },
+        };
+        var cut = Pane();
+        cut.Find("[data-testid=sb-test]").Click();
+        cut.WaitForElement("[data-testid=sb-result]");
+
+        cut.Find("[data-testid=sb-result-metrics-provenance]").TextContent.Should().Contain("Azure Monitor").And.Contain("last 24 h");
+        var metrics = cut.Find("[data-testid=sb-result-metrics]").TextContent;
+        metrics.Should().Contain("Observed: 120").And.Contain("Observed: 0").And.Contain("Observed: 3.5 / 9").And.Contain("Not reported").And.Contain("Oldest-message age").And.Contain("Not available");
+        metrics.Should().NotContain("Pass").And.NotContain("Fail");
+        cut.Find("[data-testid=sb-result-provenance]").TextContent.Should().Contain("Azure Resource Manager management metadata (GET only)");
+        cut.Find("[data-testid=sb-result-route-status]").TextContent.Should().Contain("Matched");
+    }
+
+    [Fact]
+    public void OldAnalysisShowsNeedsReanalysisAndUnreadMetricsShowTheirState()
+    {
+        _api.ServiceBusCheck = _ => Observed(DateTimeOffset.UtcNow) with
+        {
+            RouteAnalysis = ServiceBusRouteAnalysis.NeedsReanalysis, Routes = [],
+            Metrics = new ServiceBusMetricsEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "Azure runtime evidence is disabled for this BirkNext instance (IntegrationReview:Azure:Enabled is not true)." },
+        };
+        var cut = Pane();
+        cut.Find("[data-testid=sb-test]").Click();
+        cut.WaitForElement("[data-testid=sb-result]");
+
+        var routes = cut.Find("[data-testid=sb-result-route-status]").TextContent;
+        routes.Should().Contain("Needs re-analysis").And.Contain("re-analyze it").And.NotContain("0 of 0");
+        cut.Find("[data-testid=sb-result-metrics]").TextContent.Should().Contain("Not configured").And.Contain("IntegrationReview:Azure:Enabled");
+    }
 }

@@ -73,9 +73,11 @@
             <ul class="sb-list" data-testid="sb-result-configuration">
                 @foreach (var item in result.Configuration.Where(c => c.CheckId != "sb-code-reference"))
                 { <li><span class="sb-badge sb-badge-@ServiceBusPresentation.Tone(item.State)">@ServiceBusLabels.State(item.State)</span> @item.Title — @item.Detail</li> }
-                @{ var routes = result.Routes.Where(r => r.Direction != nameof(MessagingRouteDirection.Reference)).ToList(); }
-                <li><span class="sb-badge sb-badge-@(routes.Any(r => r.Configuration == ServiceBusCheckState.Mismatch) ? "fail" : routes.Count == 0 ? "muted" : "ready")">@(routes.Any(r => r.Configuration == ServiceBusCheckState.Mismatch) ? "Mismatch" : routes.Count == 0 ? "Not assessed" : "Matched")</span>
-                    Code routes: @routes.Count(r => r.Configuration == ServiceBusCheckState.Matched) of @routes.Count match the configured topology@(routes.Any(r => r.Configuration == ServiceBusCheckState.NotAssessed) ? $"; {routes.Count(r => r.Configuration == ServiceBusCheckState.NotAssessed)} decided at runtime" : "").</li>
+                @{ var routes = result.Routes.Where(r => r.Direction != nameof(MessagingRouteDirection.Reference)).ToList(); var (routeLabel, routeTone) = ServiceBusPresentation.RouteStatus(result); }
+                <li data-testid="sb-result-route-status"><span class="sb-badge sb-badge-@routeTone">@routeLabel</span>
+                    @if (result.RouteAnalysis == ServiceBusRouteAnalysis.NeedsReanalysis) { <text>Code routes: the application source was analyzed by an earlier version; re-analyze it (Integrations → Application messaging) to compare routes.</text> }
+                    else if (result.RouteAnalysis == ServiceBusRouteAnalysis.NotAnalyzed) { <text>Code routes: no analyzed application source (Integrations → Application messaging).</text> }
+                    else { <text>Code routes: @routes.Count(r => r.Configuration == ServiceBusCheckState.Matched) of @routes.Count match the configured topology@(routes.Any(r => r.Configuration == ServiceBusCheckState.NotAssessed) ? $"; {routes.Count(r => r.Configuration == ServiceBusCheckState.NotAssessed)} decided at runtime" : "").</text> }</li>
                 @{ var unreferenced = result.Configuration.Where(c => c.CheckId == "sb-code-reference" && c.State == ServiceBusCheckState.NotReferenced).ToList(); }
                 @if (unreferenced.Count > 0) { <li><span class="sb-badge sb-badge-attention">Not referenced</span> No code reference (possibly intentional): @string.Join(", ", unreferenced.Select(u => u.Entity)).</li> }
             </ul>
@@ -87,8 +89,9 @@
             }
             else
             {
+                <p class="sb-muted" data-testid="sb-result-provenance">Azure Resource Manager management metadata (GET only) · captured @runtime.CapturedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</p>
                 <ul class="sb-list" data-testid="sb-result-runtime">
-                    <li><span class="sb-badge sb-badge-info">Observed</span> Namespace @runtime.Namespace (status @(runtime.NamespaceStatus ?? "not reported"))</li>
+                    <li><span class="sb-badge sb-badge-info">Observed</span> Namespace @runtime.Namespace (status @(runtime.NamespaceStatus ?? "not reported"), SKU @(runtime.Sku ?? "not reported"))</li>
                     @foreach (var type in new[] { ServiceBusEntityType.Queue, ServiceBusEntityType.Topic, ServiceBusEntityType.Subscription })
                     {
                         var (seen, missing, all) = ServiceBusPresentation.Entities(result, type);
@@ -105,6 +108,24 @@
                     <div><dt>Scheduled messages</dt><dd>Observed: @ServiceBusPresentation.Count(scheduled)</dd></div>
                 </dl>
                 <p class="sb-muted">Point-in-time counts with no configured threshold: zero is not a pass, and dead-letter messages are not judged a failure.</p>
+            }
+
+            <h5>Azure Monitor metrics</h5>
+            @if (result.Metrics is { State: IntegrationEvidenceState.Available } metrics)
+            {
+                <p class="sb-muted" data-testid="sb-result-metrics-provenance">Azure Monitor platform metrics · last @metrics.WindowHours h · captured @metrics.CapturedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</p>
+                <dl class="sb-summary" data-testid="sb-result-metrics">
+                    @foreach (var (label, metric, aggregation) in ServiceBusPresentation.MetricRows)
+                    {
+                        <div><dt>@label</dt><dd>Observed: @ServiceBusPresentation.Metric(metrics, metric, aggregation)@(metric == "ActiveMessages" ? $" / {ServiceBusPresentation.Metric(metrics, metric, "Maximum")}" : "")</dd></div>
+                    }
+                    <div><dt>Oldest-message age</dt><dd>Not available (not a Service Bus platform metric)</dd></div>
+                </dl>
+                <p class="sb-muted">Observed values with no configured threshold: zero errors or zero messages is not a pass, and non-zero values are not judged a failure.</p>
+            }
+            else
+            {
+                <p data-testid="sb-result-metrics"><span class="sb-badge sb-badge-muted">@IntegrationReviewLabels.EvidenceState(result.Metrics?.State ?? IntegrationEvidenceState.NotSupported)</span> @(result.Metrics?.Reason ?? "Azure Monitor metrics were not read in this run.")</p>
             }
 
             @if (result.Routes.Count > 0)

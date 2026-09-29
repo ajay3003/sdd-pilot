@@ -10,8 +10,30 @@ namespace BirkNext.Api.Services.Integrations.ServiceBus;
 /// counts are Observed with no invented threshold (0 is not a pass, &gt; 0 is not a failure). Route matching is infrastructure — never proof
 /// that a message was published or processed; that needs application telemetry (Wolverine evidence), reported separately.
 /// </summary>
-public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata, ILogger<ServiceBusEvidenceService> logger)
+public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata, ILogger<ServiceBusEvidenceService> logger, IServiceBusMetricsSource? metricsSource = null)
 {
+    public static string RouteAnalysisOf(ApplicationMessagingEvidenceSet? analyzed) =>
+        analyzed is null ? ServiceBusRouteAnalysis.NotAnalyzed : analyzed.AnalyzerVersion < MinimumAnalyzerVersion ? ServiceBusRouteAnalysis.NeedsReanalysis : ServiceBusRouteAnalysis.Current;
+
+    /// <summary>What the test lead can do about unavailable runtime evidence — an action, not only the state.</summary>
+    public static string RuntimeAction(IntegrationPlatform platform, IntegrationEvidenceState state, string reason, string what) => state switch
+    {
+        IntegrationEvidenceState.NotConfigured when reason == IntegrationAzureCredential.DisabledMessage =>
+            $"{what}: enable Azure runtime evidence on the BirkNext backend (IntegrationReview:Azure:Enabled=true; read-only, DefaultAzureCredential or IntegrationReview:Azure:ManagedIdentityClientId).",
+        IntegrationEvidenceState.NotConfigured => $"{what}: configure {MissingParameters(platform)} (Integrations → Service Bus → Configure runtime evidence).",
+        IntegrationEvidenceState.NotAuthorized => $"{what}: grant the BirkNext Azure identity read access (Reader, or Monitoring Reader for metrics) on namespace {platform.Namespace}. {reason}",
+        _ => $"{what}: {IntegrationReviewLabels.EvidenceState(state)} — {reason}",
+    };
+
+    private static string MissingParameters(IntegrationPlatform platform)
+    {
+        var missing = new List<string>();
+        if (!Guid.TryParse(platform.RuntimeEvidence?.SubscriptionId, out _)) missing.Add("the Azure subscription id");
+        if (string.IsNullOrWhiteSpace(platform.ResourceGroup)) missing.Add("the resource group");
+        if (string.IsNullOrWhiteSpace(platform.Namespace)) missing.Add("the namespace name");
+        return missing.Count == 0 ? "the runtime evidence settings" : string.Join(", ", missing);
+    }
+
     public const string RouteMatchedNote = "Configured infrastructure only; a matched route is not a message published or processed.";
     /// <summary>Application analyses older than this carry no resolved entity names; they are never compared (no false orphans or mismatches).</summary>
     public const int MinimumAnalyzerVersion = 2;
@@ -34,7 +56,8 @@ public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata
             RoutesTotal = routes.Count(r => r.Direction != nameof(MessagingRouteDirection.Reference)),
             RoutesMatched = routes.Count(r => r.Direction != nameof(MessagingRouteDirection.Reference) && r.Configuration == ServiceBusCheckState.Matched),
             RoutesMismatched = routes.Count(r => r.Direction != nameof(MessagingRouteDirection.Reference) && r.Configuration == ServiceBusCheckState.Mismatch),
-            RuntimeState = status.State, RuntimeReason = status.Reason,
+            RuntimeState = status.State, RuntimeReason = status.Reason, RouteAnalysis = RouteAnalysisOf(messaging),
+            MetricsState = metricsSource?.Describe(platform).State ?? IntegrationEvidenceState.NotConfigured,
         };
     }
 
@@ -49,7 +72,13 @@ public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata
         var runtime = metadata.Describe(platform).State == IntegrationEvidenceState.Available
             ? await metadata.ReadAsync(platform, ct)
             : new ServiceBusRuntimeEvidence { PlatformId = platform.Id, Namespace = platform.Namespace, State = metadata.Describe(platform).State, Reason = metadata.Describe(platform).Reason, CapturedAt = DateTimeOffset.UtcNow };
-        var result = Evaluate(platform, topology, messaging, runtime, started, window);
+        // Metrics use the same gate: no Azure call unless the metrics source is configured for this namespace.
+        var metrics = metricsSource is null
+            ? new ServiceBusMetricsEvidence { State = IntegrationEvidenceState.NotSupported, Reason = "Azure Monitor metrics are not available in this BirkNext instance.", CapturedAt = DateTimeOffset.UtcNow, WindowHours = window }
+            : metricsSource.Describe(platform) is { State: not IntegrationEvidenceState.Available } off
+                ? new ServiceBusMetricsEvidence { State = off.State, Reason = off.Reason, CapturedAt = DateTimeOffset.UtcNow, WindowHours = window }
+                : await metricsSource.ReadAsync(platform, window, ct);
+        var result = Evaluate(platform, topology, messaging, runtime, started, window, metrics);
         logger.LogInformation("Service Bus evidence for {PlatformId} ({Namespace}): {State}; topology {Queues}q/{Topics}t/{Subscriptions}s; runtime {Runtime}; {Routes} route(s), {Findings} finding(s).",
             platform.Id, platform.Namespace, result.OverallState, result.Queues, result.Topics, result.Subscriptions, runtime.State, result.Routes.Count, result.Findings.Count);
         return result;
@@ -57,7 +86,7 @@ public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata
 
     /// <summary>Pure evaluation of configured topology, runtime metadata and application routes (no I/O).</summary>
     public static ServiceBusEvidenceCheck Evaluate(IntegrationPlatform platform, ServiceBusTopology topology, ApplicationMessagingEvidenceSet? analyzed,
-        ServiceBusRuntimeEvidence runtime, DateTimeOffset started, int windowHours)
+        ServiceBusRuntimeEvidence runtime, DateTimeOffset started, int windowHours, ServiceBusMetricsEvidence? metrics = null)
     {
         var messaging = Comparable(analyzed);
         var configuration = ConfigurationChecks(topology, messaging);
@@ -71,12 +100,16 @@ public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata
 
         var missing = new List<string>();
         if (topology.Entities.Count == 0) missing.Add("No configured Service Bus topology for this platform.");
-        if (!runtimeAvailable) missing.Add($"Service Bus runtime metadata: {IntegrationReviewLabels.EvidenceState(runtime.State)} — {runtime.Reason}");
+        if (!runtimeAvailable) missing.Add(RuntimeAction(platform, runtime.State, runtime.Reason, "Service Bus runtime metadata"));
         foreach (var (list, failure) in runtime.ListFailures) missing.Add($"Runtime {list}: {failure}");
         if (analyzed is not null && messaging is null)
             missing.Add($"The application source was analyzed {analyzed.AnalyzedAt:yyyy-MM-dd HH:mm} UTC by an earlier version that did not resolve Service Bus entity names; re-analyze it (Integrations → Application messaging) to compare code routes.");
         else if (messaging is null) missing.Add("No analyzed application source: code routes cannot be compared with the topology (Integrations → Application messaging).");
-        missing.Add("Azure Monitor metrics (throughput, oldest-message age, server errors) are not read in this build.");
+        if (metrics is not { State: IntegrationEvidenceState.Available })
+            missing.Add(metrics is null || metrics.State == IntegrationEvidenceState.NotSupported
+                ? "Azure Monitor metrics (throughput, server errors) are not read."
+                : RuntimeAction(platform, metrics.State, metrics.Reason, "Azure Monitor metrics"));
+        missing.Add("Oldest-message age: not available (not a Service Bus platform metric; never derived from counts).");
         if (messaging is not null)
             foreach (var app in messaging.Applications.Where(a => a.Detection != MessagingDetection.NotDetected && a.Handlers.Count > 0))
                 missing.Add($"Application Insights processing evidence for {app.ApplicationId}: read only during an Integration Quality Review run when the application is bound and telemetry is configured.");
@@ -93,6 +126,7 @@ public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata
             PlatformId = platform.Id, Namespace = platform.Namespace, StartedAt = started, CompletedAt = DateTimeOffset.UtcNow, OverallState = state,
             Queues = topology.Queues.Count(), Topics = topology.Topics.Count(), Subscriptions = topology.Subscriptions.Count(),
             Configuration = configuration, Runtime = runtime, RuntimeChecks = runtimeChecks, Routes = routes, Missing = missing.Distinct().ToList(), Findings = findings, WindowHours = windowHours,
+            Metrics = metrics, RouteAnalysis = RouteAnalysisOf(analyzed),
         };
     }
 
@@ -392,10 +426,19 @@ public sealed class ServiceBusEvidenceService(IServiceBusMetadataSource metadata
             IntegrationEvidenceSource.AzureResourceManager, at));
 
         // Observability and Performance: nothing is credited without measured evidence.
-        checks.Add(Check("sb-monitoring", IntegrationReviewDomain.Observability, id, "Service Bus monitoring evidence", IntegrationCheckStatus.NotAssessed, "",
-            "Azure Monitor metrics are not read in this build; no monitoring evidence is claimed for the namespace.", IntegrationEvidenceSource.AzureMetadata, at));
-        checks.Add(Check("sb-performance", IntegrationReviewDomain.Performance, id, "Service Bus throughput / latency", IntegrationCheckStatus.NotAssessed, "",
-            "No measured throughput, latency or oldest-message age; message counts are not performance evidence.", IntegrationEvidenceSource.AzureMetadata, at));
+        var metrics = check.Metrics;
+        var metricsObserved = metrics is { State: IntegrationEvidenceState.Available };
+        string Metric(string name, string aggregation) => metrics?.Metrics.FirstOrDefault(m => m.Metric == name && m.Aggregation == aggregation)?.Value is { } v ? v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "not reported";
+        checks.Add(Check("sb-monitoring", IntegrationReviewDomain.Observability, id, "Service Bus monitoring evidence",
+            metricsObserved ? IntegrationCheckStatus.Observed : metrics is null or { State: IntegrationEvidenceState.NotSupported } ? IntegrationCheckStatus.NotAssessed : RuntimeUnavailable(metrics.State),
+            metricsObserved ? $"Last {metrics!.WindowHours} h: server errors {Metric("ServerErrors", "Total")}, user errors {Metric("UserErrors", "Total")}, throttled requests {Metric("ThrottledRequests", "Total")}, dead-lettered (max) {Metric("DeadletteredMessages", "Maximum")}." : "",
+            metricsObserved ? "Azure Monitor platform metrics, observed with no configured threshold: zero errors is not a pass." : metrics is null ? "Azure Monitor metrics are not read in this build; no monitoring evidence is claimed for the namespace." : $"{IntegrationReviewLabels.EvidenceState(metrics.State)}: {metrics.Reason}",
+            IntegrationEvidenceSource.AzureMonitor, metricsObserved ? metrics!.CapturedAt : at));
+        checks.Add(Check("sb-performance", IntegrationReviewDomain.Performance, id, "Service Bus throughput / latency",
+            metricsObserved ? IntegrationCheckStatus.Observed : IntegrationCheckStatus.NotAssessed,
+            metricsObserved ? $"Last {metrics!.WindowHours} h: incoming {Metric("IncomingMessages", "Total")}, outgoing {Metric("OutgoingMessages", "Total")} messages; active messages avg {Metric("ActiveMessages", "Average")}, max {Metric("ActiveMessages", "Maximum")}." : "",
+            metricsObserved ? "Throughput observed from Azure Monitor with no configured threshold. Latency and oldest-message age are not Service Bus platform metrics and are not assessed." : "No measured throughput, latency or oldest-message age; message counts are not performance evidence.",
+            IntegrationEvidenceSource.AzureMonitor, metricsObserved ? metrics!.CapturedAt : at));
         return (checks, findings);
     }
 }

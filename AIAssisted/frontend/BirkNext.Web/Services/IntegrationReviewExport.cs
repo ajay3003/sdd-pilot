@@ -62,6 +62,10 @@ public static class IntegrationReviewExport
             // Service Bus transport: configured topology, runtime metadata and route correlation as recorded by this run. No payload, no secret.
             sb.Append($"<section class=\"block\"><h2>Service Bus · {esc(serviceBus.Namespace)}</h2>");
             sb.Append($"<p>{badge(ServiceBusLabels.Overall(serviceBus.OverallState))} Configured topology: {serviceBus.Queues} queue(s), {serviceBus.Topics} topic(s), {serviceBus.Subscriptions} subscription(s). Runtime metadata: {esc(IntegrationReviewLabels.EvidenceState(serviceBus.Runtime?.State ?? IntegrationEvidenceState.NotConfigured))}{(serviceBus.Runtime?.State == IntegrationEvidenceState.Available ? $", captured {serviceBus.Runtime.CapturedAt:u}" : $" — {esc(serviceBus.Runtime?.Reason)}")}.</p>");
+            sb.Append($"<p>Code routes: {esc(ServiceBusPresentation.RouteStatus(serviceBus).Label)}. Azure Monitor metrics: {esc(IntegrationReviewLabels.EvidenceState(serviceBus.Metrics?.State ?? IntegrationEvidenceState.NotSupported))}"
+                + (serviceBus.Metrics is { State: IntegrationEvidenceState.Available } m
+                    ? $" (last {m.WindowHours} h, captured {m.CapturedAt:u}): " + string.Join(", ", ServiceBusPresentation.MetricRows.Select(r => $"{esc(r.Label)} {esc(ServiceBusPresentation.Metric(m, r.Metric, r.Aggregation))}")) + ". Observed with no threshold."
+                    : $" — {esc(serviceBus.Metrics?.Reason ?? "not read in this run")}.") + " Oldest-message age: not available.</p>");
             sb.Append(table(["Check", "Expected", "Observed", "State", "Detail"], serviceBus.Configuration.Concat(serviceBus.RuntimeChecks).Select(c => new[]
             {
                 esc(c.Title), esc(c.Expected ?? "—"), esc(c.Observed ?? "—"), badge(ServiceBusLabels.State(c.State)), esc(c.Detail),

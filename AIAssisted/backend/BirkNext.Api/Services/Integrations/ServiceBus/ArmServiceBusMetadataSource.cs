@@ -120,6 +120,8 @@ public sealed class ArmServiceBusMetadataSource(IIntegrationAzureCredential azur
         "maxDeliveryCount", "lockDuration", "defaultMessageTimeToLive", "requiresSession", "deadLetteringOnMessageExpiration",
         "deadLetteringOnFilterEvaluationExceptions", "requiresDuplicateDetection", "duplicateDetectionHistoryTimeWindow", "maxSizeInMegabytes",
         "enablePartitioning", "autoDeleteOnIdle", "forwardTo", "forwardDeadLetteredMessagesTo", "enableBatchedOperations",
+        // Reported, never compared: size and totals are observations.
+        "sizeInBytes", "messageCount", "subscriptionCount",
     ];
 
     /// <summary>One entity document reduced to its name, status, known properties and count details. Nothing else is kept.</summary>

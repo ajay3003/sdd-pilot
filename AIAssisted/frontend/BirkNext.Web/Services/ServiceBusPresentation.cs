@@ -75,4 +75,24 @@ public static class ServiceBusPresentation
         check.Runtime is { State: IntegrationEvidenceState.Available } runtime && now - runtime.CapturedAt > TimeSpan.FromHours(Math.Max(1, check.WindowHours));
 
     public static string Count(long? value) => value?.ToString() ?? "Not reported";
+
+    /// <summary>Code-route comparison status: an older analysis is "Needs re-analysis", never a meaningful 0 of 0.</summary>
+    public static (string Label, string Tone) RouteStatus(ServiceBusEvidenceCheck check)
+    {
+        if (check.RouteAnalysis == ServiceBusRouteAnalysis.NeedsReanalysis) return (ServiceBusRouteAnalysis.NeedsReanalysis, "attention");
+        if (check.RouteAnalysis == ServiceBusRouteAnalysis.NotAnalyzed) return ("Not analyzed", "muted");
+        var routes = check.Routes.Where(r => r.Direction != nameof(MessagingRouteDirection.Reference)).ToList();
+        return routes.Any(r => r.Configuration == ServiceBusCheckState.Mismatch) ? ("Mismatch", "fail") : routes.Count == 0 ? ("Not assessed", "muted") : ("Matched", "ready");
+    }
+
+    /// <summary>A metric value as observed ("Not reported" when Azure returned none — never 0 for unknown).</summary>
+    public static string Metric(ServiceBusMetricsEvidence? metrics, string name, string aggregation) =>
+        metrics?.Metrics.FirstOrDefault(m => m.Metric == name && m.Aggregation == aggregation)?.Value is { } v ? v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) : "Not reported";
+
+    public static readonly (string Label, string Metric, string Aggregation)[] MetricRows =
+    [
+        ("Incoming messages (total)", "IncomingMessages", "Total"), ("Outgoing messages (total)", "OutgoingMessages", "Total"),
+        ("Active messages (average / max)", "ActiveMessages", "Average"), ("Dead-lettered messages (max)", "DeadletteredMessages", "Maximum"),
+        ("Server errors (total)", "ServerErrors", "Total"), ("User errors (total)", "UserErrors", "Total"), ("Throttled requests (total)", "ThrottledRequests", "Total"),
+    ];
 }

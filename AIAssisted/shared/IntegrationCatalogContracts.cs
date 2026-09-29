@@ -352,7 +352,7 @@ public enum IntegrationDomainReadiness { Ready, Available, Limited, NotAssessabl
 public enum IntegrationCheckStatus { Pass, Warning, Fail, NotAssessed, Unavailable, NoIndicatorsObserved, Observed, NeedsConfirmation, NotConfigured, NoRecentEvidence, Detected, Configured }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery, CheckpointStore, AzureResourceManager, SourceCode, PackageManifest, Infrastructure }
+public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery, CheckpointStore, AzureResourceManager, SourceCode, PackageManifest, Infrastructure, AzureMonitor }
 
 /// <summary>Why a runtime evidence source did or did not deliver. Failures are never collapsed into one "unavailable".</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -593,6 +593,7 @@ public static class IntegrationReviewLabels
         IntegrationEvidenceSource.SourceCode => "Source code",
         IntegrationEvidenceSource.PackageManifest => "Package reference",
         IntegrationEvidenceSource.Infrastructure => "Terraform / infrastructure",
+        IntegrationEvidenceSource.AzureMonitor => "Azure Monitor",
         _ => "Configuration",
     };
 

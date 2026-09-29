@@ -390,4 +390,127 @@ public sealed class ServiceBusEvidenceTests
         upgraded.Platforms.Should().Contain(p => p.Id == M2lbDevIntegrationSeed.ServiceBusPlatformId && p.ServiceBusTopology!.Entities.Count == 23);
         upgraded.Integrations.Should().NotContain(i => i.Id == deleted, "a v1 → v2 upgrade never brings back what a person deleted");
     }
+
+    // ── Azure Monitor metrics, actionable missing evidence, route-analysis state, read-only guarantee ───────────────
+
+    private sealed class CountingMetrics(ServiceBusMetricsEvidence evidence, IntegrationEvidenceState describe = IntegrationEvidenceState.Available, string reason = "test") : IServiceBusMetricsSource
+    {
+        public int Reads { get; private set; }
+        public IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform) => NotConfiguredEvidence.Status("m", IntegrationEvidenceSource.AzureMonitor, describe, reason);
+        public Task<ServiceBusMetricsEvidence> ReadAsync(IntegrationPlatform platform, int windowHours, CancellationToken ct) { Reads++; return Task.FromResult(evidence); }
+    }
+
+    private sealed class CountingMetadata(IntegrationEvidenceState describe, string reason) : IServiceBusMetadataSource
+    {
+        public int Reads { get; private set; }
+        public IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform) => NotConfiguredEvidence.Status("sb", IntegrationEvidenceSource.AzureResourceManager, describe, reason);
+        public Task<ServiceBusRuntimeEvidence> ReadAsync(IntegrationPlatform platform, CancellationToken ct) { Reads++; return Task.FromResult(new ServiceBusRuntimeEvidence { State = IntegrationEvidenceState.Available }); }
+    }
+
+    private static ServiceBusMetricsEvidence Metrics(double value) => new()
+    {
+        State = IntegrationEvidenceState.Available, CapturedAt = DateTimeOffset.UtcNow, WindowHours = 24, Reason = "test",
+        Metrics = [.. AzureMonitorServiceBusMetricsSource.CounterMetrics.Select(m => new ServiceBusMetricObservation(m, "Total", value, "Count")),
+                   .. AzureMonitorServiceBusMetricsSource.GaugeMetrics.SelectMany(m => new[] { new ServiceBusMetricObservation(m, "Average", value, "Count"), new ServiceBusMetricObservation(m, "Maximum", value, "Count") })],
+    };
+
+    [Fact]
+    public void ObservedMetricsAreObservedNeverPassEvenAtZero()
+    {
+        var check = ServiceBusEvidenceService.Evaluate(Platform(), M2lbDevIntegrationSeed.ServiceBusTopology(), null, Runtime(), DateTimeOffset.UtcNow, 24, Metrics(0));
+
+        var (checks, findings) = ServiceBusEvidenceService.ReviewChecks(Platform(), check);
+
+        var monitoring = checks.Single(c => c.CheckId == "sb-monitoring");
+        monitoring.Status.Should().Be(IntegrationCheckStatus.Observed);
+        monitoring.Provenance.Should().Be(IntegrationEvidenceSource.AzureMonitor);
+        monitoring.Evidence.Should().Contain("server errors 0").And.Contain("throttled requests 0");
+        monitoring.Explanation.Should().Contain("zero errors is not a pass");
+        checks.Single(c => c.CheckId == "sb-performance").Status.Should().Be(IntegrationCheckStatus.Observed);
+        checks.Single(c => c.CheckId == "sb-performance").Explanation.Should().Contain("oldest-message age are not Service Bus platform metrics");
+        findings.Should().NotContain(f => f.RuleId.Contains("metric"));
+        check.Missing.Should().NotContain(m => m.StartsWith("Azure Monitor metrics"));
+        check.Missing.Should().Contain(m => m.StartsWith("Oldest-message age: not available"));
+    }
+
+    [Fact]
+    public async Task AzureDisabledMakesNoAzureCallAndSaysHowToEnableIt()
+    {
+        var metadata = new CountingMetadata(IntegrationEvidenceState.NotConfigured, IntegrationAzureCredential.DisabledMessage);
+        var metrics = new CountingMetrics(Metrics(1), IntegrationEvidenceState.NotConfigured, IntegrationAzureCredential.DisabledMessage);
+
+        var check = await new ServiceBusEvidenceService(metadata, NullLogger<ServiceBusEvidenceService>.Instance, metrics).CheckAsync(Platform(), null, default);
+
+        metadata.Reads.Should().Be(0);
+        metrics.Reads.Should().Be(0);
+        check.Runtime!.State.Should().Be(IntegrationEvidenceState.NotConfigured);
+        check.Metrics!.State.Should().Be(IntegrationEvidenceState.NotConfigured);
+        check.Missing.Should().Contain(m => m.StartsWith("Service Bus runtime metadata: enable Azure runtime evidence") && m.Contains("IntegrationReview:Azure:Enabled=true"));
+        check.Missing.Should().Contain(m => m.StartsWith("Azure Monitor metrics: enable Azure runtime evidence"));
+        var real = new AzureMonitorServiceBusMetricsSource(new IntegrationAzureCredential(new ConfigurationBuilder().Build()), NullLogger<AzureMonitorServiceBusMetricsSource>.Instance);
+        real.Describe(Platform()).State.Should().Be(IntegrationEvidenceState.NotConfigured);
+        (await real.ReadAsync(Platform(), 24, default)).State.Should().Be(IntegrationEvidenceState.NotConfigured);
+    }
+
+    [Fact]
+    public void MissingItemsNameTheExactMissingParameterAndTheReadRoleNeeded()
+    {
+        var missingId = ServiceBusEvidenceService.RuntimeAction(Platform(subscriptionId: null), IntegrationEvidenceState.NotConfigured, "needs ids", "Service Bus runtime metadata");
+        missingId.Should().Contain("configure the Azure subscription id").And.NotContain("resource group");
+        var unauthorized = ServiceBusEvidenceService.RuntimeAction(Platform(), IntegrationEvidenceState.NotAuthorized, "not authorized (HTTP 403).", "Azure Monitor metrics");
+        unauthorized.Should().Contain("grant the BirkNext Azure identity read access").And.Contain(M2lbDevIntegrationSeed.ServiceBusNamespace).And.NotContain("Not found");
+
+        var check = ServiceBusEvidenceService.Evaluate(Platform(), M2lbDevIntegrationSeed.ServiceBusTopology(), null,
+            new ServiceBusRuntimeEvidence { State = IntegrationEvidenceState.NotAuthorized, Reason = "Namespace x: not authorized (HTTP 403)." }, DateTimeOffset.UtcNow, 24,
+            new ServiceBusMetricsEvidence { State = IntegrationEvidenceState.NotAuthorized, Reason = "403" });
+        check.Missing.Should().Contain(m => m.StartsWith("Service Bus runtime metadata: grant"));
+        check.RuntimeChecks.Should().BeEmpty("nothing is claimed as missing in Azure when access is refused");
+        ServiceBusEvidenceService.ReviewChecks(Platform(), check).Checks.Single(c => c.CheckId == "sb-entities").Status.Should().NotBe(IntegrationCheckStatus.Fail);
+    }
+
+    [Theory]
+    [InlineData(null, "Not analyzed")]
+    [InlineData(1, "Needs re-analysis")]
+    [InlineData(2, "Current")]
+    public void RouteAnalysisStateIsExplicitNotAZeroOfZero(int? analyzerVersion, string expected)
+    {
+        var messaging = analyzerVersion is { } v ? Messaging(("M2LB.Tjeneste.Api", Route(MessagingRouteDirection.Publish, MessagingEndpointKind.Queue, "leselogg"))) with { AnalyzerVersion = v } : null;
+
+        var check = ServiceBusEvidenceService.Evaluate(Platform(), M2lbDevIntegrationSeed.ServiceBusTopology(), messaging, Runtime(), DateTimeOffset.UtcNow, 24);
+        var readiness = new ServiceBusEvidenceService(new StaticSource(Runtime()), NullLogger<ServiceBusEvidenceService>.Instance).Readiness(Platform(), messaging);
+
+        check.RouteAnalysis.Should().Be(expected);
+        readiness.RouteAnalysis.Should().Be(expected);
+        if (expected == "Needs re-analysis") check.Routes.Should().BeEmpty("an older analysis is never compared");
+    }
+
+    [Fact]
+    public void ServiceBusEvidenceCodeUsesNoMessageOperationOrDataPlaneClient()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "BirkNext.Api", "Services", "Integrations", "ServiceBus"))) dir = dir.Parent;
+        dir.Should().NotBeNull("the source tree is next to the test build");
+        var root = Path.Combine(dir!.FullName, "BirkNext.Api");
+        var sources = Directory.GetFiles(Path.Combine(root, "Services", "Integrations", "ServiceBus"), "*.cs").Select(File.ReadAllText).ToList();
+        sources.Should().HaveCountGreaterThanOrEqualTo(3);
+        // Data-plane client types and message operations (method calls), plus any non-GET HTTP method. Count properties such as
+        // DeadLetterMessageCount are observations and are allowed.
+        var forbidden = new System.Text.RegularExpressions.Regex(@"\b(ServiceBusSender|ServiceBusReceiver|ServiceBusSessionReceiver|ServiceBusProcessor|ServiceBusClient|ServiceBusAdministrationClient)\b"
+            + @"|\b(Send|Schedule|Receive|Peek|Complete|Abandon|DeadLetter|Defer|Cancel)(Scheduled)?Messages?Async\b|\bRenewMessageLockAsync\b|HttpMethod\.(Put|Post|Delete|Patch)\b|\b(Post|Put|Patch|Delete)AsJsonAsync\b|\.(PostAsync|PutAsync|PatchAsync|DeleteAsync)\(");
+        new[] { "await sender.SendMessageAsync(message);", "receiver.CompleteMessageAsync(m)", "new ServiceBusClient(fqdn)", "new HttpRequestMessage(HttpMethod.Put, url)" }
+            .Should().OnlyContain(sample => forbidden.IsMatch(sample), "the guard must detect a message operation or mutation (never vacuous)");
+        forbidden.IsMatch("DeadLetterMessageCount = 1").Should().BeFalse("a count property is an observation, not an operation");
+        foreach (var source in sources) forbidden.Matches(source).Select(m => m.Value).Should().BeEmpty("the Service Bus evidence code performs no message operation or mutation");
+        File.ReadAllText(Path.Combine(root, "BirkNext.Api.csproj")).Should().NotContain("Azure.Messaging.ServiceBus", "no Service Bus data-plane SDK is referenced");
+    }
+
+    [Fact]
+    public void AzureErrorsAreReducedToTypeAndStatusNeverTheMessage()
+    {
+        var described = AzureEvidence.Describe(new Azure.RequestFailedException(403, "Authorization: Bearer SENTINEL-TOKEN-XYZ; SharedAccessKey=SENTINEL-KEY", "AuthorizationFailed", null));
+
+        described.Should().Be("RequestFailedException (HTTP 403, AuthorizationFailed)");
+        AzureEvidence.StateOf(new Azure.RequestFailedException(403, "x")).Should().Be(IntegrationEvidenceState.NotAuthorized);
+        AzureEvidence.StateOf(new Azure.RequestFailedException(404, "x")).Should().Be(IntegrationEvidenceState.NotFound);
+    }
 }
