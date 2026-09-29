@@ -28,7 +28,7 @@ public sealed class CriticalE2EFlowDraft
     {
         Id = flow.Id, Module = flow.Module, Name = flow.Name, Description = flow.Description, Kind = flow.Kind, Mode = flow.Mode,
         Enabled = flow.Enabled, RequiredForRelease = flow.RequiredForRelease, AutomationBoundary = flow.AutomationBoundary,
-        TestDataPolicy = flow.TestDataPolicy, TimeoutMs = flow.TimeoutMs, Steps = [.. flow.Steps],
+        TestDataPolicy = flow.TestDataPolicy, TimeoutMs = flow.TimeoutMs, Steps = WithStableIds(flow.Steps),
     };
 
     public CriticalE2EFlowDefinition ToDefinition(string profileId, string environmentId) => new()
@@ -46,4 +46,37 @@ public sealed class CriticalE2EFlowDraft
 
     /// <summary>The definition's own rule, asked of the draft, so the editor refuses exactly what a run would refuse.</summary>
     public string? Problem(string profileId, string environmentId) => ToDefinition(profileId, environmentId).ConfigurationProblem();
+
+    private static List<CriticalE2EStepDefinition> WithStableIds(IEnumerable<CriticalE2EStepDefinition> steps)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return steps.Select(step =>
+        {
+            if (!string.IsNullOrWhiteSpace(step.StepId) && seen.Add(step.StepId)) return step;
+            var id = $"step-{Guid.NewGuid():N}";
+            seen.Add(id);
+            return step with { StepId = id };
+        }).ToList();
+    }
+
+    // Array position is the persisted execution order. Move the record, never reconstruct its contents.
+    public bool MoveStep(string stepId, int destination)
+    {
+        var index = Steps.FindIndex(s => s.StepId == stepId);
+        if (index < 0 || destination < 0 || destination >= Steps.Count || index == destination) return false;
+        var step = Steps[index];
+        Steps.RemoveAt(index);
+        Steps.Insert(destination, step);
+        return true;
+    }
+
+    public CriticalE2EStepDefinition InsertStep(int index)
+    {
+        var id = $"step-{Guid.NewGuid():N}";
+        var step = Mode == CriticalE2EExecutionMode.CompanionBrowser
+            ? new CriticalE2EStepDefinition { StepId = id, BrowserAction = CompanionActionKind.Click, Selector = new CompanionSelector() }
+            : new CriticalE2EStepDefinition { StepId = id, IntegrationAction = CriticalE2EIntegrationKind.Http, Method = "GET", Expect = new CriticalE2EExpectation() };
+        Steps.Insert(index, step);
+        return step;
+    }
 }
