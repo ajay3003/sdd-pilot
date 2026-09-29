@@ -12,7 +12,10 @@ namespace BirkNext.Api.Tests.Services.Integrations;
 public sealed class IntegrationMappingEvidenceTests
 {
     private static IntegrationDefinition Topic => M2lbDevIntegrationSeed.Integrations("dev", DateTimeOffset.UtcNow).Single(i => i.SourceResource!.EndsWith(".Tiltak"));
-    private static IntegrationPlatform Platform => M2lbDevIntegrationSeed.Platform("dev", DateTimeOffset.UtcNow);
+    /// <summary>The seeded platform without runtime-evidence settings: no expected consumer group, so nothing is assumed.</summary>
+    private static IntegrationPlatform Platform => M2lbDevIntegrationSeed.Platform("dev", DateTimeOffset.UtcNow) with { RuntimeEvidence = null };
+    /// <summary>The seeded platform with the verified v4 defaults ($Default as a configured assumption).</summary>
+    private static IntegrationPlatform SeededPlatform => M2lbDevIntegrationSeed.Platform("dev", DateTimeOffset.UtcNow);
     private static IntegrationMappingEvidenceService Service(Sources source, bool enabled = true) => new(
         new IntegrationAzureCredential(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["IntegrationReview:Azure:Enabled"] = enabled.ToString() }).Build()), source, source, source, source);
 
@@ -198,5 +201,23 @@ public sealed class IntegrationMappingEvidenceTests
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "backend/BirkNext.Api/Services/Integrations/IntegrationMappingEvidenceService.cs"))) dir = dir.Parent;
         var source = File.ReadAllText(Path.Combine(dir!.FullName, "backend/BirkNext.Api/Services/Integrations/IntegrationMappingEvidenceService.cs"));
         source.Should().NotContainAny("EventHubProducerClient", "SendAsync", "ReceiveAsync", "ReadEvents", "CreateConsumerGroup", "UpdateCheckpoint", "SetMetadata", "Upload", "SaveChanges", "UpdateAsync", "HttpClient", "ProbeAsync");
+    }
+
+    [Fact]
+    public async Task ThePlatformExpectationIsReadAsAnAssumption_AndTheMappingStaysUnconfirmed()
+    {
+        var sources = new Sources();
+        var person = M2lbDevIntegrationSeed.Integrations("dev", DateTimeOffset.UtcNow).Single(i => i.SourceResource!.EndsWith(".Person"));
+        var result = await Service(sources).CheckAsync(person, SeededPlatform, IntegrationContractSet.Empty);
+        sources.CheckpointCalls.Should().Be(1);
+        result.ExpectedConsumerGroup.Should().Be("$Default");
+        result.ExpectedConsumerGroupProvenance.Should().Be(IntegrationValueProvenance.ConfiguredAssumption);
+        result.ObservedConsumerGroups.Should().BeEmpty("the fake lists none; observed is kept apart from expected");
+        var group = result.Checks.Single(c => c.CheckId == "configured-group");
+        group.Label.Should().Be("Expected consumer group");
+        group.Summary.Should().Contain("Configured assumption").And.Contain("Mapping: Needs confirmation");
+        result.Checks.Single(c => c.CheckId == "checkpoint").Summary.Should().Contain("(configured assumption)");
+        result.OverallState.Should().NotBe(IntegrationMappingEvidenceState.StrongEvidence);
+        person.ConsumerGroup.Should().BeNull();
     }
 }

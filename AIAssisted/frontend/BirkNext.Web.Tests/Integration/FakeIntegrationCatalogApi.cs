@@ -221,6 +221,23 @@ public static class M2lbFixture
 
     public static IntegrationCatalog Catalog() => new() { EnvironmentId = "dev", Platforms = [Platform()], Integrations = Tables.Select(Topic).ToList() };
 
+    /// <summary>The verified M2LB DEV runtime-evidence defaults as the backend seed (v4) stores them — identifiers only.</summary>
+    public static IntegrationRuntimeEvidenceSettings SeededRuntime() => new()
+    {
+        EventHubMetadata = true, SubscriptionId = "2fcdb9d0-22eb-43b0-b95e-7cbba08c34b0", SubscriptionName = "m2lb-samhandling-dev", NamespaceSku = "Premium", NamespaceCapacity = 1,
+        ExpectedConsumerGroup = "$Default", ExpectedConsumerGroupProvenance = IntegrationValueProvenance.ConfiguredAssumption,
+        ExpectedConsumerGroupNote = "Observed on hub m2lb-cdc-dev.birkm2lb.dbo.barntype (Active, 1 partition, 168 h retention, 1 consumer group); not confirmed as the group the consumer reads with.",
+        CheckpointBlobEndpoint = "https://stm2bbirkdevnwe001.blob.core.windows.net/", CheckpointContainerName = "person-adapter", CheckpointProvenance = IntegrationValueProvenance.SourceConfigurationVerified,
+        CheckpointSourceNote = "Person Adapter environment variables EventHub__FQDN, Storage__BlobEndpoint and Storage__ContainerName.",
+        ApplicationInsightsResourceName = "appi-m2lb-dev-nwe-001", ApplicationInsightsResourceGroup = "rg-m2lb-dev-shared-nwe", ApplicationInsightsConfigured = true,
+        ContainerAppsLogDestination = "azure-monitor", ConsumerApplicationName = "ca-m2lb-person-adp-dev-nwe-001", ConsumerApplicationResourceGroup = "rg-m2lb-dev-apps-nwe",
+        ReviewWindowHours = 24,
+    };
+
+    /// <summary>The DEV catalog with the seeded runtime-evidence defaults on the Event Hub platform.</summary>
+    public static IntegrationCatalog SeededCatalog(bool azureEnabled = false) =>
+        Catalog() with { Platforms = [Platform() with { Region = "Norway East", RuntimeEvidence = SeededRuntime() }], AzureRuntimeEnabled = azureEnabled };
+
     public static IntegrationReviewReadiness Readiness() => new()
     {
         EnvironmentId = "dev", ConfiguredIntegrations = 16, EnabledIntegrations = 16, CanRun = true, Headline = "Can run with limitations",

@@ -1,0 +1,15 @@
+@* Event Hub runtime-evidence readiness rows: status badge, value and one line of detail. "Not required" is muted, never a warning. *@
+<ul class="ehr-list" data-testid="ip-runtime-readiness-list">
+    @foreach (var row in Rows)
+    {
+        <li data-testid="@($"ip-runtime-row-{row.Key}")" data-status="@row.Status">
+            <span class="ehr-label">@row.Label</span>
+            <span class="ehr-badge ehr-badge-@EventHubRuntimeEvidencePresentation.Tone(row.Status)">@EventHubRuntimeEvidencePresentation.StatusLabel(row.Status)</span>
+            <span class="ehr-value ip-mono">@row.Value</span>
+            <span class="ehr-detail">@row.Detail</span>
+        </li>
+    }
+</ul>
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<RuntimeReadinessRow> Rows { get; set; } = [];
+}

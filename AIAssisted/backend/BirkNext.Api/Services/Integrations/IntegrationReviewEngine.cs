@@ -64,7 +64,7 @@ public sealed class IntegrationReviewEngine(
         var metadataReady = Configured(platforms.Select(metadata.Describe));
         var checkpointReady = Configured(platforms.Select(checkpoints.Describe));
         var telemetryReady = Configured(platforms.Select(telemetry.Describe));
-        var unknownGroups = eventHub.Count(i => string.IsNullOrWhiteSpace(i.ConsumerGroup));
+        var unknownGroups = eventHub.Count(i => EffectiveGroup(i, catalog.Platforms.FirstOrDefault(p => p.Id == i.PlatformId)).Group is null);
         var unknownRoles = eventHub.Count(i => string.IsNullOrWhiteSpace(i.Consumer.ContainerApp));
         var both = enabled.Count(i => contracts.Of(i.Id, IntegrationContractRole.Producer) is not null && contracts.Of(i.Id, IntegrationContractRole.Consumer) is not null);
         var oneSided = enabled.Count(i => (contracts.Of(i.Id, IntegrationContractRole.Producer) is not null) ^ (contracts.Of(i.Id, IntegrationContractRole.Consumer) is not null));
@@ -113,6 +113,7 @@ public sealed class IntegrationReviewEngine(
             if (system.ConsumersSuggested > 0) reasons.Add($"{system.ConsumersSuggested} consumer mapping{(system.ConsumersSuggested == 1 ? "" : "s")} suggested by the audited source and not confirmed for this environment.");
             if (system.ConsumersNeedingConfirmation > 0) reasons.Add($"{system.ConsumersNeedingConfirmation} consumer mapping{(system.ConsumersNeedingConfirmation == 1 ? "" : "s")} need confirmation.");
             if (system.ConsumerGroupsUnknown > 0) reasons.Add($"Consumer group not configured for {system.ConsumerGroupsUnknown} topic{(system.ConsumerGroupsUnknown == 1 ? "" : "s")} — only checkpoint/lag checks are affected.");
+            if (system.ConsumerGroupsAssumed > 0) reasons.Add($"Consumer group {system.ExpectedConsumerGroup} is a configured assumption for {system.ConsumerGroupsAssumed} topic{(system.ConsumerGroupsAssumed == 1 ? "" : "s")} — checkpoints are read for it, but it needs confirmation and yields no verdict.");
             if (!system.DomainReviewSupported) reasons.Add($"{system.SystemName}: domain review for {IntegrationConfigurationRules.KindLabel(system.Kind)} is not implemented yet; configuration is still reviewed.");
         }
         foreach (var adapter in adapters.Where(a => a.State != IntegrationEvidenceState.Available).GroupBy(a => a.Reason).Select(g => g.First()))
@@ -140,7 +141,9 @@ public sealed class IntegrationReviewEngine(
                     ConsumersConfirmed = g.Count(i => i.Consumer.MappingState == ConsumerMappingState.Confirmed),
                     ConsumersSuggested = g.Count(i => i.Consumer.MappingState == ConsumerMappingState.Suggested),
                     ConsumersNeedingConfirmation = g.Count(i => i.Consumer.MappingState == ConsumerMappingState.NeedsConfirmation),
-                    ConsumerGroupsUnknown = kind == IntegrationKind.EventHub ? g.Count(i => string.IsNullOrWhiteSpace(i.ConsumerGroup)) : 0,
+                    ConsumerGroupsUnknown = kind == IntegrationKind.EventHub ? g.Count(i => EffectiveGroup(i, platform).Group is null) : 0,
+                    ConsumerGroupsAssumed = kind == IntegrationKind.EventHub ? g.Count(i => EffectiveGroup(i, platform).Assumed) : 0,
+                    ExpectedConsumerGroup = kind == IntegrationKind.EventHub && g.Any(i => EffectiveGroup(i, platform).Assumed) ? platform?.RuntimeEvidence?.ExpectedConsumerGroup?.Trim() : null,
                     ContractsConfigured = g.Count(i => i.ContractRelationship != ContractRelationshipState.NotConfigured),
                     DomainReviewSupported = kind == IntegrationKind.EventHub,
                 };
@@ -160,9 +163,12 @@ public sealed class IntegrationReviewEngine(
         EvidenceResult<ConsumerTelemetry>? Telemetry,
         (IntegrationContractArtifact Artifact, JsonSchemaContract? Contract, string? Problem)? Producer,
         (IntegrationContractArtifact Artifact, JsonSchemaContract? Contract, string? Problem)? Consumer,
-        IReadOnlyList<IntegrationContractArtifact> PreviousContracts)
+        IReadOnlyList<IntegrationContractArtifact> PreviousContracts,
+        string? Group = null, bool GroupAssumed = false)
     {
         public string? Hub => Topic.EndpointOrTopic;
+        /// <summary>" (configured assumption)" when the checkpoint group is the platform's expectation rather than the topic's own group.</summary>
+        public string AssumptionNote => GroupAssumed ? $" (consumer group {Group} is a configured assumption, not confirmed)" : "";
         public string? Role => Topic.Consumer.ContainerApp;
         public IntegrationEvidenceItemFreshness Fresh(DateTimeOffset? at) => IntegrationReviewLabels.FreshnessOf(at, CapturedAt, WindowHours);
         public bool InWindow(DateTimeOffset? at) => at is { } t && CapturedAt - t <= TimeSpan.FromHours(WindowHours);
@@ -213,15 +219,19 @@ public sealed class IntegrationReviewEngine(
                 {
                     var name = topic.EndpointOrTopic!;
                     hub = await metadata.GetHubAsync(platform, name, ct);
+                    // No own group: list the hub's groups (observed) and, when the platform states an expected group, read checkpoints for
+                    // that configured assumption — labelled as such everywhere, never a confirmed mapping.
                     if (string.IsNullOrWhiteSpace(topic.ConsumerGroup)) groupList = await consumerGroups.ListAsync(platform, name, ct);
-                    else checkpoint = await checkpoints.GetAsync(platform, name, topic.ConsumerGroup!, ct);
+                    if (EffectiveGroup(topic, platform).Group is { } checkpointGroup) checkpoint = await checkpoints.GetAsync(platform, name, checkpointGroup, ct);
                     if (topic.Consumer.ContainerApp is { Length: > 0 } role)
                     {
                         if (!telemetryByRole.TryGetValue(role, out roleTelemetry)) telemetryByRole[role] = roleTelemetry = await telemetry.GetConsumerAsync(platform, role, window, ct);
                     }
                 }
+                var effective = EffectiveGroup(topic, platform);
                 evidence.Add(new TopicEvidence(topic, platform, window, DateTimeOffset.UtcNow, probe, hub, groupList, checkpoint, roleTelemetry,
-                    contracts.Of(topic.Id, IntegrationContractRole.Producer), contracts.Of(topic.Id, IntegrationContractRole.Consumer), previousContracts));
+                    contracts.Of(topic.Id, IntegrationContractRole.Producer), contracts.Of(topic.Id, IntegrationContractRole.Consumer), previousContracts,
+                    effective.Group, effective.Assumed));
             }
 
             if (platform is not null && supported)
@@ -380,6 +390,11 @@ public sealed class IntegrationReviewEngine(
         return configured with { State = failure.State, Reason = failure.Reason, CapturedAt = failure.CapturedAt };
     }
 
+    /// <summary>The consumer group checkpoints are read for: the topic's own group, else the platform's expected group as a configured
+    /// assumption (never silently <c>$Default</c>: only when the platform states it). Null when neither is known.</summary>
+    public static (string? Group, bool Assumed) EffectiveGroup(IntegrationDefinition topic, IntegrationPlatform? platform) =>
+        IntegrationConfigurationRules.EffectiveConsumerGroup(topic, platform);
+
     private static string? SuggestedGroup(TopicEvidence e) =>
         string.IsNullOrWhiteSpace(e.Topic.ConsumerGroup) && e.Groups is { IsAvailable: true, Value: { } list }
         && list.Names.Where(n => !string.Equals(n, "$Default", StringComparison.OrdinalIgnoreCase)).ToList() is { Count: 1 } only ? only[0] : null;
@@ -488,12 +503,20 @@ public sealed class IntegrationReviewEngine(
         if (topic.Kind == IntegrationKind.EventHub)
         {
             var suggestion = SuggestedGroup(e);
-            yield return Check("cfg-consumer-group", IntegrationReviewDomain.Configuration, id, "Consumer group",
-                string.IsNullOrWhiteSpace(topic.ConsumerGroup) ? IntegrationCheckStatus.NotConfigured : IntegrationCheckStatus.Pass,
-                "The consumer group the consumer reads with is known.",
-                topic.ConsumerGroup ?? (suggestion is null ? "Unknown / not configured" : $"Unknown — Azure lists one non-default group: {suggestion} (suggestion, not saved)"),
-                string.IsNullOrWhiteSpace(topic.ConsumerGroup) ? "Only checkpoint/lag review depends on it; $Default is never assumed." : "",
-                string.IsNullOrWhiteSpace(topic.ConsumerGroup) ? "Confirm the consumer group to enable checkpoint/lag review." : null);
+            var observed = e.Groups is { IsAvailable: true, Value: { } listed } ? $" · Observed on the hub: {(listed.Names.Count == 0 ? "none" : string.Join(", ", listed.Names))}" : "";
+            yield return e.GroupAssumed
+                ? Check("cfg-consumer-group", IntegrationReviewDomain.Configuration, id, "Consumer group", IntegrationCheckStatus.NeedsConfirmation,
+                    "The consumer group the consumer reads with is known.",
+                    $"Expected: {e.Group} ({IntegrationRuntimeEvidenceSettings.ProvenanceLabel(e.Platform?.RuntimeEvidence?.ExpectedConsumerGroupProvenance ?? IntegrationValueProvenance.ConfiguredAssumption)}){observed} · Mapping: Needs confirmation",
+                    "The platform's expected group is used for checkpoint lookups; it is an assumption, not the confirmed group of this consumer, so no checkpoint or lag verdict is given.",
+                    "Confirm the consumer group the consumer reads with, and save it on the integration.",
+                    e.Groups is { IsAvailable: true } ? e.Groups.Source : IntegrationEvidenceSource.Configuration)
+                : Check("cfg-consumer-group", IntegrationReviewDomain.Configuration, id, "Consumer group",
+                    string.IsNullOrWhiteSpace(topic.ConsumerGroup) ? IntegrationCheckStatus.NotConfigured : IntegrationCheckStatus.Pass,
+                    "The consumer group the consumer reads with is known.",
+                    topic.ConsumerGroup ?? (suggestion is null ? "Unknown / not configured" : $"Unknown — Azure lists one non-default group: {suggestion} (suggestion, not saved)"),
+                    string.IsNullOrWhiteSpace(topic.ConsumerGroup) ? "Only checkpoint/lag review depends on it; $Default is never assumed unless the platform states it as an expectation." : "",
+                    string.IsNullOrWhiteSpace(topic.ConsumerGroup) ? "Confirm the consumer group to enable checkpoint/lag review." : null);
             if (IsDebezium(e))
                 yield return Check("cfg-delete-expectation", IntegrationReviewDomain.Configuration, id, "Delete/tombstone expectation",
                     topic.DeleteExpectation == CdcDeleteExpectation.NotSpecified ? IntegrationCheckStatus.NotConfigured : IntegrationCheckStatus.Pass,
@@ -658,7 +681,7 @@ public sealed class IntegrationReviewEngine(
             yield return Check("flow-consumer", IntegrationReviewDomain.MessageFlow, id, "Consumer activity", IntegrationCheckStatus.NotAssessed, "The consumer makes progress.", "",
                 string.Join(" ", new[]
                 {
-                    string.IsNullOrWhiteSpace(e.Topic.ConsumerGroup) ? "Consumer group unknown (no checkpoint lookup)." : e.Checkpoint is { } c1 ? $"Checkpoints: {c1.Reason}" : null,
+                    e.Group is null ? "Consumer group unknown (no checkpoint lookup)." : e.Checkpoint is { } c1 ? $"Checkpoints: {c1.Reason}" : null,
                     string.IsNullOrWhiteSpace(e.Role) ? "Consumer application not configured (no telemetry attribution)." : e.Telemetry is { } t1 ? $"Telemetry: {t1.Reason}" : null,
                 }.OfType<string>()));
     }
@@ -668,7 +691,7 @@ public sealed class IntegrationReviewEngine(
     private static IEnumerable<IntegrationCheck> ReliabilityChecks(TopicEvidence e, List<IntegrationReviewFinding> findings)
     {
         var id = e.Topic.Id;
-        if (string.IsNullOrWhiteSpace(e.Topic.ConsumerGroup))
+        if (e.Group is null)
         {
             yield return Check("rel-checkpoint", IntegrationReviewDomain.Reliability, id, "Consumer checkpoints", IntegrationCheckStatus.NotAssessed, "The consumer records its position.", "",
                 "Consumer group is not configured.", "Confirm the consumer group to enable checkpoint/lag review.");
@@ -678,11 +701,12 @@ public sealed class IntegrationReviewEngine(
         {
             var hubPartitions = e.Metadata is { IsAvailable: true, Value: { Exists: true } hub } ? hub.Partitions.Count : (int?)null;
             yield return Check("rel-checkpoint", IntegrationReviewDomain.Reliability, id, "Consumer checkpoints",
-                hubPartitions is { } total && cp.Partitions.Count < total ? IntegrationCheckStatus.Warning : IntegrationCheckStatus.Pass, "The consumer records its position.",
-                $"Checkpoints for {cp.Partitions.Count}{(hubPartitions is { } t ? $" of {t}" : "")} partition(s), consumer group {cp.ConsumerGroup}; {cp.OwnershipRecords} ownership record(s).",
-                "Checkpoint present is not lag acceptable; see Performance.", hubPartitions is { } t2 && cp.Partitions.Count < t2 ? "Check why some partitions have no checkpoint." : null,
+                e.GroupAssumed ? IntegrationCheckStatus.Observed : hubPartitions is { } total && cp.Partitions.Count < total ? IntegrationCheckStatus.Warning : IntegrationCheckStatus.Pass, "The consumer records its position.",
+                $"Checkpoints for {cp.Partitions.Count}{(hubPartitions is { } t ? $" of {t}" : "")} partition(s), consumer group {cp.ConsumerGroup}{e.AssumptionNote}; {cp.OwnershipRecords} ownership record(s).",
+                e.GroupAssumed ? "Observed for the assumed group only; it does not show which application owns the group, so no verdict is given." : "Checkpoint present is not lag acceptable; see Performance.", hubPartitions is { } t2 && cp.Partitions.Count < t2 ? "Check why some partitions have no checkpoint." : null,
                 e.Checkpoint.Source, e.Checkpoint.CapturedAt, cp.LastUpdated, e.Fresh(cp.LastUpdated));
-            var threshold = e.Platform?.RuntimeEvidence?.MaxCheckpointAgeMinutes;
+            // An assumed group is never judged: a threshold verdict would read as confirmation of the group.
+            var threshold = e.GroupAssumed ? null : e.Platform?.RuntimeEvidence?.MaxCheckpointAgeMinutes;
             if (cp.LastUpdated is { } updated)
             {
                 var ageMinutes = (e.CapturedAt - updated).TotalMinutes;
@@ -691,7 +715,8 @@ public sealed class IntegrationReviewEngine(
                         $"Last checkpoint within {limit} min (IQR threshold).", $"Last checkpoint {updated:u} ({Ago(updated, e.CapturedAt)}).", "",
                         ageMinutes <= limit ? null : "Check whether the consumer is running and checkpointing.", e.Checkpoint.Source, e.Checkpoint.CapturedAt, updated, e.Fresh(updated))
                     : Check("rel-checkpoint-freshness", IntegrationReviewDomain.Reliability, id, "Checkpoint freshness", IntegrationCheckStatus.Observed, "",
-                        $"Last checkpoint {updated:u} ({Ago(updated, e.CapturedAt)}).", "No IQR checkpoint-age threshold is configured, so the age is reported without a verdict.",
+                        $"Last checkpoint {updated:u} ({Ago(updated, e.CapturedAt)}){e.AssumptionNote}.",
+                        e.GroupAssumed ? "The consumer group is a configured assumption, so the age is reported without a verdict." : "No IQR checkpoint-age threshold is configured, so the age is reported without a verdict.",
                         provenance: e.Checkpoint.Source, at: e.Checkpoint.CapturedAt, sourceTimestamp: updated, freshness: e.Fresh(updated));
                 if (threshold is { } l2 && ageMinutes > l2)
                     findings.Add(new IntegrationReviewFinding
@@ -873,13 +898,14 @@ public sealed class IntegrationReviewEngine(
 
         if (e.Metadata is { IsAvailable: true, Value: { Exists: true } h2 } && e.Checkpoint is { IsAvailable: true, Value: { } cp } && Lag(h2, cp) is { Lag: { } lag } measured)
         {
-            var limit = e.Platform?.RuntimeEvidence?.MaxConsumerLagEvents;
-            var detail = $"{lag} event(s) behind across {measured.Compared} partition(s){(measured.WithoutCheckpoint > 0 ? $"; {measured.WithoutCheckpoint} partition(s) without checkpoint not counted" : "")}.";
+            var limit = e.GroupAssumed ? null : e.Platform?.RuntimeEvidence?.MaxConsumerLagEvents;
+            var detail = $"{lag} event(s) behind across {measured.Compared} partition(s){(measured.WithoutCheckpoint > 0 ? $"; {measured.WithoutCheckpoint} partition(s) without checkpoint not counted" : "")}{e.AssumptionNote}.";
             yield return limit is { } max
                 ? Check("perf-lag", IntegrationReviewDomain.Performance, id, "Consumer lag", lag <= max ? IntegrationCheckStatus.Pass : IntegrationCheckStatus.Warning, $"At most {max} event(s) behind (IQR threshold).", detail,
                     "Last enqueued sequence number minus checkpointed sequence number per partition.", lag <= max ? null : "Check consumer throughput and health.", IntegrationEvidenceSource.CheckpointStore, e.Checkpoint.CapturedAt, cp.LastUpdated, e.Fresh(cp.LastUpdated))
                 : Check("perf-lag", IntegrationReviewDomain.Performance, id, "Consumer lag", IntegrationCheckStatus.Observed, "", detail,
-                    "Last enqueued sequence number minus checkpointed sequence number per partition. No IQR lag threshold is configured, so no verdict.", provenance: IntegrationEvidenceSource.CheckpointStore,
+                    e.GroupAssumed ? "Last enqueued sequence number minus checkpointed sequence number per partition. The consumer group is a configured assumption, so no verdict."
+                        : "Last enqueued sequence number minus checkpointed sequence number per partition. No IQR lag threshold is configured, so no verdict.", provenance: IntegrationEvidenceSource.CheckpointStore,
                     at: e.Checkpoint.CapturedAt, sourceTimestamp: cp.LastUpdated, freshness: e.Fresh(cp.LastUpdated));
             if (limit is { } m2 && lag > m2)
                 findings.Add(Finding($"consumer-lag|{id}", "consumer-lag", IntegrationReviewDomain.Performance, IntegrationFindingSeverityV2.Medium, "Consumer lag exceeds the IQR threshold",
@@ -887,7 +913,7 @@ public sealed class IntegrationReviewEngine(
         }
         else
             yield return Check("perf-lag", IntegrationReviewDomain.Performance, id, "Consumer lag", IntegrationCheckStatus.NotAssessed, "", "",
-                string.IsNullOrWhiteSpace(e.Topic.ConsumerGroup) ? "Consumer group unknown, so no checkpoint to compare."
+                e.Group is null ? "Consumer group unknown, so no checkpoint to compare."
                 : "Lag needs both the latest enqueued position (Event Hub metadata) and the consumer checkpoint; it is never shown as 0 without them.");
 
         if (e.Telemetry is { IsAvailable: true, Value: { DependencyMedianMs: { } median } tel } && tel.DependencyCalls > 0)
@@ -979,7 +1005,9 @@ public sealed class IntegrationReviewEngine(
         Add("Identify consumers", "No consumer is known for these topics.", enabled.Count(i => i.Consumer.MappingState == ConsumerMappingState.NeedsConfirmation));
         var suggestions = systems.SelectMany(s => s.Topics).Count(t => t.SuggestedConsumerGroup is not null);
         Add("Confirm suggested consumer groups", "Azure lists one non-default consumer group for these hubs; confirm it before saving it.", suggestions);
-        Add("Confirm consumer group(s)", "Needed for checkpoint and lag review.", enabled.Count(i => i.Kind == IntegrationKind.EventHub && string.IsNullOrWhiteSpace(i.ConsumerGroup)) - suggestions);
+        int Assumed(IntegrationDefinition i) => EffectiveGroup(i, catalog.Platforms.FirstOrDefault(p => p.Id == i.PlatformId)).Assumed ? 1 : 0;
+        Add("Confirm consumer group(s)", "Needed for checkpoint and lag review.", enabled.Count(i => i.Kind == IntegrationKind.EventHub && string.IsNullOrWhiteSpace(i.ConsumerGroup) && Assumed(i) == 0) - suggestions);
+        Add("Confirm the assumed consumer group", "The platform's expected group (a configured assumption) was used for checkpoints; confirm the group each consumer reads with.", enabled.Sum(Assumed));
         Add("Upload event contracts", "Producer and consumer JSON Schemas enable compatibility review.", enabled.Count(i => i.ContractRelationship is ContractRelationshipState.NotConfigured or ContractRelationshipState.ProducerContractAvailable or ContractRelationshipState.ConsumerContractAvailable));
         Add("Confirm delete/tombstone expectation", "State what the consumer expects for delete events.", checks.Count(c => c.CheckId == "cfg-delete-expectation" && c.Status == IntegrationCheckStatus.NotConfigured));
         Add("Configure the consumer application", "The container app / cloud role lets telemetry be attributed to the consumer.", enabled.Count(i => i.Kind == IntegrationKind.EventHub && string.IsNullOrWhiteSpace(i.Consumer.ContainerApp)));
@@ -996,7 +1024,10 @@ public sealed class IntegrationReviewEngine(
     {
         var limitations = adapters.Where(a => a.State is not (IntegrationEvidenceState.Available or IntegrationEvidenceState.NotSupported))
             .Select(a => $"{a.Adapter}: {IntegrationReviewLabels.EvidenceState(a.State)} — {a.Reason}").Distinct().ToList();
-        if (enabled.Any(i => i.Kind == IntegrationKind.EventHub && string.IsNullOrWhiteSpace(i.ConsumerGroup))) limitations.Add("Consumer group not configured: checkpoint/lag review was not possible for those topics.");
+        var groups = enabled.Where(i => i.Kind == IntegrationKind.EventHub).Select(i => EffectiveGroup(i, catalog.Platforms.FirstOrDefault(p => p.Id == i.PlatformId))).ToList();
+        if (groups.Any(g => g.Group is null)) limitations.Add("Consumer group not configured: checkpoint/lag review was not possible for those topics.");
+        if (groups.FirstOrDefault(g => g.Assumed) is { Group: { } assumed })
+            limitations.Add($"Consumer group {assumed} is a configured assumption for {groups.Count(g => g.Assumed)} topic(s): checkpoint and lag values for it are observed without a verdict and do not confirm the mapping.");
         if (checks.Any(c => c.CheckId == "contract-compatibility" && c.Status == IntegrationCheckStatus.NotAssessed)) limitations.Add("Contract compatibility needs both producer and consumer contracts; integrations without both were not assessed.");
         if (enabled.Any(i => i.Kind == IntegrationKind.EventHub)) limitations.Add("Data quality uses the structure declared by producer contracts only; no safe runtime event-structure source exists and events are never consumed.");
         limitations.Add("Replay/duplicate handling has no evidence source and needs manual verification.");

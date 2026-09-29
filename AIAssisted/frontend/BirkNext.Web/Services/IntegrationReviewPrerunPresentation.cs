@@ -34,8 +34,14 @@ public static class IntegrationReviewPrerunPresentation
     public static string Consumers(IntegrationSystemScope system) =>
         $"{system.ConsumersConfirmed} confirmed · {system.ConsumersSuggested} suggested · {system.ConsumersNeedingConfirmation} unconfirmed";
 
-    public static string ConsumerGroups(IntegrationSystemScope system) =>
-        system.ConsumerGroupsUnknown == 0 ? "Configured for all topics" : $"Not configured for {system.ConsumerGroupsUnknown} topic{(system.ConsumerGroupsUnknown == 1 ? "" : "s")}";
+    public static string ConsumerGroups(IntegrationSystemScope system)
+    {
+        static string Topics(int n) => $"{n} topic{(n == 1 ? "" : "s")}";
+        var parts = new List<string>();
+        if (system.ConsumerGroupsAssumed > 0) parts.Add($"Expected {system.ExpectedConsumerGroup} for {Topics(system.ConsumerGroupsAssumed)} (configured assumption · Mapping: Needs confirmation)");
+        if (system.ConsumerGroupsUnknown > 0) parts.Add($"Not configured for {Topics(system.ConsumerGroupsUnknown)}");
+        return parts.Count == 0 ? "Configured for all topics" : string.Join("; ", parts);
+    }
 
     public static string Contracts(IntegrationSystemScope system) =>
         system.ContractsConfigured == 0 ? "Not configured" : $"{system.ContractsConfigured} of {system.Topics} configured";
@@ -95,8 +101,13 @@ public static class IntegrationReviewPrerunPresentation
         if (topics > 0 && contracts < topics)
             items.Add(new("contracts", "Contracts", contracts == 0 ? "Not configured" : $"{contracts} of {topics} topics", "Manage contracts", Href(profileId, FocusContracts)));
         var groups = readiness.Systems.Where(s => s.Kind == IntegrationKind.EventHub).Sum(s => s.ConsumerGroupsUnknown);
-        if (groups > 0)
-            items.Add(new("groups", "Consumer groups", $"Not configured for {groups} topic{(groups == 1 ? "" : "s")}", null, null));
+        var assumed = readiness.Systems.Where(s => s.Kind == IntegrationKind.EventHub).Sum(s => s.ConsumerGroupsAssumed);
+        if (groups > 0 || assumed > 0)
+            items.Add(new("groups", "Consumer groups", string.Join("; ", new[]
+            {
+                assumed > 0 ? $"{readiness.Systems.First(s => s.ConsumerGroupsAssumed > 0).ExpectedConsumerGroup} assumed for {assumed} topic{(assumed == 1 ? "" : "s")} — needs confirmation" : null,
+                groups > 0 ? $"Not configured for {groups} topic{(groups == 1 ? "" : "s")}" : null,
+            }.OfType<string>()), null, null));
         // Service Bus is its own transport: its runtime metadata and route consistency are separate limitations (never Event Hub sources).
         foreach (var serviceBus in readiness.ServiceBus)
         {

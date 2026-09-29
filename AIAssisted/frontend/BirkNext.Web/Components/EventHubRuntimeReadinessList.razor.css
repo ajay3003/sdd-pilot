@@ -1,0 +1,11 @@
+.ehr-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; min-width: 0; }
+.ehr-list li { display: grid; grid-template-columns: minmax(9rem, 13rem) auto minmax(0, 1fr); gap: .1rem .6rem; align-items: baseline; font-size: .82rem; min-width: 0; }
+.ehr-label { font-weight: 600; }
+.ehr-value { font-family: var(--font-mono); font-size: .78rem; overflow-wrap: anywhere; min-width: 0; }
+.ehr-detail { grid-column: 1 / -1; color: var(--clr-text-muted); font-size: .76rem; overflow-wrap: anywhere; }
+.ehr-badge { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .72rem; font-weight: 600; border: 1px solid var(--clr-border); white-space: nowrap; }
+.ehr-badge-ready { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.ehr-badge-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.ehr-badge-attention { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ehr-badge-muted { background: var(--clr-surface); color: var(--clr-text-muted); }
+@media (max-width: 640px) { .ehr-list li { grid-template-columns: minmax(0, 1fr) auto; } .ehr-value { grid-column: 1 / -1; } }

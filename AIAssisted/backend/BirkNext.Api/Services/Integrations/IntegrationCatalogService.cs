@@ -70,6 +70,20 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         if (state is not { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: >= 2 } && !existingPlatforms.Contains(serviceBus.Id)) { db.IntegrationPlatforms.Add(ToRecord(serviceBus)); added++; }
         var scim = M2lbDevIntegrationSeed.ScimPlatform(environmentId, now);
         if (!existingPlatforms.Contains(scim.Id)) { db.IntegrationPlatforms.Add(ToRecord(scim)); added++; }
+        // v4 fills the verified Event Hub runtime-evidence defaults into an existing seeded platform: missing values only, never an
+        // overwrite; a person-edited platform that already has runtime settings is left exactly as it is (see WithRuntimeDefaults).
+        if (upgrade && state is { SeedVersion: < 4 }
+            && await db.IntegrationPlatforms.FirstOrDefaultAsync(p => p.EnvironmentId == environmentId && p.Id == M2lbDevIntegrationSeed.PlatformId, ct) is { } eventHub)
+        {
+            var current = FromRecord(eventHub);
+            var upgraded = M2lbDevIntegrationSeed.WithRuntimeDefaults(current);
+            if (upgraded != current)
+            {
+                eventHub.DocumentJson = JsonSerializer.Serialize(upgraded with { UpdatedAt = now }, Json);
+                eventHub.UpdatedAt = now;
+                logger.LogInformation("Integration catalog seed v4 filled missing Event Hub runtime-evidence defaults on {PlatformId} for {EnvironmentId}.", eventHub.Id, environmentId);
+            }
+        }
         if (state is null) db.IntegrationEnvironmentStates.Add(new IntegrationEnvironmentStateRecord { EnvironmentId = environmentId, SeedVersion = M2lbDevIntegrationSeed.Version, SeedName = M2lbDevIntegrationSeed.Name, UpdatedAt = now });
         else { state.SeedVersion = M2lbDevIntegrationSeed.Version; state.SeedName = M2lbDevIntegrationSeed.Name; state.UpdatedAt = now; }
         await db.SaveChangesAsync(ct);

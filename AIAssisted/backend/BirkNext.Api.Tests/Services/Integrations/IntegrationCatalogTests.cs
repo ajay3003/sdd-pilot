@@ -11,7 +11,7 @@ namespace BirkNext.Api.Tests.Services.Integrations;
 
 /// <summary>
 /// Target Environment → Integrations: the M2LB DEV seed (one platform, 16 business CDC integrations, technical topics apart),
-/// consumer mapping certainty, no $Default, producer/consumer authentication apart, no secrets, idempotent add-missing seeding
+/// consumer mapping certainty, no $Default on any integration (only a labelled platform assumption), producer/consumer authentication apart, no secrets, idempotent add-missing seeding
 /// that never overwrites a user edit, QA/Prod never seeded, and the one-time browser-profile import.
 /// </summary>
 public sealed class IntegrationCatalogTests

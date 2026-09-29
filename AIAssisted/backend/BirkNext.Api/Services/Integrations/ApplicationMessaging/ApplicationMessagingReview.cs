@@ -39,7 +39,7 @@ public static class ApplicationMessagingReview
         : boundTopics == 0 ? (IntegrationEvidenceState.NotConfigured, "Not bound to an integration consumer; the telemetry workspace is configured per integration platform.")
         : app.TelemetryRoleName is null ? (IntegrationEvidenceState.NotConfigured, "Source sets no OpenTelemetry service name, so the Application Insights role is unknown.")
         : azure?.Credential is null ? (IntegrationEvidenceState.NotConfigured, azure?.DisabledReason ?? "Azure runtime evidence is not configured for this BirkNext instance.")
-        : !Guid.TryParse(platform?.RuntimeEvidence?.TelemetryWorkspaceId, out _) ? (IntegrationEvidenceState.NotConfigured, "No telemetry source configured (Log Analytics workspace id of Application Insights).")
+        : !TelemetryScope.Of(platform).Configured ? (IntegrationEvidenceState.NotConfigured, TelemetryScope.NotConfiguredReason)
         : (IntegrationEvidenceState.Available, "Handler log records can be read from Application Insights.");
 
     private static IntegrationCheck Check(string id, IntegrationReviewDomain domain, string subject, string title, IntegrationCheckStatus status, string evidence,

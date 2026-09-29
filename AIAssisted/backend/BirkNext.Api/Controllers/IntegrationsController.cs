@@ -42,8 +42,11 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
     }
 
     [HttpGet]
-    public async Task<ActionResult<IntegrationCatalog>> Get([FromQuery] string environmentId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct));
+    public async Task<ActionResult<IntegrationCatalog>> Get([FromQuery] string environmentId, [FromQuery] string? environmentType, [FromQuery] string? targetUrl,
+        [FromServices] IIntegrationAzureCredential azure, CancellationToken ct) =>
+        // Configured sources and Azure execution are separate facts: the page shows both (IntegrationReview:Azure:Enabled).
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
+            : Ok(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct) with { AzureRuntimeEnabled = azure.Credential is not null });
 
     [HttpPost]
     public async Task<ActionResult<IntegrationDefinition>> Create([FromQuery] string environmentId, [FromBody] IntegrationDefinition definition, CancellationToken ct)

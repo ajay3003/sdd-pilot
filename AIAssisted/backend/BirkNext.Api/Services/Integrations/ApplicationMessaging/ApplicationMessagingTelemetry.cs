@@ -22,11 +22,15 @@ public sealed class LogAnalyticsApplicationMessagingSource(IIntegrationAzureCred
 
     internal static string Literal(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
-    /// <summary>Aggregate over AppTraces for the role, restricted to logger categories ending in the handler class names from source.</summary>
-    internal static string HandlerLogQuery(string role, IEnumerable<string> handlerTypes) =>
-        $"AppTraces | where AppRoleName == {Literal(role)} | extend category = tostring(Properties.CategoryName) " +
-        $"| where {string.Join(" or ", handlerTypes.Select(t => $"category endswith {Literal("." + t)}"))} " +
-        "| summarize info=countif(SeverityLevel <= 1), warn=countif(SeverityLevel == 2), error=countif(SeverityLevel >= 3), last=max(TimeGenerated)";
+    /// <summary>Aggregate over the traces of the role, restricted to logger categories ending in the handler class names from source.
+    /// Workspace schema (AppTraces) for a Log Analytics workspace; classic schema (traces) for an Application Insights resource query.</summary>
+    internal static string HandlerLogQuery(string role, IEnumerable<string> handlerTypes, bool classic = false) => classic
+        ? $"traces | where cloud_RoleName == {Literal(role)} | extend category = tostring(customDimensions.CategoryName) " +
+          $"| where {string.Join(" or ", handlerTypes.Select(t => $"category endswith {Literal("." + t)}"))} " +
+          "| summarize info=countif(severityLevel <= 1), warn=countif(severityLevel == 2), error=countif(severityLevel >= 3), last=max(timestamp)"
+        : $"AppTraces | where AppRoleName == {Literal(role)} | extend category = tostring(Properties.CategoryName) " +
+          $"| where {string.Join(" or ", handlerTypes.Select(t => $"category endswith {Literal("." + t)}"))} " +
+          "| summarize info=countif(SeverityLevel <= 1), warn=countif(SeverityLevel == 2), error=countif(SeverityLevel >= 3), last=max(TimeGenerated)";
 
     public async Task<ApplicationMessagingRuntime> GetAsync(IntegrationPlatform? platform, ApplicationMessagingEvidence application, int windowHours, CancellationToken ct)
     {
@@ -35,13 +39,14 @@ public sealed class LogAnalyticsApplicationMessagingSource(IIntegrationAzureCred
         if (application.Handlers.Count == 0) return Missing(IntegrationEvidenceState.NotSupported, "No Wolverine handler in this application's source, so there is no handler processing to observe.");
         if (application.TelemetryRoleName is not { Length: > 0 } role) return Missing(IntegrationEvidenceState.NotConfigured, "Source sets no OpenTelemetry service name, so the Application Insights role is unknown.");
         if (azure.Credential is null) return Missing(IntegrationEvidenceState.NotConfigured, azure.DisabledReason);
-        if (!Guid.TryParse(platform?.RuntimeEvidence?.TelemetryWorkspaceId, out _))
-            return Missing(IntegrationEvidenceState.NotConfigured, "No telemetry source configured (Log Analytics workspace id of Application Insights) on the bound integrations' platform.");
+        var scope = TelemetryScope.Of(platform);
+        if (!scope.Configured)
+            return Missing(IntegrationEvidenceState.NotConfigured, TelemetryScope.NotConfiguredReason.TrimEnd('.') + " on the bound integrations' platform.");
         var client = new LogsQueryClient(azure.Credential);
         try
         {
-            var row = (await client.QueryWorkspaceAsync(platform!.RuntimeEvidence!.TelemetryWorkspaceId!, HandlerLogQuery(role, application.Handlers.Select(h => h.Type).Distinct()),
-                new QueryTimeRange(TimeSpan.FromHours(windowHours)), new LogsQueryOptions { ServerTimeout = TimeSpan.FromSeconds(30) }, ct)).Value.Table.Rows.FirstOrDefault();
+            var row = await scope.QueryAsync(client, HandlerLogQuery(role, application.Handlers.Select(h => h.Type).Distinct(), classic: scope.Workspace is null),
+                new QueryTimeRange(TimeSpan.FromHours(windowHours)), ct);
             var last = row?.GetDateTimeOffset("last");
             logger.LogInformation("Application messaging telemetry for {Application} (role {Role}): available, last handler log {Last}.", application.ApplicationId, role, last);
             return new ApplicationMessagingRuntime

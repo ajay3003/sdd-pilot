@@ -1,0 +1,12 @@
+.ehr-form { display: grid; gap: .6rem; margin: .4rem 0; min-width: 0; }
+.ehr-identity { margin: 0; font-size: .84rem; }
+.ehr-section { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: .45rem .9rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: .55rem .75rem .7rem; margin: 0; min-width: 0; }
+.ehr-section legend { font-size: .84rem; font-weight: 600; padding: 0 .3rem; grid-column: 1 / -1; }
+.ehr-section > .ehr-muted, .ehr-section > .ip-check, .ehr-section > .ehr-facts { grid-column: 1 / -1; }
+.ehr-muted { color: var(--clr-text-muted); font-size: .8rem; margin: 0; overflow-wrap: anywhere; }
+.ehr-facts { display: flex; flex-wrap: wrap; gap: .3rem 1.2rem; margin: 0; }
+.ehr-facts dt { font-size: .72rem; color: var(--clr-text-muted); }
+.ehr-facts dd { margin: .1rem 0 0; font-size: .82rem; overflow-wrap: anywhere; }
+.ehr-readiness { border-top: 1px solid var(--clr-border); padding-top: .45rem; min-width: 0; }
+.ehr-readiness h5 { margin: 0 0 .3rem; font-size: .84rem; }
+@media (max-width: 480px) { .ehr-section { grid-template-columns: minmax(0, 1fr); padding: .5rem; } }

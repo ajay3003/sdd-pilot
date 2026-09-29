@@ -85,15 +85,18 @@ public static class IntegrationsPanePresentation
         if (definition.Kind != IntegrationKind.EventHub) return ("Configuration only", $"Domain review for {IntegrationConfigurationRules.KindLabel(definition.Kind)} is not implemented yet.");
         var limits = new List<string>();
         if (definition.Consumer.MappingState != ConsumerMappingState.Confirmed) limits.Add("consumer not confirmed");
-        if (string.IsNullOrWhiteSpace(definition.ConsumerGroup)) limits.Add("consumer group unknown (no checkpoint review)");
+        var (group, assumed) = IntegrationConfigurationRules.EffectiveConsumerGroup(definition, platform);
+        if (group is null) limits.Add("consumer group unknown (no checkpoint review)");
+        else if (assumed) limits.Add($"consumer group {group} is a configured assumption (needs confirmation; no checkpoint verdict)");
         if (definition.ContractRelationship == ContractRelationshipState.NotConfigured) limits.Add("no contract (no compatibility review)");
         if (platform is not null)
         {
             var runtime = platform.RuntimeEvidence;
             var missingRuntime = new List<string>();
             if (runtime?.EventHubMetadata != true) missingRuntime.Add("Event Hub metadata");
-            if (string.IsNullOrWhiteSpace(runtime?.CheckpointContainerUrl)) missingRuntime.Add("checkpoint evidence");
-            if (string.IsNullOrWhiteSpace(runtime?.TelemetryWorkspaceId)) missingRuntime.Add("runtime telemetry");
+            if (runtime?.ResolvedCheckpointContainerUrl() is null) missingRuntime.Add("checkpoint evidence");
+            // Telemetry is Application Insights by resource or a Log Analytics workspace; a workspace is never required.
+            if (runtime?.TelemetryConfigured != true) missingRuntime.Add("runtime telemetry");
             if (missingRuntime.Count > 0) limits.Add("not configured: " + string.Join(", ", missingRuntime));
         }
         if (limits.Count == 0) return ("Ready", "All configured prerequisites are present.");

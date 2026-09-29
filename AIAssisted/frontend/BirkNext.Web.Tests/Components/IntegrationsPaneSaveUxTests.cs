@@ -159,19 +159,22 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         cut.Find(".disclosure[data-testid^=ip-runtime-] > button").Click();
         cut.Find("[data-testid=ip-runtime-summary]").TextContent.Should().Contain("Not configured").And.Contain("no lag threshold");
         cut.Find("[data-testid=ip-runtime-edit]").Click();
-        cut.Find("[data-testid=ip-runtime-checkpoint]").Change("https://acct.blob.core.windows.net/checkpoints?sv=2024&sig=abc");
+        cut.Find("[data-testid=ip-runtime-blob-endpoint]").Change("https://acct.blob.core.windows.net/?sv=2024&sig=abc");
+        cut.Find("[data-testid=ip-runtime-container]").Change("checkpoints");
         cut.Find("[data-testid=ip-runtime-save]").Click();
         cut.Find("[data-testid=ip-runtime-error]").TextContent.Should().Contain("never a SAS URL");
         _api.SavedPlatforms.Should().BeEmpty();
 
-        cut.Find("[data-testid=ip-runtime-checkpoint]").Change("https://acct.blob.core.windows.net/checkpoints");
+        cut.Find("[data-testid=ip-runtime-blob-endpoint]").Change("https://acct.blob.core.windows.net/");
         cut.Find("[data-testid=ip-runtime-metadata]").Change(true);
         cut.Find("[data-testid=ip-runtime-window]").Change("12");
         cut.Find("[data-testid=ip-runtime-save]").Click();
         cut.WaitForAssertion(() => _api.SavedPlatforms.Should().ContainSingle());
         var settings = _api.SavedPlatforms.Single().RuntimeEvidence!;
         settings.EventHubMetadata.Should().BeTrue();
-        settings.CheckpointContainerUrl.Should().Be("https://acct.blob.core.windows.net/checkpoints");
+        settings.CheckpointBlobEndpoint.Should().Be("https://acct.blob.core.windows.net/");
+        settings.CheckpointContainerName.Should().Be("checkpoints");
+        settings.ResolvedCheckpointContainerUrl().Should().Be("https://acct.blob.core.windows.net/checkpoints");
         settings.ReviewWindowHours.Should().Be(12);
         settings.MaxConsumerLagEvents.Should().BeNull("no threshold is invented");
         settings.MaxCheckpointAgeMinutes.Should().BeNull();

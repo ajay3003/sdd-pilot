@@ -80,8 +80,13 @@ public sealed class IntegrationReviewEngineTests
 
     private static AppDbContext Db(string? name = null) => new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(name ?? Guid.NewGuid().ToString()).Options);
 
-    private static async Task<IntegrationCatalog> DevCatalog(AppDbContext? db = null) =>
-        await new IntegrationCatalogService(db ?? Db(), NullLogger<IntegrationCatalogService>.Instance).GetAsync(DevId, "Development", DevUrl);
+    /// <summary>The seeded DEV catalog. By default without the v4 runtime-evidence defaults (no platform consumer-group expectation), so each
+    /// test states the sources it needs; <paramref name="seededRuntime"/> keeps the verified defaults ($Default as a configured assumption).</summary>
+    private static async Task<IntegrationCatalog> DevCatalog(AppDbContext? db = null, bool seededRuntime = false)
+    {
+        var catalog = await new IntegrationCatalogService(db ?? Db(), NullLogger<IntegrationCatalogService>.Instance).GetAsync(DevId, "Development", DevUrl);
+        return seededRuntime ? catalog : catalog with { Platforms = catalog.Platforms.Select(p => p.Kind == IntegrationKind.EventHub ? p with { RuntimeEvidence = null } : p).ToList() };
+    }
 
     private static IntegrationCatalog With(IntegrationCatalog catalog, Func<IntegrationDefinition, IntegrationDefinition>? topic = null, Func<IntegrationPlatform, IntegrationPlatform>? platform = null) =>
         catalog with
@@ -596,5 +601,78 @@ public sealed class IntegrationReviewEngineTests
         system.PlatformChecks.Should().Contain(c => c.CheckId == "classification-model-reference" && c.Status == IntegrationCheckStatus.Detected);
         system.PlatformChecks.Should().Contain(c => c.Domain == IntegrationReviewDomain.MessageFlow && c.Status == IntegrationCheckStatus.NotAssessed);
         system.PlatformChecks.Should().NotContain(c => c.Status == IntegrationCheckStatus.Pass);
+    }
+
+    // ── $Default as a configured assumption (seed v4) ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExpectedGroup_IsUsedForCheckpointLookups_ButLabelledAnAssumption()
+    {
+        var looked = new List<string>();
+        var groups = new Groups(_ => EvidenceResult<ConsumerGroupList>.Available(IntegrationEvidenceSource.AzureResourceManager, new ConsumerGroupList(["$Default"])));
+        var checkpoints = new Checkpoints((_, group) => { looked.Add(group); return Checkpoint(); });
+        var result = await Run(Engine(metadata: new Metadata(_ => Hub()), groups: groups, checkpoints: checkpoints), OnlyPerson(await DevCatalog(seededRuntime: true)));
+        looked.Should().Equal("$Default");
+        var group = TopicCheck(result, "Person", "cfg-consumer-group");
+        group.Status.Should().Be(IntegrationCheckStatus.NeedsConfirmation);
+        group.Evidence.Should().Contain("Expected: $Default (Configured assumption)").And.Contain("Observed on the hub: $Default").And.Contain("Mapping: Needs confirmation");
+        group.Evidence.Should().NotContain("Confirmed mapping");
+        TopicCheck(result, "Person", "rel-checkpoint").Status.Should().Be(IntegrationCheckStatus.Observed, "a checkpoint for an assumed group is observed, never a Pass");
+        TopicCheck(result, "Person", "rel-checkpoint").Evidence.Should().Contain("configured assumption");
+        result.ConfigurationSnapshot.Integrations.Single().ConsumerGroup.Should().BeNull("the assumption is never saved on the integration");
+        result.ManualFollowUp.Should().Contain(m => m.Title == "Confirm the assumed consumer group");
+        result.Limitations.Should().Contain(l => l.Contains("$Default is a configured assumption"));
+    }
+
+    [Fact]
+    public async Task ExpectedGroup_NeverYieldsAThresholdVerdict()
+    {
+        var catalog = With(OnlyPerson(await DevCatalog(seededRuntime: true)), platform: p => p.RuntimeEvidence is { } r ? p with { RuntimeEvidence = r with { MaxConsumerLagEvents = 1000, MaxCheckpointAgeMinutes = 600 } } : p);
+        var result = await Run(Engine(metadata: new Metadata(_ => Hub()), checkpoints: new Checkpoints((_, _) => Checkpoint())), catalog);
+        foreach (var id in new[] { "rel-checkpoint", "rel-checkpoint-freshness", "perf-lag", "cfg-consumer-group" })
+            TopicCheck(result, "Person", id).Status.Should().NotBe(IntegrationCheckStatus.Pass, $"{id} must not pass on an assumed group");
+        TopicCheck(result, "Person", "perf-lag").Status.Should().Be(IntegrationCheckStatus.Observed);
+        TopicCheck(result, "Person", "rel-checkpoint-freshness").Status.Should().Be(IntegrationCheckStatus.Observed);
+    }
+
+    [Fact]
+    public async Task WithoutThresholds_LagAndCheckpointAgeAreObservedOnly()
+    {
+        var result = await Run(Engine(metadata: new Metadata(_ => Hub()), checkpoints: new Checkpoints((_, _) => Checkpoint())), PersonWithGroup(await DevCatalog()));
+        TopicCheck(result, "Person", "perf-lag").Status.Should().Be(IntegrationCheckStatus.Observed);
+        TopicCheck(result, "Person", "rel-checkpoint-freshness").Status.Should().Be(IntegrationCheckStatus.Observed);
+    }
+
+    [Fact]
+    public async Task AnIntegrationsOwnGroupWinsOverTheExpectation()
+    {
+        var looked = new List<string>();
+        var catalog = With(OnlyPerson(await DevCatalog(seededRuntime: true)), t => t with { ConsumerGroup = "person-adapter" });
+        var result = await Run(Engine(checkpoints: new Checkpoints((_, g) => { looked.Add(g); return Checkpoint(); })), catalog);
+        looked.Should().Equal("person-adapter");
+        TopicCheck(result, "Person", "cfg-consumer-group").Status.Should().Be(IntegrationCheckStatus.Pass);
+    }
+
+    [Fact]
+    public async Task AMissingTelemetrySourceDoesNotBlockMetadataGroupsOrCheckpoints()
+    {
+        var groups = new Groups(_ => EvidenceResult<ConsumerGroupList>.Available(IntegrationEvidenceSource.AzureResourceManager, new ConsumerGroupList(["$Default"])));
+        var result = await Run(Engine(metadata: new Metadata(_ => Hub()), groups: groups, checkpoints: new Checkpoints((_, _) => Checkpoint())), OnlyPerson(await DevCatalog(seededRuntime: true)));
+        result.EvidenceAdapters.Single(a => a.Adapter.StartsWith("Event Hub metadata")).State.Should().Be(IntegrationEvidenceState.Available);
+        result.EvidenceAdapters.Single(a => a.Adapter.StartsWith("Consumer groups")).State.Should().Be(IntegrationEvidenceState.Available);
+        result.EvidenceAdapters.Single(a => a.Adapter.StartsWith("Consumer checkpoints")).State.Should().Be(IntegrationEvidenceState.Available);
+        result.EvidenceAdapters.Single(a => a.Adapter.StartsWith("Consumer telemetry")).State.Should().Be(IntegrationEvidenceState.NotConfigured);
+        TopicCheck(result, "Person", "rel-checkpoint").Status.Should().Be(IntegrationCheckStatus.Observed);
+    }
+
+    [Fact]
+    public async Task Readiness_NamesTheAssumptionInsteadOfUnknownGroups()
+    {
+        var readiness = Engine(checkpoints: new Checkpoints((_, _) => Checkpoint())).Readiness(await DevCatalog(seededRuntime: true), IntegrationContractSet.Empty);
+        var system = readiness.Systems.Single(s => s.Kind == IntegrationKind.EventHub);
+        system.ConsumerGroupsAssumed.Should().Be(16);
+        system.ConsumerGroupsUnknown.Should().Be(0);
+        system.ExpectedConsumerGroup.Should().Be("$Default");
+        readiness.Reasons.Should().Contain(r => r.Contains("Consumer group $Default is a configured assumption for 16 topics"));
     }
 }

@@ -54,6 +54,13 @@ public sealed record IntegrationMappingEvidenceCheck
     public IntegrationMappingEvidenceState OverallState { get; init; }
     public List<IntegrationMappingEvidenceItem> Checks { get; init; } = [];
     public List<string> ManualFollowUp { get; init; } = [];
+    /// <summary>The consumer group checkpoints were looked up for (the integration's own, or the platform's expectation) and how it is known.</summary>
+    public string? ExpectedConsumerGroup { get; init; }
+    public IntegrationValueProvenance ExpectedConsumerGroupProvenance { get; init; }
+    /// <summary>Consumer groups Azure Resource Manager listed for the hub; null when they were not read.</summary>
+    public List<string>? ObservedConsumerGroups { get; init; }
+    /// <summary>The stored consumer mapping state — never changed by this check.</summary>
+    public ConsumerMappingState MappingState { get; init; }
     public static string Label(IntegrationMappingEvidenceState state) => state switch
     {
         IntegrationMappingEvidenceState.StrongEvidence => "Strong evidence",
@@ -79,10 +86,15 @@ public enum IntegrationRecordOrigin { Seed, Manual, ImportedFromBrowserProfile }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum CdcDeleteExpectation { NotSpecified, DeleteEventOnly, DeleteEventAndTombstone, TombstoneNotExpected }
 
+/// <summary>How a configured runtime-evidence value is known. A configured assumption is never a confirmed mapping.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IntegrationValueProvenance { NotSpecified, ConfiguredAssumption, SourceConfigurationVerified, ObservedInAzure, ConfirmedByPerson, ConfiguredOnIntegration }
+
 /// <summary>
 /// Where IQR may read read-only runtime evidence for one platform. Non-secret identifiers only — credentials come from the BirkNext
 /// instance's Azure identity (Managed Identity / workload identity), never from this record. Every field is optional; a missing one
-/// makes its evidence "Not configured", never assumed.
+/// makes its evidence "Not configured", never assumed. Configured sources are not Azure execution: whether the instance may call Azure
+/// at all is <c>IntegrationReview:Azure:Enabled</c> (see <see cref="IntegrationCatalog.AzureRuntimeEnabled"/>).
 /// </summary>
 public sealed record IntegrationRuntimeEvidenceSettings
 {
@@ -90,10 +102,42 @@ public sealed record IntegrationRuntimeEvidenceSettings
     public bool EventHubMetadata { get; init; }
     /// <summary>Azure subscription of the namespace — enables the read-only consumer-group list (Azure Resource Manager).</summary>
     public string? SubscriptionId { get; init; }
-    /// <summary>Blob container of the consumers' EventProcessorClient checkpoint store, e.g. https://acct.blob.core.windows.net/checkpoints.</summary>
+    /// <summary>Display name of the subscription (reference only; the id is what is used).</summary>
+    public string? SubscriptionName { get; init; }
+    /// <summary>Namespace SKU and capacity as verified in Azure (reference only — never a pass criterion).</summary>
+    public string? NamespaceSku { get; init; }
+    public int? NamespaceCapacity { get; init; }
+
+    /// <summary>Platform-level expected consumer group, used when an integration names none. Its provenance is kept: a configured
+    /// assumption (e.g. <c>$Default</c>) lets checkpoint lookups run but never confirms a mapping or produces a Pass.</summary>
+    public string? ExpectedConsumerGroup { get; init; }
+    public IntegrationValueProvenance ExpectedConsumerGroupProvenance { get; init; }
+    /// <summary>Where the expectation comes from, e.g. the hub it was observed on (reference text, no secret).</summary>
+    public string? ExpectedConsumerGroupNote { get; init; }
+
+    /// <summary>Blob container of the consumers' EventProcessorClient checkpoint store, e.g. https://acct.blob.core.windows.net/checkpoints.
+    /// Kept for settings saved before the endpoint/container split; <see cref="CheckpointBlobEndpoint"/> + <see cref="CheckpointContainerName"/> win.</summary>
     public string? CheckpointContainerUrl { get; init; }
-    /// <summary>Log Analytics workspace id (GUID) of the workspace-based Application Insights resource.</summary>
+    /// <summary>Blob service endpoint of the checkpoint store account, e.g. https://acct.blob.core.windows.net/ (no query, no key).</summary>
+    public string? CheckpointBlobEndpoint { get; init; }
+    public string? CheckpointContainerName { get; init; }
+    public IntegrationValueProvenance CheckpointProvenance { get; init; }
+    /// <summary>Where the checkpoint location was verified, e.g. consumer environment-variable NAMES (never their values when secret).</summary>
+    public string? CheckpointSourceNote { get; init; }
+
+    /// <summary>Log Analytics workspace id (GUID). Optional and not required: Application Insights can be queried by resource.</summary>
     public string? TelemetryWorkspaceId { get; init; }
+    /// <summary>Application Insights component queried by resource id (subscription + resource group + name). No connection string.</summary>
+    public string? ApplicationInsightsResourceName { get; init; }
+    public string? ApplicationInsightsResourceGroup { get; init; }
+    /// <summary>True when the consumer is known to be configured with Application Insights (the setting exists). The value is never stored.</summary>
+    public bool? ApplicationInsightsConfigured { get; init; }
+    /// <summary>Container Apps environment log destination (e.g. <c>azure-monitor</c>); reference for why no Log Analytics workspace exists.</summary>
+    public string? ContainerAppsLogDestination { get; init; }
+    /// <summary>The consumer application this platform's runtime evidence was verified against (reference only).</summary>
+    public string? ConsumerApplicationName { get; init; }
+    public string? ConsumerApplicationResourceGroup { get; init; }
+
     /// <summary>Telemetry/runtime review window in hours. Explicit and recorded in every result; 24 h when not set.</summary>
     public int? ReviewWindowHours { get; init; }
     /// <summary>Optional IQR thresholds. Null = measured values are reported as Observed, never judged.</summary>
@@ -101,23 +145,87 @@ public sealed record IntegrationRuntimeEvidenceSettings
     public int? MaxCheckpointAgeMinutes { get; init; }
     public const int DefaultReviewWindowHours = 24;
     public const int MaxReviewWindowHours = 168;
+    public const string DefaultConsumerGroupName = "$Default";
 
-    /// <summary>The first reason these settings cannot be stored, or null. Shared by the UI and the backend so a SAS URL, key or
+    /// <summary>The checkpoint container the review lists: endpoint + container when both are set, otherwise the legacy container URL.</summary>
+    public string? ResolvedCheckpointContainerUrl() =>
+        !string.IsNullOrWhiteSpace(CheckpointBlobEndpoint) && !string.IsNullOrWhiteSpace(CheckpointContainerName)
+            ? CheckpointBlobEndpoint.Trim().TrimEnd('/') + "/" + CheckpointContainerName.Trim()
+            : string.IsNullOrWhiteSpace(CheckpointContainerUrl) ? null : CheckpointContainerUrl.Trim().TrimEnd('/');
+
+    /// <summary>ARM id of the Application Insights component, when subscription, resource group and name are all known.</summary>
+    public string? ApplicationInsightsResourceId() =>
+        Guid.TryParse(SubscriptionId?.Trim(), out var subscription) && !string.IsNullOrWhiteSpace(ApplicationInsightsResourceGroup) && !string.IsNullOrWhiteSpace(ApplicationInsightsResourceName)
+            ? $"/subscriptions/{subscription:D}/resourceGroups/{ApplicationInsightsResourceGroup.Trim()}/providers/Microsoft.Insights/components/{ApplicationInsightsResourceName.Trim()}"
+            : null;
+
+    /// <summary>Whether a telemetry source is configured: a Log Analytics workspace, or an Application Insights resource. Neither is required of the other.</summary>
+    public bool TelemetryConfigured => Guid.TryParse(TelemetryWorkspaceId?.Trim(), out _) || ApplicationInsightsResourceId() is not null;
+
+    public static string ProvenanceLabel(IntegrationValueProvenance provenance) => provenance switch
+    {
+        IntegrationValueProvenance.ConfiguredAssumption => "Configured assumption",
+        IntegrationValueProvenance.SourceConfigurationVerified => "Source/runtime configuration verified",
+        IntegrationValueProvenance.ObservedInAzure => "Observed in Azure",
+        IntegrationValueProvenance.ConfirmedByPerson => "Confirmed",
+        IntegrationValueProvenance.ConfiguredOnIntegration => "Configured on the integration",
+        _ => "Not specified",
+    };
+
+    private static readonly System.Text.RegularExpressions.Regex Name = new(@"^[A-Za-z0-9][A-Za-z0-9._()-]{0,89}$");
+    private static readonly System.Text.RegularExpressions.Regex DisplayName = new(@"^[A-Za-z0-9][A-Za-z0-9._() -]{0,89}$");
+    private static readonly System.Text.RegularExpressions.Regex ContainerName = new(@"^(?!.*--)[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$");
+    private static readonly System.Text.RegularExpressions.Regex ConsumerGroup = new(@"^(\$Default|[A-Za-z0-9][A-Za-z0-9._-]{0,49})$");
+    private static readonly System.Text.RegularExpressions.Regex SecretLike = new(
+        @"(accountkey|sharedaccesskey|sharedaccesssignature|instrumentationkey|connectionstring|endpoint\s*=\s*sb://|password\s*=|(^|[?&;])(sig|sv|se|sp|skoid|code|token|access_token|api-key|apikey)=|\bbearer\s|eyJ[A-Za-z0-9_-]{8,}\.)",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>True when a value looks like a credential (key, SAS, connection string, token) rather than an identifier.</summary>
+    public static bool LooksLikeSecret(string? value) => value is { Length: > 0 } && SecretLike.IsMatch(value);
+
+    private static string? HttpsWithoutCredentials(string value, string what)
+    {
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps) return $"The {what} must be an https URL.";
+        if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.UserInfo) || !string.IsNullOrEmpty(uri.Fragment))
+            return $"The {what} must not carry a query string, token or credentials — never a SAS URL. BirkNext reads it with its own Azure identity.";
+        return null;
+    }
+
+    /// <summary>The first reason these settings cannot be stored, or null. Shared by the UI and the backend so a SAS URL, key, token or
     /// connection string can never be saved as an "identifier".</summary>
     public string? Validate()
     {
         if (SubscriptionId is { } subscription && !Guid.TryParse(subscription.Trim(), out _)) return "The Azure subscription id is a GUID.";
+        if (SubscriptionName is { Length: > 0 } subscriptionName && !DisplayName.IsMatch(subscriptionName.Trim())) return "The subscription name is a plain Azure name.";
+        if (NamespaceCapacity is < 1) return "The namespace capacity is at least 1.";
+        if (ExpectedConsumerGroup is { Length: > 0 } group && !ConsumerGroup.IsMatch(group.Trim())) return "The expected consumer group is $Default or an Event Hub consumer-group name (letters, digits, . _ -; up to 50).";
         if (TelemetryWorkspaceId is { } workspace && !Guid.TryParse(workspace.Trim(), out _)) return "The Log Analytics workspace id is a GUID.";
-        if (CheckpointContainerUrl is { } container)
+        if (ApplicationInsightsResourceName is { Length: > 0 } ai && !Name.IsMatch(ai.Trim())) return "The Application Insights resource name is a plain Azure resource name.";
+        if (ApplicationInsightsResourceGroup is { Length: > 0 } aiGroup && !Name.IsMatch(aiGroup.Trim())) return "The Application Insights resource group is a plain Azure resource-group name.";
+        if (ConsumerApplicationName is { Length: > 0 } app && !Name.IsMatch(app.Trim())) return "The consumer application is a plain Azure resource name.";
+        if (ConsumerApplicationResourceGroup is { Length: > 0 } appGroup && !Name.IsMatch(appGroup.Trim())) return "The consumer application resource group is a plain Azure resource-group name.";
+        if (ContainerAppsLogDestination is { Length: > 0 } destination && !Name.IsMatch(destination.Trim())) return "The Container Apps log destination is a plain value such as azure-monitor.";
+        if (CheckpointBlobEndpoint is { Length: > 0 } endpoint)
         {
-            if (!Uri.TryCreate(container.Trim(), UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
-                return "The checkpoint store must be an https blob container URL.";
-            if (!string.IsNullOrEmpty(uri.Query) || !string.IsNullOrEmpty(uri.UserInfo))
-                return "The checkpoint store URL must not carry a query string or credentials — never a SAS URL. BirkNext reads it with its own Azure identity.";
-            var path = uri.AbsolutePath.Trim('/');
+            if (HttpsWithoutCredentials(endpoint, "checkpoint Blob endpoint") is { } bad) return bad;
+            if (new Uri(endpoint.Trim()).AbsolutePath.Trim('/').Length > 0) return "The checkpoint Blob endpoint is the account endpoint only (https://account.blob.core.windows.net/); the container is a separate field.";
+        }
+        if (CheckpointContainerName is { Length: > 0 } containerName && !ContainerName.IsMatch(containerName.Trim()))
+            return "The checkpoint container name is 3–63 lower-case letters, digits and single hyphens.";
+        if (string.IsNullOrWhiteSpace(CheckpointBlobEndpoint) != string.IsNullOrWhiteSpace(CheckpointContainerName) && string.IsNullOrWhiteSpace(CheckpointContainerUrl))
+            return "The checkpoint store needs both the Blob endpoint and the container name.";
+        if (CheckpointContainerUrl is { Length: > 0 } container)
+        {
+            if (HttpsWithoutCredentials(container, "checkpoint store") is { } bad) return bad;
+            var path = new Uri(container.Trim()).AbsolutePath.Trim('/');
             if (path.Length == 0 || path.Contains('/'))
                 return "The checkpoint store URL names one container: https://account.blob.core.windows.net/container.";
         }
+        // Last: free-text and any field the specific rules above let through (notes, names) must not carry a credential either.
+        foreach (var value in new[] { SubscriptionId, SubscriptionName, NamespaceSku, ExpectedConsumerGroup, ExpectedConsumerGroupNote, CheckpointContainerUrl, CheckpointBlobEndpoint,
+                     CheckpointContainerName, CheckpointSourceNote, TelemetryWorkspaceId, ApplicationInsightsResourceName, ApplicationInsightsResourceGroup, ContainerAppsLogDestination,
+                     ConsumerApplicationName, ConsumerApplicationResourceGroup })
+            if (LooksLikeSecret(value)) return "Runtime evidence settings hold identifiers only — this looks like a key, SAS token, connection string or access token and was not stored.";
         if (ReviewWindowHours is { } window && (window < 1 || window > MaxReviewWindowHours)) return $"The review window is 1–{MaxReviewWindowHours} hours.";
         if (MaxConsumerLagEvents is < 0) return "The consumer lag threshold cannot be negative.";
         if (MaxCheckpointAgeMinutes is < 1) return "The checkpoint age threshold is at least 1 minute.";
@@ -266,11 +374,20 @@ public sealed record IntegrationCatalog
     public List<IntegrationDefinition> Integrations { get; init; } = [];
     /// <summary>Set when this read attached the M2LB DEV seed or imported browser-stored integrations.</summary>
     public List<string> Notices { get; init; } = [];
+    /// <summary>Whether this BirkNext instance may call Azure for runtime evidence (<c>IntegrationReview:Azure:Enabled</c>). Separate from which sources are configured.</summary>
+    public bool AzureRuntimeEnabled { get; init; }
 }
 
 /// <summary>Configuration completeness of one integration, with the fields behind it. Pure; shared by pane, API and review.</summary>
 public static class IntegrationConfigurationRules
 {
+    /// <summary>The consumer group checkpoints are read for: the integration's own group, else the platform's expected group as a
+    /// configured assumption (never silently <c>$Default</c>: only when the platform states it). Null when neither is known.</summary>
+    public static (string? Group, bool Assumed) EffectiveConsumerGroup(IntegrationDefinition topic, IntegrationPlatform? platform) =>
+        !string.IsNullOrWhiteSpace(topic.ConsumerGroup) ? (topic.ConsumerGroup.Trim(), false)
+        : topic.Kind == IntegrationKind.EventHub && !string.IsNullOrWhiteSpace(platform?.RuntimeEvidence?.ExpectedConsumerGroup) ? (platform.RuntimeEvidence.ExpectedConsumerGroup.Trim(), true)
+        : (null, false);
+
     public static (IntegrationConfigurationState State, List<string> Missing, List<string> Unconfirmed) Evaluate(IntegrationDefinition definition, IntegrationPlatform? platform)
     {
         var missing = new List<string>();
@@ -397,7 +514,11 @@ public sealed record IntegrationSystemScope
     public int ConsumersConfirmed { get; init; }
     public int ConsumersSuggested { get; init; }
     public int ConsumersNeedingConfirmation { get; init; }
+    /// <summary>Topics with neither a configured consumer group nor a platform expectation.</summary>
     public int ConsumerGroupsUnknown { get; init; }
+    /// <summary>Topics without their own consumer group that use the platform's expected group as a configured assumption (needs confirmation).</summary>
+    public int ConsumerGroupsAssumed { get; init; }
+    public string? ExpectedConsumerGroup { get; init; }
     public int ContractsConfigured { get; init; }
     /// <summary>False when the domain review for this kind is not implemented; its topics are listed, never faked as reviewed.</summary>
     public bool DomainReviewSupported { get; init; }

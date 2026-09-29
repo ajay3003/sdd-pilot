@@ -31,8 +31,14 @@ public sealed class IntegrationMappingEvidenceService(
             $"Configured mechanism: {IntegrationConfigurationRules.AuthLabel(definition.ConsumerAuthentication)}. Identity: {definition.Consumer.ManagedIdentity ?? "not configured"}.");
         Add("rbac", "Application existence and receiver capability", IntegrationEvidenceState.NotSupported,
             "Existing IQR providers do not inspect application existence or RBAC assignments. Namespace receiver rights would establish capability only, not a topic subscription.");
-        Add("configured-group", "Configured consumer group", string.IsNullOrWhiteSpace(definition.ConsumerGroup) ? IntegrationEvidenceState.NotConfigured : IntegrationEvidenceState.Available,
-            definition.ConsumerGroup is { Length: > 0 } configuredGroup ? $"Configured: {configuredGroup}. This is not proof of the consumer relationship." : "Consumer group not configured; no default is assumed.");
+        var (group, assumed) = IntegrationReviewEngine.EffectiveGroup(definition, platform);
+        var groupProvenance = assumed ? platform!.RuntimeEvidence!.ExpectedConsumerGroupProvenance : group is null ? IntegrationValueProvenance.NotSpecified : IntegrationValueProvenance.ConfiguredOnIntegration;
+        // A platform expectation is never a confirmed group, whatever provenance it was saved with.
+        if (assumed && groupProvenance is IntegrationValueProvenance.ConfirmedByPerson or IntegrationValueProvenance.ConfiguredOnIntegration or IntegrationValueProvenance.NotSpecified) groupProvenance = IntegrationValueProvenance.ConfiguredAssumption;
+        Add("configured-group", assumed ? "Expected consumer group" : "Configured consumer group", group is null ? IntegrationEvidenceState.NotConfigured : IntegrationEvidenceState.Available,
+            assumed ? $"Expected: {group} ({IntegrationRuntimeEvidenceSettings.ProvenanceLabel(groupProvenance)}, platform setting). Used for the checkpoint lookup only; it is not proof of the consumer relationship. Mapping: Needs confirmation."
+            : group is { } configuredGroup ? $"Configured: {configuredGroup}. This is not proof of the consumer relationship."
+            : "Consumer group not configured and the platform states no expected group; no default is assumed.");
 
         var blocked = !consumerKnown ? "No consumer is configured or suggested; no runtime calls were attempted."
             : !definition.Enabled ? "Integration is disabled; no runtime calls were attempted."
@@ -72,13 +78,13 @@ public sealed class IntegrationMappingEvidenceService(
             groupList.Source, groupList.CapturedAt, IntegrationReviewLabels.FreshnessOf(groupList.CapturedAt, DateTimeOffset.UtcNow, window), groupList.Value.Names.Count > 0);
 
         var checkpoint = await Read("checkpoint", "Checkpoint evidence", IntegrationEvidenceSource.CheckpointStore,
-            platform is null ? null : checkpoints.Describe(platform), string.IsNullOrWhiteSpace(definition.ConsumerGroup) ? "Consumer group not configured; checkpoints cannot be attributed." : null,
-            token => checkpoints.GetAsync(platform!, definition.EndpointOrTopic!, definition.ConsumerGroup!, token));
+            platform is null ? null : checkpoints.Describe(platform), group is null ? "Consumer group not configured; checkpoints cannot be attributed." : null,
+            token => checkpoints.GetAsync(platform!, definition.EndpointOrTopic!, group!, token));
         if (checkpoint.IsAvailable) Add("checkpoint", "Checkpoint evidence", checkpoint.Value!.Partitions.Count > 0 ? IntegrationEvidenceState.Available : IntegrationEvidenceState.NotFound,
-            $"{checkpoint.Value.Partitions.Count} checkpoint partition(s) for group {checkpoint.Value.ConsumerGroup}. This does not identify the application owning the group.", checkpoint.Source, checkpoint.CapturedAt,
+            $"{checkpoint.Value.Partitions.Count} checkpoint partition(s) for group {checkpoint.Value.ConsumerGroup}{(assumed ? " (configured assumption)" : "")}. This does not identify the application owning the group.", checkpoint.Source, checkpoint.CapturedAt,
             IntegrationReviewLabels.FreshnessOf(checkpoint.Value.LastUpdated, DateTimeOffset.UtcNow, window), checkpoint.Value.Partitions.Count > 0);
 
-        var freshCheckpoint = checkpoint.IsAvailable && checkpoint.Value!.ConsumerGroup == definition.ConsumerGroup
+        var freshCheckpoint = checkpoint.IsAvailable && checkpoint.Value!.ConsumerGroup == group
             && IntegrationReviewLabels.FreshnessOf(checkpoint.Value.LastUpdated, DateTimeOffset.UtcNow, window) is IntegrationEvidenceItemFreshness.Current or IntegrationEvidenceItemFreshness.Recent;
         var lag = hub is { IsAvailable: true, Value.Exists: true } && freshCheckpoint ? IntegrationReviewEngine.Lag(hub.Value, checkpoint.Value!).Lag : null;
         Add("lag", "Lag", lag is null ? IntegrationEvidenceState.Unavailable : IntegrationEvidenceState.Available,
@@ -107,6 +113,8 @@ public sealed class IntegrationMappingEvidenceService(
         var state = Classify(checks, blocked is not null);
         return new() { IntegrationId = definition.Id, Topic = definition.EndpointOrTopic, SuggestedConsumer = definition.Consumer.DisplayName,
             StartedAt = started, CompletedAt = DateTimeOffset.UtcNow, OverallState = state, Checks = checks,
+            ExpectedConsumerGroup = group, ExpectedConsumerGroupProvenance = groupProvenance,
+            ObservedConsumerGroups = groupList.IsAvailable ? groupList.Value!.Names.ToList() : null, MappingState = definition.Consumer.MappingState,
             ManualFollowUp = ["Confirm the mapping only if the consumer relationship is known from a trusted source. Running this check never confirms it.",
                 "Configure missing runtime evidence sources and consumer identifiers, then run the check again. No supporting evidence does not mean the mapping is wrong."] };
     }

@@ -8,6 +8,11 @@
         @if (ConsumerState is ConsumerMappingState.Suggested or ConsumerMappingState.Confirmed) { <span class="mapping-badge" data-testid="mapping-provenance">@ConsumerState</span> }
     </p>
     <p class="mapping-muted" data-testid="mapping-meaning">@Meaning(Result.OverallState)</p>
+    <dl class="mapping-groups" data-testid="mapping-groups">
+        <div><dt>Expected consumer group</dt><dd data-testid="mapping-group-expected">@(Result.ExpectedConsumerGroup is { } expected ? $"{expected} — {IntegrationRuntimeEvidenceSettings.ProvenanceLabel(Result.ExpectedConsumerGroupProvenance)}" : "Not configured")</dd></div>
+        <div><dt>Observed consumer groups</dt><dd data-testid="mapping-group-observed">@(Result.ObservedConsumerGroups is { } observed ? observed.Count == 0 ? "None listed" : string.Join(", ", observed) : "Not read")</dd></div>
+        <div><dt>Consumer-group mapping</dt><dd data-testid="mapping-group-mapping">Mapping: @(Result.ExpectedConsumerGroupProvenance == IntegrationValueProvenance.ConfiguredOnIntegration ? "Configured on the integration" : "Needs confirmation")</dd></div>
+    </dl>
     <p class="mapping-muted">Checked <time datetime="@Result.CompletedAt.ToString("O")">@Result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") UTC</time> · session snapshot; nothing was changed.</p>
 
     <h5>Evidence found</h5>

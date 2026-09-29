@@ -167,8 +167,8 @@ public sealed class BlobCheckpointEvidenceSource(IIntegrationAzureCredential azu
 
     public IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform) =>
         azure.Credential is null ? NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.CheckpointStore, IntegrationEvidenceState.NotConfigured, azure.DisabledReason)
-        : !Uri.TryCreate(platform.RuntimeEvidence?.CheckpointContainerUrl, UriKind.Absolute, out var uri) || uri.Scheme != "https"
-            ? NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.CheckpointStore, IntegrationEvidenceState.NotConfigured, "No checkpoint evidence source configured (checkpoint store container URL).")
+        : !Uri.TryCreate(platform.RuntimeEvidence?.ResolvedCheckpointContainerUrl(), UriKind.Absolute, out var uri) || uri.Scheme != "https"
+            ? NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.CheckpointStore, IntegrationEvidenceState.NotConfigured, "No checkpoint evidence source configured (checkpoint Blob endpoint and container).")
         : NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.CheckpointStore, IntegrationEvidenceState.Available, "Configured; read-only listing (Storage Blob Data Reader on the container).");
 
     public static string Prefix(string fqdn, string hub, string consumerGroup, string kind) =>
@@ -180,7 +180,7 @@ public sealed class BlobCheckpointEvidenceSource(IIntegrationAzureCredential azu
         if (readiness.State != IntegrationEvidenceState.Available) return EvidenceResult<CheckpointEvidence>.Missing(readiness.State, IntegrationEvidenceSource.CheckpointStore, readiness.Reason);
         try
         {
-            var container = new BlobContainerClient(new Uri(platform.RuntimeEvidence!.CheckpointContainerUrl!), azure.Credential!);
+            var container = new BlobContainerClient(new Uri(platform.RuntimeEvidence!.ResolvedCheckpointContainerUrl()!), azure.Credential!);
             var partitions = new List<PartitionCheckpoint>();
             await foreach (var blob in container.GetBlobsAsync(BlobTraits.Metadata, BlobStates.None, Prefix(platform.NamespaceFqdn ?? "", hubName, consumerGroup, "checkpoint"), ct))
                 partitions.Add(new PartitionCheckpoint(blob.Name[(blob.Name.LastIndexOf('/') + 1)..],
@@ -202,8 +202,10 @@ public sealed class BlobCheckpointEvidenceSource(IIntegrationAzureCredential azu
 }
 
 /// <summary>
-/// Consumer telemetry from the workspace-based Application Insights resource: three bounded, aggregate KQL queries per consumer role in the
-/// review window (exceptions, traces, Event Hubs dependency calls). Only counts and timestamps come back; no row, message or payload.
+/// Consumer telemetry from Application Insights: three bounded, aggregate KQL queries per consumer role in the review window (exceptions,
+/// traces, Event Hubs dependency calls). Only counts and timestamps come back; no row, message or payload. Queried by the Application
+/// Insights RESOURCE (subscription + resource group + name; Reader on the component) or, when one is configured, a Log Analytics
+/// workspace. A workspace is never required. No connection string or instrumentation key is read.
 /// </summary>
 public sealed class LogAnalyticsTelemetrySource(IIntegrationAzureCredential azure, ILogger<LogAnalyticsTelemetrySource> logger) : ITelemetryEvidenceSource
 {
@@ -211,41 +213,55 @@ public sealed class LogAnalyticsTelemetrySource(IIntegrationAzureCredential azur
 
     public IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform) =>
         azure.Credential is null ? NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.ApplicationInsights, IntegrationEvidenceState.NotConfigured, azure.DisabledReason)
-        : !Guid.TryParse(platform.RuntimeEvidence?.TelemetryWorkspaceId, out _)
-            ? NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.ApplicationInsights, IntegrationEvidenceState.NotConfigured, "No telemetry source configured (Log Analytics workspace id of Application Insights).")
-        : NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.ApplicationInsights, IntegrationEvidenceState.Available, "Configured; bounded aggregate queries (Log Analytics Reader).");
+        : TelemetryScope.Of(platform) switch
+        {
+            { Workspace: not null } => NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.ApplicationInsights, IntegrationEvidenceState.Available, "Configured (Log Analytics workspace); bounded aggregate queries (Log Analytics Reader)."),
+            { ResourceId: not null } => NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.ApplicationInsights, IntegrationEvidenceState.Available,
+                $"Configured (Application Insights resource {platform.RuntimeEvidence!.ApplicationInsightsResourceName}); bounded aggregate queries (Reader on the component). No Log Analytics workspace is required."),
+            _ => NotConfiguredEvidence.Status(Adapter, IntegrationEvidenceSource.ApplicationInsights, IntegrationEvidenceState.NotConfigured, TelemetryScope.NotConfiguredReason),
+        };
 
     /// <summary>KQL string literal for a role name (the only interpolated value; quotes and backslashes escaped).</summary>
     internal static string Literal(string value) => "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
-    internal static string ExceptionsQuery(string role) =>
-        $"AppExceptions | where AppRoleName == {Literal(role)} | summarize total=count(), " +
-        "deser=countif(ExceptionType has_any (\"JsonException\",\"SerializationException\",\"AvroException\") or OuterMessage has \"deserializ\"), " +
-        "auth=countif(ExceptionType has_any (\"UnauthorizedAccessException\",\"AuthenticationFailedException\") or OuterMessage has_any (\"401\",\"403\",\"Unauthorized\")), " +
-        "last=max(TimeGenerated)";
+    // Workspace schema (AppExceptions …) for a Log Analytics workspace; classic schema (exceptions …) for an Application Insights resource query.
+    internal static string ExceptionsQuery(string role, bool classic = false) => classic
+        ? $"exceptions | where cloud_RoleName == {Literal(role)} | summarize total=count(), " +
+          "deser=countif(type has_any (\"JsonException\",\"SerializationException\",\"AvroException\") or outerMessage has \"deserializ\"), " +
+          "auth=countif(type has_any (\"UnauthorizedAccessException\",\"AuthenticationFailedException\") or outerMessage has_any (\"401\",\"403\",\"Unauthorized\")), " +
+          "last=max(timestamp)"
+        : $"AppExceptions | where AppRoleName == {Literal(role)} | summarize total=count(), " +
+          "deser=countif(ExceptionType has_any (\"JsonException\",\"SerializationException\",\"AvroException\") or OuterMessage has \"deserializ\"), " +
+          "auth=countif(ExceptionType has_any (\"UnauthorizedAccessException\",\"AuthenticationFailedException\") or OuterMessage has_any (\"401\",\"403\",\"Unauthorized\")), " +
+          "last=max(TimeGenerated)";
 
-    internal static string TracesQuery(string role) =>
-        $"AppTraces | where AppRoleName == {Literal(role)} | summarize processing=countif(Message has_any (\"EventHub\",\"partition\",\"checkpoint\")), " +
-        "retry=countif(Message has \"retry\"), deadletter=countif(Message has_any (\"dead-letter\",\"deadletter\",\"poison\")), " +
-        "correlated=countif(isnotempty(OperationId)), last=max(TimeGenerated)";
+    internal static string TracesQuery(string role, bool classic = false) => classic
+        ? $"traces | where cloud_RoleName == {Literal(role)} | summarize processing=countif(message has_any (\"EventHub\",\"partition\",\"checkpoint\")), " +
+          "retry=countif(message has \"retry\"), deadletter=countif(message has_any (\"dead-letter\",\"deadletter\",\"poison\")), " +
+          "correlated=countif(isnotempty(operation_Id)), last=max(timestamp)"
+        : $"AppTraces | where AppRoleName == {Literal(role)} | summarize processing=countif(Message has_any (\"EventHub\",\"partition\",\"checkpoint\")), " +
+          "retry=countif(Message has \"retry\"), deadletter=countif(Message has_any (\"dead-letter\",\"deadletter\",\"poison\")), " +
+          "correlated=countif(isnotempty(OperationId)), last=max(TimeGenerated)";
 
-    internal static string DependenciesQuery(string role) =>
-        $"AppDependencies | where AppRoleName == {Literal(role)} and (DependencyType has \"Event Hubs\" or Target has \"servicebus.windows.net\") " +
-        "| summarize calls=count(), failed=countif(Success == false), median=percentile(DurationMs, 50), last=max(TimeGenerated)";
+    internal static string DependenciesQuery(string role, bool classic = false) => classic
+        ? $"dependencies | where cloud_RoleName == {Literal(role)} and (type has \"Event Hubs\" or target has \"servicebus.windows.net\") " +
+          "| summarize calls=count(), failed=countif(success == false), median=percentile(duration, 50), last=max(timestamp)"
+        : $"AppDependencies | where AppRoleName == {Literal(role)} and (DependencyType has \"Event Hubs\" or Target has \"servicebus.windows.net\") " +
+          "| summarize calls=count(), failed=countif(Success == false), median=percentile(DurationMs, 50), last=max(TimeGenerated)";
 
     public async Task<EvidenceResult<ConsumerTelemetry>> GetConsumerAsync(IntegrationPlatform platform, string roleName, int windowHours, CancellationToken ct)
     {
         var readiness = Describe(platform);
         if (readiness.State != IntegrationEvidenceState.Available) return EvidenceResult<ConsumerTelemetry>.Missing(readiness.State, IntegrationEvidenceSource.ApplicationInsights, readiness.Reason);
         var client = new LogsQueryClient(azure.Credential!);
-        var workspace = platform.RuntimeEvidence!.TelemetryWorkspaceId!;
+        var scope = TelemetryScope.Of(platform);
+        var classic = scope.Workspace is null;
         var range = new QueryTimeRange(TimeSpan.FromHours(windowHours));
-        var options = new LogsQueryOptions { ServerTimeout = TimeSpan.FromSeconds(30) };
         try
         {
-            var exceptions = (await client.QueryWorkspaceAsync(workspace, ExceptionsQuery(roleName), range, options, ct)).Value.Table.Rows.FirstOrDefault();
-            var traces = (await client.QueryWorkspaceAsync(workspace, TracesQuery(roleName), range, options, ct)).Value.Table.Rows.FirstOrDefault();
-            var dependencies = (await client.QueryWorkspaceAsync(workspace, DependenciesQuery(roleName), range, options, ct)).Value.Table.Rows.FirstOrDefault();
+            var exceptions = await scope.QueryAsync(client, ExceptionsQuery(roleName, classic), range, ct);
+            var traces = await scope.QueryAsync(client, TracesQuery(roleName, classic), range, ct);
+            var dependencies = await scope.QueryAsync(client, DependenciesQuery(roleName, classic), range, ct);
             static long L(LogsTableRow? row, string column) => row?.GetInt64(column) ?? 0;
             static DateTimeOffset? T(LogsTableRow? row, string column) => row?.GetDateTimeOffset(column);
             var last = new[] { T(exceptions, "last"), T(traces, "last"), T(dependencies, "last") }.Max();
@@ -256,9 +272,37 @@ public sealed class LogAnalyticsTelemetrySource(IIntegrationAzureCredential azur
         }
         catch (Exception ex) when (ex is RequestFailedException or AuthenticationFailedException or CredentialUnavailableException)
         {
-            logger.LogInformation("Telemetry for role {Role} unavailable: {Error}.", roleName, AzureEvidence.Describe(ex));
+            logger.LogInformation("Telemetry for role {Role} unavailable ({Scope}): {Error}.", roleName, classic ? "Application Insights resource" : "Log Analytics workspace", AzureEvidence.Describe(ex));
             return EvidenceResult<ConsumerTelemetry>.Missing(AzureEvidence.StateOf(ex), IntegrationEvidenceSource.ApplicationInsights,
                 AzureEvidence.StateOf(ex) == IntegrationEvidenceState.NotAuthorized ? $"Telemetry access unauthorized ({AzureEvidence.Describe(ex)})." : $"Telemetry query failed ({AzureEvidence.Describe(ex)}).");
         }
+    }
+}
+
+/// <summary>
+/// Where Application Insights telemetry is queried: a Log Analytics workspace when one is configured, otherwise the Application Insights
+/// component by its resource id. Neither requires the other; a workspace is optional (a Container Apps environment that sends logs to
+/// Azure Monitor has none). Identifiers only — no connection string, instrumentation key or token.
+/// </summary>
+internal sealed record TelemetryScope(string? Workspace, string? ResourceId)
+{
+    public const string NotConfiguredReason = "No telemetry source configured (Application Insights resource name and resource group, with the subscription id).";
+
+    public static TelemetryScope Of(IntegrationPlatform? platform)
+    {
+        var runtime = platform?.RuntimeEvidence;
+        return Guid.TryParse(runtime?.TelemetryWorkspaceId?.Trim(), out var workspace) ? new(workspace.ToString("D"), null) : new(null, runtime?.ApplicationInsightsResourceId());
+    }
+
+    public bool Configured => Workspace is not null || ResourceId is not null;
+
+    /// <summary>One bounded aggregate query (30 s server timeout); the first row or null.</summary>
+    public async Task<LogsTableRow?> QueryAsync(LogsQueryClient client, string query, QueryTimeRange range, CancellationToken ct)
+    {
+        var options = new LogsQueryOptions { ServerTimeout = TimeSpan.FromSeconds(30) };
+        var result = Workspace is not null
+            ? await client.QueryWorkspaceAsync(Workspace, query, range, options, ct)
+            : await client.QueryResourceAsync(new ResourceIdentifier(ResourceId!), query, range, options, ct);
+        return result.Value.Table.Rows.FirstOrDefault();
     }
 }
