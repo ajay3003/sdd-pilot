@@ -11,7 +11,8 @@ public static class ClassificationExport
     {
         var sb = new StringBuilder();
         sb.Append($"<section class=\"block\"><h2>Security classification</h2><p>{badge(ClassificationLabels.Overall(r.Overall))} {esc(ClassificationPresentation.Headline(r))}. Completed {r.CompletedAt:u}.</p>");
-        sb.Append(table(["Area", "State", "Evidence"], r.Summary.Select(s => new[] { esc(s.Title), badge(ClassificationLabels.State(s.State)), esc(s.Evidence) })));
+        sb.Append(table(["Area", "State", "Evidence"], r.Summary.Select(s => new[] { esc(s.Title), badge(ClassificationLabels.State(s.State)),
+            esc(s.Evidence) + string.Concat(s.Parts.Select(p => $"<br>{esc(p.Name)}: {badge(ClassificationLabels.State(p.State))} {esc(p.Detail)}")) })));
         sb.Append("</section>\n<section class=\"block\"><h2>Classification model (from source)</h2>");
         sb.Append(table(["Level", "Value", "BiRK / Elements", "Graded access"], r.Levels.Select(l => new[] { l.Nivaa.ToString(), esc(l.Verdi), esc($"{l.BiRKKode ?? "—"} / {l.ElementsKode ?? "—"}"), l.KreverGradertTilgang ? "Required" : "No" })));
         sb.Append("</section>\n<section class=\"block\"><h2>CDC pipeline</h2>");
@@ -47,7 +48,9 @@ public static class ClassificationExport
         sb.Append(table(["Behaviour", "Coverage", "Tests", "Note"], r.TestCoverage.Select(t => new[] { esc(t.Scenario), badge(ClassificationLabels.Coverage(t.State)), esc(string.Join(", ", t.Tests.Take(3))), esc(t.Note) })));
         foreach (var p in r.ProposedTests) sb.Append($"<h3>Proposed regression: {esc(p.Name)}</h3><p>{esc(p.Purpose)}</p><pre>{esc(p.Code)}</pre>");
         sb.Append("</section>\n<section class=\"block\"><h2>Missing evidence</h2><ul>");
-        foreach (var m in r.Missing) sb.Append($"<li>{esc(m)}</li>");
+        if (r.MissingItems.Count > 0)
+            foreach (var m in r.MissingItems) sb.Append($"<li>{esc(ClassificationLabels.MissingGroup(m.Group))}: <strong>{esc(m.Title)}</strong> — {esc(m.Detail)}</li>");
+        else foreach (var m in r.Missing) sb.Append($"<li>{esc(m)}</li>");
         sb.Append("</ul><h2>Limitations</h2><ul>");
         foreach (var l in r.Limitations) sb.Append($"<li>{esc(l)}</li>");
         sb.Append("</ul></section>\n");

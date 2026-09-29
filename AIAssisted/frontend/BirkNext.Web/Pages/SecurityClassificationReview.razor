@@ -124,18 +124,33 @@
             }
         </section>
 
+        @if (_result is null && _overview is not null) { @NeededCard }
+
         @if (_result is { } result)
         {
             <section class="sc-card" aria-labelledby="sc-summary-heading" data-testid="sc-summary" tabindex="-1" @ref="_resultRef">
                 <h2 id="sc-summary-heading">Security classification <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(result.Overall)" data-testid="sc-overall">@ClassificationLabels.Overall(result.Overall)</span></h2>
                 <p class="sc-muted" data-testid="sc-headline">@ClassificationPresentation.Headline(result) · @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</p>
+                <p class="sc-orientation" data-testid="sc-orientation">@ClassificationPresentation.Orientation(result, MissingNow.Count)</p>
                 <ul class="sc-summary">
                     @foreach (var row in result.Summary)
                     {
-                        <li data-testid="sc-summary-row" data-area="@row.Area"><span class="sc-summary-title">@row.Title</span> <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(row.State)">@ClassificationLabels.State(row.State)</span> <span class="sc-muted">@row.Evidence</span></li>
+                        <li data-testid="sc-summary-row" data-area="@row.Area"><span class="sc-summary-title">@row.Title</span> <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(row.State)" title="@ClassificationLabels.StateHelp(row.State)">@ClassificationLabels.State(row.State)</span> <span class="sc-muted">@row.Evidence</span>
+                            @if (row.Parts.Count > 0)
+                            {
+                                <ul class="sc-parts" data-testid="sc-summary-parts">
+                                    @foreach (var part in row.Parts)
+                                    {
+                                        <li data-testid="sc-summary-part" data-part="@part.Name"><span>@part.Name</span> <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(part.State)" title="@ClassificationLabels.StateHelp(part.State)">@ClassificationLabels.State(part.State)</span></li>
+                                    }
+                                </ul>
+                            }
+                        </li>
                     }
                 </ul>
             </section>
+
+            @NeededCard
 
             <section class="sc-card" aria-labelledby="sc-model-heading" data-testid="sc-model">
                 <h2 id="sc-model-heading">Classification model (from source)</h2>
@@ -154,8 +169,12 @@
                     {
                         <li data-testid="sc-stage" data-stage="@stage.Stage">
                             <span class="sc-stage-title">@stage.Title</span>
-                            <span><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(stage.Source)" title="Source / configuration">@ClassificationLabels.State(stage.Source)</span> <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(stage.Runtime)">Runtime: @ClassificationLabels.State(stage.Runtime)</span></span>
+                            <span><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(stage.Source)" title="@(ClassificationLabels.StateHelp(stage.Source) ?? "Source / configuration")" data-testid="sc-stage-source">@(stage.Stage == ClassificationPipelineStage.EventHub ? "Evidence" : "Source"): @ClassificationLabels.State(stage.Source)</span> <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(stage.Runtime)" title="@ClassificationLabels.StateHelp(stage.Runtime)" data-testid="sc-stage-runtime">Runtime: @ClassificationLabels.State(stage.Runtime)</span></span>
                             <span class="sc-muted">@stage.SourceDetail</span>
+                            @if (stage.Stage == ClassificationPipelineStage.EventHub)
+                            {
+                                <a class="sc-link" href="integration-quality-review" data-testid="sc-eventhub-link" aria-label="View Event Hub evidence in Integration Quality Review">View Event Hub evidence</a>
+                            }
                         </li>
                     }
                 </ol>
@@ -254,8 +273,7 @@
                         <pre class="sc-code" tabindex="0" data-testid="sc-proposed">@p.Code</pre>
                     }
                 </ReviewDisclosure>
-                <h3>What’s missing</h3>
-                <ul class="sc-list" data-testid="sc-missing">@foreach (var m in result.Missing) { <li>@m</li> }</ul>
+                <p class="sc-muted" data-testid="sc-missing-pointer">Missing evidence and next steps are listed in “What’s needed to complete this review” near the top of the page.</p>
             </section>
         }
     }
@@ -304,6 +322,69 @@
             Counts = Counts.Where(c => c.Value is not null).ToDictionary(c => c.Key, c => c.Value!.Value),
         };
     }
+
+    private bool _showAllMissing;
+
+    /// <summary>The latest review follows the current context; an opened historical review shows its own recorded snapshot.</summary>
+    private bool IsLatest => _result is null || _overview?.Latest?.RunId == _result.RunId;
+    private ClassificationPresentation.MissingView MissingNow => ClassificationPresentation.Missing(_result, IsLatest, Context, _overview?.Source);
+
+    private RenderFragment NeededCard => __builder =>
+    {
+        var view = MissingNow;
+        if (view.Count == 0)
+        {
+            <section class="sc-card sc-needed sc-needed-done" aria-labelledby="sc-needed-heading" data-testid="sc-needed" data-count="0">
+                <h2 id="sc-needed-heading">Review prerequisites complete <span class="sc-badge sc-badge-ready">Complete</span></h2>
+                @if (view.Items.Any(i => i.Group == ClassificationMissingGroup.Secondary))
+                {
+                    <p class="sc-muted">Not part of this version: @string.Join("; ", view.Items.Where(i => i.Group == ClassificationMissingGroup.Secondary).Select(i => i.Title)).</p>
+                }
+            </section>
+            return;
+        }
+        var shown = 0;
+        <section class="sc-card sc-needed" aria-labelledby="sc-needed-heading" data-testid="sc-needed" data-count="@view.Count">
+            <h2 id="sc-needed-heading">What’s needed to complete this review <span class="sc-badge sc-badge-attention" data-testid="sc-needed-count">@view.Count item@(view.Count == 1 ? "" : "s")</span></h2>
+            <p data-testid="sc-needed-lead">@(view.BlocksLiveChecks ? "Runtime authorization testing cannot run yet: required test context or evidence is missing. These are prerequisites, not security findings." : "Live authorization checks can run; the remaining items add runtime evidence. These are not security findings.")</p>
+            @if (view.Recorded)
+            {
+                <p class="sc-muted" data-testid="sc-needed-recorded">As recorded with the review from @_result!.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC — not recalculated against today's configuration.</p>
+            }
+            <div id="sc-needed-list">
+                @if (view.LegacyItems.Count > 0)
+                {
+                    <ul class="sc-needed-items" data-testid="sc-needed-items">
+                        @foreach (var legacy in view.LegacyItems.Take(_showAllMissing ? int.MaxValue : ClassificationPresentation.MissingPreview)) { <li data-testid="sc-needed-item">@legacy</li> }
+                    </ul>
+                }
+                @foreach (var group in view.Items.GroupBy(i => i.Group).OrderBy(g => g.Key))
+                {
+                    var visible = group.Where(_ => _showAllMissing || shown++ < ClassificationPresentation.MissingPreview).ToList();
+                    if (visible.Count == 0) continue;
+                    <h3 data-testid="sc-needed-group" data-group="@group.Key">@ClassificationLabels.MissingGroup(group.Key)</h3>
+                    <ul class="sc-needed-items">
+                        @foreach (var item in visible)
+                        {
+                            <li data-testid="sc-needed-item" data-item="@item.Id"><strong>@item.Title</strong> <span class="sc-muted">— @item.Detail</span></li>
+                        }
+                    </ul>
+                }
+            </div>
+            <div class="sc-actions">
+                @if (view.NeedsContext && !view.Recorded)
+                {
+                    <button type="button" class="btn-primary" data-testid="sc-needed-configure" @onclick="BeginEdit">Configure test context</button>
+                }
+                @{ var total = view.Items.Count + view.LegacyItems.Count; }
+                @if (total > ClassificationPresentation.MissingPreview)
+                {
+                    <button type="button" class="btn-secondary" data-testid="sc-needed-all" aria-expanded="@(_showAllMissing ? "true" : "false")" aria-controls="sc-needed-list"
+                            @onclick="() => _showAllMissing = !_showAllMissing">@(_showAllMissing ? "Show fewer" : $"View all missing evidence ({total})")</button>
+                }
+            </div>
+        </section>
+    };
 
     private ClassificationTestContext Context => _overview?.Context ?? new();
     private IReadOnlyList<ClassificationLevel> Levels => _overview?.Source?.Levels is { Count: > 0 } levels ? levels : _result?.Levels ?? [];

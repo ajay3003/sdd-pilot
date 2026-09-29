@@ -11,13 +11,19 @@ namespace BirkNext.Integrations;
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /// <summary>Check states. Pass/Fail only for a bounded executed check with an explicit expectation; source facts use SourceVerified,
-/// Warning, IssueDetected, DocumentedOnly or NotFound; NotTested is never Pass; NoIndicatorsObserved is never Pass.</summary>
+/// Warning, IssueDetected, DocumentedOnly or NotFound; NotTested is never Pass; NoIndicatorsObserved is never Pass. NotApplicable = the check is
+/// irrelevant here; NotAssessedHere = relevant to the end-to-end flow but not evaluated by this review (outside the analyzed source, or owned by
+/// another review) — never the same thing.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ClassificationState
 {
     Pass, Fail, IssueDetected, Warning, SourceVerified, Configured, Observed, Verified, Partial, NotTested, NotAvailable, NeedsDecision,
-    NotApplicable, NoIndicatorsObserved, DocumentedOnly, NotFound,
+    NotApplicable, NoIndicatorsObserved, DocumentedOnly, NotFound, NotAssessedHere,
 }
+
+/// <summary>What completing the review needs, in the order a test lead acts on it. Missing evidence is never a finding.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ClassificationMissingGroup { RequiredForLiveChecks, RuntimeEvidence, Secondary }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ClassificationTestType { Static, Functional, Negative, NonFunctional, DataConsistency }
@@ -239,7 +245,23 @@ public sealed record ClassificationFinding
 }
 
 /// <summary>One row of the summary: an area and its state with the kind of evidence behind it.</summary>
-public sealed record ClassificationSummaryRow(ClassificationArea Area, string Title, ClassificationState State, string Evidence);
+public sealed record ClassificationSummaryRow(ClassificationArea Area, string Title, ClassificationState State, string Evidence)
+{
+    /// <summary>Evidence items behind the state when they differ in kind (e.g. metric definition in source vs runtime telemetry).</summary>
+    public List<ClassificationSubStatus> Parts { get; init; } = [];
+}
+
+public sealed record ClassificationSubStatus(string Name, ClassificationState State, string Detail);
+
+/// <summary>One thing needed to complete the review. <see cref="ConfiguresContext"/> = resolved in "Configure test context".</summary>
+public sealed record ClassificationMissingItem
+{
+    public string Id { get; init; } = "";
+    public ClassificationMissingGroup Group { get; init; }
+    public string Title { get; init; } = "";
+    public string Detail { get; init; } = "";
+    public bool ConfiguresContext { get; init; }
+}
 
 /// <summary>A stored, immutable review run (source snapshot + configuration + safe runtime observations + counts).</summary>
 public sealed record ClassificationReviewResult
@@ -265,7 +287,50 @@ public sealed record ClassificationReviewResult
     /// <summary>The configured context exactly as this run used it (ids and labels only).</summary>
     public ClassificationTestContext Context { get; init; } = new();
     public List<string> Missing { get; init; } = [];
+    /// <summary>Structured, prioritized missing evidence as of this run (empty for runs recorded before it existed; <see cref="Missing"/> then applies).</summary>
+    public List<ClassificationMissingItem> MissingItems { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+}
+
+/// <summary>
+/// The one rule for "what's needed to complete this review", used for a run's snapshot and for the live card on the page (so configuring the
+/// test context removes its items immediately). Ordered: required for live authorization checks, then runtime evidence, then secondary.
+/// </summary>
+public static class ClassificationPrerequisites
+{
+    public static List<ClassificationMissingItem> Evaluate(bool sourceAnalyzed, IReadOnlyList<ClassificationLevel> levels, ClassificationTestContext context,
+        bool countsAvailable, string? metricName, bool telemetryObserved)
+    {
+        var items = new List<ClassificationMissingItem>();
+        void Add(string id, ClassificationMissingGroup group, string title, string detail, bool configures = false) =>
+            items.Add(new ClassificationMissingItem { Id = id, Group = group, Title = title, Detail = detail, ConfiguresContext = configures });
+        if (!sourceAnalyzed)
+            Add("source", ClassificationMissingGroup.RequiredForLiveChecks, "M2LB source archive", "Upload the repository archive to analyze the classification model, the CDC path and the access paths.");
+        var env = context.Environment?.Trim().ToUpperInvariant();
+        var contextGaps = new List<string>();
+        if (env is not ("DEV" or "QA")) contextGaps.Add("a DEV or QA environment");
+        if (string.IsNullOrWhiteSpace(context.GraphQlEndpoint)) contextGaps.Add("the Person GraphQL endpoint");
+        if (!context.ApprovedByTestLead) contextGaps.Add("test-lead approval");
+        if (contextGaps.Count > 0)
+            Add("context", ClassificationMissingGroup.RequiredForLiveChecks, "Approved DEV/QA security test context", $"Not configured: {string.Join(", ", contextGaps)}.", configures: true);
+        foreach (var level in levels.Where(l => !context.TestChildren.Any(c => c.Nivaa == l.Nivaa && c.BarnRegistreringId is not null)))
+        {
+            var codes = string.Join(" / ", new[] { level.BiRKKode, level.ElementsKode }.OfType<string>().Where(c => c.Length > 0).Distinct());
+            Add($"child-{level.Nivaa}", ClassificationMissingGroup.RequiredForLiveChecks, $"Synthetic level {level.Nivaa} test child ({level.Verdi}{(codes.Length > 0 ? $" / {codes}" : "")})",
+                "A synthetic or approved test child with this level, identified by id only.", configures: true);
+        }
+        if (string.IsNullOrWhiteSpace(context.UnauthorizedIdentityLabel))
+            Add("identity-unauthorized", ClassificationMissingGroup.RequiredForLiveChecks, "Unauthorized test identity", "A test identity without graded access (label only; its token is given per run).", configures: true);
+        if (string.IsNullOrWhiteSpace(context.AuthorizedIdentityLabel))
+            Add("identity-authorized", ClassificationMissingGroup.RequiredForLiveChecks, "Authorized graded identity", "A test identity with graded access (label only; its token is given per run).", configures: true);
+        if (!countsAvailable)
+            Add("counts", ClassificationMissingGroup.RuntimeEvidence, "Classification count evidence from BiRK and M2LB", "Counts per level from both systems, captured at aligned times (run option).");
+        if (!telemetryObserved)
+            Add("telemetry", ClassificationMissingGroup.RuntimeEvidence, $"Runtime telemetry for {metricName ?? "the Kode 6/7 rejection metric"}",
+                "No telemetry source is connected: the runtime value is Not available (never 0 rejections).");
+        Add("browser", ClassificationMissingGroup.Secondary, "Browser storage / route leakage checks", "Not part of this version (Browser Companion). Browser evidence would not prove server authorization.");
+        return items;
+    }
 }
 
 public sealed record ClassificationRunSummary(Guid RunId, DateTimeOffset CompletedAt, ClassificationOverall Overall, int Findings, int LiveObservations);
@@ -288,10 +353,27 @@ public static class ClassificationLabels
         ClassificationState.NotAvailable => "Not available",
         ClassificationState.NeedsDecision => "Needs decision",
         ClassificationState.NotApplicable => "Not applicable",
+        ClassificationState.NotAssessedHere => "Not assessed here",
         ClassificationState.NoIndicatorsObserved => "No indicators observed",
         ClassificationState.DocumentedOnly => "Documented only",
         ClassificationState.NotFound => "Not found",
         _ => state.ToString(),
+    };
+
+    /// <summary>Help text for states whose meaning is easy to confuse.</summary>
+    public static string? StateHelp(ClassificationState state) => state switch
+    {
+        ClassificationState.NotAssessedHere => "This stage is relevant to the end-to-end flow but is not evaluated by this review.",
+        ClassificationState.NotApplicable => "This check does not apply here.",
+        ClassificationState.NotAvailable => "The evidence source did not provide a value — this is not zero.",
+        _ => null,
+    };
+
+    public static string MissingGroup(ClassificationMissingGroup group) => group switch
+    {
+        ClassificationMissingGroup.RequiredForLiveChecks => "Required for live authorization checks",
+        ClassificationMissingGroup.RuntimeEvidence => "Runtime evidence",
+        _ => "Optional / secondary",
     };
 
     public static string TestType(ClassificationTestType type) => type switch

@@ -237,7 +237,7 @@ public static class ClassificationSourceAnalyzer
                 guarded.Count > 0 ? $"Rejects an event whose {levelParameter?.Text} is {string.Join(" or ", guarded)}{(text.Contains("LogCritical", StringComparison.Ordinal) ? "; logs Critical with table name and time only" : "")}{(text.Contains("Alert", StringComparison.Ordinal) ? "; raises an alert" : "")}{(metric.Success ? $"; increments {metric.Groups[1].Value}" : "")}. The guard logic is correct for its input — it only protects when the input carries the real level."
                     : "The guard's rejection rule was not recognised.", [Loc(guard.Code, guard.Type)]));
             if (metric.Success)
-                facts.Add(Fact("guard-metric", ClassificationArea.Observability, $"Metric {metric.Groups[1].Value}", ClassificationState.Configured,
+                facts.Add(Fact("guard-metric", ClassificationArea.Observability, $"Metric {metric.Groups[1].Value}", ClassificationState.SourceVerified,
                     $"Defined in source. Runtime value not read (no telemetry source): Not available — never reported as 0 rejections. With a constant guard input the counter cannot increase.", [Loc(guard.Code, guard.Type)], ClassificationTestType.NonFunctional));
         }
         else facts.Add(Fact("guard-logic", ClassificationArea.Guard, "Classification guard", ClassificationState.NotFound, "No guard evaluating the CDC event's classification was found."));
@@ -276,13 +276,32 @@ public static class ClassificationSourceAnalyzer
         return new CdcResult(facts, deserializer, guard.Type?.Identifier.Text, eventType, payloadField, constant, constantValue, guardFirst, mapper.Code is not null, guarded, deleteFromBefore, deletesDiscarded);
     }
 
+    public const string BiRKStageDetail = "BiRK source filtering of Kode 6/7 is documented as the primary protection layer, but that implementation is outside the analyzed source.";
+    public const string EventHubStageDetail = "Event Hub is part of the classification pipeline. Transport/runtime evidence is assessed in Integration Quality Review.";
+
+    /// <summary>
+    /// Brings stored source evidence from before NotAssessedHere existed to today's semantics when a NEW run is evaluated: BiRK and Event Hub
+    /// were "Not applicable" although they are relevant (not assessed here), and the rejection metric was "Configured" although it is a
+    /// definition found in source. Stored runs are never rewritten.
+    /// </summary>
+    public static ClassificationSourceEvidence Normalize(ClassificationSourceEvidence source) => source with
+    {
+        Pipeline = source.Pipeline.Select(s => s.Stage switch
+        {
+            ClassificationPipelineStage.BiRK when s.Source == ClassificationState.NotApplicable => s with { Source = ClassificationState.NotAssessedHere, SourceDetail = BiRKStageDetail },
+            ClassificationPipelineStage.EventHub when s.Source == ClassificationState.NotApplicable => s with { Source = ClassificationState.NotAssessedHere, SourceDetail = EventHubStageDetail },
+            _ => s,
+        }).ToList(),
+        Facts = source.Facts.Select(f => f.Id == "guard-metric" && f.State == ClassificationState.Configured ? f with { State = ClassificationState.SourceVerified } : f).ToList(),
+    };
+
     private static List<ClassificationStageEvidence> PipelineStages(CdcResult cdc, List<ClassificationLevel> levels) =>
     [
-        new() { Stage = ClassificationPipelineStage.BiRK, Title = ClassificationLabels.Stage(ClassificationPipelineStage.BiRK), Source = ClassificationState.NotApplicable,
-            SourceDetail = "BiRK source filtering of Kode 6/7 (documented as the primary layer) is outside the analyzed source.", RuntimeDetail = "BiRK data is not read." },
+        new() { Stage = ClassificationPipelineStage.BiRK, Title = ClassificationLabels.Stage(ClassificationPipelineStage.BiRK), Source = ClassificationState.NotAssessedHere,
+            SourceDetail = BiRKStageDetail, RuntimeDetail = "BiRK data is not read." },
         new() { Stage = ClassificationPipelineStage.Debezium, Title = "Debezium", Source = cdc.MapperReadsPayload ? ClassificationState.SourceVerified : ClassificationState.NotTested,
             SourceDetail = cdc.MapperReadsPayload ? $"The Barn payload carries \"{cdc.PayloadField}\" (read by the mapper)." : "The payload field was not found.", RuntimeDetail = "No CDC event is consumed by BirkNext." },
-        new() { Stage = ClassificationPipelineStage.EventHub, Title = "Event Hub", Source = ClassificationState.NotApplicable, SourceDetail = "Transport only; see Integrations for Event Hub evidence.", RuntimeDetail = "No event is read." },
+        new() { Stage = ClassificationPipelineStage.EventHub, Title = "Event Hub", Source = ClassificationState.NotAssessedHere, SourceDetail = EventHubStageDetail, RuntimeDetail = "No event is read." },
         new() { Stage = ClassificationPipelineStage.PersonAdapterDeserialization, Title = ClassificationLabels.Stage(ClassificationPipelineStage.PersonAdapterDeserialization),
             Source = cdc.Deserializer is null ? ClassificationState.NotFound : cdc.ConstantGuardInput ? ClassificationState.IssueDetected : ClassificationState.SourceVerified,
             SourceDetail = cdc.Deserializer is { } d ? $"{d.Type}.{d.Method}: {(cdc.ConstantGuardInput ? $"sets the classification to the constant {cdc.ConstantValue}" : "reads the classification from the payload")}." : "Not found." },

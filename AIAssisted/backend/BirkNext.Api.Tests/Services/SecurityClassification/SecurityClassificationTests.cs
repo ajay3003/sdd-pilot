@@ -498,9 +498,95 @@ public sealed class SecurityClassificationTests
     {
         var result = Evaluate(Analyze());
 
-        Fact(Analyze(), "guard-metric").State.Should().Be(ClassificationState.Configured);
+        Fact(Analyze(), "guard-metric").State.Should().Be(ClassificationState.SourceVerified, "a metric defined in source is a source fact, not an observed metric");
         result.Checks.Single(c => c.CheckId == "metric-runtime").State.Should().Be(ClassificationState.NotAvailable);
         result.Checks.Single(c => c.CheckId == "metric-runtime").Detail.Should().Contain("not 0 rejections");
+    }
+
+    // ── Status semantics: not assessed here ≠ not applicable; source-only observability is Partial ──────────────────
+
+    [Fact]
+    public void BiRKAndEventHubAreNotAssessedHereNotNotApplicable()
+    {
+        var pipeline = Evaluate(Analyze()).Pipeline;
+
+        var birk = pipeline.Single(p => p.Stage == ClassificationPipelineStage.BiRK);
+        birk.Source.Should().Be(ClassificationState.NotAssessedHere);
+        birk.SourceDetail.Should().Contain("primary protection layer").And.Contain("outside the analyzed source");
+        birk.Runtime.Should().Be(ClassificationState.NotTested);
+        var eventHub = pipeline.Single(p => p.Stage == ClassificationPipelineStage.EventHub);
+        eventHub.Source.Should().Be(ClassificationState.NotAssessedHere);
+        eventHub.SourceDetail.Should().Contain("part of the classification pipeline").And.Contain("Integration Quality Review");
+        eventHub.Runtime.Should().Be(ClassificationState.NotTested);
+        pipeline.Should().NotContain(p => p.Source == ClassificationState.NotApplicable);
+        ClassificationLabels.State(ClassificationState.NotAssessedHere).Should().Be("Not assessed here");
+        ClassificationLabels.StateHelp(ClassificationState.NotAssessedHere).Should().Be("This stage is relevant to the end-to-end flow but is not evaluated by this review.");
+    }
+
+    [Fact]
+    public void StoredLegacySourceEvidenceIsNormalizedForANewRunOnly()
+    {
+        var current = Analyze();
+        var legacy = current with
+        {
+            Pipeline = current.Pipeline.Select(p => p.Stage is ClassificationPipelineStage.BiRK or ClassificationPipelineStage.EventHub ? p with { Source = ClassificationState.NotApplicable, SourceDetail = "Transport only; see Integrations for Event Hub evidence." } : p).ToList(),
+            Facts = current.Facts.Select(f => f.Id == "guard-metric" ? f with { State = ClassificationState.Configured } : f).ToList(),
+        };
+
+        var result = Evaluate(legacy);
+
+        result.Pipeline.Single(p => p.Stage == ClassificationPipelineStage.EventHub).Should().Match<ClassificationStageEvidence>(p => p.Source == ClassificationState.NotAssessedHere && p.SourceDetail.Contains("Integration Quality Review"));
+        result.Checks.Single(c => c.CheckId == "guard-metric").State.Should().Be(ClassificationState.SourceVerified);
+        legacy.Pipeline.Single(p => p.Stage == ClassificationPipelineStage.EventHub).Source.Should().Be(ClassificationState.NotApplicable, "the stored evidence itself is not rewritten");
+    }
+
+    [Fact]
+    public void GenuineNotApplicableIsPreserved()
+    {
+        var cache = Fact(Analyze(), "cache-server");
+        cache.State.Should().Be(ClassificationState.NotApplicable, "no server-side cache in the Person module: the cache check genuinely does not apply");
+        Evaluate(Analyze()).Checks.Single(c => c.CheckId == "cache-server").State.Should().Be(ClassificationState.NotApplicable);
+    }
+
+    [Fact]
+    public void ObservabilityWithSourceOnlyMetricIsPartialAndRuntimeTelemetryIsNotAvailableNotZero()
+    {
+        var row = Evaluate(Analyze()).Summary.Single(r => r.Area == ClassificationArea.Observability);
+
+        row.State.Should().Be(ClassificationState.Partial);
+        row.State.Should().NotBe(ClassificationState.Configured);
+        row.Evidence.Should().Contain("birk.kode67.rejections is defined in source").And.Contain("runtime telemetry evidence is unavailable");
+        row.Parts.Select(p => (p.Name, p.State)).Should().Equal(("Metric definition", ClassificationState.SourceVerified), ("Runtime telemetry", ClassificationState.NotAvailable));
+        string.Join(" ", row.Parts.Select(p => p.Detail).Append(row.Evidence)).Should().NotContain("0 rejections").And.Contain("not 0");
+    }
+
+    [Fact]
+    public void MissingItemsArePrioritizedAndFollowTheTestContext()
+    {
+        var source = Analyze();
+        var empty = ClassificationEvaluator.Evaluate("dev", source, new ClassificationTestContext(), new ClassificationLiveEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "No context." }, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var partial = Evaluate(source);
+
+        empty.MissingItems.Select(i => i.Id).Should().Equal("context", "child-0", "child-1", "child-2", "child-3", "identity-unauthorized", "identity-authorized", "counts", "telemetry", "browser");
+        empty.MissingItems.Take(7).Should().OnlyContain(i => i.Group == ClassificationMissingGroup.RequiredForLiveChecks && i.ConfiguresContext);
+        empty.MissingItems.Single(i => i.Id == "context").Title.Should().Be("Approved DEV/QA security test context");
+        empty.MissingItems.Single(i => i.Id == "child-3").Title.Should().Contain("Kode6");
+        empty.MissingItems.Single(i => i.Id == "telemetry").Should().Match<ClassificationMissingItem>(i => i.Group == ClassificationMissingGroup.RuntimeEvidence && i.Title.Contains("birk.kode67.rejections") && i.Detail.Contains("never 0"));
+        empty.MissingItems.Single(i => i.Id == "browser").Group.Should().Be(ClassificationMissingGroup.Secondary);
+        partial.MissingItems.Select(i => i.Id).Should().Equal("child-1", "child-3", "counts", "telemetry", "browser");
+        partial.Findings.Should().HaveCount(empty.Findings.Count, "missing prerequisites never become findings");
+        partial.Findings.Select(f => f.RuleId).Should().Equal(empty.Findings.Select(f => f.RuleId));
+        partial.Findings.Should().Contain(f => f.RuleId == "cdc-classification-constant");
+    }
+
+    [Fact]
+    public void AlignedCountsRemoveTheCountItem()
+    {
+        var at = DateTimeOffset.UtcNow;
+        var counts = new ClassificationCountEvidence { System = "BiRK", CapturedAt = at, Provenance = "test", Counts = new() { [2] = 4, [3] = 1 } };
+        var result = Evaluate(Analyze(), s: counts, t: counts with { System = "M2LB" });
+
+        result.MissingItems.Select(i => i.Id).Should().NotContain("counts");
     }
 
     // ── Live checks: fake Person GraphQL endpoint ───────────────────────────────────────────────────────────────────

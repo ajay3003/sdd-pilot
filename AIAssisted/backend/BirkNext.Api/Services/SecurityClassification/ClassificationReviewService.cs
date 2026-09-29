@@ -152,7 +152,7 @@ public static class ClassificationEvaluator
     private static readonly ClassificationState[] Rank =
     [
         ClassificationState.Fail, ClassificationState.IssueDetected, ClassificationState.NeedsDecision, ClassificationState.Warning, ClassificationState.DocumentedOnly, ClassificationState.NotFound,
-        ClassificationState.Partial, ClassificationState.NotAvailable, ClassificationState.NotTested, ClassificationState.NoIndicatorsObserved, ClassificationState.NotApplicable,
+        ClassificationState.Partial, ClassificationState.NotAvailable, ClassificationState.NotTested, ClassificationState.NoIndicatorsObserved, ClassificationState.NotAssessedHere, ClassificationState.NotApplicable,
         ClassificationState.Configured, ClassificationState.SourceVerified, ClassificationState.Observed, ClassificationState.Verified, ClassificationState.Pass,
     ];
 
@@ -168,6 +168,7 @@ public static class ClassificationEvaluator
     public static ClassificationReviewResult Evaluate(string environmentId, ClassificationSourceEvidence? source, ClassificationTestContext context, ClassificationLiveEvidence live,
         ClassificationCountEvidence? sourceCounts, ClassificationCountEvidence? targetCounts, DateTimeOffset started, DateTimeOffset completed)
     {
+        if (source is not null) source = ClassificationSourceAnalyzer.Normalize(source);
         ClassificationFact? F(string id) => source?.Facts.FirstOrDefault(f => f.Id == id);
         bool Has(string id, params ClassificationState[] states) => F(id) is { } f && (states.Length == 0 || states.Contains(f.State));
         var checks = new List<ClassificationCheck>();
@@ -254,7 +255,30 @@ public static class ClassificationEvaluator
             var sourceItems = items.Where(c => c.Provenance == IntegrationEvidenceSource.SourceCode).ToList();
             var state = runtime.Count > 0 ? Worst(runtime.Select(r => r.State).Concat(sourceItems.Select(s => s.State).Where(s => s is ClassificationState.IssueDetected))) : sourceItems.Count > 0 ? Worst(sourceItems.Select(s => s.State)) : items.Count > 0 ? Worst(items.Select(i => i.State)) : ClassificationState.NotTested;
             var evidence = runtime.Count > 0 ? $"Runtime ({runtime.Count} check(s)) + source" : sourceItems.Count > 0 ? "Source evidence only" : items.Count > 0 ? "Configuration" : "No evidence";
+            if (area == ClassificationArea.Observability) return ObservabilityRow(area, title, state, evidence);
             return new ClassificationSummaryRow(area, title ?? ClassificationLabels.Area(area), state, evidence);
+        }
+        // Observability: a metric defined in source is not a metric observed at runtime. Source/config evidence without runtime telemetry is
+        // Partial (never "Configured" overall); an unavailable runtime value is Not available — never 0.
+        ClassificationSummaryRow ObservabilityRow(ClassificationArea area, string? title, ClassificationState state, string evidence)
+        {
+            var definition = F("guard-metric");
+            var telemetry = checks.FirstOrDefault(c => c.CheckId == "metric-runtime");
+            var telemetryObserved = telemetry is not null && ClassificationLabels.IsRuntimeResult(telemetry.State);
+            var parts = new List<ClassificationSubStatus>
+            {
+                definition is null
+                    ? new("Metric definition", ClassificationState.NotFound, "No rejection metric was found in the analyzed source.")
+                    : new("Metric definition", definition.State, $"{definition.Title[(definition.Title.StartsWith("Metric ") ? 7 : 0)..]} is defined in source."),
+                new("Runtime telemetry", telemetry?.State ?? ClassificationState.NotAvailable, telemetryObserved ? telemetry!.Detail : "Runtime telemetry evidence is unavailable (not 0)."),
+            };
+            if (!telemetryObserved && state is ClassificationState.Configured or ClassificationState.SourceVerified)
+            {
+                state = ClassificationState.Partial;
+                evidence = definition is null ? "Source/configuration only; runtime telemetry unavailable"
+                    : $"{definition.Title[(definition.Title.StartsWith("Metric ") ? 7 : 0)..]} is defined in source; runtime telemetry evidence is unavailable.";
+            }
+            return new ClassificationSummaryRow(area, title ?? ClassificationLabels.Area(area), state, evidence) { Parts = parts };
         }
         var summary = new[]
         {
@@ -271,6 +295,11 @@ public static class ClassificationEvaluator
             missing.Add($"A synthetic level {level.Nivaa} ({level.Verdi}) test child in the approved context.");
         if (comparisons.All(c => c.State == CountComparisonState.NotAvailable)) missing.Add("Classification count evidence from the source (BiRK) and target (M2LB) captured at aligned times.");
         missing.Add("Telemetry for birk.kode67.rejections and security log events (runtime).");
+        var metricFact = F("guard-metric");
+        var missingItems = ClassificationPrerequisites.Evaluate(source is not null, levels, context,
+            countsAvailable: comparisons.Any(c => c.State is CountComparisonState.Match or CountComparisonState.Mismatch),
+            metricName: metricFact is null ? null : metricFact.Title.StartsWith("Metric ") ? metricFact.Title[7..] : metricFact.Title,
+            telemetryObserved: checks.Any(c => c.CheckId == "metric-runtime" && ClassificationLabels.IsRuntimeResult(c.State)));
 
         var overall = findings.Any(f => f.Severity is ClassificationSeverity.Critical or ClassificationSeverity.High) || checks.Any(c => c.State is ClassificationState.Fail) ? ClassificationOverall.IssueDetected
             : source is null && live.Observations.Count == 0 ? ClassificationOverall.NotTestable
@@ -281,7 +310,7 @@ public static class ClassificationEvaluator
             RunId = Guid.NewGuid(), EnvironmentId = environmentId, StartedAt = started, CompletedAt = completed, Overall = overall,
             SourceAnalyzedAt = source?.AnalyzedAt, SourceArchives = source?.Archives ?? [], Levels = levels, Summary = summary, Pipeline = pipeline, Checks = checks,
             Findings = findings.OrderBy(f => f.Severity).ToList(), Live = live, SourceCounts = sourceCounts, TargetCounts = targetCounts, CountComparisons = comparisons,
-            TestCoverage = source?.TestCoverage ?? [], ProposedTests = source?.ProposedTests ?? [], Context = context, Missing = missing,
+            TestCoverage = source?.TestCoverage ?? [], ProposedTests = source?.ProposedTests ?? [], Context = context, Missing = missing, MissingItems = missingItems,
             Limitations =
             [
                 "Live checks are GraphQL queries for configured synthetic test children only; no mutation, classification change, grant or broad search is ever performed.",

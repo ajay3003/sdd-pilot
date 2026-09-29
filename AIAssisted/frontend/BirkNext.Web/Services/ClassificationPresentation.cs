@@ -67,6 +67,41 @@ public static class ClassificationPresentation
         return $"{ClassificationLabels.Overall(result.Overall)} · {result.Live.Observations.Count(o => ClassificationLabels.IsRuntimeResult(o.State))} live observation(s) · {result.Findings.Count} finding(s){(high > 0 ? $", {high} high or critical" : "")}";
     }
 
+    /// <summary>Test-lead orientation line: findings, runtime checks and missing evidence (never merged into the finding count).</summary>
+    public static string Orientation(ClassificationReviewResult result, int missing)
+    {
+        var high = result.Findings.Count(f => f.Severity is ClassificationSeverity.Critical or ClassificationSeverity.High);
+        var runtime = result.Live.Observations.Count(o => ClassificationLabels.IsRuntimeResult(o.State));
+        return $"{result.Findings.Count} finding(s) · {high} high/critical · Runtime checks: {(runtime == 0 ? "Not run" : $"{runtime} observation(s)")} · Missing evidence: {missing}";
+    }
+
+    /// <summary>What the "What's needed" card shows. Recorded = a historical review's own snapshot (not today's configuration).</summary>
+    public sealed record MissingView(IReadOnlyList<ClassificationMissingItem> Items, bool Recorded, IReadOnlyList<string> LegacyItems)
+    {
+        /// <summary>Items that block completing the review (secondary items are listed but not counted).</summary>
+        public int Count => LegacyItems.Count > 0 ? LegacyItems.Count : Items.Count(i => i.Group != ClassificationMissingGroup.Secondary);
+        public bool BlocksLiveChecks => Items.Any(i => i.Group == ClassificationMissingGroup.RequiredForLiveChecks) || LegacyItems.Count > 0;
+        public bool NeedsContext => Items.Any(i => i.ConfiguresContext) || LegacyItems.Count > 0;
+    }
+
+    /// <summary>
+    /// The latest review (or none yet): computed from the CURRENT test context with the shared prerequisite rule, so configuring the context
+    /// removes its items immediately. A historical review: that run's recorded snapshot, never recalculated against today's configuration.
+    /// </summary>
+    public static MissingView Missing(ClassificationReviewResult? result, bool isLatest, ClassificationTestContext context, ClassificationSourceEvidence? source)
+    {
+        if (result is not null && !isLatest)
+            return result.MissingItems.Count > 0 ? new MissingView(result.MissingItems, true, []) : new MissingView([], true, result.Missing);
+        var metric = source?.Facts.FirstOrDefault(f => f.Id == "guard-metric")?.Title ?? result?.Checks.FirstOrDefault(c => c.CheckId == "guard-metric")?.Title;
+        var items = ClassificationPrerequisites.Evaluate(source is not null || result?.SourceAnalyzedAt is not null, source?.Levels ?? result?.Levels ?? [], context,
+            countsAvailable: result?.CountComparisons.Any(c => c.State is CountComparisonState.Match or CountComparisonState.Mismatch) ?? false,
+            metricName: metric is null ? null : metric.StartsWith("Metric ") ? metric[7..] : metric,
+            telemetryObserved: result?.Checks.Any(c => c.CheckId == "metric-runtime" && ClassificationLabels.IsRuntimeResult(c.State)) ?? false);
+        return new MissingView(items, false, []);
+    }
+
+    public const int MissingPreview = 6;
+
     public static readonly ClassificationTestType[] TestTypes = Enum.GetValues<ClassificationTestType>();
 
     public static string Location(SourceLocation location)

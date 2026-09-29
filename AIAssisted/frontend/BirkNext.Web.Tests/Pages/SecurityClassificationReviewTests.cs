@@ -282,4 +282,204 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         ClassificationPresentation.LiveReadiness(new ClassificationTestContext { Environment = "QA", ApprovedByTestLead = true, GraphQlEndpoint = "https://x", TestChildren = [new() { Nivaa = 2 }] }, "Development", true).CanRun.Should().BeFalse();
         ClassificationPresentation.LiveReadiness(new ClassificationTestContext { Environment = "DEV", ApprovedByTestLead = true, GraphQlEndpoint = "https://x", TestChildren = [new() { Nivaa = 2 }] }, "Development", true).CanRun.Should().BeTrue();
     }
+
+    // ── Status semantics and "What's needed to complete this review" ────────────────────────────────────────────────
+
+    private static ClassificationReviewResult WithScopeStages(ClassificationReviewResult r) => r with
+    {
+        Pipeline =
+        [
+            new() { Stage = ClassificationPipelineStage.BiRK, Title = "BiRK", Source = ClassificationState.NotAssessedHere, SourceDetail = "BiRK source filtering of Kode 6/7 is documented as the primary protection layer, but that implementation is outside the analyzed source." },
+            new() { Stage = ClassificationPipelineStage.EventHub, Title = "Event Hub", Source = ClassificationState.NotAssessedHere, SourceDetail = "Event Hub is part of the classification pipeline. Transport/runtime evidence is assessed in Integration Quality Review." },
+            .. r.Pipeline,
+        ],
+        Summary =
+        [
+            .. r.Summary,
+            new(ClassificationArea.Observability, "Observability", ClassificationState.Partial, "birk.kode67.rejections is defined in source; runtime telemetry evidence is unavailable.")
+            {
+                Parts = [new("Metric definition", ClassificationState.SourceVerified, "birk.kode67.rejections is defined in source."), new("Runtime telemetry", ClassificationState.NotAvailable, "Runtime telemetry evidence is unavailable (not 0).")],
+            },
+        ],
+    };
+
+    [Fact]
+    public void NeededCardIsDirectlyBelowTheSummaryAndListsCurrentPrerequisites()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = Result() };
+
+        var cut = Page();
+
+        var order = cut.FindAll("section[data-testid]").Select(e => e.GetAttribute("data-testid")).ToList();
+        order.IndexOf("sc-needed").Should().Be(order.IndexOf("sc-summary") + 1);
+        order.IndexOf("sc-needed").Should().BeLessThan(order.IndexOf("sc-model")).And.BeLessThan(order.IndexOf("sc-pipeline"));
+        var card = cut.Find("[data-testid='sc-needed']");
+        card.GetAttribute("data-count").Should().Be("8");
+        cut.Find("[data-testid='sc-needed-count']").TextContent.Should().Be("8 items");
+        cut.Find("[data-testid='sc-needed-lead']").TextContent.Should().Contain("cannot run yet").And.Contain("not security findings");
+        var items = cut.FindAll("[data-testid='sc-needed-item']").Select(i => i.GetAttribute("data-item")).ToList();
+        items.Should().Equal("context", "child-0", "child-1", "child-2", "child-3", "identity-unauthorized");
+        card.TextContent.Should().Contain("Approved DEV/QA security test context").And.Contain("Kode6 / Kode 6 / K2");
+        cut.FindAll("[data-testid='sc-needed-group']").Select(g => g.GetAttribute("data-group")).Should().Equal("RequiredForLiveChecks");
+        cut.Find("[data-testid='sc-needed-configure']").TextContent.Should().Be("Configure test context");
+    }
+
+    [Fact]
+    public void ViewAllShowsEveryItemGroupedByPriority()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = Result() };
+        var cut = Page();
+
+        var toggle = cut.Find("[data-testid='sc-needed-all']");
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.GetAttribute("aria-controls").Should().Be("sc-needed-list");
+        toggle.Click();
+
+        cut.Find("[data-testid='sc-needed-all']").GetAttribute("aria-expanded").Should().Be("true");
+        cut.FindAll("[data-testid='sc-needed-item']").Select(i => i.GetAttribute("data-item")).Should().Equal(
+            "context", "child-0", "child-1", "child-2", "child-3", "identity-unauthorized", "identity-authorized", "telemetry", "browser");
+        cut.FindAll("[data-testid='sc-needed-group']").Select(g => g.GetAttribute("data-group")).Should().Equal("RequiredForLiveChecks", "RuntimeEvidence", "Secondary");
+        cut.Find("[data-item='telemetry']").TextContent.Should().Contain("Not available").And.Contain("never 0");
+        cut.Find("[data-testid='sc-needed-count']").TextContent.Should().Be("8 items", "secondary items are listed but not counted");
+    }
+
+    [Fact]
+    public void ConfiguringTheTestContextFromTheCardRemovesItsItems()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = Result() };
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-needed-configure']").Click();
+        cut.Find("[data-testid='sc-context-form']");
+        cut.Find("[data-testid='sc-context-environment']").Change("DEV");
+        cut.Find("[data-testid='sc-context-endpoint']").Change("https://person.dev.example.test/graphql");
+        cut.Find("[data-testid='sc-context-child-id-2']").Change(Guid.NewGuid().ToString());
+        cut.Find("[data-testid='sc-context-child-id-3']").Change(Guid.NewGuid().ToString());
+        cut.Find("[data-testid='sc-context-unauthorized']").Change("Saksbehandler uten gradert tilgang");
+        cut.Find("[data-testid='sc-context-authorized']").Change("Saksbehandler med gradert tilgang");
+        cut.Find("[data-testid='sc-context-approved']").Change(true);
+        cut.Find("[data-testid='sc-context-save']").Click();
+
+        cut.Find("[data-testid='sc-needed']").GetAttribute("data-count").Should().Be("3");
+        cut.FindAll("[data-testid='sc-needed-item']").Select(i => i.GetAttribute("data-item")).Should().Equal("child-0", "child-1", "telemetry", "browser");
+        cut.Find("[data-testid='sc-orientation']").TextContent.Should().Contain("Missing evidence: 3");
+    }
+
+    [Fact]
+    public void MissingEvidenceNeverChangesTheFindingCount()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = Result() };
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-orientation']").TextContent.Should().Be("1 finding(s) · 1 high/critical · Runtime checks: 4 observation(s) · Missing evidence: 8");
+        cut.FindAll("[data-testid='sc-finding']").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void CompletePrerequisitesShowACompactPositiveState()
+    {
+        var full = new ClassificationTestContext
+        {
+            Environment = "DEV", GraphQlEndpoint = "https://person.dev.example.test/graphql", ApprovedByTestLead = true, UnauthorizedIdentityLabel = "u", AuthorizedIdentityLabel = "a",
+            TestChildren = [.. Enumerable.Range(0, 4).Select(i => new ClassificationTestChild { Nivaa = i, BarnRegistreringId = Guid.NewGuid() })],
+        };
+        var result = Result() with { Checks = [.. Result().Checks.Where(c => c.CheckId != "metric-runtime"), new() { CheckId = "metric-runtime", Area = ClassificationArea.Observability, State = ClassificationState.Observed, Provenance = IntegrationEvidenceSource.ApplicationInsights }] };
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = result, Context = full };
+
+        var cut = Page();
+
+        var card = cut.Find("[data-testid='sc-needed']");
+        card.GetAttribute("data-count").Should().Be("0");
+        card.TextContent.Should().Contain("Review prerequisites complete").And.NotContain("0 items");
+        cut.FindAll("[data-testid='sc-needed-count']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void HistoricalReviewShowsItsRecordedMissingEvidence()
+    {
+        var older = Result() with
+        {
+            CompletedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            MissingItems = [new() { Id = "child-3", Group = ClassificationMissingGroup.RequiredForLiveChecks, Title = "Synthetic level 3 test child (Kode6 / Kode 6 / K2)", ConfiguresContext = true }],
+        };
+        var latest = Result();
+        _api.Result = older;
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = latest, History = [new(latest.RunId, latest.CompletedAt, latest.Overall, 1, 4), new(older.RunId, older.CompletedAt, older.Overall, 1, 4)] };
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-history']").Change(older.RunId.ToString());
+
+        cut.Find("[data-testid='sc-needed']").GetAttribute("data-count").Should().Be("1");
+        cut.Find("[data-testid='sc-needed-recorded']").TextContent.Should().Contain("not recalculated against today's configuration");
+        cut.FindAll("[data-testid='sc-needed-item']").Select(i => i.GetAttribute("data-item")).Should().Equal("child-3");
+        cut.FindAll("[data-testid='sc-needed-configure']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LegacyRunWithoutStructuredItemsFallsBackToItsRecordedList()
+    {
+        var older = Result() with { CompletedAt = DateTimeOffset.UtcNow.AddDays(-2) };
+        var latest = Result();
+        _api.Result = older;
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = latest, History = [new(older.RunId, older.CompletedAt, older.Overall, 1, 4)] };
+        var cut = Page();
+
+        cut.Find("[data-testid='sc-history']").Change(older.RunId.ToString());
+
+        cut.FindAll("[data-testid='sc-needed-item']").Select(i => i.TextContent).Should().Equal("A synthetic level 3 (Kode6) test child in the approved context.");
+    }
+
+    [Fact]
+    public void BiRKAndEventHubSayNotAssessedHereWithTheIqrLink()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = WithScopeStages(Result()) };
+        var cut = Page();
+
+        var birk = cut.Find("[data-testid='sc-stage'][data-stage='BiRK']");
+        birk.QuerySelector("[data-testid='sc-stage-source']")!.TextContent.Should().Be("Source: Not assessed here");
+        birk.QuerySelector("[data-testid='sc-stage-source']")!.GetAttribute("title").Should().Be("This stage is relevant to the end-to-end flow but is not evaluated by this review.");
+        birk.QuerySelector("[data-testid='sc-stage-runtime']")!.TextContent.Should().Be("Runtime: Not tested");
+        birk.TextContent.Should().NotContain("Not applicable");
+        var hub = cut.Find("[data-testid='sc-stage'][data-stage='EventHub']");
+        hub.QuerySelector("[data-testid='sc-stage-source']")!.TextContent.Should().Be("Evidence: Not assessed here");
+        var link = hub.QuerySelector("[data-testid='sc-eventhub-link']")!;
+        link.GetAttribute("href").Should().Be("integration-quality-review");
+        link.GetAttribute("aria-label").Should().Be("View Event Hub evidence in Integration Quality Review");
+        cut.FindAll("[data-testid='sc-eventhub-link']").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void ObservabilityShowsPartialWithDefinitionAndTelemetryParts()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = WithScopeStages(Result()) };
+        var cut = Page();
+
+        var row = cut.Find("[data-testid='sc-summary-row'][data-area='Observability']");
+        row.TextContent.Should().Contain("Partial").And.NotContain("Configured").And.Contain("runtime telemetry evidence is unavailable");
+        cut.Find("[data-part='Metric definition']").TextContent.Should().Contain("Source verified");
+        cut.Find("[data-part='Runtime telemetry']").TextContent.Should().Contain("Not available").And.NotContain("0");
+    }
+
+    [Fact]
+    public void WhatIsMissingIsListedOnceOnly()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source(), Latest = Result() };
+        var cut = Page();
+
+        cut.FindAll("[data-testid='sc-missing']").Should().BeEmpty();
+        cut.Find("[data-testid='sc-missing-pointer']").TextContent.Should().Contain("What’s needed to complete this review");
+        cut.FindAll("[data-testid='sc-needed']").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void BeforeAnyReviewTheCardFollowsTheSetup()
+    {
+        _api.Overview = new ClassificationOverview { Source = Source() };
+        var cut = Page();
+
+        var order = cut.FindAll("section[data-testid]").Select(e => e.GetAttribute("data-testid")).ToList();
+        order.Should().Equal("sc-setup", "sc-needed");
+        cut.Find("[data-testid='sc-needed-all']").Click();
+        cut.FindAll("[data-item='counts']").Should().ContainSingle("no run has provided count evidence yet");
+    }
 }
