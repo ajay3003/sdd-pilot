@@ -9,6 +9,7 @@ public interface IReportExportService
     string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName);
     string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName);
     string ExportDependencyReview(BirkNext.Dependencies.DependencyReviewResult result);
+    string ExportDependencyHealth(BirkNext.Dependencies.DependencyHealthRun run);
     string ExportScimCheck(BirkNext.Integrations.ScimEvidenceCheck check);
     string ExportClassificationReview(BirkNext.Integrations.ClassificationReviewResult result);
     string ExportSecurityReview(WasmSecurityReviewReport report, string? projectName);

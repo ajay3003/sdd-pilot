@@ -115,7 +115,7 @@ public sealed class DependencyReviewService(AppDbContext db, ILogger<DependencyR
                 sims.Count == 0 ? "No policy simulation." : $"{sims.Count} synthetic scenario(s); {sims.Count(s => s.Result == PolicyResult.NotAssessable)} not assessable."),
             new("Security-update policy", repos.Any(r => r.SecurityUpdatePolicy.State == ReviewCategoryState.Partial) ? ReviewCategoryState.Partial : ReviewCategoryState.NotConfigured,
                 string.Join(" ", repos.Select(r => $"{r.Repository}: {DependencyLabels.Category(r.SecurityUpdatePolicy.State)}."))),
-            new("Runtime automation", ReviewCategoryState.NotAssessed, "Renovate runs, open PRs and failures are not read (no repository connector). Pipeline definitions in source are listed per repository."),
+            new("Runtime automation", ReviewCategoryState.NotAssessed, "Renovate runs, open PRs and failures are not read by the source review (see Automation status in the dependency health review). Pipeline definitions in source are listed per repository."),
         ];
     }
 

@@ -81,6 +81,26 @@ public class DependencyReviewRunRecord
     public string ResultJson { get; set; } = string.Empty;
 }
 
+/// <summary>A stored dependency inventory snapshot (SBOM, lock file or deployed evidence) — dependency facts only, never document secrets.</summary>
+public class DependencyInventoryRecord
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset RecordedAt { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string SourceType { get; set; } = string.Empty;
+    public string SnapshotJson { get; set; } = string.Empty;
+}
+
+/// <summary>One immutable dependency-health run: the inventory copy plus every registry/advisory/license/automation observation as retrieved.</summary>
+public class DependencyHealthRunRecord
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset CompletedAt { get; set; }
+    public string Label { get; set; } = string.Empty;
+    public Guid InventoryId { get; set; }
+    public string ResultJson { get; set; } = string.Empty;
+}
+
 /// <summary>Application messaging evidence set of an environment (facts extracted from uploaded source; never the source itself).</summary>
 public class ApplicationMessagingEvidenceRecord
 {

@@ -41,6 +41,15 @@ public sealed class DependencyReviewPageTests : BunitContext
             if (SimulationError is not null) return Task.FromResult<(PolicySimulation?, string?)>((null, SimulationError));
             return Task.FromResult<(PolicySimulation?, string?)>((Sim(request.PackageName, "Custom", request.CandidateVersion, DependencyUpdateType.Major, PolicyResult.Blocked, "Matched #2. Renovate update disabled by policy.") with { Repository = request.Repository, CurrentValue = request.CurrentVersion }, null));
         }
+
+        // Dependency health is covered by DependencyHealthPageTests; the source review page works with no stored inventory.
+        public Task<IReadOnlyList<InventorySummary>> InventoriesAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<InventorySummary>>([]);
+        public Task<InventoryImportResult> ImportInventoryAsync(string fileName, Stream content, SbomRole role, string? environment, string? name, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<InventoryImportResult> CaptureDeployedAsync(DeployedCaptureRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<(DependencyHealthRun? Run, string? Error)> RunHealthAsync(DependencyHealthRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<DependencyHealthRunSummary>> HealthHistoryAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<DependencyHealthRunSummary>>([]);
+        public Task<DependencyHealthRun?> GetHealthAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<DependencyHealthRun?>(null);
+        public Task<(DependencyHealthRun? Run, string? Error)> RefreshHealthAsync(Guid runId, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
     private static PolicySimulation Sim(string package, string scenario, string? candidate, DependencyUpdateType type, PolicyResult result, string why, bool? automerge = true) => new()

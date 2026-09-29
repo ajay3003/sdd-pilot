@@ -288,7 +288,7 @@ public static class DependencyReviewBuilder
         var ruleSecurity = (config["packageRules"] as JsonArray ?? []).OfType<JsonObject>().Any(r => RenovateConfig.Strings(r["matchCategories"]).Contains("security") || r["isVulnerabilityAlert"] is not null);
         return keys.Count == 0 && !ruleSecurity
             ? new("Security-update policy", ReviewCategoryState.NotConfigured,
-                "No security-specific policy (vulnerabilityAlerts / osvVulnerabilityAlerts) in the repository config; what presets add is not assessed. Dependency update policy is not vulnerability status, and no vulnerability source is connected, so no vulnerability claim is made.")
+                "No security-specific policy (vulnerabilityAlerts / osvVulnerabilityAlerts) in the repository config; what presets add is not assessed. Dependency update policy is not vulnerability status; the source review uses no vulnerability source, so no vulnerability claim is made here (advisories are checked by the dependency health review).")
             : new("Security-update policy", ReviewCategoryState.Partial, $"Configured: {string.Join(", ", keys)}{(ruleSecurity ? " (and a security-specific packageRule)" : "")}. Whether security updates are raised depends on the platform's alert source, which is not assessed.");
     }
 

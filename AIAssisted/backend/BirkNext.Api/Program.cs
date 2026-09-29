@@ -416,6 +416,19 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.SecurityClassification.ICla
 builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.IClassificationReviewService, BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>();
 // Dependency / supply-chain review (Renovate policy): offline, read-only analysis of uploaded repository archives.
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
+// Dependency health over stored inventories (no source upload): nuget.org registry metadata (GET only) and OSV advisories, bounded and cached;
+// Renovate runtime from the existing Azure DevOps options (GET only, Not configured otherwise); deployed Blazor boot-manifest evidence.
+builder.Services.Configure<BirkNext.Api.Services.DependencyReview.DependencyHealthOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.DependencyReview.DependencyHealthOptions.SectionName));
+builder.Services.AddSingleton<BirkNext.Api.Services.DependencyReview.DependencyEvidenceCache>();
+builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IPackageRegistryProvider, BirkNext.Api.Services.DependencyReview.NuGetRegistryProvider>(client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All, MaxConnectionsPerServer = 8 });
+builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IAdvisoryProvider, BirkNext.Api.Services.DependencyReview.OsvAdvisoryProvider>(client => client.Timeout = TimeSpan.FromSeconds(60))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All, MaxConnectionsPerServer = 4 });
+builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDependencyAutomationSource, BirkNext.Api.Services.DependencyReview.AzureDevOpsRenovateAutomationSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddHttpClient<BirkNext.Api.Services.DependencyReview.IDeployedDependencySource, BirkNext.Api.Services.DependencyReview.BootManifestDeployedSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false, AutomaticDecompression = System.Net.DecompressionMethods.All });
+builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyHealthService, BirkNext.Api.Services.DependencyReview.DependencyHealthService>();
 builder.Services.AddScoped<IContractDiscoveryService, ContractDiscoveryService>();
 
 // Contract Analysis - Messaging/EventHub (Phase 5)

@@ -191,9 +191,13 @@ builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalog
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
-// Dependency Review (Renovate policy): read-only analysis of uploaded repository archives; synthetic version simulation only.
+// Dependency Review: read-only analysis of uploaded repository archives (synthetic version simulation only) and source-free dependency
+// health over stored inventories (registry/advisory lookups for hundreds of packages can take a while, hence the longer timeout).
 builder.Services.AddHttpClient<IDependencyReviewApiService, DependencyReviewApiService>(client =>
-    client.BaseAddress = new Uri("http://localhost:5000/"));
+{
+    client.BaseAddress = new Uri("http://localhost:5000/");
+    client.Timeout = TimeSpan.FromMinutes(5);
+});
 // Trusted GraphQL schema artifacts per (Target Environment, API target) — API Quality Review's fallback schema for compatibility.
 builder.Services.AddHttpClient<IGraphQlSchemaArtifactApiService, GraphQlSchemaArtifactApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

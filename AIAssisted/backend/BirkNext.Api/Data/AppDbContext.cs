@@ -28,6 +28,8 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
+    public DbSet<DependencyInventoryRecord> DependencyInventories => Set<DependencyInventoryRecord>();
+    public DbSet<DependencyHealthRunRecord> DependencyHealthRuns => Set<DependencyHealthRunRecord>();
     public DbSet<ScimEvidenceRecord> ScimEvidence => Set<ScimEvidenceRecord>();
     public DbSet<SecurityClassificationEvidenceRecord> SecurityClassificationEvidence => Set<SecurityClassificationEvidenceRecord>();
 
@@ -635,6 +637,30 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Label).HasColumnName("label").HasMaxLength(300).IsRequired();
             entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
             entity.HasIndex(r => r.CompletedAt).HasDatabaseName("ix_dependency_review_runs_completed");
+        });
+
+        modelBuilder.Entity<DependencyInventoryRecord>(entity =>
+        {
+            entity.ToTable("dependency_inventories");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.RecordedAt).HasColumnName("recorded_at");
+            entity.Property(r => r.Name).HasColumnName("name").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.SourceType).HasColumnName("source_type").HasMaxLength(40).IsRequired();
+            entity.Property(r => r.SnapshotJson).HasColumnName("snapshot_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => r.RecordedAt).HasDatabaseName("ix_dependency_inventories_recorded");
+        });
+
+        modelBuilder.Entity<DependencyHealthRunRecord>(entity =>
+        {
+            entity.ToTable("dependency_health_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.CompletedAt).HasColumnName("completed_at");
+            entity.Property(r => r.Label).HasColumnName("label").HasMaxLength(300).IsRequired();
+            entity.Property(r => r.InventoryId).HasColumnName("inventory_id");
+            entity.Property(r => r.ResultJson).HasColumnName("result_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => r.CompletedAt).HasDatabaseName("ix_dependency_health_runs_completed");
         });
 
         modelBuilder.Entity<ApplicationMessagingEvidenceRecord>(entity =>

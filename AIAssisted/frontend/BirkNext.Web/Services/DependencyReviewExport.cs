@@ -18,7 +18,7 @@ public static class DependencyReviewExport
         sb.Append(table(["Category", "State", "Detail"], result.Categories.Select(c => new[] { esc(c.Name), badge(DependencyLabels.Category(c.State)), esc(c.Detail) })));
         sb.Append($"<p><strong>Evaluation mechanism:</strong> {esc(result.EvaluationMechanism)}</p><ul>");
         foreach (var limitation in result.UnsupportedSemantics) sb.Append($"<li>{esc(limitation)}</li>");
-        sb.Append("</ul><p>Simulated versions are synthetic candidates for testing policy only — not observed, available or published versions. No vulnerability source is connected: nothing here is a vulnerability status.</p></section>\n");
+        sb.Append("</ul><p>Simulated versions are synthetic candidates for testing policy only — not observed, available or published versions. The source review uses no vulnerability source: nothing here is a vulnerability status (advisories are checked in the dependency health review).</p></section>\n");
 
         foreach (var repo in result.Repositories)
         {
