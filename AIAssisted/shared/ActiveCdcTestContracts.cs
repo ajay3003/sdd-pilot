@@ -11,13 +11,16 @@ namespace BirkNext.Integrations;
 public enum ActiveCdcRunStatus { Running, Passed, Failed, Partial, Blocked, Inconclusive, Cancelled }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ActiveCdcEvidenceState { Observed, NotObserved, NotAssessed, Unavailable, NotAuthorized, TimedOut, Error }
+public enum ActiveCdcEvidenceState { Observed, NotObserved, NotAssessed, Unavailable, NotAuthorized, TimedOut, Error, Ambiguous, NotTested }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ActiveCdcStepKind
 {
     EnvironmentGuard, Destination, SourceContract, FixtureGenerated, BaselineCaptured, IntentRecorded,
     EventHubSend, PartitionPosition, ConsumerCheckpoint, ConsumerTelemetry, PersonPersisted, OutboxCreated, ServiceBusDelivered, SubscriberProcessed,
+    // Same PersonPK replay (appended: stored Phase 1 runs keep their meaning).
+    IdentitiesAllocated, SendA, ObserveA, ReplayEquivalence, SendReplay, ObserveReplay, SendControl, ObserveControl, FollowingEventProgression,
+    CorrelatedReplayError, DatabaseIdempotency, PersonRowCount, OverwriteBehavior, OutboxDuplication, NaturalKeyDuplicate,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -40,7 +43,47 @@ public sealed record ActiveCdcScenario
     public List<string> Fields { get; init; } = [];
     /// <summary>What a Passed result would require — not reachable in Phase 1 (no reliable read-only Person verification exists).</summary>
     public string PassCriterion { get; init; } = "";
+    /// <summary>"Transport" or "Runtime resilience". Empty in runs recorded before categories existed.</summary>
+    public string Category { get; init; } = "";
+    /// <summary>Events one run sends (1 for Normal Person, 3 for Same PersonPK replay).</summary>
+    public int MessageCount { get; init; } = 1;
+    /// <summary>The limitation shown prominently beside the scenario — never only in help text.</summary>
+    public string Limitation { get; init; } = "";
+    /// <summary>What a Passed result means, exactly, and what it does not.</summary>
+    public string PassMeaning { get; init; } = "";
+    public string PassDoesNotMean { get; init; } = "";
 }
+
+/// <summary>One sent message of a multi-message scenario (A, A2, B): synthetic identity, hash, send outcome and where it landed. Never the payload.</summary>
+public sealed record ActiveCdcMessageEvidence
+{
+    public string Label { get; init; } = "";
+    public string Role { get; init; } = "";
+    public int SyntheticPersonPk { get; init; }
+    public Guid ExpectedPersonId { get; init; }
+    public string Marker { get; init; } = "";
+    public string PayloadSha256 { get; init; } = "";
+    public int PayloadBytes { get; init; }
+    public ActiveCdcEvidenceState SendState { get; init; } = ActiveCdcEvidenceState.NotAssessed;
+    public string SendDetail { get; init; } = "";
+    public DateTimeOffset? SentAt { get; init; }
+    /// <summary>Partitions whose last-enqueued position moved across this send, with the post-send position. More than one = other traffic in the interval.</summary>
+    public Dictionary<string, long> AdvancedPartitions { get; init; } = [];
+    public ActiveCdcEvidenceState CheckpointState { get; init; } = ActiveCdcEvidenceState.NotAssessed;
+    public string CheckpointDetail { get; init; } = "";
+}
+
+/// <summary>Read-only partition/checkpoint snapshot at one point of the sequence (T0 before A … T3 after B).</summary>
+public sealed record ActiveCdcCheckpointSnapshot
+{
+    public string Label { get; init; } = "";
+    public DateTimeOffset CapturedAt { get; init; }
+    public ActiveCdcEvidenceState State { get; init; } = ActiveCdcEvidenceState.NotAssessed;
+    public string Detail { get; init; } = "";
+    public List<ActiveCdcPartitionPosition> Partitions { get; init; } = [];
+}
+
+public sealed record ActiveCdcPartitionPosition(string PartitionId, long? LastEnqueued, long? Checkpointed);
 
 /// <summary>Scenario ↔ source snapshot binding. Recomputed per run and stored with it; a newer snapshot makes it Outdated (blocked) until re-bound.</summary>
 public sealed record ActiveCdcContractManifest
@@ -59,6 +102,8 @@ public sealed record ActiveCdcContractManifest
     public string Detail { get; init; } = "";
     /// <summary>SHA-256 over scenario, fixture schema, snapshot and confirmed fields. Two runs with the same fingerprint used the same binding.</summary>
     public string Fingerprint { get; init; } = "";
+    /// <summary>Developer tests in the bound snapshot that cover the scenario's domain behavior (discovered, not executed). Shown apart from Active CDC evidence.</summary>
+    public List<string> DeveloperCoverage { get; init; } = [];
 }
 
 /// <summary>Where the event goes: derived from the configured integration and platform, then approved by backend policy. Identifiers only.</summary>
@@ -122,6 +167,9 @@ public sealed record ActiveCdcRun
     public bool SendAttempted { get; init; }
     public bool CancellationRequested { get; init; }
     public List<ActiveCdcStep> Steps { get; init; } = [];
+    /// <summary>Multi-message scenarios only (A, A2, B), in send order. Empty for Normal Person.</summary>
+    public List<ActiveCdcMessageEvidence> Messages { get; init; } = [];
+    public List<ActiveCdcCheckpointSnapshot> CheckpointSnapshots { get; init; } = [];
     public List<string> WhatWasTested { get; init; } = [];
     public List<string> WhatWasNotAssessed { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
@@ -181,6 +229,7 @@ public static class ActiveCdcLabels
         ActiveCdcEvidenceState.NotAssessed => "Not assessed",
         ActiveCdcEvidenceState.NotAuthorized => "Not authorized",
         ActiveCdcEvidenceState.TimedOut => "Timed out",
+        ActiveCdcEvidenceState.NotTested => "Not tested",
         _ => state.ToString(),
     };
 
@@ -200,6 +249,21 @@ public static class ActiveCdcLabels
         ActiveCdcStepKind.OutboxCreated => "Outbox message created",
         ActiveCdcStepKind.ServiceBusDelivered => "Service Bus delivered",
         ActiveCdcStepKind.SubscriberProcessed => "Subscriber processed",
+        ActiveCdcStepKind.IdentitiesAllocated => "Allocate synthetic identities (X, Y)",
+        ActiveCdcStepKind.SendA => "A — send (PersonPK X)",
+        ActiveCdcStepKind.ObserveA => "Observe A (consumer checkpoint)",
+        ActiveCdcStepKind.ReplayEquivalence => "A2 is an exact replay of A",
+        ActiveCdcStepKind.SendReplay => "A2 — replay send (same PersonPK X)",
+        ActiveCdcStepKind.ObserveReplay => "Observe replay (consumer checkpoint)",
+        ActiveCdcStepKind.SendControl => "B — control send (different PersonPK Y)",
+        ActiveCdcStepKind.ObserveControl => "Observe B (consumer checkpoint)",
+        ActiveCdcStepKind.FollowingEventProgression => "Following valid event progression",
+        ActiveCdcStepKind.CorrelatedReplayError => "Correlated replay error",
+        ActiveCdcStepKind.DatabaseIdempotency => "Database idempotency",
+        ActiveCdcStepKind.PersonRowCount => "Person row count",
+        ActiveCdcStepKind.OverwriteBehavior => "Overwrite behavior",
+        ActiveCdcStepKind.OutboxDuplication => "Outbox duplication",
+        ActiveCdcStepKind.NaturalKeyDuplicate => "Natural-key duplicate",
         _ => kind.ToString(),
     };
 

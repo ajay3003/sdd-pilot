@@ -156,12 +156,16 @@ internal sealed class ActiveCdcTestHarness : IAsyncDisposable
         public List<PartitionRuntime> After { get; set; } = [new("0", 11, DateTimeOffset.UtcNow, false), new("1", 5, DateTimeOffset.UtcNow, false)];
         public bool Available { get; set; } = true;
         public Func<CancellationToken, Task>? Gate { get; set; }
+        /// <summary>Per-call partition positions (call index from 0). Wins over Before/After when set.</summary>
+        public Func<int, List<PartitionRuntime>>? Script { get; set; }
+        public int Calls => _calls;
         public IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform) => new() { State = IntegrationEvidenceState.Available };
         public async Task<EvidenceResult<EventHubRuntimeMetadata>> GetHubAsync(IntegrationPlatform platform, string hubName, CancellationToken ct)
         {
             if (Gate is not null) await Gate(ct);
-            var first = Interlocked.Increment(ref _calls) == 1;
-            return Available ? EvidenceResult<EventHubRuntimeMetadata>.Available(IntegrationEvidenceSource.AzureMetadata, new(true, first ? Before : After))
+            var call = Interlocked.Increment(ref _calls) - 1;
+            var first = call == 0;
+            return Available ? EvidenceResult<EventHubRuntimeMetadata>.Available(IntegrationEvidenceSource.AzureMetadata, new(true, Script?.Invoke(call) ?? (first ? Before : After)))
                 : EvidenceResult<EventHubRuntimeMetadata>.Missing(IntegrationEvidenceState.NotConfigured, IntegrationEvidenceSource.AzureMetadata, "Azure is disabled for this test instance.");
         }
     }
@@ -172,12 +176,17 @@ internal sealed class ActiveCdcTestHarness : IAsyncDisposable
         public List<PartitionCheckpoint> Before { get; set; } = [new("0", 9, 0, DateTimeOffset.UtcNow), new("1", 5, 0, DateTimeOffset.UtcNow)];
         public List<PartitionCheckpoint> After { get; set; } = [new("0", 11, 0, DateTimeOffset.UtcNow), new("1", 5, 0, DateTimeOffset.UtcNow)];
         public List<string> Groups { get; } = [];
+        /// <summary>Per-call checkpoints (call index from 0). Wins over Before/After when set.</summary>
+        public Func<int, List<PartitionCheckpoint>>? Script { get; set; }
+        public bool Available { get; set; } = true;
         public IntegrationEvidenceAdapterStatus Describe(IntegrationPlatform platform) => new() { State = IntegrationEvidenceState.Available, Reason = "Configured (test)." };
         public Task<EvidenceResult<CheckpointEvidence>> GetAsync(IntegrationPlatform platform, string hubName, string consumerGroup, CancellationToken ct)
         {
             lock (Groups) Groups.Add(consumerGroup);
-            var first = Interlocked.Increment(ref _calls) == 1;
-            return Task.FromResult(EvidenceResult<CheckpointEvidence>.Available(IntegrationEvidenceSource.CheckpointStore, new(consumerGroup, first ? Before : After, 1)));
+            var call = Interlocked.Increment(ref _calls) - 1;
+            var first = call == 0;
+            if (!Available) return Task.FromResult(EvidenceResult<CheckpointEvidence>.Missing(IntegrationEvidenceState.Unavailable, IntegrationEvidenceSource.CheckpointStore, "Checkpoint store unavailable (test)."));
+            return Task.FromResult(EvidenceResult<CheckpointEvidence>.Available(IntegrationEvidenceSource.CheckpointStore, new(consumerGroup, Script?.Invoke(call) ?? (first ? Before : After), 1)));
         }
     }
 

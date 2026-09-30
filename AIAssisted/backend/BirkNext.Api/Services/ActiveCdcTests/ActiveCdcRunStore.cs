@@ -22,6 +22,7 @@ public sealed class ActiveCdcRunStore(IServiceScopeFactory scopes, ILogger<Activ
         db.ActiveCdcRuns.Add(new ActiveCdcRunRecord
         {
             Id = run.RunId, EnvironmentId = run.EnvironmentId, IntegrationId = run.IntegrationId, SyntheticPersonPk = run.Fixture?.SyntheticPersonPk,
+            SyntheticPersonPkControl = run.Messages.Select(m => (int?)m.SyntheticPersonPk).Where(pk => pk != run.Fixture?.SyntheticPersonPk).Max(),
             StartedAt = run.StartedAt, CompletedAt = run.CompletedAt, Status = run.Status.ToString(), ResultJson = JsonSerializer.Serialize(run, Json),
         });
         try { await db.SaveChangesAsync(ct); return true; }
@@ -60,13 +61,15 @@ public sealed class ActiveCdcRunStore(IServiceScopeFactory scopes, ILogger<Activ
         return records.Select(r => JsonSerializer.Deserialize<ActiveCdcRun>(r.ResultJson, Json)).OfType<ActiveCdcRun>().ToList();
     }
 
-    /// <summary>Highest synthetic PersonPK already used in this environment within the reserved range (any run, any status).</summary>
+    /// <summary>Highest synthetic PersonPK already used in this environment within the reserved range (any run, any status, either key).</summary>
     public async Task<int?> MaxPersonPkAsync(string environmentId, int min, int max, CancellationToken ct)
     {
         using var scope = scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        return await db.ActiveCdcRuns.AsNoTracking().Where(r => r.EnvironmentId == environmentId && r.SyntheticPersonPk >= min && r.SyntheticPersonPk <= max)
-            .MaxAsync(r => r.SyntheticPersonPk, ct);
+        var runs = db.ActiveCdcRuns.AsNoTracking().Where(r => r.EnvironmentId == environmentId);
+        var first = await runs.Where(r => r.SyntheticPersonPk >= min && r.SyntheticPersonPk <= max).MaxAsync(r => r.SyntheticPersonPk, ct);
+        var control = await runs.Where(r => r.SyntheticPersonPkControl >= min && r.SyntheticPersonPkControl <= max).MaxAsync(r => r.SyntheticPersonPkControl, ct);
+        return first is null ? control : control is null ? first : Math.Max(first.Value, control.Value);
     }
 }
 

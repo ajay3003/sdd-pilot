@@ -4,6 +4,14 @@
 .act-notice { margin: 0; padding: .55rem .75rem; border-radius: var(--radius-md, .5rem); border: 1px solid #fde68a; background: #fffbeb; color: #78350f; font-size: .88rem; }
 .act-muted { color: var(--clr-text-muted, #4b5563); font-size: .85rem; margin: .25rem 0; }
 .act-mono { font-family: var(--font-mono, monospace); font-size: .8rem; overflow-wrap: anywhere; }
+.act-limitation { margin: .5rem 0 0; padding: .5rem .75rem; border-left: 4px solid #b45309; background: #fffbeb; color: #78350f; font-size: .88rem; }
+.act-scenarios { border: 1px solid var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); padding: .5rem .75rem; margin: .75rem 0 0; min-width: 0; }
+.act-scenarios legend { font-weight: 600; font-size: .9rem; padding: 0 .25rem; }
+.act-scenario { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .3rem 0; font-weight: 400; }
+.act-scenario input { flex: none; }
+.act-plan { margin: .25rem 0 .5rem; padding-left: 1.4rem; font-size: .88rem; }
+.act-coverage { margin: .5rem 0; font-size: .86rem; }
+.act-coverage p { margin: .25rem 0; }
 .act-empty { margin: .5rem 0 0; padding: .75rem; border: 1px dashed var(--clr-border, #aaa6); border-radius: var(--radius-md, .5rem); font-size: .86rem; }
 .act-error { margin: .75rem 0 0; padding: .55rem .75rem; border-radius: var(--radius-md, .5rem); border: 1px solid #fecaca; background: #fef2f2; color: #991b1b; font-size: .88rem; }
 label { display: block; margin-top: .75rem; font-weight: 600; }

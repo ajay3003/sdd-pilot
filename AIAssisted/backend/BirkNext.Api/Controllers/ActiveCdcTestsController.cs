@@ -13,14 +13,15 @@ namespace BirkNext.Api.Controllers;
 public sealed class ActiveCdcTestsController(IActiveCdcTestService tests) : ControllerBase
 {
     [HttpGet("scenarios")]
-    public ActionResult<IReadOnlyList<ActiveCdcScenario>> Scenarios() => Ok(new[] { ActiveCdcScenarioCatalog.NormalPerson });
+    public ActionResult<IReadOnlyList<ActiveCdcScenario>> Scenarios() => Ok(ActiveCdcScenarioCatalog.All);
 
     [HttpGet("readiness")]
     public async Task<ActionResult<ActiveCdcReadiness>> Readiness([FromQuery] string environmentId, [FromQuery] string integrationId, [FromQuery] string? environmentType,
-        [FromQuery] string? targetUrl, [FromQuery] Guid? snapshotId, CancellationToken ct)
+        [FromQuery] string? targetUrl, [FromQuery] Guid? snapshotId, [FromQuery] string? scenarioId, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(integrationId)) return BadRequest(new { message = "environmentId and integrationId are required." });
-        return Ok(await tests.ReadinessAsync(environmentId, integrationId, environmentType, targetUrl, snapshotId, ct));
+        try { return Ok(await tests.ReadinessAsync(environmentId, integrationId, environmentType, targetUrl, snapshotId, scenarioId, ct)); }
+        catch (ActiveCdcRequestException ex) { return BadRequest(new { message = ex.Message }); }
     }
 
     [HttpPost("runs")]

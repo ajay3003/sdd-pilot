@@ -684,6 +684,7 @@ public class AppDbContext : DbContext
             entity.Property(r => r.ResultJson).HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.IntegrationId, r.StartedAt });
             entity.HasIndex(r => new { r.EnvironmentId, r.SyntheticPersonPk }).IsUnique();
+            entity.HasIndex(r => new { r.EnvironmentId, r.SyntheticPersonPkControl }).IsUnique();
         });
 
         modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>

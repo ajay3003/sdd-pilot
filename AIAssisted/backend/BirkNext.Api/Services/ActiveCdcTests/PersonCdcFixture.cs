@@ -22,16 +22,36 @@ public static class ActiveCdcScenarioCatalog
         PassCriterion = "Passed requires a verified read-only observation of the synthetic PersonId in the Person module. No such verification path exists in Phase 1, so an accepted event is Partial.",
     };
 
-    public static ActiveCdcScenario? Find(string? id) => string.Equals(id, NormalPersonId, StringComparison.Ordinal) ? NormalPerson : null;
+    public const string SamePersonPkReplayId = "person.same-personpk-replay";
+
+    /// <summary>
+    /// Runtime resilience, not duplicate correctness: A (PersonPK X), A2 (byte-identical replay of A), then B (PersonPK Y) as a following valid
+    /// control. It asks only whether the observable Event Hub → Person Adapter consumer path keeps going after a replay.
+    /// </summary>
+    public static readonly ActiveCdcScenario SamePersonPkReplay = NormalPerson with
+    {
+        Id = SamePersonPkReplayId, Version = "1", Name = "Same PersonPK replay", Category = "Runtime resilience", MessageCount = 3,
+        Description = "Sends one synthetic Person, replays the same source identity, then sends another valid Person to check whether the observable consumer path continues.",
+        Limitation = "This does not verify database idempotency or duplicate Person handling.",
+        PassCriterion = "Passed requires all three sends accepted, A2 byte-identical to A, and the consumer checkpoint past both the replay and the following valid event on their partitions.",
+        PassMeaning = "Passed means the same source Person identity was replayed and the observable Event Hub → Person Adapter consumer path continued processing a following valid Person event.",
+        PassDoesNotMean = "This result does not prove database idempotency, Person row count, overwrite behavior, outbox duplication, Service Bus delivery or natural-key duplicate handling.",
+    };
+
+    public static IReadOnlyList<ActiveCdcScenario> All { get; } = [NormalPerson, SamePersonPkReplay];
+
+    public static ActiveCdcScenario? Find(string? id) => All.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.Ordinal));
 }
 
 /// <summary>A generated synthetic CDC event. Only <see cref="PersonCdcFixtureBuilder"/> can create one — there is no generic "send this JSON".</summary>
 public sealed class SyntheticCdcEvent
 {
-    internal SyntheticCdcEvent(byte[] body, Guid runId, string scenarioId) { Body = body; RunId = runId; ScenarioId = scenarioId; }
+    internal SyntheticCdcEvent(byte[] body, Guid runId, string scenarioId, string label = "") { Body = body; RunId = runId; ScenarioId = scenarioId; Label = label; }
     public ReadOnlyMemory<byte> Body { get; }
     public Guid RunId { get; }
     public string ScenarioId { get; }
+    /// <summary>Message label within a multi-message scenario ("A", "A2", "B"); empty for Normal Person. Transport metadata only — never in the body.</summary>
+    public string Label { get; }
 }
 
 /// <summary>
@@ -51,12 +71,25 @@ public static class PersonCdcFixtureBuilder
     /// <summary>The adapter's PersonId derivation (PersonMapper.ToDeterministicGuid): SHA-256 of the decimal PersonPK text, first 16 bytes.</summary>
     public static Guid ExpectedPersonId(int personPk) => new(SHA256.HashData(Encoding.UTF8.GetBytes(personPk.ToString(System.Globalization.CultureInfo.InvariantCulture)))[..16]);
 
-    public static (SyntheticCdcEvent Event, ActiveCdcFixtureSummary Summary) Build(Guid runId, int personPk, ActiveCdcDestination destination, DateTimeOffset now, int maxBytes)
+    public static (SyntheticCdcEvent Event, ActiveCdcFixtureSummary Summary) Build(Guid runId, int personPk, ActiveCdcDestination destination, DateTimeOffset now, int maxBytes) =>
+        Build(runId, personPk, destination, now, maxBytes, ActiveCdcScenarioCatalog.NormalPersonId, "", "");
+
+    /// <summary>
+    /// The exact replay of <paramref name="original"/>: the same body bytes (same PersonPK, fields, operation and timestamps). Only the
+    /// transport label differs, so the replay cannot turn into an update.
+    /// </summary>
+    public static SyntheticCdcEvent Replay(SyntheticCdcEvent original, string label) => new(original.Body.ToArray(), original.RunId, original.ScenarioId, label);
+
+    /// <summary>A2 is a replay of A only when the business payload is byte-identical.</summary>
+    public static bool IsExactReplay(SyntheticCdcEvent a, SyntheticCdcEvent a2) => a.Body.Span.SequenceEqual(a2.Body.Span);
+
+    public static (SyntheticCdcEvent Event, ActiveCdcFixtureSummary Summary) Build(Guid runId, int personPk, ActiveCdcDestination destination, DateTimeOffset now, int maxBytes,
+        string scenarioId, string label, string markerSuffix)
     {
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, Oslo).Date);
         var birth = today.AddYears(-20).AddDays(-30);
         var age = today.Year - birth.Year - (today < birth.AddYears(today.Year - birth.Year) ? 1 : 0);
-        var marker = Marker(runId);
+        var marker = Marker(runId) + markerSuffix;
         using var buffer = new MemoryStream();
         using (var json = new Utf8JsonWriter(buffer, Writer))
         {
@@ -100,7 +133,7 @@ public static class PersonCdcFixtureBuilder
                 $"Birth date is synthetic (age {age} in Europe/Oslo); the adapter's age filter keeps create events up to 25 years.",
             ],
         };
-        return (new SyntheticCdcEvent(body, runId, ActiveCdcScenarioCatalog.NormalPersonId), summary);
+        return (new SyntheticCdcEvent(body, runId, scenarioId, label), summary);
     }
 
     private static TimeZoneInfo FindOslo()
@@ -135,9 +168,20 @@ public static class ActiveCdcContractManifestService
             return Seal(bound with { Status = ActiveCdcContractStatus.Incompatible, ConfirmedFields = confirmed, MissingFields = missing, Detail = $"The snapshot has no adapter model {record}." });
         if (missing.Count > 0)
             return Seal(bound with { Status = ActiveCdcContractStatus.Incompatible, ConfirmedFields = confirmed, MissingFields = missing, Detail = $"The adapter in this snapshot does not read: {string.Join(", ", missing)}." });
+        if (scenario.Id == ActiveCdcScenarioCatalog.SamePersonPkReplayId) bound = bound with { DeveloperCoverage = SamePersonPkCoverage(snapshot) };
         if (latestSnapshotId is { } latest && latest != snapshot.Id)
             return Seal(bound with { Status = ActiveCdcContractStatus.Outdated, ConfirmedFields = confirmed, Detail = "A newer source snapshot exists for this integration. Select it so the fixture is bound to the current source." });
         return Seal(bound with { Status = ActiveCdcContractStatus.Compatible, ConfirmedFields = confirmed, Detail = $"All {confirmed.Count} fixture fields are read by {record} in this snapshot (source compatibility, not deployment correlation)." });
+    }
+
+    /// <summary>Developer tests in the snapshot's repeated-ingestion rule that send the same Person payload twice (matched by test name; discovered, not executed).</summary>
+    private static List<string> SamePersonPkCoverage(IqrSourceSnapshot snapshot)
+    {
+        var tests = snapshot.Tests.GroupBy(t => t.Id).ToDictionary(g => g.Key, g => g.First());
+        return (snapshot.IntegrationPath?.Rules ?? []).Where(r => r.Kind == "Idempotency").SelectMany(r => r.DeveloperTestIds)
+            .Select(id => tests.GetValueOrDefault(id)).OfType<DeveloperTestEvidence>()
+            .Where(t => t.Method.Contains("SamePayload", StringComparison.Ordinal) && t.Method.Contains("Person", StringComparison.Ordinal))
+            .Select(t => $"{t.Class}.{t.Method} ({t.Layer.ToString().ToLowerInvariant()})").Distinct().ToList();
     }
 
     private static ActiveCdcContractManifest Seal(ActiveCdcContractManifest m)

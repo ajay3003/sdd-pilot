@@ -14,8 +14,19 @@
 <section class="act" aria-labelledby="act-heading" data-testid="act-panel">
     <h2 id="act-heading">Active tests</h2>
     <p class="act-notice" role="note" data-testid="act-notice"><strong>@ActiveCdcLabels.ActiveTestNotice</strong></p>
-    <h3 class="act-subheading">CDC — @Shown.Name <span class="act-muted">(@Shown.Id v@(Shown.Version))</span></h3>
+    <fieldset class="act-scenarios" data-testid="act-scenarios" disabled="@Busy">
+        <legend>CDC scenario</legend>
+        @foreach (var option in ScenarioOptions)
+        {
+            <label class="act-scenario">
+                <input type="radio" name="act-scenario" value="@option.Id" checked="@(option.Id == _scenarioId)" data-testid="@($"act-scenario-{option.Id}")" @onchange="() => SelectScenarioAsync(option.Id)" />
+                <span>@option.Name</span> <span class="act-pill act-pill-neutral">@option.Category</span>
+            </label>
+        }
+    </fieldset>
+    <h3 class="act-subheading" data-testid="act-scenario-heading">CDC — @Shown.Name <span class="act-muted">(@Shown.Id v@(Shown.Version))</span> <span class="act-pill act-pill-neutral" data-testid="act-category">@Category</span></h3>
     <p class="act-muted">@Shown.Description</p>
+    @if (Shown.Limitation.Length > 0) { <p class="act-limitation" role="note" data-testid="act-limitation"><strong>@Shown.Limitation</strong></p> }
 
     @if (Candidates.Count == 0)
     {
@@ -51,21 +62,35 @@
             @if (!_confirming)
             {
                 <div class="act-actions">
-                    <button type="button" class="btn-primary" data-testid="act-start" disabled="@(!readiness.CanRun || Busy)" aria-describedby="act-start-note" @onclick="() => { _confirming = true; _acknowledged = false; }">Send one synthetic event…</button>
+                    <button type="button" class="btn-primary" data-testid="act-start" disabled="@(!readiness.CanRun || Busy)" aria-describedby="act-start-note" @onclick="() => { _confirming = true; _acknowledged = false; }">@(Shown.MessageCount > 1 ? $"Send {Shown.MessageCount} synthetic events…" : "Send one synthetic event…")</button>
                 </div>
                 <p id="act-start-note" class="act-muted" data-testid="act-start-note">
-                    @(readiness.CanRun ? $"Sends exactly one event, then observes read-only evidence for up to {readiness.ObservationSeconds} s. Without a verified Person read the best result is Partial."
-                        : "Cannot run: resolve the blocked checks above. Nothing is sent while any check is blocked.")
+                    @(!readiness.CanRun ? "Cannot run: resolve the blocked checks above. Nothing is sent while any check is blocked."
+                        : Shown.MessageCount > 1 ? $"Sends A, an exact replay A2 and a control B — one attempt each, in order — and observes read-only evidence for up to {readiness.ObservationSeconds} s after each. Passed requires progression after the replay."
+                        : $"Sends exactly one event, then observes read-only evidence for up to {readiness.ObservationSeconds} s. Without a verified Person read the best result is Partial.")
                 </p>
             }
             else
             {
                 <div class="act-confirm" role="group" aria-labelledby="act-confirm-heading" data-testid="act-confirm">
                     <h4 id="act-confirm-heading">Confirm active test</h4>
-                    <p>One synthetic Person create event is sent to <strong class="act-mono">@readiness.Destination.EventHub</strong> on <span class="act-mono">@readiness.Destination.NamespaceFqdn</span> (@Profile.EnvironmentType). A sent event cannot be recalled; cancelling only stops waiting for evidence.</p>
+                    @if (Shown.MessageCount > 1)
+                    {
+                        <p>Three synthetic Person events are sent, in order, to <strong class="act-mono">@readiness.Destination.EventHub</strong> on <span class="act-mono">@readiness.Destination.NamespaceFqdn</span> (@Profile.EnvironmentType):</p>
+                        <ol class="act-plan" data-testid="act-confirm-messages">
+                            <li><strong>A</strong> — PersonPK X (next reserved synthetic key)</li>
+                            <li><strong>A2</strong> — same PersonPK X, exact replay of A</li>
+                            <li><strong>B</strong> — different PersonPK Y, a following valid Person</li>
+                        </ol>
+                        <p>Persistent synthetic records may remain: <strong>Yes</strong>. Sent events cannot be recalled; cancelling only stops the remaining steps.</p>
+                    }
+                    else
+                    {
+                        <p>One synthetic Person create event is sent to <strong class="act-mono">@readiness.Destination.EventHub</strong> on <span class="act-mono">@readiness.Destination.NamespaceFqdn</span> (@Profile.EnvironmentType). A sent event cannot be recalled; cancelling only stops waiting for evidence.</p>
+                    }
                     <label class="act-ack"><input type="checkbox" data-testid="act-ack" @bind="_acknowledged" /> I understand this sends synthetic test data to a non-production environment and cannot be undone.</label>
                     <div class="act-actions">
-                        <button type="button" class="btn-primary" data-testid="act-confirm-send" disabled="@(!_acknowledged || Busy)" @onclick="StartAsync">Send synthetic event</button>
+                        <button type="button" class="btn-primary" data-testid="act-confirm-send" disabled="@(!_acknowledged || Busy)" @onclick="StartAsync">@(Shown.MessageCount > 1 ? "Send synthetic events" : "Send synthetic event")</button>
                         <button type="button" class="btn-secondary" data-testid="act-confirm-cancel" @onclick="() => _confirming = false">Cancel</button>
                     </div>
                 </div>
@@ -81,6 +106,10 @@
             <h3 id="act-run-heading">Active test result <span class="act-pill act-pill-@ActiveCdcPresentation.Tone(run.Status)" data-testid="act-run-status">@ActiveCdcLabels.Status(run.Status)</span></h3>
             <p aria-live="polite" data-testid="act-run-headline"><strong>@ActiveCdcPresentation.Headline(run)</strong></p>
             @if (run.StatusReason.Length > 0) { <p data-testid="act-run-reason">@run.StatusReason</p> }
+            @if (run.Scenario.PassDoesNotMean.Length > 0)
+            {
+                <p class="act-limitation" role="note" data-testid="act-pass-bounds">@(run.Status == ActiveCdcRunStatus.Passed ? $"{run.Scenario.PassMeaning} " : "")<strong>@run.Scenario.PassDoesNotMean</strong></p>
+            }
             @if (!run.Completed)
             {
                 <div class="act-actions">
@@ -104,7 +133,39 @@
                     </tbody>
                 </table>
             </div>
-            @if (run.Fixture is { } fixture)
+            @if (run.Messages.Count > 0)
+            {
+                <div class="act-table" tabindex="0" role="region" aria-label="Messages sent" data-testid="act-messages">
+                    <table>
+                        <thead><tr><th scope="col">Message</th><th scope="col">Synthetic PersonPK</th><th scope="col">Send</th><th scope="col">Partition (post-send position)</th><th scope="col">Consumer checkpoint</th><th scope="col">Payload</th></tr></thead>
+                        <tbody>
+                            @foreach (var m in run.Messages)
+                            {
+                                <tr data-testid="act-message" data-label="@m.Label" data-send="@m.SendState">
+                                    <th scope="row">@m.Label <span class="act-muted">@m.Role</span></th>
+                                    <td class="act-mono">@m.SyntheticPersonPk</td>
+                                    <td><span class="act-pill act-pill-@ActiveCdcPresentation.Tone(m.SendState)">@ActiveCdcLabels.State(m.SendState)</span></td>
+                                    <td>@(m.AdvancedPartitions.Count == 0 ? "Not located" : string.Join(", ", m.AdvancedPartitions.Select(a => $"{a.Key} → {a.Value}")))</td>
+                                    <td><span class="act-pill act-pill-@ActiveCdcPresentation.Tone(m.CheckpointState)">@ActiveCdcLabels.State(m.CheckpointState)</span></td>
+                                    <td class="act-muted">@m.PayloadBytes bytes · <span class="act-mono">@(m.PayloadSha256.Length >= 12 ? m.PayloadSha256[..12] : m.PayloadSha256)…</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (run.CheckpointSnapshots.Count > 0)
+                {
+                    <details class="act-details" data-testid="act-snapshots"><summary>Partition / checkpoint snapshots (@run.CheckpointSnapshots.Count)</summary>
+                        <ul>@foreach (var c in run.CheckpointSnapshots) { <li data-testid="act-snapshot"><strong>@c.Label</strong> — @ActiveCdcLabels.State(c.State): @(c.Partitions.Count == 0 ? c.Detail : string.Join("; ", c.Partitions.Select(p => $"partition {p.PartitionId}: last enqueued {p.LastEnqueued?.ToString() ?? "unknown"}, checkpoint {p.Checkpointed?.ToString() ?? "unknown"}")))</li> }</ul>
+                        <p class="act-muted">Positions are compared per partition only; a checkpoint shows the adapter finished a flush, not what it stored.</p>
+                    </details>
+                }
+                <div class="act-coverage" data-testid="act-coverage">
+                    <p><strong>Developer coverage</strong> (discovered in the bound source, not executed): @(run.Manifest.DeveloperCoverage.Count == 0 ? "No same-PersonPK developer test found in the bound snapshot." : string.Join("; ", run.Manifest.DeveloperCoverage))</p>
+                    <p><strong>Active CDC coverage</strong>: the deployed Event Hub → Person Adapter replay-resilience path.</p>
+                </div>
+            }
+            @if (run.Messages.Count == 0 && run.Fixture is { } fixture)
             {
                 <dl class="act-facts" data-testid="act-fixture">
                     <div><dt>Synthetic PersonPK</dt><dd class="act-mono">@fixture.SyntheticPersonPk</dd></div>
@@ -132,7 +193,7 @@
             <ul class="act-history">
                 @foreach (var item in _history)
                 {
-                    <li data-testid="act-history-item"><button type="button" class="act-link" @onclick="() => OpenAsync(item.RunId)">@item.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @ActiveCdcLabels.Status(item.Status) · @(item.SendAttempted ? "event sent" : "nothing sent")@if (item.ManifestFingerprint.Length > 0) { <span class="act-muted"> · manifest @item.ManifestFingerprint</span> }</li>
+                    <li data-testid="act-history-item"><button type="button" class="act-link" @onclick="() => OpenAsync(item.RunId)">@item.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @ScenarioName(item.ScenarioId) · @ActiveCdcLabels.Status(item.Status) · @(item.SendAttempted ? item.ScenarioId == ScenarioOptions[1].Id ? "events sent" : "event sent" : "nothing sent")@if (item.ManifestFingerprint.Length > 0) { <span class="act-muted"> · manifest @item.ManifestFingerprint</span> }</li>
                 }
             </ul>
         </details>
@@ -156,6 +217,24 @@
     // Optional: hosts that do not register the client (older page tests) simply show no Active tests panel.
     private IActiveCdcTestsApiService? Api => _api ??= Services.GetService<IActiveCdcTestsApiService>();
     private IActiveCdcTestsApiService? _api;
+    private sealed record ScenarioOption(string Id, string Name, string Category);
+    private static readonly ScenarioOption[] ScenarioOptions =
+    [
+        new("person.normal.create", "Normal Person", "Transport"),
+        new("person.same-personpk-replay", "Same PersonPK replay", "Runtime resilience"),
+    ];
+    private string _scenarioId = ScenarioOptions[0].Id;
+    private string Category => Shown.Category.Length > 0 ? Shown.Category : ScenarioOptions.FirstOrDefault(o => o.Id == Shown.Id)?.Category ?? "";
+    private static string ScenarioName(string id) => ScenarioOptions.FirstOrDefault(o => o.Id == id)?.Name ?? id;
+
+    private async Task SelectScenarioAsync(string id)
+    {
+        _scenarioId = id;
+        _run = null;
+        _confirming = false;
+        await LoadAsync();
+    }
+
     private readonly CancellationTokenSource _disposed = new();
     private string _integrationId = "";
     private ActiveCdcReadiness? _readiness;
@@ -167,14 +246,15 @@
 
     private IReadOnlyList<IntegrationDefinition> Candidates => Integrations
         .Where(i => i.Enabled && i.Kind == IntegrationKind.EventHub && (i.SourceResource ?? "").EndsWith(".Person", StringComparison.OrdinalIgnoreCase)).ToList();
-    private ActiveCdcScenario Shown => _readiness?.Scenario is { Id.Length: > 0 } s ? s : Scenario;
+    private ActiveCdcScenario Shown => _readiness?.Scenario is { Id.Length: > 0 } s && s.Id == _scenarioId ? s
+        : Scenario with { Id = _scenarioId, Name = ScenarioName(_scenarioId), MessageCount = _scenarioId == ScenarioOptions[1].Id ? 3 : 1 };
     private bool Busy => _loading || _starting || _run is { Completed: false };
 
     protected override async Task OnParametersSetAsync()
     {
         if (Api is null || Candidates.Count == 0) return;
         if (!Candidates.Any(c => c.Id == _integrationId)) _integrationId = Candidates[0].Id;
-        var key = $"{Profile.Id}|{_integrationId}|{SnapshotId}";
+        var key = $"{Profile.Id}|{_integrationId}|{SnapshotId}|{_scenarioId}";
         if (key != _loadedFor) await LoadAsync();
     }
 
@@ -190,12 +270,12 @@
 
     private async Task LoadAsync()
     {
-        _loadedFor = $"{Profile.Id}|{_integrationId}|{SnapshotId}";
+        _loadedFor = $"{Profile.Id}|{_integrationId}|{SnapshotId}|{_scenarioId}";
         _loading = true;
         _error = null;
         try
         {
-            _readiness = await Api!.ReadinessAsync(Profile, _integrationId, SnapshotId, _disposed.Token);
+            _readiness = await Api!.ReadinessAsync(Profile, _integrationId, SnapshotId, _scenarioId, _disposed.Token);
             _history = await Api!.HistoryAsync(Profile.Id, _integrationId, _disposed.Token);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
@@ -214,7 +294,7 @@
         {
             var (run, error) = await Api!.StartAsync(Profile, new ActiveCdcRunRequest
             {
-                EnvironmentId = Profile.Id, EnvironmentName = Profile.Name, IntegrationId = _integrationId, ScenarioId = Scenario.Id,
+                EnvironmentId = Profile.Id, EnvironmentName = Profile.Name, IntegrationId = _integrationId, ScenarioId = _scenarioId,
                 SourceSnapshotId = _readiness.Manifest.SourceSnapshotId, ConfirmedSend = true, ConfirmedEventHub = _readiness.Destination.EventHub,
             }, _disposed.Token);
             _confirming = false;

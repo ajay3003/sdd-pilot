@@ -71,7 +71,7 @@ public sealed class ActiveCdcTestsPanelTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=act-run]").GetAttribute("data-status").Should().Be("Partial"), TimeSpan.FromSeconds(5));
         cut.Find("[data-testid=act-run-headline]").TextContent.Should().Contain("Person persistence not assessed");
         var stages = cut.FindAll("[data-testid=act-stage]");
-        stages.Should().HaveCount(Enum.GetValues<ActiveCdcStepKind>().Length, "every stage is listed, reached or not");
+        stages.Should().HaveCount(ActiveCdcPresentation.Order.Length, "every Normal Person stage is listed, reached or not");
         stages.Single(s => s.GetAttribute("data-kind") == "EventHubSend").GetAttribute("data-state").Should().Be("Observed");
         foreach (var kind in new[] { "PersonPersisted", "OutboxCreated", "ServiceBusDelivered", "SubscriberProcessed" })
             stages.Single(s => s.GetAttribute("data-kind") == kind).GetAttribute("data-state").Should().Be("Not assessed");
@@ -175,7 +175,7 @@ public sealed class ActiveCdcTestsPanelTests : BunitContext
             WhatWasTested = ["Event Hub accepted the event: Accepted."], WhatWasNotAssessed = ["Person persisted — Not assessed: No verification path."], Limitations = ["Source compatibility is not deployment correlation."],
         };
 
-        public Task<ActiveCdcReadiness> ReadinessAsync(FrontendAnalysisProfile profile, string integrationId, Guid? snapshotId, CancellationToken ct = default)
+        public Task<ActiveCdcReadiness> ReadinessAsync(FrontendAnalysisProfile profile, string integrationId, Guid? snapshotId, string scenarioId, CancellationToken ct = default)
         {
             Readiness.Add((profile.Id, integrationId, snapshotId));
             return Task.FromResult(Ready);

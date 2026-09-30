@@ -56,13 +56,14 @@ public sealed class AzureEventHubTestSender(IIntegrationAzureCredential azure, I
         if (azure.Credential is not { } credential) return new(ActiveCdcEvidenceState.NotAuthorized, false, azure.DisabledReason);
         var data = new EventData(synthetic.Body)
         {
-            MessageId = synthetic.RunId.ToString("N"),
+            MessageId = synthetic.Label.Length == 0 ? synthetic.RunId.ToString("N") : $"{synthetic.RunId:N}-{synthetic.Label}",
             ContentType = "application/json",
         };
         // Metadata only. The Person Adapter reads the body alone, so these are not propagated downstream.
         data.Properties["BirkNextRunId"] = synthetic.RunId.ToString("N");
         data.Properties["BirkNextScenario"] = synthetic.ScenarioId;
         data.Properties["BirkNextSynthetic"] = true;
+        if (synthetic.Label.Length > 0) data.Properties["BirkNextMessage"] = synthetic.Label;
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(ct);
         bounded.CancelAfter(timeout);
         try

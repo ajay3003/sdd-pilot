@@ -10,6 +10,8 @@ public sealed class ActiveCdcRunRecord
     public string EnvironmentId { get; init; } = "";
     public string IntegrationId { get; init; } = "";
     public int? SyntheticPersonPk { get; init; }
+    /// <summary>The second reserved key of a multi-message scenario (Same PersonPK replay: Y). Unique per environment like the first.</summary>
+    public int? SyntheticPersonPkControl { get; init; }
     public DateTimeOffset StartedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; set; }
     public string Status { get; set; } = "";

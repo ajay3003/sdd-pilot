@@ -8,7 +8,9 @@ public sealed class ActiveCdcRequestException(string message) : Exception(messag
 
 public interface IActiveCdcTestService
 {
-    Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, CancellationToken ct = default);
+    Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, CancellationToken ct = default) =>
+        ReadinessAsync(environmentId, integrationId, environmentType, targetUrl, snapshotId, ActiveCdcScenarioCatalog.NormalPersonId, ct);
+    Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, string? scenarioId, CancellationToken ct = default);
     Task<ActiveCdcRun> StartAsync(ActiveCdcRunRequest request, string? environmentType, string? targetUrl, CancellationToken ct = default);
     Task<ActiveCdcRun?> GetAsync(Guid runId, CancellationToken ct = default);
     Task<IReadOnlyList<ActiveCdcRunSummary>> HistoryAsync(string environmentId, string? integrationId, CancellationToken ct = default);
@@ -25,9 +27,10 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
     private sealed record Preparation(ActiveCdcScenario Scenario, IntegrationDefinition? Integration, IntegrationPlatform? Platform, ActiveCdcDestination Destination,
         ApprovedCdcDestination? Approved, ActiveCdcContractManifest Manifest, List<ActiveCdcReadinessCheck> Checks, bool CanRun, Guid? RunningRunId);
 
-    public async Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, CancellationToken ct = default)
+    public async Task<ActiveCdcReadiness> ReadinessAsync(string environmentId, string integrationId, string? environmentType, string? targetUrl, Guid? snapshotId, string? scenarioId, CancellationToken ct = default)
     {
-        var p = await PrepareAsync(ActiveCdcScenarioCatalog.NormalPerson, environmentId, integrationId, environmentType, targetUrl, snapshotId, ct);
+        var scenario = ActiveCdcScenarioCatalog.Find(scenarioId ?? ActiveCdcScenarioCatalog.NormalPersonId) ?? throw new ActiveCdcRequestException("Unknown scenario. Only built-in reviewed scenarios can run.");
+        var p = await PrepareAsync(scenario, environmentId, integrationId, environmentType, targetUrl, snapshotId, ct);
         return new ActiveCdcReadiness
         {
             EnvironmentId = environmentId, IntegrationId = integrationId, Scenario = p.Scenario, Manifest = p.Manifest, Destination = p.Destination,
@@ -61,15 +64,11 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         {
             if (policy.PersonPkRange(out var rangeReason) is not { } range) return await BlockedAsync(run, p, [rangeReason], ct);
             var next = (await store.MaxPersonPkAsync(request.EnvironmentId, range.Min, range.Max, ct) is { } used ? used + 1 : range.Min);
-            if (next > range.Max || next < range.Min) return await BlockedAsync(run, p, [$"The reserved synthetic PersonPK range {range.Min}–{range.Max} is used up."], ct);
+            if (next < range.Min || (long)next + KeysNeeded(scenario) - 1 > range.Max)
+                return await BlockedAsync(run, p, [$"The reserved synthetic PersonPK range {range.Min}–{range.Max} has fewer than {KeysNeeded(scenario)} unused key(s) left."], ct);
 
-            SyntheticCdcEvent synthetic;
-            try
-            {
-                var built = PersonCdcFixtureBuilder.Build(run.RunId, next, p.Destination, clock.GetUtcNow(), policy.Options.MaxPayloadBytes);
-                synthetic = built.Event;
-                run = run with { Fixture = built.Summary };
-            }
+            List<SyntheticCdcEvent> events;
+            try { (events, run) = BuildFixtures(scenario, run, next, p.Destination); }
             catch (InvalidOperationException ex) { return await BlockedAsync(run, p, [ex.Message], ct); }
 
             var now = clock.GetUtcNow();
@@ -80,15 +79,25 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
                     Step(ActiveCdcStepKind.EnvironmentGuard, ActiveCdcEvidenceState.Observed, $"{run.EnvironmentType} is allowed for active CDC tests.", "Backend policy", now),
                     Step(ActiveCdcStepKind.Destination, ActiveCdcEvidenceState.Observed, $"{p.Destination.EventHub} on {p.Destination.NamespaceFqdn}. {p.Destination.Detail}", "Integration catalog + backend enrollment", now),
                     Step(ActiveCdcStepKind.SourceContract, ActiveCdcEvidenceState.Observed, $"{p.Manifest.Detail} Manifest {p.Manifest.Fingerprint}.", "Bound source snapshot", now),
-                    Step(ActiveCdcStepKind.FixtureGenerated, ActiveCdcEvidenceState.Observed,
-                        $"Synthetic PersonPK {run.Fixture!.SyntheticPersonPk}, marker {run.Fixture.Marker}, {run.Fixture.PayloadBytes} bytes, SHA-256 {run.Fixture.PayloadSha256[..16]}….", "BirkNext fixture builder", now),
+                    .. scenario.MessageCount > 1
+                        ? new[] { Step(ActiveCdcStepKind.IdentitiesAllocated, ActiveCdcEvidenceState.Observed,
+                            $"X = {run.Messages[0].SyntheticPersonPk} (A and A2), Y = {run.Messages[^1].SyntheticPersonPk} (B); both inside the reserved range {range.Min}–{range.Max} and unused.", "Reserved synthetic PersonPK range", now) }
+                        : [],
+                    Step(ActiveCdcStepKind.FixtureGenerated, ActiveCdcEvidenceState.Observed, scenario.MessageCount > 1
+                        ? string.Join(" ", run.Messages.Select(m => $"{m.Label}: PersonPK {m.SyntheticPersonPk}, marker {m.Marker}, {m.PayloadBytes} bytes, SHA-256 {m.PayloadSha256[..16]}…."))
+                        : $"Synthetic PersonPK {run.Fixture!.SyntheticPersonPk}, marker {run.Fixture.Marker}, {run.Fixture.PayloadBytes} bytes, SHA-256 {run.Fixture.PayloadSha256[..16]}….", "BirkNext fixture builder", now),
+                    .. scenario.MessageCount > 1
+                        ? new[] { ReplayEquivalence(events, now) }
+                        : [],
                 ],
             };
+            if (run.Step(ActiveCdcStepKind.ReplayEquivalence) is { State: not ActiveCdcEvidenceState.Observed })
+                return await BlockedAsync(run, p, ["A2 is not an exact replay of A, so nothing was sent."], ct);
             // Durable intent BEFORE any send: if this cannot be written, nothing is sent.
             var intent = run with { Steps = [.. run.Steps, Step(ActiveCdcStepKind.IntentRecorded, ActiveCdcEvidenceState.Observed, "Run recorded as Running before the send.", "BirkNext run history", now)] };
             if (!await store.InsertAsync(intent, ct))
                 return Finish(run, ActiveCdcRunStatus.Blocked, "The run could not be recorded before sending, so nothing was sent.", stored: false);
-            coordinator.Launch(intent.RunId, key, token => runner.ExecuteAsync(intent, p.Platform, environmentType, targetUrl, synthetic, token));
+            coordinator.Launch(intent.RunId, key, token => runner.ExecuteAsync(intent, p.Platform, environmentType, targetUrl, events, token));
             launched = true;
             return intent;
         }
@@ -144,6 +153,35 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         WhatWasNotAssessed = ["Nothing was sent: no Event Hub, checkpoint, telemetry, Person, outbox or Service Bus evidence was collected."],
         Limitations = stored ? [] : ["This run could not be saved to history."],
     };
+
+    private static int KeysNeeded(ActiveCdcScenario scenario) => scenario.MessageCount > 1 ? 2 : 1;
+
+    private static ActiveCdcStep ReplayEquivalence(IReadOnlyList<SyntheticCdcEvent> events, DateTimeOffset now) => PersonCdcFixtureBuilder.IsExactReplay(events[0], events[1])
+        ? Step(ActiveCdcStepKind.ReplayEquivalence, ActiveCdcEvidenceState.Observed, "A2 body is byte-identical to A (same PersonPK, fields, operation and timestamps); only the transport label differs.", "BirkNext fixture builder", now)
+        : Step(ActiveCdcStepKind.ReplayEquivalence, ActiveCdcEvidenceState.Error, "A2 differs from A — not a replay.", "BirkNext fixture builder", now);
+
+    /// <summary>Normal Person: one fixture. Same PersonPK replay: A (X), A2 = byte-identical replay of A, B (Y = X + 1, its own marker).</summary>
+    private (List<SyntheticCdcEvent> Events, ActiveCdcRun Run) BuildFixtures(ActiveCdcScenario scenario, ActiveCdcRun run, int x, ActiveCdcDestination destination)
+    {
+        var now = clock.GetUtcNow();
+        if (scenario.MessageCount == 1)
+        {
+            var single = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes);
+            return ([single.Event], run with { Fixture = single.Summary });
+        }
+        var a = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "A", "");
+        var a2 = PersonCdcFixtureBuilder.Replay(a.Event, "A2");
+        var b = PersonCdcFixtureBuilder.Build(run.RunId, x + 1, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "B", "-B");
+        static ActiveCdcMessageEvidence Message(string label, string role, ActiveCdcFixtureSummary f) => new()
+        {
+            Label = label, Role = role, SyntheticPersonPk = f.SyntheticPersonPk, ExpectedPersonId = f.ExpectedPersonId, Marker = f.Marker, PayloadSha256 = f.PayloadSha256, PayloadBytes = f.PayloadBytes,
+        };
+        return ([a.Event, a2, b.Event], run with
+        {
+            Fixture = a.Summary,
+            Messages = [Message("A", "First create (PersonPK X)", a.Summary), Message("A2", "Exact replay of A (same PersonPK X)", a.Summary), Message("B", "Following valid control (different PersonPK Y)", b.Summary)],
+        });
+    }
 
     private static ActiveCdcStepKind KindOf(string key) => key switch
     {
@@ -207,15 +245,30 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
             $"{ActiveCdcLabels.Contract(manifest.Status)} — {manifest.Detail}");
 
         var range = policy.PersonPkRange(out var rangeReason);
-        Add("synthetic-key", "Reserved synthetic PersonPK range", range is null ? ActiveCdcReadinessState.Blocked : ActiveCdcReadinessState.Ready, rangeReason);
+        if (range is { } r)
+        {
+            var next = await store.MaxPersonPkAsync(environmentId, r.Min, r.Max, ct) is { } used ? used + 1 : r.Min;
+            var available = Math.Max(0, (long)r.Max - next + 1);
+            var needed = KeysNeeded(scenario);
+            Add("synthetic-key", "Reserved synthetic PersonPK range", available >= needed ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
+                available >= needed ? $"{rangeReason} {available} unused key(s); this scenario needs {needed}."
+                    : $"{rangeReason} Only {available} unused key(s) left; this scenario needs {needed} distinct keys.");
+        }
+        else Add("synthetic-key", "Reserved synthetic PersonPK range", ActiveCdcReadinessState.Blocked, rangeReason);
 
         var checkpoint = platform is null ? null : checkpoints.Describe(platform);
         Add("checkpoint", "Consumer checkpoint evidence (read-only)",
             checkpoint?.State == IntegrationEvidenceState.Available && group is not null ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Optional,
             group is null ? "No consumer group is configured or assumed; checkpoint movement will be Not assessed."
             : $"{checkpoint?.Reason ?? "No platform."} Consumer group {group}{(assumed ? " (configured assumption)" : "")}.");
-        Add("person-verification", "Person persisted verification", ActiveCdcReadinessState.Optional,
-            "No reliable read-only Person verification exists (no standalone Person read endpoint; the ingestion success log is Debug level). Person persisted stays Not assessed, so a successful send is Partial, never Passed.");
+        if (scenario.MessageCount > 1)
+            Add("progression-evidence", "Runtime progression evidence", checkpoint?.State == IntegrationEvidenceState.Available && group is not null ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Optional,
+                checkpoint?.State == IntegrationEvidenceState.Available && group is not null
+                    ? $"Partition positions and consumer checkpoints can be read for {group}{(assumed ? " (configured assumption)" : "")}. Without them the result is Partial, never Passed."
+                    : "Partition/checkpoint evidence is not available, so following-event progression cannot be assessed: the result would be Partial, never Passed.");
+        else
+            Add("person-verification", "Person persisted verification", ActiveCdcReadinessState.Optional,
+                "No reliable read-only Person verification exists (no standalone Person read endpoint; the ingestion success log is Debug level). Person persisted stays Not assessed, so a successful send is Partial, never Passed.");
 
         var running = coordinator.LeaseHolder(ActiveCdcRunCoordinator.Key(environmentId, integrationId));
         Add("concurrency", "No run in flight", running is null ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
