@@ -63,9 +63,12 @@ internal sealed class ActiveCdcTestHarness : IAsyncDisposable
         return new ActiveCdcTestService(Catalog, new IqrSourceStore(Db()), policy, sender, Checkpoints, Store, Coordinator, runner, TimeProvider.System);
     }
 
-    public async Task<IqrSourceSnapshot> AddSnapshotAsync(IEnumerable<string>? cdcFields = null, DateTimeOffset? at = null)
+    public Task<IqrSourceSnapshot> AddSnapshotAsync(IEnumerable<string>? cdcFields = null, DateTimeOffset? at = null) =>
+        AddSnapshotAsync(Snapshot(cdcFields ?? ActiveCdcScenarioCatalog.NormalPerson.Fields), at);
+
+    public async Task<IqrSourceSnapshot> AddSnapshotAsync(IqrSourceSnapshot template, DateTimeOffset? at = null)
     {
-        var snapshot = Snapshot(cdcFields ?? ActiveCdcScenarioCatalog.NormalPerson.Fields) with { AnalyzedAt = at ?? DateTimeOffset.UtcNow };
+        var snapshot = template with { AnalyzedAt = at ?? DateTimeOffset.UtcNow };
         using var db = Db();
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = Env, IntegrationId = IntegrationId, AnalyzedAt = snapshot.AnalyzedAt,
             EvidenceJson = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web)) });

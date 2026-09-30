@@ -15,8 +15,8 @@ public sealed class ActiveCdcReplayPanelTests : BunitContext
     private const string Hub = "m2lb-cdc-dev.BirkM2LB.dbo.Person";
     private const string ReplayId = "person.same-personpk-replay";
     private const string Limitation = "This does not verify database idempotency or duplicate Person handling.";
-    private const string PassMeaning = "Passed means the same source Person identity was replayed and the observable Event Hub → Person Adapter consumer path continued processing a following valid Person event.";
-    private const string DoesNotMean = "This result does not prove database idempotency, Person row count, overwrite behavior, outbox duplication, Service Bus delivery or natural-key duplicate handling.";
+    private const string PassMeaning = "Runtime continuity after replay was observed: the Event Hub consumer advanced beyond the replay and the following control event without becoming stuck.";
+    private const string DoesNotMean = "It does not mean the replay was processed successfully, the control Person was persisted, database idempotency was proven, no outbox duplication occurred, Person row count or overwrite behavior was correct, natural-key duplicates were handled, or Service Bus was verified. A checkpoint past an event shows consumer progression, not successful handling.";
     private readonly FakeApi _api = new();
     private static readonly FrontendAnalysisProfile Profile = new() { Id = "dev-env", Name = "M2LB DEV", EnvironmentType = FrontendEnvironmentType.Development };
     private static readonly IntegrationDefinition Person = new() { Id = "dev:eventhub:birk-cdc:dbo.Person", DisplayName = "BIRK Person CDC", Kind = IntegrationKind.EventHub, Enabled = true, SourceResource = "BirkM2LB.dbo.Person", EndpointOrTopic = Hub };
@@ -84,7 +84,10 @@ public sealed class ActiveCdcReplayPanelTests : BunitContext
         var cut = RenderReplay();
         StartReplay(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=act-run]").GetAttribute("data-status").Should().Be("Passed"), TimeSpan.FromSeconds(5));
-        cut.Find("[data-testid=act-run-headline]").TextContent.Should().Be("Passed — the consumer path continued after the replay");
+        cut.Find("[data-testid=act-run-headline]").TextContent.Should().Be("Passed — the consumer advanced past the replay and the control event");
+        cut.Find("[data-testid=act-stage][data-kind=ObserveControl]").TextContent.Should().Contain("Consumer advanced past B");
+        foreach (var kind in new[] { "ReplayHandled", "ControlHandled" })
+            cut.Find($"[data-testid=act-stage][data-kind={kind}]").GetAttribute("data-state").Should().Be("Not assessed", "checkpoint progression is never shown as successful handling");
         cut.Find("[data-testid=act-pass-bounds]").TextContent.Should().Contain(PassMeaning).And.Contain(DoesNotMean);
         cut.FindAll("[data-testid=act-message]").Select(r => (r.GetAttribute("data-label"), r.GetAttribute("data-send"))).Should().Equal([("A", "Observed"), ("A2", "Observed"), ("B", "Observed")]);
         var stages = cut.FindAll("[data-testid=act-stage]");
@@ -108,7 +111,7 @@ public sealed class ActiveCdcReplayPanelTests : BunitContext
         StartReplay(cut);
         cut.WaitForAssertion(() => cut.Find("[data-testid=act-run]").GetAttribute("data-status").Should().Be("Partial"), TimeSpan.FromSeconds(5));
         cut.Find("[data-testid=act-run-headline]").TextContent.Should().Contain("progression after the replay not assessable");
-        cut.Find("[data-testid=act-pass-bounds]").TextContent.Should().NotContain("Passed means").And.Contain(DoesNotMean);
+        cut.Find("[data-testid=act-pass-bounds]").TextContent.Should().NotContain(PassMeaning).And.Contain(DoesNotMean);
     }
 
     [Fact]
@@ -116,8 +119,8 @@ public sealed class ActiveCdcReplayPanelTests : BunitContext
     {
         var html = new ReportExportService().ExportActiveCdcRun(_api.Run(ActiveCdcRunStatus.Passed), "Example");
         var body = html[html.IndexOf("<body", StringComparison.Ordinal)..];
-        body.Should().Contain("Runtime resilience").And.Contain(Limitation).And.Contain("Pass meaning").And.Contain("does not prove database idempotency")
-            .And.Contain("Messages (payloads not stored)").And.Contain("T3 — after B").And.Contain("Developer coverage").And.Contain("Natural-key duplicate").And.Contain("Not tested");
+        body.Should().Contain("Runtime resilience").And.Contain(Limitation).And.Contain("Pass meaning").And.Contain("database idempotency was proven")
+            .And.Contain("advanced beyond the replay").And.Contain("Messages (payloads not stored)").And.Contain("T3 — after B").And.Contain("Developer coverage").And.Contain("Natural-key duplicate").And.Contain("Not tested");
         body.Should().NotContain("\"after\"").And.NotContain("SECRET_SENTINEL_REPLAY_123");
     }
 

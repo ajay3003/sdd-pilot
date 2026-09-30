@@ -43,6 +43,7 @@ select:focus-visible, input:focus-visible, .act-table:focus-visible, .act-link:f
 .act-table th { text-align: left; padding: .42rem .6rem; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); vertical-align: top; }
 .act-table thead th { font-size: .74rem; color: var(--clr-text-muted, #4b5563); background: var(--clr-surface, #f8fafc); }
 .act-table td { padding: .42rem .6rem; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); vertical-align: top; }
+.act-table td:last-child { overflow-wrap: normal; word-break: normal; min-width: 6.5rem; }
 .act-details { margin: .5rem 0; }
 .act-details summary { cursor: pointer; font-weight: 600; font-size: .9rem; }
 .act-details ul { margin: .35rem 0; padding-left: 1.25rem; font-size: .86rem; }

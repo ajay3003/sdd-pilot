@@ -22,7 +22,7 @@ public sealed class ActiveCdcRunStore(IServiceScopeFactory scopes, ILogger<Activ
         db.ActiveCdcRuns.Add(new ActiveCdcRunRecord
         {
             Id = run.RunId, EnvironmentId = run.EnvironmentId, IntegrationId = run.IntegrationId, SyntheticPersonPk = run.Fixture?.SyntheticPersonPk,
-            SyntheticPersonPkControl = run.Messages.Select(m => (int?)m.SyntheticPersonPk).Where(pk => pk != run.Fixture?.SyntheticPersonPk).Max(),
+            SyntheticPersonPkControl = run.Messages.Select(m => m.SyntheticPersonPk).Where(pk => pk is not null && pk != run.Fixture?.SyntheticPersonPk).Max(),
             StartedAt = run.StartedAt, CompletedAt = run.CompletedAt, Status = run.Status.ToString(), ResultJson = JsonSerializer.Serialize(run, Json),
         });
         try { await db.SaveChangesAsync(ct); return true; }

@@ -18,7 +18,7 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
     {
         try
         {
-            return events.Count > 1 ? await ExecuteReplayAsync(run, platform, environmentType, targetUrl, events, ct)
+            return events.Count > 1 ? await ExecuteSequenceAsync(run, platform, environmentType, targetUrl, events, ct)
                 : await ExecuteCoreAsync(run, platform, environmentType, targetUrl, events[0], ct);
         }
         catch (Exception ex)
@@ -155,39 +155,64 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         return Add(run, ActiveCdcStepKind.SubscriberProcessed, ActiveCdcEvidenceState.NotAssessed, Why("Subscriber processing is not observable from BirkNext."), "Not available in Phase 1");
     }
 
-    // ── Same PersonPK replay ────────────────────────────────────────────────────────────────────────────────────────────
-    // Strictly sequential A → A2 → B, one send attempt each. After every send: where it landed (partitions whose last-enqueued position
-    // moved) and whether the consumer checkpoint passed it, per partition. Checkpoints are never compared across partitions, and a
-    // checkpoint past an event means the adapter finished that flush (ingested, fault-queued or skipped) — never that a row is right.
+    // ── Multi-message sequences (Same PersonPK replay, Invalid Person → valid Person) ────────────────────────────────────
+    // Strictly sequential, one send attempt each. After every send: where it landed (partitions whose last-enqueued position moved) and
+    // whether the consumer checkpoint passed it, per partition. Checkpoints are never compared across partitions, and a checkpoint past an
+    // event means the adapter finished that flush (ingested, fault-queued, discarded or skipped) — never that the event was handled well.
 
-    private static readonly (ActiveCdcStepKind Send, ActiveCdcStepKind Observe, string Snapshot)[] ReplayStages =
-    [
-        (ActiveCdcStepKind.SendA, ActiveCdcStepKind.ObserveA, "T1 — after A"),
-        (ActiveCdcStepKind.SendReplay, ActiveCdcStepKind.ObserveReplay, "T2 — after A2"),
-        (ActiveCdcStepKind.SendControl, ActiveCdcStepKind.ObserveControl, "T3 — after B"),
-    ];
+    private sealed record SequencePlan(
+        string BaselineLabel,
+        (ActiveCdcStepKind Send, ActiveCdcStepKind Observe, string Snapshot)[] Stages,
+        ActiveCdcStepKind Evaluation,
+        Func<int, EventHubTestSendOutcome, (ActiveCdcRunStatus Status, string Reason)> SendFailure,
+        Func<ActiveCdcRun, (ActiveCdcEvidenceState State, ActiveCdcRunStatus Status, string Detail, string Reason)> Evaluate,
+        string CancelledAfterLast);
 
-    private async Task<ActiveCdcRun> ExecuteReplayAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, IReadOnlyList<SyntheticCdcEvent> events, CancellationToken ct)
+    private static readonly SequencePlan ReplayPlan = new(
+        "T0 — before A",
+        [
+            (ActiveCdcStepKind.SendA, ActiveCdcStepKind.ObserveA, "T1 — after A"),
+            (ActiveCdcStepKind.SendReplay, ActiveCdcStepKind.ObserveReplay, "T2 — after A2"),
+            (ActiveCdcStepKind.SendControl, ActiveCdcStepKind.ObserveControl, "T3 — after B"),
+        ],
+        ActiveCdcStepKind.FollowingEventProgression, ReplaySendFailure,
+        run => EvaluateProgression(run.Messages[1], run.Messages[2], run.Destination.ConsumerGroupAssumed),
+        "Cancelled while observing B. A, A2 and B had been sent and cannot be unsent; consumer continuity was not evaluated.");
+
+    private static readonly SequencePlan InvalidThenValidPlan = new(
+        "T0 — before I",
+        [
+            (ActiveCdcStepKind.SendInvalid, ActiveCdcStepKind.ObserveInvalid, "T1 — after invalid I"),
+            (ActiveCdcStepKind.SendValidControl, ActiveCdcStepKind.ObserveValidControl, "T2 — after valid V"),
+        ],
+        ActiveCdcStepKind.ConsumerContinuity, InvalidSendFailure,
+        run => EvaluateContinuity(run.Messages[0], run.Messages[1], run.Destination.ConsumerGroupAssumed),
+        "Cancelled while observing V. I and V had been sent and cannot be unsent; consumer continuity was not evaluated.");
+
+    private static SequencePlan PlanFor(ActiveCdcRun run) => run.Scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId ? InvalidThenValidPlan : ReplayPlan;
+
+    private async Task<ActiveCdcRun> ExecuteSequenceAsync(ActiveCdcRun run, IntegrationPlatform platform, string? environmentType, string? targetUrl, IReadOnlyList<SyntheticCdcEvent> events, CancellationToken ct)
     {
+        var plan = PlanFor(run);
         var hub = run.Destination.EventHub!;
         var group = run.Destination.ConsumerGroup;
         var position = await metadata.GetHubAsync(platform, hub, ct);
         var baseline = group is null ? null : await checkpoints.GetAsync(platform, hub, group, ct);
-        run = Snapshot(run, "T0 — before A", position, baseline);
+        run = Snapshot(run, plan.BaselineLabel, position, baseline);
         run = Add(run, ActiveCdcStepKind.BaselineCaptured, position.IsAvailable ? ActiveCdcEvidenceState.Observed : ActiveCdcEvidenceState.Unavailable,
             position.IsAvailable ? $"Partitions: {string.Join(", ", position.Value!.Partitions.Select(p => $"{p.PartitionId}@{p.LastEnqueuedSequenceNumber}"))}." : $"Partition positions unavailable: {position.Reason}", MetadataSource);
         await store.UpdateAsync(run, CancellationToken.None);
 
-        for (var i = 0; i < ReplayStages.Length; i++)
+        for (var i = 0; i < plan.Stages.Length; i++)
         {
-            var (sendKind, observeKind, snapshotLabel) = ReplayStages[i];
+            var (sendKind, observeKind, snapshotLabel) = plan.Stages[i];
             var label = run.Messages[i].Label;
             if (ct.IsCancellationRequested)
-                return await FinishReplayAsync(run with { CancellationRequested = true }, i, ActiveCdcRunStatus.Cancelled, i == 0 ? "Cancelled before A. Nothing was sent."
+                return await FinishSequenceAsync(run with { CancellationRequested = true }, plan, i, ActiveCdcRunStatus.Cancelled, i == 0 ? $"Cancelled before {label}. Nothing was sent."
                     : $"Cancelled before {label}. {string.Join(", ", run.Messages.Take(i).Select(m => m.Label))} had already been sent and cannot be unsent; {label} and later messages were not sent.");
             var (approved, reason) = policy.Approve(environmentType, run.Destination.NamespaceFqdn, hub, targetUrl);
             if (approved is null)
-                return await FinishReplayAsync(run, i, i == 0 ? ActiveCdcRunStatus.Blocked : ActiveCdcRunStatus.Inconclusive,
+                return await FinishSequenceAsync(run, plan, i, i == 0 ? ActiveCdcRunStatus.Blocked : ActiveCdcRunStatus.Inconclusive,
                     i == 0 ? $"Re-check before sending failed: {reason} Nothing was sent." : $"Re-check before {label} failed: {reason} Earlier messages were sent; the sequence is incomplete.");
 
             run = run with { SendAttempted = true };
@@ -201,8 +226,8 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
             await store.UpdateAsync(run, CancellationToken.None);
             if (outcome.State != ActiveCdcEvidenceState.Observed)
             {
-                var (status, why) = SendFailure(i, outcome);
-                return await FinishReplayAsync(run, i + 1, status, why);
+                var (status, why) = plan.SendFailure(i, outcome);
+                return await FinishSequenceAsync(run, plan, i + 1, status, why);
             }
             position = after;
 
@@ -214,44 +239,74 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         }
 
         if (ct.IsCancellationRequested)
-            return await FinishReplayAsync(run with { CancellationRequested = true }, ReplayStages.Length, ActiveCdcRunStatus.Cancelled,
-                "Cancelled while observing B. A, A2 and B had been sent and cannot be unsent; following-event progression was not evaluated.");
-        var progression = EvaluateProgression(run.Messages[1], run.Messages[2], run.Destination.ConsumerGroupAssumed);
-        run = Add(run, ActiveCdcStepKind.FollowingEventProgression, progression.State, progression.Detail, CheckpointSource);
-        return await FinishReplayAsync(run, ReplayStages.Length, progression.Status, progression.Reason);
+            return await FinishSequenceAsync(run with { CancellationRequested = true }, plan, plan.Stages.Length, ActiveCdcRunStatus.Cancelled, plan.CancelledAfterLast);
+        var result = plan.Evaluate(run);
+        run = Add(run, plan.Evaluation, result.State, result.Detail, CheckpointSource);
+        return await FinishSequenceAsync(run, plan, plan.Stages.Length, result.Status, result.Reason);
     }
+
+    /// <summary>The wording of one continuity evaluation; the rules are shared.</summary>
+    private sealed record ContinuityTexts(string Unreadable, string Unlocated, string FirstUnlocated, string Observed, string PassReason, string Stall, string StallReason, string Unattributable, string UnattributableReason);
 
     /// <summary>
-    /// Following-event progression from per-message checkpoint evidence. Observed only when the consumer checkpoint passed the replay (A2) on
-    /// its partition(s) AND the following valid event (B) on its partition(s). Missing or unreadable evidence is Partial; a stall is Failed
-    /// only when it is attributable (confirmed consumer group, each send moved exactly one partition), otherwise Inconclusive.
+    /// Continuity from per-message checkpoint evidence of the event under test (<paramref name="first"/>: A2 or I) and the control after it
+    /// (<paramref name="second"/>: B or V). Observed only when the consumer advanced past both, each on its own partition(s). Unreadable or
+    /// unlocatable evidence is Partial. A stall is Failed only when attributable (confirmed consumer group, each send moved exactly one
+    /// partition); otherwise Inconclusive — the <c>$Default</c> assumption can never produce a Failed.
     /// </summary>
-    public static (ActiveCdcEvidenceState State, ActiveCdcRunStatus Status, string Detail, string Reason) EvaluateProgression(ActiveCdcMessageEvidence replay, ActiveCdcMessageEvidence control, bool consumerGroupAssumed)
+    private static (ActiveCdcEvidenceState State, ActiveCdcRunStatus Status, string Detail, string Reason) Continuity(ActiveCdcMessageEvidence first, ActiveCdcMessageEvidence second, bool consumerGroupAssumed, ContinuityTexts t)
     {
-        var states = new[] { replay.CheckpointState, control.CheckpointState };
+        var states = new[] { first.CheckpointState, second.CheckpointState };
+        const string partial = "no reliable run-specific consumer-progression evidence was available, so the result is Partial.";
         if (states.Any(s => s is ActiveCdcEvidenceState.Unavailable or ActiveCdcEvidenceState.NotAuthorized))
-            return (ActiveCdcEvidenceState.Unavailable, ActiveCdcRunStatus.Partial, "Checkpoint evidence could not be read for A2 and/or B, so progression after the replay is not assessable.",
-                "All three messages were accepted by Event Hub, but no reliable run-specific consumer-progression evidence was available, so the result is Partial.");
-        if (states.Any(s => s is ActiveCdcEvidenceState.NotAssessed))
-            return (ActiveCdcEvidenceState.NotAssessed, ActiveCdcRunStatus.Partial, "The partition position of A2 and/or B could not be located, so progression after the replay is not assessable.",
-                "All three messages were accepted by Event Hub, but no reliable run-specific consumer-progression evidence was available, so the result is Partial.");
+            return (ActiveCdcEvidenceState.Unavailable, ActiveCdcRunStatus.Partial, t.Unreadable, $"All messages were accepted by Event Hub, but {partial}");
+        if (second.CheckpointState == ActiveCdcEvidenceState.NotAssessed)
+            return (ActiveCdcEvidenceState.NotAssessed, ActiveCdcRunStatus.Partial, t.Unlocated, $"All messages were accepted by Event Hub, but {partial}");
+        if (first.CheckpointState == ActiveCdcEvidenceState.NotAssessed)
+            return (ActiveCdcEvidenceState.NotAssessed, ActiveCdcRunStatus.Partial, t.FirstUnlocated, $"All messages were accepted by Event Hub, but {partial}");
         if (states.All(s => s == ActiveCdcEvidenceState.Observed))
             return (ActiveCdcEvidenceState.Observed, ActiveCdcRunStatus.Passed,
-                $"The consumer checkpoint passed the replay A2 (partition {string.Join(", ", replay.AdvancedPartitions.Keys)}) and the following valid event B (partition {string.Join(", ", control.AdvancedPartitions.Keys)}).",
-                "All required expectations were met: A, A2 and B were accepted, A2 was an exact replay of A, and the consumer checkpoint passed both the replay and the following valid event.");
-        var attributable = !consumerGroupAssumed && replay.AdvancedPartitions.Count == 1 && control.AdvancedPartitions.Count == 1;
-        return attributable
-            ? (ActiveCdcEvidenceState.NotObserved, ActiveCdcRunStatus.Failed,
-                "The consumer checkpoint did not pass the replay and/or the following valid event within the bounded window, on partitions attributable to this run.",
-                "Required expectation not met: the following valid event did not progress past the consumer within the bounded window after the replay.")
-            : (ActiveCdcEvidenceState.NotObserved, ActiveCdcRunStatus.Inconclusive,
-                "The consumer checkpoint did not pass A2 and/or B within the bounded window, but the stall is not attributable to this run (consumer group is a configured assumption, or other traffic moved more than one partition).",
-                "Progression after the replay was not observed, but the evidence cannot distinguish a stalled consumer from lag or an unconfirmed consumer group.");
+                string.Format(t.Observed, string.Join(", ", first.AdvancedPartitions.Keys), string.Join(", ", second.AdvancedPartitions.Keys)), t.PassReason);
+        var attributable = !consumerGroupAssumed && first.AdvancedPartitions.Count == 1 && second.AdvancedPartitions.Count == 1;
+        return attributable ? (ActiveCdcEvidenceState.NotObserved, ActiveCdcRunStatus.Failed, t.Stall, t.StallReason)
+            : (ActiveCdcEvidenceState.NotObserved, ActiveCdcRunStatus.Inconclusive, t.Unattributable, t.UnattributableReason);
     }
 
-    private static (ActiveCdcRunStatus Status, string Reason) SendFailure(int index, EventHubTestSendOutcome outcome)
-    {
+    private static readonly ContinuityTexts ReplayTexts = new(
+        "Checkpoint evidence could not be read for A2 and/or B, so progression after the replay is not assessable.",
+        "The partition position of A2 and/or B could not be located, so progression after the replay is not assessable.",
+        "The partition position of A2 and/or B could not be located, so progression after the replay is not assessable.",
+        "The consumer advanced past the replay A2 position (partition {0}) and the control B position (partition {1}). Checkpoint progression only — not evidence that either event was handled successfully.",
+        "All required expectations were met: A, A2 and B were accepted, A2 was an exact replay of A, and the consumer advanced past both the replay and the control event positions.",
+        "The consumer did not advance past the replay and/or the control event position within the bounded window, on partitions attributable to this run.",
+        "Required expectation not met: the consumer did not advance past the control event position within the bounded window after the replay.",
+        "The consumer checkpoint did not pass A2 and/or B within the bounded window, but the stall is not attributable to this run (consumer group is a configured assumption, or other traffic moved more than one partition).",
+        "Progression after the replay was not observed, but the evidence cannot distinguish a stalled consumer from lag or an unconfirmed consumer group.");
 
+    private static readonly ContinuityTexts InvalidTexts = new(
+        "Checkpoint evidence could not be read for I and/or V, so consumer continuity after the invalid input is not assessable.",
+        "The valid control's partition position could not be located, so consumer continuity after the invalid input is not assessable.",
+        "The consumer advanced past V, but the invalid event's partition could not be located, so continuity on I's partition after the invalid input is not assessable.",
+        "The consumer advanced past the invalid event position (partition {0}) and the valid control position (partition {1}). Consumer progression only — not evidence that I was rejected for the right reason or that V was handled.",
+        "All required expectations were met: the reviewed invalid event and the valid control were accepted, and the consumer advanced past both positions.",
+        "The consumer did not advance past the invalid event and/or the valid control position within the bounded window, on partitions attributable to this run.",
+        "Required expectation not met: after the invalid event, the consumer did not advance past the valid control position within the bounded window.",
+        "The consumer checkpoint did not pass I and/or V within the bounded window, but the stall is not attributable to this run (consumer group is a configured assumption, or other traffic moved more than one partition).",
+        "Consumer continuity after the invalid input was not observed, but the evidence cannot distinguish a stalled consumer from lag or an unconfirmed consumer group.");
+
+    /// <summary>Same PersonPK replay: the consumer must advance past A2 and B, each on its own partition(s).</summary>
+    public static (ActiveCdcEvidenceState State, ActiveCdcRunStatus Status, string Detail, string Reason) EvaluateProgression(ActiveCdcMessageEvidence replay, ActiveCdcMessageEvidence control, bool consumerGroupAssumed) =>
+        Continuity(replay, control, consumerGroupAssumed, ReplayTexts);
+
+    /// <summary>
+    /// Invalid Person → valid Person: the consumer must advance past I on I's partition(s) and past V on V's. When they share a partition,
+    /// passing V also passes I. When I could not be located, V alone says nothing about I's partition, so continuity is not assessable (Partial).
+    /// </summary>
+    public static (ActiveCdcEvidenceState State, ActiveCdcRunStatus Status, string Detail, string Reason) EvaluateContinuity(ActiveCdcMessageEvidence invalid, ActiveCdcMessageEvidence valid, bool consumerGroupAssumed) =>
+        Continuity(invalid, valid, consumerGroupAssumed, InvalidTexts);
+
+    private static (ActiveCdcRunStatus Status, string Reason) ReplaySendFailure(int index, EventHubTestSendOutcome outcome)
+    {
         if (outcome.Ambiguous)
             return (ActiveCdcRunStatus.Inconclusive, index switch
             {
@@ -266,7 +321,18 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
             1 => $"Replay transport failure: A2 was not accepted ({outcome.Detail}), so replay processing was never exercised. B was not sent.",
             _ => $"Control transport failure: B was not accepted ({outcome.Detail}). The consumer's state after the replay is not judged.",
         });
+    }
 
+    private static (ActiveCdcRunStatus Status, string Reason) InvalidSendFailure(int index, EventHubTestSendOutcome outcome)
+    {
+        if (outcome.Ambiguous)
+            return (ActiveCdcRunStatus.Inconclusive, index == 0
+                ? $"The invalid event's send outcome is unknown ({outcome.Detail}) — it was not re-sent, so the valid control was not sent."
+                : $"The valid control's send outcome is unknown ({outcome.Detail}) — it was not re-sent. Consumer continuity cannot be claimed.");
+        if (index == 0 && outcome.State == ActiveCdcEvidenceState.NotAuthorized) return (ActiveCdcRunStatus.Blocked, $"{outcome.Detail} Nothing was sent.");
+        return (ActiveCdcRunStatus.Failed, index == 0
+            ? $"Invalid event transport failure: Event Hub did not accept I ({outcome.Detail}), so the fault scenario never entered the consumer path. V was not sent."
+            : $"Control transport failure: V was not accepted ({outcome.Detail}). The consumer's state after the invalid event is not judged.");
     }
 
     private async Task<(ActiveCdcEvidenceState State, string Detail, EvidenceResult<CheckpointEvidence>? Last)> CheckpointPastAsync(IntegrationPlatform platform, string hub, string? group,
@@ -285,7 +351,7 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
                 return (last.State == IntegrationEvidenceState.NotAuthorized ? ActiveCdcEvidenceState.NotAuthorized : ActiveCdcEvidenceState.Unavailable, $"Checkpoints unavailable: {last.Reason}{caveat}", last);
             var pending = advanced.Where(a => last.Value!.Partitions.FirstOrDefault(p => p.PartitionId == a.Key)?.SequenceNumber is not { } seq || seq < a.Value).Select(a => a.Key).ToList();
             if (pending.Count == 0)
-                return (ActiveCdcEvidenceState.Observed, $"Checkpoint of {group} at or past the post-send position on partition {string.Join(", ", advanced.Select(a => $"{a.Key} (≥ {a.Value})"))}. The adapter finished that flush; this does not show what it stored.{shared}{caveat}", last);
+                return (ActiveCdcEvidenceState.Observed, $"Checkpoint of {group} at or past the post-send position on partition {string.Join(", ", advanced.Select(a => $"{a.Key} (≥ {a.Value})"))}. Consumer progression only: the adapter checkpoints per flush and skips events it cannot handle, so this does not show the event was handled or stored.{shared}{caveat}", last);
             if (ct.IsCancellationRequested || clock.GetUtcNow() >= deadline)
                 return (ct.IsCancellationRequested ? ActiveCdcEvidenceState.NotObserved : ActiveCdcEvidenceState.TimedOut,
                     $"{(ct.IsCancellationRequested ? "Observation cancelled" : $"Not reached within {policy.Options.ObservationSeconds} s")}: partition {string.Join(", ", pending)} not yet checkpointed past the event.{shared}{caveat}", last);
@@ -326,20 +392,21 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         run with { Messages = run.Messages.Select((m, i) => i == index ? change(m) : m).ToList() };
 
     /// <summary>Records the stages that were not reached and the domains BirkNext cannot see, then completes the run.</summary>
-    private async Task<ActiveCdcRun> FinishReplayAsync(ActiveCdcRun run, int reached, ActiveCdcRunStatus status, string reason)
+    private async Task<ActiveCdcRun> FinishSequenceAsync(ActiveCdcRun run, SequencePlan plan, int reached, ActiveCdcRunStatus status, string reason)
     {
-        for (var i = reached; i < ReplayStages.Length; i++)
+        for (var i = reached; i < plan.Stages.Length; i++)
         {
-            if (run.Step(ReplayStages[i].Send) is null) run = Add(run, ReplayStages[i].Send, ActiveCdcEvidenceState.NotAssessed, $"Not sent — the sequence stopped before {run.Messages[i].Label}.", "Not reached");
-            if (run.Step(ReplayStages[i].Observe) is null) run = Add(run, ReplayStages[i].Observe, ActiveCdcEvidenceState.NotAssessed, "Not observed — the message was not sent.", "Not reached");
+            if (run.Step(plan.Stages[i].Send) is null) run = Add(run, plan.Stages[i].Send, ActiveCdcEvidenceState.NotAssessed, $"Not sent — the sequence stopped before {run.Messages[i].Label}.", "Not reached");
+            if (run.Step(plan.Stages[i].Observe) is null) run = Add(run, plan.Stages[i].Observe, ActiveCdcEvidenceState.NotAssessed, "Not observed — the message was not sent.", "Not reached");
         }
-        for (var i = 0; i < Math.Min(reached, ReplayStages.Length); i++)
-            if (run.Step(ReplayStages[i].Observe) is null) run = Add(run, ReplayStages[i].Observe, ActiveCdcEvidenceState.NotAssessed, "Not observed — the sequence stopped after this send.", "Not reached");
-        if (run.Step(ActiveCdcStepKind.FollowingEventProgression) is null)
-            run = Add(run, ActiveCdcStepKind.FollowingEventProgression, ActiveCdcEvidenceState.NotAssessed, "Not evaluated — the sequence did not complete.", CheckpointSource);
-        run = Add(run, ActiveCdcStepKind.CorrelatedReplayError, ActiveCdcEvidenceState.NotAssessed,
-            "No run-correlated error source exists: adapter errors are logged with partition and BirkId only (no run id), and its fault queue is in the adapter's own database. No correlated replay error evidence was observed — this is not a statement that no error occurred.",
-            "Not available");
+        for (var i = 0; i < Math.Min(reached, plan.Stages.Length); i++)
+            if (run.Step(plan.Stages[i].Observe) is null) run = Add(run, plan.Stages[i].Observe, ActiveCdcEvidenceState.NotAssessed, "Not observed — the sequence stopped after this send.", "Not reached");
+        if (run.Step(plan.Evaluation) is null)
+            run = Add(run, plan.Evaluation, ActiveCdcEvidenceState.NotAssessed, "Not evaluated — the sequence did not complete.", CheckpointSource);
+        if (plan == ReplayPlan)
+            run = Add(run, ActiveCdcStepKind.CorrelatedReplayError, ActiveCdcEvidenceState.NotAssessed,
+                "No run-correlated error source exists: adapter errors are logged with partition and BirkId only (no run id), and its fault queue is in the adapter's own database. No correlated replay error evidence was observed — this is not a statement that no error occurred.",
+                "Not available");
         return await CompleteAsync(run, status, reason);
     }
 
@@ -358,18 +425,42 @@ public sealed class ActiveCdcRunner(ActiveCdcPolicy policy, IEventHubTestSender 
         [ActiveCdcStepKind.ServiceBusDelivered] = (ActiveCdcEvidenceState.NotAssessed, "BirkNext does not receive from Service Bus (no data-plane receive)."),
         [ActiveCdcStepKind.SubscriberProcessed] = (ActiveCdcEvidenceState.NotAssessed, "Subscriber processing is not observable from BirkNext."),
         [ActiveCdcStepKind.NaturalKeyDuplicate] = (ActiveCdcEvidenceState.NotTested, "Not tested: this scenario reuses the same PersonPK; it sends no second PersonPK with the same natural identity."),
+        [ActiveCdcStepKind.ReplayHandled] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: a checkpoint past A2 shows consumer progression only — the adapter checkpoints per flush and logs and skips events it cannot handle."),
+        [ActiveCdcStepKind.ControlHandled] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: a checkpoint past B shows consumer progression only, not that B was ingested or stored."),
+        [ActiveCdcStepKind.InvalidHandledCorrectly] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: the source-reviewed path is \"PersonMapper returned null → discarded\", but nothing observable ties that outcome to this event; a checkpoint past I shows consumer progression only."),
+        [ActiveCdcStepKind.InvalidDiagnostic] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: the adapter logs the discard with table and operation only (no PersonPK, message id or run id), so no log line can be tied to this run. An expected invalid-input warning would not be a failure; no correlated error evidence is available."),
+        [ActiveCdcStepKind.FaultQueueOutcome] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: the adapter's fault queue is in its own database, which BirkNext does not read. The reviewed discard path writes no fault entry, but that is not observed."),
+        [ActiveCdcStepKind.ConsumerRetry] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: consumer and application retries are not observable from BirkNext. The producer made one attempt per message; no correlated consumer retry evidence is available."),
+        [ActiveCdcStepKind.DatabaseEffects] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: BirkNext does not read the Person or adapter databases."),
+        [ActiveCdcStepKind.ValidControlHandled] = (ActiveCdcEvidenceState.NotAssessed, "Not assessed: a checkpoint past V shows consumer progression only, not that V was ingested or stored."),
     };
 
-    /// <summary>Applies <see cref="Unobservable"/>: replay runs get every such step; any run's existing step is forced back to its only allowed state.</summary>
+    private static readonly ActiveCdcStepKind[] SequenceCommon =
+        [ActiveCdcStepKind.PersonPersisted, ActiveCdcStepKind.OutboxCreated, ActiveCdcStepKind.ServiceBusDelivered, ActiveCdcStepKind.SubscriberProcessed];
+
+    /// <summary>The unobservable domains a scenario records explicitly (Normal Person keeps its Phase 1 set, which its runner already writes).</summary>
+    internal static IReadOnlyCollection<ActiveCdcStepKind> RecordedUnobservable(string scenarioId) => scenarioId switch
+    {
+        ActiveCdcScenarioCatalog.SamePersonPkReplayId =>
+            [.. SequenceCommon, ActiveCdcStepKind.DatabaseIdempotency, ActiveCdcStepKind.PersonRowCount, ActiveCdcStepKind.OverwriteBehavior, ActiveCdcStepKind.OutboxDuplication,
+             ActiveCdcStepKind.NaturalKeyDuplicate, ActiveCdcStepKind.ReplayHandled, ActiveCdcStepKind.ControlHandled],
+        ActiveCdcScenarioCatalog.InvalidThenValidId =>
+            [.. SequenceCommon, ActiveCdcStepKind.InvalidHandledCorrectly, ActiveCdcStepKind.InvalidDiagnostic, ActiveCdcStepKind.FaultQueueOutcome, ActiveCdcStepKind.ConsumerRetry,
+             ActiveCdcStepKind.DatabaseEffects, ActiveCdcStepKind.ValidControlHandled],
+        _ => [],
+    };
+
+    /// <summary>Applies <see cref="Unobservable"/>: the scenario's own set is always recorded; any run's existing step for one of these kinds is forced back to its only allowed state.</summary>
     internal static ActiveCdcRun EnforceBoundaries(ActiveCdcRun run)
     {
-        var replay = run.Scenario.Id == ActiveCdcScenarioCatalog.SamePersonPkReplayId;
+        var recorded = RecordedUnobservable(run.Scenario.Id);
         foreach (var (kind, (state, detail)) in Unobservable)
         {
             var step = run.Step(kind);
-            if (step is null && !replay) continue;
+            if (step is null && !recorded.Contains(kind)) continue;
             if (step is { } existing && existing.State == state) continue;
-            run = Add(run, kind, state, step is null ? detail : step.Detail, step?.Source is { Length: > 0 } source ? source : "Not available", step?.CapturedAt);
+            // A step that claimed more than BirkNext can see gets the canonical Not assessed text, not its claim.
+            run = Add(run, kind, state, detail, step?.Source is { Length: > 0 } source ? source : "Not available", step?.CapturedAt);
         }
         return run;
     }

@@ -33,14 +33,59 @@ public static class ActiveCdcScenarioCatalog
         Id = SamePersonPkReplayId, Version = "1", Name = "Same PersonPK replay", Category = "Runtime resilience", MessageCount = 3,
         Description = "Sends one synthetic Person, replays the same source identity, then sends another valid Person to check whether the observable consumer path continues.",
         Limitation = "This does not verify database idempotency or duplicate Person handling.",
-        PassCriterion = "Passed requires all three sends accepted, A2 byte-identical to A, and the consumer checkpoint past both the replay and the following valid event on their partitions.",
-        PassMeaning = "Passed means the same source Person identity was replayed and the observable Event Hub → Person Adapter consumer path continued processing a following valid Person event.",
-        PassDoesNotMean = "This result does not prove database idempotency, Person row count, overwrite behavior, outbox duplication, Service Bus delivery or natural-key duplicate handling.",
+        PassCriterion = "Passed requires all three sends accepted, A2 byte-identical to A, and the consumer checkpoint past both the replay and the control event on their partitions.",
+        PassMeaning = "Runtime continuity after replay was observed: the Event Hub consumer advanced beyond the replay and the following control event without becoming stuck.",
+        PassDoesNotMean = "It does not mean the replay was processed successfully, the control Person was persisted, database idempotency was proven, no outbox duplication occurred, Person row count or overwrite behavior was correct, natural-key duplicates were handled, or Service Bus was verified. A checkpoint past an event shows consumer progression, not successful handling.",
     };
 
-    public static IReadOnlyList<ActiveCdcScenario> All { get; } = [NormalPerson, SamePersonPkReplay];
+    public const string InvalidThenValidId = "person.invalid-then-valid";
+
+    /// <summary>
+    /// Fault resilience: one controlled invalid Person CDC event (valid Debezium envelope, PersonPK missing) followed by one valid synthetic
+    /// Person. It asks only whether the observable Event Hub consumer keeps advancing after the invalid input.
+    /// </summary>
+    public static readonly ActiveCdcScenario InvalidThenValid = NormalPerson with
+    {
+        Id = InvalidThenValidId, Version = "1", Name = "Invalid Person → valid Person", Category = "Fault resilience", MessageCount = 2,
+        Description = "Sends one controlled invalid Person CDC event followed by a valid synthetic Person event to check whether the observable consumer continues advancing.",
+        Limitation = "This verifies consumer continuity, not correct handling or persistence of either message.",
+        PassCriterion = "Passed requires both sends accepted, the reviewed invalid fixture, and the consumer checkpoint past the invalid event and the valid control on their partitions.",
+        PassMeaning = "A controlled invalid Person CDC event was followed by a valid Person CDC event, and the observable Event Hub consumer advanced beyond the valid control event without becoming stuck.",
+        PassDoesNotMean = "This does not prove that the invalid event was rejected for the correct reason or that the valid Person was persisted. It also does not prove the invalid event left no database state, the mapper output was correct, or that no exception, retry, fault record, outbox event or Service Bus effect occurred.",
+        InvalidFixture = $"{InvalidFixtureReview.FixtureId} v{InvalidFixtureReview.FixtureVersion}",
+        InvalidCondition = InvalidFixtureReview.Condition,
+    };
+
+    public static IReadOnlyList<ActiveCdcScenario> All { get; } = [NormalPerson, SamePersonPkReplay, InvalidThenValid];
 
     public static ActiveCdcScenario? Find(string? id) => All.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.Ordinal));
+}
+
+/// <summary>
+/// The reviewed invalid fixture. The M2LB source analyzer records that PersonPK derives the Person identity but not the mapper's null gate,
+/// so the review is bound to the exact archive it was made against; any other archive is "Needs review" until re-reviewed (an operator can
+/// add re-reviewed archive hashes in <c>ActiveCdcTests:InvalidFixtureReviewedArchives</c>).
+/// </summary>
+public static class InvalidFixtureReview
+{
+    public const string FixtureId = "person.missing-personpk";
+    public const int FixtureVersion = 1;
+    public const string Condition = "PersonPK missing from a structurally valid Person create (valid payload, op \"c\", source.table Person, after object).";
+
+    /// <summary>SHA-256 of the M2LB archive reviewed on 2026-09-30 (PersonAdapter sources identical to the audited copy).</summary>
+    public static readonly IReadOnlySet<string> ReviewedArchives = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "c850a1b2813bbf6e2a9eba1f311d63ff0332eacf35764cd6b767489ac22dc41e",
+    };
+
+    /// <summary>The expected code path, as reviewed (source locations; no source text is stored).</summary>
+    public static readonly IReadOnlyList<string> ReviewedPath =
+    [
+        "PersonMapper.Map returns null when PersonPK is not a JSON number (PersonAdapter/src/M2LB.PersonBiRKAdapter.Infrastructure/Mapping/PersonMapper.cs:17-19).",
+        "CdcRouter.RouteAsync logs \"PersonMapper returned null — discarding\" and returns Discarded (PersonAdapter/src/M2LB.PersonBiRKAdapter.Domain/Routing/CdcRouter.cs:93).",
+        "CdcProcessorWorker.OnProcessEventAsync logs \"CDC event discarded\", sets the batch's last event and flushes, so the next checkpoint passes it (PersonAdapter/src/M2LB.PersonBiRKAdapter.Worker/Workers/CdcProcessorWorker.cs:139-150).",
+        "No HTTP call, no fault-queue entry and no retry on this path.",
+    ];
 }
 
 /// <summary>A generated synthetic CDC event. Only <see cref="PersonCdcFixtureBuilder"/> can create one — there is no generic "send this JSON".</summary>
@@ -83,7 +128,17 @@ public static class PersonCdcFixtureBuilder
     /// <summary>A2 is a replay of A only when the business payload is byte-identical.</summary>
     public static bool IsExactReplay(SyntheticCdcEvent a, SyntheticCdcEvent a2) => a.Body.Span.SequenceEqual(a2.Body.Span);
 
+    /// <summary>
+    /// The controlled invalid fixture: the Normal Person envelope and fields with PersonPK omitted — nothing else differs, so there is no
+    /// second invalidity. It is built by the same writer as the valid fixtures.
+    /// </summary>
+    public static (SyntheticCdcEvent Event, ActiveCdcFixtureSummary Summary) BuildInvalid(Guid runId, ActiveCdcDestination destination, DateTimeOffset now, int maxBytes, string scenarioId, string label) =>
+        Write(runId, null, destination, now, maxBytes, scenarioId, label, "-INVALID");
+
     public static (SyntheticCdcEvent Event, ActiveCdcFixtureSummary Summary) Build(Guid runId, int personPk, ActiveCdcDestination destination, DateTimeOffset now, int maxBytes,
+        string scenarioId, string label, string markerSuffix) => Write(runId, personPk, destination, now, maxBytes, scenarioId, label, markerSuffix);
+
+    private static (SyntheticCdcEvent Event, ActiveCdcFixtureSummary Summary) Write(Guid runId, int? personPk, ActiveCdcDestination destination, DateTimeOffset now, int maxBytes,
         string scenarioId, string label, string markerSuffix)
     {
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(now, Oslo).Date);
@@ -98,7 +153,7 @@ public static class PersonCdcFixtureBuilder
             json.WriteStartObject("payload");
             json.WriteNull("before");
             json.WriteStartObject("after");
-            json.WriteNumber("PersonPK", personPk);
+            if (personPk is { } pk) json.WriteNumber("PersonPK", pk);
             json.WriteString("Fornavn", marker);
             json.WriteString("Etternavn", "Synthetic");
             json.WriteNumber("Født", birth.DayNumber - DateOnly.FromDateTime(DateTime.UnixEpoch).DayNumber);
@@ -124,8 +179,8 @@ public static class PersonCdcFixtureBuilder
         if (body.Length > maxBytes) throw new InvalidOperationException($"The synthetic fixture is {body.Length} bytes, above the {maxBytes}-byte bound.");
         var summary = new ActiveCdcFixtureSummary
         {
-            SyntheticPersonPk = personPk, ExpectedPersonId = ExpectedPersonId(personPk), Marker = marker, SyntheticBirthDate = birth, AgeYears = age,
-            Fields = [.. ActiveCdcScenarioCatalog.NormalPerson.Fields], PayloadSha256 = Convert.ToHexString(SHA256.HashData(body)).ToLowerInvariant(), PayloadBytes = body.Length,
+            SyntheticPersonPk = personPk ?? 0, ExpectedPersonId = personPk is { } key ? ExpectedPersonId(key) : Guid.Empty, Marker = marker, SyntheticBirthDate = birth, AgeYears = age,
+            Fields = [.. ActiveCdcScenarioCatalog.NormalPerson.Fields.Where(f => personPk is not null || f != "PersonPK")], PayloadSha256 = Convert.ToHexString(SHA256.HashData(body)).ToLowerInvariant(), PayloadBytes = body.Length,
             Notes =
             [
                 "Synthetic values only; the payload itself is not stored.",
@@ -149,7 +204,7 @@ public static class PersonCdcFixtureBuilder
 /// </summary>
 public static class ActiveCdcContractManifestService
 {
-    public static ActiveCdcContractManifest Evaluate(ActiveCdcScenario scenario, IqrSourceSnapshot? snapshot, Guid? latestSnapshotId)
+    public static ActiveCdcContractManifest Evaluate(ActiveCdcScenario scenario, IqrSourceSnapshot? snapshot, Guid? latestSnapshotId, IEnumerable<string>? additionalReviewedArchives = null)
     {
         var baseline = new ActiveCdcContractManifest
         {
@@ -169,6 +224,24 @@ public static class ActiveCdcContractManifestService
         if (missing.Count > 0)
             return Seal(bound with { Status = ActiveCdcContractStatus.Incompatible, ConfirmedFields = confirmed, MissingFields = missing, Detail = $"The adapter in this snapshot does not read: {string.Join(", ", missing)}." });
         if (scenario.Id == ActiveCdcScenarioCatalog.SamePersonPkReplayId) bound = bound with { DeveloperCoverage = SamePersonPkCoverage(snapshot) };
+        if (scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId)
+        {
+            var identity = path.Fields.FirstOrDefault(f => f.Key == $"CDC {record}.PersonPK")?.Steps
+                .Any(s => s.Field == "PersonId" && s.Transformation == FieldTransformation.Derived && s.Location?.File.EndsWith("PersonMapper.cs", StringComparison.Ordinal) == true) == true;
+            if (!identity)
+                return Seal(bound with { Status = ActiveCdcContractStatus.Incompatible, ConfirmedFields = confirmed, MissingFields = missing, InvalidFixture = scenario.InvalidFixture, InvalidFixtureStatus = "Needs review",
+                    Detail = "The snapshot does not show PersonMapper deriving the Person identity from PersonPK, so the invalid fixture's premise is not supported by this source." });
+            var reviewed = InvalidFixtureReview.ReviewedArchives.Contains(snapshot.Archive.Sha256)
+                || (additionalReviewedArchives ?? []).Contains(snapshot.Archive.Sha256, StringComparer.OrdinalIgnoreCase);
+            bound = bound with
+            {
+                InvalidFixture = scenario.InvalidFixture, InvalidFixtureStatus = reviewed ? "Reviewed" : "Needs review",
+                InvalidFixtureDetail = reviewed
+                    ? $"Reviewed against archive {snapshot.Archive.Sha256[..12]}…: {string.Join(" ", InvalidFixtureReview.ReviewedPath)}"
+                    : $"Archive {snapshot.Archive.Sha256[..Math.Min(12, snapshot.Archive.Sha256.Length)]}… was not reviewed for this fixture. The source analyzer does not see the mapper's null gate, so the invalid behavior must be re-reviewed before sending.",
+                DeveloperCoverage = InvalidInputCoverage(snapshot),
+            };
+        }
         if (latestSnapshotId is { } latest && latest != snapshot.Id)
             return Seal(bound with { Status = ActiveCdcContractStatus.Outdated, ConfirmedFields = confirmed, Detail = "A newer source snapshot exists for this integration. Select it so the fixture is bound to the current source." });
         return Seal(bound with { Status = ActiveCdcContractStatus.Compatible, ConfirmedFields = confirmed, Detail = $"All {confirmed.Count} fixture fields are read by {record} in this snapshot (source compatibility, not deployment correlation)." });
@@ -184,9 +257,17 @@ public static class ActiveCdcContractManifestService
             .Select(t => $"{t.Class}.{t.Method} ({t.Layer.ToString().ToLowerInvariant()})").Distinct().ToList();
     }
 
+    /// <summary>Developer tests near the invalid path (discovered, not executed): mapper-null discards, discard-with-checkpoint and envelope rejection. None is the exact missing-PersonPK case unless its name says so.</summary>
+    private static List<string> InvalidInputCoverage(IqrSourceSnapshot snapshot) => snapshot.Tests
+        .Where(t => t.Method.Contains("MapperReturnsNull", StringComparison.Ordinal) || (t.Method.Contains("Discarded", StringComparison.Ordinal) && t.Method.Contains("Checkpoint", StringComparison.Ordinal))
+            || (t.Method.Contains("PersonPK", StringComparison.Ordinal) && (t.Method.Contains("Missing", StringComparison.Ordinal) || t.Method.Contains("Null", StringComparison.Ordinal)))
+            || (t.Class == "CdcEnvelopeDeserializeTests" && t.Method.Contains("ReturnsNull", StringComparison.Ordinal)))
+        .Select(t => $"{t.Class}.{t.Method} ({t.Layer.ToString().ToLowerInvariant()}{(t.Method.Contains("PersonPK", StringComparison.Ordinal) ? "" : ", related")})").Distinct().ToList();
+
     private static ActiveCdcContractManifest Seal(ActiveCdcContractManifest m)
     {
         var text = string.Join("|", m.ScenarioId, m.ScenarioVersion, m.FixtureSchemaVersion, m.SourceSnapshotId, m.ArchiveSha256, m.Status, string.Join(",", m.ConfirmedFields));
+        if (m.InvalidFixture.Length > 0) text += $"|{m.InvalidFixture}|{m.InvalidFixtureStatus}";
         return m with { Fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant()[..16] };
     }
 }

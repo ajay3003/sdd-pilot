@@ -21,6 +21,11 @@ public enum ActiveCdcStepKind
     // Same PersonPK replay (appended: stored Phase 1 runs keep their meaning).
     IdentitiesAllocated, SendA, ObserveA, ReplayEquivalence, SendReplay, ObserveReplay, SendControl, ObserveControl, FollowingEventProgression,
     CorrelatedReplayError, DatabaseIdempotency, PersonRowCount, OverwriteBehavior, OutboxDuplication, NaturalKeyDuplicate,
+    // Checkpoint progression ≠ successful handling: these are never assessed (appended; stored runs keep their meaning).
+    ReplayHandled, ControlHandled,
+    // Invalid Person → valid Person (fault resilience).
+    InvalidFixtureReviewed, SendInvalid, ObserveInvalid, SendValidControl, ObserveValidControl, ConsumerContinuity,
+    InvalidHandledCorrectly, InvalidDiagnostic, FaultQueueOutcome, ConsumerRetry, DatabaseEffects, ValidControlHandled,
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -52,6 +57,9 @@ public sealed record ActiveCdcScenario
     /// <summary>What a Passed result means, exactly, and what it does not.</summary>
     public string PassMeaning { get; init; } = "";
     public string PassDoesNotMean { get; init; } = "";
+    /// <summary>Fault-resilience scenarios: the reviewed invalid fixture ("person.missing-personpk v1") and its source-derived invalid condition.</summary>
+    public string InvalidFixture { get; init; } = "";
+    public string InvalidCondition { get; init; } = "";
 }
 
 /// <summary>One sent message of a multi-message scenario (A, A2, B): synthetic identity, hash, send outcome and where it landed. Never the payload.</summary>
@@ -59,7 +67,10 @@ public sealed record ActiveCdcMessageEvidence
 {
     public string Label { get; init; } = "";
     public string Role { get; init; } = "";
-    public int SyntheticPersonPk { get; init; }
+    /// <summary>Null for the invalid message I, which carries no PersonPK by design.</summary>
+    public int? SyntheticPersonPk { get; init; }
+    /// <summary>Invalid messages only: the controlled invalid condition (field names, never values).</summary>
+    public string InvalidCondition { get; init; } = "";
     public Guid ExpectedPersonId { get; init; }
     public string Marker { get; init; } = "";
     public string PayloadSha256 { get; init; } = "";
@@ -104,6 +115,10 @@ public sealed record ActiveCdcContractManifest
     public string Fingerprint { get; init; } = "";
     /// <summary>Developer tests in the bound snapshot that cover the scenario's domain behavior (discovered, not executed). Shown apart from Active CDC evidence.</summary>
     public List<string> DeveloperCoverage { get; init; } = [];
+    /// <summary>Fault-resilience scenarios: which invalid fixture was bound, and whether it was reviewed against this exact source (else Needs review → blocked).</summary>
+    public string InvalidFixture { get; init; } = "";
+    public string InvalidFixtureStatus { get; init; } = "";
+    public string InvalidFixtureDetail { get; init; } = "";
 }
 
 /// <summary>Where the event goes: derived from the configured integration and platform, then approved by backend policy. Identifiers only.</summary>
@@ -249,21 +264,35 @@ public static class ActiveCdcLabels
         ActiveCdcStepKind.OutboxCreated => "Outbox message created",
         ActiveCdcStepKind.ServiceBusDelivered => "Service Bus delivered",
         ActiveCdcStepKind.SubscriberProcessed => "Subscriber processed",
-        ActiveCdcStepKind.IdentitiesAllocated => "Allocate synthetic identities (X, Y)",
+        ActiveCdcStepKind.IdentitiesAllocated => "Allocate synthetic PersonPK(s)",
         ActiveCdcStepKind.SendA => "A — send (PersonPK X)",
-        ActiveCdcStepKind.ObserveA => "Observe A (consumer checkpoint)",
+        ActiveCdcStepKind.ObserveA => "Consumer advanced past A",
         ActiveCdcStepKind.ReplayEquivalence => "A2 is an exact replay of A",
         ActiveCdcStepKind.SendReplay => "A2 — replay send (same PersonPK X)",
-        ActiveCdcStepKind.ObserveReplay => "Observe replay (consumer checkpoint)",
+        ActiveCdcStepKind.ObserveReplay => "Consumer advanced past A2",
         ActiveCdcStepKind.SendControl => "B — control send (different PersonPK Y)",
-        ActiveCdcStepKind.ObserveControl => "Observe B (consumer checkpoint)",
-        ActiveCdcStepKind.FollowingEventProgression => "Following valid event progression",
+        ActiveCdcStepKind.ObserveControl => "Consumer advanced past B",
+        ActiveCdcStepKind.FollowingEventProgression => "Consumer continuity after replay",
         ActiveCdcStepKind.CorrelatedReplayError => "Correlated replay error",
         ActiveCdcStepKind.DatabaseIdempotency => "Database idempotency",
         ActiveCdcStepKind.PersonRowCount => "Person row count",
         ActiveCdcStepKind.OverwriteBehavior => "Overwrite behavior",
         ActiveCdcStepKind.OutboxDuplication => "Outbox duplication",
         ActiveCdcStepKind.NaturalKeyDuplicate => "Natural-key duplicate",
+        ActiveCdcStepKind.ReplayHandled => "A2 handled successfully",
+        ActiveCdcStepKind.ControlHandled => "B handled successfully",
+        ActiveCdcStepKind.InvalidFixtureReviewed => "Invalid fixture reviewed against the bound source",
+        ActiveCdcStepKind.SendInvalid => "I — invalid Person send (PersonPK missing)",
+        ActiveCdcStepKind.ObserveInvalid => "Consumer advanced past invalid event position",
+        ActiveCdcStepKind.SendValidControl => "V — valid control send",
+        ActiveCdcStepKind.ObserveValidControl => "Consumer advanced past valid control position",
+        ActiveCdcStepKind.ConsumerContinuity => "Consumer continuity after invalid input",
+        ActiveCdcStepKind.InvalidHandledCorrectly => "Invalid event rejected for the correct reason",
+        ActiveCdcStepKind.InvalidDiagnostic => "Invalid-event diagnostic",
+        ActiveCdcStepKind.FaultQueueOutcome => "Fault queue outcome",
+        ActiveCdcStepKind.ConsumerRetry => "Consumer / application retry",
+        ActiveCdcStepKind.DatabaseEffects => "Database effects",
+        ActiveCdcStepKind.ValidControlHandled => "Valid control handled successfully",
         _ => kind.ToString(),
     };
 

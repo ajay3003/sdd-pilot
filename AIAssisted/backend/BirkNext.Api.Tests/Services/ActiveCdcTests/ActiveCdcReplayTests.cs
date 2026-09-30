@@ -43,8 +43,10 @@ public sealed class ActiveCdcReplayTests
         var s = ActiveCdcScenarioCatalog.Find(Replay)!;
         (s.Id, s.Version, s.Name, s.Category, s.MessageCount).Should().Be((Replay, "1", "Same PersonPK replay", "Runtime resilience", 3));
         s.Limitation.Should().Be("This does not verify database idempotency or duplicate Person handling.");
-        s.PassMeaning.Should().Contain("observable Event Hub → Person Adapter consumer path continued");
-        s.PassDoesNotMean.Should().Contain("database idempotency").And.Contain("Person row count").And.Contain("natural-key duplicate");
+        s.PassMeaning.Should().Be("Runtime continuity after replay was observed: the Event Hub consumer advanced beyond the replay and the following control event without becoming stuck.");
+        s.PassMeaning.Should().NotContainAny(["processed", "processing", "handled"], "checkpoint progression is not successful processing");
+        s.PassDoesNotMean.Should().Contain("replay was processed successfully").And.Contain("control Person was persisted").And.Contain("database idempotency")
+            .And.Contain("outbox duplication").And.Contain("Service Bus").And.Contain("not successful handling");
         s.Name.Should().NotContain("Duplicate Person");
         ActiveCdcScenarioCatalog.NormalPerson.MessageCount.Should().Be(1, "Normal Person is unchanged");
     }
@@ -101,6 +103,26 @@ public sealed class ActiveCdcReplayTests
                      ActiveCdcStepKind.OutboxCreated, ActiveCdcStepKind.OutboxDuplication, ActiveCdcStepKind.ServiceBusDelivered, ActiveCdcStepKind.SubscriberProcessed })
             run.Step(kind)!.State.Should().Be(ActiveCdcEvidenceState.NotAssessed, $"{kind} is never assessed by an Active CDC run");
         run.Step(ActiveCdcStepKind.NaturalKeyDuplicate)!.State.Should().Be(ActiveCdcEvidenceState.NotTested);
+        run.Step(ActiveCdcStepKind.ReplayHandled)!.State.Should().Be(ActiveCdcEvidenceState.NotAssessed, "a checkpoint past A2 is not successful handling");
+        run.Step(ActiveCdcStepKind.ControlHandled)!.State.Should().Be(ActiveCdcEvidenceState.NotAssessed, "a checkpoint past B is not successful handling");
+    }
+
+    [Fact]
+    public async Task CheckpointPastReplayAndControl_IsProgressionOnly_NeverSuccessfulHandling()
+    {
+        await using var h = new H();
+        await h.AddSnapshotAsync();
+        SinglePartition(h);
+        var run = await RunAsync(h);
+        run.Status.Should().Be(ActiveCdcRunStatus.Passed);
+        (run.Step(ActiveCdcStepKind.ObserveReplay)!.State, run.Step(ActiveCdcStepKind.ObserveControl)!.State).Should().Be((ActiveCdcEvidenceState.Observed, ActiveCdcEvidenceState.Observed));
+        (run.Step(ActiveCdcStepKind.ReplayHandled)!.State, run.Step(ActiveCdcStepKind.ControlHandled)!.State).Should().Be((ActiveCdcEvidenceState.NotAssessed, ActiveCdcEvidenceState.NotAssessed));
+        run.Step(ActiveCdcStepKind.ObserveControl)!.Detail.Should().Contain("Consumer progression only").And.Contain("does not show the event was handled");
+        run.Step(ActiveCdcStepKind.FollowingEventProgression)!.Detail.Should().Contain("not evidence that either event was handled successfully");
+        run.WhatWasTested.Should().NotContain(t => t.Contains("processed") || t.Contains("handled successfully:"));
+        run.WhatWasNotAssessed.Should().Contain(t => t.StartsWith("A2 handled successfully — Not assessed")).And.Contain(t => t.StartsWith("B handled successfully — Not assessed"));
+        ActiveCdcLabels.Step(ActiveCdcStepKind.ObserveControl).Should().Be("Consumer advanced past B");
+        ActiveCdcLabels.Step(ActiveCdcStepKind.FollowingEventProgression).Should().Be("Consumer continuity after replay");
     }
 
     [Fact]
@@ -148,7 +170,7 @@ public sealed class ActiveCdcReplayTests
         SinglePartition(confirmed, checkpointAfterStart: 11);
         var failed = await RunAsync(confirmed);
         failed.Status.Should().Be(ActiveCdcRunStatus.Failed);
-        failed.StatusReason.Should().Contain("following valid event did not progress");
+        failed.StatusReason.Should().Contain("did not advance past the control event position");
         AssertBoundaries(failed);
     }
 

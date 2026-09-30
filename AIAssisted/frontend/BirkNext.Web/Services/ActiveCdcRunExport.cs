@@ -19,6 +19,9 @@ public static class ActiveCdcRunExport
         sb.Append($"<p>Status: {badge(ActiveCdcLabels.Status(run.Status))} — {esc(ActiveCdcPresentation.Headline(run))}. {esc(run.StatusReason)}</p>");
         if (run.Scenario.Category.Length > 0) sb.Append($"<p>Category: {esc(run.Scenario.Category)}. Purpose: {esc(run.Scenario.Description)}</p>");
         if (run.Scenario.Limitation.Length > 0) sb.Append($"<p><strong>{esc(run.Scenario.Limitation)}</strong></p>");
+        if (run.Scenario.InvalidFixture.Length > 0)
+            sb.Append($"<p>Invalid fixture: {esc(run.Scenario.InvalidFixture)} — table Person, operation create. Invalid condition: {esc(run.Scenario.InvalidCondition)} " +
+                $"Review: {esc(run.Manifest.InvalidFixtureStatus.Length > 0 ? run.Manifest.InvalidFixtureStatus : "not recorded")}. {esc(run.Manifest.InvalidFixtureDetail)}</p>");
         if (run.Scenario.PassMeaning.Length > 0) sb.Append($"<p>Pass meaning: {esc(run.Scenario.PassMeaning)} <strong>{esc(run.Scenario.PassDoesNotMean)}</strong></p>");
         sb.Append(table(["Environment", "Integration", "Destination", "Consumer group", "Started", "Completed", "Send attempted"], [[
             esc($"{run.EnvironmentName} ({run.EnvironmentType})"), esc(run.IntegrationName), esc($"{run.Destination.EventHub} on {run.Destination.NamespaceFqdn}"),
@@ -32,7 +35,7 @@ public static class ActiveCdcRunExport
             sb.Append("<section class=\"block\"><h2>Messages (payloads not stored)</h2>");
             sb.Append(table(["Message", "Role", "Synthetic PersonPK", "Send", "Send evidence", "Partition (post-send position)", "Consumer checkpoint", "Payload"], run.Messages.Select(m => new[]
             {
-                esc(m.Label), esc(m.Role), m.SyntheticPersonPk.ToString(System.Globalization.CultureInfo.InvariantCulture), esc(ActiveCdcLabels.State(m.SendState)), esc(m.SendDetail),
+                esc(m.Label), esc(m.Role + (m.InvalidCondition.Length > 0 ? $" — {m.InvalidCondition}" : "")), esc(ActiveCdcPresentation.PersonPk(m)), esc(ActiveCdcLabels.State(m.SendState)), esc(m.SendDetail),
                 esc(m.AdvancedPartitions.Count == 0 ? "Not located" : string.Join(", ", m.AdvancedPartitions.Select(a => $"{a.Key} → {a.Value}"))),
                 esc($"{ActiveCdcLabels.State(m.CheckpointState)} — {m.CheckpointDetail}"), esc($"{m.PayloadBytes} bytes, SHA-256 {m.PayloadSha256}"),
             })));
@@ -42,7 +45,7 @@ public static class ActiveCdcRunExport
                 esc(c.Partitions.Count == 0 ? c.Detail : string.Join("; ", c.Partitions.Select(p => $"{p.PartitionId}: {p.LastEnqueued?.ToString() ?? "unknown"} / {p.Checkpointed?.ToString() ?? "unknown"}"))),
             })));
             sb.Append($"<p>Developer coverage (discovered in the bound source, not executed): {esc(run.Manifest.DeveloperCoverage.Count == 0 ? "none found" : string.Join("; ", run.Manifest.DeveloperCoverage))}. " +
-                "Active CDC coverage: the deployed Event Hub → Person Adapter replay-resilience path.</p></section>\n");
+                $"Active CDC coverage: {esc(ActiveCdcPresentation.ActiveCoverage(run))}</p></section>\n");
         }
         if (run.Messages.Count == 0 && run.Fixture is { } f)
         {

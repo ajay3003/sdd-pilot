@@ -19,6 +19,8 @@ public sealed record ActiveCdcOptions
     public int ObservationSeconds { get; init; } = 180;
     public int PollSeconds { get; init; } = 15;
     public int MaxPayloadBytes { get; init; } = 8192;
+    /// <summary>Archive SHA-256 values re-reviewed for the invalid fixture beyond the built-in reviewed archive (identifiers only).</summary>
+    public IReadOnlyList<string> InvalidFixtureReviewedArchives { get; init; } = [];
 
     public sealed record ApprovedDestination(string NamespaceFqdn, string EventHub);
 
@@ -37,6 +39,7 @@ public sealed record ActiveCdcOptions
             ObservationSeconds = Math.Clamp(section.GetValue("ObservationSeconds", 180), 0, 600),
             PollSeconds = Math.Clamp(section.GetValue("PollSeconds", 15), 1, 60),
             MaxPayloadBytes = Math.Clamp(section.GetValue("MaxPayloadBytes", 8192), 1024, 65536),
+            InvalidFixtureReviewedArchives = section.GetSection("InvalidFixtureReviewedArchives").GetChildren().Select(c => c.Value ?? "").Where(v => v.Length == 64).ToList(),
         };
     }
 }

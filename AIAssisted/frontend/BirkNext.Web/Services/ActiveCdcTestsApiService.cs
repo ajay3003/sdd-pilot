@@ -73,11 +73,31 @@ public static class ActiveCdcPresentation
         ActiveCdcStepKind.EnvironmentGuard, ActiveCdcStepKind.SourceContract, ActiveCdcStepKind.Destination, ActiveCdcStepKind.IdentitiesAllocated, ActiveCdcStepKind.FixtureGenerated,
         ActiveCdcStepKind.ReplayEquivalence, ActiveCdcStepKind.BaselineCaptured, ActiveCdcStepKind.IntentRecorded, ActiveCdcStepKind.SendA, ActiveCdcStepKind.ObserveA,
         ActiveCdcStepKind.SendReplay, ActiveCdcStepKind.ObserveReplay, ActiveCdcStepKind.SendControl, ActiveCdcStepKind.ObserveControl, ActiveCdcStepKind.FollowingEventProgression,
-        ActiveCdcStepKind.CorrelatedReplayError, ActiveCdcStepKind.PersonPersisted, ActiveCdcStepKind.DatabaseIdempotency, ActiveCdcStepKind.PersonRowCount, ActiveCdcStepKind.OverwriteBehavior,
+        ActiveCdcStepKind.CorrelatedReplayError, ActiveCdcStepKind.ReplayHandled, ActiveCdcStepKind.ControlHandled, ActiveCdcStepKind.PersonPersisted, ActiveCdcStepKind.DatabaseIdempotency, ActiveCdcStepKind.PersonRowCount, ActiveCdcStepKind.OverwriteBehavior,
         ActiveCdcStepKind.OutboxCreated, ActiveCdcStepKind.OutboxDuplication, ActiveCdcStepKind.ServiceBusDelivered, ActiveCdcStepKind.SubscriberProcessed, ActiveCdcStepKind.NaturalKeyDuplicate,
     ];
 
+    /// <summary>Invalid Person → valid Person stages in execution order, then the domains it never assesses.</summary>
+    public static readonly ActiveCdcStepKind[] InvalidOrder =
+    [
+        ActiveCdcStepKind.EnvironmentGuard, ActiveCdcStepKind.SourceContract, ActiveCdcStepKind.Destination, ActiveCdcStepKind.InvalidFixtureReviewed, ActiveCdcStepKind.IdentitiesAllocated,
+        ActiveCdcStepKind.FixtureGenerated, ActiveCdcStepKind.BaselineCaptured, ActiveCdcStepKind.IntentRecorded, ActiveCdcStepKind.SendInvalid, ActiveCdcStepKind.ObserveInvalid,
+        ActiveCdcStepKind.SendValidControl, ActiveCdcStepKind.ObserveValidControl, ActiveCdcStepKind.ConsumerContinuity, ActiveCdcStepKind.InvalidHandledCorrectly,
+        ActiveCdcStepKind.InvalidDiagnostic, ActiveCdcStepKind.FaultQueueOutcome, ActiveCdcStepKind.ConsumerRetry, ActiveCdcStepKind.DatabaseEffects, ActiveCdcStepKind.ValidControlHandled,
+        ActiveCdcStepKind.PersonPersisted, ActiveCdcStepKind.OutboxCreated, ActiveCdcStepKind.ServiceBusDelivered, ActiveCdcStepKind.SubscriberProcessed,
+    ];
+
     public static bool IsReplay(ActiveCdcRun run) => run.Scenario.Id == "person.same-personpk-replay";
+    public static bool IsInvalidThenValid(ActiveCdcRun run) => run.Scenario.Id == "person.invalid-then-valid";
+
+    public static string PersonPk(ActiveCdcMessageEvidence m) => m.SyntheticPersonPk is { } pk ? pk.ToString(System.Globalization.CultureInfo.InvariantCulture) : "None (missing by design)";
+
+    public static string ActiveCoverage(ActiveCdcRun run) => IsInvalidThenValid(run)
+        ? "the deployed Event Hub → Person Adapter consumer-continuity path after a controlled invalid Person event."
+        : "the deployed Event Hub → Person Adapter replay-resilience path.";
+
+    public static string DeveloperCoverage(ActiveCdcRun run) => run.Manifest.DeveloperCoverage.Count > 0 ? string.Join("; ", run.Manifest.DeveloperCoverage)
+        : IsInvalidThenValid(run) ? "No developer test for the invalid-input path found in the bound snapshot." : "No same-PersonPK developer test found in the bound snapshot.";
 
     public static string Tone(ActiveCdcRunStatus status) => status switch
     {
@@ -102,12 +122,12 @@ public static class ActiveCdcPresentation
 
     /// <summary>Every stage in pipeline order; a stage the run has not reached yet is shown as pending (running) or Not assessed (completed).</summary>
     public static IReadOnlyList<(ActiveCdcStepKind Kind, string Label, string State, string Tone, string Detail, string Source)> Stages(ActiveCdcRun run) =>
-        (IsReplay(run) ? ReplayOrder : Order).Select(kind => run.Step(kind) is { } s
+        (IsReplay(run) ? ReplayOrder : IsInvalidThenValid(run) ? InvalidOrder : Order).Select(kind => run.Step(kind) is { } s
                 ? (kind, ActiveCdcLabels.Step(kind), ActiveCdcLabels.State(s.State), Tone(s.State), s.Detail, s.Source)
                 : (kind, ActiveCdcLabels.Step(kind), run.Completed ? "Not assessed" : "Pending", "neutral", run.Completed ? "Not reached in this run." : "Waiting…", ""))
             .ToList();
 
-    public static string Headline(ActiveCdcRun run) => IsReplay(run) ? ReplayHeadline(run) : run.Status switch
+    public static string Headline(ActiveCdcRun run) => IsReplay(run) ? ReplayHeadline(run) : IsInvalidThenValid(run) ? InvalidHeadline(run) : run.Status switch
     {
         ActiveCdcRunStatus.Running => run.SendAttempted ? "Sent — observing read-only evidence" : "Preparing — nothing sent yet",
         ActiveCdcRunStatus.Partial => "Partial — Event Hub accepted the synthetic event; Person persistence not assessed",
@@ -118,10 +138,22 @@ public static class ActiveCdcPresentation
         _ => ActiveCdcLabels.Status(run.Status),
     };
 
+    private static string InvalidHeadline(ActiveCdcRun run) => run.Status switch
+    {
+        ActiveCdcRunStatus.Running => run.SendAttempted ? $"Running — {string.Join(", ", run.Messages.Where(m => m.SendState == ActiveCdcEvidenceState.Observed).Select(m => m.Label).DefaultIfEmpty("no message"))} accepted so far" : "Preparing — nothing sent yet",
+        ActiveCdcRunStatus.Passed => "Passed — the consumer advanced past the valid control after the invalid event",
+        ActiveCdcRunStatus.Partial => "Partial — both messages sent; consumer continuity not assessable",
+        ActiveCdcRunStatus.Blocked => run.SendAttempted ? "Blocked — a send was refused" : "Blocked — nothing was sent",
+        ActiveCdcRunStatus.Inconclusive => "Inconclusive — a send outcome or the continuity evidence is uncertain",
+        ActiveCdcRunStatus.Cancelled => run.SendAttempted ? "Cancelled — messages already sent cannot be unsent" : "Cancelled — nothing was sent",
+        ActiveCdcRunStatus.Failed => "Failed — a bounded expectation of the invalid → valid sequence was not met",
+        _ => ActiveCdcLabels.Status(run.Status),
+    };
+
     private static string ReplayHeadline(ActiveCdcRun run) => run.Status switch
     {
         ActiveCdcRunStatus.Running => run.SendAttempted ? $"Running — {string.Join(", ", run.Messages.Where(m => m.SendState == ActiveCdcEvidenceState.Observed).Select(m => m.Label).DefaultIfEmpty("no message"))} accepted so far" : "Preparing — nothing sent yet",
-        ActiveCdcRunStatus.Passed => "Passed — the consumer path continued after the replay",
+        ActiveCdcRunStatus.Passed => "Passed — the consumer advanced past the replay and the control event",
         ActiveCdcRunStatus.Partial => "Partial — all three messages sent; progression after the replay not assessable",
         ActiveCdcRunStatus.Blocked => run.SendAttempted ? "Blocked — a send was refused" : "Blocked — nothing was sent",
         ActiveCdcRunStatus.Inconclusive => "Inconclusive — a send outcome or the progression evidence is uncertain",

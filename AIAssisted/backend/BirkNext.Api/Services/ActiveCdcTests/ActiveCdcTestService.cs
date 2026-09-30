@@ -80,13 +80,17 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
                     Step(ActiveCdcStepKind.Destination, ActiveCdcEvidenceState.Observed, $"{p.Destination.EventHub} on {p.Destination.NamespaceFqdn}. {p.Destination.Detail}", "Integration catalog + backend enrollment", now),
                     Step(ActiveCdcStepKind.SourceContract, ActiveCdcEvidenceState.Observed, $"{p.Manifest.Detail} Manifest {p.Manifest.Fingerprint}.", "Bound source snapshot", now),
                     .. scenario.MessageCount > 1
-                        ? new[] { Step(ActiveCdcStepKind.IdentitiesAllocated, ActiveCdcEvidenceState.Observed,
-                            $"X = {run.Messages[0].SyntheticPersonPk} (A and A2), Y = {run.Messages[^1].SyntheticPersonPk} (B); both inside the reserved range {range.Min}–{range.Max} and unused.", "Reserved synthetic PersonPK range", now) }
+                        ? new[] { Step(ActiveCdcStepKind.IdentitiesAllocated, ActiveCdcEvidenceState.Observed, scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId
+                            ? $"Valid control V = PersonPK {run.Messages[^1].SyntheticPersonPk}, inside the reserved range {range.Min}–{range.Max} and unused. The invalid event I carries no PersonPK, so no key is allocated for it."
+                            : $"X = {run.Messages[0].SyntheticPersonPk} (A and A2), Y = {run.Messages[^1].SyntheticPersonPk} (B); both inside the reserved range {range.Min}–{range.Max} and unused.", "Reserved synthetic PersonPK range", now) }
+                        : [],
+                    .. scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId
+                        ? new[] { Step(ActiveCdcStepKind.InvalidFixtureReviewed, ActiveCdcEvidenceState.Observed, $"{scenario.InvalidFixture}: {scenario.InvalidCondition} {p.Manifest.InvalidFixtureDetail}", "Reviewed fixture bound to the source archive", now) }
                         : [],
                     Step(ActiveCdcStepKind.FixtureGenerated, ActiveCdcEvidenceState.Observed, scenario.MessageCount > 1
-                        ? string.Join(" ", run.Messages.Select(m => $"{m.Label}: PersonPK {m.SyntheticPersonPk}, marker {m.Marker}, {m.PayloadBytes} bytes, SHA-256 {m.PayloadSha256[..16]}…."))
+                        ? string.Join(" ", run.Messages.Select(m => $"{m.Label}: {(m.SyntheticPersonPk is { } pk ? $"PersonPK {pk}" : "no PersonPK (by design)")}, marker {m.Marker}, {m.PayloadBytes} bytes, SHA-256 {m.PayloadSha256[..16]}…."))
                         : $"Synthetic PersonPK {run.Fixture!.SyntheticPersonPk}, marker {run.Fixture.Marker}, {run.Fixture.PayloadBytes} bytes, SHA-256 {run.Fixture.PayloadSha256[..16]}….", "BirkNext fixture builder", now),
-                    .. scenario.MessageCount > 1
+                    .. scenario.Id == ActiveCdcScenarioCatalog.SamePersonPkReplayId
                         ? new[] { ReplayEquivalence(events, now) }
                         : [],
                 ],
@@ -154,7 +158,8 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         Limitations = stored ? [] : ["This run could not be saved to history."],
     };
 
-    private static int KeysNeeded(ActiveCdcScenario scenario) => scenario.MessageCount > 1 ? 2 : 1;
+    /// <summary>Distinct reserved keys a run allocates: replay needs X and Y; Normal Person and invalid → valid need one (the invalid event has none).</summary>
+    private static int KeysNeeded(ActiveCdcScenario scenario) => scenario.Id == ActiveCdcScenarioCatalog.SamePersonPkReplayId ? 2 : 1;
 
     private static ActiveCdcStep ReplayEquivalence(IReadOnlyList<SyntheticCdcEvent> events, DateTimeOffset now) => PersonCdcFixtureBuilder.IsExactReplay(events[0], events[1])
         ? Step(ActiveCdcStepKind.ReplayEquivalence, ActiveCdcEvidenceState.Observed, "A2 body is byte-identical to A (same PersonPK, fields, operation and timestamps); only the transport label differs.", "BirkNext fixture builder", now)
@@ -168,6 +173,23 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         {
             var single = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes);
             return ([single.Event], run with { Fixture = single.Summary });
+        }
+        if (scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId)
+        {
+            // I: the reviewed invalid fixture (PersonPK omitted, nothing else changed). V: the Normal Person fixture with one reserved key.
+            var invalid = PersonCdcFixtureBuilder.BuildInvalid(run.RunId, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "I");
+            var valid = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "V", "-V");
+            return ([invalid.Event, valid.Event], run with
+            {
+                Fixture = valid.Summary,
+                Messages =
+                [
+                    new() { Label = "I", Role = "Controlled invalid Person CDC", SyntheticPersonPk = null, Marker = invalid.Summary.Marker, PayloadSha256 = invalid.Summary.PayloadSha256,
+                        PayloadBytes = invalid.Summary.PayloadBytes, InvalidCondition = scenario.InvalidCondition },
+                    new() { Label = "V", Role = "Valid synthetic Person control", SyntheticPersonPk = valid.Summary.SyntheticPersonPk, ExpectedPersonId = valid.Summary.ExpectedPersonId,
+                        Marker = valid.Summary.Marker, PayloadSha256 = valid.Summary.PayloadSha256, PayloadBytes = valid.Summary.PayloadBytes },
+                ],
+            });
         }
         var a = PersonCdcFixtureBuilder.Build(run.RunId, x, destination, now, policy.Options.MaxPayloadBytes, scenario.Id, "A", "");
         var a2 = PersonCdcFixtureBuilder.Replay(a.Event, "A2");
@@ -240,9 +262,13 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
         var selected = snapshotId is { } id ? snapshots.FirstOrDefault(s => s.Id == id) : snapshots.FirstOrDefault();
         var manifest = snapshotId is not null && selected is null
             ? ActiveCdcContractManifestService.Evaluate(scenario, null, null) with { Detail = "The selected source snapshot does not belong to this integration." }
-            : ActiveCdcContractManifestService.Evaluate(scenario, selected, snapshots.FirstOrDefault()?.Id);
+            : ActiveCdcContractManifestService.Evaluate(scenario, selected, snapshots.FirstOrDefault()?.Id, policy.Options.InvalidFixtureReviewedArchives);
         Add("contract", "Source contract", manifest.Status == ActiveCdcContractStatus.Compatible ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
             $"{ActiveCdcLabels.Contract(manifest.Status)} — {manifest.Detail}");
+        if (scenario.Id == ActiveCdcScenarioCatalog.InvalidThenValidId)
+            Add("invalid-fixture", "Invalid fixture", manifest.InvalidFixtureStatus == "Reviewed" ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Blocked,
+                manifest.InvalidFixtureStatus == "Reviewed" ? $"Reviewed — {scenario.InvalidFixture}: {scenario.InvalidCondition}"
+                    : $"Needs review — {(manifest.InvalidFixtureDetail.Length > 0 ? manifest.InvalidFixtureDetail : "no source snapshot is bound, so the invalid behavior cannot be checked.")}");
 
         var range = policy.PersonPkRange(out var rangeReason);
         if (range is { } r)
@@ -265,7 +291,7 @@ public sealed class ActiveCdcTestService(IIntegrationCatalogService catalog, Iqr
             Add("progression-evidence", "Runtime progression evidence", checkpoint?.State == IntegrationEvidenceState.Available && group is not null ? ActiveCdcReadinessState.Ready : ActiveCdcReadinessState.Optional,
                 checkpoint?.State == IntegrationEvidenceState.Available && group is not null
                     ? $"Partition positions and consumer checkpoints can be read for {group}{(assumed ? " (configured assumption)" : "")}. Without them the result is Partial, never Passed."
-                    : "Partition/checkpoint evidence is not available, so following-event progression cannot be assessed: the result would be Partial, never Passed.");
+                    : "Partition/checkpoint evidence is not available, so consumer progression cannot be assessed: the result would be Partial, never Passed.");
         else
             Add("person-verification", "Person persisted verification", ActiveCdcReadinessState.Optional,
                 "No reliable read-only Person verification exists (no standalone Person read endpoint; the ingestion success log is Debug level). Person persisted stays Not assessed, so a successful send is Partial, never Passed.");
