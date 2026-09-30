@@ -424,6 +424,7 @@ public sealed class ReportExportService : IReportExportService
     public string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName) => ApiReviewExport.Build(report, projectName, Table, Badge, Esc, BuildHtml);
 
     public string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName) => IntegrationReviewExport.Build(result, projectName, Table, Badge, Esc, BuildHtml);
+    public string ExportActiveCdcRun(BirkNext.Integrations.ActiveCdcRun run, string? projectName) => ActiveCdcRunExport.Build(run, projectName, Table, Badge, Esc, BuildHtml);
     public string ExportDependencyReview(BirkNext.Dependencies.DependencyReviewResult result) => DependencyReviewExport.Build(result, Table, Badge, Esc, BuildHtml);
     public string ExportDependencyHealth(BirkNext.Dependencies.DependencyHealthRun run) => DependencyHealthExport.Build(run, Table, Badge, Esc, BuildHtml);
     public string ExportScimCheck(BirkNext.Integrations.ScimEvidenceCheck check) => ScimExport.Build(check, Table, Badge, Esc, BuildHtml);

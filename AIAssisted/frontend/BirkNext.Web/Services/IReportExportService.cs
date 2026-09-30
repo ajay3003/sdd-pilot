@@ -8,6 +8,7 @@ public interface IReportExportService
     string ExportFrontendQualityReview(FrontendQualityReviewReport report, string? projectName);
     string ExportApiReview(BirkNext.ApiReview.ApiReviewReport report, string? projectName);
     string ExportIntegrationReview(BirkNext.Integrations.IntegrationReviewResult result, string? projectName);
+    string ExportActiveCdcRun(BirkNext.Integrations.ActiveCdcRun run, string? projectName) => throw new NotSupportedException();
     string ExportDependencyReview(BirkNext.Dependencies.DependencyReviewResult result);
     string ExportDependencyHealth(BirkNext.Dependencies.DependencyHealthRun run);
     string ExportScimCheck(BirkNext.Integrations.ScimEvidenceCheck check);

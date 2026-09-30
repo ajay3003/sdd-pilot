@@ -39,6 +39,7 @@
     else if (_profile is { } profile && _result is null)
     {
         <IqrSourceSetup EnvironmentId="@profile.Id" Integrations="@(_catalog?.Integrations ?? [])" Snapshots="@(_readiness?.SourceSnapshots ?? [])" Selections="_sourceSelections" Analyzed="LoadReadinessAsync" BusyChanged="@(busy => _sourceBusy = busy)" />
+        <ActiveCdcTestsPanel Profile="profile" Integrations="@(_catalog?.Integrations ?? [])" Selections="_sourceSelections" />
         @* ── Pre-run ── Scope + readiness, then what limits the review (with the one place that fixes each), then the details.
            Presentation only: headline, domain readiness and the Run gate are the backend's. Corrective actions deep-link to
            Target Environment → Integrations; nothing is configured here. *@

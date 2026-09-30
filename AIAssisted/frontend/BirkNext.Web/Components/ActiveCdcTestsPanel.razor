@@ -1,0 +1,288 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@implements IDisposable
+@inject IServiceProvider Services
+@inject IReportExportService ExportService
+@inject IWorkspaceSessionService Workspace
+@inject IJSRuntime JS
+
+@* IQR → Active tests → CDC. The only IQR action that SENDS: one built-in synthetic Person event to an enrolled DEV/QA Event Hub.
+   Every gate (environment, destination, source contract, reserved key range, identity) is decided by the backend; this panel shows
+   the decision, asks for explicit confirmation and then shows each stage as its own evidence. Not assessed is never shown as a pass. *@
+@if (Api is null) { return; }
+<section class="act" aria-labelledby="act-heading" data-testid="act-panel">
+    <h2 id="act-heading">Active tests</h2>
+    <p class="act-notice" role="note" data-testid="act-notice"><strong>@ActiveCdcLabels.ActiveTestNotice</strong></p>
+    <h3 class="act-subheading">CDC — @Shown.Name <span class="act-muted">(@Shown.Id v@(Shown.Version))</span></h3>
+    <p class="act-muted">@Shown.Description</p>
+
+    @if (Candidates.Count == 0)
+    {
+        <p class="act-empty" data-testid="act-no-integration">No enabled Event Hub integration carries a Person CDC source (database.dbo.Person). Configure it in Target Environment → Integrations.</p>
+    }
+    else
+    {
+        <label for="act-integration">CDC integration</label>
+        <select id="act-integration" value="@_integrationId" @onchange="SelectIntegrationAsync" disabled="@Busy">
+            @foreach (var integration in Candidates) { <option value="@integration.Id">@integration.DisplayName</option> }
+        </select>
+
+        @if (_loading) { <p class="act-muted" role="status">Checking readiness…</p> }
+        @if (_readiness is { } readiness)
+        {
+            <dl class="act-facts" data-testid="act-destination">
+                <div><dt>Event Hub</dt><dd class="act-mono">@(readiness.Destination.EventHub ?? "Not configured")</dd></div>
+                <div><dt>Namespace</dt><dd class="act-mono">@(readiness.Destination.NamespaceFqdn ?? "Not configured")</dd></div>
+                <div><dt>Consumer group</dt><dd>@(readiness.Destination.ConsumerGroup is { } g ? $"{g}{(readiness.Destination.ConsumerGroupAssumed ? " (configured assumption)" : "")}" : "Not configured")</dd></div>
+                <div><dt>Source contract</dt><dd data-testid="act-contract" data-status="@readiness.Manifest.Status">@ActiveCdcLabels.Contract(readiness.Manifest.Status)@if (readiness.Manifest.Fingerprint.Length > 0) { <span class="act-muted"> · manifest @readiness.Manifest.Fingerprint</span> }</dd></div>
+            </dl>
+            <ul class="act-checks" data-testid="act-checks">
+                @foreach (var check in readiness.Checks)
+                {
+                    <li class="act-check" data-testid="act-check" data-key="@check.Key" data-state="@check.State">
+                        <span class="act-check-label">@check.Label</span>
+                        <span class="act-pill act-pill-@ActiveCdcPresentation.Tone(check.State)">@ActiveCdcLabels.Readiness(check.State)</span>
+                        <span class="act-check-detail">@check.Detail</span>
+                    </li>
+                }
+            </ul>
+
+            @if (!_confirming)
+            {
+                <div class="act-actions">
+                    <button type="button" class="btn-primary" data-testid="act-start" disabled="@(!readiness.CanRun || Busy)" aria-describedby="act-start-note" @onclick="() => { _confirming = true; _acknowledged = false; }">Send one synthetic event…</button>
+                </div>
+                <p id="act-start-note" class="act-muted" data-testid="act-start-note">
+                    @(readiness.CanRun ? $"Sends exactly one event, then observes read-only evidence for up to {readiness.ObservationSeconds} s. Without a verified Person read the best result is Partial."
+                        : "Cannot run: resolve the blocked checks above. Nothing is sent while any check is blocked.")
+                </p>
+            }
+            else
+            {
+                <div class="act-confirm" role="group" aria-labelledby="act-confirm-heading" data-testid="act-confirm">
+                    <h4 id="act-confirm-heading">Confirm active test</h4>
+                    <p>One synthetic Person create event is sent to <strong class="act-mono">@readiness.Destination.EventHub</strong> on <span class="act-mono">@readiness.Destination.NamespaceFqdn</span> (@Profile.EnvironmentType). A sent event cannot be recalled; cancelling only stops waiting for evidence.</p>
+                    <label class="act-ack"><input type="checkbox" data-testid="act-ack" @bind="_acknowledged" /> I understand this sends synthetic test data to a non-production environment and cannot be undone.</label>
+                    <div class="act-actions">
+                        <button type="button" class="btn-primary" data-testid="act-confirm-send" disabled="@(!_acknowledged || Busy)" @onclick="StartAsync">Send synthetic event</button>
+                        <button type="button" class="btn-secondary" data-testid="act-confirm-cancel" @onclick="() => _confirming = false">Cancel</button>
+                    </div>
+                </div>
+            }
+        }
+    }
+
+    @if (_error is { } error) { <p class="act-error" role="alert" data-testid="act-error">@error</p> }
+
+    @if (_run is { } run)
+    {
+        <section class="act-run" aria-labelledby="act-run-heading" data-testid="act-run" data-status="@run.Status">
+            <h3 id="act-run-heading">Active test result <span class="act-pill act-pill-@ActiveCdcPresentation.Tone(run.Status)" data-testid="act-run-status">@ActiveCdcLabels.Status(run.Status)</span></h3>
+            <p aria-live="polite" data-testid="act-run-headline"><strong>@ActiveCdcPresentation.Headline(run)</strong></p>
+            @if (run.StatusReason.Length > 0) { <p data-testid="act-run-reason">@run.StatusReason</p> }
+            @if (!run.Completed)
+            {
+                <div class="act-actions">
+                    <button type="button" class="btn-secondary" data-testid="act-cancel" disabled="@_cancelling" @onclick="CancelAsync">Stop the run</button>
+                </div>
+                <p class="act-muted" data-testid="act-cancel-note">@ActiveCdcLabels.CancelNotice</p>
+            }
+            <div class="act-table" tabindex="0" role="region" aria-label="Active test stages">
+                <table>
+                    <thead><tr><th scope="col">Stage</th><th scope="col">State</th><th scope="col">Evidence</th><th scope="col">Source</th></tr></thead>
+                    <tbody>
+                        @foreach (var stage in ActiveCdcPresentation.Stages(run))
+                        {
+                            <tr data-testid="act-stage" data-kind="@stage.Kind" data-state="@stage.State">
+                                <th scope="row">@stage.Label</th>
+                                <td><span class="act-pill act-pill-@stage.Tone">@stage.State</span></td>
+                                <td>@stage.Detail</td>
+                                <td class="act-muted">@stage.Source</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (run.Fixture is { } fixture)
+            {
+                <dl class="act-facts" data-testid="act-fixture">
+                    <div><dt>Synthetic PersonPK</dt><dd class="act-mono">@fixture.SyntheticPersonPk</dd></div>
+                    <div><dt>Expected PersonId</dt><dd class="act-mono">@fixture.ExpectedPersonId</dd></div>
+                    <div><dt>Marker</dt><dd class="act-mono">@fixture.Marker</dd></div>
+                    <div><dt>Payload</dt><dd>@fixture.PayloadBytes bytes · SHA-256 <span class="act-mono">@fixture.PayloadSha256[..16]…</span> (not stored)</dd></div>
+                </dl>
+            }
+            @if (run.Completed)
+            {
+                <details class="act-details" data-testid="act-tested"><summary>What was tested (@run.WhatWasTested.Count)</summary><ul>@foreach (var t in run.WhatWasTested) { <li>@t</li> }</ul></details>
+                <details class="act-details" open data-testid="act-not-assessed"><summary>What was not assessed (@run.WhatWasNotAssessed.Count)</summary><ul>@foreach (var t in run.WhatWasNotAssessed) { <li>@t</li> }</ul></details>
+                @if (run.Limitations.Count > 0) { <details class="act-details" data-testid="act-limitations"><summary>Limitations (@run.Limitations.Count)</summary><ul>@foreach (var t in run.Limitations) { <li>@t</li> }</ul></details> }
+                <div class="act-actions">
+                    <button type="button" class="btn-secondary" data-testid="act-export" @onclick="ExportAsync">Export HTML</button>
+                </div>
+            }
+        </section>
+    }
+
+    @if (_history.Count > 0)
+    {
+        <details class="act-details" data-testid="act-history"><summary>Previous active runs (@_history.Count)</summary>
+            <p class="act-muted">Stored runs are immutable; a later source upload or configuration change never re-renders them.</p>
+            <ul class="act-history">
+                @foreach (var item in _history)
+                {
+                    <li data-testid="act-history-item"><button type="button" class="act-link" @onclick="() => OpenAsync(item.RunId)">@item.StartedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @ActiveCdcLabels.Status(item.Status) · @(item.SendAttempted ? "event sent" : "nothing sent")@if (item.ManifestFingerprint.Length > 0) { <span class="act-muted"> · manifest @item.ManifestFingerprint</span> }</li>
+                }
+            </ul>
+        </details>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
+    [Parameter] public IReadOnlyList<IntegrationDefinition> Integrations { get; set; } = [];
+    /// <summary>The IQR source selections: a snapshot chosen there for this integration is the one the fixture is bound to (else the latest).</summary>
+    [Parameter] public IReadOnlyList<IqrSourceSelection> Selections { get; set; } = [];
+    /// <summary>Poll interval while a run is in flight (tests shorten it).</summary>
+    [Parameter] public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(2);
+
+    private static readonly ActiveCdcScenario Scenario = new()
+    {
+        Id = "person.normal.create", Version = "1", Name = "Normal Person",
+        Description = "Sends one synthetic Debezium Person create event (synthetic name marker, synthetic birth date, no national id, DUF number or child data) and records each stage it can observe.",
+    };
+
+    // Optional: hosts that do not register the client (older page tests) simply show no Active tests panel.
+    private IActiveCdcTestsApiService? Api => _api ??= Services.GetService<IActiveCdcTestsApiService>();
+    private IActiveCdcTestsApiService? _api;
+    private readonly CancellationTokenSource _disposed = new();
+    private string _integrationId = "";
+    private ActiveCdcReadiness? _readiness;
+    private ActiveCdcRun? _run;
+    private IReadOnlyList<ActiveCdcRunSummary> _history = [];
+    private bool _loading, _starting, _cancelling, _confirming, _acknowledged;
+    private string? _error;
+    private string? _loadedFor;
+
+    private IReadOnlyList<IntegrationDefinition> Candidates => Integrations
+        .Where(i => i.Enabled && i.Kind == IntegrationKind.EventHub && (i.SourceResource ?? "").EndsWith(".Person", StringComparison.OrdinalIgnoreCase)).ToList();
+    private ActiveCdcScenario Shown => _readiness?.Scenario is { Id.Length: > 0 } s ? s : Scenario;
+    private bool Busy => _loading || _starting || _run is { Completed: false };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Api is null || Candidates.Count == 0) return;
+        if (!Candidates.Any(c => c.Id == _integrationId)) _integrationId = Candidates[0].Id;
+        var key = $"{Profile.Id}|{_integrationId}|{SnapshotId}";
+        if (key != _loadedFor) await LoadAsync();
+    }
+
+    private Guid? SnapshotId => Selections.FirstOrDefault(s => s.IntegrationId == _integrationId)?.SnapshotId;
+
+    private async Task SelectIntegrationAsync(ChangeEventArgs e)
+    {
+        _integrationId = e.Value?.ToString() ?? "";
+        _run = null;
+        _confirming = false;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loadedFor = $"{Profile.Id}|{_integrationId}|{SnapshotId}";
+        _loading = true;
+        _error = null;
+        try
+        {
+            _readiness = await Api!.ReadinessAsync(Profile, _integrationId, SnapshotId, _disposed.Token);
+            _history = await Api!.HistoryAsync(Profile.Id, _integrationId, _disposed.Token);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            if (!_disposed.IsCancellationRequested) _error = "Active test readiness could not be loaded: the BirkNext backend did not answer.";
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task StartAsync()
+    {
+        if (_readiness is null || !_acknowledged) return;
+        _starting = true;
+        _error = null;
+        try
+        {
+            var (run, error) = await Api!.StartAsync(Profile, new ActiveCdcRunRequest
+            {
+                EnvironmentId = Profile.Id, EnvironmentName = Profile.Name, IntegrationId = _integrationId, ScenarioId = Scenario.Id,
+                SourceSnapshotId = _readiness.Manifest.SourceSnapshotId, ConfirmedSend = true, ConfirmedEventHub = _readiness.Destination.EventHub,
+            }, _disposed.Token);
+            _confirming = false;
+            if (error is not null) { _error = error; return; }
+            _run = run;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
+        {
+            // The request may have reached the backend: say so rather than implying nothing happened.
+            if (!_disposed.IsCancellationRequested) _error = "The backend did not answer the start request. Check the history below before starting again — the run may have started.";
+        }
+        finally { _starting = false; }
+        if (_run is { Completed: false }) await PollAsync(_run.RunId);
+        else await RefreshAsync();
+    }
+
+    private async Task PollAsync(Guid runId)
+    {
+        while (!_disposed.IsCancellationRequested && _run is { Completed: false } && _run.RunId == runId)
+        {
+            try
+            {
+                await Task.Delay(PollInterval, _disposed.Token);
+                if (await Api!.GetAsync(runId, _disposed.Token) is { } latest) _run = latest;
+            }
+            catch (TaskCanceledException) { return; }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException)
+            {
+                _error = "Live progress is unavailable (the backend did not answer). The run continues in the backend; open it from the history.";
+                return;
+            }
+            StateHasChanged();
+        }
+        await RefreshAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _cancelling = false;
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task CancelAsync()
+    {
+        if (_run is null) return;
+        _cancelling = true;
+        try { if (!await Api!.CancelAsync(_run.RunId, _disposed.Token)) _error = "The run is no longer in flight."; }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _error = "Cancellation could not be requested: the backend did not answer."; }
+    }
+
+    private async Task OpenAsync(Guid runId)
+    {
+        try { _run = await Api!.GetAsync(runId, _disposed.Token); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "The run could not be loaded."; }
+        if (_run is { Completed: false }) await PollAsync(_run.RunId);
+    }
+
+    private async Task ExportAsync()
+    {
+        if (_run is null) return;
+        var html = ExportService.ExportActiveCdcRun(_run, Workspace.ProjectName);
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"active-cdc-test-{_run.StartedAt:yyyy-MM-dd}-{_run.RunId.ToString("N")[..8]}.html", html);
+    }
+
+    public void Dispose()
+    {
+        _disposed.Cancel();
+        _disposed.Dispose();
+    }
+}

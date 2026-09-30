@@ -188,6 +188,9 @@ builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
 // Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
 builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+// IQR → Active tests → CDC: built-in scenarios only; every gate is the backend's.
+builder.Services.AddHttpClient<IActiveCdcTestsApiService, ActiveCdcTestsApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 // Security Classification / Gradert tilgang review (source + approved test context + safe live queries; tokens per run, never stored).
 builder.Services.AddHttpClient<IClassificationReviewApiService, ClassificationReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

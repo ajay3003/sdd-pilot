@@ -403,6 +403,14 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
+// Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
+builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestSender, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestSender>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunStore>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunCoordinator>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.ActiveCdcRunner>();
+builder.Services.AddScoped<BirkNext.Api.Services.ActiveCdcTests.IActiveCdcTestService, BirkNext.Api.Services.ActiveCdcTests.ActiveCdcTestService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IntegrationMappingEvidenceService>();
 // Application messaging (Wolverine) evidence: syntax-only analysis of uploaded source + read-only handler telemetry (Azure-gated).
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.ApplicationMessaging.IApplicationMessagingStore, BirkNext.Api.Services.Integrations.ApplicationMessaging.ApplicationMessagingStore>();
