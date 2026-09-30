@@ -11,6 +11,8 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public interface IIntegrationCatalogApiService
 {
+    Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
+    Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source analysis is unavailable."));
     Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeIqrSourceAsync(string environmentId, string integrationId, string fileName, Stream content, CancellationToken ct = default) =>
         Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source evidence upload is unavailable."));
     Task<IntegrationReviewResult> RunWithSourceAsync(FrontendAnalysisProfile profile, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default) =>
@@ -54,11 +56,14 @@ public interface IIntegrationCatalogApiService
 
 public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegrationCatalogApiService
 {
-    public async Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeIqrSourceAsync(string environmentId, string integrationId, string fileName, Stream content, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
+    public Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => UploadSource($"api/source-analysis/snapshots?{Env(environmentId)}", fileName, content, ct);
+    public Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeIqrSourceAsync(string environmentId, string integrationId, string fileName, Stream content, CancellationToken ct = default) => UploadSource($"api/integration-review/source/{Uri.EscapeDataString(integrationId)}?{Env(environmentId)}", fileName, content, ct);
+    private async Task<(IqrSourceSnapshot? Snapshot, string? Error)> UploadSource(string route, string fileName, Stream content, CancellationToken ct)
     {
         using var body = new MultipartFormDataContent();
         body.Add(new StreamContent(content), "file", fileName);
-        using var response = await http.PostAsync($"api/integration-review/source/{Uri.EscapeDataString(integrationId)}?{Env(environmentId)}", body, ct);
+        using var response = await http.PostAsync(route, body, ct);
         if (!response.IsSuccessStatusCode)
         {
             if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)

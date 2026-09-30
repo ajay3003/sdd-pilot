@@ -49,7 +49,7 @@ public static class IqrSourceArchiveReader
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
                 if (extension is ".js" or ".ts" or ".py" or ".java" or ".go" or ".fs" or ".vb" or ".tf")
                     limitations.Add($"Not analyzed: {extension} source (unsupported language).");
-                if (extension is not (".cs" or ".csproj" or ".sln" or ".json" or ".yaml" or ".yml" or ".props")) continue;
+                if (extension is not (".cs" or ".csproj" or ".sln" or ".json" or ".yaml" or ".yml" or ".props" or ".sql")) continue;
                 if (entry.Length > MaxFileBytes) { limitations.Add("Source file exceeds the 2 MB per-file limit and was not analyzed."); continue; }
                 using var input = entry.Open();
                 using var buffer = new MemoryStream();

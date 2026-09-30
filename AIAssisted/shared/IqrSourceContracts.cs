@@ -32,6 +32,7 @@ public sealed record IqrSourceSnapshot
     public string DeploymentCorrelation { get; init; } = "Deployment/source correlation not established";
     /// <summary>Multi-stage source path (adapter → ingestion → domain → event → outbox → Service Bus) discovered from the same archive. Null in analyzer v1 snapshots.</summary>
     public IntegrationPathEvidence? IntegrationPath { get; init; }
+    public BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? DatabaseArchitecture { get; init; }
 }
 
 // ── Multi-stage integration path (analyzer v2) ────────────────────────────────────────────────────────────────────────

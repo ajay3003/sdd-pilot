@@ -7,6 +7,7 @@ namespace BirkNext.Api.Controllers;
 
 [ApiController]
 [Route("api/integration-review/source")]
+[Route("api/source-analysis")]
 public sealed class IqrSourceEvidenceController(IqrSourceStore store, IIntegrationCatalogService catalog) : ControllerBase
 {
     [HttpGet]
@@ -20,6 +21,18 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, IIntegrati
     {
         if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
         if (!(await catalog.GetAsync(environmentId, null, null, ct)).Integrations.Any(i => i.Id == integrationId)) return NotFound();
+        return await AnalyzeArchive(environmentId, integrationId, ct);
+    }
+
+    [HttpPost("snapshots")]
+    [RequestSizeLimit(IqrSourceArchiveReader.MaxArchiveBytes + 64 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = IqrSourceArchiveReader.MaxArchiveBytes + 64 * 1024)]
+    public Task<ActionResult<IqrSourceSnapshot>> AnalyzeSourceSnapshot([FromQuery] string environmentId, CancellationToken ct) =>
+        AnalyzeArchive(environmentId, "source-analysis", ct);
+
+    private async Task<ActionResult<IqrSourceSnapshot>> AnalyzeArchive(string environmentId, string integrationId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
         if (!Request.HasFormContentType) return BadRequest("Upload a .zip source archive as multipart form data.");
         var form = await Request.ReadFormAsync(ct);
         if (form.Files.Count != 1) return BadRequest("Upload exactly one .zip source archive.");
