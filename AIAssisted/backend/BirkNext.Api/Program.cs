@@ -394,6 +394,10 @@ builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IEventHubMetada
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IEventHubConsumerGroupSource, BirkNext.Api.Services.Integrations.ArmConsumerGroupSource>(client => client.Timeout = TimeSpan.FromSeconds(20));
 builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ICheckpointEvidenceSource, BirkNext.Api.Services.Integrations.BlobCheckpointEvidenceSource>();
 builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.ITelemetryEvidenceSource, BirkNext.Api.Services.Integrations.LogAnalyticsTelemetrySource>();
+// Event Hub namespace + hub list (Azure Resource Manager GETs) and namespace metrics (Azure Monitor): same Azure gate and identity, never the data plane.
+builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.EventHub.IEventHubNamespaceSource, BirkNext.Api.Services.Integrations.EventHub.ArmEventHubNamespaceSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.EventHub.IEventHubMetricsSource, BirkNext.Api.Services.Integrations.EventHub.AzureMonitorEventHubMetricsSource>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationContractStore, BirkNext.Api.Services.Integrations.IntegrationContractStore>();
 builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationReviewEngine>(client => client.Timeout = TimeSpan.FromSeconds(15))
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });

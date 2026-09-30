@@ -145,6 +145,11 @@
             var commonReason = IntegrationReviewPrerunPresentation.CommonUnavailableReason(readiness);
             <section class="iqr-card" aria-labelledby="iqr-evidence-heading" data-testid="iqr-evidence-sources">
                 <h2 id="iqr-evidence-heading">Runtime evidence <span class="iqr-muted" data-testid="iqr-evidence-count">· @runtimeAvailable of @runtimeTotal available</span></h2>
+                @if (readiness.RuntimeSourcesTotal > 0)
+                {
+                    @* Configured sources and Azure execution are two facts: Azure off is an instance setting, never an integration misconfiguration. *@
+                    <p data-testid="iqr-azure-runtime" data-azure="@(readiness.AzureRuntimeEnabled ? "enabled" : "disabled")">@IntegrationReviewPrerunPresentation.AzureRuntimeLine(readiness)@if (!readiness.AzureRuntimeEnabled && readiness.AzureRuntimeReason is { } azureReason) { <span class="iqr-muted"> — @azureReason Not an integration misconfiguration.</span> }</p>
+                }
                 @if (readiness.EvidenceAdapters.Count == 0)
                 {
                     <p class="iqr-muted" data-testid="iqr-no-evidence-sources">No platform is configured, so no runtime evidence source applies.</p>
@@ -164,7 +169,7 @@
                             </li>
                         }
                     </ul>
-                    @if (commonReason is not null) { <p class="iqr-muted" data-testid="iqr-evidence-common-reason">@commonReason</p> }
+                    @if (commonReason is not null && commonReason != readiness.AzureRuntimeReason) { <p class="iqr-muted" data-testid="iqr-evidence-common-reason">@commonReason</p> }
                     <div class="iqr-system-actions">
                         @if (runtimeAvailable < runtimeTotal) { <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, IntegrationReviewPrerunPresentation.FocusRuntime)" data-testid="iqr-configure-runtime">Configure runtime evidence</a> }
                         <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="iqr-evidence-details" Class="disclosure-inline">
@@ -255,6 +260,16 @@
                         <li class="iqr-domain-card" data-testid="iqr-domain-readiness-card" data-domain="@domain.Domain" data-readiness="@domain.Readiness">
                             <div class="iqr-domain-head"><strong>@IntegrationReviewLabels.Domain(domain.Domain)</strong> <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(domain.Readiness)">@IntegrationReviewLabels.Readiness(domain.Readiness)</span></div>
                             <p class="iqr-muted" data-testid="iqr-domain-reason">@domain.Explanation</p>
+                            @if (domain.Available is { Count: > 0 } canRead)
+                            {
+                                <p class="iqr-domain-list-label">Evidence the run reads</p>
+                                <ul class="iqr-domain-list" data-testid="iqr-domain-available">@foreach (var item in canRead) { <li>@item</li> }</ul>
+                            }
+                            @if (domain.Missing is { Count: > 0 } missing)
+                            {
+                                <p class="iqr-domain-list-label">Missing</p>
+                                <ul class="iqr-domain-list iqr-domain-list-missing" data-testid="iqr-domain-missing">@foreach (var item in missing) { <li>@item</li> }</ul>
+                            }
                             @if (action is { } a) { <a class="iqr-link iqr-domain-action" href="@a.Href" data-testid="iqr-domain-action">@a.Label</a> }
                         </li>
                     }
@@ -310,6 +325,17 @@
                             <div class="iqr-domain-head"><strong>@IntegrationReviewLabels.Domain(domain.Domain)</strong> <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.DomainTone(domain)" data-testid="iqr-domain-state">@domain.StateLabel</span></div>
                             <p data-testid="iqr-domain-coverage">@IntegrationReviewResultPresentation.Coverage(domain)@(domain.Findings > 0 ? $" · {domain.Findings} finding{(domain.Findings == 1 ? "" : "s")}" : "")</p>
                             @if (domain.KeyLimitation is { } limitation) { <p class="iqr-muted" data-testid="iqr-domain-limitation">@limitation</p> }
+                            @if (domain.Observed.Count > 0)
+                            {
+                                <p class="iqr-domain-list-label">Observed</p>
+                                <ul class="iqr-domain-list" data-testid="iqr-domain-observed">@foreach (var item in domain.Observed.Take(4)) { <li>@item</li> }</ul>
+                            }
+                            @if (domain.Missing.Count > 0)
+                            {
+                                <p class="iqr-domain-list-label">Missing</p>
+                                <ul class="iqr-domain-list iqr-domain-list-missing" data-testid="iqr-domain-missing">@foreach (var item in domain.Missing.Take(4)) { <li>@item</li> }</ul>
+                            }
+                            @if (domain.Observed.Count > 4 || domain.Missing.Count > 4) { <p class="iqr-muted">More in the @IntegrationReviewLabels.Domain(domain.Domain) tab.</p> }
                         </li>
                     }
                 </ul>
@@ -335,6 +361,70 @@
                     @if (result.ContractSnapshot.Count > 0)
                     {
                         <p class="iqr-muted" data-testid="iqr-result-contracts">Contracts used: @string.Join("; ", result.ContractSnapshot.Select(c => $"{c.FileName} ({c.Role.ToString().ToLowerInvariant()}, sha256 {c.ShortHash})"))</p>
+                    }
+                </section>
+                @foreach (var eventHub in result.EventHubSnapshot)
+                {
+                    @* Transport — Event Hubs: what M2LB expects vs what Azure showed in THIS run (snapshot; never re-read). Observed is not Pass. *@
+                    var ehId = $"iqr-result-eventhub-heading-{Slug(eventHub.PlatformId)}";
+                    var hubRows = IntegrationReviewResultPresentation.HubRows(eventHub);
+                    <section class="iqr-card" aria-labelledby="@ehId" data-testid="iqr-result-eventhub" data-platform="@eventHub.PlatformId">
+                        <h3 id="@ehId">Transport — Event Hubs · configured vs observed</h3>
+                        <dl class="iqr-dl iqr-eh-facts">
+                            <div><dt>Azure runtime</dt><dd data-testid="iqr-eh-azure">@(eventHub.AzureRuntimeEnabled ? "Enabled" : "Not configured — IntegrationReview:Azure:Enabled is not true (an instance setting, not an integration misconfiguration)")</dd></div>
+                            <div><dt>Namespace</dt><dd data-testid="iqr-eh-namespace"><span class="iqr-mono">@eventHub.Namespace</span> — @IntegrationReviewResultPresentation.NamespaceLine(eventHub)</dd></div>
+                            <div><dt>Consumer groups</dt><dd data-testid="iqr-eh-groups">@foreach (var line in IntegrationReviewResultPresentation.GroupLines(eventHub)) { <span class="iqr-eh-line">@line</span> }</dd></div>
+                            <div><dt>Checkpoints</dt><dd data-testid="iqr-eh-checkpoints">@foreach (var line in IntegrationReviewResultPresentation.CheckpointLines(eventHub)) { <span class="iqr-eh-line">@line</span> }</dd></div>
+                            @foreach (var (label, value) in IntegrationReviewResultPresentation.MonitoringRows(eventHub))
+                            {
+                                <div><dt>@label</dt><dd data-testid="iqr-eh-monitoring">@value</dd></div>
+                            }
+                            <div><dt>Namespace metrics</dt><dd data-testid="iqr-eh-metrics">@IntegrationReviewResultPresentation.MetricsLine(eventHub)</dd></div>
+                        </dl>
+                        @if (hubRows.Count > 0)
+                        {
+                            <ReviewDisclosure Text="@($"Configured vs observed hubs ({hubRows.Count})")" CollapseText="Hide hubs" TestId="@($"iqr-eh-hubs-{Slug(eventHub.PlatformId)}")" Class="disclosure-inline">
+                                <div class="iqr-tablewrap" tabindex="0" role="region" aria-label="Configured vs observed Event Hubs">
+                                    <table class="iqr-table iqr-table-compact" data-testid="iqr-eh-hub-table">
+                                        <thead><tr><th scope="col">Event Hub</th><th scope="col">Type</th><th scope="col">Configured</th><th scope="col">Observed</th><th scope="col">Comparison</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var row in hubRows)
+                                            {
+                                                <tr data-testid="iqr-eh-hub-row" data-state="@row.State"><td class="iqr-mono">@row.Hub</td><td>@row.Kind</td><td>@row.Configured</td><td>@row.Observed</td>
+                                                    <td><span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ComparisonTone(row.State)">@EventHubComparisonLabels.State(row.State)</span></td></tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </ReviewDisclosure>
+                        }
+                        <p class="iqr-muted">Snapshot of this run; opening an old run never re-reads Azure. An observed match is configuration agreeing with Azure — not message flow — and an observed consumer group never confirms which application reads with it.</p>
+                    </section>
+                }
+                <section class="iqr-card" aria-labelledby="iqr-tested-heading" data-testid="iqr-tested">
+                    <h3 id="iqr-tested-heading">What was tested</h3>
+                    @if (!IntegrationReviewResultPresentation.ScopeRecorded(result))
+                    {
+                        <p class="iqr-muted">Not recorded for this run (recorded before this list existed).</p>
+                    }
+                    else if (result.WhatWasTested.Count == 0)
+                    {
+                        <p class="iqr-muted">No check was executed with runtime evidence in this run; configuration was reviewed.</p>
+                    }
+                    else
+                    {
+                        <ul>@foreach (var item in result.WhatWasTested) { <li data-testid="iqr-tested-item">@item</li> }</ul>
+                    }
+                </section>
+                <section class="iqr-card" aria-labelledby="iqr-not-assessed-heading" data-testid="iqr-not-assessed">
+                    <h3 id="iqr-not-assessed-heading">What was not assessed</h3>
+                    @if (!IntegrationReviewResultPresentation.ScopeRecorded(result))
+                    {
+                        <p class="iqr-muted">Not recorded for this run; see Review limitations.</p>
+                    }
+                    else
+                    {
+                        <ul>@foreach (var item in result.WhatWasNotAssessed) { <li data-testid="iqr-not-assessed-item">@item</li> }</ul>
                     }
                 </section>
                 @if (result.ServiceBusSnapshot.Count > 0)

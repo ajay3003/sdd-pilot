@@ -108,12 +108,99 @@ public static class IntegrationReviewResultPresentation
     public static string ReadinessTone(IntegrationDomainReadiness readiness) => readiness switch
     {
         IntegrationDomainReadiness.Ready or IntegrationDomainReadiness.Available => "ready",
+        IntegrationDomainReadiness.Partial => "observed",
         IntegrationDomainReadiness.Limited => "attention",
         _ => "muted",
     };
 
     public static string DomainTone(IntegrationDomainResult domain) =>
         domain.Findings > 0 ? "fail" : domain.StateLabel == "Assessed" ? "pass" : domain.StateLabel == "Partially assessed" ? "attention" : "muted";
+
+    // ── Event Hub runtime evidence (the run's snapshot; never the current catalog, never re-read) ─────────────────────────
+
+    private static string Number(double value) => value.ToString(Math.Abs(value % 1) < 0.0001 ? "N0" : "N1", System.Globalization.CultureInfo.InvariantCulture);
+
+    public static string ComparisonTone(EventHubComparisonState state) => state switch
+    {
+        EventHubComparisonState.ObservedMatch => "observed",
+        EventHubComparisonState.DifferenceObserved or EventHubComparisonState.MissingInAzure => "warning",
+        EventHubComparisonState.NotAuthorized => "attention",
+        _ => "muted",
+    };
+
+    public sealed record HubRow(string Hub, string Kind, string Configured, string Observed, EventHubComparisonState State);
+
+    /// <summary>Configured business hubs first, then additional observed, then technical/support hubs.</summary>
+    public static IReadOnlyList<HubRow> HubRows(EventHubRuntimeSnapshot snapshot) =>
+        snapshot.Hubs.OrderBy(h => h.Technical ? 2 : h.IntegrationId is null ? 1 : 0).ThenBy(h => h.Hub, StringComparer.Ordinal)
+            .Select(h => new HubRow(h.Hub, h.Technical ? "Technical / support" : h.IntegrationId is null ? "Not configured" : "Business",
+                h.IntegrationId is null ? "—" : Properties(null, h.ConfiguredPartitions, h.ConfiguredRetentionHours),
+                h.State switch
+                {
+                    EventHubComparisonState.MissingInAzure => "Not found",
+                    EventHubComparisonState.NotAuthorized or EventHubComparisonState.NotAssessed => "Not read",
+                    _ => Properties(h.ObservedStatus, h.ObservedPartitions, h.ObservedRetentionHours),
+                }, h.State)).ToList();
+
+    private static string Properties(string? status, int? partitions, long? retentionHours)
+    {
+        var parts = new[] { status, partitions is { } p ? $"{p} partition{(p == 1 ? "" : "s")}" : null, retentionHours is { } h ? $"{h} h retention" : null }.OfType<string>().ToList();
+        return parts.Count == 0 ? "—" : string.Join(" · ", parts);
+    }
+
+    /// <summary>A runtime source this run did not read because the instance does not call Azure: "Not read", never "Not configured" (the source may well be configured).</summary>
+    private static string RuntimeState(EventHubRuntimeSnapshot snapshot, IntegrationEvidenceState state) =>
+        state == IntegrationEvidenceState.Available ? "Observed"
+        : state == IntegrationEvidenceState.NotConfigured && !snapshot.AzureRuntimeEnabled ? "Not read (Azure runtime not enabled)"
+        : IntegrationReviewLabels.EvidenceState(state);
+
+    public static string NamespaceLine(EventHubRuntimeSnapshot snapshot) => snapshot.NamespaceObservation switch
+    {
+        null => "Not read in this run",
+        { State: IntegrationEvidenceState.Available } ns => "Observed match" + string.Concat(new[] { ns.Status, ns.Sku, ns.Location }.Where(v => !string.IsNullOrWhiteSpace(v)).Select(v => $" · {v}"))
+            + (ns.HubListState == IntegrationEvidenceState.Available ? $" · {ns.Hubs.Count} hub(s) listed" : $" · {ns.HubListReason}"),
+        var ns => $"{RuntimeState(snapshot, ns.State)} — {ns.Reason}",
+    };
+
+    /// <summary>Consumer-group comparisons grouped: "Expected $Default (Configured assumption): Observed match on 16 of 16 hub(s) · Application mapping: Needs confirmation".</summary>
+    public static IReadOnlyList<string> GroupLines(EventHubRuntimeSnapshot snapshot) =>
+        snapshot.ConsumerGroups.Count == 0 ? ["Not read in this run"]
+        : snapshot.ConsumerGroups.GroupBy(g => (g.Expected, g.ExpectedProvenance, g.State, g.Mapping))
+            .Select(g => $"{(g.Key.Expected is null ? "Expected: not configured" : $"Expected {g.Key.Expected} ({g.Key.ExpectedProvenance})")}: {EventHubComparisonLabels.State(g.Key.State)} on {g.Count()} of {snapshot.ConsumerGroups.Count} hub(s) · Application mapping: {g.Key.Mapping}")
+            .ToList();
+
+    /// <summary>Checkpoint configuration and checkpoint runtime evidence as two separate statements.</summary>
+    public static IReadOnlyList<string> CheckpointLines(EventHubRuntimeSnapshot snapshot)
+    {
+        if (snapshot.Checkpoints.Count == 0) return ["Not read in this run"];
+        var configuration = string.Join(", ", snapshot.Checkpoints.GroupBy(c => c.Configuration).Select(g => $"{g.Key} ({g.Count()} hub(s))"));
+        var runtime = string.Join(", ", snapshot.Checkpoints.GroupBy(c => c.Runtime)
+            .Select(g => $"{(g.Key is { } state ? RuntimeState(snapshot, state) : "Not assessed")} ({g.Count()} hub(s))"));
+        var latest = snapshot.Checkpoints.Select(c => c.LastUpdated).Max();
+        return [$"Checkpoint configuration: {configuration}", $"Checkpoint runtime evidence: {runtime}{(latest is { } at ? $" · latest checkpoint {at:yyyy-MM-dd HH:mm} UTC" : "")}"];
+    }
+
+    public static IReadOnlyList<(string Label, string Value)> MonitoringRows(EventHubRuntimeSnapshot snapshot) =>
+    [
+        ("Application Insights", snapshot.ApplicationInsights is { Length: > 0 } ai ? $"{ai} — Configured" : "Not configured"),
+        ("Runtime telemetry", RuntimeState(snapshot, snapshot.TelemetryState)),
+        ("Container App logs", string.Equals(snapshot.ContainerAppsLogDestination, "azure-monitor", StringComparison.OrdinalIgnoreCase) ? "Azure Monitor" : snapshot.ContainerAppsLogDestination ?? "Not stated"),
+        ("Dedicated Log Analytics workspace", snapshot.LogAnalytics),
+    ];
+
+    /// <summary>Namespace metrics as Observed values — never judged without a threshold.</summary>
+    public static string MetricsLine(EventHubRuntimeSnapshot snapshot) => snapshot.Metrics switch
+    {
+        null => "Not read in this run",
+        { State: IntegrationEvidenceState.Available } m => string.Join(" · ", new[]
+        {
+            ("Incoming", "IncomingMessages"), ("outgoing", "OutgoingMessages"), ("server errors", "ServerErrors"), ("user errors", "UserErrors"), ("throttled", "ThrottledRequests"),
+        }.Select(x => $"{x.Item1} {(m.Total(x.Item2) is { } v ? Number(v) : "not returned")}")) + $" over {m.WindowHours} h — Observed, no threshold",
+        var m => $"{RuntimeState(snapshot, m.State)} — {m.Reason}",
+    };
+
+    /// <summary>What a run executed / did not assess. Runs recorded before these lists existed say so rather than showing an empty list.</summary>
+    public static bool ScopeRecorded(IntegrationReviewResult result) => result.WhatWasTested.Count > 0 || result.WhatWasNotAssessed.Count > 0;
 
     /// <summary>"3 of 16 checks assessed" — never "0 failures" for a domain nothing could assess.</summary>
     public static string Coverage(IntegrationDomainResult domain) =>

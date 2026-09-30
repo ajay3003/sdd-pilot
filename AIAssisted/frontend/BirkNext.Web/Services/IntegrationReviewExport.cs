@@ -30,6 +30,43 @@ public static class IntegrationReviewExport
             })));
         sb.Append("</section>\n");
 
+        // What the run executed and what it did not assess — explicit, from the run itself.
+        if (IntegrationReviewResultPresentation.ScopeRecorded(result))
+        {
+            sb.Append("<section class=\"block\"><h2>What was tested</h2>");
+            sb.Append(result.WhatWasTested.Count == 0 ? "<p>No check was executed with runtime evidence in this run; configuration was reviewed.</p>"
+                : "<ul>" + string.Concat(result.WhatWasTested.Select(t => $"<li>{esc(t)}</li>")) + "</ul>");
+            sb.Append("</section>\n<section class=\"block\"><h2>What was not assessed</h2><ul>");
+            foreach (var item in result.WhatWasNotAssessed) sb.Append($"<li>{esc(item)}</li>");
+            sb.Append("</ul></section>\n");
+        }
+
+        foreach (var eventHub in result.EventHubSnapshot)
+        {
+            // Event Hub transport: configured vs observed as this run read it (identifiers and counts only — no token, key, SAS or payload).
+            sb.Append($"<section class=\"block\"><h2>Event Hubs · configured vs observed · {esc(eventHub.PlatformName)}</h2><dl>");
+            sb.Append($"<dt>Captured</dt><dd>{eventHub.CapturedAt:u}</dd>");
+            sb.Append($"<dt>Azure runtime</dt><dd>{(eventHub.AzureRuntimeEnabled ? "Enabled" : "Not configured — IntegrationReview:Azure:Enabled is not true (not an integration misconfiguration)")}</dd>");
+            sb.Append($"<dt>Namespace</dt><dd>{esc(eventHub.Namespace)} — {esc(IntegrationReviewResultPresentation.NamespaceLine(eventHub))}</dd>");
+            sb.Append($"<dt>Consumer groups</dt><dd>{string.Join("<br>", IntegrationReviewResultPresentation.GroupLines(eventHub).Select(esc))}</dd>");
+            sb.Append($"<dt>Checkpoints</dt><dd>{string.Join("<br>", IntegrationReviewResultPresentation.CheckpointLines(eventHub).Select(esc))}</dd>");
+            foreach (var (label, value) in IntegrationReviewResultPresentation.MonitoringRows(eventHub)) sb.Append($"<dt>{esc(label)}</dt><dd>{esc(value)}</dd>");
+            sb.Append($"<dt>Namespace metrics</dt><dd>{esc(IntegrationReviewResultPresentation.MetricsLine(eventHub))}</dd></dl>");
+            var hubs = IntegrationReviewResultPresentation.HubRows(eventHub);
+            if (hubs.Count > 0)
+                sb.Append(table(["Event Hub", "Type", "Configured", "Observed", "Comparison"], hubs.Select(h => new[]
+                {
+                    esc(h.Hub), esc(h.Kind), esc(h.Configured), esc(h.Observed), badge(EventHubComparisonLabels.State(h.State)),
+                })));
+            if (eventHub.ConsumerGroups.Count > 0)
+                sb.Append(table(["Event Hub", "Expected group", "Provenance", "Observed groups", "Comparison", "Application mapping"], eventHub.ConsumerGroups.Select(g => new[]
+                {
+                    esc(g.Hub), esc(g.Expected ?? "Not configured"), esc(g.ExpectedProvenance), esc(g.Observed.Count == 0 ? "—" : string.Join(", ", g.Observed)),
+                    badge(EventHubComparisonLabels.State(g.State)), esc(g.Mapping),
+                })));
+            sb.Append("<p>Observed values carry no verdict without a threshold. An observed match is configuration agreeing with Azure, not message flow; an observed consumer group never confirms the application mapping.</p></section>\n");
+        }
+
         if (result.ApplicationMessagingSnapshot is { } messaging && messaging.Applications.Any(a => a.BoundConsumer is not null))
         {
             // Application messaging (Wolverine): the source evidence and runtime reads this run used. Facts and provenance only — no source code,
@@ -112,9 +149,10 @@ public static class IntegrationReviewExport
         sb.Append("</section>\n");
 
         sb.Append("<section class=\"block\"><h2>Domain coverage</h2>");
-        sb.Append(table(["Domain", "State", "Coverage", "Findings", "Key limitation"], result.Domains.Select(d => new[]
+        sb.Append(table(["Domain", "State", "Coverage", "Findings", "Observed", "Missing"], result.Domains.Select(d => new[]
         {
-            esc(IntegrationReviewLabels.Domain(d.Domain)), esc(d.StateLabel), esc(IntegrationReviewResultPresentation.Coverage(d)), d.Findings.ToString(), esc(d.KeyLimitation ?? ""),
+            esc(IntegrationReviewLabels.Domain(d.Domain)), esc(d.StateLabel), esc(IntegrationReviewResultPresentation.Coverage(d)), d.Findings.ToString(),
+            esc(string.Join("; ", d.Observed)), esc(d.Missing.Count > 0 ? string.Join("; ", d.Missing) : d.KeyLimitation ?? ""),
         })));
         sb.Append("</section>\n");
 

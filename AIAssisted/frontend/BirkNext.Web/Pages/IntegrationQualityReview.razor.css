@@ -84,3 +84,10 @@
     .iqr-attention-value { grid-column: 1 / -1; grid-row: 2; }
     .iqr-attention-detail { grid-column: 1 / -1; }
 }
+/* Domain cards: evidence read / observed and what stays missing (text labels, never colour alone). */
+.iqr-domain-list-label { margin: .4rem 0 0; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; color: var(--clr-text-muted); }
+.iqr-domain-list { margin: .1rem 0 0; padding-left: 1rem; font-size: .8rem; overflow-wrap: anywhere; }
+.iqr-domain-list li { margin: .05rem 0; }
+.iqr-domain-list-missing { color: var(--clr-text-muted); }
+.iqr-eh-facts { grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+.iqr-eh-line { display: block; }

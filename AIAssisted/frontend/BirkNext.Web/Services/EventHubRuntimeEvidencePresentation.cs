@@ -35,19 +35,8 @@ public static class EventHubRuntimeEvidencePresentation
 
     public static string ExecutionStatus(bool azureEnabled) => azureEnabled ? "Enabled" : "Not configured";
 
-    /// <summary>The four evidence sources the review reads: metadata, consumer-group list, checkpoints, telemetry.</summary>
-    public static (int Configured, int Total) SourceCount(IntegrationPlatform platform)
-    {
-        var r = platform.RuntimeEvidence;
-        var flags = new[]
-        {
-            r?.EventHubMetadata == true && !string.IsNullOrWhiteSpace(platform.NamespaceFqdn),
-            GroupListConfigured(platform),
-            r?.ResolvedCheckpointContainerUrl() is not null,
-            r?.TelemetryConfigured == true,
-        };
-        return (flags.Count(f => f), flags.Length);
-    }
+    /// <summary>The four evidence sources the review reads: metadata, Resource Manager (consumer groups, hub list, metrics), checkpoints, telemetry.</summary>
+    public static (int Configured, int Total) SourceCount(IntegrationPlatform platform) => EventHubRuntimeSources.Count(platform);
 
     /// <summary>"Configured" / "Partially configured" / "Not configured" over the four sources (never about Azure execution).</summary>
     public static string SourcesStatus(IEnumerable<IntegrationPlatform> platforms)
@@ -62,8 +51,7 @@ public static class EventHubRuntimeEvidencePresentation
         return configured == 0 ? "None configured" : $"{configured} of {total} configured";
     }
 
-    private static bool GroupListConfigured(IntegrationPlatform platform) =>
-        Guid.TryParse(platform.RuntimeEvidence?.SubscriptionId?.Trim(), out _) && !string.IsNullOrWhiteSpace(platform.ResourceGroup) && !string.IsNullOrWhiteSpace(platform.Namespace);
+    private static bool GroupListConfigured(IntegrationPlatform platform) => EventHubRuntimeSources.ResourceManager(platform);
 
     public static IReadOnlyList<RuntimeReadinessRow> Readiness(IntegrationPlatform platform, bool azureEnabled)
     {

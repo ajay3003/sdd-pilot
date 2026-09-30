@@ -459,9 +459,10 @@ public static class IntegrationConfigurationRules
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum IntegrationReviewDomain { Configuration, Connectivity, Contract, MessageFlow, Reliability, ErrorHandling, Security, Observability, Performance, DataQuality }
 
-/// <summary>Before a run: whether a domain can produce evidence. Not a result.</summary>
+/// <summary>Before a run: whether a domain can produce evidence. Not a result. Partial: some of the domain's evidence can be read, but by
+/// construction not all of it (e.g. transport progression without application processing).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationDomainReadiness { Ready, Available, Limited, NotAssessable }
+public enum IntegrationDomainReadiness { Ready, Available, Limited, NotAssessable, Partial }
 
 /// <summary>Result of one check. Fail only when an explicit expected rule was violated; unavailable evidence is never Fail.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -501,7 +502,9 @@ public enum IntegrationEvidenceFreshness { Current, Mixed, Historical, Configura
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum IntegrationFindingSeverityV2 { Critical, High, Medium, Low, Info }
 
-public sealed record IntegrationDomainReadinessRow(IntegrationReviewDomain Domain, IntegrationDomainReadiness Readiness, string Explanation);
+/// <summary>One "What can be reviewed" card: the readiness, why, the evidence the run can read, and what stays missing.</summary>
+public sealed record IntegrationDomainReadinessRow(IntegrationReviewDomain Domain, IntegrationDomainReadiness Readiness, string Explanation,
+    IReadOnlyList<string>? Available = null, IReadOnlyList<string>? Missing = null);
 
 public sealed record IntegrationSystemScope
 {
@@ -544,6 +547,167 @@ public sealed record IntegrationReviewReadiness
     public List<ServiceBusReadiness> ServiceBus { get; init; } = [];
     /// <summary>Identity provisioning (SCIM) platforms: configured flow and stored source evidence. Nothing is contacted before a run.</summary>
     public List<ScimReadiness> Scim { get; init; } = [];
+    /// <summary>Whether this BirkNext instance may call Azure (<c>IntegrationReview:Azure:Enabled</c> and an identity). Separate from which sources are configured.</summary>
+    public bool AzureRuntimeEnabled { get; init; }
+    /// <summary>Why Azure runtime evidence is not read, when it is not ("IntegrationReview:Azure:Enabled is not true"). Never a configuration problem of the integration.</summary>
+    public string? AzureRuntimeReason { get; init; }
+    /// <summary>Event Hub runtime evidence sources configured on the platforms (settings only, whether or not Azure runs).</summary>
+    public int RuntimeSourcesConfigured { get; init; }
+    public int RuntimeSourcesTotal { get; init; }
+}
+
+// ── Event Hub runtime evidence as IQR consumes it (snapshot of one run) ─────────────────────────────────────────────────
+// Configured ≠ observed ≠ healthy: every comparison keeps both sides and a typed state; observed values carry no verdict without a threshold.
+
+/// <summary>Which runtime evidence sources a platform has configured — settings only, never whether Azure is called. Shared by the review and the UI.</summary>
+public static class EventHubRuntimeSources
+{
+    public static bool Metadata(IntegrationPlatform platform) => platform.RuntimeEvidence?.EventHubMetadata == true && !string.IsNullOrWhiteSpace(platform.NamespaceFqdn);
+    /// <summary>Azure Resource Manager reads (namespace, hub list, consumer groups) and Azure Monitor metrics need the subscription, resource group and namespace.</summary>
+    public static bool ResourceManager(IntegrationPlatform platform) =>
+        Guid.TryParse(platform.RuntimeEvidence?.SubscriptionId?.Trim(), out _) && !string.IsNullOrWhiteSpace(platform.ResourceGroup) && !string.IsNullOrWhiteSpace(platform.Namespace);
+    public static bool Checkpoints(IntegrationPlatform platform) => platform.RuntimeEvidence?.ResolvedCheckpointContainerUrl() is not null;
+    public static bool Telemetry(IntegrationPlatform platform) => platform.RuntimeEvidence?.TelemetryConfigured == true;
+
+    public static (int Configured, int Total) Count(IntegrationPlatform platform)
+    {
+        var flags = new[] { Metadata(platform), ResourceManager(platform), Checkpoints(platform), Telemetry(platform) };
+        return (flags.Count(f => f), flags.Length);
+    }
+
+    /// <summary>Known Debezium / Kafka Connect support hubs. Observed in Azure, they are technical — never an unexpected business hub.</summary>
+    public static readonly string[] KnownTechnicalHubs = ["connect-configs", "connect-offsets", "connect-status", "schemahistory"];
+
+    public static bool IsTechnical(IntegrationPlatform platform, string hub) =>
+        platform.TechnicalTopics.Any(t => string.Equals(t.Name, hub, StringComparison.OrdinalIgnoreCase))
+        || KnownTechnicalHubs.Any(k => string.Equals(k, hub, StringComparison.OrdinalIgnoreCase) || hub.EndsWith("-" + k, StringComparison.OrdinalIgnoreCase) || hub.EndsWith("." + k, StringComparison.OrdinalIgnoreCase))
+        || (!string.IsNullOrWhiteSpace(platform.TopicPrefix) && string.Equals(hub, platform.TopicPrefix, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>A dedicated Log Analytics workspace is only expected when one is configured; Container Apps logging to Azure Monitor needs none.</summary>
+    public static string LogAnalyticsLabel(IntegrationRuntimeEvidenceSettings? settings) =>
+        Guid.TryParse(settings?.TelemetryWorkspaceId?.Trim(), out var workspace) ? $"Configured ({workspace:D})" : "Not configured — not required for this platform configuration";
+}
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum EventHubComparisonState { ObservedMatch, DifferenceObserved, MissingInAzure, AdditionalObserved, TechnicalObserved, ConfiguredDisabled, NotAuthorized, NotAssessed }
+
+/// <summary>One hub as Azure Resource Manager lists it (GET only): status, partitions, retention. No message, no key.</summary>
+public sealed record EventHubObservedHub
+{
+    public string Name { get; init; } = "";
+    public string? Status { get; init; }
+    public int? PartitionCount { get; init; }
+    public long? RetentionHours { get; init; }
+}
+
+/// <summary>Namespace and hub list read through Azure Resource Manager in one run.</summary>
+public sealed record EventHubNamespaceObservation
+{
+    public IntegrationEvidenceState State { get; init; }
+    public string Reason { get; init; } = "";
+    public DateTimeOffset CapturedAt { get; init; }
+    public string? Status { get; init; }
+    public string? Sku { get; init; }
+    public string? Location { get; init; }
+    public string? PublicNetworkAccess { get; init; }
+    public bool? DisableLocalAuth { get; init; }
+    public string? MinimumTlsVersion { get; init; }
+    public int? PrivateEndpointConnections { get; init; }
+    /// <summary>State of the hub list itself: a namespace can be readable while the list is not.</summary>
+    public IntegrationEvidenceState HubListState { get; init; } = IntegrationEvidenceState.NotConfigured;
+    public string HubListReason { get; init; } = "";
+    public List<EventHubObservedHub> Hubs { get; init; } = [];
+}
+
+public sealed record EventHubMetricObservation(string Name, string Aggregation, double? Value, string Unit);
+
+/// <summary>Azure Monitor platform metrics of the namespace over the review window. Observed only: no threshold, zero is not a pass.</summary>
+public sealed record EventHubMetricsEvidence
+{
+    public IntegrationEvidenceState State { get; init; }
+    public string Reason { get; init; } = "";
+    public DateTimeOffset CapturedAt { get; init; }
+    public int WindowHours { get; init; }
+    public List<EventHubMetricObservation> Metrics { get; init; } = [];
+    public double? Total(string metric) => Metrics.FirstOrDefault(m => m.Name == metric && m.Aggregation == "Total")?.Value;
+}
+
+/// <summary>Configured hub vs the hub Azure lists (or an observed hub nobody configured).</summary>
+public sealed record EventHubHubComparison
+{
+    public string Hub { get; init; } = "";
+    public string? IntegrationId { get; init; }
+    public bool Technical { get; init; }
+    public EventHubComparisonState State { get; init; }
+    public int? ConfiguredPartitions { get; init; }
+    public int? ObservedPartitions { get; init; }
+    public long? ConfiguredRetentionHours { get; init; }
+    public long? ObservedRetentionHours { get; init; }
+    public string? ObservedStatus { get; init; }
+    public string Detail { get; init; } = "";
+}
+
+/// <summary>Expected consumer group vs the groups Azure lists for the hub. An observed match never confirms the application mapping.</summary>
+public sealed record EventHubConsumerGroupComparison
+{
+    public string IntegrationId { get; init; } = "";
+    public string Hub { get; init; } = "";
+    public string? Expected { get; init; }
+    /// <summary>"Configured assumption", "Configured on the integration" …</summary>
+    public string ExpectedProvenance { get; init; } = "";
+    public List<string> Observed { get; init; } = [];
+    public EventHubComparisonState State { get; init; }
+    public string Mapping { get; init; } = "Needs confirmation";
+    public string Reason { get; init; } = "";
+}
+
+/// <summary>Checkpoint configuration and checkpoint runtime evidence, never flattened into one state.</summary>
+public sealed record EventHubCheckpointSummary
+{
+    public string IntegrationId { get; init; } = "";
+    public string Hub { get; init; } = "";
+    public string? ConsumerGroup { get; init; }
+    public bool GroupAssumed { get; init; }
+    /// <summary>"Verified" (source/runtime configuration verified), "Configured" or "Not configured".</summary>
+    public string Configuration { get; init; } = "";
+    public IntegrationEvidenceState? Runtime { get; init; }
+    public string RuntimeReason { get; init; } = "";
+    public int Partitions { get; init; }
+    public DateTimeOffset? LastUpdated { get; init; }
+}
+
+/// <summary>Everything the Event Hub runtime evidence contributed to one run, per platform — rendered as captured, never re-queried.</summary>
+public sealed record EventHubRuntimeSnapshot
+{
+    public string PlatformId { get; init; } = "";
+    public string PlatformName { get; init; } = "";
+    public string? Namespace { get; init; }
+    public bool AzureRuntimeEnabled { get; init; }
+    public DateTimeOffset CapturedAt { get; init; }
+    public EventHubNamespaceObservation? NamespaceObservation { get; init; }
+    public EventHubMetricsEvidence? Metrics { get; init; }
+    public List<EventHubHubComparison> Hubs { get; init; } = [];
+    public List<EventHubConsumerGroupComparison> ConsumerGroups { get; init; } = [];
+    public List<EventHubCheckpointSummary> Checkpoints { get; init; } = [];
+    public string? ApplicationInsights { get; init; }
+    public IntegrationEvidenceState TelemetryState { get; init; } = IntegrationEvidenceState.NotConfigured;
+    public string? ContainerAppsLogDestination { get; init; }
+    public string LogAnalytics { get; init; } = "";
+}
+
+public static class EventHubComparisonLabels
+{
+    public static string State(EventHubComparisonState state) => state switch
+    {
+        EventHubComparisonState.ObservedMatch => "Observed match",
+        EventHubComparisonState.DifferenceObserved => "Difference observed",
+        EventHubComparisonState.MissingInAzure => "Configured but not found in Azure",
+        EventHubComparisonState.AdditionalObserved => "Additional observed",
+        EventHubComparisonState.TechnicalObserved => "Technical / support hub",
+        EventHubComparisonState.ConfiguredDisabled => "Configured (disabled, not reviewed)",
+        EventHubComparisonState.NotAuthorized => "Not authorized",
+        _ => "Not assessed",
+    };
 }
 
 public sealed record IntegrationCheck
@@ -593,6 +757,10 @@ public sealed record IntegrationDomainResult
     /// <summary>"Assessed", "Partially assessed", "Not assessed".</summary>
     public string StateLabel { get; init; } = "";
     public string? KeyLimitation { get; init; }
+    /// <summary>What the domain's assessed checks established ("Configured Event Hub in Azure: Observed"). Evidence, never a verdict by itself.</summary>
+    public List<string> Observed { get; init; } = [];
+    /// <summary>What the domain could not assess, with the reason ("Consumer lag — needs both positions").</summary>
+    public List<string> Missing { get; init; } = [];
 }
 
 public sealed record IntegrationTopicResult
@@ -651,6 +819,12 @@ public sealed record IntegrationReviewResult
     public List<ScimEvidenceCheck> ScimSnapshot { get; init; } = [];
     /// <summary>Security classification (source + configuration only) as this run used it. Its own review owns live checks.</summary>
     public ClassificationReviewResult? SecurityClassificationSnapshot { get; init; }
+    /// <summary>Event Hub runtime evidence exactly as this run read and compared it (namespace, hubs, consumer groups, checkpoints, metrics). Never re-queried.</summary>
+    public List<EventHubRuntimeSnapshot> EventHubSnapshot { get; init; } = [];
+    /// <summary>The checks this run actually executed with evidence (a source that could not be read is listed under <see cref="WhatWasNotAssessed"/>).</summary>
+    public List<string> WhatWasTested { get; init; } = [];
+    /// <summary>What this run did not assess, and why — explicit, never implied by absence.</summary>
+    public List<string> WhatWasNotAssessed { get; init; } = [];
     [JsonIgnore] public int TopicsReviewed => Systems.Where(s => s.DomainReviewSupported).Sum(s => s.Topics.Count);
     [JsonIgnore] public IEnumerable<IntegrationCheck> AllChecks => Systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks)));
 }

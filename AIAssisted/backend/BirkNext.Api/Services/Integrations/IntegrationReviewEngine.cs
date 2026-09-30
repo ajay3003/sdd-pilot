@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using BirkNext.Api.Services.Integrations.ApplicationMessaging;
 using BirkNext.Api.Services.Integrations.ServiceBus;
 using BirkNext.Integrations;
@@ -31,29 +32,40 @@ public sealed class IntegrationReviewEngine(
     IIntegrationAzureCredential? azure = null,
     ServiceBusEvidenceService? serviceBus = null,
     BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null,
-    BirkNext.Api.Services.SecurityClassification.IClassificationReviewService? classification = null)
+    BirkNext.Api.Services.SecurityClassification.IClassificationReviewService? classification = null,
+    EventHub.IEventHubNamespaceSource? namespaces = null,
+    EventHub.IEventHubMetricsSource? eventHubMetrics = null)
 {
     private const string NoSafeEventSource = "No safe runtime event-structure source is configured; events are never consumed to inspect them.";
 
     // ── Pre-run ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    public IReadOnlyList<IntegrationEvidenceAdapterStatus> Adapters(IntegrationPlatform platform) =>
-    [
-        metadata.Describe(platform), consumerGroups.Describe(platform), checkpoints.Describe(platform), telemetry.Describe(platform),
-    ];
+    public IReadOnlyList<IntegrationEvidenceAdapterStatus> Adapters(IntegrationPlatform platform)
+    {
+        var adapters = new List<IntegrationEvidenceAdapterStatus> { metadata.Describe(platform), consumerGroups.Describe(platform), checkpoints.Describe(platform), telemetry.Describe(platform) };
+        if (namespaces is not null) adapters.Add(namespaces.Describe(platform));
+        if (eventHubMetrics is not null) adapters.Add(eventHubMetrics.Describe(platform));
+        return adapters;
+    }
+
+    /// <summary>Whether this instance calls Azure: its identity when known, else (fakes in tests) whether any source is Available.</summary>
+    private bool AzureEnabled(IEnumerable<IntegrationEvidenceAdapterStatus> adapters) =>
+        azure is not null ? azure.Credential is not null : adapters.Any(a => a.State == IntegrationEvidenceState.Available);
+
+    private string AzureDisabledReason => azure?.DisabledReason ?? IntegrationAzureCredential.DisabledMessage;
 
     public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts) => Readiness(catalog, contracts, null);
 
     /// <summary>Pre-run readiness. Application messaging evidence is summarized beside it and never changes a domain's readiness.</summary>
     public IntegrationReviewReadiness Readiness(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging) =>
-        ReadinessCore(catalog, contracts) with
+        ReadinessCore(catalog, contracts, messaging) with
         {
             ApplicationMessaging = ApplicationMessagingReview.Summaries(catalog, messaging, azure),
             // Service Bus is its own transport: summarized here, never counted among the Event Hub runtime sources.
             ServiceBus = serviceBus is null ? [] : catalog.Platforms.Where(p => p.Enabled && ServiceBusEvidenceService.IsServiceBus(p)).Select(p => serviceBus.Readiness(p, messaging)).ToList(),
         };
 
-    private IntegrationReviewReadiness ReadinessCore(IntegrationCatalog catalog, IntegrationContractSet contracts)
+    private IntegrationReviewReadiness ReadinessCore(IntegrationCatalog catalog, IntegrationContractSet contracts, ApplicationMessagingEvidenceSet? messaging)
     {
         var enabled = catalog.Integrations.Where(i => i.Enabled).ToList();
         var systems = Systems(catalog, enabled);
@@ -62,8 +74,20 @@ public sealed class IntegrationReviewEngine(
         var adapters = platforms.SelectMany(p => Adapters(p).Select(a => a with { Adapter = $"{a.Adapter} · {p.Name}" })).ToList();
         bool Configured(IEnumerable<IntegrationEvidenceAdapterStatus> statuses) => statuses.Any(s => s.State == IntegrationEvidenceState.Available);
         var metadataReady = Configured(platforms.Select(metadata.Describe));
+        var groupsReady = Configured(platforms.Select(consumerGroups.Describe));
         var checkpointReady = Configured(platforms.Select(checkpoints.Describe));
         var telemetryReady = Configured(platforms.Select(telemetry.Describe));
+        var namespaceReady = namespaces is not null && Configured(platforms.Select(namespaces.Describe));
+        var metricsReady = eventHubMetrics is not null && Configured(platforms.Select(eventHubMetrics.Describe));
+        var azureOn = AzureEnabled(adapters);
+        // Configured sources (settings only), kept apart from whether this instance calls Azure at all.
+        var metadataConfigured = platforms.Any(EventHubRuntimeSources.Metadata);
+        var armConfigured = platforms.Any(EventHubRuntimeSources.ResourceManager);
+        var checkpointConfigured = platforms.Any(EventHubRuntimeSources.Checkpoints);
+        var telemetryConfigured = platforms.Any(EventHubRuntimeSources.Telemetry);
+        string Gap(bool configured, string what) =>
+            !configured ? $"{what}: not configured" : !azureOn ? $"{what}: configured, not read — Azure runtime is not enabled for this instance" : $"{what}: configured, not readable (see Runtime evidence)";
+        var appBound = messaging?.Applications.Any(a => a.BoundConsumer is not null) == true;
         var unknownGroups = eventHub.Count(i => EffectiveGroup(i, catalog.Platforms.FirstOrDefault(p => p.Id == i.PlatformId)).Group is null);
         var unknownRoles = eventHub.Count(i => string.IsNullOrWhiteSpace(i.Consumer.ContainerApp));
         var both = enabled.Count(i => contracts.Of(i.Id, IntegrationContractRole.Producer) is not null && contracts.Of(i.Id, IntegrationContractRole.Consumer) is not null);
@@ -72,41 +96,114 @@ public sealed class IntegrationReviewEngine(
         var thresholds = platforms.Any(p => p.RuntimeEvidence is { MaxConsumerLagEvents: not null } or { MaxCheckpointAgeMinutes: not null });
         var provider = catalog.Platforms.Any(p => !string.IsNullOrWhiteSpace(p.MonitoringProvider));
 
-        IntegrationDomainReadinessRow Row(IntegrationReviewDomain domain, IntegrationDomainReadiness readiness, string explanation) => new(domain, readiness, explanation);
+        IntegrationDomainReadinessRow Row(IntegrationReviewDomain domain, IntegrationDomainReadiness readiness, string explanation, IEnumerable<string?>? available = null, IEnumerable<string?>? missing = null) =>
+            new(domain, readiness, explanation, (available ?? []).OfType<string>().ToList(), (missing ?? []).OfType<string>().ToList());
+        var azureMetadata = metadataReady || namespaceReady;
+        var producer = platforms.Select(p => p.ProducerTechnology).FirstOrDefault(t => !string.IsNullOrWhiteSpace(t));
+        var expectedGroup = platforms.Select(p => p.RuntimeEvidence?.ExpectedConsumerGroup).FirstOrDefault(g => !string.IsNullOrWhiteSpace(g))?.Trim();
+        var providers = catalog.Platforms.Select(p => p.MonitoringProvider).Where(p => !string.IsNullOrWhiteSpace(p)).Distinct().ToList();
+        var appInsights = platforms.Select(p => p.RuntimeEvidence?.ApplicationInsightsResourceName).FirstOrDefault(n => !string.IsNullOrWhiteSpace(n))?.Trim();
+        var azureMonitorLogs = platforms.Any(p => string.Equals(p.RuntimeEvidence?.ContainerAppsLogDestination?.Trim(), "azure-monitor", StringComparison.OrdinalIgnoreCase));
+        var logAnalytics = $"Dedicated Log Analytics workspace: {EventHubRuntimeSources.LogAnalyticsLabel(platforms.FirstOrDefault()?.RuntimeEvidence)}.";
+        var hasFqdn = catalog.Platforms.Any(p => !string.IsNullOrWhiteSpace(p.NamespaceFqdn));
+        var transport = azureMetadata || checkpointReady || telemetryReady;
+        var perfEvidence = metricsReady || metadataReady || checkpointReady || telemetryReady;
+        var consumerAuth = eventHub.Select(i => i.ConsumerAuthentication).Where(a => a != IntegrationAuthMechanism.NotConfigured).Distinct().Select(IntegrationConfigurationRules.AuthLabel).ToList();
         var domains = new List<IntegrationDomainReadinessRow>
         {
             enabled.Count == 0 ? Row(IntegrationReviewDomain.Configuration, IntegrationDomainReadiness.NotAssessable, "No enabled integration is configured.")
-                : Row(IntegrationReviewDomain.Configuration, IntegrationDomainReadiness.Ready, $"{enabled.Count} enabled integration{(enabled.Count == 1 ? "" : "s")} will be reviewed against the configured expectation."),
-            !catalog.Platforms.Any(p => !string.IsNullOrWhiteSpace(p.NamespaceFqdn)) ? Row(IntegrationReviewDomain.Connectivity, IntegrationDomainReadiness.NotAssessable, "No namespace FQDN is configured to probe.")
-                : metadataReady ? Row(IntegrationReviewDomain.Connectivity, IntegrationDomainReadiness.Ready, "Namespace probe and Event Hub metadata (existence, partitions).")
-                : Row(IntegrationReviewDomain.Connectivity, IntegrationDomainReadiness.Limited, "Namespace reachability can be probed (DNS, TCP, TLS). Event Hub existence needs Event Hub metadata access, which is not configured."),
+                : Row(IntegrationReviewDomain.Configuration, IntegrationDomainReadiness.Ready,
+                    azureMetadata ? "Configured Event Hubs compared with Azure runtime metadata."
+                        : $"{enabled.Count} enabled integration{(enabled.Count == 1 ? "" : "s")} will be reviewed against the configured expectation; the comparison with Azure needs runtime evidence.",
+                    [$"{enabled.Count} configured integration{(enabled.Count == 1 ? "" : "s")}: expected Event Hubs, partitions, retention, consumer group, checkpoint store, authentication and monitoring",
+                        namespaceReady ? "Configured vs observed hubs (Azure Resource Manager: status, partitions, retention)" : metadataReady ? "Configured vs observed hubs (Event Hub metadata: existence, partitions)" : null],
+                    [azureMetadata ? null : Gap(metadataConfigured || armConfigured, "Comparison with Azure runtime metadata")]),
+            !hasFqdn ? Row(IntegrationReviewDomain.Connectivity, IntegrationDomainReadiness.NotAssessable, "No namespace FQDN is configured to probe.")
+                : azureMetadata ? Row(IntegrationReviewDomain.Connectivity, IntegrationDomainReadiness.Ready, "DNS/TCP/TLS and Azure metadata access are observed separately; reachable is not authorized.",
+                    ["Namespace DNS, TCP 443 and TLS probe", "Azure metadata access with the BirkNext identity (read-only)"])
+                : Row(IntegrationReviewDomain.Connectivity, IntegrationDomainReadiness.Limited,
+                    "Namespace reachability can be probed (DNS, TCP, TLS). Event Hub existence and Azure metadata access need Event Hub metadata, which is not read.",
+                    ["Namespace DNS, TCP 443 and TLS probe"], [Gap(metadataConfigured || armConfigured, "Azure metadata access")]),
             both > 0 ? Row(IntegrationReviewDomain.Contract, oneSided > 0 || both < enabled.Count ? IntegrationDomainReadiness.Limited : IntegrationDomainReadiness.Ready,
-                    $"{both} integration(s) have producer and consumer contracts{(both < enabled.Count ? $"; {enabled.Count - both} lack one or both" : "")}.")
-                : oneSided > 0 ? Row(IntegrationReviewDomain.Contract, IntegrationDomainReadiness.Limited, $"{oneSided} integration(s) have one contract only; compatibility needs both.")
-                : Row(IntegrationReviewDomain.Contract, IntegrationDomainReadiness.NotAssessable, "No producer/consumer contract is uploaded."),
-            metadataReady ? Row(IntegrationReviewDomain.MessageFlow, IntegrationDomainReadiness.Available, "Producer activity from Event Hub metadata" + (checkpointReady || telemetryReady ? "; consumer activity from checkpoints/telemetry." : "; consumer activity needs checkpoints or telemetry."))
-                : Row(IntegrationReviewDomain.MessageFlow, IntegrationDomainReadiness.NotAssessable, "Event Hub metadata access is not configured."),
-            !checkpointReady && !telemetryReady ? Row(IntegrationReviewDomain.Reliability, IntegrationDomainReadiness.NotAssessable, "No checkpoint or telemetry evidence source is configured.")
-                : unknownGroups > 0 || !checkpointReady ? Row(IntegrationReviewDomain.Reliability, IntegrationDomainReadiness.Limited, !checkpointReady ? "No checkpoint evidence source configured; telemetry indicators only." : $"Consumer group unknown for {unknownGroups} integration(s).")
-                : Row(IntegrationReviewDomain.Reliability, IntegrationDomainReadiness.Available, "Checkpoint and telemetry evidence."),
-            !telemetryReady ? Row(IntegrationReviewDomain.ErrorHandling, IntegrationDomainReadiness.NotAssessable, "No telemetry source configured.")
-                : Row(IntegrationReviewDomain.ErrorHandling, unknownRoles > 0 ? IntegrationDomainReadiness.Limited : IntegrationDomainReadiness.Available,
-                    unknownRoles > 0 ? $"Telemetry configured; {unknownRoles} integration(s) have no consumer application to attribute telemetry to." : "Consumer telemetry (exceptions, traces)."),
-            Row(IntegrationReviewDomain.Security, enabled.Count == 0 ? IntegrationDomainReadiness.NotAssessable : telemetryReady ? IntegrationDomainReadiness.Available : IntegrationDomainReadiness.Limited,
-                telemetryReady ? "Configured authentication, TLS and runtime authorization indicators." : "Configured authentication and TLS; runtime authorization needs telemetry."),
-            !provider ? Row(IntegrationReviewDomain.Observability, IntegrationDomainReadiness.Limited, "No monitoring provider is configured.")
-                : telemetryReady ? Row(IntegrationReviewDomain.Observability, IntegrationDomainReadiness.Available, "Monitoring configuration and telemetry access.")
-                : Row(IntegrationReviewDomain.Observability, IntegrationDomainReadiness.Limited, "Monitoring provider configured; runtime telemetry is not configured."),
-            !metadataReady && !checkpointReady && !telemetryReady ? Row(IntegrationReviewDomain.Performance, IntegrationDomainReadiness.NotAssessable, "No measured timing, lag or backlog evidence source. Configuration values are never performance evidence.")
-                : Row(IntegrationReviewDomain.Performance, thresholds ? IntegrationDomainReadiness.Available : IntegrationDomainReadiness.Limited,
-                    thresholds ? "Measured event age, lag and processing time; judged against the configured IQR thresholds." : "Measured values are reported as Observed; no IQR lag/checkpoint threshold is configured."),
-            producerContracts > 0 ? Row(IntegrationReviewDomain.DataQuality, IntegrationDomainReadiness.Limited, $"Envelope structure declared by {producerContracts} producer contract(s). {NoSafeEventSource}")
-                : Row(IntegrationReviewDomain.DataQuality, IntegrationDomainReadiness.NotAssessable, $"No producer contract. {NoSafeEventSource}"),
+                    $"{both} integration(s) have producer and consumer contracts{(both < enabled.Count ? $"; {enabled.Count - both} lack one or both" : "")}.",
+                    [$"Producer and consumer JSON Schemas for {both} integration(s)"], [both < enabled.Count ? $"Contracts for {enabled.Count - both} integration(s)" : null])
+                : oneSided > 0 ? Row(IntegrationReviewDomain.Contract, IntegrationDomainReadiness.Limited, $"{oneSided} integration(s) have one contract only; compatibility needs both.",
+                    [$"One-sided contracts for {oneSided} integration(s)"], ["The other side's contract"])
+                : Row(IntegrationReviewDomain.Contract, IntegrationDomainReadiness.NotAssessable, "No producer/consumer contract is uploaded. Event Hub runtime metadata does not make contracts assessable.",
+                    [], ["Producer and consumer JSON Schemas"]),
+            transport ? Row(IntegrationReviewDomain.MessageFlow, IntegrationDomainReadiness.Partial,
+                    "Transport progression evidence can be read; application processing is separate evidence and end-to-end flow is never proven by transport evidence.",
+                    [producer is null ? null : $"Producer configured ({producer})",
+                        azureMetadata ? $"Event Hub observed in Azure ({(metadataReady ? "existence, last enqueued position" : "existence, status")})" : null,
+                        groupsReady ? expectedGroup is { } g ? $"Expected consumer group {g} compared with the groups Azure lists (configured assumption — mapping needs confirmation)" : "Consumer groups Azure lists for each hub" : null,
+                        checkpointReady ? "Checkpoint progression (blob metadata, read-only)" : null,
+                        telemetryReady ? "Consumer processing telemetry (Application Insights)" : null,
+                        appBound ? "Application handlers from analyzed source (Wolverine) — configuration, not processing" : null],
+                    [azureMetadata ? null : Gap(metadataConfigured || armConfigured, "Event Hub runtime metadata"), groupsReady ? null : Gap(armConfigured, "Consumer-group list"),
+                        checkpointReady ? null : Gap(checkpointConfigured, "Checkpoint evidence"), telemetryReady ? null : Gap(telemetryConfigured, "Application-processing telemetry"),
+                        "End-to-end processing: never proven by transport evidence"])
+                : Row(IntegrationReviewDomain.MessageFlow, IntegrationDomainReadiness.NotAssessable,
+                    !azureOn && (metadataConfigured || armConfigured || checkpointConfigured || telemetryConfigured)
+                        ? "Transport configured; runtime evidence sources are configured but not read because Azure runtime is not enabled for this instance."
+                        : "Event Hub metadata access is not configured.",
+                    [producer is null ? null : $"Producer configured ({producer})", appBound ? "Application handlers from analyzed source (Wolverine) — configuration, not processing" : null],
+                    [Gap(metadataConfigured || armConfigured, "Event Hub runtime metadata"), Gap(checkpointConfigured, "Checkpoint evidence"), Gap(telemetryConfigured, "Application-processing telemetry")]),
+            !checkpointReady && !telemetryReady ? Row(IntegrationReviewDomain.Reliability, IntegrationDomainReadiness.NotAssessable,
+                    checkpointConfigured && !azureOn ? "Checkpoint store configured; runtime checkpoint evidence is not read because Azure runtime is not enabled for this instance." : "No checkpoint or telemetry evidence source is configured.",
+                    [checkpointConfigured ? "Checkpoint store configured" : null], [Gap(checkpointConfigured, "Checkpoint evidence"), Gap(telemetryConfigured, "Retry/failure telemetry"), "Replay / duplicate handling: manual verification"])
+                : unknownGroups > 0 || !checkpointReady ? Row(IntegrationReviewDomain.Reliability, IntegrationDomainReadiness.Limited,
+                    !checkpointReady ? "No checkpoint evidence source configured; telemetry indicators only." : $"Consumer group unknown for {unknownGroups} integration(s).",
+                    [checkpointReady ? "Checkpoint presence and age (read-only)" : null, telemetryReady ? "Retry and dependency-failure indicators (telemetry)" : null],
+                    [checkpointReady ? null : Gap(checkpointConfigured, "Checkpoint evidence"), unknownGroups > 0 ? $"Consumer group for {unknownGroups} integration(s)" : null, "Replay / duplicate handling: manual verification"])
+                : Row(IntegrationReviewDomain.Reliability, IntegrationDomainReadiness.Partial,
+                    thresholds ? "Checkpoint/runtime evidence available; judged only against the configured IQR threshold." : "Checkpoint/runtime evidence available. No configured checkpoint-age threshold, so age is Observed only.",
+                    ["Checkpoint presence and age (read-only)", telemetryReady ? "Retry and dependency-failure indicators (telemetry)" : null],
+                    [telemetryReady ? null : Gap(telemetryConfigured, "Retry/failure telemetry"), thresholds ? null : "Checkpoint-age threshold: none configured", "Replay / duplicate handling: manual verification"]),
+            !telemetryReady && !metricsReady ? Row(IntegrationReviewDomain.ErrorHandling, IntegrationDomainReadiness.NotAssessable,
+                    telemetryConfigured && !azureOn ? "Telemetry configured; not read because Azure runtime is not enabled for this instance." : "No telemetry source configured.",
+                    [appBound ? "Application error handling from analyzed source (separate from transport)" : null],
+                    [eventHubMetrics is null ? null : Gap(armConfigured, "Transport error metrics"), Gap(telemetryConfigured, "Consumer exception telemetry")])
+                : telemetryReady && !metricsReady && unknownRoles > 0 ? Row(IntegrationReviewDomain.ErrorHandling, IntegrationDomainReadiness.Limited,
+                    $"Telemetry configured; {unknownRoles} integration(s) have no consumer application to attribute telemetry to.",
+                    ["Consumer exception, deserialization and dead-letter indicators (telemetry)"], [$"Consumer application for {unknownRoles} integration(s)"])
+                : Row(IntegrationReviewDomain.ErrorHandling, IntegrationDomainReadiness.Partial, "Azure transport errors can be observed; application error handling evidence remains separate.",
+                    [metricsReady ? "Transport errors: server errors, user errors and throttling (namespace metrics)" : null, telemetryReady ? "Consumer exception, deserialization and dead-letter indicators (telemetry)" : null,
+                        appBound ? "Application error handling from analyzed source (separate from transport)" : null],
+                    [metricsReady || eventHubMetrics is null ? null : Gap(armConfigured, "Transport error metrics"), telemetryReady ? null : Gap(telemetryConfigured, "Consumer exception telemetry")]),
+            Row(IntegrationReviewDomain.Security, enabled.Count == 0 ? IntegrationDomainReadiness.NotAssessable : IntegrationDomainReadiness.Limited,
+                (consumerAuth.Contains("Managed Identity") ? "Managed Identity configured; " : "Configured authentication; ") + "runtime authorization evidence limited to read-only Azure access.",
+                [consumerAuth.Count > 0 ? $"Configured consumer authentication ({string.Join(", ", consumerAuth)})" : null, hasFqdn ? "TLS on the namespace (probe)" : null,
+                    namespaceReady ? "Namespace network access and local (SAS) authentication settings (read-only)" : null, telemetryReady ? "Authorization failure indicators (telemetry)" : null],
+                ["Consumer identity authorization (RBAC): not evaluated — Managed Identity configured is not authorization proven", namespaceReady ? null : Gap(armConfigured, "Namespace network settings")]),
+            providers.Count == 0 ? Row(IntegrationReviewDomain.Observability, IntegrationDomainReadiness.Limited, "No monitoring provider is configured.", [], ["Monitoring provider"])
+                : Row(IntegrationReviewDomain.Observability, telemetryReady ? IntegrationDomainReadiness.Partial : IntegrationDomainReadiness.Limited,
+                    (telemetryReady ? $"{string.Join(", ", providers)} configured; runtime telemetry can be read." : $"Monitoring provider configured; runtime telemetry is not {(telemetryConfigured && !azureOn ? "read (Azure runtime is not enabled)" : "configured")}.")
+                        + (azureMonitorLogs ? " Container App logs go to Azure Monitor." : "") + $" {logAnalytics}",
+                    [$"Monitoring provider: {string.Join(", ", providers)}", appInsights is null ? null : $"Application Insights resource {appInsights}", azureMonitorLogs ? "Container App logs: Azure Monitor" : null,
+                        telemetryReady ? "Runtime telemetry and its freshness (bounded aggregate queries)" : null],
+                    [telemetryReady ? null : Gap(telemetryConfigured, "Runtime telemetry")]),
+            !perfEvidence ? Row(IntegrationReviewDomain.Performance, IntegrationDomainReadiness.NotAssessable,
+                    "No measured timing, lag or backlog evidence source. Configuration values are never performance evidence." + (!azureOn && (metadataConfigured || armConfigured || checkpointConfigured || telemetryConfigured) ? " Runtime sources are configured but Azure runtime is not enabled." : ""),
+                    [], [Gap(armConfigured, "Throughput metrics"), Gap(metadataConfigured && checkpointConfigured, "Consumer lag (partition positions + checkpoints)"), Gap(telemetryConfigured, "Processing duration")])
+                : Row(IntegrationReviewDomain.Performance, IntegrationDomainReadiness.Partial,
+                    thresholds ? "Measured event age, lag and processing time; judged against the configured IQR thresholds, other values Observed." : "Runtime throughput/lag evidence shown as Observed. No thresholds configured.",
+                    [metricsReady ? "Event Hub throughput and request metrics (Azure Monitor)" : null, metadataReady ? "Newest event age (Event Hub metadata)" : null,
+                        metadataReady && checkpointReady ? "Consumer lag (last enqueued minus checkpointed sequence number)" : null, telemetryReady ? "Event Hubs call duration (telemetry)" : null],
+                    [metadataReady && checkpointReady ? null : "Consumer lag: needs partition positions and checkpoints", telemetryReady ? null : "Processing duration: needs telemetry",
+                        thresholds ? null : "Thresholds: none configured — measured values are Observed only"]),
+            producerContracts > 0 ? Row(IntegrationReviewDomain.DataQuality, IntegrationDomainReadiness.Limited, $"Envelope structure declared by {producerContracts} producer contract(s). {NoSafeEventSource}",
+                    [$"Debezium envelope declared by {producerContracts} producer contract(s)"], ["Safe event-structure evidence: events are never read"])
+                : Row(IntegrationReviewDomain.DataQuality, IntegrationDomainReadiness.NotAssessable, $"No producer contract. {NoSafeEventSource}",
+                    [], ["Producer contract", "Safe event-structure evidence: events are never read"]),
         };
 
         var canRun = enabled.Count > 0;
-        var limited = domains.Any(d => d.Readiness is IntegrationDomainReadiness.Limited or IntegrationDomainReadiness.NotAssessable);
+        var limited = domains.Any(d => d.Readiness is IntegrationDomainReadiness.Limited or IntegrationDomainReadiness.NotAssessable or IntegrationDomainReadiness.Partial);
         var reasons = new List<string>();
+        var (sourcesConfigured, sourcesTotal) = platforms.Select(EventHubRuntimeSources.Count).Aggregate((0, 0), (sum, c) => (sum.Item1 + c.Configured, sum.Item2 + c.Total));
+        // Azure runtime off is an instance setting, never an integration misconfiguration: stated once, beside the configured sources.
+        if (!azureOn && sourcesConfigured > 0)
+            reasons.Add($"Runtime evidence sources: configured ({sourcesConfigured} of {sourcesTotal}). Azure runtime: not configured — {AzureDisabledReason} This is not an integration misconfiguration.");
         foreach (var system in systems.Where(s => s.Topics > 1 || s.Kind == IntegrationKind.EventHub))
         {
             if (system.ConsumersConfirmed > 0) reasons.Add($"{system.ConsumersConfirmed} confirmed consumer mapping{(system.ConsumersConfirmed == 1 ? "" : "s")} in {system.SystemName}.");
@@ -122,6 +219,7 @@ public sealed class IntegrationReviewEngine(
         {
             EnvironmentId = catalog.EnvironmentId, Systems = systems, ConfiguredIntegrations = catalog.Integrations.Count, EnabledIntegrations = enabled.Count,
             Domains = domains, CanRun = canRun, EvidenceAdapters = adapters,
+            AzureRuntimeEnabled = azureOn, AzureRuntimeReason = azureOn ? null : AzureDisabledReason, RuntimeSourcesConfigured = sourcesConfigured, RuntimeSourcesTotal = sourcesTotal,
             Headline = !canRun ? "Cannot run" : limited ? "Can run with limitations" : "Ready",
             Reasons = canRun ? reasons : ["Enable at least one configured integration in Target Environment → Integrations."],
         };
@@ -164,7 +262,8 @@ public sealed class IntegrationReviewEngine(
         (IntegrationContractArtifact Artifact, JsonSchemaContract? Contract, string? Problem)? Producer,
         (IntegrationContractArtifact Artifact, JsonSchemaContract? Contract, string? Problem)? Consumer,
         IReadOnlyList<IntegrationContractArtifact> PreviousContracts,
-        string? Group = null, bool GroupAssumed = false)
+        string? Group = null, bool GroupAssumed = false,
+        EventHubHubComparison? HubComparison = null, EventHubConsumerGroupComparison? GroupComparison = null)
     {
         public string? Hub => Topic.EndpointOrTopic;
         /// <summary>" (configured assumption)" when the checkpoint group is the platform's expectation rather than the topic's own group.</summary>
@@ -191,6 +290,13 @@ public sealed class IntegrationReviewEngine(
         var findings = new List<IntegrationReviewFinding>();
         var adapterStatuses = new List<IntegrationEvidenceAdapterStatus>();
         var windows = new List<int>();
+        // Namespace-level Event Hub evidence is read once per platform, whatever the number of systems on it.
+        var namespaceByPlatform = new Dictionary<string, EventHubNamespaceObservation>(StringComparer.Ordinal);
+        var metricsByPlatform = new Dictionary<string, EventHubMetricsEvidence>(StringComparer.Ordinal);
+        var hubsByPlatform = new Dictionary<string, List<EventHubHubComparison>>(StringComparer.Ordinal);
+        var eventHubSnapshot = new Dictionary<string, EventHubRuntimeSnapshot>(StringComparer.Ordinal);
+        var probes = new List<(IntegrationPlatform Platform, NamespaceProbeResult Probe)>();
+        var allEvidence = new List<TopicEvidence>();
 
         foreach (var group in enabled.GroupBy(SystemKey))
         {
@@ -205,6 +311,21 @@ public sealed class IntegrationReviewEngine(
 
             NamespaceProbeResult? probe = null;
             if (supported && platform is { NamespaceFqdn: { Length: > 0 } fqdn }) probe = await namespaceProbe.ProbeAsync(fqdn, ct);
+            if (probe is not null && platform is not null) probes.Add((platform, probe));
+
+            // Namespace + hub list (Azure Resource Manager, GET only) and namespace metrics (Azure Monitor), each failure isolated from the rest.
+            EventHubNamespaceObservation? observation = null;
+            EventHubMetricsEvidence? hubMetrics = null;
+            List<EventHubHubComparison>? hubComparisons = null;
+            if (supported && platform is not null)
+            {
+                if (namespaces is not null && !namespaceByPlatform.TryGetValue(platform.Id, out observation))
+                    namespaceByPlatform[platform.Id] = observation = await namespaces.ReadAsync(platform, ct);
+                if (eventHubMetrics is not null && !metricsByPlatform.TryGetValue(platform.Id, out hubMetrics))
+                    metricsByPlatform[platform.Id] = hubMetrics = await eventHubMetrics.ReadAsync(platform, window, ct);
+                if (observation is not null && !hubsByPlatform.TryGetValue(platform.Id, out hubComparisons))
+                    hubsByPlatform[platform.Id] = hubComparisons = EventHub.EventHubRuntimeEvaluation.CompareHubs(platform, catalog.Integrations, observation);
+            }
 
             // Evidence per topic (and telemetry once per consumer role), gathered before any domain reads it.
             var telemetryByRole = new Dictionary<string, EvidenceResult<ConsumerTelemetry>>(StringComparer.Ordinal);
@@ -219,9 +340,9 @@ public sealed class IntegrationReviewEngine(
                 {
                     var name = topic.EndpointOrTopic!;
                     hub = await metadata.GetHubAsync(platform, name, ct);
-                    // No own group: list the hub's groups (observed) and, when the platform states an expected group, read checkpoints for
-                    // that configured assumption — labelled as such everywhere, never a confirmed mapping.
-                    if (string.IsNullOrWhiteSpace(topic.ConsumerGroup)) groupList = await consumerGroups.ListAsync(platform, name, ct);
+                    // The hub's consumer groups (observed, read-only) are compared with the expected group; when the platform states an expected group,
+                    // checkpoints are read for that configured assumption — labelled as such everywhere, never a confirmed mapping.
+                    groupList = await consumerGroups.ListAsync(platform, name, ct);
                     if (EffectiveGroup(topic, platform).Group is { } checkpointGroup) checkpoint = await checkpoints.GetAsync(platform, name, checkpointGroup, ct);
                     if (topic.Consumer.ContainerApp is { Length: > 0 } role)
                     {
@@ -231,8 +352,10 @@ public sealed class IntegrationReviewEngine(
                 var effective = EffectiveGroup(topic, platform);
                 evidence.Add(new TopicEvidence(topic, platform, window, DateTimeOffset.UtcNow, probe, hub, groupList, checkpoint, roleTelemetry,
                     contracts.Of(topic.Id, IntegrationContractRole.Producer), contracts.Of(topic.Id, IntegrationContractRole.Consumer), previousContracts,
-                    effective.Group, effective.Assumed));
+                    effective.Group, effective.Assumed, hubComparisons?.FirstOrDefault(h => h.IntegrationId == topic.Id),
+                    supported && !string.IsNullOrWhiteSpace(topic.EndpointOrTopic) ? EventHub.EventHubRuntimeEvaluation.CompareGroup(topic, platform, groupList) : null));
             }
+            allEvidence.AddRange(evidence);
 
             if (platform is not null && supported)
             {
@@ -243,10 +366,17 @@ public sealed class IntegrationReviewEngine(
                     Rollup(checkpoints.Describe(platform), evidence.Select(e => e.Checkpoint)),
                     Rollup(telemetry.Describe(platform), evidence.Select(e => e.Telemetry)),
                 };
-                adapterStatuses.AddRange(statuses.Select(s => s with { Adapter = $"{s.Adapter} · {platform.Name}" }));
-                foreach (var s in statuses)
+                var runtimeStatuses = new List<IntegrationEvidenceAdapterStatus>();
+                if (namespaces is not null && observation is not null && !adapterStatuses.Any(a => a.Adapter == $"{EventHub.ArmEventHubNamespaceSource.Adapter} · {platform.Name}"))
+                    runtimeStatuses.Add(namespaces.Describe(platform) with { State = observation.State, Reason = observation.State == IntegrationEvidenceState.Available ? $"{observation.Reason} {observation.HubListReason}" : observation.Reason, CapturedAt = observation.CapturedAt });
+                if (eventHubMetrics is not null && hubMetrics is not null && !adapterStatuses.Any(a => a.Adapter == $"{EventHub.AzureMonitorEventHubMetricsSource.Adapter} · {platform.Name}"))
+                    runtimeStatuses.Add(eventHubMetrics.Describe(platform) with { State = hubMetrics.State, Reason = hubMetrics.Reason, CapturedAt = hubMetrics.CapturedAt });
+                adapterStatuses.AddRange(statuses.Concat(runtimeStatuses).Select(s => s with { Adapter = $"{s.Adapter} · {platform.Name}" }));
+                foreach (var s in statuses.Concat(runtimeStatuses))
                     logger.LogInformation("IQR evidence adapter {Adapter} for platform {PlatformId}: {State} ({Reason}).", s.Adapter, platform.Id, s.State, s.Reason);
                 platformChecks.AddRange(PlatformChecks(platform, probe, statuses, window));
+                platformChecks.AddRange(RuntimePlatformChecks(platform, namespaces is null ? null : observation, eventHubMetrics is null ? null : hubMetrics, hubComparisons, findings));
+                eventHubSnapshot[platform.Id] = Snapshot(eventHubSnapshot.GetValueOrDefault(platform.Id), platform, observation, hubMetrics, hubComparisons, evidence, statuses[3].State, AzureEnabled(statuses));
             }
             else if (platform is not null) platformChecks.AddRange(PlatformChecks(platform, null, [], window));
 
@@ -262,12 +392,12 @@ public sealed class IntegrationReviewEngine(
             foreach (var e in evidence)
             {
                 var checks = new List<IntegrationCheck>();
-                checks.AddRange(ConfigurationChecks(e));
+                checks.AddRange(ConfigurationChecks(e, findings, namespaces is not null));
                 if (supported)
                 {
                     checks.AddRange(ConnectivityChecks(e, findings));
                     checks.AddRange(ContractChecks(e, findings));
-                    checks.AddRange(MessageFlowChecks(e));
+                    checks.AddRange(MessageFlowChecks(e, findings));
                     checks.AddRange(ReliabilityChecks(e, findings));
                     checks.AddRange(ErrorHandlingChecks(e, findings));
                     checks.AddRange(SecurityChecks(e, findings));
@@ -284,7 +414,9 @@ public sealed class IntegrationReviewEngine(
                         checks.AddRange(ApplicationMessagingReview.Checks(e.Topic, app, appRuntime, messaging.AnalyzedAt));
                         logger.LogInformation("IQR application messaging for {IntegrationId}: {Application} Wolverine {Detection}, handlers {Handlers}, retry policy {Retry}, runtime {Runtime}.",
                             e.Topic.Id, app.ApplicationId, app.Detection, app.Handlers.Count, app.RetryPolicy, appRuntime.State);
+                        checks.Add(EndToEndCheck(e, app.ApplicationId, appRuntime.State == IntegrationEvidenceState.Available));
                     }
+                    else checks.Add(EndToEndCheck(e, null, false));
                 }
                 else
                 {
@@ -372,6 +504,9 @@ public sealed class IntegrationReviewEngine(
             EvidenceAdapters = adapterStatuses, ContractSnapshot = contracts.Items.Where(i => enabled.Any(e => e.Id == i.Artifact.IntegrationId)).Select(i => i.Artifact).ToList(),
             // The evidence as used: a later re-analysis or re-binding never changes this result.
             ApplicationMessagingSnapshot = messaging, ApplicationMessagingRuntime = messagingRuntime.Values.ToList(), ServiceBusSnapshot = serviceBusSnapshot, ScimSnapshot = scimSnapshot, SecurityClassificationSnapshot = classificationSnapshot,
+            EventHubSnapshot = eventHubSnapshot.Values.ToList(),
+            WhatWasTested = Tested(probes, adapterStatuses, eventHubSnapshot.Values.ToList(), allChecks, messagingRuntime.Values.ToList(), serviceBusSnapshot),
+            WhatWasNotAssessed = NotAssessed(enabled, catalog, adapterStatuses, allChecks),
         };
         logger.LogInformation(
             "Integration Quality Review for {EnvironmentId}: {Integrations} integration(s) in {Systems} system(s), window {WindowHours} h, sources {Sources}, {Assessed} of {Checks} check(s) assessed, {Findings} finding(s), {DurationMs:0} ms.",
@@ -445,7 +580,7 @@ public sealed class IntegrationReviewEngine(
             yield return Check("conn-metadata-access", IntegrationReviewDomain.Connectivity, id, "Event Hub metadata readable",
                 meta.State switch
                 {
-                    IntegrationEvidenceState.Available => IntegrationCheckStatus.Pass,
+                    IntegrationEvidenceState.Available => IntegrationCheckStatus.Observed,
                     IntegrationEvidenceState.NotConfigured => IntegrationCheckStatus.NotConfigured,
                     _ => IntegrationCheckStatus.NotAssessed,
                 },
@@ -483,12 +618,247 @@ public sealed class IntegrationReviewEngine(
             "A runbook explains how to act on integration failures.", platform.RunbookUrl ?? "Not configured", "Configuration only.", scope: P);
     }
 
+    // ── Event Hub runtime evidence (namespace, topology, monitoring, transport metrics) ──────────────────────────────
+
+    private static string Number(double value) => value.ToString(Math.Abs(value % 1) < 0.0001 ? "N0" : "N1", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Platform-scope checks from the Azure Resource Manager namespace read and the Azure Monitor metrics, plus the configuration facts every
+    /// run states (checkpoint store, Application Insights, log destination, consumer RBAC). Observed values carry no verdict without a threshold;
+    /// an unreadable source is Not assessed with its reason; a missing Log Analytics workspace is not a gap when logs go to Azure Monitor.
+    /// </summary>
+    private static IEnumerable<IntegrationCheck> RuntimePlatformChecks(IntegrationPlatform platform, EventHubNamespaceObservation? ns, EventHubMetricsEvidence? metrics,
+        List<EventHubHubComparison>? hubs, List<IntegrationReviewFinding> findings)
+    {
+        var id = platform.Id;
+        const IntegrationCheckScope P = IntegrationCheckScope.Platform;
+        const IntegrationEvidenceSource Arm = IntegrationEvidenceSource.AzureResourceManager;
+        var r = platform.RuntimeEvidence;
+        if (ns is not null)
+        {
+            var available = ns.State == IntegrationEvidenceState.Available;
+            var observedDetail = string.Join(" · ", new[] { ns.Status, ns.Sku, ns.Location }.Where(v => !string.IsNullOrWhiteSpace(v)));
+            yield return available
+                ? Check("cfg-namespace-observed", IntegrationReviewDomain.Configuration, id, "Configured namespace in Azure", IntegrationCheckStatus.Observed,
+                    $"Namespace {platform.Namespace} in resource group {platform.ResourceGroup}.", $"Observed match: {platform.Namespace}{(observedDetail.Length == 0 ? "" : $" ({observedDetail})")}.",
+                    "Observed in Azure Resource Manager; a namespace that exists is not a healthy integration.", provenance: Arm, at: ns.CapturedAt, sourceTimestamp: ns.CapturedAt,
+                    freshness: IntegrationEvidenceItemFreshness.Current, scope: P)
+                : ns.State == IntegrationEvidenceState.NotFound
+                    ? Check("cfg-namespace-observed", IntegrationReviewDomain.Configuration, id, "Configured namespace in Azure", IntegrationCheckStatus.Warning,
+                        $"Namespace {platform.Namespace} in resource group {platform.ResourceGroup}.", "Configured but not found in Azure Resource Manager.",
+                        "The subscription, resource group or namespace name may be wrong, or the namespace does not exist.",
+                        "Check the configured subscription id, resource group and namespace name.", Arm, ns.CapturedAt, scope: P)
+                    : Check("cfg-namespace-observed", IntegrationReviewDomain.Configuration, id, "Configured namespace in Azure", IntegrationCheckStatus.NotAssessed,
+                        $"Namespace {platform.Namespace} in resource group {platform.ResourceGroup}.", "", $"{IntegrationReviewLabels.EvidenceState(ns.State)}: {ns.Reason}", provenance: Arm, at: ns.CapturedAt, scope: P);
+            if (ns.State == IntegrationEvidenceState.NotFound)
+                findings.Add(Finding($"namespace-not-found|{id}", "namespace-not-found", IntegrationReviewDomain.Configuration, IntegrationFindingSeverityV2.Medium,
+                    "Configured Event Hubs namespace not found in Azure", platform.Namespace ?? platform.Name, [$"Azure Resource Manager returned HTTP 404 for the configured namespace ({ns.CapturedAt:u})."],
+                    "Check the configured subscription id, resource group and namespace name.", platform.Name));
+
+            if (hubs is not null)
+            {
+                var business = hubs.Where(h => h.State is not (EventHubComparisonState.TechnicalObserved or EventHubComparisonState.AdditionalObserved or EventHubComparisonState.ConfiguredDisabled)).ToList();
+                int Count(EventHubComparisonState state) => hubs.Count(h => h.State == state);
+                var unread = business.Count(h => h.State is EventHubComparisonState.NotAuthorized or EventHubComparisonState.NotAssessed);
+                yield return business.Count > 0 && unread == business.Count
+                    ? Check("cfg-topology", IntegrationReviewDomain.Configuration, id, "Configured vs observed Event Hubs", IntegrationCheckStatus.NotAssessed,
+                        $"{business.Count} configured business hub(s) exist in the namespace.", "", $"{EventHubComparisonLabels.State(business[0].State)}: {business[0].Detail}", provenance: Arm, at: ns.CapturedAt, scope: P)
+                    : Check("cfg-topology", IntegrationReviewDomain.Configuration, id, "Configured vs observed Event Hubs",
+                        Count(EventHubComparisonState.MissingInAzure) + Count(EventHubComparisonState.DifferenceObserved) > 0 ? IntegrationCheckStatus.Warning : IntegrationCheckStatus.Observed,
+                        $"{business.Count} configured business hub(s) exist in the namespace as configured.",
+                        $"{Count(EventHubComparisonState.ObservedMatch)} observed match, {Count(EventHubComparisonState.DifferenceObserved)} difference observed, {Count(EventHubComparisonState.MissingInAzure)} configured but not found in Azure"
+                        + $" · {Count(EventHubComparisonState.AdditionalObserved)} additional observed · {Count(EventHubComparisonState.TechnicalObserved)} technical/support hub(s) · {ns.Hubs.Count} hub(s) listed in the namespace.",
+                        "Additional and technical hubs are listed, never errors. A match is configuration agreeing with Azure, not message flow.",
+                        Count(EventHubComparisonState.MissingInAzure) > 0 ? "Correct the configured hub names or provision the missing hubs through the platform's normal process." : null,
+                        Arm, ns.CapturedAt, ns.CapturedAt, IntegrationEvidenceItemFreshness.Current, P);
+            }
+
+            yield return Check("conn-arm-access", IntegrationReviewDomain.Connectivity, id, "Azure management metadata readable", available ? IntegrationCheckStatus.Observed : IntegrationCheckStatus.NotAssessed,
+                "The review can read the namespace through Azure Resource Manager with the instance's identity.",
+                available ? "Observed (read-only GET)" : IntegrationReviewLabels.EvidenceState(ns.State),
+                available ? "Separate from reachability: this is BirkNext's read access, not the consumer's authorization." : ns.Reason,
+                available ? null : "Grant the BirkNext identity Reader on the namespace, or enable Azure runtime evidence for this instance.", Arm, ns.CapturedAt,
+                available ? ns.CapturedAt : null, available ? IntegrationEvidenceItemFreshness.Current : IntegrationEvidenceItemFreshness.Unknown, P);
+
+            if (available)
+            {
+                yield return Check("sec-network-access", IntegrationReviewDomain.Security, id, "Namespace network access", IntegrationCheckStatus.Observed, "",
+                    $"Public network access: {ns.PublicNetworkAccess ?? "not reported"} · private endpoint connection(s): {(ns.PrivateEndpointConnections is { } pe ? pe.ToString(CultureInfo.InvariantCulture) : "not reported")} · minimum TLS: {ns.MinimumTlsVersion ?? "not reported"}.",
+                    "Observed configuration; no network policy is configured to judge it.", provenance: Arm, at: ns.CapturedAt, sourceTimestamp: ns.CapturedAt, freshness: IntegrationEvidenceItemFreshness.Current, scope: P);
+                yield return Check("sec-local-auth", IntegrationReviewDomain.Security, id, "Local (SAS) authentication", IntegrationCheckStatus.Observed, "",
+                    ns.DisableLocalAuth switch { true => "Disabled on the namespace (Entra ID only).", false => "Enabled on the namespace.", _ => "Not reported." },
+                    platform.ProducerAuthentication == IntegrationAuthMechanism.Sas ? "Observed without a verdict; the producer is configured with SAS, which needs local authentication." : "Observed without a verdict.",
+                    provenance: Arm, at: ns.CapturedAt, sourceTimestamp: ns.CapturedAt, freshness: IntegrationEvidenceItemFreshness.Current, scope: P);
+            }
+            else
+                yield return Check("sec-network-access", IntegrationReviewDomain.Security, id, "Namespace network access", IntegrationCheckStatus.NotAssessed, "", "",
+                    $"{IntegrationReviewLabels.EvidenceState(ns.State)}: {ns.Reason}", provenance: Arm, at: ns.CapturedAt, scope: P);
+        }
+
+        yield return Check("sec-consumer-rbac", IntegrationReviewDomain.Security, id, "Consumer identity authorization (RBAC)", IntegrationCheckStatus.NotAssessed,
+            "The consumer identity holds Azure Event Hubs Data Receiver on its hubs.", "",
+            "Not evaluated: the review reads with BirkNext's own identity; Managed Identity configured is not authorization proven.", "Verify the consumer identity's role assignment on the hubs.", scope: P);
+
+        yield return r?.ResolvedCheckpointContainerUrl() is { } container
+            ? Check("rel-checkpoint-config", IntegrationReviewDomain.Reliability, id, "Checkpoint configuration", IntegrationCheckStatus.Configured, "The consumer's checkpoint store is known.",
+                $"{container} — {(r.CheckpointProvenance == IntegrationValueProvenance.SourceConfigurationVerified ? "Verified" : "Configured")} ({IntegrationRuntimeEvidenceSettings.ProvenanceLabel(r.CheckpointProvenance)}){(string.IsNullOrWhiteSpace(r.CheckpointSourceNote) ? "" : $": {r.CheckpointSourceNote.Trim()}")}",
+                "Where checkpoints are stored — configuration, not checkpoint runtime evidence (see Consumer checkpoints).", scope: P)
+            : Check("rel-checkpoint-config", IntegrationReviewDomain.Reliability, id, "Checkpoint configuration", IntegrationCheckStatus.NotConfigured, "The consumer's checkpoint store is known.",
+                "Not configured", "Without the checkpoint store, checkpoint progression cannot be read.", "Configure the consumer's checkpoint Blob endpoint and container.", scope: P);
+
+        yield return r?.ApplicationInsightsResourceName is { Length: > 0 } ai
+            ? Check("obs-appinsights", IntegrationReviewDomain.Observability, id, "Application Insights resource", IntegrationCheckStatus.Configured, "The consumer's Application Insights resource is known.",
+                $"{ai.Trim()}{(string.IsNullOrWhiteSpace(r.ApplicationInsightsResourceGroup) ? "" : $" ({r.ApplicationInsightsResourceGroup.Trim()})")}{(r.ApplicationInsightsConfigured == true ? " · configured on the consumer" : "")}",
+                "Configured is not telemetry observed: see Telemetry source accessible.", scope: P)
+            : Check("obs-appinsights", IntegrationReviewDomain.Observability, id, "Application Insights resource", IntegrationCheckStatus.NotConfigured, "The consumer's Application Insights resource is known.",
+                "Not configured", "", "Add the Application Insights resource name and resource group to the platform's runtime evidence.", scope: P);
+
+        if (!string.IsNullOrWhiteSpace(r?.ContainerAppsLogDestination) || Guid.TryParse(r?.TelemetryWorkspaceId?.Trim(), out _))
+        {
+            var destination = r!.ContainerAppsLogDestination?.Trim();
+            yield return Check("obs-log-destination", IntegrationReviewDomain.Observability, id, "Container App log destination", IntegrationCheckStatus.Configured, "Where the consumer's container logs go.",
+                $"{(string.Equals(destination, "azure-monitor", StringComparison.OrdinalIgnoreCase) ? "Azure Monitor" : destination ?? "Not stated")} · Dedicated Log Analytics workspace: {EventHubRuntimeSources.LogAnalyticsLabel(r)}",
+                "A dedicated Log Analytics workspace is not required: telemetry is read through Application Insights.", scope: P);
+        }
+
+        if (metrics is null) yield break;
+        var window = metrics.WindowHours;
+        if (metrics.State == IntegrationEvidenceState.Available)
+        {
+            IntegrationCheck Transport(string checkId, string title, string metric) => metrics.Total(metric) is { } value
+                ? Check(checkId, IntegrationReviewDomain.ErrorHandling, id, title, value == 0 ? IntegrationCheckStatus.NoIndicatorsObserved : IntegrationCheckStatus.Observed, "",
+                    $"{Number(value)} in the last {window} h (namespace-wide).", "Transport evidence (Azure Monitor), observed without a threshold; application error handling is assessed separately.",
+                    provenance: IntegrationEvidenceSource.AzureMonitor, at: metrics.CapturedAt, sourceTimestamp: metrics.CapturedAt, freshness: IntegrationEvidenceItemFreshness.Current, scope: P)
+                : Check(checkId, IntegrationReviewDomain.ErrorHandling, id, title, IntegrationCheckStatus.NotAssessed, "", "", $"Azure Monitor returned no {metric} value.", provenance: IntegrationEvidenceSource.AzureMonitor, at: metrics.CapturedAt, scope: P);
+            yield return Transport("err-transport-server", "Event Hubs server errors", "ServerErrors");
+            yield return Transport("err-transport-user", "Event Hubs user errors", "UserErrors");
+            yield return Transport("err-transport-throttling", "Throttled requests", "ThrottledRequests");
+            var incoming = metrics.Total("IncomingMessages");
+            var outgoing = metrics.Total("OutgoingMessages");
+            string Rate(double? value) => value is { } v ? $"{Number(v)} ({Number(v / window)}/h)" : "not returned";
+            yield return incoming is null && outgoing is null
+                ? Check("perf-throughput", IntegrationReviewDomain.Performance, id, "Namespace throughput", IntegrationCheckStatus.NotAssessed, "", "", "Azure Monitor returned no message counts.",
+                    provenance: IntegrationEvidenceSource.AzureMonitor, at: metrics.CapturedAt, scope: P)
+                : Check("perf-throughput", IntegrationReviewDomain.Performance, id, "Namespace throughput", IntegrationCheckStatus.Observed, "",
+                    $"Incoming {Rate(incoming)} · outgoing {Rate(outgoing)} events over {window} h{(metrics.Total("IncomingRequests") is { } requests ? $" · {Number(requests)} incoming request(s)" : "")}.",
+                    "Observed only: no throughput threshold is configured, and throughput is not health.", provenance: IntegrationEvidenceSource.AzureMonitor, at: metrics.CapturedAt,
+                    sourceTimestamp: metrics.CapturedAt, freshness: IntegrationEvidenceItemFreshness.Current, scope: P);
+        }
+        else
+            foreach (var (checkId, title, domain) in new[]
+                     {
+                         ("err-transport-server", "Event Hubs server errors", IntegrationReviewDomain.ErrorHandling), ("err-transport-user", "Event Hubs user errors", IntegrationReviewDomain.ErrorHandling),
+                         ("err-transport-throttling", "Throttled requests", IntegrationReviewDomain.ErrorHandling), ("perf-throughput", "Namespace throughput", IntegrationReviewDomain.Performance),
+                     })
+                yield return Check(checkId, domain, id, title, IntegrationCheckStatus.NotAssessed, "", "", $"{IntegrationReviewLabels.EvidenceState(metrics.State)}: {metrics.Reason}",
+                    provenance: IntegrationEvidenceSource.AzureMonitor, at: metrics.CapturedAt, scope: P);
+    }
+
+    /// <summary>The run's Event Hub evidence for one platform, kept on the result so an old review renders exactly what it read.</summary>
+    private static EventHubRuntimeSnapshot Snapshot(EventHubRuntimeSnapshot? existing, IntegrationPlatform platform, EventHubNamespaceObservation? ns, EventHubMetricsEvidence? metrics,
+        List<EventHubHubComparison>? hubs, List<TopicEvidence> evidence, IntegrationEvidenceState telemetryState, bool azureOn)
+    {
+        var groups = evidence.Select(e => e.GroupComparison).OfType<EventHubConsumerGroupComparison>().ToList();
+        var checkpointSummaries = evidence.Where(e => !string.IsNullOrWhiteSpace(e.Hub)).Select(e => EventHub.EventHubRuntimeEvaluation.Checkpoint(e.Topic, platform, e.Checkpoint)).ToList();
+        if (existing is not null) return existing with { ConsumerGroups = [.. existing.ConsumerGroups, .. groups], Checkpoints = [.. existing.Checkpoints, .. checkpointSummaries] };
+        var r = platform.RuntimeEvidence;
+        return new EventHubRuntimeSnapshot
+        {
+            PlatformId = platform.Id, PlatformName = platform.Name, Namespace = platform.Namespace, AzureRuntimeEnabled = azureOn, CapturedAt = DateTimeOffset.UtcNow,
+            NamespaceObservation = ns, Metrics = metrics, Hubs = hubs ?? [], ConsumerGroups = groups, Checkpoints = checkpointSummaries,
+            ApplicationInsights = r?.ApplicationInsightsResourceName, TelemetryState = telemetryState, ContainerAppsLogDestination = r?.ContainerAppsLogDestination,
+            LogAnalytics = EventHubRuntimeSources.LogAnalyticsLabel(r),
+        };
+    }
+
+    /// <summary>
+    /// The message-flow evidence chain for one topic: producer → hub → consumer group → checkpoint → application handler. Always "Not assessed":
+    /// transport evidence never proves end-to-end processing, and application telemetry does not show that every event was processed.
+    /// </summary>
+    private static IntegrationCheck EndToEndCheck(TopicEvidence e, string? application, bool applicationObserved)
+    {
+        var hubObserved = e.HubComparison is { State: EventHubComparisonState.ObservedMatch or EventHubComparisonState.DifferenceObserved } || e.Metadata is { IsAvailable: true, Value.Exists: true };
+        var hub = hubObserved ? "Observed"
+            : e.HubComparison?.State == EventHubComparisonState.MissingInAzure || e.Metadata is { IsAvailable: true, Value.Exists: false } ? "Not found" : "Not observed";
+        var group = e.Group is null ? "Unknown"
+            : $"{e.Group} {(e.GroupComparison is { } gc ? EventHubComparisonLabels.State(gc.State) : "Not assessed")}{(e.GroupAssumed ? " (configured assumption)" : "")}";
+        var checkpoint = e.Checkpoint is { IsAvailable: true } ? "Observed" : e.Checkpoint is { } c ? IntegrationReviewLabels.EvidenceState(c.State)
+            : e.Platform?.RuntimeEvidence?.ResolvedCheckpointContainerUrl() is not null ? "Configured" : "Not configured";
+        var handler = applicationObserved ? $"Observed ({application})" : e.Telemetry is { IsAvailable: true, Value.ProcessingTraces: > 0 } ? "Processing traces observed" : "Not observed";
+        var transport = hubObserved && (e.Checkpoint is { IsAvailable: true } || e.GroupComparison?.State == EventHubComparisonState.ObservedMatch);
+        return Check("flow-end-to-end", IntegrationReviewDomain.MessageFlow, e.Topic.Id, "End-to-end message flow", IntegrationCheckStatus.NotAssessed, "Events are processed end to end.",
+            $"Producer {(string.IsNullOrWhiteSpace(e.Topic.Producer) ? "Not configured" : "Configured")} → Event Hub {hub} → Consumer group {group} → Checkpoint {checkpoint} → Application handler {handler}",
+            applicationObserved || handler != "Not observed" ? "End-to-end not proven: application activity does not show that each event was processed."
+            : transport ? "Transport progression evidence exists, but application processing has not been observed; end-to-end flow is not proven."
+            : "End-to-end not proven: transport and application evidence are incomplete.");
+    }
+
+    /// <summary>Only what this run executed with evidence; a source that could not be read belongs to "What was not assessed".</summary>
+    private static List<string> Tested(List<(IntegrationPlatform Platform, NamespaceProbeResult Probe)> probes, List<IntegrationEvidenceAdapterStatus> adapters, List<EventHubRuntimeSnapshot> snapshots,
+        List<IntegrationCheck> checks, List<ApplicationMessagingRuntime> messagingRuntime, List<ServiceBusEvidenceCheck> serviceBus)
+    {
+        var tested = new List<string>();
+        foreach (var (platform, probe) in probes.DistinctBy(p => p.Platform.Id))
+            tested.Add($"Namespace DNS/TCP/TLS — {platform.NamespaceFqdn}: {(probe.Reachable && probe.TlsEstablished ? $"reachable ({probe.TlsProtocol ?? "TLS"})" : probe.Detail)}");
+        foreach (var s in snapshots)
+        {
+            if (s.NamespaceObservation is { State: IntegrationEvidenceState.Available } ns)
+            {
+                tested.Add($"Event Hub namespace metadata — {s.Namespace} (Azure Resource Manager, GET only)");
+                if (ns.HubListState == IntegrationEvidenceState.Available)
+                    tested.Add($"Configured vs observed Event Hub topology — {s.Hubs.Count(h => h.IntegrationId is not null && h.State != EventHubComparisonState.ConfiguredDisabled)} configured, {ns.Hubs.Count} observed");
+            }
+            if (s.ConsumerGroups.Count(g => g.State is EventHubComparisonState.ObservedMatch or EventHubComparisonState.DifferenceObserved || g.Observed.Count > 0) is > 0 and var groups)
+                tested.Add($"Consumer group existence — {groups} hub(s) (Azure Resource Manager)");
+            if (s.Checkpoints.Count(c => c.Runtime == IntegrationEvidenceState.Available) is > 0 and var read)
+                tested.Add($"Checkpoint metadata — {read} hub(s) (blob listing, read-only)");
+            if (s.Metrics is { State: IntegrationEvidenceState.Available } m) tested.Add($"Event Hubs namespace metrics — last {m.WindowHours} h (Azure Monitor)");
+        }
+        bool Read(IntegrationEvidenceSource source) => adapters.Any(a => a.Source == source && a.State == IntegrationEvidenceState.Available);
+        if (Read(IntegrationEvidenceSource.AzureMetadata)) tested.Add("Event Hub partition metadata — existence and last enqueued position");
+        if (Read(IntegrationEvidenceSource.ApplicationInsights)) tested.Add("Application Insights telemetry — bounded aggregate queries");
+        if (checks.Any(c => c.Provenance == IntegrationEvidenceSource.HealthEndpoint && c.Status != IntegrationCheckStatus.NotConfigured)) tested.Add("Consumer health endpoints (HTTP GET)");
+        if (checks.Any(c => c.CheckId == "contract-compatibility" && IntegrationReviewLabels.IsAssessed(c.Status))) tested.Add("Producer/consumer contract compatibility (trusted JSON Schemas)");
+        if (messagingRuntime.Count > 0) tested.Add("Code-route comparison — analyzed application messaging source bound to the consumer");
+        if (serviceBus.Any(sb => sb.Runtime?.State == IntegrationEvidenceState.Available)) tested.Add("Service Bus metadata (separate transport)");
+        return tested;
+    }
+
+    /// <summary>What the run did not assess — stated explicitly, with the reason for each unread source.</summary>
+    private static List<string> NotAssessed(List<IntegrationDefinition> enabled, IntegrationCatalog catalog, List<IntegrationEvidenceAdapterStatus> adapters, List<IntegrationCheck> checks)
+    {
+        var items = new List<string>();
+        var eventHub = enabled.Where(i => i.Kind == IntegrationKind.EventHub).ToList();
+        if (eventHub.Count > 0)
+        {
+            items.Add("Business payload correctness — events are never read or consumed.");
+            items.Add("End-to-end message processing — transport evidence never proves that the application processed each event.");
+            var unconfirmed = eventHub.Count(i => i.Consumer.MappingState != ConsumerMappingState.Confirmed);
+            var assumed = eventHub.Select(i => EffectiveGroup(i, catalog.Platforms.FirstOrDefault(p => p.Id == i.PlatformId))).Where(g => g.Assumed).ToList();
+            if (unconfirmed > 0 || assumed.Count > 0)
+                items.Add($"Consumer application mapping — {unconfirmed} mapping(s) not confirmed{(assumed.Count > 0 ? $"; consumer group {assumed[0].Group} is a configured assumption for {assumed.Count} topic(s), and observing it does not confirm the mapping" : "")}.");
+            items.Add("Message loss and delivery guarantees.");
+            items.Add("Processing correctness and business rules.");
+            items.Add("Consumer identity authorization (RBAC) — BirkNext reads with its own identity.");
+        }
+        var noContracts = checks.Count(c => c.CheckId == "contract-compatibility" && !IntegrationReviewLabels.IsAssessed(c.Status));
+        if (noContracts > 0) items.Add($"Contract compatibility — no producer and consumer schemas for {noContracts} integration(s).");
+        var lag = checks.Count(c => c.CheckId == "perf-lag" && !IntegrationReviewLabels.IsAssessed(c.Status));
+        if (lag > 0) items.Add($"Consumer lag — partition positions and checkpoints were not both available for {lag} integration(s).");
+        if (checks.Any(c => c.CheckId == "dq-runtime-structure")) items.Add("Runtime event structure / data quality — no safe event-structure evidence.");
+        foreach (var adapter in adapters.Where(a => a.State is not (IntegrationEvidenceState.Available or IntegrationEvidenceState.NotSupported)).DistinctBy(a => a.Adapter))
+            items.Add($"{adapter.Adapter}: {IntegrationReviewLabels.EvidenceState(adapter.State)} — {adapter.Reason}");
+        return items;
+    }
+
     // ── Configuration ───────────────────────────────────────────────────────────────────────────────────────────────
 
-    private static IEnumerable<IntegrationCheck> ConfigurationChecks(TopicEvidence e)
+    private static IEnumerable<IntegrationCheck> ConfigurationChecks(TopicEvidence e, List<IntegrationReviewFinding> findings, bool compareWithAzure)
     {
         var topic = e.Topic;
         var id = topic.Id;
+        if (compareWithAzure && topic.Kind == IntegrationKind.EventHub && !string.IsNullOrWhiteSpace(topic.EndpointOrTopic))
+            yield return HubObservedCheck(e, findings);
         yield return Check("cfg-topic", IntegrationReviewDomain.Configuration, id, "Topic configured",
             string.IsNullOrWhiteSpace(topic.EndpointOrTopic) ? IntegrationCheckStatus.NotConfigured : IntegrationCheckStatus.Pass,
             "The integration names its Event Hub / endpoint.", topic.EndpointOrTopic ?? "Not configured", "Configuration only — existence is a Connectivity question.");
@@ -527,6 +897,45 @@ public sealed class IntegrationReviewEngine(
             "Producer and consumer contracts are referenced.", IntegrationConfigurationRules.ContractLabel(topic.ContractRelationship), "Configured references are not contract compatibility.");
     }
 
+    /// <summary>The configured hub against the hub list Azure Resource Manager returned: Observed match, Difference observed or Configured but not found.</summary>
+    private static IntegrationCheck HubObservedCheck(TopicEvidence e, List<IntegrationReviewFinding> findings)
+    {
+        var id = e.Topic.Id;
+        var hc = e.HubComparison;
+        var expectation = hc is null ? "The configured hub exists in the namespace." :
+            $"Configured: {string.Join(", ", new[] { hc.ConfiguredPartitions is { } p ? $"{p} partition(s)" : null, hc.ConfiguredRetentionHours is { } h ? $"{h} h retention" : null }.OfType<string>().DefaultIfEmpty("exists in the namespace"))}.";
+        const IntegrationEvidenceSource Arm = IntegrationEvidenceSource.AzureResourceManager;
+        switch (hc?.State)
+        {
+            case EventHubComparisonState.ObservedMatch:
+                return Check("cfg-hub-observed", IntegrationReviewDomain.Configuration, id, "Configured Event Hub in Azure", IntegrationCheckStatus.Observed, expectation, $"Observed match: {hc.Detail}.",
+                    "Configured and observed agree; a hub that exists does not show that messages are processed.", provenance: Arm, freshness: IntegrationEvidenceItemFreshness.Current);
+            case EventHubComparisonState.DifferenceObserved:
+                if (hc.ConfiguredPartitions is { } cp && hc.ObservedPartitions is { } op && cp != op)
+                    findings.Add(Finding($"partition-drift|{id}", "partition-drift", IntegrationReviewDomain.Connectivity, IntegrationFindingSeverityV2.Low, "Configured partition count differs from the runtime hub",
+                        e.Topic.EndpointOrTopic ?? e.Topic.DisplayName, [$"Configured {cp}, observed {op} (Azure Resource Manager)."], "Align the configuration with the provisioned hub.", e.Topic.DisplayName));
+                if (hc.ConfiguredRetentionHours is { } cr && hc.ObservedRetentionHours is { } or2 && cr != or2)
+                    findings.Add(Finding($"retention-drift|{id}", "retention-drift", IntegrationReviewDomain.Configuration, IntegrationFindingSeverityV2.Low, "Configured retention differs from the runtime hub",
+                        e.Topic.EndpointOrTopic ?? e.Topic.DisplayName, [$"Configured {cr} h, observed {or2} h (Azure Resource Manager)."], "Align the configured retention with the provisioned hub.", e.Topic.DisplayName));
+                return Check("cfg-hub-observed", IntegrationReviewDomain.Configuration, id, "Configured Event Hub in Azure", IntegrationCheckStatus.Warning, expectation, hc.Detail,
+                    "Configuration and Azure disagree; one of them is out of date. A difference is not a failure of the integration.",
+                    "Align the configuration with the provisioned hub, or check whether the hub was re-provisioned.", Arm, freshness: IntegrationEvidenceItemFreshness.Current);
+            case EventHubComparisonState.MissingInAzure:
+                findings.Add(new IntegrationReviewFinding
+                {
+                    Key = $"hub-missing|{e.Topic.EndpointOrTopic}", RuleId = "hub-missing", Domain = IntegrationReviewDomain.Configuration, Severity = IntegrationFindingSeverityV2.High,
+                    Title = "Configured Event Hub not found in Azure", Subject = e.Topic.EndpointOrTopic ?? e.Topic.DisplayName,
+                    Evidence = ["Configured, but absent from the namespace's hub list (Azure Resource Manager)."],
+                    Recommendation = "Correct the configured Event Hub name or provision the hub through the platform's normal process.", AffectedIntegrations = [e.Topic.DisplayName],
+                });
+                return Check("cfg-hub-observed", IntegrationReviewDomain.Configuration, id, "Configured Event Hub in Azure", IntegrationCheckStatus.Warning, expectation, "Configured but not found in Azure.",
+                    hc.Detail, "Correct the hub name or provision the hub through the platform's normal process.", Arm, freshness: IntegrationEvidenceItemFreshness.Current);
+            default:
+                return Check("cfg-hub-observed", IntegrationReviewDomain.Configuration, id, "Configured Event Hub in Azure", IntegrationCheckStatus.NotAssessed, expectation, "",
+                    hc is null ? "The namespace hub list was not read." : $"{EventHubComparisonLabels.State(hc.State)}: {hc.Detail}", provenance: Arm);
+        }
+    }
+
     private static bool IsDebezium(TopicEvidence e) => (e.Platform?.ProducerTechnology ?? e.Topic.Producer ?? "").Contains("Debezium", StringComparison.OrdinalIgnoreCase);
 
     private static string DeleteLabel(CdcDeleteExpectation expectation) => expectation switch
@@ -549,8 +958,9 @@ public sealed class IntegrationReviewEngine(
             yield return Missing("conn-partitions", IntegrationReviewDomain.Connectivity, id, "Partition count", "Runtime partitions match the configured count.", e.Metadata, "No Event Hub metadata.");
             yield break;
         }
-        yield return Check("conn-hub", IntegrationReviewDomain.Connectivity, id, "Configured Event Hub exists", hub.Exists ? IntegrationCheckStatus.Pass : IntegrationCheckStatus.Fail,
-            "The configured hub exists in the namespace.", hub.Exists ? "Found by Event Hub metadata." : "Event Hub metadata reported the hub as not found.", "",
+        yield return Check("conn-hub", IntegrationReviewDomain.Connectivity, id, "Configured Event Hub exists", hub.Exists ? IntegrationCheckStatus.Observed : IntegrationCheckStatus.Fail,
+            "The configured hub exists in the namespace.", hub.Exists ? "Observed match: found by Event Hub metadata." : "Event Hub metadata reported the hub as not found.",
+            hub.Exists ? "Existence is not message flow." : "",
             hub.Exists ? null : "Correct the hub name or provision the hub through the platform's normal process.", e.Metadata.Source, e.Metadata.CapturedAt, e.Metadata.CapturedAt, IntegrationEvidenceItemFreshness.Current);
         if (!hub.Exists)
         {
@@ -571,8 +981,8 @@ public sealed class IntegrationReviewEngine(
                 provenance: e.Metadata.Source, at: e.Metadata.CapturedAt, sourceTimestamp: e.Metadata.CapturedAt, freshness: IntegrationEvidenceItemFreshness.Current);
         else
         {
-            yield return Check("conn-partitions", IntegrationReviewDomain.Connectivity, id, "Partition count", configured == runtime ? IntegrationCheckStatus.Pass : IntegrationCheckStatus.Warning,
-                $"{configured} partition(s) as configured.", $"{runtime} partition(s) at runtime.", configured == runtime ? "" : "Configuration and runtime disagree; one of them is out of date.",
+            yield return Check("conn-partitions", IntegrationReviewDomain.Connectivity, id, "Partition count", configured == runtime ? IntegrationCheckStatus.Observed : IntegrationCheckStatus.Warning,
+                $"{configured} partition(s) as configured.", $"{runtime} partition(s) at runtime.", configured == runtime ? "Observed match." : "Configuration and runtime disagree; one of them is out of date.",
                 configured == runtime ? null : "Update the configured partition count, or check whether the hub was re-provisioned.", e.Metadata.Source, e.Metadata.CapturedAt, e.Metadata.CapturedAt, IntegrationEvidenceItemFreshness.Current);
             if (configured != runtime)
                 findings.Add(new IntegrationReviewFinding
@@ -646,9 +1056,31 @@ public sealed class IntegrationReviewEngine(
 
     // ── Message flow ────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private static IEnumerable<IntegrationCheck> MessageFlowChecks(TopicEvidence e)
+    private static IEnumerable<IntegrationCheck> MessageFlowChecks(TopicEvidence e, List<IntegrationReviewFinding> findings)
     {
         var id = e.Topic.Id;
+        if (e.GroupComparison is { } gc)
+        {
+            var observed = gc.State is EventHubComparisonState.NotAuthorized || (gc.State == EventHubComparisonState.NotAssessed && gc.Observed.Count == 0) ? "not read" : gc.Observed.Count == 0 ? "none" : string.Join(", ", gc.Observed);
+            var read = e.Groups is { IsAvailable: true };
+            yield return Check("flow-consumer-group", IntegrationReviewDomain.MessageFlow, id, "Expected consumer group observed",
+                gc.State switch
+                {
+                    EventHubComparisonState.ObservedMatch => IntegrationCheckStatus.Observed,
+                    EventHubComparisonState.DifferenceObserved => e.GroupAssumed ? IntegrationCheckStatus.NeedsConfirmation : IntegrationCheckStatus.Warning,
+                    _ when read => IntegrationCheckStatus.Observed,
+                    _ => IntegrationCheckStatus.NotAssessed,
+                },
+                "The group the consumer reads with exists on the hub.",
+                (gc.Expected is null ? "Expected: not configured" : $"Expected: {gc.Expected} ({gc.ExpectedProvenance})") + $" · Observed: {observed} · Result: {(gc.Expected is null && read ? "Observed only" : EventHubComparisonLabels.State(gc.State))} · Application mapping: {gc.Mapping}",
+                gc.Reason, gc.State == EventHubComparisonState.DifferenceObserved ? "Confirm the consumer group the consumer reads with." : null,
+                read ? e.Groups!.Source : IntegrationEvidenceSource.AzureResourceManager, e.Groups?.CapturedAt, read ? e.Groups!.CapturedAt : null,
+                read ? IntegrationEvidenceItemFreshness.Current : IntegrationEvidenceItemFreshness.Unknown);
+            if (gc.State == EventHubComparisonState.DifferenceObserved && !e.GroupAssumed)
+                findings.Add(Finding($"consumer-group-missing|{id}", "consumer-group-missing", IntegrationReviewDomain.MessageFlow, IntegrationFindingSeverityV2.Medium,
+                    "Configured consumer group not found on the hub", e.Topic.EndpointOrTopic ?? e.Topic.DisplayName, [$"Configured {gc.Expected}; Azure lists {observed}."],
+                    "Correct the configured consumer group, or check how the consumer reads the hub.", e.Topic.DisplayName));
+        }
         if (e.Metadata is { IsAvailable: true, Value: { Exists: true } hub })
         {
             var last = hub.LastEnqueuedTime;
@@ -994,6 +1426,10 @@ public sealed class IntegrationReviewEngine(
             Domain = domain, ChecksAssessed = assessed, ChecksTotal = own.Count, Findings = findings.Count(f => f.Domain == domain),
             StateLabel = own.Count == 0 || assessed == 0 ? "Not assessed" : assessed == own.Count ? "Assessed" : "Partially assessed",
             KeyLimitation = string.IsNullOrWhiteSpace(limitation) ? null : limitation,
+            Observed = own.Where(c => IntegrationReviewLabels.IsAssessed(c.Status)).GroupBy(c => c.Title)
+                .Select(g => $"{g.Key}: {string.Join(" / ", g.Select(c => IntegrationReviewLabels.Status(c.Status)).Distinct())}").Take(8).ToList(),
+            Missing = own.Where(c => !IntegrationReviewLabels.IsAssessed(c.Status)).GroupBy(c => c.Title)
+                .Select(g => g.Select(c => c.Explanation).FirstOrDefault(x => !string.IsNullOrWhiteSpace(x)) is { } why ? $"{g.Key} — {why}" : g.Key).Take(8).ToList(),
         };
     }
 

@@ -387,7 +387,11 @@ public sealed class ApplicationMessagingEvidenceTests
         var engine = Engine();
         var catalog = Catalog();
         var withMessaging = engine.Readiness(catalog, IntegrationContractSet.Empty, Bound(Adapter, Common));
-        withMessaging.Domains.Should().BeEquivalentTo(engine.Readiness(catalog, IntegrationContractSet.Empty).Domains, "a package or configuration never changes domain readiness");
+        var without = engine.Readiness(catalog, IntegrationContractSet.Empty).Domains;
+        withMessaging.Domains.Select(d => (d.Domain, d.Readiness, d.Explanation)).Should().Equal(without.Select(d => (d.Domain, d.Readiness, d.Explanation)), "a package or configuration never changes domain readiness");
+        // It is listed as source evidence on the card, never as processing or a transport source.
+        withMessaging.Domains.SelectMany(d => d.Available ?? []).Where(a => a.Contains("Wolverine") || a.Contains("analyzed source"))
+            .Should().NotBeEmpty().And.OnlyContain(a => a.Contains("configuration, not processing") || a.Contains("separate from transport"));
         var summary = withMessaging.ApplicationMessaging.Single(s => s.ApplicationId == "M2LB.Hendelse.BiRK.Adapter");
         summary.Detection.Should().Be(MessagingDetection.Confirmed);
         summary.BoundTopics.Should().BeGreaterThan(0);

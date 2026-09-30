@@ -131,11 +131,11 @@ public sealed class IntegrationReviewEngineTests
         var readiness = engine.Readiness(await DevCatalog(), IntegrationContractSet.Empty);
         var domains = readiness.Domains.ToDictionary(d => d.Domain, d => d);
         domains[IntegrationReviewDomain.Connectivity].Readiness.Should().Be(IntegrationDomainReadiness.Ready);
-        domains[IntegrationReviewDomain.MessageFlow].Readiness.Should().Be(IntegrationDomainReadiness.Available);
+        domains[IntegrationReviewDomain.MessageFlow].Readiness.Should().Be(IntegrationDomainReadiness.Partial, "transport evidence never makes message flow fully assessable");
         domains[IntegrationReviewDomain.Reliability].Readiness.Should().Be(IntegrationDomainReadiness.Limited);
         domains[IntegrationReviewDomain.Reliability].Explanation.Should().Contain("Consumer group unknown for 16");
         domains[IntegrationReviewDomain.ErrorHandling].Readiness.Should().Be(IntegrationDomainReadiness.Limited, "15 topics have no consumer application to attribute telemetry to");
-        domains[IntegrationReviewDomain.Performance].Readiness.Should().Be(IntegrationDomainReadiness.Limited);
+        domains[IntegrationReviewDomain.Performance].Readiness.Should().Be(IntegrationDomainReadiness.Partial);
         domains[IntegrationReviewDomain.Performance].Explanation.Should().Contain("Observed");
     }
 
@@ -151,14 +151,15 @@ public sealed class IntegrationReviewEngineTests
     // ── §66–69 Event Hub metadata and platform grouping ──────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task EventHubExists_IsPass_FromRuntimeMetadata()
+    public async Task EventHubExists_IsObserved_NeverAnAutomaticPass()
     {
         var result = await Run(Engine(metadata: new Metadata(_ => Hub())), await DevCatalog());
         var check = TopicCheck(result, "Person", "conn-hub");
-        check.Status.Should().Be(IntegrationCheckStatus.Pass);
+        check.Status.Should().Be(IntegrationCheckStatus.Observed, "a hub that exists is an observation, not message flow or a pass");
+        check.Evidence.Should().Contain("Observed match");
         check.Provenance.Should().Be(IntegrationEvidenceSource.AzureMetadata);
         check.Freshness.Should().Be(IntegrationEvidenceItemFreshness.Current);
-        PlatformCheck(result, "conn-metadata-access").Status.Should().Be(IntegrationCheckStatus.Pass);
+        PlatformCheck(result, "conn-metadata-access").Status.Should().Be(IntegrationCheckStatus.Observed);
     }
 
     [Fact]
@@ -168,7 +169,7 @@ public sealed class IntegrationReviewEngineTests
             ? EvidenceResult<EventHubRuntimeMetadata>.Available(IntegrationEvidenceSource.AzureMetadata, new EventHubRuntimeMetadata(false, []), "not found") : Hub()));
         var result = await Run(engine, await DevCatalog());
         TopicCheck(result, "Person", "conn-hub").Status.Should().Be(IntegrationCheckStatus.Fail);
-        TopicCheck(result, "Barn", "conn-hub").Status.Should().Be(IntegrationCheckStatus.Pass);
+        TopicCheck(result, "Barn", "conn-hub").Status.Should().Be(IntegrationCheckStatus.Observed);
         result.Findings.Should().ContainSingle(f => f.RuleId == "hub-missing").Which.AffectedIntegrations.Should().ContainSingle();
     }
 

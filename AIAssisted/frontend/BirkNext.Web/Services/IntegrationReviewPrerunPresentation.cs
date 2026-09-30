@@ -81,6 +81,16 @@ public static class IntegrationReviewPrerunPresentation
         return reasons.Count == 1 ? reasons[0] : null;
     }
 
+    /// <summary>Sources are configured but this instance does not call Azure: an instance setting, never an integration misconfiguration.</summary>
+    public static bool AzureRuntimeOff(IntegrationReviewReadiness readiness) => !readiness.AzureRuntimeEnabled && readiness.RuntimeSourcesConfigured > 0;
+
+    /// <summary>"Runtime evidence sources: Configured (4 of 4) · Azure runtime: Not configured".</summary>
+    public static string AzureRuntimeLine(IntegrationReviewReadiness readiness) =>
+        "Runtime evidence sources: " + (readiness.RuntimeSourcesConfigured == 0 ? "Not configured"
+            : readiness.RuntimeSourcesConfigured == readiness.RuntimeSourcesTotal ? $"Configured ({readiness.RuntimeSourcesConfigured} of {readiness.RuntimeSourcesTotal})"
+            : $"Partially configured ({readiness.RuntimeSourcesConfigured} of {readiness.RuntimeSourcesTotal})")
+        + $" · Azure runtime: {(readiness.AzureRuntimeEnabled ? "Enabled" : "Not configured")}";
+
     // ── Needs attention ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     public sealed record AttentionItem(string Key, string Label, string Value, string? ActionLabel, string? ActionHref);
@@ -95,7 +105,9 @@ public static class IntegrationReviewPrerunPresentation
             items.Add(new("mappings", "Mappings", $"{unconfirmed} need{(unconfirmed == 1 ? "s" : "")} confirmation", "Review mappings", Href(profileId, FocusMappings)));
         var (available, total) = RuntimeAvailability(readiness);
         if (total > 0 && available < total)
-            items.Add(new("runtime", "Runtime evidence", $"{available} of {total} available", "Configure runtime evidence", Href(profileId, FocusRuntime)));
+            items.Add(AzureRuntimeOff(readiness)
+                ? new("runtime", "Runtime evidence", $"Sources configured ({readiness.RuntimeSourcesConfigured} of {readiness.RuntimeSourcesTotal}) · Azure runtime not enabled for this instance", "View runtime evidence", Href(profileId, FocusRuntime))
+                : new("runtime", "Runtime evidence", $"{available} of {total} available", "Configure runtime evidence", Href(profileId, FocusRuntime)));
         var topics = readiness.Systems.Sum(s => s.Topics);
         var contracts = readiness.Systems.Sum(s => s.ContractsConfigured);
         if (topics > 0 && contracts < topics)
@@ -155,7 +167,7 @@ public static class IntegrationReviewPrerunPresentation
             IntegrationReviewDomain.Configuration => ("Open Integrations", IntegrationReviewPresentation.IntegrationsHref(profileId)),
             IntegrationReviewDomain.Connectivity or IntegrationReviewDomain.MessageFlow or IntegrationReviewDomain.Reliability or IntegrationReviewDomain.ErrorHandling
                 or IntegrationReviewDomain.Security or IntegrationReviewDomain.Observability or IntegrationReviewDomain.Performance when runtimeMissing
-                => ("Configure runtime evidence", Href(profileId, FocusRuntime)),
+                => (AzureRuntimeOff(readiness) ? "View runtime evidence" : "Configure runtime evidence", Href(profileId, FocusRuntime)),
             _ => null,
         };
     }
