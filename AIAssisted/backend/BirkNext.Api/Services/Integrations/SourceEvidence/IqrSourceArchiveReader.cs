@@ -18,7 +18,10 @@ public static class IqrSourceArchiveReader
     public const int MaxExpandedBytes = 100 * 1024 * 1024;
     private static readonly HashSet<string> Ignored = new(StringComparer.OrdinalIgnoreCase)
         { "bin", "obj", "node_modules", "packages", ".git", ".vs", "coverage", "TestResults" };
-    public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null);
+    /// <param name="ConfigurationFiles">JSON/YAML content held in memory for this analysis only. Never stored; only the source-architecture analyzer reads it,
+    /// and only allow-listed entity names and endpoint hosts can leave it. Every other analyzer keeps seeing key inventories only.</param>
+    public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null,
+        List<SourceFile>? ConfigurationFiles = null);
 
     public static (Workspace? Workspace, string? Error) Read(string name, byte[] bytes, CancellationToken ct = default)
     {
@@ -28,6 +31,7 @@ public static class IqrSourceArchiveReader
         var limitations = new HashSet<string>(StringComparer.Ordinal);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var configurations = new List<SourceConfigurationEvidence>();
+        var configurationFiles = new List<SourceFile>();
         try
         {
             using var zip = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
@@ -49,7 +53,8 @@ public static class IqrSourceArchiveReader
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
                 if (extension is ".js" or ".ts" or ".py" or ".java" or ".go" or ".fs" or ".vb" or ".tf")
                     limitations.Add($"Not analyzed: {extension} source (unsupported language).");
-                if (extension is not (".cs" or ".csproj" or ".sln" or ".json" or ".yaml" or ".yml" or ".props" or ".sql")) continue;
+                if (extension is not (".cs" or ".csproj" or ".sln" or ".slnx" or ".json" or ".yaml" or ".yml" or ".props" or ".sql")
+                    && !Path.GetFileName(path).Equals("Dockerfile", StringComparison.OrdinalIgnoreCase)) continue;
                 if (entry.Length > MaxFileBytes) { limitations.Add("Source file exceeds the 2 MB per-file limit and was not analyzed."); continue; }
                 using var input = entry.Open();
                 using var buffer = new MemoryStream();
@@ -96,6 +101,7 @@ public static class IqrSourceArchiveReader
                     }
                     configurations.Add(new SourceConfigurationEvidence(SafeLabel(path), keys, extension == ".json" ? SourceConfidence.StrongSourceEvidence : SourceConfidence.Partial));
                     limitations.Add("Configuration values excluded. Key inventory is bounded to 1,024 keys per file; formal schemas are not validated.");
+                    configurationFiles.Add(new SourceFile(path, content));
                     continue;
                 }
                 files.Add(new SourceFile(path, content));
@@ -104,7 +110,7 @@ public static class IqrSourceArchiveReader
         catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException)
         { return (null, "Source archive is invalid or unreadable."); }
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return (new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count), files, [.. limitations], configurations), null);
+        return (new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count), files, [.. limitations], configurations, configurationFiles), null);
     }
 
     public static string SafeLabel(string value)

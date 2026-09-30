@@ -81,6 +81,15 @@
 @code {
     [Parameter, EditorRequired] public DatabaseArchitectureSnapshot Snapshot { get; set; } = new();
     [Parameter] public DatabaseArchitectureSnapshot? Previous { get; set; }
+    /// <summary>Opens the diagram on one database (drilldown from Source Analysis → Architecture). Null leaves the view as the user set it.</summary>
+    [Parameter] public string? FocusDatabaseId { get; set; }
+    private string? _focused;
+    protected override void OnParametersSet()
+    {
+        if (FocusDatabaseId is null || FocusDatabaseId == _focused) return;
+        _focused = FocusDatabaseId;
+        if (Snapshot.Databases.Any(d => d.Id == FocusDatabaseId)) { _database = FocusDatabaseId; _tab = "Diagram"; }
+    }
     private string _tab = "Overview", _search = "", _database = "", _schema = "", _project = "", _message = "";
     private string? _selected; private bool _confirmed, _hideIsolated, _pkOnly, _allColumns, _descending; private bool _inferred = true, _edges = true; private int _depth = 1;
     private HashSet<string>? _related; private ElementReference _canvas; private IJSObjectReference? _module; private DotNetObjectReference<DatabaseWorkspace>? _reference; private string? _renderKey;

@@ -59,6 +59,8 @@
     <Compile Include="../../shared/ApplicationMessagingContracts.cs" Link="Models/ApplicationMessagingContracts.cs" />
     <Compile Include="../../shared/IqrSourceContracts.cs" Link="Models/IqrSourceContracts.cs" />
     <Compile Include="../../shared/DatabaseArchitectureContracts.cs" Link="Models/DatabaseArchitectureContracts.cs" />
+
+    <Compile Include="../../shared/SourceArchitectureContracts.cs" Link="Models/SourceArchitectureContracts.cs" />
     <Compile Include="../../shared/ActiveCdcTestContracts.cs" Link="Models/ActiveCdcTestContracts.cs" />
     <Compile Include="../../shared/ServiceBusContracts.cs" Link="Models/ServiceBusContracts.cs" />
     <Compile Include="../../shared/DependencyReviewContracts.cs" Link="Models/DependencyReviewContracts.cs" />

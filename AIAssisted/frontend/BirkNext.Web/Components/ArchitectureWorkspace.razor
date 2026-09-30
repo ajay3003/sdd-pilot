@@ -1,0 +1,423 @@
+@using BirkNext.SourceArchitecture
+@using BirkNext.Web.Services
+@using System.Text.Json
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject IReportExportService ExportService
+
+@* Source Analysis → Architecture. Its own model (ArchitectureSnapshot); datastores only link to the separate Database area.
+   Everything shown is source-derived design evidence — never deployed topology, never runtime traffic. *@
+<section class="arch" aria-labelledby="arch-heading" data-testid="architecture-workspace">
+    <h2 id="arch-heading">Architecture <span class="arch-pill" data-testid="arch-status">@StatusLabel(Snapshot.Status)</span></h2>
+    <p class="arch-limitation" role="note" data-testid="arch-limitation">@ArchitectureSnapshot.SourceLimitation</p>
+    <p class="arch-muted">Source fingerprint <code>@Snapshot.SourceFingerprint</code> · analyzer v@(Snapshot.AnalyzerVersion) · extracted @Snapshot.ExtractedAt.ToString("u")</p>
+    <nav class="arch-tabs" aria-label="Architecture views">
+        @foreach (var tab in Tabs) { <button type="button" aria-pressed="@(_tab == tab)" data-testid="@($"arch-tab-{tab.ToLowerInvariant()}")" @onclick="() => SelectTab(tab)">@tab</button> }
+        <button type="button" data-testid="arch-export" @onclick="ExportHtml">Export HTML</button>
+        <button type="button" data-testid="arch-export-json" @onclick="ExportJson">Export JSON</button>
+    </nav>
+
+    @if (_tab == "Overview")
+    {
+        var o = ArchitecturePresentation.Overview(Snapshot);
+        <dl class="arch-summary" data-testid="arch-overview">
+            <div><dt>Components</dt><dd>@o.Components</dd></div>
+            <div><dt>APIs</dt><dd>@o.Apis</dd></div>
+            <div><dt>Workers</dt><dd>@o.Workers</dd></div>
+            <div><dt>Adapters</dt><dd>@o.Adapters</dd></div>
+            <div><dt>Frontends</dt><dd>@o.Frontends</dd></div>
+            <div><dt>Messaging channels</dt><dd>@o.Channels</dd></div>
+            <div><dt>Datastores</dt><dd>@o.DataStores</dd></div>
+            <div><dt>External systems</dt><dd>@o.ExternalSystems</dd></div>
+            <div><dt>Resolved dependencies</dt><dd>@o.Resolved</dd></div>
+            <div><dt>Unresolved</dt><dd>@o.Unresolved</dd></div>
+            <div><dt>Inferred</dt><dd>@o.Inferred</dd></div>
+            <div><dt>Conflicts</dt><dd>@o.Conflicts</dd></div>
+        </dl>
+        <h3>Technologies</h3>
+        <ul class="arch-list" data-testid="arch-technologies">@foreach (var t in Snapshot.Technologies) { <li><strong>@t.Name</strong> · @t.Category@(t.Components.Count > 0 ? $" · {t.Components.Count} component(s)" : "")</li> }</ul>
+        <details class="arch-details" open data-testid="arch-diagnostics"><summary>Diagnostics (@Snapshot.Diagnostics.Count) — limitations, not defects</summary>
+            <ul class="arch-list">@foreach (var d in Snapshot.Diagnostics) { <li><strong>@d.Kind</strong> — @d.Message</li> }</ul></details>
+        <details class="arch-details" data-testid="arch-limitations"><summary>Limitations (@Snapshot.Limitations.Count)</summary><ul class="arch-list">@foreach (var l in Snapshot.Limitations) { <li>@l</li> }</ul></details>
+    }
+    else if (_tab == "Dependencies")
+    {
+        <div class="arch-controls">
+            <label>Search dependencies <input type="search" data-testid="arch-dep-search" @bind="_depSearch" @bind:event="oninput" /></label>
+            <label>Type <select @bind="_depType"><option value="">All</option>@foreach (var t in Snapshot.Dependencies.Select(d => d.DependencyType.ToString()).Distinct().Order()) { <option>@t</option> }</select></label>
+        </div>
+        <div class="arch-table" tabindex="0" role="region" aria-label="All extracted dependencies">
+            <table data-testid="arch-dependencies">
+                <thead><tr><th scope="col">From</th><th scope="col">To / target reference</th><th scope="col">Type</th><th scope="col">Protocol</th><th scope="col">Resolved</th><th scope="col">Evidence state</th><th scope="col">Confidence</th><th scope="col">Source</th></tr></thead>
+                <tbody>
+                    @foreach (var d in Dependencies)
+                    {
+                        <tr data-testid="arch-dep-row" data-state="@d.EvidenceState">
+                            <td>@Name(d.FromComponentId)</td>
+                            <td>@(d.ToId is null ? $"Unresolved: {d.TargetReference}" : Name(d.ToId))</td>
+                            <td>@d.DependencyType@(d.Framework is { } fw ? $" · {fw}" : "")</td>
+                            <td>@d.Protocol</td>
+                            <td>@(d.IsResolved ? "Yes" : "No")</td>
+                            <td><span class="arch-pill">@ArchitecturePresentation.StateLabel(d.EvidenceState)</span></td>
+                            <td>@d.Confidence</td>
+                            <td><button type="button" class="arch-link" @onclick="() => OpenDependency(d.Id)">@(d.Evidence.FirstOrDefault() is { } e ? $"{e.File}:{e.Line}" : "Details")</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (SelectedDependency is { } selectedDep) { <aside class="arch-detail arch-detail-wide" aria-label="Relationship details" data-testid="arch-edge-detail">@EdgeDetail(selectedDep)</aside> }
+        <details class="arch-details" data-testid="arch-libraries"><summary>Shared libraries and packages (@Snapshot.SharedLibraries.Count)</summary>
+            <ul class="arch-list">@foreach (var l in Snapshot.SharedLibraries) { <li>@(l.Internal ? "Library" : "Package") <strong>@l.Name</strong> · used by @string.Join(", ", l.ReferencedByComponents.Select(Name))</li> }</ul></details>
+        <details class="arch-details" data-testid="arch-config"><summary>Configuration references (@Snapshot.ConfigurationReferences.Count) — keys only; values never shown except safe entity names</summary>
+            <ul class="arch-list">@foreach (var c in Snapshot.ConfigurationReferences) { <li>@Name(c.ComponentId) · <code>@c.Key</code> · @c.Purpose@(c.SafeValues.Count > 0 ? $" · {string.Join(", ", c.SafeValues)}" : "")</li> }</ul></details>
+    }
+    else if (_tab == "Changes")
+    {
+        <h3>Source architecture change</h3>
+        <p class="arch-limitation" role="note" data-testid="arch-change-label">@ArchitectureDiff.Label</p>
+        @if (Previous.Count == 0) { <p data-testid="arch-no-previous">Another analyzed source snapshot is required to compare.</p> }
+        else
+        {
+            <label>Compare with <select @bind="_previousId" data-testid="arch-previous">@foreach (var p in Previous) { <option value="@p.Snapshot.SnapshotId">@p.Label</option> }</select></label>
+            @if (Previous.FirstOrDefault(p => p.Snapshot.SnapshotId.ToString() == _previousId).Snapshot is { } previous)
+            {
+                @if (previous.AnalyzerVersion != Snapshot.AnalyzerVersion) { <p>Analyzer versions differ; changes may reflect extraction coverage rather than changed source.</p> }
+                var changes = ArchitectureDiff.Compare(previous, Snapshot);
+                <p class="arch-muted">Legend: <strong>+ Added</strong> · <strong>− Removed</strong> · <strong>~ Changed</strong> (current snapshot compared with the selected one; removed items are not merged into the current graph).</p>
+                @if (changes.Count == 0) { <p data-testid="arch-no-changes">No source architecture change between these snapshots.</p> }
+                <ul class="arch-list" data-testid="arch-changes">@foreach (var c in changes) { <li data-kind="@c.Kind"><strong>@(c.Kind switch { ArchitectureChangeKind.Added => "+ Added", ArchitectureChangeKind.Removed => "− Removed", _ => "~ Changed" })</strong> @c.Area · @c.Name <span class="arch-muted">@c.Detail</span></li> }</ul>
+            }
+        }
+    }
+    else
+    {
+        <div class="arch-controls" data-testid="arch-filters">
+            <label>Search <input type="search" data-testid="arch-search" @bind="_search" @bind:event="oninput" placeholder="Component, channel, datastore, configuration key" /></label>
+            <label>Component type <select @bind="ComponentTypeFilter">@Options(Snapshot.Components.Select(c => c.ComponentType.ToString()))</select></label>
+            <label>Technology <select @bind="TechnologyFilter">@Options(Snapshot.Components.SelectMany(c => c.Technologies))</select></label>
+            <label>Protocol <select @bind="ProtocolFilter">@Options(ArchitecturePresentation.TypesOf(View).Select(t => t.ToString()))</select></label>
+            <label>Project/module <select @bind="ModuleFilter">@Options(Snapshot.Components.Select(c => c.Module))</select></label>
+            <label><input type="checkbox" data-testid="arch-confirmed-only" @bind="ConfirmedOnly" /> Confirmed only</label>
+            <label><input type="checkbox" data-testid="arch-include-inferred" @bind="IncludeInferred" /> Include inferred</label>
+            <label><input type="checkbox" data-testid="arch-hide-unresolved" @bind="HideUnresolved" /> Hide unresolved</label>
+            @if (View == SourceArchitectureView.System) { <label><input type="checkbox" data-testid="arch-show-libraries" @bind="ShowLibraries" /> Libraries</label> }
+        </div>
+        @if (_search.Length > 0)
+        {
+            <p class="arch-muted" role="status" data-testid="arch-search-results">@SearchResults.Count match(es)@if (SearchResults.Count > 0) { <span>: </span>@foreach (var n in SearchResults.Take(12)) { <button type="button" class="arch-link" @onclick="() => SelectNodeAsync(n.Id)">@n.Name</button><span> </span> } }</p>
+        }
+        <div class="arch-content">
+            <div class="arch-main">
+                <div class="arch-controls">
+                    <button type="button" data-testid="arch-fit" @onclick="Fit">Fit to screen</button>
+                    <button type="button" data-testid="arch-reset" @onclick="Reset">Reset layout</button>
+                    <button type="button" data-testid="arch-save" @onclick="Save">Save layout</button>
+                    <button type="button" @onclick="ExportSvg">Export SVG</button>
+                    <button type="button" data-testid="arch-clear" @onclick="ClearHighlight" disabled="@(_highlight is null)">Clear highlight</button>
+                </div>
+                <p class="arch-muted">Solid: confirmed / strongly supported · Dashed: inferred · Dotted: unresolved · Dash-dot: conflict — labels repeat the state. Drag nodes; drag blank space to pan; scroll to zoom; Tab to a node or edge and press Enter.</p>
+                <div class="arch-canvas" @ref="_canvas" tabindex="0" data-testid="arch-canvas" aria-label="@($"{View} graph. The table below lists the same relationships.")"></div>
+                <p role="status" class="arch-muted" data-testid="arch-message">@_message</p>
+                <div class="arch-controls" data-testid="arch-path">
+                    <label>Find path from <select @bind="_pathFrom">@NodeOptions()</select></label>
+                    <label>to <select @bind="_pathTo">@NodeOptions()</select></label>
+                    <button type="button" data-testid="arch-find-path" @onclick="FindPath" disabled="@(_pathFrom == "" || _pathTo == "")">Find path</button>
+                </div>
+                @if (_pathResult is not null) { <p role="status" data-testid="arch-path-result">@_pathResult</p> }
+                <details class="arch-details" open="@(View is SourceArchitectureView.Messaging or SourceArchitectureView.Data)" data-testid="arch-view-table">
+                    <summary>@(View switch { SourceArchitectureView.Messaging => "Channels, producers and consumers", SourceArchitectureView.Data => "Datastores and who uses them", _ => "Relationships in this view" }) (table)</summary>
+                    @if (View == SourceArchitectureView.Messaging)
+                    {
+                        <div class="arch-table" tabindex="0" role="region" aria-label="Messaging channels"><table data-testid="arch-messaging-table"><thead><tr><th scope="col">Channel</th><th scope="col">Type</th><th scope="col">Producers</th><th scope="col">Consumers</th><th scope="col">Subscription / consumer group</th><th scope="col">Confidence</th></tr></thead><tbody>
+                        @foreach (var ch in Snapshot.MessagingChannels.Where(c => Graph.Nodes.Any(n => n.Id == c.Id)))
+                        {
+                            <tr><td><button type="button" class="arch-link" @onclick="() => SelectNodeAsync(ch.Id)">@ch.Name</button>@if (ch.EnvironmentVariants.Count > 0) { <br /><span class="arch-muted">@string.Join("; ", ch.EnvironmentVariants.Select(v => $"{v.Key}: {v.Value}"))</span> }</td>
+                                <td>@ArchitecturePresentation.ChannelLabel(ch.Type)</td>
+                                <td>@(ch.Producers.Count == 0 ? "None found in source" : string.Join(", ", ch.Producers.Select(p => $"{Name(p.ComponentId)} ({ArchitecturePresentation.StateLabel(p.State)}{(p.Framework is { } f ? ", " + f : "")})")))</td>
+                                <td>@(ch.Consumers.Count == 0 ? "None found in source" : string.Join(", ", ch.Consumers.Select(p => $"{Name(p.ComponentId)} ({ArchitecturePresentation.StateLabel(p.State)}{(p.Framework is { } f ? ", " + f : "")})")))</td>
+                                <td>@(ch.Subscription ?? ch.ConsumerGroup ?? "—")</td><td>@(ch.NameUnresolved ? "Name unresolved — not paired" : ArchitecturePresentation.StateLabel(ch.Confidence))</td></tr>
+                        }
+                        </tbody></table></div>
+                    }
+                    else if (View == SourceArchitectureView.Data)
+                    {
+                        <div class="arch-table" tabindex="0" role="region" aria-label="Datastores"><table data-testid="arch-data-table"><thead><tr><th scope="col">Datastore</th><th scope="col">Type</th><th scope="col">Usage</th><th scope="col">Used by</th><th scope="col">Connection reference</th><th scope="col">Database analysis</th></tr></thead><tbody>
+                        @foreach (var s in Snapshot.DataStores.Where(s => Graph.Nodes.Any(n => n.Id == s.Id)))
+                        {
+                            <tr><td><button type="button" class="arch-link" @onclick="() => SelectNodeAsync(s.Id)">@s.LogicalName</button></td><td>@ArchitecturePresentation.StoreLabel(s.StoreType)</td><td>@s.Usage</td>
+                                <td>@string.Join(", ", s.ReferencedByComponents.Select(Name))</td><td><code>@(s.ConnectionReference ?? "—")</code></td><td>@(s.DatabaseModelId is null ? "Not linked" : "Available")</td></tr>
+                        }
+                        </tbody></table></div>
+                    }
+                    else
+                    {
+                        <div class="arch-table" tabindex="0" role="region" aria-label="Relationships in this view"><table data-testid="arch-edge-table"><thead><tr><th scope="col">From</th><th scope="col">Relationship</th><th scope="col">To</th><th scope="col">State</th></tr></thead><tbody>
+                        @foreach (var e in Graph.Edges) { <tr><td>@NodeName(e.From)</td><td><button type="button" class="arch-link" @onclick="() => SelectEdgeAsync(e.Id)">@e.Label</button></td><td>@NodeName(e.To)</td><td>@e.State</td></tr> }
+                        </tbody></table></div>
+                    }
+                </details>
+            </div>
+            @if (SelectedNode is { } node) { <aside class="arch-detail" aria-label="Node details" data-testid="arch-node-detail">@NodeDetail(node)</aside> }
+            else if (_selectedEdge?.StartsWith("unresolved-edge:", StringComparison.Ordinal) == true) { <aside class="arch-detail" aria-label="Unresolved targets" data-testid="arch-edge-detail">@UnresolvedDetail(_selectedEdge)</aside> }
+            else if (SelectedDependency is { } dep) { <aside class="arch-detail" aria-label="Relationship details" data-testid="arch-edge-detail">@EdgeDetail(dep)</aside> }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ArchitectureSnapshot Snapshot { get; set; } = new();
+    /// <summary>Other analyzed snapshots to compare with (label + architecture), newest first.</summary>
+    [Parameter] public IReadOnlyList<(string Label, ArchitectureSnapshot Snapshot)> Previous { get; set; } = [];
+    /// <summary>Open the separate Database area on a linked database (same source snapshot).</summary>
+    [Parameter] public EventCallback<string> OpenDatabase { get; set; }
+
+    private static readonly string[] Tabs = ["Overview", "System", "Integrations", "Messaging", "Data", "Dependencies", "Changes"];
+    private string _tab = "Overview", _search = "", _depSearch = "", _depType = "", _message = "", _pathFrom = "", _pathTo = "", _previousId = "", _depth = "1";
+    private string? _selectedNode, _selectedEdge, _pathResult;
+    private HashSet<string>? _highlight;
+    private ArchitectureFilters _filters = new();
+    private ElementReference _canvas;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<ArchitectureWorkspace>? _reference;
+    private string? _renderKey;
+
+    private string ComponentTypeFilter { get => _filters.ComponentType; set => _filters = _filters with { ComponentType = value }; }
+    private string TechnologyFilter { get => _filters.Technology; set => _filters = _filters with { Technology = value }; }
+    private string ProtocolFilter { get => _filters.Protocol; set => _filters = _filters with { Protocol = value }; }
+    private string ModuleFilter { get => _filters.Module; set => _filters = _filters with { Module = value }; }
+    private bool ConfirmedOnly { get => _filters.ConfirmedOnly; set => _filters = _filters with { ConfirmedOnly = value }; }
+    private bool IncludeInferred { get => _filters.IncludeInferred; set => _filters = _filters with { IncludeInferred = value }; }
+    private bool HideUnresolved { get => _filters.HideUnresolved; set => _filters = _filters with { HideUnresolved = value }; }
+    private bool ShowLibraries { get => _filters.ShowLibraries; set => _filters = _filters with { ShowLibraries = value }; }
+
+    private SourceArchitectureView View => _tab switch { "Integrations" => SourceArchitectureView.Integrations, "Messaging" => SourceArchitectureView.Messaging, "Data" => SourceArchitectureView.Data, _ => SourceArchitectureView.System };
+    private ArchitectureGraph Graph => ArchitecturePresentation.Build(Snapshot, View, _filters);
+    private List<ArchitectureGraphNode> SearchResults => ArchitecturePresentation.Search(Snapshot, _search);
+    private string Name(string? id) => ArchitecturePresentation.Name(Snapshot, id);
+    private string NodeName(string id) => Graph.Nodes.FirstOrDefault(n => n.Id == id)?.Name ?? Name(id);
+    private ArchitectureGraphNode? SelectedNode => _selectedNode is null ? null : Graph.Nodes.FirstOrDefault(n => n.Id == _selectedNode) ?? (ArchitecturePresentation.Node(Snapshot, _selectedNode, out var n) ? n : null);
+    private ArchitectureDependency? SelectedDependency => _selectedEdge is null ? null : Snapshot.Dependencies.FirstOrDefault(d => d.Id == _selectedEdge);
+
+    private IEnumerable<ArchitectureDependency> Dependencies => Snapshot.Dependencies.Where(d => (_depType == "" || d.DependencyType.ToString() == _depType)
+        && (_depSearch == "" || new[] { Name(d.FromComponentId), d.ToId is null ? d.TargetReference : Name(d.ToId), d.DependencyType.ToString(), d.ConfigurationReference, d.Framework, d.Protocol }
+            .Any(v => v?.Contains(_depSearch, StringComparison.OrdinalIgnoreCase) == true)));
+
+    protected override void OnParametersSet()
+    {
+        if (_previousId == "" && Previous.Count > 0) _previousId = Previous[0].Snapshot.SnapshotId.ToString();
+    }
+
+    private void SelectTab(string tab)
+    {
+        _tab = tab;
+        _highlight = null;
+        _pathResult = null;
+    }
+
+    private static string StatusLabel(ArchitectureStatus status) => status switch
+    {
+        ArchitectureStatus.Complete => "Complete (all supported sources analyzed — not a claim of correctness)",
+        ArchitectureStatus.NeedsReview => "Needs review",
+        _ => status.ToString(),
+    };
+
+    private static RenderFragment Options(IEnumerable<string> values) => builder =>
+    {
+        builder.OpenElement(0, "option"); builder.AddAttribute(1, "value", ""); builder.AddContent(2, "All"); builder.CloseElement();
+        foreach (var v in values.Where(v => v.Length > 0).Distinct().Order(StringComparer.Ordinal)) { builder.OpenElement(3, "option"); builder.AddAttribute(4, "value", v); builder.AddContent(5, v); builder.CloseElement(); }
+    };
+
+    private RenderFragment NodeOptions() => builder =>
+    {
+        builder.OpenElement(0, "option"); builder.AddAttribute(1, "value", ""); builder.AddContent(2, "Select"); builder.CloseElement();
+        foreach (var n in Graph.Nodes) { builder.OpenElement(3, "option"); builder.AddAttribute(4, "value", n.Id); builder.AddContent(5, n.Name); builder.CloseElement(); }
+    };
+
+    [JSInvokable] public Task SelectNode(string id) => SelectNodeAsync(id);
+    [JSInvokable] public Task SelectEdge(string id) => SelectEdgeAsync(id);
+
+    private async Task SelectNodeAsync(string id)
+    {
+        _selectedNode = id;
+        _selectedEdge = null;
+        await Highlight();
+        StateHasChanged();
+    }
+
+    private async Task SelectEdgeAsync(string id)
+    {
+        _selectedEdge = id;
+        _selectedNode = null;
+        await Highlight();
+        StateHasChanged();
+    }
+
+    private void OpenDependency(string id)
+    {
+        _selectedEdge = id;
+        _selectedNode = null;
+    }
+
+    private async Task ShowRelated(bool downstream)
+    {
+        if (_selectedNode is null) return;
+        _highlight = ArchitecturePresentation.Reachable(Graph, _selectedNode, downstream, int.Parse(_depth));
+        _message = $"{(downstream ? "Downstream" : "Upstream")} of {NodeName(_selectedNode)}: {_highlight.Count - 1} node(s) along extracted relationships.";
+        await Highlight();
+    }
+
+    private async Task FindPath()
+    {
+        var path = ArchitecturePresentation.FindPath(Graph, _pathFrom, _pathTo);
+        _pathResult = path is null ? ArchitecturePresentation.NoPath : string.Join(" → ", path.Select(NodeName));
+        _highlight = path?.ToHashSet();
+        await Highlight();
+    }
+
+    private async Task ClearHighlight() { _highlight = null; _message = ""; await Highlight(); }
+
+    private async Task Highlight()
+    {
+        if (_module is null || View is not (SourceArchitectureView.System or SourceArchitectureView.Integrations or SourceArchitectureView.Messaging or SourceArchitectureView.Data) || _tab is "Overview" or "Dependencies" or "Changes") return;
+        var ids = _highlight is null ? null : _highlight.Concat(Graph.Edges.Where(e => _highlight.Contains(e.From) && _highlight.Contains(e.To)).Select(e => e.Id)).ToArray();
+        await _module.InvokeVoidAsync("highlight", _canvas, ids, _selectedNode ?? _selectedEdge);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_tab is "Overview" or "Dependencies" or "Changes") { _renderKey = null; return; }
+        var graph = Graph;
+        var matches = _search.Length > 0 ? SearchResults.Select(n => n.Id).ToHashSet() : null;
+        var key = JsonSerializer.Serialize(new { v = View, graph.Nodes, graph.Edges, Snapshot.SourceSnapshotId });
+        if (_renderKey == key)
+        {
+            if (matches is not null && _module is not null) await _module.InvokeVoidAsync("highlight", _canvas, matches.ToArray(), _selectedNode ?? _selectedEdge);
+            return;
+        }
+        _renderKey = key;
+        try
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/architectureGraph.js");
+            _reference ??= DotNetObjectReference.Create(this);
+            _message = await _module.InvokeAsync<string>("render", _canvas,
+                graph.Nodes.Select(n => new { id = n.Id, name = n.Name, subtitle = n.Subtitle, kind = n.Kind, state = n.State }).ToArray(),
+                graph.Edges.Select(e => new { id = e.Id, from = e.From, to = e.To, label = e.Label, state = e.State }).ToArray(),
+                $"architecture-layout:v1:{Snapshot.SourceSnapshotId}:{Snapshot.SourceFingerprint}:{View}:default", _reference);
+            await Highlight();
+        }
+        catch (JSException) { _message = "The interactive graph could not be drawn; the table below lists the same relationships."; }
+        StateHasChanged();
+    }
+
+    private async Task Fit() { if (_module is not null) await _module.InvokeVoidAsync("fit", _canvas); }
+    private async Task Reset() { if (_module is not null) { await _module.InvokeVoidAsync("reset", _canvas); _message = "Layout reset to the default for this view."; } }
+    private async Task Save() { if (_module is not null) _message = await _module.InvokeAsync<string>("save", _canvas); }
+    private async Task ExportSvg() { if (_module is not null) await _module.InvokeVoidAsync("exportSvg", _canvas); }
+    private async Task ExportHtml() => await JS.InvokeVoidAsync("downloadHtmlFile", $"source-architecture-{Snapshot.SourceFingerprint[..Math.Min(12, Snapshot.SourceFingerprint.Length)]}.html", ExportService.ExportSourceArchitecture(Snapshot));
+    private async Task ExportJson() => await JS.InvokeVoidAsync("downloadJsonFile", "source-architecture.json", JsonSerializer.Serialize(Snapshot, new JsonSerializerOptions { WriteIndented = true }));
+
+    private RenderFragment Evidence(IEnumerable<ArchitectureEvidence> evidence) => @<ul class="arch-list arch-evidence">@foreach (var e in evidence.Take(12)) { <li><span class="arch-pill">@e.Kind</span> @e.Explanation <span class="arch-muted">· @e.File:@e.Line · @e.Symbol · @e.Extractor</span></li> }</ul>;
+
+    private RenderFragment DependencyList(IEnumerable<ArchitectureDependency> deps, bool outgoing) => @<ul class="arch-list">@foreach (var d in deps) { <li><button type="button" class="arch-link" @onclick="() => SelectEdgeAsync(d.Id)">@ArchitecturePresentation.EdgeLabel(d)</button> @(outgoing ? "→ " + (d.ToId is null ? $"Unresolved: {d.TargetReference}" : Name(d.ToId)) : "← " + Name(d.FromComponentId))</li> }</ul>;
+
+    private RenderFragment NodeDetail(ArchitectureGraphNode node) => __builder =>
+    {
+        <button type="button" data-testid="arch-close" @onclick="() => { _selectedNode = null; _highlight = null; }">Close details</button>
+        <h3>@node.Name</h3>
+        <p class="arch-muted">@node.Subtitle · @node.State</p>
+        @if (Snapshot.Components.FirstOrDefault(c => c.Id == node.Id) is { } c)
+        {
+            <div class="arch-controls">
+                <label>Depth <select @bind="_depth"><option value="1">Direct</option><option value="2">2 levels</option><option value="999">All reachable</option></select></label>
+                <button type="button" data-testid="arch-upstream" @onclick="() => ShowRelated(false)">Show upstream</button>
+                <button type="button" data-testid="arch-downstream" @onclick="() => ShowRelated(true)">Show downstream</button>
+            </div>
+            <dl class="arch-facts">
+                <div><dt>Component type</dt><dd>@ArchitecturePresentation.Label(c.ComponentType) (@c.Confidence)</dd></div>
+                <div><dt>Project</dt><dd><code>@c.SourceProject</code></dd></div>
+                <div><dt>Runtime</dt><dd>@c.RuntimeType · @c.Framework</dd></div>
+                <div><dt>Technologies</dt><dd>@string.Join(", ", c.Technologies)</dd></div>
+                @if (c.Tags.Count > 0) { <div><dt>Tags</dt><dd>@string.Join(", ", c.Tags)</dd></div> }
+                @if (c.IncludedLibraries.Count > 0) { <div><dt>Includes libraries</dt><dd>@string.Join(", ", c.IncludedLibraries)</dd></div> }
+            </dl>
+            <h4>Outgoing</h4>@DependencyList(Snapshot.Dependencies.Where(d => d.FromComponentId == c.Id && d.DependencyType is not ArchitectureDependencyType.ProjectReference), true)
+            <h4>Incoming</h4>@DependencyList(Snapshot.Dependencies.Where(d => d.ToId == c.Id), false)
+            <h4>Interfaces</h4><ul class="arch-list">@foreach (var i in Snapshot.Interfaces.Where(i => i.ComponentId == c.Id)) { <li><strong>@i.Type</strong> · @i.Name@(i.RouteOrTopic is { Length: > 0 } r ? $" · {r}" : "")@(i.AuthRequirement is { } a ? $" · {a}" : "")</li> }</ul>
+            <h4>Configuration references</h4><ul class="arch-list">@foreach (var cfg in Snapshot.ConfigurationReferences.Where(x => x.ComponentId == c.Id).Take(40)) { <li><code>@cfg.Key</code> · @cfg.Purpose@(cfg.SafeValues.Count > 0 ? $" · {string.Join(", ", cfg.SafeValues)}" : "")</li> }</ul>
+            <h4>Unresolved references</h4><ul class="arch-list">@foreach (var d in Snapshot.Dependencies.Where(d => d.FromComponentId == c.Id && d.EvidenceState == ArchitectureEvidenceState.Unresolved)) { <li>@d.DependencyType · @d.TargetReference</li> }</ul>
+            <h4>Evidence</h4>@Evidence(c.Evidence)
+        }
+        else if (Snapshot.MessagingChannels.FirstOrDefault(x => x.Id == node.Id) is { } ch)
+        {
+            <dl class="arch-facts">
+                <div><dt>Type</dt><dd>@ArchitecturePresentation.ChannelLabel(ch.Type)</dd></div>
+                <div><dt>Entity</dt><dd>@(ch.EntityName ?? "Name computed at runtime — not paired")</dd></div>
+                @if (ch.EnvironmentVariants.Count > 0) { <div><dt>Per environment</dt><dd>@string.Join("; ", ch.EnvironmentVariants.Select(v => $"{v.Key}: {v.Value}"))</dd></div> }
+                <div><dt>Subscription / consumer group</dt><dd>@(ch.Subscription ?? ch.ConsumerGroup ?? "—")</dd></div>
+                <div><dt>Producers</dt><dd>@(ch.Producers.Count == 0 ? "None found in source" : string.Join(", ", ch.Producers.Select(p => Name(p.ComponentId))))</dd></div>
+                <div><dt>Consumers</dt><dd>@(ch.Consumers.Count == 0 ? "None found in source" : string.Join(", ", ch.Consumers.Select(p => Name(p.ComponentId))))</dd></div>
+            </dl>
+            <p class="arch-muted">A channel in source is not a deployed entity, and producers and consumers are paired only on the same entity name — never by similar names.</p>
+            <h4>Evidence</h4>@Evidence(ch.Evidence)
+        }
+        else if (Snapshot.DataStores.FirstOrDefault(x => x.Id == node.Id) is { } s)
+        {
+            <dl class="arch-facts">
+                <div><dt>Type</dt><dd>@ArchitecturePresentation.StoreLabel(s.StoreType)</dd></div>
+                <div><dt>Usage</dt><dd>@s.Usage</dd></div>
+                <div><dt>Used by</dt><dd>@string.Join(", ", s.ReferencedByComponents.Select(Name))</dd></div>
+                <div><dt>Connection reference</dt><dd><code>@(s.ConnectionReference ?? "—")</code> (value never shown)</dd></div>
+                @if (s.DbContext is { } ctx) { <div><dt>DbContext</dt><dd>@ctx</dd></div> }
+                <div><dt>Database analysis</dt><dd data-testid="arch-db-link-state">@(s.DatabaseModelId is null ? "Not linked" : "Available")</dd></div>
+            </dl>
+            @if (s.DatabaseModelId is { } model) { <button type="button" data-testid="arch-open-database" @onclick="() => OpenDatabase.InvokeAsync(model)">Open Database Diagram</button> }
+            <p class="arch-muted">Tables are shown only in the separate Database area; a datastore reference is not a verified physical database.</p>
+            <h4>Evidence</h4>@Evidence(s.Evidence)
+        }
+        else if (Snapshot.ExternalSystems.FirstOrDefault(x => x.Id == node.Id) is { } ext)
+        {
+            <dl class="arch-facts"><div><dt>Type</dt><dd>@ext.Type</dd></div><div><dt>Protocol</dt><dd>@ext.Protocol</dd></div>
+                @if (ext.ConfigurationReference is { } key) { <div><dt>Configuration</dt><dd><code>@key</code></dd></div> }</dl>
+            <h4>Evidence</h4>@Evidence(ext.Evidence)
+        }
+        else
+        {
+            @UnresolvedDetail(node.Id)
+        }
+    };
+
+    private RenderFragment UnresolvedDetail(string id) => __builder =>
+    {
+        var list = ArchitecturePresentation.UnresolvedOf(Snapshot, id);
+        <button type="button" data-testid="arch-close" @onclick="() => { _selectedEdge = null; _selectedNode = null; }">Close details</button>
+        <h3>Unresolved targets of @Name(list.FirstOrDefault()?.FromComponentId)</h3>
+        <p class="arch-muted">The source names these targets, but no evidence ties them to a component. Nothing was guessed from names.</p>
+        <ul class="arch-list" data-testid="arch-unresolved-list">@foreach (var d in list) { <li><button type="button" class="arch-link" @onclick="() => SelectEdgeAsync(d.Id)">@ArchitecturePresentation.EdgeLabel(d)</button> · <code>@d.TargetReference</code>@(d.ConflictingTargets.Count > 0 ? $" · candidates {string.Join(" vs ", d.ConflictingTargets.Select(Name))}" : "")</li> }</ul>
+    };
+
+    private RenderFragment EdgeDetail(ArchitectureDependency d) => __builder =>
+    {
+        <button type="button" data-testid="arch-close" @onclick="() => _selectedEdge = null">Close details</button>
+        <h3>@Name(d.FromComponentId) → @(d.ToId is null ? $"Unresolved: {d.TargetReference}" : Name(d.ToId))</h3>
+        <dl class="arch-facts">
+            <div><dt>Type</dt><dd>@d.DependencyType</dd></div>
+            <div><dt>Protocol</dt><dd>@d.Protocol</dd></div>
+            @if (d.Framework is { } fw) { <div><dt>Framework / transport</dt><dd>@fw</dd></div> }
+            <div><dt>Target reference</dt><dd><code>@(d.TargetReference ?? d.ConfigurationReference ?? "—")</code></dd></div>
+            <div><dt>Resolved target</dt><dd>@(d.ToId is null ? "Not resolved" : Name(d.ToId))</dd></div>
+            <div><dt>Evidence state</dt><dd data-testid="arch-edge-state">@ArchitecturePresentation.StateLabel(d.EvidenceState)</dd></div>
+            <div><dt>Confidence</dt><dd>@d.Confidence</dd></div>
+            @if (d.ConflictingTargets.Count > 0) { <div><dt>Conflicting targets</dt><dd>@string.Join(" vs ", d.ConflictingTargets.Select(Name))</dd></div> }
+        </dl>
+        @foreach (var diagnostic in d.Diagnostics) { <p class="arch-muted">@diagnostic</p> }
+        <p class="arch-muted">Source evidence only: a registration or configuration is not observed runtime traffic.</p>
+        <h4>Evidence</h4>@Evidence(d.Evidence)
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null) { try { await _module.InvokeVoidAsync("dispose", _canvas); await _module.DisposeAsync(); } catch (JSDisconnectedException) { } catch (ObjectDisposedException) { } }
+        _reference?.Dispose();
+    }
+}

@@ -9,21 +9,42 @@
 
 <PageTitle>Source Analysis</PageTitle>
 <h1>Source Analysis</h1>
-<p>Database architecture from uploaded source snapshots. No live database connection is used.</p>
+<p>Architecture and database design derived from uploaded source snapshots. Source only: no live Azure, database, messaging or HTTP connection is used.</p>
 @if (_error is not null) { <p role="alert">@_error</p> }
 @if (_profile is null) { <p>Select a target environment to access its source snapshots.</p> }
 else
 {
     <label>Upload source snapshot (.zip, maximum 50 MB) <InputFile accept=".zip" OnChange="Upload" disabled="_busy" /></label>
     @if (_busy) { <p role="status">Analyzing source snapshot…</p> }
-    <label>Database source snapshot <select @bind="_selected"><option value="">Select a source snapshot</option>@foreach (var snapshot in _snapshots) { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToString("u")</option> }</select></label>
+    <label>Source snapshot <select @bind="_selected" data-testid="source-snapshot"><option value="">Select a source snapshot</option>@foreach (var snapshot in _snapshots) { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToString("u")</option> }</select></label>
     @if (_snapshots.FirstOrDefault(s => s.Id.ToString() == _selected) is { } selected)
     {
-        @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" /> }
-        else { <p>This historical source snapshot predates database extraction. Upload the same source archive to create a new immutable analysis.</p> }
+        <nav class="source-areas" aria-label="Source Analysis areas">
+            <button type="button" aria-pressed="@(_area == "Architecture")" data-testid="area-architecture" @onclick="@(() => { _area = "Architecture"; _focusDatabase = null; })">Architecture</button>
+            <button type="button" aria-pressed="@(_area == "Database")" data-testid="area-database" @onclick="@(() => _area = "Database")">Database</button>
+        </nav>
+        @if (_area == "Architecture")
+        {
+            @if (selected.Architecture is { } architecture)
+            {
+                <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" />
+            }
+            else { <p data-testid="architecture-missing">This historical source snapshot predates architecture extraction. Upload the same source archive to create a new immutable analysis.</p> }
+        }
+        else
+        {
+            @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" FocusDatabaseId="@_focusDatabase" /> }
+            else { <p>This historical source snapshot predates database extraction. Upload the same source archive to create a new immutable analysis.</p> }
+        }
     }
 }
 @code {
+    private string _area = "Architecture";
+    private string? _focusDatabase;
+    private void OpenDatabase(string databaseModelId) { _focusDatabase = databaseModelId; _area = "Database"; }
+    private IReadOnlyList<(string Label, BirkNext.SourceArchitecture.ArchitectureSnapshot Snapshot)> PreviousArchitectures(IqrSourceSnapshot current) =>
+        _snapshots.Where(s => s.Id != current.Id && s.Architecture is not null).OrderByDescending(s => s.AnalyzedAt)
+            .Select(s => ($"{s.Archive.FileName} · {s.AnalyzedAt:u}", s.Architecture!)).ToList();
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private string? _error; private bool _busy;
     protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfile; if (_profile is not null) await Load(); }
     private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = "Source snapshots could not be loaded."; } }

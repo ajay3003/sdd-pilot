@@ -33,6 +33,8 @@ public sealed record IqrSourceSnapshot
     /// <summary>Multi-stage source path (adapter → ingestion → domain → event → outbox → Service Bus) discovered from the same archive. Null in analyzer v1 snapshots.</summary>
     public IntegrationPathEvidence? IntegrationPath { get; init; }
     public BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? DatabaseArchitecture { get; init; }
+    /// <summary>Source-derived architecture of the same archive (null in snapshots analyzed before architecture extraction). Not deployed topology.</summary>
+    public BirkNext.SourceArchitecture.ArchitectureSnapshot? Architecture { get; init; }
 }
 
 // ── Multi-stage integration path (analyzer v2) ────────────────────────────────────────────────────────────────────────
