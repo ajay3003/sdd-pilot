@@ -11,6 +11,10 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public interface IIntegrationCatalogApiService
 {
+    Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeIqrSourceAsync(string environmentId, string integrationId, string fileName, Stream content, CancellationToken ct = default) =>
+        Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source evidence upload is unavailable."));
+    Task<IntegrationReviewResult> RunWithSourceAsync(FrontendAnalysisProfile profile, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default) =>
+        selections.Count == 0 ? RunAsync(profile, ct) : throw new InvalidOperationException("Source snapshot selection is unavailable.");
     Task<IntegrationMappingEvidenceCheck> CheckMappingAsync(string environmentId, string integrationId, CancellationToken ct = default);
     /// <summary>The environment's application-messaging (Wolverine) evidence, or null when no source was analyzed.</summary>
     Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default);
@@ -50,6 +54,29 @@ public interface IIntegrationCatalogApiService
 
 public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegrationCatalogApiService
 {
+    public async Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeIqrSourceAsync(string environmentId, string integrationId, string fileName, Stream content, CancellationToken ct = default)
+    {
+        using var body = new MultipartFormDataContent();
+        body.Add(new StreamContent(content), "file", fileName);
+        using var response = await http.PostAsync($"api/integration-review/source/{Uri.EscapeDataString(integrationId)}?{Env(environmentId)}", body, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                var text = await response.Content.ReadAsStringAsync(ct);
+                try { using var json = JsonDocument.Parse(text); return (null, json.RootElement.TryGetProperty("message", out var message) ? message.GetString() : "Source archive validation failed."); }
+                catch (JsonException) { return (null, "Source archive validation failed. Check ZIP validity, safe paths and the 50 MB upload / 100 MB expanded limits."); }
+            }
+            return (null, "Source archive could not be analyzed. No new evidence was selected.");
+        }
+        return (await response.Content.ReadFromJsonAsync<IqrSourceSnapshot>(Json, ct), null);
+    }
+    public async Task<IntegrationReviewResult> RunWithSourceAsync(FrontendAnalysisProfile profile, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default)
+    {
+        var request = new IntegrationReviewRunRequest { EnvironmentId = profile.Id, EnvironmentName = profile.Name, SourceSelections = selections.ToList() };
+        var scope = $"environmentType={Uri.EscapeDataString(profile.EnvironmentType.ToString())}&targetUrl={Uri.EscapeDataString(profile.TargetUrl ?? "")}";
+        return await Read<IntegrationReviewResult>(await http.PostAsJsonAsync($"api/integration-review/run?{scope}", request, Json, ct), ct);
+    }
     public async Task<IntegrationMappingEvidenceCheck> CheckMappingAsync(string environmentId, string integrationId, CancellationToken ct = default) =>
         await Read<IntegrationMappingEvidenceCheck>(await http.PostAsync($"api/integrations/{Uri.EscapeDataString(integrationId)}/mapping-evidence?{Env(environmentId)}", null, ct), ct);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);

@@ -109,8 +109,12 @@ public sealed class IntegrationReviewController(IIntegrationReviewService review
         Ok(await review.ReadinessAsync(environmentId, environmentType, targetUrl, ct));
 
     [HttpPost("run")]
-    public async Task<ActionResult<IntegrationReviewResult>> Run([FromBody] IntegrationReviewRunRequest request, [FromQuery] string? environmentType, [FromQuery] string? targetUrl, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(request.EnvironmentId) ? BadRequest("environmentId is required.") : Ok(await review.RunAsync(request, environmentType, targetUrl, ct));
+    public async Task<ActionResult<IntegrationReviewResult>> Run([FromBody] IntegrationReviewRunRequest request, [FromQuery] string? environmentType, [FromQuery] string? targetUrl, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.EnvironmentId)) return BadRequest("environmentId is required.");
+        try { return Ok(await review.RunAsync(request, environmentType, targetUrl, ct)); }
+        catch (BirkNext.Api.Services.Integrations.SourceEvidence.InvalidSourceSelectionException ex) { return BadRequest(new { message = ex.Message }); }
+    }
 
     [HttpGet("runs")]
     public async Task<ActionResult<IReadOnlyList<IntegrationReviewRunSummary>>> History([FromQuery] string environmentId, CancellationToken ct) =>

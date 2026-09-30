@@ -14,6 +14,28 @@ public static class IntegrationReviewExport
     {
         var sb = new StringBuilder();
         var headline = IntegrationReviewResultPresentation.Headline(result);
+        foreach (var source in result.SourceSnapshots)
+        {
+            sb.Append("<section class=\"block\"><h2>Source evidence</h2>");
+            sb.Append($"<p>{esc(source.Archive.FileName)} · {source.Status} · SHA-256 {esc(source.Archive.Sha256)} · Commit {esc(source.Commit)} · Analyzer {source.AnalyzerVersion} · {source.AnalyzedAt:u}</p>");
+            sb.Append($"<p>Implementation contract derived from source. Developer tests discovered, not executed. {esc(source.DeploymentCorrelation)}</p>");
+            sb.Append(table(["Project", "Path", "Classification"], source.Projects.Select(p => new[] { esc(p.Name), esc(p.Path), esc(p.Classification) })));
+            sb.Append(table(["Configuration file", "Keys (values excluded)"], source.Configurations.Select(c => new[] { esc(c.File), esc(string.Join(", ", c.Keys)) })));
+            sb.Append(table(["Rule", "Source", "Developer test evidence", "Coverage / action"], source.Rules.Select(r =>
+            {
+                var coverage = source.Coverage.FirstOrDefault(c => c.RuleId == r.Id);
+                return new[] { esc($"{r.Kind}: {r.Field} · {r.Requirement} · {r.Behavior} · Operation {r.Operation} · Table {r.Table ?? "Not resolved"} · Type {r.TargetType ?? "Not resolved"} · Null {r.NullBehavior} · Invalid {r.InvalidBehavior} · Fallback {r.Fallback}"),
+                    esc($"{r.Confidence} · {r.Symbol} · {r.Location.File}:{r.Location.Line}"),
+                    esc(string.Join("; ", source.Tests.Where(t => coverage?.DeveloperTestIds.Contains(t.Id) == true).Select(t => $"{t.Layer}: {t.Class}.{t.Method} · {t.Location.File}:{t.Location.Line} · Test exists; execution unavailable"))),
+                    esc($"{string.Join(", ", coverage?.Statuses ?? [])} · {coverage?.MatchReason} · {coverage?.Action}") };
+            })));
+            sb.Append(table(["Developer test", "Framework/layer", "Assertion / execution", "Location"], source.Tests.Select(t => new[] {
+                esc($"{t.Project}: {t.Class}.{t.Method}"), esc($"{t.Framework} / {t.Layer} / {t.Confidence}"), esc($"{t.AssertionIntent} / {t.ExecutionResult}"), esc($"{t.Location.File}:{t.Location.Line}") })));
+            foreach (var flow in source.Dataflows) sb.Append($"<p>{esc(flow.Field)} · {flow.Confidence}: {esc(string.Join(" → ", flow.Steps))}. {esc(flow.Gap)}</p>");
+            sb.Append("<h3>What was not assessed / limitations</h3><ul>");
+            foreach (var limitation in source.Limitations) sb.Append($"<li>{esc(limitation)}</li>");
+            sb.Append("</ul></section>");
+        }
         sb.Append("<section class=\"block\"><h2>Summary</h2><dl>");
         sb.Append($"<dt>Target environment</dt><dd>{esc(result.EnvironmentName)} ({esc(result.EnvironmentId)})</dd>");
         sb.Append($"<dt>Outcome</dt><dd>{esc(headline.Outcome)}</dd>");
@@ -33,7 +55,7 @@ public static class IntegrationReviewExport
         // What the run executed and what it did not assess — explicit, from the run itself.
         if (IntegrationReviewResultPresentation.ScopeRecorded(result))
         {
-            sb.Append("<section class=\"block\"><h2>What was tested</h2>");
+            sb.Append($"<section class=\"block\"><h2>{(result.SourceSnapshots.Count > 0 ? "What was inspected or observed" : "What was tested")}</h2>");
             sb.Append(result.WhatWasTested.Count == 0 ? "<p>No check was executed with runtime evidence in this run; configuration was reviewed.</p>"
                 : "<ul>" + string.Concat(result.WhatWasTested.Select(t => $"<li>{esc(t)}</li>")) + "</ul>");
             sb.Append("</section>\n<section class=\"block\"><h2>What was not assessed</h2><ul>");

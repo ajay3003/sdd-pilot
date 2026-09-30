@@ -38,6 +38,7 @@
     }
     else if (_profile is { } profile && _result is null)
     {
+        <IqrSourceSetup EnvironmentId="@profile.Id" Integrations="@(_catalog?.Integrations ?? [])" Snapshots="@(_readiness?.SourceSnapshots ?? [])" Selections="_sourceSelections" Analyzed="LoadReadinessAsync" BusyChanged="@(busy => _sourceBusy = busy)" />
         @* ── Pre-run ── Scope + readiness, then what limits the review (with the one place that fixes each), then the details.
            Presentation only: headline, domain readiness and the Run gate are the backend's. Corrective actions deep-link to
            Target Environment → Integrations; nothing is configured here. *@
@@ -91,7 +92,7 @@
                     </ul>
                 }
                 <div class="iqr-run-bar">
-                    <button type="button" class="btn-primary" data-testid="iqr-run" disabled="@(!readiness.CanRun || _running)" aria-describedby="iqr-run-note" @onclick="RunAsync">
+                    <button type="button" class="btn-primary" data-testid="iqr-run" disabled="@(!readiness.CanRun || _running || _sourceBusy)" aria-describedby="iqr-run-note" @onclick="RunAsync">
                         @(_running ? "Running Integration Quality Review…" : readiness.Headline == "Ready" ? "Run Integration Quality Review" : "Run with limitations")
                     </button>
                     <span class="iqr-muted" id="iqr-run-note">Read-only review. No messages are published, consumed or changed.</span>
@@ -292,6 +293,7 @@
     }
     else if (_result is { } result)
     {
+        @foreach (var snapshot in result.SourceSnapshots) { <IqrSourceDetails Snapshot="snapshot" /> }
         @* ── Post-run ── *@
         var headline = IntegrationReviewResultPresentation.Headline(result);
         <section class="iqr-card iqr-result" aria-labelledby="iqr-result-heading" data-testid="iqr-result">
@@ -402,7 +404,7 @@
                     </section>
                 }
                 <section class="iqr-card" aria-labelledby="iqr-tested-heading" data-testid="iqr-tested">
-                    <h3 id="iqr-tested-heading">What was tested</h3>
+                    <h3 id="iqr-tested-heading">@(result.SourceSnapshots.Count > 0 ? "What was inspected or observed" : "What was tested")</h3>
                     @if (!IntegrationReviewResultPresentation.ScopeRecorded(result))
                     {
                         <p class="iqr-muted">Not recorded for this run (recorded before this list existed).</p>
@@ -549,6 +551,8 @@
 </div>
 
 @code {
+    private readonly List<IqrSourceSelection> _sourceSelections = [];
+    private bool _sourceBusy;
     private FrontendAnalysisProfile? _profile;
     private FrontendAnalysisContext? _context;
     private IntegrationReviewReadiness? _readiness;
@@ -591,7 +595,7 @@
         if (_context is not null) RuntimeReviews.MarkIntegrationQualityRunning(_context);
         try
         {
-            _result = await Api.RunAsync(_profile!);
+            _result = _sourceSelections.Count == 0 ? await Api.RunAsync(_profile!) : await Api.RunWithSourceAsync(_profile!, _sourceSelections);
             _tab = "Overview";
             // The Dashboard card reads the session result; it shows outcome and coverage, never a score.
             if (_context is not null) RuntimeReviews.SaveIntegrationQualityResult(_result, _context);

@@ -8,6 +8,7 @@ public class AppDbContext : DbContext
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
     public DbSet<Scenario> Scenarios => Set<Scenario>();
+    public DbSet<IqrSourceSnapshotRecord> IqrSourceSnapshots => Set<IqrSourceSnapshotRecord>();
     public DbSet<ReviewedCandidate> ReviewedCandidates => Set<ReviewedCandidate>();
     public DbSet<CandidateLink> CandidateLinks => Set<CandidateLink>();
     public DbSet<QaDeltaReview> QaDeltaReviews => Set<QaDeltaReview>();
@@ -670,6 +671,16 @@ public class AppDbContext : DbContext
             entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200);
             entity.Property(r => r.AnalyzedAt).HasColumnName("analyzed_at");
             entity.Property(r => r.EvidenceJson).HasColumnName("evidence_json").HasColumnType("text").IsRequired();
+        });
+
+        modelBuilder.Entity<IqrSourceSnapshotRecord>(entity =>
+        {
+            entity.ToTable("iqr_source_snapshots");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.EnvironmentId).HasMaxLength(200);
+            entity.Property(r => r.IntegrationId).HasMaxLength(200);
+            entity.Property(r => r.EvidenceJson).HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.IntegrationId, r.AnalyzedAt });
         });
 
         modelBuilder.Entity<GraphQlSchemaArtifactRecord>(entity =>

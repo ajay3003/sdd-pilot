@@ -1,0 +1,4 @@
+.iqr-source-setup { min-width: 0; overflow-wrap: anywhere; padding: 1rem; border: 1px solid #aaa6; border-radius: .5rem; margin: 1rem 0; }
+label { display: block; margin-top: .75rem; font-weight: 600; }
+select, ::deep input[type=file] { max-width: 100%; width: 100%; box-sizing: border-box; padding: .5rem; margin: .4rem 0; }
+select:focus-visible, ::deep input:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

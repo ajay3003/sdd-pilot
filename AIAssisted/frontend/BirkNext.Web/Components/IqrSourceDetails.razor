@@ -1,0 +1,44 @@
+@using BirkNext.Integrations
+
+<section class="source-evidence" aria-label="Source analysis evidence" data-testid="iqr-source-details">
+    <h3>@Snapshot.Archive.FileName — @Snapshot.Status</h3>
+    <dl>
+        <dt>Integration</dt><dd>@Snapshot.IntegrationId</dd>
+        <dt>Commit</dt><dd>@Snapshot.Commit</dd>
+        <dt>Fingerprint (SHA-256)</dt><dd class="source-hash">@Snapshot.Archive.Sha256</dd>
+        <dt>Analyzed</dt><dd>@Snapshot.AnalyzedAt.ToString("u") · Analyzer @Snapshot.AnalyzerVersion</dd>
+        <dt>Deployment</dt><dd>@Snapshot.DeploymentCorrelation</dd>
+        <dt>Developer tests discovered</dt><dd>Unit: @Snapshot.Tests.Count(t => t.Layer == DeveloperTestLayer.Unit) · Integration: @Snapshot.Tests.Count(t => t.Layer == DeveloperTestLayer.Integration) · Other/unknown: @Snapshot.Tests.Count(t => t.Layer is not (DeveloperTestLayer.Unit or DeveloperTestLayer.Integration))</dd>
+        <dt>Contract rules covered</dt><dd>@Snapshot.Coverage.Count(c => c.DeveloperTestIds.Count > 0) resolved mappings</dd>
+        <dt>Coverage gaps</dt><dd>Cross-layer: @Snapshot.Dataflows.Count(f => f.Gap.StartsWith("Cross-layer gap:")) · Runtime: @Snapshot.Coverage.Count(c => c.Statuses.Contains(SourceCoverageStatus.RuntimeGap)) · E2E: @Snapshot.Coverage.Count(c => c.Statuses.Contains(SourceCoverageStatus.E2EGap)) (not exercised)</dd>
+    </dl>
+    <p>Implementation contract derived from source. Formal schema and runtime compatibility are assessed separately. Developer tests exist; execution results are unavailable.</p>
+    <details><summary>Projects and services (@Snapshot.Projects.Count)</summary><ul>@foreach (var project in Snapshot.Projects) { <li>@project.Name — @project.Classification · @project.Path · @project.Confidence</li> }</ul></details>
+    @if (Snapshot.Configurations.Count > 0) { <details><summary>Configuration keys (values excluded)</summary><ul>@foreach (var configuration in Snapshot.Configurations) { <li>@configuration.File · @configuration.Confidence · @string.Join(", ", configuration.Keys)</li> }</ul></details> }
+    <details><summary>Contract rules, routes, operations and coverage (@Snapshot.Rules.Count)</summary>
+        <div class="source-table" tabindex="0" role="region" aria-label="Contract coverage matrix">
+            <table><thead><tr><th>Rule</th><th>Source</th><th>Developer coverage</th><th>Runtime evidence / gap</th></tr></thead><tbody>
+            @foreach (var rule in Snapshot.Rules)
+            {
+                var coverage = Snapshot.Coverage.FirstOrDefault(c => c.RuleId == rule.Id);
+                <tr><td><strong>@rule.Field</strong> · @rule.Kind<br />@rule.Symbol<br />@rule.Requirement<br />@rule.Behavior<br />Table: @(rule.Table ?? "Not resolved") · Operation: @rule.Operation<br />Type: @(rule.TargetType ?? "Not resolved")<br />Null: @rule.NullBehavior<br />Invalid: @rule.InvalidBehavior<br />Fallback: @rule.Fallback</td>
+                    <td>@rule.Confidence<br />@rule.Location.File:@rule.Location.Line</td>
+                    <td>@if (coverage?.DeveloperTestIds.Count > 0) { @foreach (var test in Snapshot.Tests.Where(t => coverage.DeveloperTestIds.Contains(t.Id))) { <p>Developer @test.Layer.ToString().ToLowerInvariant() test exists: @test.Class.@test.Method<br />@test.Location.File:@test.Location.Line</p> } } else { <span>No matching developer test resolved</span> }<p>@coverage?.MatchReason</p><p>@coverage?.Action</p></td>
+                    <td>Runtime not assessed at this rule boundary<br />@string.Join(", ", coverage?.Statuses ?? [])</td></tr>
+            }
+            </tbody></table>
+        </div>
+    </details>
+    <details><summary>Security dataflow and cross-layer gaps (@Snapshot.Dataflows.Count)</summary>
+        @foreach (var flow in Snapshot.Dataflows) { <p><strong>@flow.Field</strong> · @flow.Confidence<br />@string.Join(" → ", flow.Steps)<br />Guard: @flow.GuardSymbol<br />@flow.Gap</p>
+            @foreach (var test in Snapshot.Tests.Where(t => flow.DeveloperTestIds?.Contains(t.Id) == true)) { <p>Isolated guard developer @test.Layer.ToString().ToLowerInvariant() test exists: @test.Class.@test.Method. This does not establish raw-payload wiring.</p> }
+        }
+        @if (Snapshot.Dataflows.Count == 0) { <p>No security dataflow resolved. Protection is not confirmed.</p> }
+    </details>
+    <details><summary>Existing developer tests (@Snapshot.Tests.Count)</summary><ul>
+        @foreach (var test in Snapshot.Tests) { <li>@test.Project · @test.Class.@test.Method · @test.Framework · @test.Layer (@test.Confidence) · Categories: @string.Join(", ", test.Categories)<br />@test.ExecutionResult<br />Assertion intent: @test.AssertionIntent · @test.Location.File:@test.Location.Line</li> }
+    </ul></details>
+    <details><summary>Analysis limitations / what was not assessed</summary><ul>@foreach (var limitation in Snapshot.Limitations) { <li>@limitation</li> }</ul></details>
+</section>
+
+@code { [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = new(); }

@@ -530,6 +530,7 @@ public sealed record IntegrationSystemScope
 /// <summary>Pre-run: what is configured, what can be reviewed, what cannot. Never a result.</summary>
 public sealed record IntegrationReviewReadiness
 {
+    public List<IqrSourceSnapshot> SourceSnapshots { get; init; } = [];
     public string EnvironmentId { get; init; } = "";
     public List<IntegrationSystemScope> Systems { get; init; } = [];
     public int ConfiguredIntegrations { get; init; }
@@ -789,6 +790,7 @@ public sealed record IntegrationSystemResult
 
 public sealed record IntegrationReviewResult
 {
+    public List<IqrSourceSnapshot> SourceSnapshots { get; init; } = [];
     public Guid RunId { get; init; }
     public string EnvironmentId { get; init; } = "";
     public string EnvironmentName { get; init; } = "";
@@ -831,6 +833,7 @@ public sealed record IntegrationReviewResult
 
 public sealed record IntegrationReviewRunRequest
 {
+    public List<IqrSourceSelection> SourceSelections { get; init; } = [];
     public string EnvironmentId { get; init; } = "";
     public string EnvironmentName { get; init; } = "";
     /// <summary>The Target Environment type (Development, QA, Production …). Runtime checks that contact an endpoint refuse Production and unknown types.</summary>

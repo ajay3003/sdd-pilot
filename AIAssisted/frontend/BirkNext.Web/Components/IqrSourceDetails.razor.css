@@ -1,0 +1,9 @@
+.source-evidence { min-width: 0; overflow-wrap: anywhere; }
+.source-evidence dd { margin: 0 0 .65rem; }
+.source-evidence dt { font-weight: 600; }
+.source-evidence details { margin: .75rem 0; }
+.source-evidence summary { cursor: pointer; padding: .5rem; }
+.source-evidence summary:focus-visible, .source-table:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.source-table { max-width: 100%; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+th, td { text-align: left; vertical-align: top; padding: .6rem; border-bottom: 1px solid #aaa6; min-width: 150px; }

@@ -53,6 +53,13 @@ public sealed class IntegrationQualityReviewEvidenceTests : BunitContext
     }
 
     [Fact]
+    public void SourceUploadUsesTheActiveProfileIdentity()
+    {
+        var cut = Render<IntegrationQualityReview>();
+        cut.FindComponent<BirkNext.Web.Components.IqrSourceSetup>().Instance.EnvironmentId.Should().Be("dev");
+    }
+
+    [Fact]
     public void PreRunListsEachEvidenceSourceWithItsOwnState()
     {
         var cut = Render<IntegrationQualityReview>();
