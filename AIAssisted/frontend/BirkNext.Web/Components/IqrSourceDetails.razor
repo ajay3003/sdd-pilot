@@ -38,6 +38,7 @@
     <details><summary>Existing developer tests (@Snapshot.Tests.Count)</summary><ul>
         @foreach (var test in Snapshot.Tests) { <li>@test.Project · @test.Class.@test.Method · @test.Framework · @test.Layer (@test.Confidence) · Categories: @string.Join(", ", test.Categories)<br />@test.ExecutionResult<br />Assertion intent: @test.AssertionIntent · @test.Location.File:@test.Location.Line</li> }
     </ul></details>
+    @if (Snapshot.IntegrationPath is { } path) { <IqrIntegrationPathDetails Snapshot="Snapshot" Path="path" /> }
     <details><summary>Analysis limitations / what was not assessed</summary><ul>@foreach (var limitation in Snapshot.Limitations) { <li>@limitation</li> }</ul></details>
 </section>
 

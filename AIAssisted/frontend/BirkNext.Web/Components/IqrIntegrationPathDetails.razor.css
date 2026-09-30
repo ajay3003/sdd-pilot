@@ -1,0 +1,18 @@
+.path { min-width: 0; overflow-wrap: anywhere; border-top: 1px solid #aaa6; margin-top: .75rem; padding-top: .5rem; }
+.path h4 { margin: .25rem 0; }
+.path-chain { font-weight: 600; margin: .25rem 0; }
+.path-muted { display: block; opacity: .8; font-size: .85rem; }
+.path details { margin: .6rem 0; }
+.path summary { cursor: pointer; padding: .45rem; }
+.path summary:focus-visible, .path-table:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.path-hops { margin: .25rem 0; padding-left: 1.25rem; }
+.path-hop { margin: .45rem 0; display: grid; gap: .2rem; min-width: 0; }
+.path-hop-facts, .path-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .25rem 1rem; margin: 0; }
+.path-hop-facts dt, .path-facts dt { font-weight: 600; font-size: .8rem; }
+.path-hop-facts dd, .path-facts dd { margin: 0; min-width: 0; }
+.path-table { max-width: 100%; overflow-x: auto; }
+.path-table table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.path-table th, .path-table td { text-align: left; vertical-align: top; padding: .5rem; border-bottom: 1px solid #aaa6; min-width: 9rem; }
+.path-tag { display: inline-block; margin-left: .35rem; padding: 0 .4rem; border: 1px solid currentColor; border-radius: 999px; font-size: .72rem; font-weight: 600; }
+.path-list { margin: .25rem 0; padding-left: 1.1rem; }
+.path-list li { margin: .35rem 0; }

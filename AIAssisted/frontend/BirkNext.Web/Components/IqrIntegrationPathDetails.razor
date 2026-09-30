@@ -1,0 +1,121 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+
+@* Integration path from source: each hop and field keeps source evidence, developer-test evidence and runtime evidence apart.
+   Field names and contracts only — no personal value is shown. A developer test is existing evidence, never "passed". *@
+<section class="path" aria-labelledby="@HeadingId" data-testid="iqr-path">
+    <h4 id="@HeadingId">Integration path (source)</h4>
+    <p class="path-chain" data-testid="iqr-path-chain">@IqrPathPresentation.Chain(Path)</p>
+    <p class="path-muted">Source-defined behavior only. Outbox rows are not delivered messages; delivery, subscriber processing and deployment correlation are not assessed here.</p>
+
+    <details open data-testid="iqr-path-hops"><summary>Hops (@Path.Hops.Count)</summary>
+        <ol class="path-hops">
+            @foreach (var hop in IqrPathPresentation.Hops(Path))
+            {
+                <li class="path-hop" data-testid="iqr-path-hop">
+                    <strong>@hop.From → @hop.To</strong>
+                    <span>@hop.Mechanism</span>
+                    <dl class="path-hop-facts">
+                        <div><dt>Source evidence</dt><dd>@hop.Source</dd></div>
+                        <div><dt>Developer tests</dt><dd data-testid="iqr-path-hop-dev">@hop.Developer</dd></div>
+                        <div><dt>Runtime evidence</dt><dd>@hop.Runtime</dd></div>
+                    </dl>
+                    @if (hop.Note.Length > 0) { <span class="path-muted">@hop.Note</span> }
+                </li>
+            }
+        </ol>
+    </details>
+
+    <details data-testid="iqr-path-fields"><summary>Field traceability (@Path.Fields.Count)</summary>
+        <div class="path-table" tabindex="0" role="region" aria-label="Field traceability">
+            <table>
+                <thead><tr><th scope="col">Source field</th><th scope="col">Adapter</th><th scope="col">Ingestion</th><th scope="col">Domain</th><th scope="col">Events → Service Bus</th><th scope="col">Transformation</th><th scope="col">Developer coverage</th><th scope="col">Gap</th></tr></thead>
+                <tbody>
+                    @foreach (var row in IqrPathPresentation.Fields(Path))
+                    {
+                        <tr data-testid="iqr-path-field" data-sensitive="@(row.Sensitive ? "true" : "false")">
+                            <th scope="row">@row.Field@if (row.Sensitive) { <span class="path-tag">Sensitive (name)</span> }</th>
+                            <td>@row.Adapter</td><td>@row.Ingestion</td><td>@row.Domain</td><td>@row.Events</td>
+                            <td>@row.Transformation</td><td>@row.Coverage<br /><span class="path-muted">Runtime delivery: Not assessed</span></td><td>@row.Gap</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </details>
+
+    <details data-testid="iqr-path-minimization"><summary>Data minimization (field names only)</summary>
+        <dl class="path-facts">
+            <div><dt>Sensitive fields entering</dt><dd>@Items(Path.Minimization.SensitiveFieldsEntering)</dd></div>
+            <div><dt>Retained internally</dt><dd>@Items(Path.Minimization.RetainedInternally)</dd></div>
+            <div><dt>Emitted raw in events</dt><dd data-testid="iqr-path-emitted-raw">@Items(Path.Minimization.EmittedRaw, "None found")</dd></div>
+            <div><dt>Reduced to metadata</dt><dd>@Items(Path.Minimization.ReducedMetadata)</dd></div>
+            <div><dt>Potential unexpected exposures</dt><dd>@Items(Path.Minimization.PotentialExposures, "None found")</dd></div>
+            <div><dt>Raw copies kept internally</dt><dd>@Items(Path.Minimization.InternalRawCopies, "None found")</dd></div>
+        </dl>
+        <p class="path-muted">Data minimization is separate from authorization. Sensitivity is a field-name heuristic; no value is read.</p>
+    </details>
+
+    <details data-testid="iqr-path-rules"><summary>Source / developer-test evidence (@Path.Rules.Count)</summary>
+        <ul class="path-list">
+            @foreach (var rule in Path.Rules)
+            {
+                <li data-testid="iqr-path-rule" data-kind="@rule.Kind"><strong>@rule.Title</strong> — @rule.BirkNextAction
+                    @if (rule.DeveloperTestIds.Count > 0) { <span class="path-muted">Tests: @string.Join(", ", rule.DeveloperTestIds.Take(4).Select(id => IqrPathPresentation.TestName(Snapshot, id)))@(rule.DeveloperTestIds.Count > 4 ? $" (+{rule.DeveloperTestIds.Count - 4})" : "") · execution result unavailable</span> }
+                </li>
+            }
+        </ul>
+    </details>
+
+    <details data-testid="iqr-path-boundaries"><summary>Contract boundaries and event contracts (@(Path.Boundaries.Count + Path.Events.Count))</summary>
+        <ul class="path-list">
+            @foreach (var b in Path.Boundaries)
+            {
+                <li data-testid="iqr-path-boundary"><strong>@b.From → @b.To</strong> — implementation contract: @b.ImplementationContract · formal schema: @b.FormalSchema · developer contract tests: @b.DeveloperContractTests
+                    @if (b.Mismatches.Count > 0) { <ul>@foreach (var m in b.Mismatches) { <li>@m</li> }</ul> }</li>
+            }
+            @foreach (var e in Path.Events)
+            {
+                <li data-testid="iqr-path-event"><strong>@e.EventType</strong> on @string.Join(", ", e.Topics) (@string.Join(", ", e.Subjects)) · session id @e.SessionId · priority @e.Priority · formal schema @e.FormalSchema
+                    <span class="path-muted">Fields: @string.Join(", ", e.Fields.Select(f => $"{f.Name} ({IqrPathPresentation.Transformation(f.Transformation)})"))</span></li>
+            }
+        </ul>
+    </details>
+
+    @if (Path.ChangeDetection.Count > 0 || Path.Outbox is not null)
+    {
+        <details data-testid="iqr-path-outbox"><summary>Change detection, outbox and Service Bus source topology</summary>
+            <ul class="path-list">
+                @foreach (var c in Path.ChangeDetection)
+                {
+                    <li><strong>@c.Input → @c.Entity</strong> — tracked: @string.Join(", ", c.TrackedFields) · assigned but not tracked: @Items(c.AssignedNotTracked, "none") · @c.Gate · emits: @c.Emits</li>
+                }
+                @if (Path.Outbox is { } o)
+                {
+                    <li><strong>Outbox @o.EntityType</strong> — envelope @o.Envelope (@string.Join(", ", o.EnvelopeFields)) · @o.Serialization · @o.Transaction · @o.MessageId</li>
+                    <li><strong>Dispatcher</strong> — @o.Dispatcher · @o.Retry · @o.Ordering</li>
+                }
+                @if (Path.ServiceBus is { } sb)
+                {
+                    <li><strong>Service Bus (source-defined)</strong> — @string.Join("; ", sb.Publications.Select(p => $"{p.Entity}: {string.Join(", ", p.Subjects)}")) · client @sb.Client · authentication: @sb.Authentication · message mapping: @sb.MessageMapping · configuration keys (values excluded): @Items(sb.ConfigurationKeys, "none")</li>
+                }
+            </ul>
+        </details>
+    }
+
+    <details open data-testid="iqr-path-gaps"><summary>Remaining evidence gaps (@Path.Gaps.Count)</summary>
+        <ul class="path-list">
+            @foreach (var gap in Path.Gaps)
+            {
+                <li data-testid="iqr-path-gap" data-kind="@gap.Kind"><span class="path-tag">@IqrPathPresentation.GapKind(gap.Kind)</span> <strong>@gap.Title</strong> — @gap.Detail</li>
+            }
+        </ul>
+    </details>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IqrSourceSnapshot Snapshot { get; set; } = new();
+    [Parameter, EditorRequired] public IntegrationPathEvidence Path { get; set; } = new();
+    private string HeadingId => $"iqr-path-{Snapshot.Id:N}";
+    private static string Items(IReadOnlyCollection<string> items, string empty = "None") => items.Count == 0 ? empty : string.Join(", ", items);
+}

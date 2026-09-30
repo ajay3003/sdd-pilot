@@ -32,6 +32,30 @@ public static class IntegrationReviewExport
             sb.Append(table(["Developer test", "Framework/layer", "Assertion / execution", "Location"], source.Tests.Select(t => new[] {
                 esc($"{t.Project}: {t.Class}.{t.Method}"), esc($"{t.Framework} / {t.Layer} / {t.Confidence}"), esc($"{t.AssertionIntent} / {t.ExecutionResult}"), esc($"{t.Location.File}:{t.Location.Line}") })));
             foreach (var flow in source.Dataflows) sb.Append($"<p>{esc(flow.Field)} · {flow.Confidence}: {esc(string.Join(" → ", flow.Steps))}. {esc(flow.Gap)}</p>");
+            if (source.IntegrationPath is { } path)
+            {
+                // Integration path from source: field names, contracts and developer-test evidence only — no source file, value or secret.
+                sb.Append($"<h3>Integration path</h3><p>{esc(IqrPathPresentation.Chain(path))}. Source-defined; delivery, subscriber processing and deployment correlation not assessed.</p>");
+                sb.Append(table(["From", "To", "Mechanism", "Source evidence", "Developer tests", "Runtime evidence"], IqrPathPresentation.Hops(path).Select(h => new[]
+                    { esc(h.From), esc(h.To), esc(h.Mechanism), esc(h.Source), esc(h.Developer), esc(h.Runtime) })));
+                sb.Append(table(["Contract boundary", "Implementation contract", "Formal schema", "Developer contract tests", "Differences"], path.Boundaries.Select(b => new[]
+                    { esc($"{b.From} → {b.To}"), esc(b.ImplementationContract), esc(b.FormalSchema), esc(b.DeveloperContractTests), esc(b.Mismatches.Count == 0 ? "None" : string.Join("; ", b.Mismatches)) })));
+                sb.Append(table(["Source field", "Adapter", "Ingestion", "Domain", "Events → Service Bus", "Transformation", "Developer coverage", "Gap"], IqrPathPresentation.Fields(path).Select(f => new[]
+                    { esc(f.Field + (f.Sensitive ? " (sensitive by name)" : "")), esc(f.Adapter), esc(f.Ingestion), esc(f.Domain), esc(f.Events), esc(f.Transformation), esc(f.Coverage + " · runtime delivery not assessed"), esc(f.Gap) })));
+                var m = path.Minimization;
+                sb.Append($"<p><strong>Data minimization (field names only):</strong> sensitive entering {esc(string.Join(", ", m.SensitiveFieldsEntering))}; retained internally {esc(string.Join(", ", m.RetainedInternally))}; emitted raw {esc(m.EmittedRaw.Count == 0 ? "none found" : string.Join(", ", m.EmittedRaw))}; reduced to metadata {esc(string.Join(", ", m.ReducedMetadata))}; raw copies kept internally {esc(m.InternalRawCopies.Count == 0 ? "none found" : string.Join(", ", m.InternalRawCopies))}.</p>");
+                sb.Append(table(["Domain event contract", "Topic / subject", "Session id / priority", "Fields", "Formal schema"], path.Events.Select(e => new[]
+                    { esc(e.EventType), esc($"{string.Join(", ", e.Topics)} / {string.Join(", ", e.Subjects)}"), esc($"{e.SessionId} / {e.Priority}"),
+                      esc(string.Join(", ", e.Fields.Select(f => $"{f.Name} ({IqrPathPresentation.Transformation(f.Transformation)})"))), esc(e.FormalSchema) })));
+                if (path.Outbox is { } o)
+                    sb.Append($"<p><strong>Outbox (source):</strong> {esc(o.EntityType)} with envelope {esc(o.Envelope)} ({esc(string.Join(", ", o.EnvelopeFields))}); {esc(o.Transaction)}; {esc(o.MessageId)}; dispatcher {esc(o.Dispatcher)}; {esc(o.Retry)}; {esc(o.Ordering)}.</p>");
+                if (path.ServiceBus is { } bus)
+                    sb.Append($"<p><strong>Service Bus source topology:</strong> {esc(string.Join("; ", bus.Publications.Select(x => $"{x.Entity} ({string.Join(", ", x.Subjects)})")))}; authentication {esc(bus.Authentication)}; configuration keys (values excluded) {esc(string.Join(", ", bus.ConfigurationKeys))}. Source-defined ≠ configured ≠ observed ≠ processed.</p>");
+                sb.Append(table(["Source rule", "Developer tests", "BirkNext action"], path.Rules.Select(r => new[]
+                    { esc(r.Title), esc(r.DeveloperTestIds.Count == 0 ? "None resolved" : string.Join(", ", r.DeveloperTestIds.Select(id => IqrPathPresentation.TestName(source, id))) + " (exists; execution unavailable)"), esc(r.BirkNextAction) })));
+                sb.Append(table(["Gap", "Kind", "Detail"], path.Gaps.Select(g => new[] { esc(g.Title), esc(IqrPathPresentation.GapKind(g.Kind)), esc(g.Detail) })));
+                sb.Append("<h3>Source inspected</h3><ul>" + string.Concat(path.Inspected.Select(i => $"<li>{esc(i)}</li>")) + "</ul>");
+            }
             sb.Append("<h3>What was not assessed / limitations</h3><ul>");
             foreach (var limitation in source.Limitations) sb.Append($"<li>{esc(limitation)}</li>");
             sb.Append("</ul></section>");

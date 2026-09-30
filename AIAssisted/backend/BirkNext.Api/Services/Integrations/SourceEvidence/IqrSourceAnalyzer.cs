@@ -15,8 +15,10 @@ namespace BirkNext.Api.Services.Integrations.SourceEvidence;
 /// <summary>Syntax evidence, not a compiler/dataflow proof. Never compiles, executes tests or persists source snippets.</summary>
 public static class IqrSourceAnalyzer
 {
-    public const int Version = 1;
-    private sealed record Code(string Path, CompilationUnitSyntax Root, SourceProject? Project);
+    /// <summary>v2 adds the multi-stage integration path (adapter → ingestion → domain → event → outbox → Service Bus) and Contract/Integration layers from test categories.</summary>
+    public const int Version = 2;
+    internal sealed record Code(string Path, CompilationUnitSyntax Root, SourceProject? Project);
+    internal static string TestId(string path, int spanStart) => Hash($"{path}:{spanStart}:test");
     private static string Safe(string value) => IqrSourceArchiveReader.SafeLabel(value);
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static SourceLocation At(Code code, SyntaxNode node) => new(Safe(code.Path), node.GetLocation().GetLineSpan().StartLinePosition.Line + 1);
@@ -215,6 +217,15 @@ public static class IqrSourceAnalyzer
         var partial = limitations.Any(l => !l.StartsWith("Configuration values excluded", StringComparison.Ordinal));
         var tests = TestInventory(code, production);
         var dataflows = SecurityFlows(production, tests);
+        IntegrationPathEvidence? path = null;
+        // Path tracing reads partially parsed production files too: Roslyn's trees are error-tolerant, and newer syntax (e.g. C# 12 collection
+        // expressions) must not hide a whole adapter or repository. Rule extraction above keeps its stricter filter.
+        var tolerant = code.Where(c => c.Project?.IsTest == false).ToList();
+        if (tolerant.Count > production.Count)
+            limitations.Add($"Integration path tracing also read {tolerant.Count - production.Count} partially parsed production file(s) (newer C# syntax); elements from them may be incomplete.");
+        try { path = IqrPathAnalyzer.Analyze(tolerant, code, tests, ct); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or System.Collections.Generic.KeyNotFoundException or NullReferenceException or IndexOutOfRangeException)
+        { limitations.Add($"Integration path analysis stopped on an unsupported pattern ({ex.GetType().Name}); other evidence retained."); }
         var coverage = rules.Select(r =>
         {
             var covered = Correlate(r, tests);
@@ -233,7 +244,7 @@ public static class IqrSourceAnalyzer
         ]);
         return new IqrSourceSnapshot { IntegrationId = integrationId, Archive = workspace.Archive, AnalyzedAt = now, AnalyzerVersion = Version,
             Commit = commits.Count == 1 ? commits.Single() : "Unknown", Projects = projects, Configurations = workspace.Configurations ?? [], Rules = rules.Take(5000).ToList(), Tests = tests.Take(10000).ToList(),
-            Coverage = coverage.Take(5000).ToList(), Dataflows = dataflows,
+            Coverage = coverage.Take(5000).ToList(), Dataflows = dataflows, IntegrationPath = path,
             Status = production.Count == 0 ? SourceAnalysisStatus.Failed : partial || rules.Count >= 5000 || tests.Count >= 10000 ? SourceAnalysisStatus.Partial : SourceAnalysisStatus.Ready, Limitations = limitations.Distinct().ToList() };
     }
 
@@ -270,7 +281,8 @@ public static class IqrSourceAnalyzer
                 .Where(l => l.IsKind(SyntaxKind.StringLiteralExpression)).Select(l => Safe(l.Token.ValueText)).Distinct().ToList();
             var framework = attributes.Any(a => a is "Fact" or "Theory") ? "xUnit" : attributes.Any(a => a is "Test" or "TestCase" or "TestCaseSource") ? "NUnit" : attributes.Any(a => a is "TestMethod" or "DataTestMethod") ? "MSTest" : null;
             if (framework is null) continue;
-            var type = method.Ancestors().OfType<TypeDeclarationSyntax>().First();
+            // A test method outside any type only occurs in a partially parsed file (already a stated limitation); it is not inventoried.
+            if (method.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault() is not { } type) continue;
             var created = method.DescendantNodes().OfType<ObjectCreationExpressionSyntax>().Where(o => classes.Contains(o.Type.ToString().Split('.').Last()))
                 .GroupBy(o => o.Ancestors().OfType<VariableDeclaratorSyntax>().FirstOrDefault()?.Identifier.ValueText ?? $"@{o.SpanStart}")
                 .Where(g => g.Count() == 1).ToDictionary(g => g.Key, g => g.Single().Type.ToString().Split('.').Last());
@@ -310,10 +322,18 @@ public static class IqrSourceAnalyzer
             var hosted = Regex.IsMatch(setup, "WebApplicationFactory|TestServer|Testcontainers|HostBuilder|CreateClient\\(");
             var hostUsed = Regex.IsMatch(setup, @"\.CreateClient\(|\.StartAsync\(|\.GetAsync\(|\.PostAsync\(|\.SendAsync\(");
             var mocks = Regex.IsMatch(setup, @"\bMock<|Substitute\.For|FakeItEasy");
-            var layer = hosted && hostUsed ? mocks ? DeveloperTestLayer.Component : DeveloperTestLayer.Integration : mocks || targets.Count > 0 ? DeveloperTestLayer.Unit : DeveloperTestLayer.Unknown;
+            // Declared test categories and test-project names outrank setup heuristics (e.g. a shared container fixture lives outside the class).
+            var classCategories = type.AttributeLists.SelectMany(a => a.Attributes).Where(a => a.Name.ToString().Split('.').Last() is "Trait" or "Category" or "TestCategory")
+                .Select(a => a.ArgumentList?.Arguments.LastOrDefault()?.Expression).OfType<LiteralExpressionSyntax>().Where(l => l.IsKind(SyntaxKind.StringLiteralExpression)).Select(l => l.Token.ValueText).ToList();
+            categories = [.. categories, .. classCategories.Select(Safe).Where(x => !categories.Contains(x))];
+            var project = c.Project?.Name ?? "";
+            var declared = categories.Any(x => x.Equals("Contract", StringComparison.OrdinalIgnoreCase)) || project.Contains(".Contract", StringComparison.OrdinalIgnoreCase) ? DeveloperTestLayer.Contract
+                : categories.Any(x => x.Equals("Integration", StringComparison.OrdinalIgnoreCase)) || project.Contains(".Integration", StringComparison.OrdinalIgnoreCase) ? DeveloperTestLayer.Integration
+                : (DeveloperTestLayer?)null;
+            var layer = declared ?? (hosted && hostUsed ? mocks ? DeveloperTestLayer.Component : DeveloperTestLayer.Integration : mocks || targets.Count > 0 ? DeveloperTestLayer.Unit : DeveloperTestLayer.Unknown);
             tests.Add(new DeveloperTestEvidence { Id = Hash($"{c.Path}:{method.SpanStart}:test"), Project = c.Project?.Name ?? "Unknown", Class = Safe(type.Identifier.ValueText),
                 Method = Safe(method.Identifier.ValueText), Framework = framework, Categories = categories, Layer = layer,
-                Confidence = mocks ? SourceConfidence.StrongSourceEvidence : SourceConfidence.Partial, ProductionSymbols = targets,
+                Confidence = declared is not null || mocks ? SourceConfidence.StrongSourceEvidence : SourceConfidence.Partial, ProductionSymbols = targets,
                 Fields = removes, InputCondition = removes.Count > 0 ? "Missing" : "Not resolved",
                 AssertionIntent = !tied ? "Not resolved" : fluentUsed ? "null-output" : assertion?.Expression is MemberAccessExpressionSyntax a ? a.Name.Identifier.ValueText switch
                     { "Null" or "IsNull" or "That" => "null-output", "True" or "IsTrue" => "boolean true", "False" or "IsFalse" => "boolean false", _ => "Not resolved" } : "Not resolved", Location = At(c, method) });
