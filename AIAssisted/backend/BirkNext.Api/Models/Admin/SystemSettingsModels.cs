@@ -133,6 +133,7 @@ public class FeatureVisibilityInfo
     public bool SpecDrift { get; set; } = true;
     public bool ImplementationReview { get; set; } = true;
     public bool ImplementationTraceability { get; set; } = true;
+    public bool SourceAnalysis { get; set; } = true;
     public bool ConstitutionExplorer { get; set; } = true;
     public bool DataModelExplorer    { get; set; } = true;
     public bool PlanExplorer { get; set; } = true;

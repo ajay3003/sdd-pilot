@@ -232,7 +232,7 @@
 
 .fv-section-hint {
     font-size: 0.7rem;
-    color: var(--clr-text-placeholder);
+    color: var(--clr-text-muted);
 }
 
 /* Platform section has no top border (it's the first section) */

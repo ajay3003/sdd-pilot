@@ -6,52 +6,185 @@
 @using BirkNext.Integrations
 @inject IIntegrationCatalogApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
+@inject IJSRuntime JS
 
+@* Source Analysis landing workspace: one selected stored source snapshot drives every area (Overview, Architecture, Database), so no
+   summary can mix snapshots. Architecture and Database keep their own models; this page only reads their stored results — opening it
+   never re-analyzes. Source only: nothing live is contacted. Hiding the feature (Feature Visibility) hides the menu entry only. *@
 <PageTitle>Source Analysis</PageTitle>
-<h1>Source Analysis</h1>
-<p>Architecture and database design derived from uploaded source snapshots. Source only: no live Azure, database, messaging or HTTP connection is used.</p>
-@if (_error is not null) { <p role="alert">@_error</p> }
-@if (_profile is null) { <p>Select a target environment to access its source snapshots.</p> }
-else
-{
-    <label>Upload source snapshot (.zip, maximum 50 MB) <InputFile accept=".zip" OnChange="Upload" disabled="_busy" /></label>
-    @if (_busy) { <p role="status">Analyzing source snapshot…</p> }
-    <label>Source snapshot <select @bind="_selected" data-testid="source-snapshot"><option value="">Select a source snapshot</option>@foreach (var snapshot in _snapshots) { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToString("u")</option> }</select></label>
-    @if (_snapshots.FirstOrDefault(s => s.Id.ToString() == _selected) is { } selected)
+<div class="sa-page">
+    <PageHeader Title="Source Analysis" Description="Architecture and database design derived from uploaded source snapshots." />
+    <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
+    @if (_error is not null) { <p class="sa-error" role="alert" data-testid="sa-error">@_error</p> }
+    @if (_profile is null)
     {
-        <nav class="source-areas" aria-label="Source Analysis areas">
-            <button type="button" aria-pressed="@(_area == "Architecture")" data-testid="area-architecture" @onclick="@(() => { _area = "Architecture"; _focusDatabase = null; })">Architecture</button>
-            <button type="button" aria-pressed="@(_area == "Database")" data-testid="area-database" @onclick="@(() => _area = "Database")">Database</button>
-        </nav>
-        @if (_area == "Architecture")
+        @if (_loaded) { <p class="sa-card sa-muted" data-testid="sa-no-target">Select a target environment to access its source snapshots.</p> }
+    }
+    else
+    {
+        <section class="sa-card sa-snapshot-bar" aria-labelledby="sa-snapshot-heading" data-testid="sa-snapshot-bar">
+            <h2 id="sa-snapshot-heading">Source snapshot</h2>
+            <div class="sa-controls">
+                <div class="sa-upload-group">
+                    <label class="sa-file-button sa-file-primary">
+                        <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source snapshot (.zip, maximum 50 MB)" data-testid="sa-upload" />
+                        <span aria-hidden="true">Upload source snapshot</span>
+                    </label>
+                    <span class="sa-muted">ZIP · maximum 50 MB</span>
+                </div>
+                <label class="sa-field">Existing snapshot
+                    <select id="sa-snapshot-select" class="form-control" @bind="_selected" @bind:after="SnapshotChanged" data-testid="source-snapshot" disabled="@(_busy || _snapshots.Count == 0)">
+                        <option value="">@(_snapshots.Count == 0 ? "No stored snapshot yet" : "Select a source snapshot")</option>
+                        @foreach (var snapshot in _snapshots) { <option value="@snapshot.Id">@SourceAnalysisOverview.OptionLabel(snapshot)</option> }
+                    </select>
+                </label>
+            </div>
+            @if (_busy) { <p class="sa-status" role="status" data-testid="sa-analyzing">Analyzing source… The architecture and database are extracted from the archive.</p> }
+        </section>
+
+        var selected = _busy ? null : _snapshots.FirstOrDefault(s => s.Id.ToString() == _selected);
+        @if (_busy)
         {
-            @if (selected.Architecture is { } architecture)
-            {
-                <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" />
-            }
-            else { <p data-testid="architecture-missing">This historical source snapshot predates architecture extraction. Upload the same source archive to create a new immutable analysis.</p> }
+            <section class="sa-area-grid" aria-label="Analysis areas" data-testid="sa-analyzing-areas">
+                @foreach (var area in new[] { "Architecture", "Database" })
+                {
+                    <article class="sa-card sa-area-card" data-testid="sa-area-card" data-area="@area">
+                        <h3>@area <span class="sa-pill sa-pill-muted">Analyzing</span></h3>
+                        <p class="sa-muted">Counts appear when the analysis is stored.</p>
+                    </article>
+                }
+            </section>
+        }
+        else if (selected is null)
+        {
+            <section class="sa-card sa-empty" aria-labelledby="sa-empty-heading" data-testid="sa-empty">
+                <span class="sa-empty-icon" aria-hidden="true"></span>
+                <div class="sa-empty-body">
+                    <h2 id="sa-empty-heading">No source snapshot selected</h2>
+                    <p>Upload a source archive or choose an existing snapshot to explore:</p>
+                    <ul class="sa-preview" data-testid="sa-preview">
+                        <li><strong>Architecture</strong> — components, dependencies, messaging channels, data stores and external systems found in source.</li>
+                        <li><strong>Database structure</strong> — database candidates, tables/entities, relationships and indexes from EF models, migrations and SQL.</li>
+                        <li><strong>Snapshot changes</strong> — compare an analysis with another stored snapshot of the source.</li>
+                    </ul>
+                    <div class="sa-actions">
+                        <label class="sa-file-button sa-file-primary">
+                            <InputFile class="sa-file-input" accept=".zip" OnChange="Upload" disabled="@_busy" aria-label="Upload source ZIP (maximum 50 MB)" data-testid="sa-empty-upload" />
+                            <span aria-hidden="true">Upload source ZIP</span>
+                        </label>
+                        <button type="button" class="btn-secondary" data-testid="sa-choose-existing" disabled="@(_snapshots.Count == 0)" aria-describedby="@(_snapshots.Count == 0 ? "sa-no-snapshots" : null)" @onclick="FocusSelectorAsync">Choose existing snapshot</button>
+                        @if (_snapshots.Count == 0) { <span class="sa-muted" id="sa-no-snapshots">No stored snapshot yet for this target environment.</span> }
+                    </div>
+                </div>
+            </section>
         }
         else
         {
-            @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" FocusDatabaseId="@_focusDatabase" /> }
-            else { <p>This historical source snapshot predates database extraction. Upload the same source archive to create a new immutable analysis.</p> }
+            <nav class="sa-areas" aria-label="Source Analysis areas" data-testid="sa-areas">
+                @foreach (var area in Areas)
+                {
+                    <button type="button" id="@($"sa-area-{area}")" class="sa-area-tab @(_area == area ? "active" : "")" aria-pressed="@(_area == area ? "true" : "false")"
+                            data-testid="@($"area-{area.ToLowerInvariant()}")" @onclick="() => OpenArea(area)">@area</button>
+                }
+            </nav>
+            @if (_area == "Overview")
+            {
+                <section class="sa-card sa-current" aria-labelledby="sa-current-heading" data-testid="sa-current" data-snapshot="@selected.Id">
+                    <h2 id="sa-current-heading" tabindex="-1">Current snapshot</h2>
+                    <dl class="sa-facts">
+                        <div><dt>Project / archive</dt><dd data-testid="sa-current-archive">@selected.Archive.FileName</dd></div>
+                        <div><dt>Fingerprint</dt><dd><code data-testid="sa-current-fingerprint" title="@selected.Archive.Sha256">@SourceAnalysisOverview.ShortFingerprint(selected.Archive.Sha256)</code></dd></div>
+                        <div><dt>Analyzed</dt><dd data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selected.AnalyzedAt)</dd></div>
+                        <div><dt>Source files</dt><dd data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</dd></div>
+                        <div><dt>Commit</dt><dd>@selected.Commit@(selected.Branch is { } branch ? $" · {branch}" : "")</dd></div>
+                        <div><dt>Source evidence</dt><dd data-testid="sa-current-evidence">@SourceAnalysisOverview.SourceEvidence(selected.Status)</dd></div>
+                    </dl>
+                    <div class="sa-actions">
+                        <button type="button" class="btn-secondary" data-testid="sa-change-snapshot" @onclick="FocusSelectorAsync">Change snapshot</button>
+                        <ReviewDisclosure Text="Full fingerprint" CollapseText="Hide full fingerprint" TestId="sa-fingerprint" Class="disclosure-inline">
+                            <code class="sa-mono">@selected.Archive.Sha256</code>
+                        </ReviewDisclosure>
+                    </div>
+                </section>
+
+                <section class="sa-areas-section" aria-labelledby="sa-areas-heading" data-testid="sa-overview-areas">
+                    <h2 id="sa-areas-heading">Analysis areas</h2>
+                    <div class="sa-area-grid">
+                        @foreach (var card in new[] { SourceAnalysisOverview.Architecture(selected), SourceAnalysisOverview.Database(selected) })
+                        {
+                            var headingId = $"sa-card-{card.Area.ToLowerInvariant()}";
+                            <article class="sa-card sa-area-card" aria-labelledby="@headingId" data-testid="sa-area-card" data-area="@card.Area" data-status="@card.Status" data-analysis="@card.AnalysisId">
+                                <h3 id="@headingId">@card.Title <span class="sa-pill sa-pill-@card.Tone" data-testid="sa-area-status">@card.Status</span></h3>
+                                <p class="sa-muted">@card.Description</p>
+                                @if (card.Reason is { } reason) { <p class="sa-reason" data-testid="sa-area-reason">@reason</p> }
+                                @if (card.Metrics.Count > 0)
+                                {
+                                    <dl class="sa-metrics" data-testid="sa-area-metrics">
+                                        @foreach (var metric in card.Metrics) { <div data-testid="sa-metric" data-metric="@metric.Label"><dt>@metric.Label</dt><dd>@metric.Value</dd></div> }
+                                    </dl>
+                                }
+                                <p class="sa-limitation" data-testid="sa-area-limitation">@card.Limitation</p>
+                                <div class="sa-actions">
+                                    <button type="button" class="btn-primary" data-testid="@($"sa-open-{card.Area.ToLowerInvariant()}")" @onclick="() => OpenFromCard(card.Area)">@card.Action</button>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                </section>
+            }
+            else if (_area == "Architecture")
+            {
+                @if (selected.Architecture is { } architecture)
+                {
+                    <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" />
+                }
+                else { <p class="sa-card" data-testid="architecture-missing">This historical source snapshot predates architecture extraction. Upload the same source archive to create a new immutable analysis.</p> }
+            }
+            else
+            {
+                @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" FocusDatabaseId="@_focusDatabase" InitialTab="@_databaseTab" /> }
+                else { <p class="sa-card" data-testid="database-missing">This historical source snapshot predates database extraction. Upload the same source archive to create a new immutable analysis.</p> }
+            }
         }
     }
-}
+</div>
 @code {
-    private string _area = "Architecture";
+    private static readonly string[] Areas = ["Overview", "Architecture", "Database"];
+    private string _area = "Overview";
     private string? _focusDatabase;
+    private string? _databaseTab;
+    private string? _focusId;
+    private bool _loaded;
+
+    private void OpenArea(string area) { _area = area; _focusDatabase = null; _databaseTab = null; }
+    /// <summary>From an Overview card: the same selected snapshot, the matching area; Open Database Diagram lands on the diagram.</summary>
+    private void OpenFromCard(string area)
+    {
+        OpenArea(area);
+        if (area == "Database") _databaseTab = "Diagram";
+        _focusId = $"sa-area-{area}";
+    }
     private void OpenDatabase(string databaseModelId) { _focusDatabase = databaseModelId; _area = "Database"; }
+    private void SnapshotChanged() { _focusDatabase = null; _databaseTab = null; }
+    private async Task FocusSelectorAsync() { try { await JS.InvokeVoidAsync("birknextFocusElement", "sa-snapshot-select"); } catch (JSException) { } }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusId is not { } id) return;
+        _focusId = null;
+        try { await JS.InvokeVoidAsync("birknextFocusElement", id); } catch (JSException) { }
+    }
+
     private IReadOnlyList<(string Label, BirkNext.SourceArchitecture.ArchitectureSnapshot Snapshot)> PreviousArchitectures(IqrSourceSnapshot current) =>
         _snapshots.Where(s => s.Id != current.Id && s.Architecture is not null).OrderByDescending(s => s.AnalyzedAt)
             .Select(s => ($"{s.Archive.FileName} · {s.AnalyzedAt:u}", s.Architecture!)).ToList();
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private string? _error; private bool _busy;
-    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfile; if (_profile is not null) await Load(); }
+    protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfile; if (_profile is not null) await Load(); _loaded = true; }
     private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = "Source snapshots could not be loaded."; } }
     private async Task Upload(InputFileChangeEventArgs args)
     {
         _busy = true; _error = null;
-        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotAsync(_profile!.Id, args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); } }
+        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotAsync(_profile!.Id, args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
         catch (Exception) { _error = "Source archive could not be analyzed. Check the ZIP file and upload size."; }
         finally { _busy = false; }
     }

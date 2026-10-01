@@ -83,6 +83,9 @@
     [Parameter] public DatabaseArchitectureSnapshot? Previous { get; set; }
     /// <summary>Opens the diagram on one database (drilldown from Source Analysis → Architecture). Null leaves the view as the user set it.</summary>
     [Parameter] public string? FocusDatabaseId { get; set; }
+    /// <summary>The view to open first (e.g. "Diagram" from the Source Analysis landing page). Presentation only.</summary>
+    [Parameter] public string? InitialTab { get; set; }
+    protected override void OnInitialized() { if (InitialTab is "Overview" or "Diagram" or "Tables" or "Relationships" or "Changes") _tab = InitialTab; }
     private string? _focused;
     protected override void OnParametersSet()
     {

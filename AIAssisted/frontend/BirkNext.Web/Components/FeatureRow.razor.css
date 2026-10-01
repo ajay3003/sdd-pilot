@@ -34,7 +34,8 @@
 
 .fv-badge-disabled {
     background: var(--clr-surface);
-    color: var(--clr-text-placeholder);
+    /* Muted, not placeholder: the state text must meet WCAG AA contrast. */
+    color: var(--clr-text-muted);
     border: 1px solid var(--clr-border);
 }
 

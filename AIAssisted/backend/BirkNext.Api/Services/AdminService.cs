@@ -41,7 +41,8 @@ public class AdminService
         ("BlazorWasmSecurityReview",   "WASM Security Review"),
         ("BlazorWasmPerformanceReview","WASM Performance Review"),
         ("ImplementationReview",       "Implementation Review"),
-        ("ImplementationTraceability", "Implementation Traceability")
+        ("ImplementationTraceability", "Implementation Traceability"),
+        ("SourceAnalysis",             "Source Analysis")
     ];
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
@@ -245,6 +246,8 @@ public class AdminService
             SpecDrift            = s.GetValue("SpecDrift",            true),
             ImplementationReview        = s.GetValue("ImplementationReview",        true),
             ImplementationTraceability  = s.GetValue("ImplementationTraceability",  true),
+            // Missing key (older configuration) resolves to enabled, like every Core feature.
+            SourceAnalysis              = s.GetValue("SourceAnalysis",              true),
             ConstitutionExplorer        = s.GetValue("ConstitutionExplorer",        true),
             DataModelExplorer           = s.GetValue("DataModelExplorer",           true),
             PlanExplorer                = s.GetValue("PlanExplorer",                true),

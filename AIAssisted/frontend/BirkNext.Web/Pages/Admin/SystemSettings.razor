@@ -1548,7 +1548,7 @@ else if (_settings is not null)
         new(StringComparer.OrdinalIgnoreCase)
         {
             "SpecDrift", "ImpactAnalysis", "ArtifactTraceability",
-            "ImplementationReview", "ImplementationTraceability"
+            "ImplementationReview", "ImplementationTraceability", "SourceAnalysis"
         };
 
     private static readonly HashSet<string> QualitySectionKeys =
@@ -1601,6 +1601,7 @@ else if (_settings is not null)
         ("Requirements Traceability",   "ArtifactTraceability"),
         ("Implementation Review",   "ImplementationReview"),
         ("Implementation Traceability", "ImplementationTraceability"),
+        ("Source Analysis",         "SourceAnalysis"),
 
         // Quality
         ("Quality Review",          "QualityReview"),
@@ -3087,6 +3088,7 @@ else if (_settings is not null)
         ("Requirements Traceability",        "artifact-traceability"),
         ("Implementation Review",        "task-alignment"),
         ("Implementation Traceability",  "implementation-traceability"),
+        ("Source Analysis",              "source-analysis"),
         ("Quality Review",               "quality-review"),
         ("WASM Security Review",         "wasm-security-review"),
         ("WASM Performance Review",      "wasm-performance-review"),
