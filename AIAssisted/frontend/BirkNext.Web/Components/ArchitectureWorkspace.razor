@@ -9,8 +9,14 @@
    Everything shown is source-derived design evidence — never deployed topology, never runtime traffic. *@
 <section class="arch" aria-labelledby="arch-heading" data-testid="architecture-workspace">
     <h2 id="arch-heading">Architecture <span class="arch-pill" data-testid="arch-status">@StatusLabel(Snapshot.Status)</span></h2>
-    <p class="arch-limitation" role="note" data-testid="arch-limitation">@ArchitectureSnapshot.SourceLimitation</p>
-    <p class="arch-muted">Source fingerprint <code>@Snapshot.SourceFingerprint</code> · analyzer v@(Snapshot.AnalyzerVersion) · extracted @Snapshot.ExtractedAt.ToString("u")</p>
+    <p class="arch-limitation" role="note" data-testid="arch-limitation">@SourceBoundary.Architecture</p>
+    <div class="arch-meta">
+        <span class="arch-muted">Source <code title="@Snapshot.SourceFingerprint" data-testid="arch-fingerprint">@SourceBoundary.ShortFingerprint(Snapshot.SourceFingerprint)</code> · analyzer v@(Snapshot.AnalyzerVersion) · extracted @Snapshot.ExtractedAt.ToString("u")</span>
+        <ReviewDisclosure Text="Details" CollapseText="Hide details" TestId="arch-about" Class="disclosure-inline">
+            <p class="arch-muted" data-testid="arch-limitation-full">@ArchitectureSnapshot.SourceLimitation</p>
+            <p class="arch-muted">Full source fingerprint <code>@Snapshot.SourceFingerprint</code></p>
+        </ReviewDisclosure>
+    </div>
     <nav class="arch-tabs" aria-label="Architecture views">
         @foreach (var tab in Tabs) { <button type="button" aria-pressed="@(_tab == tab)" data-testid="@($"arch-tab-{tab.ToLowerInvariant()}")" @onclick="() => SelectTab(tab)">@tab</button> }
         <button type="button" data-testid="arch-export" @onclick="ExportHtml">Export HTML</button>
@@ -19,26 +25,78 @@
 
     @if (_tab == "Overview")
     {
+        @* Summary first → structured detail → evidence drill-down. Nothing is dropped: every list stays one disclosure away. *@
         var o = ArchitecturePresentation.Overview(Snapshot);
+        var dep = ArchitectureEvidenceSummary.Dependencies(Snapshot);
+        var technologies = ArchitectureEvidenceSummary.Technologies(Snapshot);
+        var groups = ArchitectureEvidenceSummary.Groups(Snapshot);
+        @if (!Assessed) { <p class="arch-muted" data-testid="arch-not-assessed">Unsupported: no supported project type was found in this source snapshot, so these counts are not assessed (not zero).</p> }
         <dl class="arch-summary" data-testid="arch-overview">
-            <div><dt>Components</dt><dd>@o.Components</dd></div>
-            <div><dt>APIs</dt><dd>@o.Apis</dd></div>
-            <div><dt>Workers</dt><dd>@o.Workers</dd></div>
-            <div><dt>Adapters</dt><dd>@o.Adapters</dd></div>
-            <div><dt>Frontends</dt><dd>@o.Frontends</dd></div>
-            <div><dt>Messaging channels</dt><dd>@o.Channels</dd></div>
-            <div><dt>Datastores</dt><dd>@o.DataStores</dd></div>
-            <div><dt>External systems</dt><dd>@o.ExternalSystems</dd></div>
-            <div><dt>Resolved dependencies</dt><dd>@o.Resolved</dd></div>
-            <div><dt>Unresolved</dt><dd>@o.Unresolved</dd></div>
-            <div><dt>Inferred</dt><dd>@o.Inferred</dd></div>
-            <div><dt>Conflicts</dt><dd>@o.Conflicts</dd></div>
+            <div><dt>Components</dt><dd>@M(o.Components)</dd></div>
+            <div><dt>APIs</dt><dd>@M(o.Apis)</dd></div>
+            <div><dt>Workers</dt><dd>@M(o.Workers)</dd></div>
+            <div><dt>Adapters</dt><dd>@M(o.Adapters)</dd></div>
+            <div><dt>Frontends</dt><dd>@M(o.Frontends)</dd></div>
+            <div><dt>Messaging channels</dt><dd>@M(o.Channels)</dd></div>
+            <div><dt>Datastores</dt><dd>@M(o.DataStores)</dd></div>
+            <div><dt>External systems</dt><dd>@M(o.ExternalSystems)</dd></div>
         </dl>
-        <h3>Technologies</h3>
-        <ul class="arch-list" data-testid="arch-technologies">@foreach (var t in Snapshot.Technologies) { <li><strong>@t.Name</strong> · @t.Category@(t.Components.Count > 0 ? $" · {t.Components.Count} component(s)" : "")</li> }</ul>
-        <details class="arch-details" open data-testid="arch-diagnostics"><summary>Diagnostics (@Snapshot.Diagnostics.Count) — limitations, not defects</summary>
-            <ul class="arch-list">@foreach (var d in Snapshot.Diagnostics) { <li><strong>@d.Kind</strong> — @d.Message</li> }</ul></details>
-        <details class="arch-details" data-testid="arch-limitations"><summary>Limitations (@Snapshot.Limitations.Count)</summary><ul class="arch-list">@foreach (var l in Snapshot.Limitations) { <li>@l</li> }</ul></details>
+        <div class="arch-panels">
+            <section class="arch-panel" aria-labelledby="arch-dep-evidence-heading" data-testid="arch-dep-evidence">
+                <h3 id="arch-dep-evidence-heading">Dependency evidence</h3>
+                <p class="arch-muted" data-testid="arch-dep-evidence-note">@dep.Runtime runtime dependencies. Each has exactly one evidence state, so these add up to @dep.Runtime.@(dep.NonRuntime > 0 ? $" {dep.NonRuntime} build-time, orchestration and configuration links are listed under Dependencies." : "")</p>
+                <dl class="arch-mini" data-testid="arch-dep-states">
+                    <div data-state="Confirmed"><dt>Confirmed</dt><dd>@M(dep.Confirmed)</dd></div>
+                    <div data-state="StronglySupported"><dt>Strongly supported</dt><dd>@M(dep.StronglySupported)</dd></div>
+                    <div data-state="Inferred"><dt>Inferred</dt><dd>@M(dep.Inferred)</dd></div>
+                    <div data-state="Unresolved"><dt>Unresolved</dt><dd>@M(dep.Unresolved)</dd></div>
+                    <div data-state="Conflict"><dt>Conflicts</dt><dd>@M(dep.Conflict)</dd></div>
+                </dl>
+                <p class="arch-muted" data-testid="arch-dep-target">Separate dimension: target not identified in source for @dep.TargetNotIdentified of @dep.All dependencies. An unresolved dependency can still point to an unresolved channel.</p>
+            </section>
+            <section class="arch-panel" aria-labelledby="arch-tech-heading" data-testid="arch-technologies">
+                <h3 id="arch-tech-heading">Technologies <span class="arch-muted">· @technologies.Count</span></h3>
+                <ul class="arch-chips">@foreach (var t in technologies.Take(8)) { <li data-testid="arch-tech"><strong>@t.Name</strong> <span class="arch-muted">@t.Category@(t.Components.Count > 0 ? $" · {t.Components.Count}" : "")</span></li> }</ul>
+                @if (technologies.Count > 8)
+                {
+                    <ReviewDisclosure Text="@($"View all technologies ({technologies.Count})")" CollapseText="Show fewer technologies" TestId="arch-tech-all" Class="disclosure-inline" @bind-Expanded="_allTechnologies">
+                        @if (_allTechnologies) { <ul class="arch-chips">@foreach (var t in technologies.Skip(8)) { <li data-testid="arch-tech"><strong>@t.Name</strong> <span class="arch-muted">@t.Category@(t.Components.Count > 0 ? $" · {t.Components.Count}" : "")</span></li> }</ul> }
+                    </ReviewDisclosure>
+                }
+                <p class="arch-muted">Inventory with component counts — a technology is not a deployed component.</p>
+            </section>
+        </div>
+        <section class="arch-panel" aria-labelledby="arch-unresolved-heading" data-testid="arch-diagnostics">
+            <h3 id="arch-unresolved-heading">Unresolved evidence <span class="arch-count" data-testid="arch-unresolved-count">@Snapshot.Diagnostics.Count</span></h3>
+            <p class="arch-muted">These are source-analysis limitations or unresolved evidence, not application defects.</p>
+            @if (groups.Count > 0)
+            {
+                <dl class="arch-groups" data-testid="arch-unresolved-groups">@foreach (var g in groups) { <div data-kind="@g.Label"><dt>@g.Label</dt><dd>@g.Count</dd></div> }</dl>
+                <ReviewDisclosure Text="@($"View unresolved evidence ({Snapshot.Diagnostics.Count})")" CollapseText="Hide unresolved evidence" TestId="arch-unresolved-detail" Class="disclosure-inline" @bind-Expanded="_showUnresolved">
+                    @if (_showUnresolved)
+                    {
+                        <div class="arch-controls">
+                            <label>Search <input type="search" data-testid="arch-unresolved-search" @bind="_unresolvedSearch" @bind:event="oninput" /></label>
+                            <label>Type <select data-testid="arch-unresolved-type" @bind="_unresolvedKind"><option value="">All</option>@foreach (var g in groups) { <option value="@g.Label">@g.Label</option> }</select></label>
+                            <label>Component <select data-testid="arch-unresolved-component" @bind="_unresolvedComponent"><option value="">All</option>@foreach (var c in Snapshot.Components.OrderBy(c => c.Name, StringComparer.Ordinal)) { <option value="@c.Id">@c.Name</option> }</select></label>
+                        </div>
+                        <p class="arch-muted" role="status" data-testid="arch-unresolved-shown">@UnresolvedRows.Count of @Snapshot.Diagnostics.Count shown</p>
+                        <div class="arch-table" tabindex="0" role="region" aria-label="Unresolved evidence">
+                            <table data-testid="arch-unresolved-table"><thead><tr><th scope="col">Type</th><th scope="col">Subject</th><th scope="col">Explanation</th></tr></thead><tbody>
+                                @foreach (var d in UnresolvedRows) { <tr data-testid="arch-unresolved-row" data-kind="@d.Kind"><td>@d.Kind</td><td>@(ArchitectureEvidenceSummary.SubjectId(d) is { } subject ? Name(subject) : "—")</td><td>@d.Message</td></tr> }
+                            </tbody></table>
+                        </div>
+                    }
+                </ReviewDisclosure>
+            }
+        </section>
+        <section class="arch-panel" aria-labelledby="arch-limitations-heading" data-testid="arch-limitations">
+            <h3 id="arch-limitations-heading">Analysis limitations <span class="arch-count">@Snapshot.Limitations.Count</span></h3>
+            <p class="arch-muted">General limits of source analysis — they apply to the whole snapshot.</p>
+            <ReviewDisclosure Text="View analysis limitations" CollapseText="Hide analysis limitations" TestId="arch-limitations-detail" Class="disclosure-inline">
+                <ul class="arch-list">@foreach (var l in Snapshot.Limitations) { <li>@l</li> }</ul>
+            </ReviewDisclosure>
+        </section>
     }
     else if (_tab == "Dependencies")
     {
@@ -48,7 +106,7 @@
         </div>
         <div class="arch-table" tabindex="0" role="region" aria-label="All extracted dependencies">
             <table data-testid="arch-dependencies">
-                <thead><tr><th scope="col">From</th><th scope="col">To / target reference</th><th scope="col">Type</th><th scope="col">Protocol</th><th scope="col">Resolved</th><th scope="col">Evidence state</th><th scope="col">Confidence</th><th scope="col">Source</th></tr></thead>
+                <thead><tr><th scope="col">From</th><th scope="col">To / target reference</th><th scope="col">Type</th><th scope="col">Protocol</th><th scope="col">State</th><th scope="col">Source</th></tr></thead>
                 <tbody>
                     @foreach (var d in Dependencies)
                     {
@@ -57,10 +115,8 @@
                             <td>@(d.ToId is null ? $"Unresolved: {d.TargetReference}" : Name(d.ToId))</td>
                             <td>@d.DependencyType@(d.Framework is { } fw ? $" · {fw}" : "")</td>
                             <td>@d.Protocol</td>
-                            <td>@(d.IsResolved ? "Yes" : "No")</td>
-                            <td><span class="arch-pill">@ArchitecturePresentation.StateLabel(d.EvidenceState)</span></td>
-                            <td>@d.Confidence</td>
-                            <td><button type="button" class="arch-link" @onclick="() => OpenDependency(d.Id)">@(d.Evidence.FirstOrDefault() is { } e ? $"{e.File}:{e.Line}" : "Details")</button></td>
+                            <td><span class="arch-pill">@ArchitecturePresentation.StateLabel(d.EvidenceState)</span>@if (!d.IsResolved) { <span class="arch-muted"> · target not identified</span> }</td>
+                            <td class="arch-source-cell">@{ var first = d.Evidence.FirstOrDefault(); var where = first is null ? null : $"{first.File}:{first.Line}"; }<button type="button" class="arch-link arch-ellipsis" title="@where" aria-label="@($"Details and evidence for {Name(d.FromComponentId)} {d.DependencyType}{(where is null ? "" : $", source {where}")}")" @onclick="() => OpenDependency(d.Id)">@(where ?? "Details")</button></td>
                         </tr>
                     }
                 </tbody>
@@ -76,7 +132,15 @@
     {
         <h3>Source architecture change</h3>
         <p class="arch-limitation" role="note" data-testid="arch-change-label">@ArchitectureDiff.Label</p>
-        @if (Previous.Count == 0) { <p data-testid="arch-no-previous">Another analyzed source snapshot is required to compare.</p> }
+        @if (Previous.Count == 0)
+        {
+            <div class="arch-empty" data-testid="arch-no-previous">
+                <h4>No previous snapshot available</h4>
+                <p>Architecture comparison needs at least two analyzed source snapshots. It can compare components, dependencies, messaging, data stores and other source topology changes.</p>
+                <p class="arch-muted">@SourceBoundary.ChangesNotDrift</p>
+                @if (ChooseSnapshot.HasDelegate) { <button type="button" data-testid="arch-choose-snapshot" @onclick="() => ChooseSnapshot.InvokeAsync()">Choose another snapshot</button> }
+            </div>
+        }
         else
         {
             <label>Compare with <select @bind="_previousId" data-testid="arch-previous">@foreach (var p in Previous) { <option value="@p.Snapshot.SnapshotId">@p.Label</option> }</select></label>
@@ -92,16 +156,22 @@
     }
     else
     {
-        <div class="arch-controls" data-testid="arch-filters">
-            <label>Search <input type="search" data-testid="arch-search" @bind="_search" @bind:event="oninput" placeholder="Component, channel, datastore, configuration key" /></label>
-            <label>Component type <select @bind="ComponentTypeFilter">@Options(Snapshot.Components.Select(c => c.ComponentType.ToString()))</select></label>
-            <label>Technology <select @bind="TechnologyFilter">@Options(Snapshot.Components.SelectMany(c => c.Technologies))</select></label>
-            <label>Protocol <select @bind="ProtocolFilter">@Options(ArchitecturePresentation.TypesOf(View).Select(t => t.ToString()))</select></label>
-            <label>Project/module <select @bind="ModuleFilter">@Options(Snapshot.Components.Select(c => c.Module))</select></label>
-            <label><input type="checkbox" data-testid="arch-confirmed-only" @bind="ConfirmedOnly" /> Confirmed only</label>
-            <label><input type="checkbox" data-testid="arch-include-inferred" @bind="IncludeInferred" /> Include inferred</label>
-            <label><input type="checkbox" data-testid="arch-hide-unresolved" @bind="HideUnresolved" /> Hide unresolved</label>
-            @if (View == SourceArchitectureView.System) { <label><input type="checkbox" data-testid="arch-show-libraries" @bind="ShowLibraries" /> Libraries</label> }
+        <div class="arch-filterbar" data-testid="arch-filters">
+            <div class="arch-group" role="group" aria-labelledby="arch-fg-search"><span class="arch-group-label" id="arch-fg-search">Search</span>
+                <label><span class="visually-hidden">Search</span><input type="search" data-testid="arch-search" @bind="_search" @bind:event="oninput" placeholder="Component, channel, datastore, configuration key" /></label>
+            </div>
+            <div class="arch-group" role="group" aria-labelledby="arch-fg-filter"><span class="arch-group-label" id="arch-fg-filter">Filter</span>
+                <label>Component type <select @bind="ComponentTypeFilter">@Options(Snapshot.Components.Select(c => c.ComponentType.ToString()))</select></label>
+                <label>Technology <select @bind="TechnologyFilter">@Options(Snapshot.Components.SelectMany(c => c.Technologies))</select></label>
+                <label>Protocol <select @bind="ProtocolFilter">@Options(ArchitecturePresentation.TypesOf(View).Select(t => t.ToString()))</select></label>
+                <label>Project/module <select @bind="ModuleFilter">@Options(Snapshot.Components.Select(c => c.Module))</select></label>
+            </div>
+            <div class="arch-group" role="group" aria-labelledby="arch-fg-evidence"><span class="arch-group-label" id="arch-fg-evidence">Evidence</span>
+                <label><input type="checkbox" data-testid="arch-confirmed-only" @bind="ConfirmedOnly" /> Confirmed only</label>
+                <label><input type="checkbox" data-testid="arch-include-inferred" @bind="IncludeInferred" /> Include inferred</label>
+                <label><input type="checkbox" data-testid="arch-hide-unresolved" @bind="HideUnresolved" /> Hide unresolved</label>
+                @if (View == SourceArchitectureView.System) { <label><input type="checkbox" data-testid="arch-show-libraries" @bind="ShowLibraries" /> Libraries</label> }
+            </div>
         </div>
         @if (_search.Length > 0)
         {
@@ -109,14 +179,22 @@
         }
         <div class="arch-content">
             <div class="arch-main">
-                <div class="arch-controls">
-                    <button type="button" data-testid="arch-fit" @onclick="Fit">Fit to screen</button>
-                    <button type="button" data-testid="arch-reset" @onclick="Reset">Reset layout</button>
-                    <button type="button" data-testid="arch-save" @onclick="Save">Save layout</button>
-                    <button type="button" @onclick="ExportSvg">Export SVG</button>
-                    <button type="button" data-testid="arch-clear" @onclick="ClearHighlight" disabled="@(_highlight is null)">Clear highlight</button>
+                <div class="arch-toolbar" data-testid="arch-toolbar">
+                    <div class="arch-group" role="group" aria-label="View"><span class="arch-group-label" aria-hidden="true">View</span>
+                        <button type="button" data-testid="arch-fit" @onclick="Fit">Fit to screen</button>
+                        <button type="button" data-testid="arch-reset" @onclick="Reset">Reset layout</button>
+                    </div>
+                    <div class="arch-group" role="group" aria-label="Layout"><span class="arch-group-label" aria-hidden="true">Layout</span>
+                        <button type="button" data-testid="arch-save" @onclick="Save">Save layout</button>
+                    </div>
+                    <div class="arch-group" role="group" aria-label="Export"><span class="arch-group-label" aria-hidden="true">Export</span>
+                        <button type="button" @onclick="ExportSvg">Export SVG</button>
+                    </div>
+                    <div class="arch-group" role="group" aria-label="Selection"><span class="arch-group-label" aria-hidden="true">Selection</span>
+                        <button type="button" data-testid="arch-clear" @onclick="ClearHighlight" disabled="@(_highlight is null)">Clear highlight</button>
+                    </div>
                 </div>
-                <p class="arch-muted">Solid: confirmed / strongly supported · Dashed: inferred · Dotted: unresolved · Dash-dot: conflict — labels repeat the state. Drag nodes; drag blank space to pan; scroll to zoom; Tab to a node or edge and press Enter.</p>
+                <p class="arch-legend" data-testid="arch-legend"><span><span class="arch-line arch-line-solid" aria-hidden="true"></span>Confirmed / strongly supported</span><span><span class="arch-line arch-line-dashed" aria-hidden="true"></span>Inferred</span><span><span class="arch-line arch-line-dotted" aria-hidden="true"></span>Unresolved</span><span><span class="arch-line arch-line-dashdot" aria-hidden="true"></span>Conflict</span><span class="arch-muted">Labels repeat the state · drag nodes, drag blank space to pan, scroll to zoom · Tab to a node or edge and press Enter.</span></p>
                 <div class="arch-canvas" @ref="_canvas" tabindex="0" data-testid="arch-canvas" aria-label="@($"{View} graph. The table below lists the same relationships.")"></div>
                 <p role="status" class="arch-muted" data-testid="arch-message">@_message</p>
                 <div class="arch-controls" data-testid="arch-path">
@@ -125,8 +203,8 @@
                     <button type="button" data-testid="arch-find-path" @onclick="FindPath" disabled="@(_pathFrom == "" || _pathTo == "")">Find path</button>
                 </div>
                 @if (_pathResult is not null) { <p role="status" data-testid="arch-path-result">@_pathResult</p> }
-                <details class="arch-details" open="@(View is SourceArchitectureView.Messaging or SourceArchitectureView.Data)" data-testid="arch-view-table">
-                    <summary>@(View switch { SourceArchitectureView.Messaging => "Channels, producers and consumers", SourceArchitectureView.Data => "Datastores and who uses them", _ => "Relationships in this view" }) (table)</summary>
+                @{ var supporting = View switch { SourceArchitectureView.Messaging => ("Show channels", "Hide channels", Snapshot.MessagingChannels.Count(c => Graph.Nodes.Any(n => n.Id == c.Id))), SourceArchitectureView.Data => ("Show datastore usage", "Hide datastore usage", Snapshot.DataStores.Count(s => Graph.Nodes.Any(n => n.Id == s.Id))), _ => ("Show relationships in this view", "Hide relationships in this view", Graph.Edges.Count) }; }
+                <ReviewDisclosure Text="@($"{supporting.Item1} · {supporting.Item3}")" CollapseText="@supporting.Item2" TestId="arch-view-table" Class="disclosure-inline">
                     @if (View == SourceArchitectureView.Messaging)
                     {
                         <div class="arch-table" tabindex="0" role="region" aria-label="Messaging channels"><table data-testid="arch-messaging-table"><thead><tr><th scope="col">Channel</th><th scope="col">Type</th><th scope="col">Producers</th><th scope="col">Consumers</th><th scope="col">Subscription / consumer group</th><th scope="col">Confidence</th></tr></thead><tbody>
@@ -156,7 +234,7 @@
                         @foreach (var e in Graph.Edges) { <tr><td>@NodeName(e.From)</td><td><button type="button" class="arch-link" @onclick="() => SelectEdgeAsync(e.Id)">@e.Label</button></td><td>@NodeName(e.To)</td><td>@e.State</td></tr> }
                         </tbody></table></div>
                     }
-                </details>
+                </ReviewDisclosure>
             </div>
             @if (SelectedNode is { } node) { <aside class="arch-detail" aria-label="Node details" data-testid="arch-node-detail">@NodeDetail(node)</aside> }
             else if (_selectedEdge?.StartsWith("unresolved-edge:", StringComparison.Ordinal) == true) { <aside class="arch-detail" aria-label="Unresolved targets" data-testid="arch-edge-detail">@UnresolvedDetail(_selectedEdge)</aside> }
@@ -171,6 +249,17 @@
     [Parameter] public IReadOnlyList<(string Label, ArchitectureSnapshot Snapshot)> Previous { get; set; } = [];
     /// <summary>Open the separate Database area on a linked database (same source snapshot).</summary>
     [Parameter] public EventCallback<string> OpenDatabase { get; set; }
+    /// <summary>Moves focus to the page's source snapshot selector (Changes empty state).</summary>
+    [Parameter] public EventCallback ChooseSnapshot { get; set; }
+
+    // Unsupported means not assessed: counts show "Not assessed", never a zero that reads as "none found".
+    private bool Assessed => Snapshot.Status != ArchitectureStatus.Unsupported;
+    private string M(int value) => Assessed ? value.ToString() : "Not assessed";
+    private bool _allTechnologies, _showUnresolved;
+    private string _unresolvedSearch = "", _unresolvedKind = "", _unresolvedComponent = "";
+    private List<ArchitectureDiagnostic> UnresolvedRows => Snapshot.Diagnostics.Where(d => (_unresolvedKind == "" || d.Kind == _unresolvedKind)
+        && (_unresolvedComponent == "" || ArchitectureEvidenceSummary.SubjectId(d) == _unresolvedComponent || (d.SubjectId?.Contains(_unresolvedComponent + ":", StringComparison.Ordinal) ?? false))
+        && (_unresolvedSearch == "" || $"{d.Kind} {d.Message} {d.SubjectId}".Contains(_unresolvedSearch, StringComparison.OrdinalIgnoreCase))).ToList();
 
     private static readonly string[] Tabs = ["Overview", "System", "Integrations", "Messaging", "Data", "Dependencies", "Changes"];
     private string _tab = "Overview", _search = "", _depSearch = "", _depType = "", _message = "", _pathFrom = "", _pathTo = "", _previousId = "", _depth = "1";

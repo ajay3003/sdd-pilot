@@ -53,6 +53,11 @@
 .sa-pill-partial { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 .sa-pill-muted { background: var(--clr-surface); color: var(--clr-text-muted); }
 
+.sa-current-title { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; font-size: .98rem; overflow-wrap: anywhere; }
+.sa-facts-compact { grid-template-columns: repeat(auto-fill, minmax(min(100%, 11rem), 1fr)); }
+.sa-progress { gap: .6rem; }
+.sa-area-preview { border: 1px dashed var(--clr-border); border-radius: var(--radius-md); padding: .65rem .8rem; display: grid; gap: .3rem; min-width: 0; }
+.sa-area-preview h3 { margin: 0; font-size: .95rem; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
 @media (max-width: 640px) {
     .sa-empty { grid-template-columns: 1fr; }
     .sa-card { padding: .75rem .8rem; }

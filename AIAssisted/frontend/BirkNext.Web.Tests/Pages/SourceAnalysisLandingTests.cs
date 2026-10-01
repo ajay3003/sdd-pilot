@@ -124,11 +124,13 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         cut.Find("[data-testid=sa-overview-areas]").TextContent.Should().NotContain("Failed");
         Metrics(cut, "Architecture").Should().Equal(new Dictionary<string, string> { ["Components"] = "3", ["Dependencies"] = "3", ["Messaging channels"] = "1", ["Data stores"] = "1", ["External systems"] = "0", ["Unresolved dependencies"] = "1" });
         Metrics(cut, "Database").Should().Equal(new Dictionary<string, string> { ["Database candidates"] = "1", ["Tables / entities"] = "4", ["Relationships"] = "3", ["Indexes"] = "4", ["Unresolved evidence"] = "5" });
-        cut.Find("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-area-reason]").TextContent.Should().Be("5 unresolved evidence items.");
+        cut.FindAll("[data-testid=sa-area-card] [data-testid=sa-area-reason]").Should().BeEmpty("the unresolved counts are metrics; no sentence repeats them");
         cut.Find("[data-testid=sa-area-card][data-area=Architecture]").GetAttribute("data-analysis").Should().Be(current.Architecture!.SnapshotId.ToString());
         cut.Find("[data-testid=sa-area-card][data-area=Database]").GetAttribute("data-analysis").Should().Be(current.DatabaseArchitecture!.SnapshotId.ToString());
-        cut.Find("[data-testid=sa-area-card][data-area=Architecture] [data-testid=sa-area-limitation]").TextContent.Should().Be(ArchitectureSnapshot.SourceLimitation);
-        cut.Find("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-area-limitation]").TextContent.Should().Be(DatabaseArchitectureSnapshot.SourceLimitation);
+        cut.Find("[data-testid=sa-area-card][data-area=Architecture] [data-testid=sa-area-limitation]").TextContent.Should().Be("Source-derived only · deployment/runtime not verified");
+        cut.Find("[data-testid=sa-area-card][data-area=Database] [data-testid=sa-area-limitation]").TextContent.Should().Be("Source-derived only · deployed schema not verified");
+        cut.Find("[data-testid=sa-current-evidence]").TextContent.Should().Be("Ready", "the source-evidence status sits next to the archive name");
+        cut.FindAll("[data-testid=sa-current] dt").Select(d => d.TextContent).Should().Equal("Fingerprint", "Analyzed", "Files", "Commit");
         (cut.Find("[data-testid=sa-open-architecture]").TextContent, cut.Find("[data-testid=sa-open-database]").TextContent).Should().Be(("Open Architecture", "Open Database Diagram"));
     }
 

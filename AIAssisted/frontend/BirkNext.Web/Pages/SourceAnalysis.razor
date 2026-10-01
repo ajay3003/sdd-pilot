@@ -45,14 +45,23 @@
         var selected = _busy ? null : _snapshots.FirstOrDefault(s => s.Id.ToString() == _selected);
         @if (_busy)
         {
-            <section class="sa-area-grid" aria-label="Analysis areas" data-testid="sa-analyzing-areas">
-                @foreach (var area in new[] { "Architecture", "Database" })
-                {
-                    <article class="sa-card sa-area-card" data-testid="sa-area-card" data-area="@area">
-                        <h3>@area <span class="sa-pill sa-pill-muted">Analyzing</span></h3>
-                        <p class="sa-muted">Counts appear when the analysis is stored.</p>
-                    </article>
-                }
+            <section class="sa-card sa-progress" aria-labelledby="sa-progress-heading" data-testid="sa-analyzing-areas">
+                <h2 id="sa-progress-heading">Analysis in progress</h2>
+                <dl class="sa-facts">
+                    <div><dt>Source snapshot</dt><dd data-testid="sa-progress-archive">@(_pendingArchive ?? "Uploaded archive")</dd></div>
+                    <div><dt>Architecture</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
+                    <div><dt>Database</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
+                </dl>
+                <p class="sa-muted">The uploaded archive is being analyzed. @SourceAnalysisOverview.SafetyNote</p>
+                <div class="sa-area-grid">
+                    @foreach (var (area, provides) in new[] { ("Architecture", SourceAnalysisOverview.ArchitectureProvides), ("Database", SourceAnalysisOverview.DatabaseProvides) })
+                    {
+                        <article class="sa-area-preview" data-testid="sa-area-card" data-area="@area">
+                            <h3>@area <span class="sa-pill sa-pill-muted">Analyzing</span></h3>
+                            <p class="sa-muted">Will provide: @string.Join(" · ", provides)</p>
+                        </article>
+                    }
+                </div>
             </section>
         }
         else if (selected is null)
@@ -91,13 +100,12 @@
             {
                 <section class="sa-card sa-current" aria-labelledby="sa-current-heading" data-testid="sa-current" data-snapshot="@selected.Id">
                     <h2 id="sa-current-heading" tabindex="-1">Current snapshot</h2>
-                    <dl class="sa-facts">
-                        <div><dt>Project / archive</dt><dd data-testid="sa-current-archive">@selected.Archive.FileName</dd></div>
+                    <p class="sa-current-title"><strong data-testid="sa-current-archive">@selected.Archive.FileName</strong> <span class="sa-pill sa-pill-@(selected.Status == SourceAnalysisStatus.Ready ? "complete" : "partial")"><span class="visually-hidden">Source evidence: </span><span data-testid="sa-current-evidence">@SourceAnalysisOverview.SourceEvidence(selected.Status)</span></span></p>
+                    <dl class="sa-facts sa-facts-compact">
                         <div><dt>Fingerprint</dt><dd><code data-testid="sa-current-fingerprint" title="@selected.Archive.Sha256">@SourceAnalysisOverview.ShortFingerprint(selected.Archive.Sha256)</code></dd></div>
                         <div><dt>Analyzed</dt><dd data-testid="sa-current-analyzed">@SourceAnalysisOverview.Utc(selected.AnalyzedAt)</dd></div>
-                        <div><dt>Source files</dt><dd data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</dd></div>
+                        <div><dt>Files</dt><dd data-testid="sa-current-files">@selected.Archive.FilesAnalyzed</dd></div>
                         <div><dt>Commit</dt><dd>@selected.Commit@(selected.Branch is { } branch ? $" · {branch}" : "")</dd></div>
-                        <div><dt>Source evidence</dt><dd data-testid="sa-current-evidence">@SourceAnalysisOverview.SourceEvidence(selected.Status)</dd></div>
                     </dl>
                     <div class="sa-actions">
                         <button type="button" class="btn-secondary" data-testid="sa-change-snapshot" @onclick="FocusSelectorAsync">Change snapshot</button>
@@ -136,13 +144,13 @@
             {
                 @if (selected.Architecture is { } architecture)
                 {
-                    <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" />
+                    <ArchitectureWorkspace @key="architecture.SnapshotId" Snapshot="architecture" Previous="@PreviousArchitectures(selected)" OpenDatabase="OpenDatabase" ChooseSnapshot="FocusSelectorAsync" />
                 }
                 else { <p class="sa-card" data-testid="architecture-missing">This historical source snapshot predates architecture extraction. Upload the same source archive to create a new immutable analysis.</p> }
             }
             else
             {
-                @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" FocusDatabaseId="@_focusDatabase" InitialTab="@_databaseTab" /> }
+                @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" FocusDatabaseId="@_focusDatabase" InitialTab="@_databaseTab" ChooseSnapshot="FocusSelectorAsync" /> }
                 else { <p class="sa-card" data-testid="database-missing">This historical source snapshot predates database extraction. Upload the same source archive to create a new immutable analysis.</p> }
             }
         }
@@ -155,6 +163,7 @@
     private string? _databaseTab;
     private string? _focusId;
     private bool _loaded;
+    private string? _pendingArchive;
 
     private void OpenArea(string area) { _area = area; _focusDatabase = null; _databaseTab = null; }
     /// <summary>From an Overview card: the same selected snapshot, the matching area; Open Database Diagram lands on the diagram.</summary>
@@ -183,7 +192,7 @@
     private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = "Source snapshots could not be loaded."; } }
     private async Task Upload(InputFileChangeEventArgs args)
     {
-        _busy = true; _error = null;
+        _busy = true; _error = null; _pendingArchive = args.File.Name;
         try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotAsync(_profile!.Id, args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
         catch (Exception) { _error = "Source archive could not be analyzed. Check the ZIP file and upload size."; }
         finally { _busy = false; }

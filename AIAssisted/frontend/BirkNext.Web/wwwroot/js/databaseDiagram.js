@@ -16,7 +16,8 @@ export function render(host, nodes, edges, key, receiver) {
             for (const node of nodes) { const p = stored[node.id]; if (p && Number.isFinite(p.x) && Number.isFinite(p.y) && Math.abs(p.x) < 100000 && Math.abs(p.y) < 100000) { positions[node.id] = p; restored = true; } }
         } catch { /* Corrupt or unavailable storage falls back to deterministic layout. */ }
     }
-    const svg = element('svg', {width: '100%', height: '100%', role: 'img', 'aria-label': 'Source database relationship diagram'});
+    // A labelled group, not role=img: the table nodes inside are focusable buttons (img would hide them from assistive technology).
+    const svg = element('svg', {width: '100%', height: '100%', role: 'group', 'aria-roledescription': 'diagram', 'aria-label': 'Source database relationship diagram'});
     const title = element('title', {}, 'Source schema only. Solid confirmed; dashed inferred; dotted migration/DDL.'); svg.append(title);
     const viewport = element('g'); svg.append(viewport); host.replaceChildren(svg);
     const s = {svg, viewport, positions, nodes, edges, key, receiver, x: 20, y: 20, zoom: 1, handlers: []}; instances.set(host, s);

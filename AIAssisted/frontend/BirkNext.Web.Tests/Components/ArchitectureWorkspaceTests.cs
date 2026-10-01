@@ -64,11 +64,15 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
     public void Overview_StatesTheSourceOnlyBoundary_CountsAndDiagnostics_WithoutPassFail()
     {
         var cut = RenderModel();
-        cut.Find("[data-testid=arch-limitation]").TextContent.Should().Be(ArchitectureSnapshot.SourceLimitation);
+        cut.Find("[data-testid=arch-limitation]").TextContent.Should().Be("Source-derived only — deployment/runtime not verified.");
+        cut.Find("[data-testid=arch-limitation-full]").TextContent.Should().Be(ArchitectureSnapshot.SourceLimitation, "the full boundary stays one click away");
         cut.Find("[data-testid=arch-status]").TextContent.Should().Be("Partial");
         var overview = cut.Find("[data-testid=arch-overview]").TextContent;
-        overview.Should().Contain("Components3").And.Contain("Messaging channels1").And.Contain("Datastores1").And.Contain("Unresolved1").And.Contain("Inferred1");
-        cut.Find("[data-testid=arch-diagnostics]").TextContent.Should().Contain("limitations, not defects").And.Contain("Billing:BaseUrl");
+        overview.Should().Contain("Components3").And.Contain("Messaging channels1").And.Contain("Datastores1");
+        cut.Find("[data-testid=arch-dep-states]").TextContent.Should().Contain("Unresolved1").And.Contain("Inferred1");
+        cut.Find("[data-testid=arch-diagnostics]").TextContent.Should().Contain("not application defects").And.NotContain("Billing:BaseUrl", "raw unresolved evidence is a drill-down");
+        cut.Find("[data-testid=arch-unresolved-detail-toggle]").Click();
+        cut.Find("[data-testid=arch-unresolved-table]").TextContent.Should().Contain("Billing:BaseUrl");
         cut.Markup.Should().NotContain(">Passed<").And.NotContain(">Failed<");
         cut.FindAll("nav[aria-label='Architecture views'] button").Select(b => b.TextContent).Take(7).Should().Equal(["Overview", "System", "Integrations", "Messaging", "Data", "Dependencies", "Changes"]);
     }
@@ -186,7 +190,7 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
         cut.Find("[data-testid=arch-dep-search]").Input("Billing");
         var row = cut.Find("[data-testid=arch-dep-row]");
         row.GetAttribute("data-state").Should().Be("Unresolved");
-        row.TextContent.Should().Contain("Unresolved: Billing:BaseUrl").And.Contain("No");
+        row.TextContent.Should().Contain("Unresolved: Billing:BaseUrl").And.Contain("target not identified");
         row.QuerySelector("button")!.Click();
         cut.Find("[data-testid=arch-edge-detail]").TextContent.Should().Contain("nothing was guessed from names");
     }
@@ -196,7 +200,7 @@ public sealed class ArchitectureWorkspaceTests : BunitContext
     {
         var cut = RenderModel();
         Tab(cut, "changes");
-        cut.Find("[data-testid=arch-no-previous]").TextContent.Should().Contain("Another analyzed source snapshot is required");
+        cut.Find("[data-testid=arch-no-previous]").TextContent.Should().Contain("No previous snapshot available").And.Contain("at least two analyzed source snapshots").And.Contain("not deployment drift");
         var older = Model() with { SnapshotId = Guid.NewGuid(), Components = Model().Components.Where(c => c.Name != "Search.Worker").ToList(), Dependencies = Model().Dependencies.Where(d => d.Id != "d-sub").ToList() };
         var with = RenderModel([("older.zip", older)]);
         Tab(with, "changes");

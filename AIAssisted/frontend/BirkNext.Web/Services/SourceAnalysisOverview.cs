@@ -18,6 +18,13 @@ public sealed record SourceAreaCard(string Area, string Title, string Descriptio
 public static class SourceAnalysisOverview
 {
     public const string SafetyNote = "Source only: no live Azure, database, messaging or HTTP connection is used.";
+    // The page carries the full source-only note; cards keep a short form (full text in the Architecture / Database areas).
+    public const string ArchitectureCardLimitation = "Source-derived only · deployment/runtime not verified";
+    public const string DatabaseCardLimitation = "Source-derived only · deployed schema not verified";
+
+    /// <summary>What each area will provide once the uploaded archive is analyzed (shown while analyzing — never as zero counts).</summary>
+    public static readonly IReadOnlyList<string> ArchitectureProvides = ["Components", "Dependencies", "Messaging channels", "Datastores", "External systems"];
+    public static readonly IReadOnlyList<string> DatabaseProvides = ["Database candidates", "Tables / entities", "Relationships", "Indexes", "Schema changes"];
 
     public static string ShortFingerprint(string sha256) => string.IsNullOrEmpty(sha256) ? "Unknown" : sha256.Length <= 8 ? sha256 : sha256[..8] + "…";
 
@@ -42,29 +49,29 @@ public static class SourceAnalysisOverview
     {
         const string title = "Architecture", description = "Source-derived topology: components, dependencies, messaging and data stores.", action = "Open Architecture";
         if (source.Architecture is not { } a)
-            return new("Architecture", title, description, "Not analyzed", "muted", "This source snapshot predates architecture extraction.", [], "View architecture details", ArchitectureSnapshot.SourceLimitation, null);
+            return new("Architecture", title, description, "Not analyzed", "muted", "This source snapshot predates architecture extraction.", [], "View architecture details", ArchitectureCardLimitation, null);
         var status = StatusLabel(a.Status);
         if (a.Status == ArchitectureStatus.Unsupported)
-            return new("Architecture", title, description, status, Tone(status), a.Limitations.FirstOrDefault(x => x != ArchitectureSnapshot.SourceLimitation) ?? "No supported project type was found in this source snapshot.", [], "View architecture details", ArchitectureSnapshot.SourceLimitation, a.SnapshotId);
+            return new("Architecture", title, description, status, Tone(status), a.Limitations.FirstOrDefault(x => x != ArchitectureSnapshot.SourceLimitation) ?? "No supported project type was found in this source snapshot.", [], "View architecture details", ArchitectureCardLimitation, a.SnapshotId);
         var unresolved = a.UnresolvedItems.Count();
+        // Counts are the structured metrics; no sentence repeats them.
         List<SourceAreaMetric> metrics =
         [
             new("Components", a.Components.Count), new("Dependencies", a.Dependencies.Count), new("Messaging channels", a.MessagingChannels.Count),
             new("Data stores", a.DataStores.Count), new("External systems", a.ExternalSystems.Count),
         ];
         if (unresolved > 0) metrics.Add(new("Unresolved dependencies", unresolved));
-        return new("Architecture", title, description, status, Tone(status), unresolved > 0 && a.Status != ArchitectureStatus.Complete ? $"{unresolved} unresolved dependenc{(unresolved == 1 ? "y" : "ies")}." : null,
-            metrics, action, ArchitectureSnapshot.SourceLimitation, a.SnapshotId);
+        return new("Architecture", title, description, status, Tone(status), null, metrics, action, ArchitectureCardLimitation, a.SnapshotId);
     }
 
     public static SourceAreaCard Database(IqrSourceSnapshot source)
     {
         const string title = "Database", description = "Source-derived database design: candidates, tables/entities, relationships and indexes.", action = "Open Database Diagram";
         if (source.DatabaseArchitecture is not { } d)
-            return new("Database", title, description, "Not analyzed", "muted", "This source snapshot predates database extraction.", [], "View database details", DatabaseArchitectureSnapshot.SourceLimitation, null);
+            return new("Database", title, description, "Not analyzed", "muted", "This source snapshot predates database extraction.", [], "View database details", DatabaseCardLimitation, null);
         var status = StatusLabel(d.Status);
         if (d.Status == DatabaseAnalysisStatus.Unsupported)
-            return new("Database", title, description, status, Tone(status), d.Diagnostics.FirstOrDefault(x => x != DatabaseArchitectureSnapshot.SourceLimitation) ?? "No supported database declaration was found in this source snapshot.", [], "View database details", DatabaseArchitectureSnapshot.SourceLimitation, d.SnapshotId);
+            return new("Database", title, description, status, Tone(status), d.Diagnostics.FirstOrDefault(x => x != DatabaseArchitectureSnapshot.SourceLimitation) ?? "No supported database declaration was found in this source snapshot.", [], "View database details", DatabaseCardLimitation, d.SnapshotId);
         // Same counting as the Database workspace overview.
         var tables = d.Databases.SelectMany(x => x.Schemas.SelectMany(s => s.Tables)).ToList();
         List<SourceAreaMetric> metrics =
@@ -74,12 +81,6 @@ public static class SourceAnalysisOverview
         ];
         if (d.UnresolvedEvidence.Count > 0) metrics.Add(new("Unresolved evidence", d.UnresolvedEvidence.Count));
         if (d.Conflicts.Count > 0) metrics.Add(new("Conflicts", d.Conflicts.Count));
-        var reason = d.Status == DatabaseAnalysisStatus.Complete ? null
-            : string.Join(" ", new[]
-            {
-                d.UnresolvedEvidence.Count > 0 ? $"{d.UnresolvedEvidence.Count} unresolved evidence item{(d.UnresolvedEvidence.Count == 1 ? "" : "s")}." : null,
-                d.Conflicts.Count > 0 ? $"{d.Conflicts.Count} conflict{(d.Conflicts.Count == 1 ? "" : "s")}." : null,
-            }.Where(x => x is not null));
-        return new("Database", title, description, status, Tone(status), string.IsNullOrEmpty(reason) ? null : reason, metrics, action, DatabaseArchitectureSnapshot.SourceLimitation, d.SnapshotId);
+        return new("Database", title, description, status, Tone(status), null, metrics, action, DatabaseCardLimitation, d.SnapshotId);
     }
 }

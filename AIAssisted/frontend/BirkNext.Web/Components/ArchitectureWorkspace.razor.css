@@ -35,6 +35,35 @@
 .arch-table th, .arch-table td { padding: .45rem; border-bottom: 1px solid #d1d5db; text-align: left; vertical-align: top; }
 .arch-link { background: none; border: none; padding: 0; color: #1d4ed8; cursor: pointer; text-decoration: underline; font: inherit; text-align: left; }
 .arch button:focus-visible, .arch-canvas:focus-visible, .arch-table:focus-visible, .arch summary:focus-visible, .arch select:focus-visible, .arch input:focus-visible { outline: 3px solid #2168be; outline-offset: 2px; }
+/* Summary first → structured detail → evidence drill-down. */
+.arch-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .8rem; }
+.arch-panels { display: grid; gap: .8rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); margin: .8rem 0; }
+.arch-panel { border: 1px solid #a8b2bf; border-radius: .5rem; padding: .65rem .8rem; min-width: 0; margin: .8rem 0 0; }
+.arch-panels > .arch-panel { margin: 0; }
+.arch-panel h3 { margin: 0 0 .35rem; font-size: 1rem; display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem; }
+.arch-count { display: inline-block; min-width: 1.6rem; padding: 0 .4rem; border-radius: 999px; background: #eef2f7; font-size: .8rem; text-align: center; }
+.arch-mini, .arch-groups { margin: .4rem 0; display: grid; gap: .3rem .8rem; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); }
+.arch-mini > div, .arch-groups > div { display: flex; justify-content: space-between; gap: .5rem; border-bottom: 1px solid #e5e7eb; padding: .15rem 0; min-width: 0; }
+.arch-mini dt, .arch-groups dt { font-size: .82rem; color: #374151; }
+.arch-mini dd, .arch-groups dd { margin: 0; font-weight: 600; }
+.arch-chips { list-style: none; margin: .3rem 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.arch-chips li { border: 1px solid #cbd5e1; border-radius: 999px; padding: .1rem .55rem; font-size: .82rem; background: #f8fafc; }
+.arch-filterbar, .arch-toolbar { display: flex; flex-wrap: wrap; gap: .5rem 1rem; margin: .6rem 0; align-items: flex-end; }
+.arch-group { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .5rem; padding: .3rem .5rem; border: 1px solid #e2e8f0; border-radius: .5rem; min-width: 0; }
+.arch-group label { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
+.arch-group input[type=search] { width: 16rem; max-width: 100%; }
+.arch-group select { max-width: 14rem; }
+.arch-group-label { font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #4b5563; }
+.arch-legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; align-items: center; font-size: .8rem; margin: .3rem 0; }
+.arch-legend > span { display: inline-flex; align-items: center; gap: .35rem; }
+.arch-line { display: inline-block; width: 1.8rem; border-top: 2px solid #44546b; }
+.arch-line-dashed { border-top-style: dashed; }
+.arch-line-dotted { border-top-style: dotted; }
+.arch-line-dashdot { border-top: 0; height: 2px; background: repeating-linear-gradient(90deg, #44546b 0 6px, transparent 6px 9px, #44546b 9px 11px, transparent 11px 14px); }
+.arch-empty { border: 1px dashed #94a3b8; border-radius: .5rem; padding: .8rem 1rem; display: grid; gap: .4rem; }
+.arch-empty h4, .arch-empty p { margin: 0; }
+.arch-source-cell { max-width: 16rem; }
+.arch-ellipsis { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 @media (max-width: 1100px) {
     .arch-content { flex-direction: column; }
     .arch-detail { width: 100%; max-height: none; box-sizing: border-box; }
@@ -45,3 +74,8 @@
     .arch-controls select, .arch-controls input[type=search] { max-width: 100%; width: 100%; }
     .arch-canvas { height: 440px; }
 }
+/* Header status pills can be long ("Complete (… not a claim of correctness)"): let them wrap on narrow screens. */
+.arch h2 .arch-pill { white-space: normal; }
+/* Counts never wrap digit by digit; long kinds wrap instead. */
+.arch-mini dd, .arch-groups dd { white-space: nowrap; flex-shrink: 0; }
+.arch-groups { grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr)); }

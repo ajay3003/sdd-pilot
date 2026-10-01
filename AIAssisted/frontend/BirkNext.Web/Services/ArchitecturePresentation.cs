@@ -39,6 +39,9 @@ public static class ArchitecturePresentation
         ArchitectureDependencyType.KeyVault, ArchitectureDependencyType.Auth, ArchitectureDependencyType.Observability,
     ];
 
+    /// <summary>Runtime relationship types (what the graph views draw); project references, orchestration and configuration links are not.</summary>
+    public static bool IsRuntime(ArchitectureDependencyType type) => Runtime.Contains(type);
+
     public static IReadOnlyList<ArchitectureDependencyType> TypesOf(SourceArchitectureView view) => view switch
     {
         SourceArchitectureView.Messaging => Messaging,
