@@ -220,7 +220,21 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     {
         var idx = _settings.Profiles.FindIndex(p => p.Id == profile.Id);
         if (idx >= 0)
+        {
+            var old = _settings.Profiles[idx].Security;
+            foreach (var field in Enum.GetValues<BirkNext.SecurityExpectations.SecurityExpectationField>())
+            {
+                var before = BirkNext.SecurityExpectations.SecurityExpectationValues.Values(old, field).ToList();
+                foreach (var value in BirkNext.SecurityExpectations.SecurityExpectationValues.Values(profile.Security, field).Where(v => !before.Contains(v)))
+                {
+                    var normalized = BirkNext.SecurityExpectations.SecurityExpectationValues.Normalize(field, value);
+                    if (normalized is null) continue;
+                    profile.Security.Origins.RemoveAll(p => p.FieldType == field && p.NormalizedValue == normalized);
+                    profile.Security.Origins.Add(new(field, normalized, BirkNext.SecurityExpectations.SecurityExpectationOrigin.Manual));
+                }
+            }
             _settings.Profiles[idx] = profile;
+        }
     }
 
     // ── Presets ───────────────────────────────────────────────────────────────
@@ -279,7 +293,11 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
         ClsPoor   = 0.25
     };
 
-    public FrontendSecuritySettings       GetDefaultSecuritySettings() => new();
+    public FrontendSecuritySettings GetDefaultSecuritySettings() => new() {
+        Origins = BirkNext.SecurityExpectations.ApprovedSecurityExpectations.DefaultHeaders.Select(h =>
+            new BirkNext.SecurityExpectations.SecurityExpectationProvenance(BirkNext.SecurityExpectations.SecurityExpectationField.SecurityHeader, h,
+                BirkNext.SecurityExpectations.SecurityExpectationOrigin.Default)).ToList()
+    };
     public FrontendAnalysisFeatureToggles GetDefaultFeatureToggles()   => new();
 
     // ── Restore actions ───────────────────────────────────────────────────────

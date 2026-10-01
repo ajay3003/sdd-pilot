@@ -11,7 +11,8 @@ public enum DeveloperTestLayer { Unit, Integration, Component, Architecture, Unk
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SourceCoverageStatus { DeveloperUnitCovered, DeveloperIntegrationCovered, SourceEvidenceOnly, CrossLayerGap, RuntimeGap, E2EGap, ManualVerification, NotAssessable, DeveloperContractCovered }
 
-/// <summary>Evidence only. No source text, configuration values, test bodies or execution results.</summary>
+/// <summary>Evidence only. No source text, secrets, test bodies or execution results.
+/// The security projection may retain allow-listed public expectation candidates.</summary>
 public sealed record IqrSourceSnapshot
 {
     public Guid Id { get; init; } = Guid.NewGuid();
@@ -35,6 +36,8 @@ public sealed record IqrSourceSnapshot
     public BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? DatabaseArchitecture { get; init; }
     /// <summary>Source-derived architecture of the same archive (null in snapshots analyzed before architecture extraction). Not deployed topology.</summary>
     public BirkNext.SourceArchitecture.ArchitectureSnapshot? Architecture { get; init; }
+    /// <summary>Allow-listed security source facts, not approved expectations or runtime verification. Null in historical snapshots.</summary>
+    public BirkNext.SecurityExpectations.SecuritySourceEvidence? SecurityExpectationsEvidence { get; init; }
 }
 
 // ── Multi-stage integration path (analyzer v2) ────────────────────────────────────────────────────────────────────────

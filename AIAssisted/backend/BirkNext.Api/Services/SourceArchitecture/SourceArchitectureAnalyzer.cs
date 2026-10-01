@@ -24,9 +24,14 @@ public static class SourceArchitectureAnalyzer
 
     public static ArchitectureSnapshot Analyze(Guid sourceSnapshotId, IqrSourceArchiveReader.Workspace workspace, DateTimeOffset extractedAt,
         DatabaseArchitectureSnapshot? database = null, CancellationToken ct = default)
+        => Analyze(sourceSnapshotId, workspace, extractedAt, database, ct, out _, out _);
+
+    internal static ArchitectureSnapshot Analyze(Guid sourceSnapshotId, IqrSourceArchiveReader.Workspace workspace, DateTimeOffset extractedAt,
+        DatabaseArchitectureSnapshot? database, CancellationToken ct, out ArchitectureInput input, out List<ArchitectureExtractionResult> results)
     {
-        var input = ArchitectureInput.From(sourceSnapshotId, workspace);
-        var results = Extractors.Where(e => e.CanAnalyze(input)).Select(e => e.Analyze(input, ct)).ToList();
+        input = ArchitectureInput.From(sourceSnapshotId, workspace);
+        var parsedInput = input;
+        results = Extractors.Where(e => e.CanAnalyze(parsedInput)).Select(e => e.Analyze(parsedInput, ct)).ToList();
         return new Merger(input, results, database).Build(extractedAt);
     }
 

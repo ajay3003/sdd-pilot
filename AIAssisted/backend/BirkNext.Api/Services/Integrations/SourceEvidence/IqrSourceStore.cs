@@ -31,7 +31,10 @@ public sealed class IqrSourceStore(AppDbContext db)
         var snapshot = IqrSourceAnalyzer.Analyze(integrationId, workspace, DateTimeOffset.UtcNow, ct);
         snapshot = snapshot with { DatabaseArchitecture = await DatabaseArchitecture.DatabaseArchitectureAnalyzer.AnalyzeAsync(snapshot.Id, workspace, snapshot.AnalyzedAt, ct) };
         // Source architecture (components, dependencies, messaging, datastores): its own model; datastores only link to the Database analysis above.
-        snapshot = snapshot with { Architecture = SourceArchitecture.SourceArchitectureAnalyzer.Analyze(snapshot.Id, workspace, snapshot.AnalyzedAt, snapshot.DatabaseArchitecture, ct) };
+        snapshot = snapshot with { Architecture = SourceArchitecture.SourceArchitectureAnalyzer.Analyze(snapshot.Id, workspace, snapshot.AnalyzedAt, snapshot.DatabaseArchitecture, ct,
+            out var architectureInput, out var architectureResults) };
+        snapshot = snapshot with { SecurityExpectationsEvidence = SecurityExpectations.SecurityExpectationSourceAnalyzer.Analyze(snapshot, architectureInput,
+            architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct) };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });

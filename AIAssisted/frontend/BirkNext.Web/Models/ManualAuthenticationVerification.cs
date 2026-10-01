@@ -26,10 +26,18 @@ public sealed class ManualAuthenticationVerificationEvidence
 
     public static string Fingerprint(FrontendAnalysisProfile profile)
     {
+        // Approval provenance is review metadata, not authentication configuration. Preserve the
+        // pre-discovery JSON shape so existing verification digests remain valid until values change.
+        var security = new Dictionary<string, object?> {
+            ["expectedAuthority"] = profile.Security.ExpectedAuthority, ["expectedTenant"] = profile.Security.ExpectedTenant,
+            ["expectedClientId"] = profile.Security.ExpectedClientId, ["allowedRedirectUrls"] = profile.Security.AllowedRedirectUrls,
+            ["allowedBackendDomains"] = profile.Security.AllowedBackendDomains, ["allowedRestHosts"] = profile.Security.AllowedRestHosts,
+            ["allowedGraphQlHosts"] = profile.Security.AllowedGraphQlHosts, ["allowedCdnHosts"] = profile.Security.AllowedCdnHosts,
+            ["expectedSecurityHeaders"] = profile.Security.ExpectedSecurityHeaders };
         // Store a digest, never URL query data or authentication configuration values.
         var context = JsonSerializer.Serialize(new { profile.Id, profile.TargetUrl, profile.EnvironmentType,
             profile.Authentication, profile.RequestTimeoutSeconds, profile.RetryCount,
-            profile.Security, profile.ExpectedApiGateway, profile.AllowedRestHosts, profile.AllowedGraphQlEndpoints });
+            Security = security, profile.ExpectedApiGateway, profile.AllowedRestHosts, profile.AllowedGraphQlEndpoints });
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(context)));
     }
 

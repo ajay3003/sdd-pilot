@@ -1,0 +1,248 @@
+@using BirkNext.SecurityExpectations
+@using BirkNext.SourceArchitecture
+@using BirkNext.Integrations
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+@implements IDisposable
+
+<section class="sec" data-testid="security-expectations" aria-labelledby="sec-heading">
+    <h3 id="sec-heading">Security Expectations</h3>
+    <p class="sec-note">These are expectations only — no validation is performed here. Source discovery may suggest values, but nothing is approved or validated automatically. Never enter secrets, passwords, or tokens.</p>
+    <dl class="sec-summary">
+        <div><dt>Approved expectations</dt><dd data-testid="sec-approved-count">@ApprovedCount</dd></div>
+        <div><dt>Source candidates</dt><dd>@(_result is null ? "Not analyzed" : _result.Candidates.Count.ToString())</dd></div>
+        <div><dt>Needs review</dt><dd>@(_result is null ? "Not analyzed" : _result.Candidates.Count(c => !Matches(c) && State(c) != SecurityCandidateState.Rejected).ToString())</dd></div>
+        <div><dt>Source snapshot</dt><dd data-testid="sec-snapshot">@(_current is null ? "Unavailable" : _result is null ? "Available · not analyzed" : IsCurrent ? "Current" : "Older snapshot")</dd></div>
+    </dl>
+    <div class="sec-actions">
+        <button type="button" class="btn-primary" data-testid="sec-discover" disabled="@(_busy || _current is null || Api is null)" @onclick="DiscoverAsync">Discover from source</button>
+        <button type="button" class="btn-secondary" aria-expanded="@(_reviewOpen ? "true" : "false")" aria-controls="sec-review" disabled="@(_result is null)" @onclick="() => _reviewOpen = !_reviewOpen">Review detected values</button>
+    </div>
+    @if (_current is null) { <p class="sec-muted">No Source Analysis snapshot is available for this Target Environment. <a href="/source-analysis">Open Source Analysis</a> to analyze source.</p> }
+    @if (Editable) { <p class="sec-muted">Save or cancel manual edits before accepting or rejecting source candidates.</p> }
+    <p class="sec-status" role="status" aria-live="polite" tabindex="-1" @ref="_statusRef" data-testid="sec-status">@_status</p>
+    @if (_error is not null) { <p role="alert" class="sec-error">@_error</p> }
+    @if (_result is not null)
+    {
+        <div id="sec-review" hidden="@(!_reviewOpen)" class="sec-review" role="region" aria-label="Review source-derived expectations">
+            <p>@_result.Status · @SafeCandidates.Count safe additions · @_result.Candidates.Count(c => State(c) == SecurityCandidateState.Conflict) conflicts · @_result.Candidates.Count(c => c.EvidenceState == ArchitectureEvidenceState.Inferred) inferred · @_result.Candidates.Count(c => State(c) == SecurityCandidateState.Stale) stale</p>
+            <button type="button" class="btn-secondary" data-testid="sec-accept-safe" disabled="@(_busy || Editable || SafeCandidates.Count == 0)" @onclick="AcceptSafeAsync">Accept all safe candidates</button>
+            <p class="sec-muted">Only current, valid, non-conflicting candidates with Confirmed or Strongly supported evidence are eligible. This action adds values only after your click.</p>
+            <ReviewDisclosure Text="Discovery details" TestId="sec-discovery-details">
+                <p>Source snapshot @_result.SourceSnapshotId · Fingerprint @_result.SourceFingerprint · Analyzer @_result.AnalyzerVersion · @_result.ExtractedAt.ToUniversalTime().ToString("u")</p>
+                @foreach (var note in _result.Diagnostics.Concat(_result.UnsupportedEvidence)) { <p>@SafeText(note)</p> }
+                @if (_history.Count > 1) { <p>@_history.Count recent discovery results available separately from approved settings.</p> }
+            </ReviewDisclosure>
+        </div>
+    }
+    @foreach (var group in Groups)
+    {
+        <section class="sec-group" aria-labelledby="@($"sec-{group.Key}")">
+            <h4 id="@($"sec-{group.Key}")">@group.Label</h4>
+            @if (group.Key == "headers") { <p class="sec-muted">Default baseline: @string.Join(", ", ApprovedSecurityExpectations.DefaultHeaders). Source-declared configuration does not prove runtime headers.</p> }
+            @foreach (var field in group.Fields)
+            {
+                var fieldId = $"sec-field-{field}";
+                var candidates = _result?.Candidates.Where(c => c.FieldType == field).ToList() ?? [];
+                <div class="sec-field" id="@fieldId" data-testid="@fieldId">
+                    @if (Editable)
+                    {
+                        <label for="@($"{fieldId}-input")">@SecurityExpectationValues.Label(field)</label>
+                        @if (SecurityExpectationValues.Singleton(field))
+                        {
+                            <input id="@($"{fieldId}-input")" type="@(field == SecurityExpectationField.Authority ? "url" : "text")" class="form-control" value="@string.Join("", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())" />
+                        }
+                        else
+                        {
+                            <textarea id="@($"{fieldId}-input")" class="form-control" rows="3" value="@string.Join("\n", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())"></textarea>
+                        }
+                    }
+                    else
+                    {
+                        <h5>@SecurityExpectationValues.Label(field)</h5>
+                        <p class="sec-muted">Approved</p>
+                        <ul class="sec-approved">
+                            @foreach (var value in SecurityExpectationValues.Values(Settings, field))
+                            {
+                                var provenance = Settings.Origins.LastOrDefault(p => p.FieldType == field && p.NormalizedValue == SecurityExpectationValues.Normalize(field, value));
+                                <li>@SafeText(value) <span class="sec-state">@OriginLabel(SecurityExpectationValues.Origin(Settings, field, value))</span>
+                                    @if (provenance?.SourceSnapshotId is { } snapshot && snapshot != _current?.Id) { <span class="sec-muted">Source evidence is from an older snapshot; expectation remains approved.</span> }
+                                </li>
+                            }
+                        </ul>
+                        @if (!SecurityExpectationValues.Values(Settings, field).Any()) { <p class="sec-muted">No approved value</p> }
+                    }
+                    @if (candidates.Count == 0) { <p class="sec-muted">@(_result is null ? "Source candidates: Not analyzed" : "No source candidate — not evidence of a security defect.")</p> }
+                    @foreach (var candidate in candidates)
+                    {
+                        var matches = Matches(candidate);
+                        var state = State(candidate);
+                        var valid = Valid(candidate);
+                        <div class="sec-candidate" data-testid="sec-candidate" data-field="@field" data-candidate="@candidate.Id">
+                            <div><strong>@(valid ? candidate.Value : "Unresolved candidate; value not displayed")</strong> <span class="sec-state">@StateLabel(state)</span></div>
+                            <p class="sec-muted">@SafeText(candidate.SourceComponent) · @(matches ? "Matches current source; approved value is unchanged." : "Not approved")</p>
+                            <div class="sec-actions">
+                                @if (state != SecurityCandidateState.Rejected && state != SecurityCandidateState.Stale && valid && !matches)
+                                {
+                                    <button type="button" class="btn-secondary" disabled="@(_busy || Editable)" data-testid="sec-accept" aria-label="@($"{(state == SecurityCandidateState.Conflict ? "Replace or choose" : SecurityExpectationValues.Singleton(field) ? "Accept" : "Add")} {SecurityExpectationValues.Label(field)} candidate {candidate.Value} from {SafeText(candidate.SourceComponent)}")" @onclick="() => ReviewAsync(candidate, true, state == SecurityCandidateState.Conflict)">@(state == SecurityCandidateState.Conflict ? "Replace / choose detected" : SecurityExpectationValues.Singleton(field) ? "Accept" : "Add")</button>
+                                }
+                                @if (state != SecurityCandidateState.Rejected)
+                                {
+                                    <button type="button" class="btn-secondary" disabled="@(_busy || Editable)" data-testid="sec-reject" aria-label="@($"Ignore {SecurityExpectationValues.Label(field)} candidate from {SafeText(candidate.SourceComponent)}")" @onclick="() => ReviewAsync(candidate, false, false)">@(state == SecurityCandidateState.Conflict ? "Keep current" : "Ignore")</button>
+                                }
+                            </div>
+                            <ReviewDisclosure Text="View evidence" TestId="@($"sec-evidence-{candidate.Id}")">
+                                <dl class="sec-evidence">
+                                    <div><dt>Snapshot</dt><dd>@candidate.SourceSnapshotId</dd></div>
+                                    <div><dt>Component</dt><dd>@SafeText(candidate.SourceComponent)</dd></div>
+                                    <div><dt>File / line</dt><dd>@SafeText(candidate.SourceFile) @(candidate.SourceLine > 0 ? $":{candidate.SourceLine}" : "")</dd></div>
+                                    <div><dt>Symbol / config key</dt><dd>@SafeText(candidate.SourceSymbol)</dd></div>
+                                    <div><dt>Evidence type</dt><dd>@candidate.EvidenceType</dd></div>
+                                    <div><dt>Evidence confidence</dt><dd>@candidate.EvidenceState · @SafeText(candidate.Confidence)</dd></div>
+                                    <div><dt>Explanation</dt><dd>@SafeText(candidate.Explanation)</dd></div>
+                                </dl>
+                            </ReviewDisclosure>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    }
+    @if (!Editable)
+    {
+        <ReviewDisclosure Text="Defaults" TestId="sec-defaults">
+            <p class="sec-muted">Restore changes approved settings only; discovery history is retained. The full reset clears identity and allowed hosts and restores headers.</p>
+            <div class="sec-actions">@Defaults</div>
+        </ReviewDisclosure>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public FrontendSecuritySettings Settings { get; set; } = new();
+    [Parameter] public bool Editable { get; set; }
+    [Parameter] public EventCallback<ApprovedSecurityExpectations> ApprovedChanged { get; set; }
+    [Parameter] public RenderFragment? Defaults { get; set; }
+    private ISecurityExpectationApi? Api => Services.GetService<ISecurityExpectationApi>();
+    private string? _loadedEnvironment;
+    private IqrSourceSnapshot? _current;
+    private SecurityExpectationDiscoveryResult? _result;
+    private IReadOnlyList<SecurityExpectationDiscoveryResult> _history = [];
+    private bool _busy, _reviewOpen;
+    private bool _disposed;
+    private string _status = "";
+    private string? _error;
+    private ElementReference _statusRef;
+    private bool IsCurrent => _result is not null && _result.IsCurrent && _result.SourceSnapshotId == _current?.Id && _result.SourceFingerprint == _current?.Archive.Sha256;
+    private int ApprovedCount => Enum.GetValues<SecurityExpectationField>().Sum(f => SecurityExpectationValues.Values(Settings, f).Count());
+    private static readonly (string Key, string Label, SecurityExpectationField[] Fields)[] Groups = [
+        ("identity", "Identity expectations", [SecurityExpectationField.Authority, SecurityExpectationField.TenantId, SecurityExpectationField.ClientId, SecurityExpectationField.RedirectUrl]),
+        ("hosts", "Allowed application hosts", [SecurityExpectationField.BackendDomain, SecurityExpectationField.RestHost, SecurityExpectationField.GraphQlHost, SecurityExpectationField.CdnHost]),
+        ("headers", "Expected security headers", [SecurityExpectationField.SecurityHeader]) ];
+    protected override async Task OnParametersSetAsync()
+    {
+        if(_loadedEnvironment == EnvironmentId) return;
+        _loadedEnvironment = EnvironmentId; _result = null; _current = null; _history = []; _status = ""; _error = null;
+        if(Api is null) return;
+        try { await LoadAsync(); }
+        catch(Exception e) when(e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error = "Source discovery is unavailable; approved expectations are unchanged."; }
+    }
+    private async Task LoadAsync()
+    {
+        var env = EnvironmentId;
+        var sources = await Api!.SourcesAsync(env);
+        var history = await Api.HistoryAsync(env);
+        if(env != EnvironmentId) return;
+        _current = sources.FirstOrDefault(); _history = history; _result = history.FirstOrDefault();
+    }
+    private bool Valid(SecurityExpectationCandidate c) => SecurityExpectationValues.Normalize(c.FieldType,c.Value) == c.NormalizedValue && c.NormalizedValue.Length > 0 &&
+        c.EvidenceState is not (ArchitectureEvidenceState.Unresolved or ArchitectureEvidenceState.Conflict);
+    private bool Matches(SecurityExpectationCandidate c) => Valid(c) && SecurityExpectationValues.Matches(Settings,c);
+    private SecurityCandidateState State(SecurityExpectationCandidate c)
+    {
+        if(!IsCurrent || !c.IsCurrent) return SecurityCandidateState.Stale;
+        if(c.CandidateState == SecurityCandidateState.Rejected) return c.CandidateState;
+        if(Matches(c))
+        {
+            var approval = Settings.Origins.LastOrDefault(p => p.FieldType == c.FieldType && p.NormalizedValue == c.NormalizedValue);
+            var acceptedHere = approval?.Origin == SecurityExpectationOrigin.AcceptedFromSource && approval.SourceSnapshotId == c.SourceSnapshotId &&
+                approval.SourceFingerprint == _result!.SourceFingerprint && (approval.SourceCandidateId == c.Id || c.CandidateState == SecurityCandidateState.Accepted);
+            return acceptedHere ? SecurityCandidateState.Accepted : SecurityCandidateState.Detected;
+        }
+        if(SecurityExpectationValues.Singleton(c.FieldType) && (SecurityExpectationValues.Values(Settings,c.FieldType).Any() ||
+            _result!.Candidates.Where(x=>x.FieldType==c.FieldType).Select(x=>x.NormalizedValue).Distinct().Count()>1)) return SecurityCandidateState.Conflict;
+        return c.CandidateState == SecurityCandidateState.Accepted ? SecurityCandidateState.Detected : c.CandidateState;
+    }
+    private List<SecurityExpectationCandidate> SafeCandidates => _result?.Candidates.Where(c => Valid(c) && IsCurrent && c.IsCurrent && !Matches(c) &&
+        State(c) == SecurityCandidateState.Detected && c.EvidenceState is ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported).ToList() ?? [];
+    private async Task DiscoverAsync()
+    {
+        _busy=true; _error=null;
+        try {
+            await LoadAsync();
+            if(_current is null) { _status="No current source snapshot; no approved expectations were changed."; return; }
+            _result=await Api!.DiscoverAsync(EnvironmentId,new(_current.Id,SecurityExpectationValues.Copy(Settings)));
+            _history = new[] { _result }.Concat(_history).DistinctBy(r => r.Id).Take(30).ToList();
+            _reviewOpen=true;
+            _status=$"Source discovery {_result.Status}. {_result.Candidates.Count(c=>c.CandidateState==SecurityCandidateState.Detected)} detected, {_result.Candidates.Count(c=>c.CandidateState==SecurityCandidateState.Suggested)} suggested, {_result.Candidates.Count(c=>c.CandidateState==SecurityCandidateState.Conflict)} conflicts, 0 approved automatically. No approved expectations were changed.";
+        } catch(Exception e) when(e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error=e is InvalidOperationException ? e.Message : "Source discovery is unavailable; approved expectations are unchanged."; }
+        finally { _busy=false; }
+    }
+    private async Task<ApprovedSecurityExpectations> ApplyReviewAsync(SecurityExpectationCandidate candidate, bool accept, bool replace,
+        ApprovedSecurityExpectations? approved = null, Func<bool>? unchanged = null)
+    {
+        var environmentId = EnvironmentId;
+        var approvedBefore = System.Text.Json.JsonSerializer.Serialize(Settings);
+        if (_disposed || Editable || unchanged?.Invoke() == false)
+            throw new InvalidOperationException("Target Environment or approved values changed; refresh review. Your current expectations were preserved.");
+        var response = await Api!.ReviewAsync(EnvironmentId,new(_result!.Id,candidate.Id,_result.Revision,SecurityExpectationValues.Copy(approved ?? Settings),replace),accept);
+        if (_disposed || EnvironmentId != environmentId || Editable || !(unchanged?.Invoke() ?? approvedBefore == System.Text.Json.JsonSerializer.Serialize(Settings)))
+            throw new InvalidOperationException("Target Environment or approved values changed; refresh review. Your current expectations were preserved.");
+        if(accept) await ApprovedChanged.InvokeAsync(response.Approved);
+        _result=response.Discovery;
+        return response.Approved;
+    }
+    private async Task ReviewAsync(SecurityExpectationCandidate candidate, bool accept, bool replace)
+    {
+        if(_busy || Editable) return;
+        _busy=true; _error=null;
+        try { await ApplyReviewAsync(candidate,accept,replace); _status=accept ? "Accepted from source and saved to approved expectations." : "Candidate ignored. Approved expectations are unchanged."; }
+        catch(Exception e) when(e is HttpRequestException or InvalidOperationException or Microsoft.JSInterop.JSException or System.Text.Json.JsonException or TaskCanceledException) { _error=e is InvalidOperationException ? e.Message : "Review could not be saved. Refresh discovery before reviewing again."; }
+        finally { _busy=false; if (!_disposed) await _statusRef.FocusAsync(); }
+    }
+    private async Task AcceptSafeAsync()
+    {
+        if(_busy || Editable) return;
+        var safe=SafeCandidates;
+        var environmentId = EnvironmentId;
+        var initialSettings = Settings;
+        var initialJson = System.Text.Json.JsonSerializer.Serialize(Settings);
+        var approved = SecurityExpectationValues.Copy(Settings);
+        // Parent parameter delivery may lag during a bulk event. Thread the successfully saved
+        // projection through every request; allow only the original object or our latest save.
+        bool Unchanged() => EnvironmentId == environmentId &&
+            ((ReferenceEquals(Settings, initialSettings) && System.Text.Json.JsonSerializer.Serialize(Settings) == initialJson) ||
+             System.Text.Json.JsonSerializer.Serialize(Settings) == System.Text.Json.JsonSerializer.Serialize(approved));
+        _busy=true; _error=null;
+        var accepted=0;
+        try { foreach(var candidate in safe) { approved = await ApplyReviewAsync(candidate,true,false,approved,Unchanged); accepted++; } _status=$"Accepted {accepted} safe candidates by your explicit action."; }
+        catch(Exception e) when(e is HttpRequestException or InvalidOperationException or Microsoft.JSInterop.JSException or System.Text.Json.JsonException or TaskCanceledException) { _error=$"{accepted} candidates saved. Review stopped; refresh discovery before continuing."; }
+        finally { _busy=false; if (!_disposed) await _statusRef.FocusAsync(); }
+    }
+    private void Set(SecurityExpectationField field, string? text)
+    {
+        if(field==SecurityExpectationField.Authority) Settings.ExpectedAuthority=text;
+        else if(field==SecurityExpectationField.TenantId) Settings.ExpectedTenant=text;
+        else if(field==SecurityExpectationField.ClientId) Settings.ExpectedClientId=text;
+        else {
+            var list=(List<string>)SecurityExpectationValues.Values(Settings,field);
+            list.Clear(); list.AddRange((text??"").Split('\n').Select(x=>x.Trim()).Where(x=>x.Length>0).Distinct());
+        }
+    }
+    private static string SafeText(string text) => SecurityExpectationValues.SecretShaped(text) ? "[Redacted]" : text;
+    private static string StateLabel(SecurityCandidateState state) => state.ToString();
+    private static string OriginLabel(SecurityExpectationOrigin origin) => origin==SecurityExpectationOrigin.AcceptedFromSource ? "Accepted from source" : origin.ToString();
+    public void Dispose() => _disposed = true;
+}

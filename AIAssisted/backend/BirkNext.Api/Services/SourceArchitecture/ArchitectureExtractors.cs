@@ -220,8 +220,10 @@ internal sealed class HttpClientArchitectureExtractor : CodeExtractor
             var keys = refs.Select(r => r.Key).ToList();
             var path = refs.FirstOrDefault(r => r.Path is not null).Path;
             var hosts = Regex.Matches(statement, @"""(https?://[^""/]+)").Select(h => h.Groups[1].Value).ToList();
+            var endpoint = ClientEndpoint(input, project, file, statement);
             facts.Add(Fact("HttpClient", project, file, m.Index, typed is not null ? "Typed HttpClient registration" : "Named HttpClient registration",
                 ("client", ArchitectureText.Safe(name ?? "(unnamed)")), ("configKey", keys.FirstOrDefault(IsEndpointKey) ?? keys.FirstOrDefault()), ("literalHost", hosts.FirstOrDefault()),
+                ("configuredEndpoint", endpoint.Literal), ("endpointConfigKey", endpoint.Key),
                 ("kind", typed is not null ? "typed" : "named"), ("path", path is null ? null : ArchitectureText.Safe(path))));
         }
         foreach (var m in Find(file, @"\.AddDownstreamApi\(\s*(""[^""]+""|[\w.]+)\s*,([^;]*)"))
@@ -234,6 +236,15 @@ internal sealed class HttpClientArchitectureExtractor : CodeExtractor
     }
 
     internal static bool IsEndpointKey(string key) => Regex.IsMatch(key, @"(?i)(baseurl|baseaddress|url|uri|endpoint|address)$");
+    // Additional projection facts only; existing architecture resolution keeps its original inputs.
+    internal static (string? Literal, string? Key) ClientEndpoint(ArchitectureInput input, ArchProject project, CodeFile file, string statement)
+    {
+        var assignment = Regex.Match(statement, @"\bBaseAddress\s*=\s*([^;]+)", RegexOptions.Singleline);
+        if (!assignment.Success) return (null, null);
+        var refs = ConfigReferences(input, project, file, assignment.Groups[1].Value);
+        var literal = Regex.Match(assignment.Groups[1].Value, @"\bnew\s*(?:(?:global::)?(?:System\.)?Uri\s*)?\(\s*""(https?://[^""]+)""");
+        return (literal.Success ? literal.Groups[1].Value : null, refs.FirstOrDefault(r => IsEndpointKey(r.Key)).Key ?? refs.FirstOrDefault().Key);
+    }
 }
 
 /// <summary>GraphQL: Hot Chocolate server registration is in AspNetCore; here the client side — Strawberry Shake Add{Name}Client().ConfigureHttpClient(...).</summary>
@@ -250,8 +261,10 @@ internal sealed class GraphQlArchitectureExtractor : CodeExtractor
             if (!statement.Contains("ConfigureHttpClient", StringComparison.Ordinal)) continue;
             var refs = ConfigReferences(input, project, file, statement);
             var path = refs.FirstOrDefault(r => r.Path is not null).Path;
+            var endpoint = HttpClientArchitectureExtractor.ClientEndpoint(input, project, file, statement);
             facts.Add(Fact("GraphQlClient", project, file, m.Index, "Strawberry Shake generated GraphQL client with a configured HttpClient",
                 ("client", ArchitectureText.Safe(m.Groups[1].Value)), ("configKey", refs.Count > 0 ? refs[0].Key : null), ("framework", "Strawberry Shake"),
+                ("configuredEndpoint", endpoint.Literal), ("endpointConfigKey", endpoint.Key),
                 ("path", path is null ? null : ArchitectureText.Safe(path))));
         }
     }

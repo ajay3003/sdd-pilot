@@ -398,26 +398,11 @@ public sealed class CoreWebVitalsThresholds
     [JsonPropertyName("clsPoor")]   public double ClsPoor   { get; set; } = 0.25;
 }
 
-public sealed class FrontendSecuritySettings
+public sealed class FrontendSecuritySettings : BirkNext.SecurityExpectations.ApprovedSecurityExpectations
 {
-    [JsonPropertyName("expectedAuthority")]       public string?      ExpectedAuthority       { get; set; }
-    [JsonPropertyName("expectedTenant")]          public string?      ExpectedTenant          { get; set; }
-    [JsonPropertyName("expectedClientId")]        public string?      ExpectedClientId        { get; set; }
-    [JsonPropertyName("allowedRedirectUrls")]     public List<string> AllowedRedirectUrls     { get; set; } = [];
-    [JsonPropertyName("allowedBackendDomains")]   public List<string> AllowedBackendDomains   { get; set; } = [];
-    [JsonPropertyName("allowedRestHosts")]        public List<string> AllowedRestHosts        { get; set; } = [];
-    [JsonPropertyName("allowedGraphQlHosts")]     public List<string> AllowedGraphQlHosts     { get; set; } = [];
-    [JsonPropertyName("allowedCdnHosts")]         public List<string> AllowedCdnHosts         { get; set; } = [];
-    [JsonPropertyName("expectedSecurityHeaders")] public List<string> ExpectedSecurityHeaders { get; set; } =
-    [
-        "Content-Security-Policy",
-        "X-Content-Type-Options",
-        "Referrer-Policy",
-        "Permissions-Policy",
-        "Strict-Transport-Security"
-    ];
+    public static FrontendSecuritySettings FromApproved(BirkNext.SecurityExpectations.ApprovedSecurityExpectations approved) =>
+        System.Text.Json.JsonSerializer.Deserialize<FrontendSecuritySettings>(System.Text.Json.JsonSerializer.Serialize(approved))!;
 }
-
 /// <summary>
 /// Per-Target-Environment activation of the FRONTEND QUALITY REVIEW engines. Nothing here affects API Quality Review
 /// (which derives its policy from Performance Thresholds + Environment Type and its targets from Endpoint Discovery)

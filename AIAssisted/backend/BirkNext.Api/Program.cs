@@ -403,6 +403,7 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.SecurityExpectations.ISecurityExpectationDiscoveryService, BirkNext.Api.Services.SecurityExpectations.SecurityExpectationDiscoveryService>();
 // Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();

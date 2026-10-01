@@ -1179,88 +1179,18 @@
                 }
             }
 
-            @* ── Security Expectations ── *@
+            @* ── Security Expectations: approved settings and separately reviewed source candidates ── *@
             @if (_activeTab == "security")
             {
-                <p class="fa-section-note">
-                    These are expectations only — no validation is performed yet. Never enter secrets, passwords, or tokens.
-                </p>
-                @if (_isEditMode && _editProfile is not null)
-                {
-                    var sec = _editProfile.Security;
-                    <div class="fa-form-grid">
-                        <div class="form-field">
-                            <label class="fa-label">Expected Authority <span class="form-optional">(optional)</span></label>
-                            <input type="url" class="form-control" @bind="sec.ExpectedAuthority" />
-                        </div>
-                        <div class="form-field">
-                            <label class="fa-label">Expected Tenant <span class="form-optional">(optional)</span></label>
-                            <input type="text" class="form-control" @bind="sec.ExpectedTenant" />
-                        </div>
-                        <div class="form-field">
-                            <label class="fa-label">Expected Client ID <span class="form-optional">(optional)</span></label>
-                            <input type="text" class="form-control" @bind="sec.ExpectedClientId" />
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed Redirect URLs <span class="form-optional">(one per line)</span></label>
-                            <textarea class="form-control" rows="3"
-                                      value="@ListToText(sec.AllowedRedirectUrls)"
-                                      @onchange="e => sec.AllowedRedirectUrls = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed Backend Domains <span class="form-optional">(one per line)</span></label>
-                            <textarea class="form-control" rows="3"
-                                      value="@ListToText(sec.AllowedBackendDomains)"
-                                      @onchange="e => sec.AllowedBackendDomains = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed REST Hosts <span class="form-optional">(one per line)</span></label>
-                            <textarea class="form-control" rows="3"
-                                      value="@ListToText(sec.AllowedRestHosts)"
-                                      @onchange="e => sec.AllowedRestHosts = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed GraphQL Hosts <span class="form-optional">(one per line)</span></label>
-                            <textarea class="form-control" rows="3"
-                                      value="@ListToText(sec.AllowedGraphQlHosts)"
-                                      @onchange="e => sec.AllowedGraphQlHosts = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Allowed CDN Hosts <span class="form-optional">(one per line)</span></label>
-                            <textarea class="form-control" rows="3"
-                                      value="@ListToText(sec.AllowedCdnHosts)"
-                                      @onchange="e => sec.AllowedCdnHosts = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                        <div class="form-field fa-field-full">
-                            <label class="fa-label">Expected Security Headers <span class="form-optional">(one per line)</span></label>
-                            <textarea class="form-control" rows="5"
-                                      value="@ListToText(sec.ExpectedSecurityHeaders)"
-                                      @onchange="e => sec.ExpectedSecurityHeaders = TextToList(e.Value?.ToString())"></textarea>
-                        </div>
-                    </div>
-                }
-                else
-                {
-                    var sec = profile.Security;
-                    <dl class="fa-detail-list">
-                        <div class="fa-dl-row"><dt>Expected Authority</dt><dd>@(sec.ExpectedAuthority ?? "—")</dd></div>
-                        <div class="fa-dl-row"><dt>Expected Tenant</dt><dd>@(string.IsNullOrWhiteSpace(sec.ExpectedTenant) ? "—" : "Configured")</dd></div>
-                        <div class="fa-dl-row"><dt>Expected Client ID</dt><dd>@(string.IsNullOrWhiteSpace(sec.ExpectedClientId) ? "—" : "Configured")</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed Redirect URLs</dt><dd>@HostList(sec.AllowedRedirectUrls)</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed Backend Domains</dt><dd>@HostList(sec.AllowedBackendDomains)</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed REST Hosts</dt><dd>@HostList(sec.AllowedRestHosts)</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed GraphQL Hosts</dt><dd>@HostList(sec.AllowedGraphQlHosts)</dd></div>
-                        <div class="fa-dl-row"><dt>Allowed CDN Hosts</dt><dd>@HostList(sec.AllowedCdnHosts)</dd></div>
-                        <div class="fa-dl-row"><dt>Expected Security Headers</dt><dd>@HostList(sec.ExpectedSecurityHeaders)</dd></div>
-                    </dl>
-                    <div class="fa-reset-row">
+                <SecurityExpectationsPanel EnvironmentId="@profile.Id" Settings="@(_isEditMode && _editProfile is not null ? _editProfile.Security : profile.Security)"
+                    Editable="_isEditMode" ApprovedChanged="@(approved => SaveSecurityApprovalAsync(profile.Id, approved))" @key="profile.Id">
+                    <Defaults>
                         <SecondaryButton OnClick="RestoreSecurityExpectationsAsync" Class="fa-btn-sm">Restore Default Security Expectations</SecondaryButton>
                         <SecondaryButton OnClick="RestoreSecurityHostsAsync" Class="fa-btn-sm">Restore Default Allowed Hosts</SecondaryButton>
                         <SecondaryButton OnClick="RestoreSecurityHeadersAsync" Class="fa-btn-sm">Restore Default Expected Headers</SecondaryButton>
-                    </div>
-                }
+                    </Defaults>
+                </SecurityExpectationsPanel>
             }
-
             @* ── Frontend Review Engines ── *@
             @if (_activeTab == "features")
             {
@@ -2822,6 +2752,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         await FaSettings.SaveAsync(JS);
     }
 
+    private async Task SaveSecurityApprovalAsync(string environmentId, BirkNext.SecurityExpectations.ApprovedSecurityExpectations approved)
+    {
+        var target = SelectedProfile;
+        if (target is null || target.Id != environmentId || _isEditMode) throw new InvalidOperationException("Target Environment or manual edits changed; refresh review before accepting.");
+        var old = target.Security;
+        target.Security = FrontendSecuritySettings.FromApproved(approved);
+        try { await FaSettings.SaveAsync(JS); }
+        catch { target.Security = old; throw; }
+    }
+
     private async Task RestoreSecurityHostsAsync()
     {
         if (SelectedProfile is null) return;
@@ -2837,6 +2777,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     {
         if (SelectedProfile is null) return;
         SelectedProfile.Security.ExpectedSecurityHeaders = FaSettings.GetDefaultSecuritySettings().ExpectedSecurityHeaders;
+        SelectedProfile.Security.Origins.RemoveAll(p => p.FieldType == BirkNext.SecurityExpectations.SecurityExpectationField.SecurityHeader);
+        SelectedProfile.Security.Origins.AddRange(FaSettings.GetDefaultSecuritySettings().Origins);
         await FaSettings.SaveAsync(JS);
     }
 

@@ -34,9 +34,22 @@ public class AppDbContext : DbContext
     public DbSet<DependencyHealthRunRecord> DependencyHealthRuns => Set<DependencyHealthRunRecord>();
     public DbSet<ScimEvidenceRecord> ScimEvidence => Set<ScimEvidenceRecord>();
     public DbSet<SecurityClassificationEvidenceRecord> SecurityClassificationEvidence => Set<SecurityClassificationEvidenceRecord>();
+    public DbSet<SecurityExpectationDiscoveryRecord> SecurityExpectationDiscoveries => Set<SecurityExpectationDiscoveryRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<SecurityExpectationDiscoveryRecord>(entity => {
+            entity.ToTable("security_expectation_discoveries");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.SourceSnapshotId).HasColumnName("source_snapshot_id");
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.Property(r => r.EvidenceJson).HasColumnName("evidence_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.DecisionsJson).HasColumnName("decisions_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.Revision).HasColumnName("revision").IsConcurrencyToken();
+            entity.HasIndex(r => new { r.EnvironmentId, r.CreatedAt });
+        });
         modelBuilder.Entity<Scenario>(entity =>
         {
             entity.ToTable("scenarios");

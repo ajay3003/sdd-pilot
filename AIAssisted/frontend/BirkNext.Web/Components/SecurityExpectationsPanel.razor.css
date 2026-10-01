@@ -1,0 +1,25 @@
+.sec { display:grid; gap:.75rem; min-width:0; }
+.sec h3,.sec h4,.sec h5,.sec p { margin:0; }
+.sec-note { padding:.65rem; background:#eff6ff; color:#1e3a8a; border-left:3px solid #2563eb; font-size:.85rem; }
+.sec-summary { display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr)); gap:.6rem; margin:0; }
+.sec-summary dt,.sec-muted { color:var(--clr-text-muted,#475569); font-size:.8rem; }
+.sec-summary dd { margin:.2rem 0 0; font-weight:600; }
+.sec-actions { display:flex; flex-wrap:wrap; gap:.5rem; }
+.sec-group { display:grid; gap:.7rem; min-width:0; }
+.sec-field { border:1px solid var(--clr-border,#cbd5e1); border-radius:.5rem; padding:.65rem; display:grid; gap:.35rem; min-width:0; }
+.sec-field label,.sec-field h5 { font-size:.9rem; font-weight:600; }
+.sec-candidate { border-top:1px solid var(--clr-border,#cbd5e1); padding-top:.5rem; display:grid; gap:.35rem; min-width:0; font-size:.85rem; }
+.sec-approved { list-style:none; margin:0; padding:0; display:grid; gap:.35rem; font-size:.85rem; }
+.sec-state { display:inline-block; padding:.1rem .35rem; border-radius:.3rem; border:1px solid #cbd5e1; background:#f1f5f9; color:#334155; font-size:.75rem; }
+.sec-status { font-size:.85rem; }
+.sec-error { color:#b91c1c; }
+.sec-review { padding:.65rem; border:1px solid var(--clr-border,#cbd5e1); border-radius:.5rem; }
+.sec-review[hidden] { display:none; }
+.sec ::deep .sec-evidence { display:grid; gap:.3rem; margin:0; font-size:.8rem; }
+.sec ::deep .sec-evidence > div { display:grid; grid-template-columns:minmax(7rem,1fr) minmax(0,3fr); gap:.4rem; }
+.sec ::deep .sec-evidence dd { margin:0; }
+.sec ::deep .disclosure,.sec ::deep .disclosure-body { min-width:0; }
+.sec,.sec ::deep p,.sec ::deep li,.sec ::deep dd,.sec ::deep strong { overflow-wrap:anywhere; }
+.sec button:focus-visible,.sec input:focus-visible,.sec textarea:focus-visible,.sec-status:focus,.sec ::deep .disclosure-toggle:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+.sec input,.sec textarea { box-sizing:border-box; max-width:100%; width:100%; min-width:0; }
+@media(max-width:600px) { .sec ::deep .sec-evidence > div { grid-template-columns:minmax(0,1fr); } .sec-actions button { max-width:100%; white-space:normal; } }
