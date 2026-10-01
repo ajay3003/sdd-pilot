@@ -1117,6 +1117,12 @@
             @* ── Core Web Vitals ── *@
             @if (_activeTab == "cwv")
             {
+                var cwvShown = _isEditMode && _editProfile is not null ? _editProfile.CoreWebVitals : profile.CoreWebVitals;
+                var cwvProfile = CoreWebVitalsPresentation.Profile(cwvShown);
+                @* Configuration only: these thresholds classify evidence in Frontend Quality Review; nothing is measured on this tab. *@
+                <p class="fa-cwv-owner" data-testid="cwv-owner-note">@CoreWebVitalsPresentation.OwnerNote</p>
+                <p class="fa-cwv-profile" data-testid="cwv-profile"><span class="fa-cwv-profile-label">Threshold profile</span>
+                    <span class="fa-cwv-profile-badge" data-testid="cwv-profile-state" data-profile="@cwvProfile">@cwvProfile</span></p>
                 @if (_isEditMode && _editProfile is not null)
                 {
                     var cwv = _editProfile.CoreWebVitals;
@@ -1125,12 +1131,12 @@
                             <div class="fa-threshold-group-title">Largest Contentful Paint (LCP)</div>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">Good threshold</label>
-                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.LcpGoodMs" />
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.LcpGoodMs" aria-label="LCP good threshold (ms)" data-testid="cwv-input-lcp-good" />
                                 <span class="fa-threshold-unit">ms</span>
                             </div>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">Poor threshold</label>
-                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.LcpPoorMs" />
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.LcpPoorMs" aria-label="LCP poor threshold (ms)" data-testid="cwv-input-lcp-poor" />
                                 <span class="fa-threshold-unit">ms</span>
                             </div>
                         </div>
@@ -1138,12 +1144,12 @@
                             <div class="fa-threshold-group-title">Interaction to Next Paint (INP)</div>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">Good threshold</label>
-                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.InpGoodMs" />
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.InpGoodMs" aria-label="INP good threshold (ms)" data-testid="cwv-input-inp-good" />
                                 <span class="fa-threshold-unit">ms</span>
                             </div>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">Poor threshold</label>
-                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.InpPoorMs" />
+                                <input type="number" class="form-control fa-threshold-input" min="0" @bind="cwv.InpPoorMs" aria-label="INP poor threshold (ms)" data-testid="cwv-input-inp-poor" />
                                 <span class="fa-threshold-unit">ms</span>
                             </div>
                         </div>
@@ -1151,30 +1157,54 @@
                             <div class="fa-threshold-group-title">Cumulative Layout Shift (CLS)</div>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">Good threshold</label>
-                                <input type="number" class="form-control fa-threshold-input" step="0.01" min="0" @bind="cwv.ClsGood" />
-                                <span class="fa-threshold-unit">score</span>
+                                <input type="number" class="form-control fa-threshold-input" step="0.01" min="0" @bind="cwv.ClsGood" aria-label="CLS good threshold (unitless)" data-testid="cwv-input-cls-good" />
+                                <span class="fa-threshold-unit">unitless</span>
                             </div>
                             <div class="fa-threshold-row">
                                 <label class="fa-threshold-label">Poor threshold</label>
-                                <input type="number" class="form-control fa-threshold-input" step="0.01" min="0" @bind="cwv.ClsPoor" />
-                                <span class="fa-threshold-unit">score</span>
+                                <input type="number" class="form-control fa-threshold-input" step="0.01" min="0" @bind="cwv.ClsPoor" aria-label="CLS poor threshold (unitless)" data-testid="cwv-input-cls-poor" />
+                                <span class="fa-threshold-unit">unitless</span>
                             </div>
                         </div>
                     </div>
                 }
                 else
                 {
-                    var cwv = profile.CoreWebVitals;
-                    <div class="fa-threshold-display-grid">
-                        <div class="fa-threshold-display-row"><span>LCP Good</span><strong>@cwv.LcpGoodMs ms</strong></div>
-                        <div class="fa-threshold-display-row"><span>LCP Poor</span><strong>@cwv.LcpPoorMs ms</strong></div>
-                        <div class="fa-threshold-display-row"><span>INP Good</span><strong>@cwv.InpGoodMs ms</strong></div>
-                        <div class="fa-threshold-display-row"><span>INP Poor</span><strong>@cwv.InpPoorMs ms</strong></div>
-                        <div class="fa-threshold-display-row"><span>CLS Good</span><strong>@cwv.ClsGood</strong></div>
-                        <div class="fa-threshold-display-row"><span>CLS Poor</span><strong>@cwv.ClsPoor</strong></div>
+                    <div class="fa-cwv-tablewrap" tabindex="0" role="region" aria-label="Core Web Vitals thresholds">
+                        <table class="fa-cwv-table" data-testid="cwv-table">
+                            <thead><tr><th scope="col">Metric</th><th scope="col">Good</th><th scope="col">Needs improvement</th><th scope="col">Poor</th></tr></thead>
+                            <tbody>
+                                @foreach (var row in CoreWebVitalsPresentation.Rows(cwvShown))
+                                {
+                                    <tr data-testid="cwv-row" data-metric="@row.Abbreviation" data-unit="@row.Unit">
+                                        <th scope="row"><abbr class="fa-cwv-abbr" title="@row.Name">@row.Abbreviation</abbr> <span class="fa-cwv-name">@row.Name</span>
+                                            <span class="fa-cwv-measures" data-testid="cwv-measures">@row.Measures</span></th>
+                                        <td data-label="Good" data-testid="cwv-good"><span class="fa-cwv-band">@row.Good</span></td>
+                                        <td data-label="Needs improvement" data-testid="cwv-needs-improvement"><span class="fa-cwv-band">@row.NeedsImprovement</span></td>
+                                        <td data-label="Poor" data-testid="cwv-poor"><span class="fa-cwv-band">@row.Poor</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
-                    <div class="fa-reset-row">
-                        <SecondaryButton OnClick="RestoreCoreWebVitalsAsync" Class="fa-btn-sm">Restore Default Core Web Vitals</SecondaryButton>
+                    <p class="fa-cwv-note" data-testid="cwv-browser-quality-note">@CoreWebVitalsPresentation.BrowserQualityNote</p>
+                    <p class="fa-cwv-note" data-testid="cwv-baseline-note">@CoreWebVitalsPresentation.BaselineNote</p>
+                    <div class="fa-reset-row" data-testid="cwv-defaults">
+                        @if (_confirmRestoreCwv)
+                        {
+                            <div class="fa-cwv-confirm" role="group" aria-labelledby="cwv-restore-heading" data-testid="cwv-restore-confirm">
+                                <p id="cwv-restore-heading"><strong>@(CoreWebVitalsPresentation.RestoreLabel) for this target?</strong></p>
+                                <p data-testid="cwv-restore-text">@CoreWebVitalsPresentation.RestoreConfirmation</p>
+                                <div class="fa-cwv-confirm-actions">
+                                    <SecondaryButton OnClick="RestoreCoreWebVitalsAsync" Class="fa-btn-sm">@CoreWebVitalsPresentation.RestoreLabel</SecondaryButton>
+                                    <button type="button" class="fa-cwv-cancel" data-testid="cwv-restore-cancel" @onclick="() => _confirmRestoreCwv = false">Cancel</button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <SecondaryButton OnClick="() => _confirmRestoreCwv = true" Class="fa-btn-sm">@CoreWebVitalsPresentation.RestoreLabel</SecondaryButton>
+                        }
                     </div>
                 }
             }
@@ -2758,11 +2788,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         await FaSettings.SaveAsync(JS);
     }
 
+    /// <summary>Opens the Core Web Vitals restore confirmation (nothing changes until confirmed).</summary>
+    private bool _confirmRestoreCwv;
+
+    /// <summary>Restores only this target's LCP/INP/CLS thresholds (RestoreDefaultCoreWebVitals); nothing else is touched.</summary>
     private async Task RestoreCoreWebVitalsAsync()
     {
         if (_selectedProfileId is null) return;
         FaSettings.RestoreDefaultCoreWebVitals(_selectedProfileId);
         await FaSettings.SaveAsync(JS);
+        _confirmRestoreCwv = false;
     }
 
     private async Task RestoreSecurityExpectationsAsync()

@@ -1434,3 +1434,32 @@
 /* The integration form lives in its own component, so its elements carry that component's scope and not
    this one's. ::deep re-applies the shared field layout to it from here, keeping one definition per rule. */
 ::deep .fa-integration-form { padding: .65rem .75rem; border-top: 1px solid var(--clr-border); }
+
+/* ── Core Web Vitals: configured bands (never measurements) ─────────────────── */
+.fa-cwv-owner { margin: 0 0 .5rem; padding: .45rem .7rem; border-left: 3px solid var(--clr-info, #2563eb); background: var(--clr-info-bg-light, #eff6ff); border-radius: 0 8px 8px 0; font-size: .82rem; }
+.fa-cwv-profile { margin: 0 0 .6rem; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-size: .82rem; }
+.fa-cwv-profile-label { font-weight: 600; color: var(--clr-text-heading); }
+.fa-cwv-profile-badge { display: inline-block; padding: .0625rem .45rem; border-radius: 999px; border: 1px solid var(--clr-border); background: var(--clr-surface); font-size: .72rem; font-weight: 600; color: var(--clr-text-muted); }
+.fa-cwv-tablewrap { overflow-x: auto; border: 1px solid var(--clr-border); border-radius: 10px; container-type: inline-size; }
+.fa-cwv-tablewrap:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.fa-cwv-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.fa-cwv-table thead th { text-align: left; font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--clr-text-muted); padding: .5rem .7rem; border-bottom: 1px solid var(--clr-border); background: var(--clr-surface); }
+.fa-cwv-table tbody th, .fa-cwv-table tbody td { text-align: left; vertical-align: top; padding: .5rem .7rem; border-bottom: 1px solid var(--clr-border-subtle); }
+.fa-cwv-table tbody tr:last-child th, .fa-cwv-table tbody tr:last-child td { border-bottom: none; }
+.fa-cwv-abbr { font-weight: 700; text-decoration: none; color: var(--clr-text-heading); }
+.fa-cwv-name { display: block; font-weight: 500; font-size: .78rem; color: var(--clr-text-heading); }
+.fa-cwv-measures { display: block; font-size: .74rem; color: var(--clr-text-muted); font-weight: 400; }
+.fa-cwv-band { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fa-cwv-note { margin: .45rem 0 0; font-size: .76rem; color: var(--clr-text-muted); }
+.fa-cwv-confirm { display: grid; gap: .3rem; padding: .5rem .7rem; border: 1px solid var(--clr-border); border-radius: 10px; font-size: .82rem; max-width: 42rem; }
+.fa-cwv-confirm p { margin: 0; }
+.fa-cwv-confirm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; }
+.fa-cwv-cancel { background: none; border: 0; padding: 0; font: inherit; color: var(--clr-primary); text-decoration: underline; cursor: pointer; }
+.fa-cwv-cancel:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+@container (max-width: 520px) {
+    .fa-cwv-table thead { display: none; }
+    .fa-cwv-table tbody tr { display: block; padding: .4rem 0; border-bottom: 1px solid var(--clr-border-subtle); }
+    .fa-cwv-table tbody th, .fa-cwv-table tbody td { display: block; border: 0; padding: .15rem .7rem; }
+    .fa-cwv-table tbody td[data-label]::before { content: attr(data-label) ": "; font-size: .72rem; font-weight: 600; color: var(--clr-text-muted); }
+    .fa-cwv-band { white-space: normal; }
+}
