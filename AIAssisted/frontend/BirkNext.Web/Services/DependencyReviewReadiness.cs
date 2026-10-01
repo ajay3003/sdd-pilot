@@ -6,11 +6,30 @@ namespace BirkNext.Web.Services;
 /// available to another (the health review).</summary>
 public enum DependencyReviewMode { None, Source, Inventory, Sbom, Deployed }
 
-public sealed record DependencyReviewModeCard(DependencyReviewMode Mode, string Title, string Summary, string Action);
+public sealed record DependencyReviewModeCard(DependencyReviewMode Mode, string Title, string Summary, string Action, string BestFor);
 
-public sealed record ReadinessRow(string Key, string Name, string State, string Tone, string Detail = "");
+/// <summary>Readiness rows are grouped: what was chosen (inputs), what the run will check (analysis), what it will compare (comparison).</summary>
+public enum ReadinessGroup { Inputs, Analysis, Comparison }
+
+public sealed record ReadinessRow(string Key, string Name, string State, string Tone, string Detail = "")
+{
+    public ReadinessGroup Group { get; init; }
+    /// <summary>What this check needs before it can run — a dependency, never a state.</summary>
+    public string DependsOn { get; init; } = "";
+}
 
 public sealed record ReadinessView(string Headline, string Tone, IReadOnlyList<ReadinessRow> Rows);
+
+/// <summary>The one next action for the selected review source. Choose* actions select an input; the others run an existing command.</summary>
+public enum DependencyReviewNextAction { ChooseReviewSource, ChooseSourceArchive, ChooseInventory, UploadSbom, ReviewSbom, ChooseTarget, CaptureDeployed, RunSourceReview, RunHealthReview }
+
+/// <summary>Readiness of the SELECTED review source: Ready when its required inputs exist; the next action names the exact blocker or command.</summary>
+public sealed record DependencyReviewNextStep(bool Ready, DependencyReviewNextAction Action, string Label, string Reason, string Tone = "muted")
+{
+    public bool Runs => Action is DependencyReviewNextAction.RunSourceReview or DependencyReviewNextAction.RunHealthReview
+        or DependencyReviewNextAction.ReviewSbom or DependencyReviewNextAction.CaptureDeployed;
+    public string Status => Ready ? "Ready" : "Not ready";
+}
 
 /// <summary>What the page knows before a run — selections only, never a result.</summary>
 public sealed record ReadinessInput
@@ -20,23 +39,27 @@ public sealed record ReadinessInput
     public InventorySummary? Inventory { get; init; }
     public string? PendingSbom { get; init; }
     public bool SbomInvalid { get; init; }
+    /// <summary>The chosen SBOM was validated and stored as an inventory.</summary>
+    public bool SbomReviewed { get; init; }
     public InventorySummary? PolicyInventory { get; init; }
     public InventorySummary? Deployed { get; init; }
     public string? DeploymentTarget { get; init; }
+    /// <summary>A Target Environment URL (or the advanced manual URL) is available, so deployed evidence can be captured.</summary>
+    public bool CanCaptureDeployed { get; init; }
 }
 
 /// <summary>
 /// Pre-run readiness of the Dependency Review. Uses only pre-run states — Ready, Ready to test, Waiting for …, Not selected, Not assessed,
-/// Unavailable, Available — never Pass, Fail or Issue detected, and never a result count: nothing has been executed yet.
+/// Not required, Unavailable, Available — never Pass, Fail or Issue detected, and never a result count: nothing has been executed yet.
 /// </summary>
 public static class DependencyReviewReadiness
 {
     public static readonly IReadOnlyList<DependencyReviewModeCard> Modes =
     [
-        new(DependencyReviewMode.Source, "Review from source", "Renovate policy and declared dependencies", "Choose repository archives"),
-        new(DependencyReviewMode.Inventory, "Existing inventory", "Registry, security and license checks without source", "Choose inventory"),
-        new(DependencyReviewMode.Sbom, "Review SBOM", "CycloneDX / SPDX / packages.lock.json", "Upload SBOM"),
-        new(DependencyReviewMode.Deployed, "Deployed evidence", "Compare known inventory with a target environment", "Choose target"),
+        new(DependencyReviewMode.Source, "Review from source", "Declared dependencies + Renovate policy", "Choose repository archives", "repository/source review"),
+        new(DependencyReviewMode.Inventory, "Existing inventory", "Registry, security and license review without source upload", "Choose inventory", "registry/security/license analysis"),
+        new(DependencyReviewMode.Sbom, "Review SBOM", "Review CycloneDX / SPDX / packages.lock.json input", "Upload SBOM", "generated dependency manifests"),
+        new(DependencyReviewMode.Deployed, "Deployed evidence", "Compare known inventory with a selected Target Environment", "Choose target", "inventory vs environment comparison"),
     ];
 
     public static string ModeName(DependencyReviewMode mode) => Modes.FirstOrDefault(m => m.Mode == mode)?.Title ?? "Not selected";
@@ -49,28 +72,36 @@ public static class DependencyReviewReadiness
 
     public static ReadinessView Evaluate(ReadinessInput input)
     {
+        static ReadinessRow In(ReadinessRow r) => r with { Group = ReadinessGroup.Inputs };
+        static ReadinessRow Check(ReadinessRow r, string dependsOn) => r with { Group = ReadinessGroup.Analysis, DependsOn = dependsOn };
+
+        string waiting = input.PendingSbom is not null ? input.SbomInvalid ? "Unavailable" : "Waiting for SBOM review" : "Waiting for inventory";
         var rows = new List<ReadinessRow>
         {
-            new("source", "Review source", ModeName(input.Mode), input.Mode == DependencyReviewMode.None ? "muted" : "info"),
-            input.Archives > 0
+            In(new("source", "Review source", ModeName(input.Mode), input.Mode == DependencyReviewMode.None ? "muted" : "info")),
+            In(input.Inventory is { } inv
+                ? new("inventory", "Inventory", "Ready", "info", $"{inv.Name} · {DependencyHealthLabels.Source(inv.SourceType)} · {inv.Dependencies} dependencies · {inv.Freshness}")
+                : new("inventory", "Inventory", input.PendingSbom is not null ? waiting : "Not selected", "muted",
+                    input.SbomInvalid ? "The SBOM is not valid; no inventory was created." : input.PendingSbom is not null ? $"{input.PendingSbom} becomes an inventory when reviewed." : "")),
+            In(input.DeploymentTarget is { } chosenTarget ? new("target", "Target environment", "Selected", "info", chosenTarget)
+                : input.Deployed is not null ? new("target", "Target environment", "Evidence captured", "info")
+                : new("target", "Target environment", input.Mode == DependencyReviewMode.Deployed ? "Not selected" : "Not required", "muted")),
+            Check(input.Archives > 0
                 ? new("renovate", "Source review", "Ready to test", "info", $"{input.Archives} repository archive(s) chosen.")
-                : new("renovate", "Source review", input.Mode == DependencyReviewMode.Source ? "Waiting for repository archives" : "Not selected", "muted"),
+                : new("renovate", "Source review", input.Mode == DependencyReviewMode.Source ? "Waiting for repository archives" : "Not selected", "muted"), "Repository archives"),
         };
-        string waiting = input.PendingSbom is not null ? input.SbomInvalid ? "Unavailable" : "Waiting for SBOM review" : "Waiting for inventory";
-        rows.Add(input.Inventory is { } inv
-            ? new("inventory", "Inventory", "Ready", "info", $"{inv.Name} · {DependencyHealthLabels.Source(inv.SourceType)} · {inv.Dependencies} dependencies · {inv.Freshness}")
-            : new("inventory", "Inventory", input.PendingSbom is not null ? waiting : "Not selected", "muted",
-                input.SbomInvalid ? "The SBOM is not valid; no inventory was created." : input.PendingSbom is not null ? $"{input.PendingSbom} becomes an inventory when reviewed." : ""));
         foreach (var (key, name) in new[] { ("registry", "Registry checks"), ("security", "Security advisories"), ("license", "License metadata") })
-            rows.Add(input.Inventory is not null ? new(key, name, "Ready", "info") : new(key, name, waiting, "muted"));
+            rows.Add(Check(input.Inventory is not null ? new(key, name, "Ready", "info") : new(key, name, waiting, "muted"), "Inventory"));
         var (policyState, policyTone, policyDetail) = PolicyStatus(input.Inventory, input.PolicyInventory);
-        rows.Add(new("policy", "Renovate policy (security fixes)", input.Inventory is null ? "Not assessed" : policyState, input.Inventory is null ? "muted" : policyTone,
-            input.Inventory is null ? "Needs an inventory and a source review." : policyDetail));
-        rows.Add(input.Deployed is { } deployed
-            ? new("deployment", "Deployment comparison", input.Inventory is null ? "Waiting for inventory" : "Ready", input.Inventory is null ? "muted" : "info", deployed.Name)
+        // Without an inventory the dependency column already says what is missing; the row repeats nothing.
+        rows.Add(Check(new("policy", "Renovate policy (security fixes)", input.Inventory is null ? "Not assessed" : policyState, input.Inventory is null ? "muted" : policyTone,
+            input.Inventory is null ? "" : policyDetail), "Inventory + source review"));
+        rows.Add((input.Deployed is { } deployed
+            ? new ReadinessRow("deployment", "Deployment comparison", input.Inventory is null ? "Waiting for inventory" : "Ready", input.Inventory is null ? "muted" : "info", deployed.Name)
             : input.DeploymentTarget is { } target
-                ? new("deployment", "Deployment comparison", "Waiting for deployed evidence capture", "muted", target)
-                : new("deployment", "Deployment comparison", "Not assessed", "muted", "No deployed evidence selected."));
+                ? new ReadinessRow("deployment", "Deployment comparison", "Waiting for deployed evidence capture", "muted", target)
+                : new ReadinessRow("deployment", "Deployment comparison", "Not assessed", "muted", "No deployed evidence selected."))
+            with { Group = ReadinessGroup.Comparison, DependsOn = "Inventory + deployed evidence" });
 
         var (headline, tone) = input.Inventory is not null ? ("Ready for dependency health review", "info")
             : input.Archives > 0 ? ("Ready to test Renovate policy", "info")
@@ -79,4 +110,33 @@ public static class DependencyReviewReadiness
             : ("Not ready — choose a review source", "muted");
         return new ReadinessView(headline, tone, rows);
     }
+
+    /// <summary>
+    /// The one next step for the selected review source, from the same selections as <see cref="Evaluate"/>: the first missing input, or the
+    /// existing command that runs with what is chosen. Never a result and never a failure — a missing input is a next step.
+    /// </summary>
+    public static DependencyReviewNextStep NextStep(ReadinessInput input) => input.Mode switch
+    {
+        DependencyReviewMode.Source => input.Archives > 0
+            ? new(true, DependencyReviewNextAction.RunSourceReview, "Test Renovate policy", $"{input.Archives} repository archive(s) chosen. The source review tests the Renovate policy and declared dependencies; registry, advisory and license checks need an inventory.", "info")
+            : new(false, DependencyReviewNextAction.ChooseSourceArchive, "Choose repository archives", "Review from source needs one to four repository archives (.zip)."),
+        DependencyReviewMode.Inventory => input.Inventory is { } inventory
+            ? new(true, DependencyReviewNextAction.RunHealthReview, "Run dependency health review", $"Registry, security advisory and license checks run on {inventory.Name}.", "info")
+            : new(false, DependencyReviewNextAction.ChooseInventory, "Choose inventory", "Registry, security advisory and license checks need a stored inventory."),
+        DependencyReviewMode.Sbom => input.PendingSbom is null
+            ? new(false, DependencyReviewNextAction.UploadSbom, "Upload SBOM", "Review SBOM needs a CycloneDX, SPDX or packages.lock.json document.")
+            : input.SbomInvalid
+                ? new(false, DependencyReviewNextAction.UploadSbom, "Upload a valid SBOM", "The SBOM is not valid; no inventory was created.", "attention")
+                : input.SbomReviewed
+                    ? new(true, DependencyReviewNextAction.UploadSbom, "Upload another SBOM", $"{input.PendingSbom} is stored as an inventory and its dependency health review has run.", "info")
+                    : new(true, DependencyReviewNextAction.ReviewSbom, "Review SBOM", $"{input.PendingSbom} is validated, stored as an inventory and then checked for registry, advisory and license evidence.", "info"),
+        DependencyReviewMode.Deployed => input.Deployed is null
+            ? input.CanCaptureDeployed
+                ? new(false, DependencyReviewNextAction.CaptureDeployed, "Capture deployed evidence", $"Reads the deployed metadata of {input.DeploymentTarget ?? "the target"} with a read-only GET.")
+                : new(false, DependencyReviewNextAction.ChooseTarget, "Choose Target Environment", "Deployment comparison needs deployed evidence from a Target Environment.")
+            : input.Inventory is { } known
+                ? new(true, DependencyReviewNextAction.RunHealthReview, "Run dependency health review", $"Compares {known.Name} with {input.Deployed.Name}.", "info")
+                : new(false, DependencyReviewNextAction.ChooseInventory, "Choose the inventory to compare", "Deployed evidence is captured; the comparison also needs a known inventory."),
+        _ => new(false, DependencyReviewNextAction.ChooseReviewSource, "Choose a review source", "Choose a review source above. Each source checks different things; nothing has been reviewed yet."),
+    };
 }

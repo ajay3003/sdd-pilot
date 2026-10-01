@@ -27,43 +27,87 @@
         }
     </PageHeader>
 
+    @{ var readiness = Readiness; var next = NextStep; }
+    @* Workflow: Choose source → Check readiness → Run review. A hint, not a wizard: every panel stays reachable. *@
+    <ol class="dr-steps" aria-label="Dependency Review workflow" data-testid="dr-steps">
+        @foreach (var (number, label, done) in Steps(next))
+        {
+            var current = !done && Steps(next).First(s => !s.Done).Number == number;
+            <li class="dr-step @(done ? "dr-step-done" : current ? "dr-step-current" : "")" aria-current="@(current ? "step" : null)" data-testid="dr-step" data-step="@number" data-state="@(done ? "done" : current ? "current" : "pending")">
+                <span class="dr-step-number" aria-hidden="true">@(done ? "✓" : number.ToString())</span>
+                <span class="dr-step-label">@label</span>
+                <span class="dr-step-state">@(done ? "Done" : current ? "Current step" : "")</span>
+            </li>
+        }
+    </ol>
+
     <section class="dr-modes" aria-labelledby="dr-modes-heading" data-testid="dr-modes">
-        <h2 id="dr-modes-heading" class="dr-modes-heading">Choose how you want to review dependencies</h2>
+        <h2 id="dr-modes-heading" class="dr-modes-heading">1. Choose a review source</h2>
         <div class="dr-mode-grid" role="group" aria-labelledby="dr-modes-heading">
             @foreach (var mode in DependencyReviewReadiness.Modes)
             {
-                <button type="button" class="dr-mode @(_mode == mode.Mode ? "active" : "")" aria-pressed="@(_mode == mode.Mode ? "true" : "false")" aria-controls="@($"dr-panel-{mode.Mode}")"
-                        data-testid="dr-mode" data-mode="@mode.Mode" @onclick="() => SelectModeAsync(mode.Mode)">
-                    <span class="dr-mode-title">@mode.Title</span>
+                var selected = _mode == mode.Mode;
+                <button type="button" class="dr-mode @(selected ? "active" : "")" aria-pressed="@(selected ? "true" : "false")" aria-controls="@($"dr-panel-{mode.Mode}")"
+                        data-testid="dr-mode" data-mode="@mode.Mode" @ref="_modeCards[mode.Mode]" @onclick="() => SelectModeAsync(mode.Mode)">
+                    <span class="dr-mode-head">
+                        <span class="dr-mode-title">@mode.Title</span>
+                        @if (selected) { <span class="dr-mode-selected" data-testid="dr-mode-selected"><span aria-hidden="true">✓ </span>Selected</span> }
+                    </span>
                     <span class="dr-mode-sub">@mode.Summary</span>
+                    <span class="dr-mode-best" data-testid="dr-mode-best">Best for: @mode.BestFor</span>
                     <span class="dr-mode-action" aria-hidden="true">@mode.Action →</span>
                 </button>
             }
         </div>
     </section>
 
-    @{ var readiness = Readiness; }
-    <section class="dr-card dr-readiness" aria-labelledby="dr-readiness-heading" data-testid="dr-readiness">
-        <h2 id="dr-readiness-heading">Review readiness <span class="dr-badge dr-badge-@readiness.Tone" data-testid="dr-readiness-state">@readiness.Headline</span></h2>
-        <dl class="dr-ready-grid">
-            @foreach (var row in readiness.Rows)
-            {
-                <div data-testid="dr-ready-row" data-row="@row.Key">
-                    <dt>@row.Name</dt>
-                    <dd><span class="dr-badge dr-badge-@row.Tone" data-testid="dr-ready-state">@row.State</span>@if (row.Detail.Length > 0) { <span class="dr-muted"> @row.Detail</span> }</dd>
-                </div>
-            }
-        </dl>
+    <section class="dr-card dr-readiness" aria-labelledby="dr-readiness-heading" data-testid="dr-readiness" data-ready="@(next.Ready ? "true" : "false")">
+        <h2 id="dr-readiness-heading">2. Review readiness <span class="dr-badge dr-badge-@(next.Ready ? "info" : next.Tone == "attention" ? "attention" : "muted")" data-testid="dr-readiness-state">@next.Status</span></h2>
+        <p class="dr-muted" data-testid="dr-readiness-help">Readiness shows whether the inputs required for the selected review mode are available. It is not a dependency-health result.</p>
+
+        <div class="dr-next" data-testid="dr-next" data-action="@next.Action">
+            <p class="dr-next-label">Next step</p>
+            <p class="dr-next-text" data-testid="dr-next-text">@next.Label</p>
+            <p class="dr-muted" data-testid="dr-next-reason">@next.Reason</p>
+            <div class="dr-actions">
+                <button type="button" class="btn-primary" data-testid="dr-next-action" disabled="@(_busy || (next.Action == DependencyReviewNextAction.RunHealthReview && _inventoryId is null))" @onclick="NextActionAsync">@next.Label</button>
+                @if (_mode != DependencyReviewMode.None) { <span class="dr-muted">Review source: <strong data-testid="dr-next-mode">@DependencyReviewReadiness.ModeName(_mode)</strong></span> }
+            </div>
+        </div>
+
+        @foreach (var group in new[] { ReadinessGroup.Inputs, ReadinessGroup.Analysis, ReadinessGroup.Comparison })
+        {
+            var groupRows = readiness.Rows.Where(r => r.Group == group).ToList();
+            var groupId = $"dr-ready-{group.ToString().ToLowerInvariant()}";
+            <div class="dr-ready-group" data-testid="dr-ready-group" data-group="@group">
+                <h3 id="@groupId">@group</h3>
+                <table class="dr-ready-table" aria-labelledby="@groupId">
+                    <thead><tr><th scope="col">@(group == ReadinessGroup.Inputs ? "Input" : "Check")</th><th scope="col">Status</th><th scope="col">@(group == ReadinessGroup.Inputs ? "Selected" : "Depends on")</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in groupRows)
+                        {
+                            <tr data-testid="dr-ready-row" data-row="@row.Key">
+                                <th scope="row">@row.Name</th>
+                                <td data-label="Status"><span class="dr-badge dr-badge-@row.Tone" data-testid="dr-ready-state">@row.State</span>@if (group != ReadinessGroup.Inputs && row.Detail.Length > 0) { <span class="dr-muted dr-ready-detail"> @row.Detail</span> }</td>
+                                <td data-label="@(group == ReadinessGroup.Inputs ? "Selected" : "Depends on")" class="dr-ready-depends" data-testid="dr-ready-depends">@(group == ReadinessGroup.Inputs ? (row.Detail.Length > 0 ? row.Detail : "—") : row.DependsOn)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </section>
 
-    <div class="dr-sources" data-testid="dr-sources">
+    <section class="dr-sources" aria-labelledby="dr-run-heading" data-testid="dr-sources">
+        <h2 class="dr-run-heading" id="dr-run-heading">3. Run review</h2>
+        @if (_mode == DependencyReviewMode.None) { <p class="dr-muted" data-testid="dr-run-none">Choose a review source to see how it runs.</p> }
         <section class="dr-card dr-source" id="dr-panel-Source" aria-labelledby="dr-setup-heading" data-testid="dr-setup" hidden="@(_mode != DependencyReviewMode.Source)">
-            <h2 id="dr-setup-heading" tabindex="-1" @ref="_sourceHeading">Review from source</h2>
+            <h3 id="dr-setup-heading" tabindex="-1" @ref="_sourceHeading">Review from source</h3>
             <p class="dr-muted">Renovate policy and declared dependencies from one to four repository archives (.zip), each evaluated separately. Read-only: nothing is written to any repository and Renovate is not run.</p>
             <p class="dr-scope"><strong>Can assess:</strong> Renovate coverage and policy, declared dependencies.<br /><strong>Cannot assess:</strong> registry, advisories, packaged or deployed evidence.</p>
             <div class="dr-upload">
                 <label class="dr-file-button">
-                    <InputFile class="dr-file-input" multiple accept=".zip" OnChange="PickArchives" disabled="@_busy" aria-label="Choose repository archives (.zip)" data-testid="dr-archives" />
+                    <InputFile @ref="_archivesInput" class="dr-file-input" multiple accept=".zip" OnChange="PickArchives" disabled="@_busy" aria-label="Choose repository archives (.zip)" data-testid="dr-archives" />
                     <span aria-hidden="true">Choose repository archives</span>
                 </label>
                 <span class="dr-muted" data-testid="dr-picked">@(_archives.Count == 0 ? "No archive chosen." : string.Join(", ", _archives.Select(a => $"{a.Name} → {a.Repository}")))</span>
@@ -93,11 +137,11 @@
         </section>
 
         <section class="dr-card dr-source" id="dr-panel-Inventory" aria-labelledby="dh-inventory-heading" data-testid="dh-inventory-card" hidden="@(_mode != DependencyReviewMode.Inventory)">
-            <h2 id="dh-inventory-heading" tabindex="-1" @ref="_inventoryHeading">Existing inventory</h2>
+            <h3 id="dh-inventory-heading" tabindex="-1" @ref="_inventoryHeading">Existing inventory</h3>
             <p class="dr-muted">Run registry, security and license checks without uploading source, on a stored inventory: a previous source review, an SBOM, a lock file or deployed evidence.</p>
             <p class="dr-scope"><strong>Can assess:</strong> registry, latest published stable, package age, deprecated/unlisted, advisories, license metadata.<br /><strong>Cannot assess:</strong> runtime loading; Renovate policy unless a source review is chosen.</p>
             <label class="dr-field">Inventory
-                <select class="form-control" data-testid="dh-inventory" value="@(_inventoryId?.ToString() ?? "")" @onchange="PickInventory" disabled="@_busy">
+                <select @ref="_inventorySelect" class="form-control" data-testid="dh-inventory" value="@(_inventoryId?.ToString() ?? "")" @onchange="PickInventory" disabled="@_busy">
                     <option value="">@(_inventories.Count == 0 ? "No stored inventory yet" : "Choose an inventory")</option>
                     @foreach (var inventory in _inventories) { <option value="@inventory.Id">@DependencyHealthPresentation.InventoryOption(inventory)</option> }
                 </select>
@@ -156,12 +200,12 @@
         </section>
 
         <section class="dr-card dr-source" id="dr-panel-Sbom" aria-labelledby="dh-sbom-heading" data-testid="dh-sbom-card" hidden="@(_mode != DependencyReviewMode.Sbom)">
-            <h2 id="dh-sbom-heading" tabindex="-1" @ref="_sbomHeading">Review SBOM</h2>
+            <h3 id="dh-sbom-heading" tabindex="-1" @ref="_sbomHeading">Review SBOM</h3>
             <p class="dr-muted">Supported: CycloneDX JSON/XML and SPDX JSON (validated against the official schemas), NuGet packages.lock.json. An invalid document never becomes an inventory.</p>
             <p class="dr-scope"><strong>Can assess:</strong> components, relationships, identifiers, hashes, licenses, then dependency health.<br /><strong>Cannot assess:</strong> SBOM completeness, runtime loading.</p>
             <div class="dr-upload">
                 <label class="dr-file-button">
-                    <InputFile class="dr-file-input" accept=".json,.xml,.cdx,.spdx" OnChange="PickSbom" disabled="@_busy" aria-label="Choose an SBOM or packages.lock.json" data-testid="dh-sbom-file" />
+                    <InputFile @ref="_sbomInput" class="dr-file-input" accept=".json,.xml,.cdx,.spdx" OnChange="PickSbom" disabled="@_busy" aria-label="Choose an SBOM or packages.lock.json" data-testid="dh-sbom-file" />
                     <span aria-hidden="true">Upload SBOM</span>
                 </label>
                 <span class="dr-muted" data-testid="dh-sbom-picked">@(_sbom is null ? "No document chosen." : _sbom.Value.Name)</span>
@@ -203,11 +247,11 @@
         </section>
 
         <section class="dr-card dr-source" id="dr-panel-Deployed" aria-labelledby="dh-deployed-heading" data-testid="dh-deployed-card" hidden="@(_mode != DependencyReviewMode.Deployed)">
-            <h2 id="dh-deployed-heading" tabindex="-1" @ref="_deployedHeading">Deployed evidence</h2>
+            <h3 id="dh-deployed-heading" tabindex="-1" @ref="_deployedHeading">Deployed evidence</h3>
             <p class="dr-muted">Compare a known inventory with what a Target Environment serves (its Blazor boot manifest), or use a deployed-artifact SBOM from Review SBOM.</p>
             <p class="dr-scope"><strong>Can assess:</strong> expected vs deployed where versions are proven.<br /><strong>Cannot assess:</strong> versions from a boot manifest, absence unless proven, runtime loading.</p>
             <label class="dr-field">Target Environment
-                <select class="form-control" data-testid="dh-deployed-target" value="@(_targetId ?? "")" @onchange="e => _targetId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()" disabled="@_busy">
+                <select @ref="_targetSelect" class="form-control" data-testid="dh-deployed-target" value="@(_targetId ?? "")" @onchange="e => _targetId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString()" disabled="@_busy">
                     <option value="">@(Targets.Count == 0 ? "No Target Environment with a URL" : "Select target")</option>
                     @foreach (var target in Targets) { <option value="@target.Id">@target.Name — @target.TargetUrl</option> }
                 </select>
@@ -242,7 +286,7 @@
                 </label>
             }
         </section>
-    </div>
+    </section>
 
     <div class="dr-live">
         <p class="dr-status" role="status" aria-live="polite" data-testid="dh-status">@_healthStatus</p>
@@ -566,12 +610,49 @@
     /// <summary>The selected Target Environment's URL; the manual URL (advanced) only when no target is selected.</summary>
     private string? CaptureUrl => SelectedTarget?.TargetUrl ?? (string.IsNullOrWhiteSpace(_targetUrl) ? null : _targetUrl.Trim());
 
-    private ReadinessView Readiness => DependencyReviewReadiness.Evaluate(new ReadinessInput
+    private ReadinessView Readiness => DependencyReviewReadiness.Evaluate(ReadinessSelections);
+
+    private ReadinessInput ReadinessSelections => new()
     {
         Mode = _mode, Archives = _archives.Count, Inventory = SelectedInventory, PendingSbom = _sbom?.Name, SbomInvalid = _validation is { Valid: false },
         PolicyInventory = _inventories.FirstOrDefault(i => i.Id == _policyInventoryId), Deployed = _inventories.FirstOrDefault(i => i.Id == _deployedId),
-        DeploymentTarget = SelectedTarget?.Name,
-    });
+        DeploymentTarget = SelectedTarget?.Name, SbomReviewed = _validation is { Valid: true }, CanCaptureDeployed = CaptureUrl is not null,
+    };
+
+    private DependencyReviewNextStep NextStep => DependencyReviewReadiness.NextStep(ReadinessSelections);
+
+    /// <summary>Workflow hint: 1 when a source is chosen, 2 when its inputs are ready, 3 when a review result is shown this session.</summary>
+    private IReadOnlyList<(int Number, string Label, bool Done)> Steps(DependencyReviewNextStep next) =>
+    [
+        (1, "Choose source", _mode != DependencyReviewMode.None),
+        (2, "Check readiness", next.Ready),
+        (3, "Run review", next.Ready && (_result is not null || _health is not null)),
+    ];
+
+    private readonly Dictionary<DependencyReviewMode, ElementReference> _modeCards = new();
+    private InputFile? _archivesInput;
+    private InputFile? _sbomInput;
+    private ElementReference _inventorySelect;
+    private ElementReference _targetSelect;
+    private Func<ElementReference?>? _focusControl;
+
+    /// <summary>The next step's action: Choose* opens the right panel and focuses its control; the others call the panel's own command.</summary>
+    private async Task NextActionAsync()
+    {
+        void Choose(DependencyReviewMode mode, Func<ElementReference?> control) { _mode = mode; _focusControl = control; }
+        switch (NextStep.Action)
+        {
+            case DependencyReviewNextAction.ChooseReviewSource: _focusControl = () => _modeCards.TryGetValue(DependencyReviewMode.Source, out var card) ? card : null; break;
+            case DependencyReviewNextAction.ChooseSourceArchive: Choose(DependencyReviewMode.Source, () => _archivesInput?.Element); break;
+            case DependencyReviewNextAction.ChooseInventory: Choose(DependencyReviewMode.Inventory, () => _inventorySelect); break;
+            case DependencyReviewNextAction.UploadSbom: Choose(DependencyReviewMode.Sbom, () => _sbomInput?.Element); break;
+            case DependencyReviewNextAction.ChooseTarget: Choose(DependencyReviewMode.Deployed, () => _targetSelect); break;
+            case DependencyReviewNextAction.CaptureDeployed: await CaptureDeployedAsync(); break;
+            case DependencyReviewNextAction.ReviewSbom: await ReviewSbomAsync(); break;
+            case DependencyReviewNextAction.RunSourceReview: await RunAsync(); break;
+            case DependencyReviewNextAction.RunHealthReview: await RunHealthAsync(); break;
+        }
+    }
 
     private void SelectModeAsync(DependencyReviewMode mode)
     {
@@ -581,6 +662,13 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusControl is { } control)
+        {
+            _focusControl = null;
+            _focusMode = false;
+            if (control() is { } element) { try { await element.FocusAsync(); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { } }
+            return;
+        }
         if (!_focusMode) return;
         _focusMode = false;
         var heading = _mode switch { DependencyReviewMode.Source => _sourceHeading, DependencyReviewMode.Inventory => _inventoryHeading, DependencyReviewMode.Sbom => _sbomHeading, _ => _deployedHeading };
