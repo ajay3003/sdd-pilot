@@ -51,6 +51,8 @@ public sealed class IqrSourceStore(AppDbContext db)
         // Source architecture (components, dependencies, messaging, datastores): its own model; datastores only link to the Database analysis above.
         snapshot = snapshot with { Architecture = SourceArchitecture.SourceArchitectureAnalyzer.Analyze(snapshot.Id, workspace, snapshot.AnalyzedAt, snapshot.DatabaseArchitecture, ct,
             out var architectureInput, out var architectureResults) };
+        // Observability (correlation/tracing, logging quality, telemetry configuration): analysed once here over the same workspace and Architecture model.
+        snapshot = snapshot with { Observability = SourceAnalysis.Observability.ObservabilitySourceAnalyzer.Analyze(snapshot.Id, workspace, architectureInput, snapshot.Architecture, snapshot.AnalyzedAt, ct) };
         snapshot = snapshot with { SecurityExpectationsEvidence = SecurityExpectations.SecurityExpectationSourceAnalyzer.Analyze(snapshot, architectureInput,
             architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct) };
         // Source integration discovery signals (capture-technology markers, orchestration-declared channels): identifiers only, read from the same workspace.

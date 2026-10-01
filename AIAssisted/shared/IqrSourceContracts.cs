@@ -36,6 +36,8 @@ public sealed record IqrSourceSnapshot
     public BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? DatabaseArchitecture { get; init; }
     /// <summary>Source-derived architecture of the same archive (null in snapshots analyzed before architecture extraction). Not deployed topology.</summary>
     public BirkNext.SourceArchitecture.ArchitectureSnapshot? Architecture { get; init; }
+    /// <summary>Source-derived correlation/tracing, logging quality and telemetry configuration of the same archive (null in snapshots analyzed before it existed). Not runtime telemetry.</summary>
+    public BirkNext.SourceObservability.SourceObservabilitySnapshot? Observability { get; init; }
     /// <summary>Repository this snapshot belongs to (null in snapshots analyzed before repository identity was captured).</summary>
     public BirkNext.SourceEvidence.SourceRepositoryIdentity? Repository { get; init; }
     /// <summary>Dependency-relevant evidence for Dependency Review (null in snapshots analyzed before it was captured).</summary>

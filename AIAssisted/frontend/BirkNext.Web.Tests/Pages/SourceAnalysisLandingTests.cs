@@ -62,12 +62,14 @@ public sealed class SourceAnalysisLandingTests : BunitContext
         };
     }
 
-    private static IqrSourceSnapshot Snapshot(string file, string sha, DateTimeOffset at, ArchitectureSnapshot? arch, DatabaseArchitectureSnapshot? db, SourceAnalysisStatus status = SourceAnalysisStatus.Ready)
+    private static IqrSourceSnapshot Snapshot(string file, string sha, DateTimeOffset at, ArchitectureSnapshot? arch, DatabaseArchitectureSnapshot? db, SourceAnalysisStatus status = SourceAnalysisStatus.Ready,
+        BirkNext.SourceObservability.SourceObservabilitySnapshot? observability = null)
     {
         var id = Guid.NewGuid();
         if (arch is not null) arch = arch with { SourceSnapshotId = id };
         if (db is not null) db.SourceSnapshotId = id;
-        return new IqrSourceSnapshot { Id = id, IntegrationId = "source-analysis", Archive = new SourceArchive(file, sha, 120), AnalyzedAt = at, Status = status, Architecture = arch, DatabaseArchitecture = db };
+        return new IqrSourceSnapshot { Id = id, IntegrationId = "source-analysis", Archive = new SourceArchive(file, sha, 120), AnalyzedAt = at, Status = status, Architecture = arch, DatabaseArchitecture = db,
+            Observability = observability is null ? null : observability with { SourceSnapshotId = id } };
     }
 
     private static IReadOnlyDictionary<string, string> Metrics(IRenderedComponent<SourceAnalysis> cut, string area) =>
@@ -95,7 +97,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
 
         cut.Find("[data-testid=sa-safety]").TextContent.Should().Be("Source only: no live Azure, database, messaging or HTTP connection is used.");
         cut.Find("#sa-empty-heading").TextContent.Should().Be("No source snapshot selected");
-        cut.FindAll("[data-testid=sa-preview] li strong").Select(s => s.TextContent).Should().Equal("Architecture", "Database structure", "Snapshot changes");
+        cut.FindAll("[data-testid=sa-preview] li strong").Select(s => s.TextContent).Should().Equal("Architecture", "Database structure", "Observability", "Snapshot changes");
         cut.Find("[data-testid=sa-empty-upload]").GetAttribute("aria-label").Should().Be("Upload source ZIP (maximum 50 MB)");
         cut.Find("[data-testid=sa-upload]").GetAttribute("accept").Should().Be(".zip");
         cut.Find("[data-testid=sa-choose-existing]").HasAttribute("disabled").Should().BeTrue("there is no stored snapshot to choose");
@@ -120,7 +122,8 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     [Fact]
     public void SelectedSnapshot_ShowsSummaryAndBothCardsFromThatSnapshot()
     {
-        var current = Snapshot("shop-api.zip", "c850a1b2" + new string('0', 56), DateTimeOffset.Parse("2026-09-29T08:15:00Z"), Arch(ArchitectureStatus.Partial, 3, unresolved: 1), Db(DatabaseAnalysisStatus.Partial, 4, unresolved: 5));
+        var current = Snapshot("shop-api.zip", "c850a1b2" + new string('0', 56), DateTimeOffset.Parse("2026-09-29T08:15:00Z"), Arch(ArchitectureStatus.Partial, 3, unresolved: 1), Db(DatabaseAnalysisStatus.Partial, 4, unresolved: 5),
+            observability: Components.ObservabilityWorkspaceTests.Fixture());
         _snapshots = [current];
         var cut = Render<SourceAnalysis>();
 
@@ -130,8 +133,8 @@ public sealed class SourceAnalysisLandingTests : BunitContext
             .Should().Be(("shop-api.zip", "c850a1b2…", "2026-09-29 08:15 UTC", "120"));
         cut.Find("[data-testid=sa-current-fingerprint]").GetAttribute("title").Should().Be(current.Archive.Sha256);
 
-        cut.FindAll("[data-testid=sa-area-card]").Select(c => c.GetAttribute("data-area")).Should().Equal("Architecture", "Database");
-        cut.FindAll("[data-testid=sa-area-card] h3").Should().HaveCount(2);
+        cut.FindAll("[data-testid=sa-area-card]").Select(c => c.GetAttribute("data-area")).Should().Equal("Architecture", "Database", "Observability");
+        cut.FindAll("[data-testid=sa-area-card] h3").Should().HaveCount(3);
         Status(cut, "Architecture").Should().Be("Partial");
         Status(cut, "Database").Should().Be("Partial", "Partial is never Failed");
         cut.Find("[data-testid=sa-overview-areas]").TextContent.Should().NotContain("Failed");

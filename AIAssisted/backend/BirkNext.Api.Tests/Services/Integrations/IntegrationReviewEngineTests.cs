@@ -634,6 +634,31 @@ public sealed class IntegrationReviewEngineTests
         readiness.SourceSnapshots.Select(s => s.Id).Should().Equal(new[] { snapshot.Id }, "only Source Analysis snapshots are offered");
     }
 
+    [Fact]
+    public async Task IqrReadsObservabilityEvidenceFromTheSelectedSnapshotWithoutRescanning()
+    {
+        await using var db = Db();
+        var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
+        var store = new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db);
+        var bytes = BirkNext.Api.Tests.Services.SourceAnalysis.ObservabilitySourceAnalyzerTests.Zip(
+            ("shop/Shop.Api/Shop.Api.csproj", """<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.0.0" /></ItemGroup></Project>"""),
+            ("shop/Shop.Api/Program.cs", "var b = WebApplication.CreateBuilder(args); b.Services.AddOpenTelemetry().WithTracing(t => t.AddAspNetCoreInstrumentation().AddOtlpExporter()); var app = b.Build(); app.MapGet(\"/\", () => 1); app.Run();"),
+            ("shop/Shop.Api/Jobs.cs", "public class Jobs(ILogger<Jobs> logger) { public void Run() { try { } catch (Exception ex) { logger.LogError(\"Failed {Reason}\", ex.Message); } } }"));
+        var (snapshot, _) = await store.AnalyzeAsync(DevId, "source-analysis", "shop.zip", bytes);
+        snapshot!.Observability.Should().NotBeNull();
+        var service = new IntegrationReviewService(catalogService, Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance,
+            source: new BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider(store));
+        var integration = (await catalogService.GetAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
+
+        var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "Dev", SourceSelections = [new(integration, snapshot.Id)] }, "Development", DevUrl);
+
+        run.SourceSnapshots.Single().Observability!.Id.Should().Be(snapshot.Observability!.Id, "the stored analysis is read, not recomputed");
+        var observability = run.Domains.Single(d => d.Domain == IntegrationReviewDomain.Observability);
+        observability.Observed.Should().Contain(l => l.StartsWith("Source observability (source snapshot ") && l.Contains("OTLP exporter"));
+        observability.Missing.Should().Contain(BirkNext.Api.Services.Integrations.SourceEvidence.IqrObservabilityReview.RuntimeLimitation);
+        run.Domains.Single(d => d.Domain == IntegrationReviewDomain.ErrorHandling).Observed.Should().Contain(l => l.StartsWith("Source exception logging") && l.Contains("1 log only its message"));
+    }
+
     // ── $Default as a configured assumption (seed v4) ──────────────────────────────────────────────────────────────
 
     [Fact]

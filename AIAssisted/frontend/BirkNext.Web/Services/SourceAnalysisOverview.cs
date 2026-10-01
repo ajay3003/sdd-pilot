@@ -64,6 +64,24 @@ public static class SourceAnalysisOverview
         return new("Architecture", title, description, status, Tone(status), null, metrics, action, ArchitectureCardLimitation, a.SnapshotId);
     }
 
+    public static SourceAreaCard Observability(IqrSourceSnapshot source)
+    {
+        const string title = "Observability", description = "Source-derived correlation and tracing, logging quality and telemetry configuration.", action = "Open Observability";
+        if (source.Observability is not { } o)
+            return new("Observability", title, description, "Not analyzed", "muted", "This source snapshot predates observability analysis.", [], "View observability details", SourceObservabilityPresentation.CardLimitation, null);
+        var status = StatusLabel(o.Status);
+        if (o.Status == ArchitectureStatus.Unsupported)
+            return new("Observability", title, description, status, Tone(status), o.UnsupportedEvidence.FirstOrDefault() ?? "No supported source language was found in this source snapshot.", [],
+                "View observability details", SourceObservabilityPresentation.CardLimitation, o.Id);
+        List<SourceAreaMetric> metrics =
+        [
+            new("Components with tracing", o.Correlation.ComponentsWithTracing), new("Correlation boundaries", o.Boundaries.Count),
+            new("Log calls", SourceObservabilityPresentation.LogCalls(o)), new("Findings needing review", SourceObservabilityPresentation.NeedsReview(o)),
+        ];
+        if (o.Correlation.PropagationUnresolved > 0) metrics.Add(new("Unresolved boundaries", o.Correlation.PropagationUnresolved));
+        return new("Observability", title, description, status, Tone(status), null, metrics, action, SourceObservabilityPresentation.CardLimitation, o.Id);
+    }
+
     public static SourceAreaCard Database(IqrSourceSnapshot source)
     {
         const string title = "Database", description = "Source-derived database design: candidates, tables/entities, relationships and indexes.", action = "Open Database Diagram";

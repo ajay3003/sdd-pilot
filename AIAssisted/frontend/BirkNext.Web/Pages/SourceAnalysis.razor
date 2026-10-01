@@ -8,12 +8,12 @@
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IJSRuntime JS
 
-@* Source Analysis landing workspace: one selected stored source snapshot drives every area (Overview, Architecture, Database), so no
+@* Source Analysis landing workspace: one selected stored source snapshot drives every area (Overview, Architecture, Database, Observability), so no
    summary can mix snapshots. Architecture and Database keep their own models; this page only reads their stored results — opening it
    never re-analyzes. Source only: nothing live is contacted. Hiding the feature (Feature Visibility) hides the menu entry only. *@
 <PageTitle>Source Analysis</PageTitle>
 <div class="sa-page">
-    <PageHeader Title="Source Analysis" Description="Architecture and database design derived from uploaded source snapshots." />
+    <PageHeader Title="Source Analysis" Description="Architecture, database design and observability derived from uploaded source snapshots." />
     @if (ReturnTarget is { } back)
     {
         <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
@@ -55,10 +55,11 @@
                     <div><dt>Source snapshot</dt><dd data-testid="sa-progress-archive">@(_pendingArchive ?? "Uploaded archive")</dd></div>
                     <div><dt>Architecture</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
                     <div><dt>Database</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
+                    <div><dt>Observability</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
                 </dl>
                 <p class="sa-muted">The uploaded archive is being analyzed. @SourceAnalysisOverview.SafetyNote</p>
                 <div class="sa-area-grid">
-                    @foreach (var (area, provides) in new[] { ("Architecture", SourceAnalysisOverview.ArchitectureProvides), ("Database", SourceAnalysisOverview.DatabaseProvides) })
+                    @foreach (var (area, provides) in new[] { ("Architecture", SourceAnalysisOverview.ArchitectureProvides), ("Database", SourceAnalysisOverview.DatabaseProvides), ("Observability", SourceObservabilityPresentation.Provides) })
                     {
                         <article class="sa-area-preview" data-testid="sa-area-card" data-area="@area">
                             <h3>@area <span class="sa-pill sa-pill-muted">Analyzing</span></h3>
@@ -78,6 +79,7 @@
                     <ul class="sa-preview" data-testid="sa-preview">
                         <li><strong>Architecture</strong> — components, dependencies, messaging channels, data stores and external systems found in source.</li>
                         <li><strong>Database structure</strong> — database candidates, tables/entities, relationships and indexes from EF models, migrations and SQL.</li>
+                        <li><strong>Observability</strong> — correlation and tracing boundaries, logging quality and telemetry configuration found in source.</li>
                         <li><strong>Snapshot changes</strong> — compare an analysis with another stored snapshot of the source.</li>
                     </ul>
                     <div class="sa-actions">
@@ -122,7 +124,7 @@
                 <section class="sa-areas-section" aria-labelledby="sa-areas-heading" data-testid="sa-overview-areas">
                     <h2 id="sa-areas-heading">Analysis areas</h2>
                     <div class="sa-area-grid">
-                        @foreach (var card in new[] { SourceAnalysisOverview.Architecture(selected), SourceAnalysisOverview.Database(selected) })
+                        @foreach (var card in new[] { SourceAnalysisOverview.Architecture(selected), SourceAnalysisOverview.Database(selected), SourceAnalysisOverview.Observability(selected) })
                         {
                             var headingId = $"sa-card-{card.Area.ToLowerInvariant()}";
                             <article class="sa-card sa-area-card" aria-labelledby="@headingId" data-testid="sa-area-card" data-area="@card.Area" data-status="@card.Status" data-analysis="@card.AnalysisId">
@@ -152,6 +154,14 @@
                 }
                 else { <p class="sa-card" data-testid="architecture-missing">This historical source snapshot predates architecture extraction. Upload the same source archive to create a new immutable analysis.</p> }
             }
+            else if (_area == "Observability")
+            {
+                @if (selected.Observability is { } observability)
+                {
+                    <ObservabilityWorkspace @key="observability.Id" Snapshot="observability" Previous="@PreviousObservability(selected)" ChooseSnapshot="FocusSelectorAsync" />
+                }
+                else { <p class="sa-card" data-testid="observability-missing">This historical source snapshot predates observability analysis. Upload the same source archive to create a new immutable analysis.</p> }
+            }
             else
             {
                 @if (selected.DatabaseArchitecture is { } database) { <DatabaseWorkspace @key="database.SnapshotId" Snapshot="database" Previous="@Previous(selected)" FocusDatabaseId="@_focusDatabase" InitialTab="@_databaseTab" ChooseSnapshot="FocusSelectorAsync" /> }
@@ -171,7 +181,7 @@
     };
     private (string Route, string Label)? ReturnTarget => ReturnTo is { } key && ReturnTargets.TryGetValue(key, out var label) ? (key, label) : null;
 
-    private static readonly string[] Areas = ["Overview", "Architecture", "Database"];
+    private static readonly string[] Areas = ["Overview", "Architecture", "Database", "Observability"];
     private string _area = "Overview";
     private string? _focusDatabase;
     private string? _databaseTab;
@@ -201,6 +211,11 @@
     private IReadOnlyList<(string Label, BirkNext.SourceArchitecture.ArchitectureSnapshot Snapshot)> PreviousArchitectures(IqrSourceSnapshot current) =>
         _snapshots.Where(s => s.Id != current.Id && s.Architecture is not null).OrderByDescending(s => s.AnalyzedAt)
             .Select(s => ($"{s.Archive.FileName} · {s.AnalyzedAt:u}", s.Architecture!)).ToList();
+    /// <summary>The latest earlier Observability analysis of the SAME repository (repository key, else archive name) — never another repository.</summary>
+    private BirkNext.SourceObservability.SourceObservabilitySnapshot? PreviousObservability(IqrSourceSnapshot current) =>
+        _snapshots.Where(s => s.Id != current.Id && s.AnalyzedAt < current.AnalyzedAt && s.Observability is not null && SameRepository(s, current)).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault()?.Observability;
+    private static bool SameRepository(IqrSourceSnapshot a, IqrSourceSnapshot b) =>
+        a.Repository is { } ra && b.Repository is { } rb ? ra.Key == rb.Key : a.Archive.FileName == b.Archive.FileName;
     private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private string? _error; private bool _busy;
     protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfile; if (_profile is not null) await Load(); _loaded = true; }
     private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = "Source snapshots could not be loaded."; } }
