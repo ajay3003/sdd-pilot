@@ -1,0 +1,107 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+
+<ReviewDisclosure Text="Overview" Expanded="true" TestId="am-detail-overview">
+    <dl class="am-states">
+        <div><dt>Application</dt><dd>@Application.ApplicationId</dd></div>
+        <div><dt>Project/source</dt><dd>Analyzed source archives · @Application.ApplicationId</dd></div>
+        <div><dt>Service / telemetry role</dt><dd>@(Application.ServiceName ?? Application.TelemetryRoleName ?? "Not established from analyzed source")</dd></div>
+        <div><dt>Primary transports observed in source</dt><dd>@(Application.Routes.Count + Application.SdkRoutes.Count > 0 ? "Azure Service Bus" : "See configuration evidence")@if (Application.Fact("event-hub-consumer") is not null) { <span> · Event Hub consumption source evidence</span> }</dd></div>
+        <div><dt>Messaging roles from source</dt><dd>@(Application.Routes.Count == 0 ? "See source evidence" : string.Join(", ", Application.Routes.Select(r => r.Direction).Distinct()))</dd></div>
+    </dl>
+    <p data-testid="am-meaning"><strong>Why:</strong> @Application.DetectionReason</p>
+    <p class="am-muted">Source evidence does not establish handler execution. No handler mapping found does not mean no handler exists. Retry configuration not found does not mean retries are disabled at runtime.</p>
+</ReviewDisclosure>
+<ReviewDisclosure Text="Source evidence" TestId="am-source">
+    <p>Source analysis: Analyzed</p>
+    <ul class="am-facts" data-testid="am-facts">
+        @foreach (var fact in Application.Facts)
+        {
+            <li><strong>@fact.Label</strong> <span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(fact.State)">@ApplicationMessagingLabels.Fact(fact.State)</span>
+                <p>@fact.Detail</p><p class="am-mono">@ApplicationMessagingPresentation.Locations(fact)</p></li>
+        }
+    </ul>
+    @foreach (var handler in Application.Handlers)
+    {
+        <p><strong>@handler.Type.@handler.Method</strong> (@handler.MessageType) · Project @handler.Project · Discovery: @handler.DiscoveryReason
+            <span class="am-mono">@Location(handler.Location)</span></p>
+    }
+</ReviewDisclosure>
+<ReviewDisclosure Text="Configuration" TestId="am-configuration">
+    <div class="am-scroll" tabindex="0" role="region" aria-label="Messaging configuration evidence">
+        <table class="am-table">
+            <caption>Configuration from analyzed source; configured does not mean runtime verified.</caption>
+            <thead><tr><th scope="col">Setting</th><th scope="col">State</th><th scope="col">Evidence</th></tr></thead>
+            <tbody>
+                @foreach (var fact in Application.Facts.Where(f => f.Id != "event-hub-consumer"))
+                {
+                    <tr><th scope="row">@fact.Label</th><td>@ApplicationMessagingLabels.Fact(fact.State)</td><td>@fact.Detail <span class="am-mono">@ApplicationMessagingPresentation.Locations(fact)</span></td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @foreach (var rule in Application.FailureRules)
+    {
+        <p><strong>Failure rule: @rule.ExceptionType</strong> @rule.Condition · @string.Join("; ", rule.Actions) · @string.Join(", ", rule.Delays) <span class="am-mono">@Location(rule.Location)</span></p>
+    }
+    <p class="am-muted">No explicit retry or failure disposition found in analyzed source does not establish runtime behavior. Durable inbox/outbox configuration does not verify processing.</p>
+</ReviewDisclosure>
+<ReviewDisclosure Text="Routes / handlers" TestId="am-route-section">
+    <div class="am-scroll" tabindex="0" role="region" aria-label="Source messaging routes">
+        <table class="am-table" data-testid="am-routes">
+            <caption>Source-derived routes; publish/listen configuration is not evidence that messages were published or consumed.</caption>
+            <thead><tr><th scope="col">Direction</th><th scope="col">Transport / technology</th><th scope="col">Endpoint / channel</th><th scope="col">Message</th><th scope="col">Handler / publisher</th><th scope="col">Evidence</th></tr></thead>
+            <tbody>
+                @foreach (var route in Application.Routes.Concat(Application.SdkRoutes))
+                {
+                    <tr>
+                        <td>@route.Direction</td><td>Service Bus @route.EndpointKind · @route.Technology</td>
+                        <td>@route.Endpoint @if (route.EntityName is not null) { <p>@route.EntityName · @route.EntityNameSource</p> } @if (route.Topic is not null) { <p>Topic @route.Topic @route.TopicName</p> }</td>
+                        <td>@(route.MessageType ?? "Not established from analyzed source")</td>
+                        <td>@string.Join(", ", route.Handlers.Concat(route.Senders))
+                            @if (route.Direction == MessagingRouteDirection.Listen) { <p>Handler evidence: @ApplicationMessagingPresentation.HandlerState(route.HandlerMapping)</p> }
+                        </td>
+                        <td>Source evidence <span class="am-mono">@Location(route.Location)</span>
+                            @if (route.Condition is not null) { <p>@route.Condition</p> }
+                            @if (route.Options.Count > 0) { <p>@string.Join("; ", route.Options)</p> }
+                            @if (route.FailurePath.Count > 0) { <p>on failure: @string.Join("; ", route.FailurePath)</p> }
+                            @if (route.MappingReason is not null) { <p>@route.MappingReason</p> }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (Application.Routes.Count + Application.SdkRoutes.Count == 0) { <p>No routes extracted from analyzed source.</p> }
+</ReviewDisclosure>
+<ReviewDisclosure Text="Transport relationship" TestId="am-transport">
+    <p>Application messaging evidence and Event Hub / Service Bus transport runtime evidence are reviewed separately.</p>
+    @foreach (var platform in Catalog.Platforms.Where(p => p.Kind is IntegrationKind.ServiceBus or IntegrationKind.EventHub))
+    {
+        <p>@platform.Name · Reviewed separately <a href="@($"#ip-platform-{Slug(platform.Id)}")">Open @platform.Name transport evidence</a></p>
+    }
+</ReviewDisclosure>
+<ReviewDisclosure Text="Runtime evidence" TestId="am-runtime-section">
+    <table class="am-table" data-testid="am-runtime-evidence">
+        <thead><tr><th scope="col">Runtime check</th><th scope="col">Status</th></tr></thead>
+        <tbody><tr><th scope="row">Handler execution</th><td>Not assessed</td></tr><tr><th scope="row">Retry activity</th><td>Not assessed</td></tr><tr><th scope="row">Processing duration</th><td>Not assessed</td></tr></tbody>
+    </table>
+    <p>Handler telemetry is read only during an Integration Quality Review run, and only when the application is linked and Azure runtime evidence is configured.</p>
+    <p>No Wolverine retry telemetry is exported by the analyzed source. No measured handler duration; configuration is never performance evidence.</p>
+</ReviewDisclosure>
+<ReviewDisclosure Text="Limitations" TestId="am-limitations">
+    <ul class="am-facts">
+        @foreach (var limitation in Application.Limitations.Distinct()) { <li>@limitation</li> }
+        @if (Application.Detection == MessagingDetection.Likely) { <li>@Application.DetectionReason</li> }
+        <li>Handler execution is not runtime-assessed.</li>
+        <li>Transport evidence is reviewed separately.</li>
+        @if (Application.BoundConsumer is null) { <li>IQR integration link is not established.</li> }
+    </ul>
+</ReviewDisclosure>
+
+@code {
+    [Parameter, EditorRequired] public ApplicationMessagingEvidence Application { get; set; } = new();
+    [Parameter, EditorRequired] public IntegrationCatalog Catalog { get; set; } = new();
+    private static string Location(SourceLocation? location) => location is null ? "Source location not available" : $"{location.File}:{location.Line}";
+    private static string Slug(string value) => new string(value.Select(c => char.IsLetterOrDigit(c) ? char.ToLowerInvariant(c) : '-').ToArray());
+}

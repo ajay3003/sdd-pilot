@@ -3,104 +3,96 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject IIntegrationCatalogApiService Api
 
-@* Application messaging (Wolverine) evidence beside — never inside — transport evidence. Source archives are analyzed read-only by the
-   backend; only facts with file:line provenance are kept. Configured is never shown as executed: runtime processing stays Not assessed
-   here, because handler telemetry is read only during an Integration Quality Review run. Bindings are explicit and saved immediately. *@
 <section class="am" aria-labelledby="am-heading" data-testid="am">
-    <h3 id="am-heading">Application messaging</h3>
-    <p class="am-note" role="note" data-testid="am-note">Wolverine evidence from analyzed application source. Event Hub and Service Bus transport evidence is separate. Source shows what is configured — not that a handler ran.</p>
-    <dl class="am-overview" data-testid="am-overview">
-        @foreach (var row in ApplicationMessagingPresentation.Overview(Evidence))
-        {
-            <div data-testid="@($"am-overview-{row.Key}")"><dt>@row.Label</dt><dd><span class="am-badge am-badge-@row.Tone">@row.Status</span> <span class="am-muted">@row.Detail</span></dd></div>
-        }
-    </dl>
-    <div class="am-upload">
+    <div class="am-title">
+        <h3 id="am-heading">Application messaging</h3>
         <label class="am-file-button">
             <InputFile id="@ServiceBusPlatformPanel.MessagingUploadId" class="am-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze application messaging source archives (.zip)" data-testid="am-upload" />
             <span aria-hidden="true">@(Evidence is null ? "Analyze messaging source" : "Re-analyze messaging source")</span>
         </label>
-        <span class="am-muted">Wolverine messaging only. Up to 4 .zip files, 50 MB each. Read in memory; source code and configuration values are never stored.</span>
     </div>
+    <dl class="am-overview" data-testid="am-overview">
+        @foreach (var row in ApplicationMessagingPresentation.Overview(Evidence))
+        {
+            <div data-testid="@($"am-overview-{row.Key}")"><dt>@row.Label</dt><dd><span class="am-badge am-badge-@row.Tone" title="@row.Detail">@row.Status</span>
+                @if (row.Key == "wolverine" && Evidence is not null)
+                {
+                    <span class="am-muted">@Evidence.Applications.Count(a => a.Detection == MessagingDetection.Confirmed) detected / @Evidence.Applications.Count(a => a.Detection == MessagingDetection.Likely) likely</span>
+                }
+            </dd></div>
+        }
+        <div><dt>Applications analyzed</dt><dd data-testid="am-count">@(Evidence?.Applications.Count.ToString() ?? "Not assessed")</dd></div>
+        <div><dt>Handler evidence</dt><dd>@(Evidence is null ? "Not assessed" : $"{Evidence.Applications.Count(a => a.Handlers.Count > 0 || a.Routes.Count > 0)} applications with handler/route evidence")</dd></div>
+    </dl>
+    <p class="am-note" role="note" data-testid="am-note">Event Hub and Service Bus transport evidence is separate. Source shows what is configured — not that a handler ran.</p>
+    <ReviewDisclosure Text="Analysis details" TestId="am-analysis">
+        <p class="am-muted">Wolverine messaging only. Up to 4 .zip files, 50 MB each. Read in memory; source code and configuration values are never stored.</p>
+        @foreach (var row in ApplicationMessagingPresentation.Overview(Evidence)) { <p class="am-muted">@row.Label: @row.Detail</p> }
+        @if (Evidence is not null)
+        {
+            <p class="am-muted" data-testid="am-provenance">Analyzed @Evidence.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @Evidence.Archives.Count archive(s) · @Evidence.Archives.Sum(a => a.FilesAnalyzed) files</p>
+            <ul class="am-facts">@foreach (var archive in Evidence.Archives) { <li class="am-mono">@archive.FileName · sha256 @archive.Sha256 · @archive.FilesAnalyzed files</li> }</ul>
+            <ul class="am-facts am-muted" data-testid="am-set-limitations">@foreach (var limitation in Evidence.Limitations) { <li>@limitation</li> }</ul>
+        }
+    </ReviewDisclosure>
     <p class="am-status" role="status" aria-live="polite" data-testid="am-status">@_status</p>
     @if (_error is { } error) { <p class="am-error" role="alert" data-testid="am-error">@error</p> }
-
     @if (Evidence is null)
     {
         <p class="am-muted" data-testid="am-empty">No application source analyzed yet.</p>
     }
     else
     {
-        var listed = ApplicationMessagingPresentation.Listed(Evidence);
-        var notDetected = ApplicationMessagingPresentation.NotDetected(Evidence);
-        <p class="am-muted" data-testid="am-provenance">Analyzed @Evidence.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @string.Join(", ", Evidence.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..Math.Min(12, a.Sha256.Length)]}, {a.FilesAnalyzed} files)"))</p>
-        @if (listed.Count == 0) { <p class="am-muted" data-testid="am-none">Wolverine is not detected in any analyzed application.</p> }
-        <ul class="am-apps">
-            @foreach (var app in listed)
-            {
-                var headingId = $"am-app-{Slug(app.ApplicationId)}";
-                <li class="am-app" data-testid="am-app" data-application="@app.ApplicationId" aria-labelledby="@headingId">
-                    <div class="am-app-head"><strong id="@headingId">@app.ApplicationId</strong>@if (app.ServiceName is { } service) { <span class="am-muted">· @service</span> }</div>
-                    <dl class="am-states">
-                        <div><dt>Wolverine</dt><dd><span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(app.Detection)" data-testid="am-detection">@ApplicationMessagingLabels.Detection(app.Detection)</span></dd></div>
-                        @if (app.Detection != MessagingDetection.NotDetected)
-                        {
-                            <div><dt>Handler mapping</dt><dd><span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(app.HandlerMapping)" data-testid="am-mapping">@ApplicationMessagingLabels.Fact(app.HandlerMapping)</span></dd></div>
-                            <div><dt>Retry policy</dt><dd><span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(app.RetryPolicy)" data-testid="am-retry">@ApplicationMessagingLabels.Fact(app.RetryPolicy)</span></dd></div>
-                            <div><dt>Runtime processing</dt><dd><span class="am-badge am-badge-muted" data-testid="am-runtime">Not assessed</span></dd></div>
-                        }
-                    </dl>
-                    <label class="am-bind">Integrations consumer
-                        <select class="form-control" data-testid="am-binding" value="@(app.BoundConsumer ?? "")" disabled="@_busy" @onchange="e => BindAsync(app, e.Value?.ToString())">
-                            <option value="">Not bound</option>
-                            @foreach (var consumer in ApplicationMessagingPresentation.Consumers(Catalog)) { <option value="@consumer">@consumer</option> }
-                        </select>
-                    </label>
-                    <ReviewDisclosure Text="View Wolverine evidence" CollapseText="Hide Wolverine evidence" TestId="@($"am-evidence-{Slug(app.ApplicationId)}")" Class="disclosure-inline">
-                        <p data-testid="am-meaning"><strong>What this means:</strong> @ApplicationMessagingPresentation.Meaning(app) @app.DetectionReason</p>
-                        <h4>Configuration evidence</h4>
-                        <ul class="am-facts" data-testid="am-facts">
-                            @foreach (var fact in app.Facts)
-                            {
-                                <li><strong>@fact.Label</strong> <span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(fact.State)">@ApplicationMessagingLabels.Fact(fact.State)</span> @fact.Detail <span class="am-muted am-mono">@ApplicationMessagingPresentation.Locations(fact)</span></li>
-                            }
-                        </ul>
-                        @if (app.Routes.Count > 0)
-                        {
-                            <h4>Routes</h4>
-                            <ul class="am-facts" data-testid="am-routes">
-                                @foreach (var route in app.Routes)
-                                {
-                                    <li><strong>@route.Direction</strong> @ApplicationMessagingPresentation.Route(route)
-                                        @if (route.Direction == MessagingRouteDirection.Listen) { <span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(route.HandlerMapping)">Handler mapping @ApplicationMessagingLabels.Fact(route.HandlerMapping).ToLowerInvariant()</span> }
-                                        @if (route.Condition is { } condition) { <span class="am-muted"> · @condition</span> }
-                                        @if (route.Senders.Count > 0) { <span class="am-muted"> · sent by @string.Join(", ", route.Senders)</span> }
-                                        @if (route.FailurePath.Count > 0) { <span class="am-muted"> · on failure: @string.Join("; ", route.FailurePath)</span> }
-                                        @if (route.MappingReason is { } why && route.HandlerMapping != MessagingFactState.Available) { <span class="am-muted"> · @why.Trim()</span> }
-                                    </li>
-                                }
-                            </ul>
-                        }
-                        <h4>Runtime evidence</h4>
-                        <ul class="am-facts" data-testid="am-runtime-evidence">
-                            <li><strong>Handler execution</strong> <span class="am-badge am-badge-muted">Not assessed</span> Handler telemetry is read only during an Integration Quality Review run, and only when the application is bound and Azure runtime evidence is configured.</li>
-                            <li><strong>Retry activity</strong> <span class="am-badge am-badge-muted">Not assessed</span> No Wolverine retry telemetry is exported by the analyzed source.</li>
-                            <li><strong>Processing duration</strong> <span class="am-badge am-badge-muted">Not assessed</span> No measured handler duration; configuration is never performance evidence.</li>
-                        </ul>
-                        @if (app.Limitations.Count > 0)
-                        {
-                            <h4>Limitations</h4>
-                            <ul class="am-facts">@foreach (var limitation in app.Limitations.Distinct()) { <li>@limitation</li> }</ul>
-                        }
-                    </ReviewDisclosure>
-                </li>
-            }
-        </ul>
-        @if (notDetected.Count > 0) { <p class="am-muted" data-testid="am-not-detected">Wolverine not detected: @string.Join(", ", notDetected).</p> }
-        @if (Evidence.Limitations.Count > 0)
+        <div class="am-search">
+            <label>Search applications <input type="search" class="form-control" data-testid="am-search" @bind="_search" @bind:event="oninput" /></label>
+            <span class="am-muted" data-testid="am-shown">@Evidence.Applications.Count analyzed · @Applications.Count shown</span>
+        </div>
+        <div class="am-master">
+            <table class="am-table" aria-label="Analyzed applications">
+                <thead><tr><th scope="col">Application</th><th scope="col">Wolverine</th><th scope="col">Handler evidence</th><th scope="col">IQR link</th><th scope="col">Runtime</th></tr></thead>
+                <tbody>
+                    @foreach (var app in Applications)
+                    {
+                        <tr @key="app.ApplicationId" class="@(_selected == app.ApplicationId ? "am-selected" : "")" data-testid="am-app" data-application="@app.ApplicationId" @onclick="() => Select(app)">
+                            <th scope="row"><button type="button" class="am-select" aria-pressed="@(_selected == app.ApplicationId ? "true" : "false")" aria-controls="am-selected-detail" @onclick="() => Select(app)">@app.ApplicationId<span class="am-mobile">View details</span></button></th>
+                            <td data-label="Wolverine"><span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(app.Detection)" data-testid="am-detection">@ApplicationMessagingPresentation.Detection(app.Detection)</span></td>
+                            <td data-label="Handler evidence"><span class="am-badge am-badge-@ApplicationMessagingPresentation.Tone(app.HandlerMapping)" data-testid="am-mapping">@ApplicationMessagingPresentation.HandlerState(app.HandlerMapping)</span></td>
+                            <td data-label="IQR link">@(app.BoundConsumer is null ? "Not linked" : "Linked")</td>
+                            <td data-label="Runtime" data-testid="am-runtime">Not assessed</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (Applications.Count == 0) { <p class="am-muted">No applications match the search.</p> }
+        </div>
+        <div id="am-selected-detail">
+        @if (Selected is { } selected)
         {
-            <ul class="am-facts am-muted" data-testid="am-set-limitations">@foreach (var limitation in Evidence.Limitations) { <li>@limitation</li> }</ul>
+            <section class="am-detail" data-testid="am-detail" aria-labelledby="am-detail-heading" @key="selected.ApplicationId">
+                <div class="am-title"><h4 id="am-detail-heading">@selected.ApplicationId</h4><button type="button" class="btn-secondary" @onclick="() => _selected = null">Collapse details</button></div>
+                <dl class="am-states">
+                    <div><dt>Wolverine usage</dt><dd>@ApplicationMessagingPresentation.Detection(selected.Detection)</dd></div>
+                    <div><dt>Handler evidence</dt><dd>@ApplicationMessagingPresentation.HandlerState(selected.HandlerMapping)</dd></div>
+                    <div><dt>IQR integration link</dt><dd>@(selected.BoundConsumer ?? "Not linked")</dd></div>
+                    <div><dt>Runtime processing</dt><dd>Not assessed</dd></div>
+                </dl>
+                <label class="am-bind">IQR integration link
+                    <select class="form-control" data-testid="am-binding" value="@(selected.BoundConsumer ?? "")" disabled="@_busy" @onchange="e => BindAsync(selected, e.Value?.ToString())">
+                        <option value="">Not linked</option>
+                        @foreach (var consumer in ApplicationMessagingPresentation.Consumers(Catalog)) { <option value="@consumer">@consumer</option> }
+                    </select>
+                </label>
+                <div class="am-title">
+                    @foreach (var platform in Catalog.Platforms.Where(p => p.Kind is IntegrationKind.ServiceBus or IntegrationKind.EventHub))
+                    {
+                        <a href="@($"#ip-platform-{Slug(platform.Id)}")">Open @platform.Name transport evidence</a>
+                    }
+                </div>
+                <ApplicationMessagingDetail Application="selected" Catalog="Catalog" />
+            </section>
         }
+        else { <p class="am-muted">Select an application to inspect messaging evidence.</p> }
+        </div>
     }
 </section>
 
@@ -114,6 +106,23 @@
     private bool _busy;
     private string _status = "";
     private string? _error;
+    private string _search = "";
+    private string? _selected;
+    private ApplicationMessagingEvidenceSet? _previous;
+    private IReadOnlyList<ApplicationMessagingEvidence> Applications => Evidence?.Applications
+        .Where(a => a.ApplicationId.Contains(_search, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(a => a.ApplicationId, StringComparer.OrdinalIgnoreCase).ToList() ?? [];
+    private ApplicationMessagingEvidence? Selected => Applications.FirstOrDefault(a => a.ApplicationId == _selected);
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_previous, Evidence)) return;
+        _previous = Evidence;
+        if (Evidence?.Applications.Any(a => a.ApplicationId == _selected) != true)
+            _selected = Evidence?.Applications.OrderBy(a => a.ApplicationId, StringComparer.OrdinalIgnoreCase).FirstOrDefault()?.ApplicationId;
+    }
+
+    private void Select(ApplicationMessagingEvidence app) => _selected = app.ApplicationId;
 
     private async Task AnalyzeAsync(InputFileChangeEventArgs args)
     {
@@ -157,12 +166,12 @@
         try
         {
             var set = await Api.BindApplicationMessagingAsync(EnvironmentId, app.ApplicationId, string.IsNullOrWhiteSpace(consumer) ? null : consumer);
-            _status = string.IsNullOrWhiteSpace(consumer) ? $"Saved. {app.ApplicationId} is not bound to a consumer." : $"Saved. {app.ApplicationId} is bound to {consumer}.";
+            _status = string.IsNullOrWhiteSpace(consumer) ? $"Saved. {app.ApplicationId} is not linked to an IQR integration consumer." : $"Saved. {app.ApplicationId} is linked to {consumer}.";
             await EvidenceChanged.InvokeAsync(set);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _error = "Save failed: the binding was not stored.";
+            _error = "Save failed: the IQR integration link was not stored.";
             _status = "";
         }
         finally { _busy = false; }

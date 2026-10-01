@@ -8,6 +8,21 @@ namespace BirkNext.Web.Services;
 /// </summary>
 public static class ApplicationMessagingPresentation
 {
+    // UI wording only; the persisted enum values and mapping calculation are unchanged.
+    public static string Detection(MessagingDetection detection) => detection switch
+    {
+        MessagingDetection.Confirmed => "Detected",
+        MessagingDetection.NotDetected => "Not found",
+        _ => "Likely",
+    };
+
+    public static string HandlerState(MessagingFactState state) => state switch
+    {
+        MessagingFactState.NotFound => "Not mapped",
+        MessagingFactState.NotAssessable => "Not assessed",
+        _ => ApplicationMessagingLabels.Fact(state),
+    };
+
     public static string Tone(MessagingDetection detection) => detection switch
     {
         MessagingDetection.Confirmed => "info",
@@ -37,7 +52,7 @@ public static class ApplicationMessagingPresentation
         definition.Consumer.DisplayName is { Length: > 0 } consumer ? set?.Applications.FirstOrDefault(a => a.BoundConsumer == consumer) : null;
 
     public static string Locations(MessagingFact fact) =>
-        fact.Locations.Count == 0 ? IntegrationReviewLabels.Source(fact.Source) : $"{IntegrationReviewLabels.Source(fact.Source)}: {string.Join(", ", fact.Locations.Take(3).Select(l => $"{l.File}:{l.Line}"))}";
+        fact.Locations.Count == 0 ? IntegrationReviewLabels.Source(fact.Source) : $"{IntegrationReviewLabels.Source(fact.Source)}: {string.Join(", ", fact.Locations.Select(l => $"{l.File}:{l.Line}"))}";
 
     public static string Route(MessagingRoute route) => route.Direction == MessagingRouteDirection.Publish
         ? $"{route.MessageType} → Azure Service Bus {route.EndpointKind.ToString().ToLowerInvariant()} {route.Endpoint}"
