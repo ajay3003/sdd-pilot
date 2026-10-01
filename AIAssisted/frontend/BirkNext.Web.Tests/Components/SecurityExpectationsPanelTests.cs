@@ -20,17 +20,45 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         .Add(c=>c.EnvironmentId,"qa").Add(c=>c.Settings,_settings).Add(c=>c.Editable,editable)
         .Add(c=>c.ApprovedChanged,a=> { _applied=a; _settings.ExpectedAuthority=a.ExpectedAuthority; _settings.ExpectedTenant=a.ExpectedTenant; _settings.ExpectedClientId=a.ExpectedClientId;
             _settings.AllowedRestHosts=a.AllowedRestHosts;_settings.AllowedGraphQlHosts=a.AllowedGraphQlHosts;_settings.AllowedCdnHosts=a.AllowedCdnHosts;_settings.Origins=a.Origins; }));
-    private static void Discover(IRenderedComponent<SecurityExpectationsPanel> cut) {cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("0 approved automatically"));}
+    private static void Discover(IRenderedComponent<SecurityExpectationsPanel> cut) {cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("0 approved automatically")); foreach(var id in cut.FindAll("button[data-testid^=sec-review-]").Select(b => b.GetAttribute("data-testid")).ToList()) cut.Find($"[data-testid={id}]").Click();}
     [Fact] public void NotAnalyzedStateHasNoGuessesAndKeepsExpectationBoundary()
     {
         var cut=Panel();cut.Markup.Should().Contain("Not analyzed").And.Contain("nothing is approved or validated automatically").And.Contain("Never enter secrets");
         cut.FindAll("[data-testid=sec-candidate]").Should().BeEmpty();cut.Find("[data-testid=sec-approved-count]").TextContent.Should().Be("6");
         cut.Markup.Should().Contain("Identity expectations").And.Contain("Allowed application hosts").And.Contain("Expected security headers");
     }
+    [Fact] public void DefaultViewDoesNotRenderCandidateOrEvidenceRows()
+    {
+        var cut=Panel();cut.Find("[data-testid=sec-discover]").Click();
+        cut.WaitForAssertion(()=>cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("0 approved automatically"));
+        cut.FindAll("[data-testid=sec-candidate],table").Should().BeEmpty();
+        cut.Find("[data-testid=sec-review-GraphQlHost]").GetAttribute("aria-expanded").Should().Be("false");
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NoApprovedSingletonUsesAcceptOrChooseWithoutConflictOrKeepCurrent(bool ambiguous)
+    {
+        _api.Candidates=[_api.Make("a",SecurityExpectationField.Authority,"https://identity.example.test/a")];
+        if(ambiguous) _api.Candidates.Add(_api.Make("b",SecurityExpectationField.Authority,"https://identity.example.test/b"));
+        var cut=Panel();Discover(cut);
+        cut.Find("[data-testid=sec-field-Authority]").TextContent.Should().NotContain("Conflict").And.NotContain("Keep current").And.NotContain("Replace");
+        cut.FindAll("[data-testid=sec-accept]").Should().HaveCount(ambiguous ? 2 : 1);
+        cut.Find("[data-testid=sec-accept]").TextContent.Should().Be(ambiguous ? "Choose this value" : "Accept");
+    }
+    [Fact] public async Task NewerSnapshotShowsNoticeAndPreservesHistoricalBinding()
+    {
+        await _api.DiscoverAsync("qa",new(_api.Snapshot.Id,new()));
+        _api.AdditionalSources=[_api.Snapshot with {Id=Guid.NewGuid(),Archive=new("newer.zip",new string('b',64),2),AnalyzedAt=_api.Snapshot.AnalyzedAt.AddMinutes(1)}];
+        var cut=Panel();cut.Markup.Should().Contain("Newer source snapshot available");
+        cut.Find("[data-testid=sec-snapshot]").TextContent.Should().Contain("generic.zip").And.NotContain("newer.zip");
+        cut.Find("#sec-source").GetAttribute("value").Should().Be(_api.Snapshot.Id.ToString());
+        _api.DiscoverCalls.Should().Be(1);
+    }
     [Fact] public void DiscoverShowsCandidatesSnapshotAndEvidenceButChangesNoApprovedValue()
     {
         var cut=Panel();Discover(cut);_applied.Should().BeNull();_api.DiscoverCalls.Should().Be(1);_settings.AllowedRestHosts.Should().Equal("manual.example.test");
-        cut.Find("[data-testid=sec-snapshot]").TextContent.Should().Be("Current");cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("No approved expectations were changed.");
+        cut.Find("[data-testid=sec-snapshot]").TextContent.Should().Contain("zip");cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("No approved expectations were changed.");
         var evidence=cut.Find("[data-testid=sec-evidence-gql-toggle]");evidence.GetAttribute("aria-expanded").Should().Be("false");evidence.Click();
         cut.Find("[data-testid=sec-evidence-gql-toggle]").GetAttribute("aria-expanded").Should().Be("true");
         cut.Markup.Should().Contain("Shop.Ui/appsettings.json").And.Contain("GraphQl:Endpoint").And.Contain("Confirmed");
@@ -46,21 +74,21 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
     [Fact] public void MatchingManualValueDoesNotBecomeAcceptedFromSource()
     {
         _settings.AllowedGraphQlHosts=["graphql.example.test"];var cut=Panel();Discover(cut);
-        cut.Find("[data-candidate=gql]").TextContent.Should().Contain("Matches current source").And.Contain("Detected").And.NotContain("Accepted");
+        cut.Find("[data-candidate=gql]").TextContent.Should().Contain("Matches current source").And.Contain("Matches source").And.NotContain("Accepted");
         cut.FindAll("[data-candidate=gql] [data-testid=sec-accept]").Should().BeEmpty();_settings.Origins.Should().BeEmpty();
     }
     [Fact] public void MatchingOlderApprovalDoesNotAutomaticallyAcceptANewSourceFinding()
     {
         _settings.AllowedGraphQlHosts=["graphql.example.test"];
         _settings.Origins=[new(SecurityExpectationField.GraphQlHost,"graphql.example.test",SecurityExpectationOrigin.AcceptedFromSource,Guid.NewGuid(),new string('b',64),DateTimeOffset.UtcNow,"gql")];
-        var cut=Panel();Discover(cut);cut.Find("[data-candidate=gql]").TextContent.Should().Contain("Detected").And.NotContain("Accepted");
+        var cut=Panel();Discover(cut);cut.Find("[data-candidate=gql]").TextContent.Should().Contain("Matches source").And.NotContain("Accepted");
         cut.Find("[data-testid=sec-field-GraphQlHost]").TextContent.Should().Contain("older snapshot; expectation remains approved");
         _api.Reviews.Should().BeEmpty();_settings.AllowedGraphQlHosts.Should().Equal("graphql.example.test");
     }
     [Fact] public void ConflictKeepCurrentRejectsWithoutReplacingAndReplaceIsExplicit()
     {
         _settings.ExpectedClientId="existing-client";_api.Candidates=[_api.Make("client",SecurityExpectationField.ClientId,"source-client")];
-        var cut=Panel();Discover(cut);cut.Find("[data-candidate=client]").TextContent.Should().Contain("Conflict").And.Contain("Keep current").And.Contain("Replace / choose detected");
+        var cut=Panel();Discover(cut);cut.Find("[data-candidate=client]").TextContent.Should().Contain("Conflict").And.Contain("Keep current").And.Contain("Replace with detected");
         cut.Find("[data-testid=sec-reject]").Click();cut.WaitForAssertion(()=>_api.Reviews.Should().HaveCount(1));
         _api.Reviews.Single().Accept.Should().BeFalse();_settings.ExpectedClientId.Should().Be("existing-client");_applied.Should().BeNull();
         Discover(cut);cut.Find("[data-testid=sec-accept]").Click();cut.WaitForAssertion(()=>_settings.ExpectedClientId.Should().Be("source-client"));_api.Reviews.Last().Request.Replace.Should().BeTrue();
@@ -69,7 +97,7 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
     {
         _api.ResultCurrent=false;_settings.AllowedGraphQlHosts=["legacy.example.test"];var cut=Panel();Discover(cut);
         cut.Find("[data-candidate=gql]").TextContent.Should().Contain("Stale");cut.FindAll("[data-testid=sec-accept]").Should().BeEmpty();
-        cut.Find("[data-testid=sec-snapshot]").TextContent.Should().Be("Older snapshot");_settings.AllowedGraphQlHosts.Should().Equal("legacy.example.test");
+        cut.Find("[data-testid=sec-snapshot]").TextContent.Should().Contain("zip");_settings.AllowedGraphQlHosts.Should().Equal("legacy.example.test");
     }
     [Fact] public void ServerRejectsChangedSourceAndUiPreservesApprovedConfiguration()
     {
@@ -111,7 +139,7 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         var cut=Render<BirkNext.Web.Components.FrontendAnalysisSettings>(p=>p.Add(c=>c.InitialTab,"security"));
         var panel=cut.FindComponent<SecurityExpectationsPanel>();panel.Instance.EnvironmentId.Should().Be("actual-qa-id");
         var settings=Services.GetRequiredService<IFrontendAnalysisSettingsService>();settings.Settings.Profiles.Single().Security.AllowedGraphQlHosts.Should().BeEmpty();
-        cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.FindAll("[data-testid=sec-candidate]").Should().HaveCount(1));
+        cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("0 approved automatically")); cut.Find("[data-testid=sec-review-GraphQlHost]").Click();
         settings.Settings.Profiles.Single().Security.AllowedGraphQlHosts.Should().BeEmpty();
         cut.Find("[data-testid=sec-accept]").Click();cut.WaitForAssertion(()=>settings.Settings.Profiles.Single().Security.AllowedGraphQlHosts.Should().Equal("graphql.example.test"));
         settings.Settings.Profiles.Single().Security.Origins.Should().Contain(p=>p.Origin==SecurityExpectationOrigin.AcceptedFromSource);
@@ -146,7 +174,7 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         JSInterop.Setup<string?>("birkNextStorage.getItem", _=>true).SetResult("""{"activeProfileId":"actual-qa-id","profiles":[{"id":"actual-qa-id","name":"QA","environmentType":2},{"id":"other-id","name":"Other","environmentType":2}]}""");
         JSInterop.SetupVoid("birkNextStorage.setItem", _=>true).SetVoidResult();_api.ReviewGate=new(TaskCreationOptions.RunContinuationsAsynchronously);
         var cut=Render<BirkNext.Web.Components.FrontendAnalysisSettings>(p=>p.Add(c=>c.InitialTab,"security"));
-        cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.FindAll("[data-testid=sec-candidate]").Should().HaveCount(1));
+        cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("0 approved automatically")); cut.Find("[data-testid=sec-review-GraphQlHost]").Click();
         var pending=cut.Find("[data-testid=sec-accept]").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());cut.WaitForAssertion(()=>_api.Reviews.Should().HaveCount(1));
         cut.FindAll(".fa-profile-chip").Single(b=>b.TextContent.Contains("Other")).Click();_api.ReviewGate.SetResult();await pending;
         Services.GetRequiredService<IFrontendAnalysisSettingsService>().Settings.Profiles.Should().OnlyContain(p=>p.Security.AllowedGraphQlHosts.Count==0);
@@ -158,7 +186,7 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         JSInterop.SetupVoid("birkNextStorage.setItem", _=>true).SetVoidResult();
         _api.Candidates=[_api.Make("gql",SecurityExpectationField.GraphQlHost,"graphql.example.test"),_api.Make("rest",SecurityExpectationField.RestHost,"new-rest.example.test")];
         var cut=Render<BirkNext.Web.Components.FrontendAnalysisSettings>(p=>p.Add(c=>c.InitialTab,"security"));
-        cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.FindAll("[data-testid=sec-candidate]").Should().HaveCount(2));
+        cut.Find("[data-testid=sec-discover]").Click();cut.WaitForAssertion(()=>cut.Find("[data-testid=sec-status]").TextContent.Should().Contain("0 approved automatically"));
         cut.Find("[data-testid=sec-accept-safe]").Click();cut.WaitForAssertion(()=>_api.Reviews.Should().HaveCount(2));
         var security=Services.GetRequiredService<IFrontendAnalysisSettingsService>().Settings.Profiles.Single().Security;
         security.AllowedRestHosts.Should().Equal("manual.example.test","new-rest.example.test");security.AllowedGraphQlHosts.Should().Equal("graphql.example.test");security.Origins.Should().HaveCount(2);
@@ -166,6 +194,7 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
     private sealed class FakeApi : ISecurityExpectationApi
     {
         public IqrSourceSnapshot Snapshot {get;}=new() {Id=Guid.NewGuid(),IntegrationId="source-analysis",Archive=new("generic.zip",new string('a',64),2),AnalyzedAt=DateTimeOffset.UtcNow};
+        public List<IqrSourceSnapshot> AdditionalSources {get;set;}=[];
         public List<SecurityExpectationCandidate> Candidates {get;set;}
         public bool ResultCurrent {get;set;}=true;
         public int DiscoverCalls;public string? ReviewError;
@@ -175,7 +204,7 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         public FakeApi() => Candidates=[Make("gql",SecurityExpectationField.GraphQlHost,"graphql.example.test")];
         public SecurityExpectationCandidate Make(string id,SecurityExpectationField field,string value)=>new() {Id=id,FieldType=field,Value=value,NormalizedValue=SecurityExpectationValues.Normalize(field,value)??"",
             SourceSnapshotId=Snapshot.Id,SourceComponent="Shop.Ui",SourceFile="Shop.Ui/appsettings.json",SourceSymbol="GraphQl:Endpoint",Explanation="Explicit source configuration, no runtime observation.",EvidenceState=ArchitectureEvidenceState.Confirmed};
-        public Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string env)=>Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([Snapshot]);
+        public Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string env)=>Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>(AdditionalSources.Concat([Snapshot]).ToList());
         public Task<IReadOnlyList<SecurityExpectationDiscoveryResult>> HistoryAsync(string env)=>Task.FromResult<IReadOnlyList<SecurityExpectationDiscoveryResult>>(_result is null?[]:[_result]);
         public Task<SecurityExpectationDiscoveryResult> DiscoverAsync(string env,SecurityDiscoveryRequest request) {DiscoverCalls++;_result=new() {Id=Guid.NewGuid(),TargetEnvironmentId=env,SourceSnapshotId=Snapshot.Id,SourceFingerprint=Snapshot.Archive.Sha256,IsCurrent=ResultCurrent,Status=ArchitectureStatus.Complete,Candidates=[..Candidates]};return Task.FromResult(_result);}
         public async Task<SecurityCandidateReviewResponse> ReviewAsync(string env,SecurityCandidateReviewRequest request,bool accept)

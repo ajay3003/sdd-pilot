@@ -23,3 +23,8 @@
 .sec button:focus-visible,.sec input:focus-visible,.sec textarea:focus-visible,.sec-status:focus,.sec ::deep .disclosure-toggle:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
 .sec input,.sec textarea { box-sizing:border-box; max-width:100%; width:100%; min-width:0; }
 @media(max-width:600px) { .sec ::deep .sec-evidence > div { grid-template-columns:minmax(0,1fr); } .sec-actions button { max-width:100%; white-space:normal; } }
+
+.sec select { max-width:100%; min-width:0; }
+.sec-evidence-scroll { overflow-x:auto; max-width:100%; min-width:0; }
+.sec-evidence-scroll table { border-collapse:collapse; min-width:650px; font-size:.8rem; }
+.sec-evidence-scroll th,.sec-evidence-scroll td { padding:.4rem; text-align:left; border-bottom:1px solid #cbd5e1; max-width:220px; overflow-wrap:anywhere; }

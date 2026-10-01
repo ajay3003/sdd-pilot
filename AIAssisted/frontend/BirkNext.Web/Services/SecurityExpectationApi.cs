@@ -17,13 +17,11 @@ public sealed class SecurityExpectationApi(HttpClient http) : ISecurityExpectati
     private static string Path(string env) => $"api/target-environments/{Uri.EscapeDataString(env)}/security-expectations/";
     public async Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string env)
     {
-        // Select the latest standalone Source Analysis directly: the general source history has
-        // a bounded list that also contains IQR integration snapshots.
-        using var response = await http.GetAsync(Path(env) + "source-snapshot");
+        // Metadata for immutable standalone Source Analysis snapshots; selection stays explicit.
+        using var response = await http.GetAsync(Path(env) + "source-snapshots");
         if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return [];
         response.EnsureSuccessStatusCode();
-        var snapshot = await response.Content.ReadFromJsonAsync<IqrSourceSnapshot>();
-        return snapshot is null ? [] : [snapshot];
+        return await response.Content.ReadFromJsonAsync<List<IqrSourceSnapshot>>() ?? [];
     }
     public async Task<IReadOnlyList<SecurityExpectationDiscoveryResult>> HistoryAsync(string env) =>
         await http.GetFromJsonAsync<List<SecurityExpectationDiscoveryResult>>(Path(env) + "discovery") ?? [];

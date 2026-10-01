@@ -84,7 +84,7 @@ public sealed class SecurityExpectationDiscoveryTests
         evidence.Candidates.Should().OnlyContain(c=>c.SourceSnapshotId==snapshot.Id && c.SourceFile.Length>0 && c.SourceSymbol.Length>0);
         var approved=new ApprovedSecurityExpectations();var before=JsonSerializer.Serialize(approved,Json);
         var result=SecurityExpectationDiscoveryService.Project(snapshot,"qa",approved);
-        result.Candidates.Where(c=>c.FieldType==SecurityExpectationField.ClientId).Should().OnlyContain(c=>c.CandidateState==SecurityCandidateState.Conflict);
+        result.Candidates.Where(c=>c.FieldType==SecurityExpectationField.ClientId).Should().OnlyContain(c=>c.CandidateState==SecurityCandidateState.NeedsReview);
         JsonSerializer.Serialize(approved,Json).Should().Be(before);
         result.Candidates.Should().NotContain(c=>c.CandidateState==SecurityCandidateState.Accepted);
     }
@@ -144,15 +144,65 @@ public sealed class SecurityExpectationDiscoveryTests
         var replaced=await service.ReviewAsync("qa",new(result.Id,c.Id,kept.Discovery.Revision,approved,true),true);replaced.Approved.ExpectedClientId.Should().Be(ApiClient);
         approved.ExpectedClientId.Should().Be(FrontendClient);
     }
-    [Fact] public async Task SourceChangeBlocksOldAcceptanceWithoutUnapprovingAnything()
+    [Fact] public async Task NewerSnapshotDoesNotRebindSelectedReviewOrUnapproveAnything()
     {
         using var db=Db();var a=Snapshot(SecurityExpectationField.RestHost,"a.example.test");await Insert(db,a);
         var service=new SecurityExpectationDiscoveryService(db);var approved=new ApprovedSecurityExpectations {AllowedRestHosts=["manual.example.test"]};
         var result=await service.DiscoverAsync("qa",new(a.Id,approved));
         await Insert(db,Snapshot(SecurityExpectationField.RestHost,"b.example.test") with {AnalyzedAt=a.AnalyzedAt.AddMinutes(1)});
-        await FluentActions.Invoking(()=>service.ReviewAsync("qa",new(result.Id,result.Candidates.Single().Id,0,approved),true)).Should().ThrowAsync<SecurityDiscoveryReviewException>().WithMessage("Source evidence changed; refresh discovery.");
-        var history=(await service.ListAsync("qa")).Single();history.IsCurrent.Should().BeFalse();history.Candidates.Single().CandidateState.Should().Be(SecurityCandidateState.Stale);
+        var accepted = await service.ReviewAsync("qa",new(result.Id,result.Candidates.Single().Id,0,approved),true);
+        accepted.Approved.AllowedRestHosts.Should().Contain("a.example.test");
+        var history=(await service.ListAsync("qa")).Single();history.IsCurrent.Should().BeTrue();history.SourceSnapshotId.Should().Be(a.Id);
         approved.AllowedRestHosts.Should().Equal("manual.example.test");
+    }
+    [Fact] public void GenericDuplicateSourceFixtureCollapsesLocationsWithoutFalseConflict()
+    {
+        var files = Enumerable.Range(0,10).Select(i => ($"App/appsettings.{i}.json", """{"AzureAd":{"Authority":"https://identity.example.test/a","TenantId":"11111111-1111-1111-1111-111111111111"},"ApiBaseUrl":"https://api.example.test/api","SecurityHeaders":{"X-Frame-Options":"DENY"}}""")).ToList();
+        files.Add(("App/App.csproj","<Project Sdk=\"Microsoft.NET.Sdk.Web\"/>"));
+        files.Add(("App/appsettings.alternate.json","""{"AzureAd":{"Authority":"https://identity.example.test/b"},"RestBaseUrl":"https://second.example.test/api"}"""));
+        var result=SecurityExpectationDiscoveryService.Project(Analyze(files.ToArray()),"qa",new());
+        var authorities=result.Candidates.Where(c=>c.FieldType==SecurityExpectationField.Authority).ToList();
+        authorities.Should().HaveCount(2); authorities.Should().OnlyContain(c=>c.CandidateState==SecurityCandidateState.NeedsReview);
+        authorities.Single(c=>c.Value.EndsWith("/a")).SupportingEvidenceCount.Should().Be(10);
+        result.Candidates.Should().NotContain(c=>c.CandidateState==SecurityCandidateState.Conflict);
+        result.Candidates.Single(c=>c.FieldType==SecurityExpectationField.TenantId).SupportingEvidenceCount.Should().Be(10);
+        result.Candidates.Single(c=>c.FieldType==SecurityExpectationField.SecurityHeader).SupportingEvidenceCount.Should().Be(10);
+    }
+    [Fact] public async Task LegacyDiscoveryIsGroupedReadOnlyWithoutChangingStoredHistory()
+    {
+        using var db=Db(); var snapshot=Snapshot(SecurityExpectationField.RestHost,"api.example.test"); await Insert(db,snapshot);
+        var old=new SecurityExpectationDiscoveryResult {TargetEnvironmentId="qa",SourceSnapshotId=snapshot.Id,SourceFingerprint=snapshot.Archive.Sha256,
+            Candidates=[Candidate(SecurityExpectationField.RestHost,"api.example.test",snapshot.Id),Candidate(SecurityExpectationField.RestHost,"api.example.test",snapshot.Id)]};
+        var json=JsonSerializer.Serialize(old,Json);db.SecurityExpectationDiscoveries.Add(new(){Id=old.Id,EnvironmentId="qa",SourceSnapshotId=snapshot.Id,CreatedAt=DateTimeOffset.UtcNow,EvidenceJson=json});await db.SaveChangesAsync();
+        var result=(await new SecurityExpectationDiscoveryService(db).ListAsync("qa")).Single();result.Candidates.Should().HaveCount(1);result.SupportingEvidenceCount.Should().Be(2);
+        result.Candidates.Single().IsCurrent.Should().BeFalse();db.SecurityExpectationDiscoveries.Single().EvidenceJson.Should().Be(json);
+    }
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExplicitRelatedScopeAggregatesSameValuesAndPreservesDifferentValues(bool different)
+    {
+        using var db=Db();
+        var a=Snapshot(SecurityExpectationField.Authority,"https://identity.example.test/a");
+        var b=Snapshot(SecurityExpectationField.Authority,different ? "https://identity.example.test/b" : "https://identity.example.test/a");
+        await Insert(db,a); await Insert(db,b);
+        var service=new SecurityExpectationDiscoveryService(db);
+        var primary=await service.DiscoverAsync("qa",new(a.Id,new())); primary.Candidates.Should().HaveCount(1);
+        var result=await service.DiscoverAsync("qa",new(a.Id,new(),[b.Id]));
+        result.SourceScope!.RelatedSourceSnapshotIds.Should().Equal(b.Id);
+        result.Candidates.Should().HaveCount(different ? 2 : 1);
+        result.SupportingEvidenceCount.Should().Be(2);
+        result.Candidates.Should().OnlyContain(c => c.CandidateState == (different ? SecurityCandidateState.NeedsReview : SecurityCandidateState.Detected));
+        result.Candidates.SelectMany(c => c.SupportingEvidence).Select(e => e.SourceSnapshotId).Should().BeEquivalentTo([a.Id,b.Id]);
+    }
+    [Fact] public async Task SwitchingSnapshotRecomputesWithoutChangingPolicy()
+    {
+        using var db=Db(); var a=Snapshot(SecurityExpectationField.Authority,"https://identity.example.test/a");
+        var b=Snapshot(SecurityExpectationField.Authority,"https://identity.example.test/b"); await Insert(db,a); await Insert(db,b);
+        var approved=new ApprovedSecurityExpectations {ExpectedAuthority="https://identity.example.test/a"}; var service=new SecurityExpectationDiscoveryService(db);
+        (await service.DiscoverAsync("qa",new(a.Id,approved))).Candidates.Single().CandidateState.Should().Be(SecurityCandidateState.MatchesSource);
+        var next=await service.DiscoverAsync("qa",new(b.Id,approved)); next.Candidates.Single().Value.Should().EndWith("/b");
+        next.Candidates.Single().CandidateState.Should().Be(SecurityCandidateState.Conflict); approved.ExpectedAuthority.Should().EndWith("/a");
     }
     [Fact] public async Task ReviewRevisionAndEnvironmentScopeAreEnforced()
     {
@@ -165,7 +215,7 @@ public sealed class SecurityExpectationDiscoveryTests
     [Fact] public void PartialAndHistoricalUnsupportedEvidenceAreNotFailures()
     {
         var snapshot=Snapshot(SecurityExpectationField.RestHost,"api.example.test") with {Status=SourceAnalysisStatus.Partial};
-        SecurityExpectationDiscoveryService.Project(snapshot,"qa",new()).Status.Should().Be(ArchitectureStatus.Partial);
+        SecurityExpectationDiscoveryService.Project(snapshot,"qa",new()).Status.Should().Be(ArchitectureStatus.Complete);
         SecurityExpectationDiscoveryService.Project(snapshot with {SecurityExpectationsEvidence=null},"qa",new()).Status.Should().Be(ArchitectureStatus.Unsupported);
     }
     [Fact] public void ExistingJsonLoadsWithoutMigrationAndSourceDefaultsStaySeparate()

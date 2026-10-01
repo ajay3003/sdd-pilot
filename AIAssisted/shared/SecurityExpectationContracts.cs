@@ -7,12 +7,17 @@ namespace BirkNext.SecurityExpectations;
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SecurityExpectationField { Authority, TenantId, ClientId, RedirectUrl, BackendDomain, RestHost, GraphQlHost, CdnHost, SecurityHeader }
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SecurityCandidateState { Detected, Suggested, Conflict, Stale, Rejected, Accepted }
+public enum SecurityCandidateState { Detected, Suggested, Conflict, Stale, Rejected, Accepted, NeedsReview, MatchesSource }
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum SecurityExpectationOrigin { Existing, Default, Manual, AcceptedFromSource }
 
 public sealed record SecurityExpectationCandidate
 {
+    public List<string> SourceOccurrenceIds { get; init; } = [];
+    public List<SecurityExpectationEvidence> SupportingEvidence { get; init; } = [];
+    public int SupportingEvidenceCount => SupportingEvidence.Count == 0 ? 1 : SupportingEvidence.Count;
+    public List<Guid> SourceSnapshotIds => SupportingEvidence.Count == 0 ? [SourceSnapshotId] : SupportingEvidence.Select(e => e.SourceSnapshotId).Distinct().ToList();
+    public string NormalizationRule { get; init; } = "Conservative field-specific normalization";
     public string Id { get; init; } = "";
     public SecurityExpectationField FieldType { get; init; }
     public string Value { get; init; } = "";
@@ -32,6 +37,11 @@ public sealed record SecurityExpectationCandidate
     public string SuggestedAction { get; init; } = "Review";
 }
 
+public sealed record SecurityExpectationEvidence(Guid SourceSnapshotId, string Repository, string FilePath,
+    int Line, string SymbolOrKey, string EvidenceKind, string RawValue, string Confidence, ArchitectureEvidenceState State, string SourceFingerprint = "");
+public sealed record SecurityExpectationSourceScope(Guid PrimarySourceSnapshotId, List<Guid> RelatedSourceSnapshotIds);
+public sealed record SecurityExpectationFieldDefinition(SecurityExpectationField Field, bool IsSingleton, string ValueType, string NormalizationRule);
+
 public sealed record SecuritySourceEvidence
 {
     public Guid SourceSnapshotId { get; init; }
@@ -44,6 +54,13 @@ public sealed record SecuritySourceEvidence
 
 public sealed record SecurityExpectationDiscoveryResult
 {
+    public List<SecurityCandidateDecision> ReviewDecisions { get; init; } = [];
+    public Dictionary<Guid, string> SourceFingerprints { get; init; } = [];
+    public SecurityExpectationSourceScope? SourceScope { get; init; }
+    public string SourceDisplayName { get; init; } = "";
+    public DateTimeOffset? SourceAnalyzedAt { get; init; }
+    public int SupportingEvidenceCount => Candidates.Sum(c => c.SupportingEvidenceCount);
+    public int NeedsReviewCount => Candidates.Where(c => c.IsCurrent && c.CandidateState is SecurityCandidateState.Detected or SecurityCandidateState.Suggested or SecurityCandidateState.NeedsReview or SecurityCandidateState.Conflict).Select(c => c.FieldType).Distinct().Count();
     public Guid Id { get; init; } = Guid.NewGuid();
     public string TargetEnvironmentId { get; init; } = "";
     public Guid SourceSnapshotId { get; init; }
@@ -78,7 +95,7 @@ public class ApprovedSecurityExpectations
     public static readonly string[] DefaultHeaders = ["Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "Strict-Transport-Security"];
 }
 
-public sealed record SecurityDiscoveryRequest(Guid SourceSnapshotId, ApprovedSecurityExpectations Approved);
+public sealed record SecurityDiscoveryRequest(Guid SourceSnapshotId, ApprovedSecurityExpectations Approved, List<Guid>? RelatedSourceSnapshotIds = null);
 public sealed record SecurityCandidateReviewRequest(Guid DiscoveryId, string CandidateId, int Revision, ApprovedSecurityExpectations Approved, bool Replace = false);
 public sealed record SecurityCandidateReviewResponse(SecurityExpectationDiscoveryResult Discovery, ApprovedSecurityExpectations Approved);
 public sealed record SecurityCandidateDecision(string CandidateId, SecurityCandidateState State, DateTimeOffset At);
@@ -86,6 +103,40 @@ public sealed record SecurityCandidateDecision(string CandidateId, SecurityCandi
 /// <summary>Conservative comparison and approval projection shared by API and UI; no network or inference.</summary>
 public static class SecurityExpectationValues
 {
+    public static SecurityExpectationFieldDefinition Definition(SecurityExpectationField field) => new(field, Singleton(field),
+        field is SecurityExpectationField.Authority or SecurityExpectationField.RedirectUrl ? "URL" :
+        field is SecurityExpectationField.TenantId or SecurityExpectationField.ClientId ? "Identifier" : field == SecurityExpectationField.SecurityHeader ? "Header name" : "Host and port",
+        field switch {
+            SecurityExpectationField.Authority => "URL scheme/host normalization; preserve authority path and version",
+            SecurityExpectationField.RedirectUrl => "URL scheme/host normalization; preserve path case and trailing slash",
+            SecurityExpectationField.TenantId => "GUID formatting or domain case; no GUID/domain alias mapping",
+            SecurityExpectationField.ClientId => "GUID formatting; exact comparison for legacy public identifiers",
+            SecurityExpectationField.SecurityHeader => "Allow-listed case-insensitive header name; no header policies stored",
+            _ => "Host case and DNS terminal dot; preserve non-default port; endpoint path is outside host expectation" });
+    public static SecurityCandidateState DeriveState(SecurityExpectationCandidate candidate, ApprovedSecurityExpectations approved, int uniqueFieldCandidates)
+    {
+        if (!candidate.IsCurrent) return SecurityCandidateState.Stale;
+        if (candidate.CandidateState == SecurityCandidateState.Rejected) return SecurityCandidateState.Rejected;
+        if (Matches(approved, candidate)) return SecurityCandidateState.MatchesSource;
+        if (Singleton(candidate.FieldType))
+        {
+            if (Values(approved, candidate.FieldType).Any()) return SecurityCandidateState.Conflict;
+            if (uniqueFieldCandidates > 1) return SecurityCandidateState.NeedsReview;
+        }
+        return candidate.EvidenceState == ArchitectureEvidenceState.Inferred ? SecurityCandidateState.Suggested : SecurityCandidateState.Detected;
+    }
+    public static string AcceptAction(SecurityExpectationCandidate candidate, ApprovedSecurityExpectations approved, int uniqueFieldCandidates)
+        => DeriveState(candidate, approved, uniqueFieldCandidates) == SecurityCandidateState.Conflict ? "Replace with detected" :
+            !Singleton(candidate.FieldType) ? "Add" : uniqueFieldCandidates > 1 ? "Choose this value" : "Accept";
+    public static List<SecurityExpectationCandidate> Group(IEnumerable<SecurityExpectationCandidate> observations)
+        => observations.GroupBy(c => (c.FieldType, c.NormalizedValue)).OrderBy(g => g.Key.FieldType).ThenBy(g => g.Key.NormalizedValue, StringComparer.Ordinal)
+        .Select(g => {
+            var first = g.OrderBy(c => c.SourceComponent, StringComparer.Ordinal).ThenBy(c => c.SourceFile, StringComparer.Ordinal).ThenBy(c => c.SourceSymbol, StringComparer.Ordinal).First();
+            var evidence = g.SelectMany(c => c.SupportingEvidence.Count > 0 ? c.SupportingEvidence : [new SecurityExpectationEvidence(c.SourceSnapshotId,c.SourceComponent,c.SourceFile,c.SourceLine,c.SourceSymbol,c.EvidenceType,c.Value,c.Confidence,c.EvidenceState)])
+                .OrderBy(e => e.Repository,StringComparer.Ordinal).ThenBy(e => e.FilePath,StringComparer.Ordinal).ThenBy(e => e.SymbolOrKey,StringComparer.Ordinal).ThenBy(e => e.Line).ToList();
+            var key = $"{g.Key.FieldType}|{g.Key.NormalizedValue}|{string.Join(",",evidence.Select(e => e.SourceSnapshotId).Distinct().Order())}";
+            return first with { Id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key))), SupportingEvidence = evidence, SourceOccurrenceIds = g.SelectMany(c => c.SourceOccurrenceIds.Count > 0 ? c.SourceOccurrenceIds : [c.Id]).ToList(), NormalizationRule = Definition(first.FieldType).NormalizationRule };
+        }).ToList();
     public static bool Singleton(SecurityExpectationField field) => field is SecurityExpectationField.Authority or SecurityExpectationField.TenantId or SecurityExpectationField.ClientId;
     public static string Label(SecurityExpectationField field) => field switch {
         SecurityExpectationField.Authority => "Expected Authority", SecurityExpectationField.TenantId => "Expected Tenant",

@@ -42,6 +42,8 @@ public static class SecurityExpectationSourceAnalyzer
                 EvidenceState = state, Confidence = state == ArchitectureEvidenceState.Confirmed ? "Explicit source configuration" : "Source role requires review",
                 SourceSnapshotId = snapshot.Id, SourceComponent = component, SourceFile = ArchitectureText.Safe(evidence.File),
                 SourceLine = evidence.Line, SourceSymbol = ArchitectureText.Safe(evidence.Symbol), EvidenceType = evidence.Kind.ToString(),
+                SupportingEvidence = [new(snapshot.Id, snapshot.Archive.FileName + " / " + component, ArchitectureText.Safe(evidence.File), evidence.Line,
+                    ArchitectureText.Safe(evidence.Symbol), evidence.Kind.ToString(), raw.Trim(), state == ArchitectureEvidenceState.Confirmed ? "Explicit source configuration" : "Source role requires review", state, snapshot.Archive.Sha256)],
                 Explanation = evidence.Explanation, SuggestedAction = SecurityExpectationValues.Singleton(field) ? "Accept or explicitly replace" : "Add or ignore"
             });
             if (field == SecurityExpectationField.Authority && Uri.TryCreate(raw, UriKind.Absolute, out var authority) &&

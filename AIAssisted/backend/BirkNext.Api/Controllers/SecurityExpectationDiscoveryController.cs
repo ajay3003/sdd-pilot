@@ -8,6 +8,9 @@ namespace BirkNext.Api.Controllers;
 [Route("api/target-environments/{environmentId}/security-expectations")]
 public sealed class SecurityExpectationDiscoveryController(ISecurityExpectationDiscoveryService service) : ControllerBase
 {
+    [HttpGet("source-snapshots")]
+    public async Task<ActionResult<IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot>>> Sources(string environmentId, CancellationToken ct) =>
+        Ok(await service.SourcesAsync(environmentId, ct));
     [HttpGet("source-snapshot")]
     public async Task<ActionResult<BirkNext.Integrations.IqrSourceSnapshot>> Source(string environmentId, CancellationToken ct) =>
         Ok(await service.CurrentSourceAsync(environmentId, ct));
