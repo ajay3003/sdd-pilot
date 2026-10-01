@@ -54,7 +54,6 @@
 
         @foreach (var platform in _catalog.Platforms)
         {
-            var runtime = platform.RuntimeEvidence;
             <section class="ip-card ip-platform" data-testid="ip-platform" aria-labelledby="@($"ip-platform-{Slug(platform.Id)}")">
                 <h3 id="@($"ip-platform-{Slug(platform.Id)}")">@platform.Name <span class="ip-pill ip-pill-muted">@IntegrationConfigurationRules.KindLabel(platform.Kind)</span></h3>
                 @if (platform.Kind == IntegrationKind.IdentityProvisioning)
@@ -65,7 +64,8 @@
                 else if (platform.Kind == IntegrationKind.ServiceBus)
                 {
                     @* Service Bus is its own transport: topology, runtime metadata and application routes — no Event Hub fields. *@
-                    <ServiceBusPlatformPanel EnvironmentId="@Profile.Id" Platform="platform" Messaging="_messaging" OnConfigure="() => BeginRuntime(platform)" />
+                    <ServiceBusPlatformPanel EnvironmentId="@Profile.Id" Platform="platform" Messaging="_messaging" AzureEnabled="_catalog.AzureRuntimeEnabled" OnConfigure="() => BeginRuntime(platform)"
+                        RuntimeEditor="@(_editingRuntime == platform.Id ? ServiceBusRuntimeForm(platform) : null)" />
                 }
                 else
                 {
@@ -96,36 +96,6 @@
                     OnConfigureAccess="() => BeginRuntime(platform)" OnEditSources="() => BeginRuntime(platform)"
                     SavedMessage="@(_runtimeSaved == platform.Id ? EventHubRuntimeEvidencePresentation.SavedSummary(platform, _catalog.AzureRuntimeEnabled) : null)"
                     EditContent="@(_editingRuntime == platform.Id ? RuntimeForm(platform) : null)" />
-                }
-                @if (platform.Kind == IntegrationKind.ServiceBus)
-                {
-                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@ServiceBusPresentation.RuntimeConfiguration(platform).Label" Expanded="@(_runtimeExpanded == platform.Id)" ExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
-                    <p class="ip-muted">Read-only sources Integration Quality Review may use for this platform. @EventHubRuntimeEvidencePresentation.IdentityText</p>
-                    @if (_editingRuntime == platform.Id)
-                    {
-                        <div class="ip-runtime-form" data-testid="ip-runtime-form">
-                            @* Service Bus metadata is read through Azure Resource Manager: subscription + resource group + namespace. No connection string. *@
-                            <label class="ip-field">Azure subscription id (Service Bus namespace metadata) <input class="form-control ip-mono" @ref="_runtimeFocus" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
-                            <p class="ip-muted">Resource group @(platform.ResourceGroup ?? "not configured") · namespace @(platform.Namespace ?? "not configured"). Read-only metadata GETs with the instance's Azure identity (Reader); no message is read.</p>
-                            <label class="ip-field">Review window (hours) <input type="number" min="1" max="168" class="form-control" @bind="_runtime.ReviewWindowHours" data-testid="ip-runtime-window" /></label>
-                            @if (_runtimeError is { } runtimeError) { <p class="ip-field-error" role="alert" data-testid="ip-runtime-error">@runtimeError</p> }
-                            <div class="ip-editor-actions">
-                                <button type="button" class="btn-primary" data-testid="ip-runtime-save" @onclick="() => SaveRuntimeAsync(platform)">Save runtime evidence sources</button>
-                                <button type="button" class="btn-secondary" @onclick="() => _editingRuntime = null">Cancel</button>
-                            </div>
-                        </div>
-                    }
-                    else
-                    {
-                        <dl class="ip-dl ip-dl-technical" data-testid="ip-runtime-summary">
-                            <div><dt>Azure subscription</dt><dd class="ip-mono">@(runtime?.SubscriptionId ?? "Not configured")</dd></div>
-                            <div><dt>Resource group / namespace</dt><dd class="ip-mono">@(platform.ResourceGroup ?? "—") / @(platform.Namespace ?? "—")</dd></div>
-                            <div><dt>Review window</dt><dd>@(runtime?.ReviewWindowHours ?? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours) h</dd></div>
-                            <div><dt>Thresholds</dt><dd>None — message counts are reported as Observed, never judged.</dd></div>
-                        </dl>
-                        <button type="button" class="ip-link" data-testid="ip-runtime-edit" @onclick="() => BeginRuntime(platform)">Edit runtime evidence sources</button>
-                    }
-                </ReviewDisclosure>
                 }
             </section>
         }
@@ -579,6 +549,19 @@
     private RenderFragment RuntimeForm(IntegrationPlatform platform) =>
         @<EventHubRuntimeEvidenceForm Platform="platform" AzureEnabled="_catalog!.AzureRuntimeEnabled" OnSave="settings => SaveEventHubRuntimeAsync(platform, settings)" OnCancel="() => _editingRuntime = null" />;
 
+    /// <summary>Service Bus runtime access (subscription) and review window: read through Azure Resource Manager — no connection string.</summary>
+    private RenderFragment ServiceBusRuntimeForm(IntegrationPlatform platform) =>
+        @<div class="ip-runtime-form" data-testid="ip-runtime-form">
+            <label class="ip-field">Azure subscription id (Service Bus namespace metadata) <input class="form-control ip-mono" @ref="_runtimeFocus" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
+            <p class="ip-muted">Resource group @(platform.ResourceGroup ?? "not configured") · namespace @(platform.Namespace ?? "not configured"). Read-only metadata GETs with the instance's Azure identity (Reader); no message is read.</p>
+            <label class="ip-field">Review window (hours) <input type="number" min="1" max="168" class="form-control" @bind="_runtime.ReviewWindowHours" data-testid="ip-runtime-window" /></label>
+            @if (_runtimeError is { } runtimeError) { <p class="ip-field-error" role="alert" data-testid="ip-runtime-error">@runtimeError</p> }
+            <div class="ip-editor-actions">
+                <button type="button" class="btn-primary" data-testid="ip-runtime-save" @onclick="() => SaveRuntimeAsync(platform)">Save runtime access</button>
+                <button type="button" class="btn-secondary" @onclick="() => _editingRuntime = null">Cancel</button>
+            </div>
+        </div>;
+
     private void BeginRuntime(IntegrationPlatform platform)
     {
         _runtimeExpanded = platform.Id;
@@ -607,7 +590,7 @@
         var settings = (platform.RuntimeEvidence ?? new IntegrationRuntimeEvidenceSettings()) with { SubscriptionId = Clean(_runtime.SubscriptionId), ReviewWindowHours = _runtime.ReviewWindowHours };
         _runtimeError = settings.Validate();
         if (_runtimeError is not null) return;
-        if (await TrackAsync($"Runtime evidence sources of {platform.Name} updated.", () => Api.UpdatePlatformAsync(Profile.Id, platform with { RuntimeEvidence = settings })))
+        if (await TrackAsync($"Runtime access of {platform.Name} updated.", () => Api.UpdatePlatformAsync(Profile.Id, platform with { RuntimeEvidence = settings })))
             _editingRuntime = null;
     }
 

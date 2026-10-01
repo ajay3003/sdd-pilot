@@ -17,7 +17,7 @@
     </dl>
     <div class="am-upload">
         <label class="am-file-button">
-            <InputFile class="am-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze application messaging source archives (.zip)" data-testid="am-upload" />
+            <InputFile id="@ServiceBusPlatformPanel.MessagingUploadId" class="am-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze application messaging source archives (.zip)" data-testid="am-upload" />
             <span aria-hidden="true">@(Evidence is null ? "Analyze messaging source" : "Re-analyze messaging source")</span>
         </label>
         <span class="am-muted">Wolverine messaging only. Up to 4 .zip files, 50 MB each. Read in memory; source code and configuration values are never stored.</span>

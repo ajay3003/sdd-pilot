@@ -1,65 +1,181 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services
 @inject IIntegrationCatalogApiService Api
+@inject IJSRuntime JS
 
-@* Service Bus platform (a transport of its own — not an Event Hub): configured topology, read-only runtime metadata, and the Wolverine/SDK
-   routes of analyzed applications, shown as separate layers. "Test Service Bus" is read-only: configuration comparison always, and Azure
-   Resource Manager GETs only when runtime evidence is configured. Nothing is sent, received, peeked, settled, created or changed. *@
+@* Service Bus platform (a transport of its own — not an Event Hub), in separate sections: overview, declared (source-derived) topology,
+   application messaging (Wolverine source findings), runtime access (configuration input + instance gate), runtime observations and the
+   evaluation policy. "Run Service Bus review" is read-only: configuration and route comparison always, Azure Resource Manager GETs and
+   Azure Monitor metrics only when runtime access is available. Nothing is sent, received, peeked, settled, created or changed. *@
 <div class="sb" data-testid="sb">
     @{
         var topology = Platform.ServiceBusTopology;
-        var (runtimeLabel, runtimeDetail) = ServiceBusPresentation.RuntimeConfiguration(Platform);
-        var (named, total) = ServiceBusPresentation.WolverineRoutes(topology, Messaging);
+        var declared = topology is { Entities.Count: > 0 };
+        var access = ServiceBusPresentation.RuntimeAccess(Platform, AzureEnabled);
+        var messaging = ServiceBusPresentation.Messaging(topology, Messaging);
+        var counts = $"{topology?.Queues.Count() ?? 0} queues · {topology?.Topics.Count() ?? 0} topics · {topology?.Subscriptions.Count() ?? 0} subscriptions";
+        var window = Platform.RuntimeEvidence?.ReviewWindowHours ?? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours;
     }
     <dl class="sb-summary" data-testid="sb-summary">
         <div><dt>Namespace</dt><dd class="sb-mono" data-testid="sb-namespace">@(Platform.Namespace ?? "Not configured")</dd></div>
-        <div><dt>Configuration</dt><dd><span class="sb-badge sb-badge-@(topology is { Entities.Count: > 0 } ? "info" : "muted")" data-testid="sb-configuration">@(topology is { Entities.Count: > 0 } ? "Configured" : "Not configured")</span></dd></div>
+        <div><dt>Declared topology</dt><dd><span class="sb-badge sb-badge-@(declared ? "info" : "muted")" data-testid="sb-configuration">@(declared ? "Configured" : "Not configured")</span></dd></div>
         <div><dt>Queues</dt><dd data-testid="sb-queues">@(topology?.Queues.Count() ?? 0)</dd></div>
         <div><dt>Topics</dt><dd data-testid="sb-topics">@(topology?.Topics.Count() ?? 0)</dd></div>
         <div><dt>Subscriptions</dt><dd data-testid="sb-subscriptions">@(topology?.Subscriptions.Count() ?? 0)</dd></div>
-        <div><dt>Wolverine routes</dt><dd data-testid="sb-routes">@(Messaging is null ? "No analyzed source" : Messaging.AnalyzerVersion < 2 ? "Re-analyze source to compare" : $"{named} of {total} name a configured entity")</dd></div>
-        <div><dt>Runtime evidence</dt><dd><span class="sb-badge sb-badge-@(runtimeLabel == "Configured" ? "info" : "attention")" data-testid="sb-runtime">@runtimeLabel</span></dd></div>
+        <div><dt>Application messaging source</dt><dd><span class="sb-badge sb-badge-@messaging.SourceTone" data-testid="sb-messaging-source">@messaging.Source</span></dd></div>
+        <div><dt>Runtime access</dt><dd><span class="sb-badge sb-badge-@(access.Available ? "info" : "attention")" data-testid="sb-runtime">@access.Label</span></dd></div>
     </dl>
-    <p class="sb-muted">@runtimeDetail @(topology?.Source is { Length: > 0 } source ? $"Expected topology: {source}." : "")</p>
     <div class="sb-actions">
-        <button type="button" class="btn-secondary" data-testid="sb-test" aria-label="@($"Test Service Bus {Platform.Name} (read-only)")" disabled="@_busy" @onclick="TestAsync">@(_busy ? "Testing Service Bus…" : "Test Service Bus")</button>
-        <button type="button" class="sb-link" data-testid="sb-configure-runtime" @onclick="OnConfigure">Configure runtime evidence</button>
+        <button type="button" class="btn-secondary" data-testid="sb-test" aria-label="@($"Run Service Bus review for {Platform.Name} (read-only)")" disabled="@_busy" @onclick="TestAsync">@(_busy ? "Reviewing Service Bus…" : "Run Service Bus review")</button>
     </div>
+    <p class="sb-muted" data-testid="sb-review-scope">Read-only. Compares the declared topology with analyzed application routes@(access.Available ? " and reads Azure management metadata and metrics" : "; Azure metadata is not read while runtime access is not available"). Nothing is sent, received, peeked or changed.</p>
     <p class="sb-muted" role="status" aria-live="polite" data-testid="sb-status">@_status</p>
 
-    @if (topology is { Entities.Count: > 0 })
-    {
-        <ReviewDisclosure Text="View topology" CollapseText="Hide topology" TestId="sb-topology" Class="disclosure-inline">
-            <h4>Queues</h4>
-            <div class="sb-tablewrap" tabindex="0" role="region" aria-label="Configured queues">
-                <table class="sb-table" data-testid="sb-queue-table">
-                    <thead><tr><th scope="col">Queue</th><th scope="col">Publishers</th><th scope="col">Consumers</th><th scope="col">Expected properties</th></tr></thead>
-                    <tbody>
-                        @foreach (var queue in topology.Queues)
-                        {
-                            <tr><td class="sb-mono">@queue.Name</td><td>@Names(queue.Publishers)</td><td>@Names(queue.Consumers, topology.NamespaceReceivers.Count > 0)</td><td>@ServiceBusPresentation.Expected(queue)</td></tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-            <h4>Topics and subscriptions</h4>
-            <ul class="sb-tree" data-testid="sb-topic-tree">
-                @foreach (var topic in topology.Topics)
+    <section class="sb-section" aria-labelledby="@($"{_id}-topology")" data-testid="sb-topology-source">
+        <h4 id="@($"{_id}-topology")">Declared topology</h4>
+        <dl class="sb-rows">
+            <div><dt>State</dt><dd><span class="sb-badge sb-badge-@(declared ? "info" : "muted")">@(declared ? "Configured" : "Not configured")</span> <span data-testid="sb-topology-counts">@counts</span></dd></div>
+            <div><dt>Source</dt><dd data-testid="sb-topology-provenance">@(topology?.Source is { Length: > 0 } source ? source : "Not recorded")</dd></div>
+            @if (topology?.AuditedAt is { } audited) { <div><dt>Recorded</dt><dd data-testid="sb-topology-recorded">@audited.ToUniversalTime().ToString("yyyy-MM-dd")</dd></div> }
+        </dl>
+        <p class="sb-note" role="note" data-testid="sb-topology-boundary">Declared topology is the expected, source-derived topology — not proof of what is deployed. Runtime metadata, when available, may confirm or contradict it.</p>
+        @if (topology is { Entities.Count: > 0 })
+        {
+            var rows = ServiceBusPresentation.TopicRows(topology);
+            <ReviewDisclosure Text="Show topology" CollapseText="Hide topology" Hint="@counts" TestId="sb-topology" Class="disclosure-inline">
+                <h5>Queues</h5>
+                <div class="sb-tablewrap" tabindex="0" role="region" aria-label="Declared queues">
+                    <table class="sb-table" data-testid="sb-queue-table">
+                        <thead><tr><th scope="col">Queue</th><th scope="col">Publishers</th><th scope="col">Consumers</th><th scope="col">Expected properties</th></tr></thead>
+                        <tbody>
+                            @foreach (var queue in topology.Queues)
+                            {
+                                var (consumers, supporting) = ServiceBusPresentation.Consumers(queue, topology);
+                                <tr data-testid="sb-queue" data-queue="@queue.Name">
+                                    <th scope="row" class="sb-mono">@queue.Name</th>
+                                    <td>@(queue.Publishers.Count == 0 ? "None configured" : string.Join(", ", queue.Publishers))</td>
+                                    <td data-testid="sb-queue-consumers">@consumers@if (supporting is not null) { <span class="sb-cell sb-muted">@supporting</span> }</td>
+                                    <td class="sb-expected" data-testid="sb-queue-expected">@ServiceBusPresentation.ExpectedCompact(queue)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (topology.NamespaceReceivers.Count > 0)
                 {
-                    <li><span class="sb-mono">@topic.Name</span> <span class="sb-muted">· published by @Names(topic.Publishers) · @ServiceBusPresentation.Expected(topic)</span>
-                        @{ var subscriptions = topology.Subscriptions.Where(s => s.Topic == topic.Name).ToList(); }
-                        @if (subscriptions.Count == 0) { <span class="sb-muted"> · no subscription configured</span> }
-                        else
-                        {
-                            <ul>@foreach (var subscription in subscriptions) { <li><span class="sb-mono">@subscription.Name</span> <span class="sb-muted">· consumer @Names(subscription.Consumers) · @ServiceBusPresentation.Expected(subscription)</span></li> }</ul>
-                        }
-                    </li>
+                    <p class="sb-muted" data-testid="sb-namespace-receivers">Namespace-wide receive rights: @string.Join(", ", topology.NamespaceReceivers). A capability on every queue and subscription — not an entity-specific consumer mapping.</p>
                 }
-            </ul>
-            @if (topology.NamespaceReceivers.Count > 0) { <p class="sb-muted">Namespace-wide receivers: @string.Join(", ", topology.NamespaceReceivers).</p> }
-            @foreach (var note in topology.Notes) { <p class="sb-muted">@note</p> }
+                <h5>Topics and subscriptions</h5>
+                <div class="sb-tablewrap" tabindex="0" role="region" aria-label="Declared topics and subscriptions">
+                    <table class="sb-table sb-topic-table" data-testid="sb-topic-table">
+                        <thead><tr><th scope="col">Topic</th><th scope="col">Publisher</th><th scope="col">Subscription</th><th scope="col">Consumer</th><th scope="col">Expected properties</th><th scope="col">Mapping state</th></tr></thead>
+                        @foreach (var row in rows)
+                        {
+                            var span = Math.Max(1, row.Subscriptions.Count);
+                            <tbody data-testid="sb-topic" data-topic="@row.Topic.Name">
+                                @if (row.Subscriptions.Count == 0)
+                                {
+                                    <tr>
+                                        <th scope="row" class="sb-mono">@row.Topic.Name<span class="sb-cell sb-muted">@ServiceBusPresentation.ExpectedCompact(row.Topic)</span></th>
+                                        <td>@(row.Topic.Publishers.Count == 0 ? "None configured" : string.Join(", ", row.Topic.Publishers))</td>
+                                        <td>—</td><td>—</td><td>—</td>
+                                        <td><span class="sb-badge sb-badge-muted" data-testid="sb-mapping-state">No subscription configured</span></td>
+                                    </tr>
+                                }
+                                @for (var i = 0; i < row.Subscriptions.Count; i++)
+                                {
+                                    var sub = row.Subscriptions[i];
+                                    <tr data-testid="sb-subscription" data-subscription="@sub.Subscription.Name">
+                                        @if (i == 0)
+                                        {
+                                            <th scope="rowgroup" rowspan="@span" class="sb-mono">@row.Topic.Name<span class="sb-cell sb-muted">@ServiceBusPresentation.ExpectedCompact(row.Topic)</span></th>
+                                            <td rowspan="@span">@(row.Topic.Publishers.Count == 0 ? "None configured" : string.Join(", ", row.Topic.Publishers))</td>
+                                        }
+                                        <td class="sb-mono">@sub.Subscription.Name</td>
+                                        <td>@sub.Consumers@if (sub.Supporting is not null) { <span class="sb-cell sb-muted">@sub.Supporting</span> }</td>
+                                        <td class="sb-expected">@ServiceBusPresentation.ExpectedCompact(sub.Subscription)</td>
+                                        <td><span class="sb-badge sb-badge-@(sub.MappingState == "Configured" ? "info" : "muted")" data-testid="sb-mapping-state">@sub.MappingState</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        }
+                    </table>
+                </div>
+                <ReviewDisclosure Text="View exact properties" CollapseText="Hide exact properties" TestId="sb-exact" Class="disclosure-inline disclosure-small">
+                    <div class="sb-tablewrap" tabindex="0" role="region" aria-label="Exact declared properties">
+                        <table class="sb-table" data-testid="sb-exact-table">
+                            <thead><tr><th scope="col">Entity</th><th scope="col">Type</th><th scope="col">Declared Azure properties</th></tr></thead>
+                            <tbody>
+                                @foreach (var entity in topology.Entities)
+                                {
+                                    var exact = ServiceBusPresentation.ExactProperties(entity);
+                                    <tr><th scope="row" class="sb-mono">@entity.Path</th><td>@entity.EntityType</td>
+                                        <td class="sb-mono">@(exact.Count == 0 ? "None declared" : string.Join(" · ", exact.Select(p => $"{p.Name} {p.Value}")))@if (entity.Note is { } note) { <span class="sb-cell sb-muted">@note</span> }</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </ReviewDisclosure>
+            </ReviewDisclosure>
+        }
+        @if (topology is { Notes.Count: > 0 })
+        {
+            <ReviewDisclosure Text="Topology notes" CollapseText="Hide topology notes" Hint="@($"{topology.Notes.Count} note(s) from the source")" TestId="sb-topology-notes" Class="disclosure-inline disclosure-small">
+                <ul class="sb-list" data-testid="sb-notes">@foreach (var note in topology.Notes) { <li>@note</li> }</ul>
+            </ReviewDisclosure>
+        }
+    </section>
+
+    <section class="sb-section" aria-labelledby="@($"{_id}-messaging")" data-testid="sb-messaging">
+        <h4 id="@($"{_id}-messaging")">Application messaging</h4>
+        <dl class="sb-rows">
+            <div><dt>Source analysis</dt><dd><span class="sb-badge sb-badge-@messaging.SourceTone" data-testid="sb-messaging-analysis">@messaging.Source</span>@if (Messaging is null) { <span class="sb-muted"> Not analyzed is not evidence that Wolverine is absent.</span> }</dd></div>
+            <div><dt>Wolverine routes</dt><dd><span class="sb-badge sb-badge-@messaging.RoutesTone" data-testid="sb-routes">@messaging.Routes</span>@if (Messaging is not null) { <span class="sb-muted"> Source findings, not executed handlers.</span> }</dd></div>
+            <div><dt>Runtime processing</dt><dd><span class="sb-badge sb-badge-muted" data-testid="sb-messaging-runtime">Not assessed</span></dd></div>
+        </dl>
+        <p class="sb-note" role="note">Service Bus transport configuration does not prove that a Wolverine handler is configured or executed.</p>
+        <div class="sb-actions"><button type="button" class="sb-link" data-testid="sb-analyze-messaging" @onclick="GoToMessagingAsync">@(Messaging is null ? "Analyze messaging source" : "Re-analyze messaging source")</button></div>
+    </section>
+
+    <section class="sb-section" aria-labelledby="@($"{_id}-access")" data-testid="sb-runtime-access">
+        <h4 id="@($"{_id}-access")">Runtime access</h4>
+        <div class="sb-state-row"><span class="sb-state-label">Status</span> <span class="sb-badge sb-badge-@(access.Available ? "info" : "attention")" data-testid="sb-access-status">@access.Label</span></div>
+        <dl class="sb-rows">
+            @if (access.Reasons.Count == 1) { <div><dt>Reason</dt><dd data-testid="sb-access-reason">@access.Reasons[0]</dd></div> }
+            else if (access.Reasons.Count > 1) { <div><dt>Reasons</dt><dd><ul class="sb-list" data-testid="sb-access-reason">@foreach (var reason in access.Reasons) { <li>@reason</li> }</ul></dd></div> }
+            <div><dt>Azure subscription</dt><dd data-testid="sb-access-subscription">@if (access.SubscriptionId is { } id) { <span class="sb-mono">@id</span> } else { <span class="sb-badge sb-badge-attention">Not configured</span> }</dd></div>
+            <div><dt>Resource group</dt><dd class="sb-mono" data-testid="sb-access-rg">@(Platform.ResourceGroup ?? "Not configured")</dd></div>
+            <div><dt>Namespace</dt><dd class="sb-mono" data-testid="sb-access-namespace">@(Platform.Namespace ?? "Not configured")</dd></div>
+            @if (!access.Available)
+            {
+                <div><dt>Impact</dt><dd data-testid="sb-access-impact">BirkNext cannot currently verify the deployed: @string.Join(", ", ServiceBusPresentation.UnverifiedWithoutRuntime.Select(s => s.ToLowerInvariant())).</dd></div>
+            }
+        </dl>
+        <div class="sb-actions"><button type="button" class="sb-link" data-testid="sb-configure-runtime" @onclick="OnConfigure">Configure Azure runtime access</button></div>
+        @RuntimeEditor
+        <ReviewDisclosure Text="Runtime access details" CollapseText="Hide runtime access details" TestId="sb-access-details" Class="disclosure-inline disclosure-small">
+            <p class="sb-muted">Runtime access configuration (subscription, resource group, namespace) is an input, not evidence. With it, BirkNext reads Azure Resource Manager management metadata (GET only) and Azure Monitor metrics with the instance's Azure identity (Reader). No connection string, SAS or local authentication is used, and no message is sent, received or peeked.</p>
         </ReviewDisclosure>
-    }
+    </section>
+
+    <section class="sb-section" aria-labelledby="@($"{_id}-observations")" data-testid="sb-observations">
+        <h4 id="@($"{_id}-observations")">Runtime observations</h4>
+        <p class="sb-muted" data-testid="sb-observations-state">@(_result switch
+        {
+            null => access.Available ? "No runtime metadata collected yet. Run the Service Bus review to read it." : "No runtime metadata collected.",
+            { Runtime.State: IntegrationEvidenceState.Available } => "Observed in the last review — see Azure runtime and operational evidence in the review result.",
+            _ => $"No runtime metadata collected in the last review: {_result.Runtime?.Reason ?? "runtime metadata was not read."}",
+        })</p>
+    </section>
+
+    <section class="sb-section" aria-labelledby="@($"{_id}-policy")" data-testid="sb-policy">
+        <h4 id="@($"{_id}-policy")">Evaluation policy</h4>
+        <dl class="sb-rows">
+            <div><dt>Review window</dt><dd data-testid="sb-policy-window">@window h</dd></div>
+            <div><dt>Message-count thresholds</dt><dd data-testid="sb-policy-thresholds">Not configured</dd></div>
+        </dl>
+        <p class="sb-muted" data-testid="sb-policy-semantics">Without thresholds, message counts are reported as Observed only — never judged Pass or Fail, and a missing count is never zero. The policy is not an evidence source.</p>
+    </section>
 
     @if (_result is { } result)
     {
@@ -182,7 +298,16 @@
     [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
     [Parameter, EditorRequired] public IntegrationPlatform Platform { get; set; } = new();
     [Parameter] public ApplicationMessagingEvidenceSet? Messaging { get; set; }
+    /// <summary>Opens the runtime access configuration (subscription, review window) — it never enables Azure execution itself.</summary>
     [Parameter] public EventCallback OnConfigure { get; set; }
+    /// <summary>Whether this BirkNext instance may call Azure (IntegrationReview:Azure:Enabled).</summary>
+    [Parameter] public bool AzureEnabled { get; set; }
+    /// <summary>The runtime access form while it is edited (owned by the Integrations pane).</summary>
+    [Parameter] public RenderFragment? RuntimeEditor { get; set; }
+
+    /// <summary>The Application messaging upload input (ApplicationMessagingPanel) that "Analyze messaging source" moves focus to.</summary>
+    public const string MessagingUploadId = "am-upload-input";
+    private readonly string _id = "sb-" + Guid.NewGuid().ToString("N")[..8];
 
     private ServiceBusEvidenceCheck? _result;
     private bool _busy;
@@ -198,7 +323,7 @@
     private async Task TestAsync()
     {
         _busy = true;
-        _status = "Testing Service Bus (read-only)…";
+        _status = "Running the Service Bus review (read-only)…";
         try
         {
             _result = await Api.CheckServiceBusAsync(EnvironmentId, Platform.Id);
@@ -207,11 +332,11 @@
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _status = "The Service Bus test could not run: the BirkNext backend did not answer. Nothing was changed.";
+            _status = "The Service Bus review could not run: the BirkNext backend did not answer. Nothing was changed.";
         }
         finally { _busy = false; }
     }
 
-    private static string Names(List<string> names, bool namespaceReceivers = false) =>
-        names.Count == 0 ? namespaceReceivers ? "none per entity (namespace-wide receivers only)" : "none" : string.Join(", ", names);
+    /// <summary>The upload lives once, in Application messaging; this moves focus there instead of duplicating it.</summary>
+    private async Task GoToMessagingAsync() => await JS.InvokeVoidAsync("birknextFocusElement", MessagingUploadId);
 }

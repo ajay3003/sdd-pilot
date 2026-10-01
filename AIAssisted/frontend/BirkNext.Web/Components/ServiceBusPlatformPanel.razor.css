@@ -1,5 +1,5 @@
-.sb { display: grid; gap: .45rem; min-width: 0; }
-.sb h4 { margin: .5rem 0 .25rem; font-size: .9rem; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.sb { display: grid; gap: .45rem; min-width: 0; container-type: inline-size; }
+.sb h4 { margin: .5rem 0 .25rem; font-size: .9rem; font-weight: 700; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
 .sb h5 { margin: .55rem 0 .2rem; font-size: .84rem; }
 .sb-muted { color: var(--clr-text-muted); font-size: .82rem; margin: 0; }
 .sb-mono { font-family: var(--font-mono); font-size: .78rem; overflow-wrap: anywhere; }
@@ -24,3 +24,27 @@
 .sb-tree, .sb-list { margin: 0; padding-left: 1.1rem; font-size: .82rem; display: grid; gap: .2rem; overflow-wrap: anywhere; }
 .sb-tree ul { padding-left: 1.1rem; margin: .15rem 0 0; }
 .sb-result { border-top: 1px solid var(--clr-border); padding-top: .5rem; min-width: 0; display: grid; gap: .25rem; }
+.sb-link:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.sb-section { border-top: 1px solid var(--clr-border-subtle, #eef2f7); padding-top: .35rem; display: grid; gap: .35rem; min-width: 0; }
+.sb-section > h4 { margin: .15rem 0 0; }
+.sb-rows { margin: 0; display: grid; gap: .25rem; font-size: .82rem; min-width: 0; }
+.sb-rows > div { display: grid; grid-template-columns: minmax(8rem, 11rem) minmax(0, 1fr); gap: .6rem; align-items: baseline; min-width: 0; }
+.sb-rows dt { color: var(--clr-text-muted); font-weight: 600; font-size: .78rem; }
+.sb-rows dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.sb-note { margin: 0; border-left: 3px solid #93c5fd; background: #eff6ff; color: #1e3a8a; padding: .35rem .6rem; font-size: .8rem; border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.sb-state-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+.sb-state-label { font-weight: 600; font-size: .84rem; }
+.sb-cell { display: block; margin-top: .1rem; font-size: .74rem; font-weight: 400; font-family: inherit; }
+.sb-table tbody th { background: none; color: inherit; font-size: .8rem; font-weight: 600; vertical-align: top; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); }
+.sb-topic-table tbody + tbody { border-top: 2px solid var(--clr-border); }
+@container (max-width: 560px) {
+    .sb-rows > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .sb-summary { gap: .35rem 1rem; }
+    .sb-badge { white-space: normal; }
+}
+/* Grid items default to min-width: auto, which lets a wide table widen its section instead of scrolling in its own container. */
+.sb-section > *, .sb ::deep .disclosure, .sb ::deep .disclosure-body { min-width: 0; max-width: 100%; }
+.sb-topic-table { min-width: 62rem; }
+.sb-table .sb-expected { min-width: 12rem; }
+.sb-table tbody th { min-width: 11rem; }
+.sb-table .sb-badge { white-space: nowrap; }
