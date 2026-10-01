@@ -63,7 +63,7 @@ public sealed class IntegrationQualityReviewEvidenceTests : BunitContext
     public void PreRunListsEachEvidenceSourceWithItsOwnState()
     {
         var cut = Render<IntegrationQualityReview>();
-        cut.Find("[data-testid=iqr-evidence-sources] h2").TextContent.Should().Contain("1 of 3 available");
+        cut.Find("[data-testid=iqr-evidence-sources] h3").TextContent.Should().Contain("1 of 3 available");
         var sources = cut.FindAll("[data-testid=iqr-evidence-source]");
         sources.Select(s => s.GetAttribute("data-state")).Should().Equal("NotAuthorized", "NotConfigured", "Available");
         sources[0].TextContent.Should().Contain("Not authorized").And.Contain("not authorized to read");

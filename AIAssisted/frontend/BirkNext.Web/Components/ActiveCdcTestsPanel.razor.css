@@ -56,3 +56,12 @@ select:focus-visible, input:focus-visible, .act-table:focus-visible, .act-link:f
     .act-check { grid-template-columns: minmax(0, 1fr) auto; }
     .act-check-detail { grid-column: 1 / -1; }
 }
+
+.act-summary { margin: .3rem 0 .4rem; display: flex; flex-wrap: wrap; gap: .35rem 1.4rem; }
+.act-summary dt { font-size: .72rem; color: var(--clr-text-muted); }
+.act-summary dd { margin: .1rem 0 0; font-size: .86rem; }
+.act-summary-label { margin: .2rem 0 0; font-size: .78rem; font-weight: 600; }
+.act-summary-blockers { margin: .15rem 0 .4rem; padding-left: 1.1rem; font-size: .82rem; display: grid; gap: .1rem; }
+.act-toggle { background: none; border: 1px solid var(--clr-border); border-radius: 8px; padding: .3rem .7rem; font: inherit; font-size: .84rem; cursor: pointer; color: var(--clr-link, #2563eb); }
+.act-toggle:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.act-runner { margin-top: .5rem; }

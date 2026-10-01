@@ -91,3 +91,35 @@
 .iqr-domain-list-missing { color: var(--clr-text-muted); }
 .iqr-eh-facts { grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
 .iqr-eh-line { display: block; }
+
+/* Pre-run groups: Review overview → Evidence → Integration areas → Active tests. */
+.iqr-group { display: grid; gap: .7rem; min-width: 0; }
+.iqr-group + .iqr-group { margin-top: .4rem; }
+.iqr-group-heading { margin: 0; font-size: .82rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--clr-text-muted); padding-bottom: .3rem; border-bottom: 1px solid var(--clr-border); }
+.iqr-card h3 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.iqr-card h3:first-child { font-size: 1rem; margin-bottom: .55rem; }
+.iqr-system h4, .iqr-domain-detail h4 { margin: 0 0 .35rem; font-size: .92rem; display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.iqr-domain-table { min-width: 40rem; }
+.iqr-domain-table th[scope=row] { padding: 0; font-weight: 600; white-space: nowrap; }
+.iqr-domain-toggle { display: flex; align-items: center; gap: .35rem; width: 100%; background: none; border: 0; padding: .42rem .6rem; font: inherit; font-size: .84rem; font-weight: 600; color: inherit; cursor: pointer; text-align: left; }
+.iqr-domain-toggle:hover { color: var(--clr-link, #2563eb); }
+.iqr-domain-toggle:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: -2px; }
+.iqr-domain-chevron { font-size: .75rem; color: var(--clr-text-muted); }
+.iqr-domain-row-open > * { background: var(--clr-surface); }
+.iqr-domain-limitation { color: var(--clr-text-muted); }
+.iqr-domain-detail { margin-top: .6rem; padding: .7rem .8rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); background: var(--clr-surface); }
+.iqr-domain-detail[hidden] { display: none; }
+::deep .disclosure { min-width: 0; }
+
+/* Narrow cards: each domain row stacks (area + status, then limitation, then action) instead of scrolling sideways. */
+[data-testid=iqr-domain-readiness] { container-type: inline-size; }
+@container (max-width: 40rem) {
+    .iqr-domain-table { min-width: 0; }
+    .iqr-domain-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    .iqr-domain-table, .iqr-domain-table tbody { display: block; }
+    .iqr-domain-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); padding: .2rem 0 .35rem; }
+    .iqr-domain-table th[scope=row], .iqr-domain-table td { border-bottom: 0; }
+    .iqr-domain-table td { padding: .1rem .6rem; }
+    .iqr-domain-table td.iqr-domain-limitation, .iqr-domain-table td:last-child { grid-column: 1 / -1; padding-left: 1.6rem; }
+    .iqr-domain-table td:last-child:has(> .iqr-muted) { display: none; }
+}

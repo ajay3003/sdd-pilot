@@ -402,8 +402,9 @@ public sealed class ServiceBusUiTests : BunitContext
                 RuntimeState = IntegrationEvidenceState.NotConfigured, RuntimeReason = "Azure runtime evidence is disabled for this BirkNext instance." }],
         };
         var cut = Iqr();
-        var platform = cut.Find("[data-testid=iqr-servicebus-platform]");
-        platform.TextContent.Should().Contain("4 queue(s) · 11 topic(s) · 8 subscription(s)").And.Contain("code routes 12 of 12 matched");
+        cut.Find("[data-testid=iqr-servicebus-details-body]").HasAttribute("hidden").Should().BeTrue("topology counts are detail, collapsed by default");
+        cut.Find("[data-testid=iqr-servicebus-counts]").TextContent.Should().Contain("4 queue(s) · 11 topic(s) · 8 subscription(s)").And.Contain("code routes 12 of 12 matched");
+        cut.Find("[data-testid=iqr-servicebus-manage]").GetAttribute("href").Should().EndWith("focus=servicebus");
         cut.Find("[data-testid=iqr-servicebus-topology]").TextContent.Should().Be("Configured");
         cut.Find("[data-testid=iqr-servicebus-runtime]").TextContent.Should().Be("Not configured");
         cut.Find("[data-testid=iqr-action-servicebus-runtime]").GetAttribute("href").Should().EndWith("focus=servicebus");

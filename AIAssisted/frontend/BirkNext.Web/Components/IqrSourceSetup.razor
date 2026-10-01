@@ -3,8 +3,8 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject IIntegrationCatalogApiService Api
 
-<section class="iqr-source-setup" aria-labelledby="iqr-source-heading" data-testid="iqr-source-setup">
-    <h2 id="iqr-source-heading">Source evidence</h2>
+<section class="iqr-source-setup" aria-labelledby="@(ShowHeading ? "iqr-source-heading" : null)" aria-label="@(ShowHeading ? null : "Source evidence setup")" data-testid="iqr-source-setup">
+    @if (ShowHeading) { <h2 id="iqr-source-heading">Source evidence</h2> }
     <p>BirkNext analyzes the supplied source snapshot and stores the resulting review evidence. The full extracted source tree is not required for historical IQR rendering.</p>
     <label for="iqr-source-integration">Integration</label>
     <select id="iqr-source-integration" @bind="_integrationId" disabled="@_busy"><option value="">Select an integration</option>@foreach (var integration in Integrations.Where(i => i.Enabled)) { <option value="@integration.Id">@integration.DisplayName</option> }</select>
@@ -27,6 +27,8 @@
     [Parameter] public List<IqrSourceSelection> Selections { get; set; } = [];
     [Parameter] public EventCallback Analyzed { get; set; }
     [Parameter] public EventCallback<bool> BusyChanged { get; set; }
+    /// <summary>False when a surrounding summary card already carries the "Source evidence" heading.</summary>
+    [Parameter] public bool ShowHeading { get; set; } = true;
     private string _integrationId = "";
     private bool _busy;
     private string? _error;

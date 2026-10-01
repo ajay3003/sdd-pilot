@@ -13,6 +13,22 @@
 @if (Api is null) { return; }
 <section class="act" aria-labelledby="act-heading" data-testid="act-panel">
     <h2 id="act-heading">Active tests</h2>
+    @if (SummaryFirst)
+    {
+        var blockers = _readiness?.Checks.Where(c => c.State == ActiveCdcReadinessState.Blocked).ToList() ?? [];
+        <dl class="act-summary" data-testid="act-summary">
+            <div><dt>Scenarios</dt><dd data-testid="act-summary-scenarios">@ScenarioOptions.Length available</dd></div>
+            <div><dt>Selected scenario</dt><dd data-testid="act-summary-scenario">@ScenarioOptions.First(o => o.Id == _scenarioId).Name</dd></div>
+            <div><dt>Execution</dt><dd><span class="act-pill act-pill-@(_readiness?.CanRun == true ? "ready" : "neutral")" data-testid="act-summary-execution">@SummaryExecution</span></dd></div>
+        </dl>
+        @if (blockers.Count > 0)
+        {
+            <p class="act-summary-label">Main blockers</p>
+            <ul class="act-summary-blockers" data-testid="act-summary-blockers">@foreach (var b in blockers) { <li>@b.Label</li> }</ul>
+        }
+        <button type="button" class="act-toggle" aria-expanded="@(_open ? "true" : "false")" aria-controls="@_runnerId" data-testid="act-open" @onclick="() => _open = !_open">@(_open ? "Hide active tests" : "Open active tests")</button>
+    }
+    <div id="@_runnerId" class="act-runner" hidden="@(SummaryFirst && !_open)" data-testid="act-runner">
     <p class="act-notice" role="note" data-testid="act-notice"><strong>@ActiveCdcLabels.ActiveTestNotice</strong></p>
     <fieldset class="act-scenarios" data-testid="act-scenarios" disabled="@(_starting || _run is { Completed: false })">
         <legend>CDC scenario</legend>
@@ -209,11 +225,19 @@
             </ul>
         </details>
     }
+    </div>
 </section>
 
 @code {
     [Parameter, EditorRequired] public FrontendAnalysisProfile Profile { get; set; } = default!;
     [Parameter] public IReadOnlyList<IntegrationDefinition> Integrations { get; set; } = [];
+    /// <summary>Show a compact model-derived summary first and keep the full runner collapsed until opened (presentation only).</summary>
+    [Parameter] public bool SummaryFirst { get; set; }
+    private bool _open;
+    private readonly string _runnerId = "act-runner-" + Guid.NewGuid().ToString("N")[..8];
+    private string SummaryExecution => Candidates.Count == 0 ? "No CDC integration"
+        : _readiness is null ? (_loading ? "Checking readiness…" : "Not checked")
+        : _readiness.CanRun ? "Ready" : "Blocked";
     /// <summary>The IQR source selections: a snapshot chosen there for this integration is the one the fixture is bound to (else the latest).</summary>
     [Parameter] public IReadOnlyList<IqrSourceSelection> Selections { get; set; } = [];
     /// <summary>Poll interval while a run is in flight (tests shorten it).</summary>

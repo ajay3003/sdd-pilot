@@ -52,7 +52,7 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
     public void NeedsAttentionIsCompactAndEveryFixDeepLinksToIntegrations()
     {
         var cut = Open();
-        cut.Find("[data-testid=iqr-readiness] h2").TextContent.Should().Be("Needs attention");
+        cut.Find("[data-testid=iqr-readiness] h3").TextContent.Should().Be("Needs attention");
         var items = cut.FindAll("[data-testid=iqr-attention-item]");
         items.Select(i => i.GetAttribute("data-key")).Should().Equal("mappings", "runtime", "contracts", "groups");
         items[0].TextContent.Should().Contain("15 need confirmation");
@@ -93,8 +93,16 @@ public sealed class IntegrationQualityReviewPrerunTests : BunitContext
         var cut = Open();
         var cards = cut.FindAll("[data-testid=iqr-domain-readiness-card]");
         cards.Should().HaveCount(10);
-        cards.Should().OnlyContain(c => c.QuerySelector("[data-testid=iqr-domain-reason]") != null);
-        string? Action(string domain) => cards.Single(c => c.GetAttribute("data-domain") == domain).QuerySelector("[data-testid=iqr-domain-action]")?.TextContent;
+        // Master-detail: every domain's detail (short reason) is one click away; the row carries the same action as the detail.
+        foreach (var domain in cards.Select(c => c.GetAttribute("data-domain")!).ToList())
+        {
+            cut.FindAll("[data-testid=iqr-domain-readiness-card]").Single(c => c.GetAttribute("data-domain") == domain).QuerySelector("[data-testid=iqr-domain-toggle]")!.Click();
+            cut.Find("[data-testid=iqr-domain-detail] [data-testid=iqr-domain-reason]").TextContent.Should().NotBeNullOrWhiteSpace();
+            cut.Find("[data-testid=iqr-domain-detail]").QuerySelector("[data-testid=iqr-domain-action]")?.TextContent.Should()
+                .Be(cut.FindAll("[data-testid=iqr-domain-readiness-card]").Single(c => c.GetAttribute("data-domain") == domain).QuerySelector("[data-testid=iqr-domain-row-action]")!.TextContent);
+        }
+        cards = cut.FindAll("[data-testid=iqr-domain-readiness-card]");
+        string? Action(string domain) => cards.Single(c => c.GetAttribute("data-domain") == domain).QuerySelector("[data-testid=iqr-domain-row-action]")?.TextContent;
         Action("Configuration").Should().BeNull("a Ready domain needs no corrective action");
         Action("Connectivity").Should().Be("Configure runtime evidence");
         Action("Contract").Should().Be("Manage contracts");

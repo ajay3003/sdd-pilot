@@ -38,261 +38,342 @@
     }
     else if (_profile is { } profile && _result is null)
     {
-        <IqrSourceSetup EnvironmentId="@profile.Id" Integrations="@(_catalog?.Integrations ?? [])" Snapshots="@(_readiness?.SourceSnapshots ?? [])" Selections="_sourceSelections" Analyzed="LoadReadinessAsync" BusyChanged="@(busy => _sourceBusy = busy)" />
-        <ActiveCdcTestsPanel Profile="profile" Integrations="@(_catalog?.Integrations ?? [])" Selections="_sourceSelections" />
-        @* ── Pre-run ── Scope + readiness, then what limits the review (with the one place that fixes each), then the details.
-           Presentation only: headline, domain readiness and the Run gate are the backend's. Corrective actions deep-link to
-           Target Environment → Integrations; nothing is configured here. *@
-        <section class="iqr-card iqr-scope @(_readiness is { } r0 ? $"iqr-readiness iqr-readiness-{IntegrationReviewPrerunPresentation.ReadinessTone(r0)}" : "")" aria-labelledby="iqr-scope-heading" data-testid="iqr-scope">
-            <h2 id="iqr-scope-heading">Configured scope</h2>
-            @if (_readiness is null)
-            {
-                @if (_error is null) { <p class="iqr-muted" role="status">Loading configured integrations…</p> }
-            }
-            else
-            {
-                <dl class="iqr-summary" data-testid="iqr-summary">
-                    <div><dt>Target</dt><dd data-testid="iqr-summary-target">@(string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name)</dd></div>
-                    <div><dt>Integration systems</dt><dd data-testid="iqr-summary-systems">@_readiness.Systems.Count</dd></div>
-                    <div><dt>Business topics</dt><dd data-testid="iqr-summary-topics">@_readiness.Systems.Sum(s => s.Topics)</dd></div>
-                    <div><dt>Enabled</dt><dd data-testid="iqr-summary-enabled">@_readiness.EnabledIntegrations of @_readiness.ConfiguredIntegrations</dd></div>
-                    <div><dt>Review readiness</dt><dd><span class="iqr-pill iqr-pill-@(IntegrationReviewPrerunPresentation.ReadinessTone(_readiness) switch { "ready" => "ready", "limited" => "attention", _ => "fail" })" data-testid="iqr-summary-readiness">@IntegrationReviewPrerunPresentation.ReadinessLabel(_readiness)</span></dd></div>
-                </dl>
-                @if (_readiness.CanRun && _readiness.Domains.Count > 0)
+        @* ── Pre-run ── Four groups, summary first: Review overview (scope, readiness + Run, what can be reviewed) → Evidence (source,
+           runtime) → Integration areas → Active tests. Presentation only: headline, domain readiness and the Run gate are the
+           backend's; every detail stays reachable behind a disclosure. Corrective actions deep-link to Target Environment →
+           Integrations; nothing is configured here. *@
+        <section class="iqr-group" aria-labelledby="iqr-group-overview-heading" data-testid="iqr-group-overview">
+            <h2 class="iqr-group-heading" id="iqr-group-overview-heading">Review overview</h2>
+            <section class="iqr-card iqr-scope @(_readiness is { } r0 ? $"iqr-readiness iqr-readiness-{IntegrationReviewPrerunPresentation.ReadinessTone(r0)}" : "")" aria-labelledby="iqr-scope-heading" data-testid="iqr-scope">
+                <h3 id="iqr-scope-heading">Configured scope</h3>
+                @if (_readiness is null)
                 {
-                    <p class="iqr-muted" data-testid="iqr-readiness-coverage">@IntegrationReviewPrerunPresentation.AssessableDomains(_readiness) of @_readiness.Domains.Count domains are currently assessable or partially assessable.@(_readiness.Headline == "Ready" ? "" : " Some review domains lack runtime or contract evidence.")</p>
-                }
-            }
-        </section>
-
-        @if (_readiness is { } readiness)
-        {
-            var attention = IntegrationReviewPrerunPresentation.NeedsAttention(readiness, profile.Id);
-            var mappingEvidence = IntegrationReviewPrerunPresentation.MappingEvidence(_catalog, MappingEvidence.For(profile.Id));
-            <section class="iqr-card iqr-attention" aria-labelledby="iqr-readiness-heading" data-testid="iqr-readiness" data-headline="@readiness.Headline">
-                <h2 id="iqr-readiness-heading">@(readiness.CanRun ? attention.Count > 0 ? "Needs attention" : "Ready to run" : "Cannot run")</h2>
-                @if (!readiness.CanRun)
-                {
-                    <ul class="iqr-reasons" data-testid="iqr-readiness-reasons">@foreach (var reason in readiness.Reasons) { <li>@reason</li> }</ul>
-                }
-                else if (attention.Count > 0)
-                {
-                    <ul class="iqr-attention-list" data-testid="iqr-attention">
-                        @foreach (var item in attention)
-                        {
-                            <li class="iqr-attention-item" data-testid="iqr-attention-item" data-key="@item.Key">
-                                <span class="iqr-attention-label">@item.Label</span>
-                                <span class="iqr-attention-value">@item.Value</span>
-                                @if (item.ActionHref is { } href) { <a class="iqr-link" href="@href" data-testid="@($"iqr-action-{item.Key}")">@item.ActionLabel</a> }
-                                @if (item.Key == "mappings" && mappingEvidence is { } me)
-                                {
-                                    <span class="iqr-attention-detail iqr-muted" data-testid="iqr-mapping-evidence">Evidence checks this session: @me.Tested tested@(me.Strong > 0 ? $" · {me.Strong} strong evidence, not confirmed" : "")@(me.Partial > 0 ? $" · {me.Partial} partial evidence" : "")@(me.NoSupport > 0 ? $" · {me.NoSupport} no supporting evidence" : "")@(me.NotTestable > 0 ? $" · {me.NotTestable} not testable" : "")@(me.Error > 0 ? $" · {me.Error} error" : "") · @me.NotTested not tested. Evidence never confirms a mapping.</span>
-                                }
-                            </li>
-                        }
-                    </ul>
-                }
-                <div class="iqr-run-bar">
-                    <button type="button" class="btn-primary" data-testid="iqr-run" disabled="@(!readiness.CanRun || _running || _sourceBusy)" aria-describedby="iqr-run-note" @onclick="RunAsync">
-                        @(_running ? "Running Integration Quality Review…" : readiness.Headline == "Ready" ? "Run Integration Quality Review" : "Run with limitations")
-                    </button>
-                    <span class="iqr-muted" id="iqr-run-note">Read-only review. No messages are published, consumed or changed.</span>
-                    <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-open-integrations">Open Target Environment → Integrations</a>
-                </div>
-                @if (readiness.CanRun && readiness.Reasons.Count > 0)
-                {
-                    <ReviewDisclosure Text="All limitation details" CollapseText="Hide limitation details" Hint="@($"{readiness.Reasons.Count} item{(readiness.Reasons.Count == 1 ? "" : "s")}")" TestId="iqr-limitation-details" Class="disclosure-inline">
-                        <ul class="iqr-reasons" data-testid="iqr-readiness-reasons">@foreach (var reason in readiness.Reasons) { <li>@reason</li> }</ul>
-                    </ReviewDisclosure>
-                }
-            </section>
-
-            <section class="iqr-card" aria-labelledby="iqr-systems-heading" data-testid="iqr-systems">
-                <h2 id="iqr-systems-heading">Configured integration system@(readiness.Systems.Count == 1 ? "" : "s")</h2>
-                @if (readiness.Systems.Count == 0)
-                {
-                    <p class="iqr-muted" data-testid="iqr-no-systems">No enabled integration is configured for this Target Environment.</p>
-                }
-                @foreach (var system in readiness.Systems)
-                {
-                    <article class="iqr-system" data-testid="iqr-system">
-                        @* Generic heading: the configured group name (often naming a technology) is shown as data, never as the category. *@
-                        <h3 data-testid="iqr-system-title">@SourceIntegrationsPresentation.Title @if (system.PlatformName is { } platform) { <span class="iqr-muted">→ @platform</span> }</h3>
-                        <p class="iqr-muted" data-testid="iqr-system-group">Configured group: @system.SystemName</p>
-                        <dl class="iqr-dl">
-                            <div><dt>Topics</dt><dd data-testid="iqr-system-topics">@system.Topics</dd></div>
-                            <div><dt>Consumers</dt><dd data-testid="iqr-system-consumers">@IntegrationReviewPrerunPresentation.Consumers(system)</dd></div>
-                            @if (system.Kind == IntegrationKind.EventHub) { <div><dt>Consumer groups</dt><dd data-testid="iqr-system-groups">@IntegrationReviewPrerunPresentation.ConsumerGroups(system)</dd></div> }
-                            <div><dt>Contracts</dt><dd data-testid="iqr-system-contracts">@IntegrationReviewPrerunPresentation.Contracts(system)</dd></div>
-                            @if (!system.DomainReviewSupported) { <div><dt>Domain review</dt><dd>Not implemented for @IntegrationConfigurationRules.KindLabel(system.Kind) — configuration is reviewed</dd></div> }
-                        </dl>
-                        <div class="iqr-system-actions">
-                            @if (system.ConsumersSuggested + system.ConsumersNeedingConfirmation > 0)
-                            { <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, IntegrationReviewPrerunPresentation.FocusMappings)" data-testid="iqr-system-review-mappings">Review mappings</a> }
-                            @if (_catalog is { } catalog)
-                            {
-                                <ReviewDisclosure Text="@($"View {system.Topics} topic{(system.Topics == 1 ? "" : "s")}")" CollapseText="Hide topics" TestId="@($"iqr-system-topics-{Slug(system.SystemName)}")" Class="disclosure-inline">
-                                    <ul class="iqr-topic-list">
-                                        @foreach (var topic in catalog.Integrations.Where(i => i.Enabled && (i.SystemName ?? i.DisplayName) == system.SystemName))
-                                        {
-                                            <li><span class="iqr-mono">@(topic.EndpointOrTopic ?? topic.DisplayName)</span> — @(topic.Consumer.DisplayName ?? "Consumer not assigned") <span class="iqr-pill iqr-pill-muted">@IntegrationConfigurationRules.MappingLabel(topic.Consumer.MappingState)</span></li>
-                                        }
-                                    </ul>
-                                </ReviewDisclosure>
-                            }
-                        </div>
-                    </article>
-                }
-            </section>
-
-            var (runtimeAvailable, runtimeTotal) = IntegrationReviewPrerunPresentation.RuntimeAvailability(readiness);
-            var commonReason = IntegrationReviewPrerunPresentation.CommonUnavailableReason(readiness);
-            <section class="iqr-card" aria-labelledby="iqr-evidence-heading" data-testid="iqr-evidence-sources">
-                <h2 id="iqr-evidence-heading">Runtime evidence <span class="iqr-muted" data-testid="iqr-evidence-count">· @runtimeAvailable of @runtimeTotal available</span></h2>
-                @if (readiness.RuntimeSourcesTotal > 0)
-                {
-                    @* Configured sources and Azure execution are two facts: Azure off is an instance setting, never an integration misconfiguration. *@
-                    <p data-testid="iqr-azure-runtime" data-azure="@(readiness.AzureRuntimeEnabled ? "enabled" : "disabled")">@IntegrationReviewPrerunPresentation.AzureRuntimeLine(readiness)@if (!readiness.AzureRuntimeEnabled && readiness.AzureRuntimeReason is { } azureReason) { <span class="iqr-muted"> — @azureReason Not an integration misconfiguration.</span> }</p>
-                }
-                @if (readiness.EvidenceAdapters.Count == 0)
-                {
-                    <p class="iqr-muted" data-testid="iqr-no-evidence-sources">No platform is configured, so no runtime evidence source applies.</p>
+                    @if (_error is null) { <p class="iqr-muted" role="status">Loading configured integrations…</p> }
                 }
                 else
                 {
-                    var sources = IntegrationReviewPrerunPresentation.RuntimeSources(readiness);
-                    <ul class="iqr-sources" data-testid="iqr-evidence-list">
-                        @for (var i = 0; i < sources.Count; i++)
-                        {
-                            var source = sources[i];
-                            var adapter = readiness.EvidenceAdapters[i];
-                            <li class="iqr-source" data-testid="iqr-evidence-source" data-source="@adapter.Source" data-state="@adapter.State">
-                                <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.AdapterTone(adapter.State)">@IntegrationReviewLabels.EvidenceState(adapter.State)</span>
-                                <span class="iqr-adapter-name">@source.Name@if (source.Platform is { } p) { <span class="iqr-muted"> · @p</span> }</span>
-                                @if (commonReason is null && adapter.State != IntegrationEvidenceState.Available) { <span class="iqr-muted iqr-adapter-reason">@adapter.Reason</span> }
-                            </li>
-                        }
-                    </ul>
-                    @if (commonReason is not null && commonReason != readiness.AzureRuntimeReason) { <p class="iqr-muted" data-testid="iqr-evidence-common-reason">@commonReason</p> }
-                    <div class="iqr-system-actions">
-                        @if (runtimeAvailable < runtimeTotal) { <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, IntegrationReviewPrerunPresentation.FocusRuntime)" data-testid="iqr-configure-runtime">Configure runtime evidence</a> }
-                        <ReviewDisclosure Text="View details" CollapseText="Hide details" TestId="iqr-evidence-details" Class="disclosure-inline">
-                            <p class="iqr-muted">Configuration state only — nothing is contacted before the review runs. Each source is read-only and uses the BirkNext instance's own Azure identity.</p>
-                            <div class="iqr-tablewrap" tabindex="0" role="region" aria-label="Runtime evidence source details">
-                                <table class="iqr-table iqr-table-compact" data-testid="iqr-evidence-detail-table">
-                                    <thead><tr><th scope="col">Source</th><th scope="col">State</th><th scope="col">Reason</th><th scope="col">Freshness</th><th scope="col">Last captured</th></tr></thead>
-                                    <tbody>
-                                        @foreach (var adapter in readiness.EvidenceAdapters)
-                                        {
-                                            <tr data-testid="iqr-evidence-detail-row"><td>@adapter.Adapter</td><td>@IntegrationReviewLabels.EvidenceState(adapter.State)</td><td>@adapter.Reason</td><td>Not read pre-run</td><td class="iqr-nowrap">@adapter.CapturedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</td></tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        </ReviewDisclosure>
-                    </div>
+                    <dl class="iqr-summary" data-testid="iqr-summary">
+                        <div><dt>Target</dt><dd data-testid="iqr-summary-target">@(string.IsNullOrWhiteSpace(profile.Name) ? profile.Id : profile.Name)</dd></div>
+                        <div><dt>Integration systems</dt><dd data-testid="iqr-summary-systems">@_readiness.Systems.Count</dd></div>
+                        <div><dt>Business topics</dt><dd data-testid="iqr-summary-topics">@_readiness.Systems.Sum(s => s.Topics)</dd></div>
+                        <div><dt>Enabled</dt><dd data-testid="iqr-summary-enabled">@_readiness.EnabledIntegrations of @_readiness.ConfiguredIntegrations</dd></div>
+                        <div><dt>Review readiness</dt><dd><span class="iqr-pill iqr-pill-@(IntegrationReviewPrerunPresentation.ReadinessTone(_readiness) switch { "ready" => "ready", "limited" => "attention", _ => "fail" })" data-testid="iqr-summary-readiness">@IntegrationReviewPrerunPresentation.ReadinessLabel(_readiness)</span></dd></div>
+                    </dl>
+                    @if (_readiness.CanRun && _readiness.Domains.Count > 0)
+                    {
+                        <p class="iqr-muted" data-testid="iqr-readiness-coverage">@IntegrationReviewPrerunPresentation.AssessableDomains(_readiness) of @_readiness.Domains.Count domains are currently assessable or partially assessable.@(_readiness.Headline == "Ready" ? "" : " Some review domains lack runtime or contract evidence.")</p>
+                    }
                 }
             </section>
 
-            @if (readiness.ServiceBus.Count > 0)
+            @if (_readiness is { } readiness)
             {
-                @* Transport — Service Bus: configured topology and runtime metadata, separate from Event Hub sources and from Wolverine. *@
-                <section class="iqr-card" aria-labelledby="iqr-servicebus-heading" data-testid="iqr-servicebus">
-                    <h2 id="iqr-servicebus-heading">Transport — Service Bus</h2>
-                    <ul class="iqr-sources iqr-messaging-list">
-                        @foreach (var serviceBus in readiness.ServiceBus)
-                        {
-                            <li class="iqr-messaging-item" data-testid="iqr-servicebus-platform" data-platform="@serviceBus.PlatformId">
-                                <span><strong>@serviceBus.PlatformName</strong> · Topology <span class="iqr-pill iqr-pill-observed" data-testid="iqr-servicebus-topology">@(serviceBus.Queues + serviceBus.Topics + serviceBus.Subscriptions > 0 ? "Configured" : "Not configured")</span>
-                                    · Runtime metadata <span class="iqr-pill iqr-pill-muted" data-testid="iqr-servicebus-runtime">@(serviceBus.RuntimeState == IntegrationEvidenceState.Available ? "Available" : IntegrationReviewLabels.EvidenceState(serviceBus.RuntimeState))</span></span>
-                                <span class="iqr-muted">@serviceBus.Queues queue(s) · @serviceBus.Topics topic(s) · @serviceBus.Subscriptions subscription(s) · code routes @serviceBus.RoutesMatched of @serviceBus.RoutesTotal matched@(serviceBus.RoutesMismatched > 0 ? $", {serviceBus.RoutesMismatched} mismatch" : "")</span>
-                                @if (serviceBus.RuntimeState != IntegrationEvidenceState.Available) { <span class="iqr-muted" data-testid="iqr-servicebus-reason">@serviceBus.RuntimeReason</span> }
-                            </li>
-                        }
-                    </ul>
-                    <p class="iqr-muted">Transport evidence only: an entity that exists or a route that matches does not show that messages were processed.</p>
-                </section>
-            }
-
-            @if (readiness.Scim.Count > 0)
-            {
-                @* Identity provisioning (SCIM): configured flow and stored source evidence. The run adds safe GET checks only — never a user write. *@
-                <section class="iqr-card" aria-labelledby="iqr-scim-heading" data-testid="iqr-scim">
-                    <h2 id="iqr-scim-heading">Identity provisioning — SCIM</h2>
-                    <ul class="iqr-sources iqr-messaging-list">
-                        @foreach (var scim in readiness.Scim)
-                        {
-                            <li class="iqr-messaging-item" data-testid="iqr-scim-platform" data-platform="@scim.PlatformId">
-                                <span><strong>@scim.PlatformName</strong> · SCIM <span class="iqr-pill iqr-pill-observed" data-testid="iqr-scim-source">@(scim.Detected ? "Source verified" : scim.SourceAnalyzed ? "Not found in source" : "Source not analyzed")</span>
-                                    · Safe runtime checks <span class="iqr-pill iqr-pill-muted" data-testid="iqr-scim-runtime">@(scim.RuntimeState == IntegrationEvidenceState.Available ? "Available" : IntegrationReviewLabels.EvidenceState(scim.RuntimeState))</span>
-                                    · Synthetic mutation test <span class="iqr-pill iqr-pill-muted" data-testid="iqr-scim-mutation">@ScimLabels.Mutation(scim.SyntheticMutation)</span></span>
-                                @if (scim.SourceAnalyzed) { <span class="iqr-muted">@scim.Operations operation(s) · @scim.RequirementsImplemented of @scim.RequirementsTotal specification requirement(s) implemented · @scim.NeedsReview source observation(s) need review</span> }
-                                @if (scim.RuntimeState != IntegrationEvidenceState.Available) { <span class="iqr-muted" data-testid="iqr-scim-reason">@scim.RuntimeReason</span> }
-                            </li>
-                        }
-                    </ul>
-                    <p class="iqr-muted">Configuration and source evidence are not runtime success. The review never creates, changes, deletes or lists a user.</p>
-                </section>
-            }
-
-            @if (readiness.ApplicationMessaging.Count > 0)
-            {
-                @* Application messaging (Wolverine) is source evidence beside the transport runtime sources — never counted among them. *@
-                <section class="iqr-card" aria-labelledby="iqr-messaging-heading" data-testid="iqr-messaging">
-                    <h2 id="iqr-messaging-heading">Application messaging</h2>
-                    <ul class="iqr-sources iqr-messaging-list">
-                        @foreach (var app in readiness.ApplicationMessaging)
-                        {
-                            <li class="iqr-messaging-item" data-testid="iqr-messaging-app" data-application="@app.ApplicationId">
-                                <span><strong>@app.ApplicationId</strong> · @app.Technology · <span class="iqr-pill iqr-pill-@(app.Detection == MessagingDetection.Confirmed ? "observed" : "muted")" data-testid="iqr-messaging-detection">@(app.Detection == MessagingDetection.Confirmed ? "Configured" : ApplicationMessagingLabels.Detection(app.Detection))</span></span>
-                                <span class="iqr-muted">Handler mapping @ApplicationMessagingLabels.Fact(app.HandlerMapping) · Retry policy @ApplicationMessagingLabels.Fact(app.RetryPolicy) · Outbox @ApplicationMessagingLabels.Fact(app.Outbox) · Error handling @ApplicationMessagingLabels.Fact(app.ErrorHandling)</span>
-                                <span class="iqr-muted">@(app.BoundConsumer is { } consumer ? $"Bound to {consumer} ({app.BoundTopics} topic{(app.BoundTopics == 1 ? "" : "s")})." : "Not bound to an Integrations consumer, so it contributes no review checks.")</span>
-                                <span class="iqr-muted" data-testid="iqr-messaging-copy">@ApplicationMessagingPresentation.PrerunCopy(app)</span>
-                            </li>
-                        }
-                    </ul>
-                    <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-messaging-manage">Manage in Target Environment → Integrations</a>
-                </section>
-            }
-
-            <section class="iqr-card" aria-labelledby="iqr-domains-heading" data-testid="iqr-domain-readiness">
-                <h2 id="iqr-domains-heading">What can be reviewed</h2>
-                <ul class="iqr-domain-grid">
-                    @foreach (var domain in readiness.Domains)
+                var attention = IntegrationReviewPrerunPresentation.NeedsAttention(readiness, profile.Id);
+                var mappingEvidence = IntegrationReviewPrerunPresentation.MappingEvidence(_catalog, MappingEvidence.For(profile.Id));
+                <section class="iqr-card iqr-attention" aria-labelledby="iqr-readiness-heading" data-testid="iqr-readiness" data-headline="@readiness.Headline">
+                    <h3 id="iqr-readiness-heading">@(readiness.CanRun ? attention.Count > 0 ? "Needs attention" : "Ready to run" : "Cannot run")</h3>
+                    @if (!readiness.CanRun)
                     {
-                        var action = IntegrationReviewPrerunPresentation.DomainAction(domain, readiness, profile.Id);
-                        <li class="iqr-domain-card" data-testid="iqr-domain-readiness-card" data-domain="@domain.Domain" data-readiness="@domain.Readiness">
-                            <div class="iqr-domain-head"><strong>@IntegrationReviewLabels.Domain(domain.Domain)</strong> <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(domain.Readiness)">@IntegrationReviewLabels.Readiness(domain.Readiness)</span></div>
-                            <p class="iqr-muted" data-testid="iqr-domain-reason">@domain.Explanation</p>
-                            @if (domain.Available is { Count: > 0 } canRead)
+                        <ul class="iqr-reasons" data-testid="iqr-readiness-reasons">@foreach (var reason in readiness.Reasons) { <li>@reason</li> }</ul>
+                    }
+                    else if (attention.Count > 0)
+                    {
+                        <ul class="iqr-attention-list" data-testid="iqr-attention">
+                            @foreach (var item in attention)
+                            {
+                                <li class="iqr-attention-item" data-testid="iqr-attention-item" data-key="@item.Key">
+                                    <span class="iqr-attention-label">@item.Label</span>
+                                    <span class="iqr-attention-value">@item.Value</span>
+                                    @if (item.ActionHref is { } href) { <a class="iqr-link" href="@href" data-testid="@($"iqr-action-{item.Key}")">@item.ActionLabel</a> }
+                                    @if (item.Key == "mappings" && mappingEvidence is { } me)
+                                    {
+                                        <span class="iqr-attention-detail iqr-muted" data-testid="iqr-mapping-evidence">Evidence checks this session: @me.Tested tested@(me.Strong > 0 ? $" · {me.Strong} strong evidence, not confirmed" : "")@(me.Partial > 0 ? $" · {me.Partial} partial evidence" : "")@(me.NoSupport > 0 ? $" · {me.NoSupport} no supporting evidence" : "")@(me.NotTestable > 0 ? $" · {me.NotTestable} not testable" : "")@(me.Error > 0 ? $" · {me.Error} error" : "") · @me.NotTested not tested. Evidence never confirms a mapping.</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    <div class="iqr-run-bar">
+                        <button type="button" class="btn-primary" data-testid="iqr-run" disabled="@(!readiness.CanRun || _running || _sourceBusy)" aria-describedby="iqr-run-note" @onclick="RunAsync">
+                            @(_running ? "Running Integration Quality Review…" : readiness.Headline == "Ready" ? "Run Integration Quality Review" : "Run with limitations")
+                        </button>
+                        <span class="iqr-muted" id="iqr-run-note">Read-only review. No messages are published, consumed or changed.</span>
+                        <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-open-integrations">Open Target Environment → Integrations</a>
+                    </div>
+                    @if (readiness.CanRun && readiness.Reasons.Count > 0)
+                    {
+                        <ReviewDisclosure Text="All limitation details" CollapseText="Hide limitation details" Hint="@($"{readiness.Reasons.Count} item{(readiness.Reasons.Count == 1 ? "" : "s")}")" TestId="iqr-limitation-details" Class="disclosure-inline">
+                            <ul class="iqr-reasons" data-testid="iqr-readiness-reasons">@foreach (var reason in readiness.Reasons) { <li>@reason</li> }</ul>
+                        </ReviewDisclosure>
+                    }
+                </section>
+
+                @* Master-detail: one compact row per domain (all of them, in the backend's order); one detail open at a time. *@
+                <section class="iqr-card" aria-labelledby="iqr-domains-heading" data-testid="iqr-domain-readiness">
+                    <h3 id="iqr-domains-heading">What can be reviewed</h3>
+                    <div class="iqr-tablewrap iqr-domain-tablewrap" tabindex="0" role="region" aria-labelledby="iqr-domains-heading">
+                        <table class="iqr-table iqr-domain-table" data-testid="iqr-domain-table">
+                            <thead><tr><th scope="col">Review area</th><th scope="col">Status</th><th scope="col">Main limitation</th><th scope="col">Action</th></tr></thead>
+                            <tbody>
+                                @foreach (var domain in readiness.Domains)
+                                {
+                                    var action = IntegrationReviewPrerunPresentation.DomainAction(domain, readiness, profile.Id);
+                                    var open = _openDomain == domain.Domain;
+                                    <tr class="@(open ? "iqr-domain-row-open" : null)" data-testid="iqr-domain-readiness-card" data-domain="@domain.Domain" data-readiness="@domain.Readiness">
+                                        <th scope="row">
+                                            <button type="button" class="iqr-domain-toggle" aria-expanded="@(open ? "true" : "false")" aria-controls="iqr-domain-detail" data-testid="iqr-domain-toggle" @onclick="() => ToggleDomain(domain.Domain)">
+                                                <span class="iqr-domain-chevron" aria-hidden="true">@(open ? "▾" : "▸")</span>@IntegrationReviewLabels.Domain(domain.Domain)
+                                            </button>
+                                        </th>
+                                        <td><span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(domain.Readiness)" data-testid="iqr-domain-status">@IntegrationReviewLabels.Readiness(domain.Readiness)</span></td>
+                                        <td class="iqr-domain-limitation" data-testid="iqr-domain-limitation">@(domain.Missing is { Count: > 0 } m ? m[0] : "—")</td>
+                                        <td>@if (action is { } a) { <a class="iqr-link" href="@a.Href" data-testid="iqr-domain-row-action">@a.Label</a> } else { <span class="iqr-muted">—</span> }</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="iqr-domain-detail" class="iqr-domain-detail" role="region" aria-label="Review area details" aria-live="polite" data-testid="iqr-domain-detail" hidden="@(_openDomain is null)">
+                        @if (_openDomain is { } openDomain && readiness.Domains.FirstOrDefault(d => d.Domain == openDomain) is { } detail)
+                        {
+                            var detailAction = IntegrationReviewPrerunPresentation.DomainAction(detail, readiness, profile.Id);
+                            <h4 data-testid="iqr-domain-detail-title">@IntegrationReviewLabels.Domain(detail.Domain) <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.ReadinessTone(detail.Readiness)">@IntegrationReviewLabels.Readiness(detail.Readiness)</span></h4>
+                            <p class="iqr-muted" data-testid="iqr-domain-reason">@detail.Explanation</p>
+                            @if (detail.Available is { Count: > 0 } canRead)
                             {
                                 <p class="iqr-domain-list-label">Evidence the run reads</p>
                                 <ul class="iqr-domain-list" data-testid="iqr-domain-available">@foreach (var item in canRead) { <li>@item</li> }</ul>
                             }
-                            @if (domain.Missing is { Count: > 0 } missing)
+                            @if (detail.Missing is { Count: > 0 } missing)
                             {
                                 <p class="iqr-domain-list-label">Missing</p>
                                 <ul class="iqr-domain-list iqr-domain-list-missing" data-testid="iqr-domain-missing">@foreach (var item in missing) { <li>@item</li> }</ul>
                             }
-                            @if (action is { } a) { <a class="iqr-link iqr-domain-action" href="@a.Href" data-testid="iqr-domain-action">@a.Label</a> }
-                        </li>
-                    }
-                </ul>
+                            @if (detailAction is { } da) { <a class="iqr-link iqr-domain-action" href="@da.Href" data-testid="iqr-domain-action">@da.Label</a> }
+                        }
+                    </div>
+                </section>
+
+                @if (_history.Count > 0)
+                {
+                    <ReviewDisclosure Text="Previous runs" CollapseText="Hide previous runs" Hint="@($"{_history.Count} run{(_history.Count == 1 ? "" : "s")}")" TestId="iqr-history" Class="iqr-detail-disclosure">
+                        <p class="iqr-muted">Historical results. They do not change the current readiness above.</p>
+                        <ul class="iqr-history" data-testid="iqr-history-list">
+                            @foreach (var run in _history)
+                            {
+                                <li><button type="button" class="iqr-link" @onclick="() => OpenRunAsync(run.RunId)">@run.CompletedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @IntegrationReviewLabels.Outcome(run.Outcome) · @run.Topics topic(s) · @run.Findings finding(s)</li>
+                            }
+                        </ul>
+                    </ReviewDisclosure>
+                }
+            }
+        </section>
+
+        <section class="iqr-group" aria-labelledby="iqr-group-evidence-heading" data-testid="iqr-group-evidence">
+            <h2 class="iqr-group-heading" id="iqr-group-evidence-heading">Evidence</h2>
+            @{ var snapshots = _readiness?.SourceSnapshots ?? []; }
+            <section class="iqr-card" aria-labelledby="iqr-source-summary-heading" data-testid="iqr-source-evidence">
+                <h3 id="iqr-source-summary-heading">Source evidence</h3>
+                <p data-testid="iqr-source-summary">@SourceSummary(snapshots.Count, _sourceSelections.Count)</p>
+                <p class="iqr-muted">Uploaded application source is analyzed offline; nothing is contacted and no source is stored beyond the analysis snapshot.</p>
+                <ReviewDisclosure Text="Add or select source evidence" CollapseText="Hide source evidence" TestId="iqr-source-details" Class="disclosure-inline">
+                    <IqrSourceSetup ShowHeading="false" EnvironmentId="@profile.Id" Integrations="@(_catalog?.Integrations ?? [])" Snapshots="@snapshots" Selections="_sourceSelections" Analyzed="LoadReadinessAsync" BusyChanged="@(busy => _sourceBusy = busy)" />
+                </ReviewDisclosure>
             </section>
 
-            @if (_history.Count > 0)
+            @if (_readiness is { } evidence)
             {
-                <ReviewDisclosure Text="Previous runs" CollapseText="Hide previous runs" Hint="@($"{_history.Count} run{(_history.Count == 1 ? "" : "s")}")" TestId="iqr-history" Class="iqr-detail-disclosure">
-                    <p class="iqr-muted">Historical results. They do not change the current readiness above.</p>
-                    <ul class="iqr-history" data-testid="iqr-history-list">
-                        @foreach (var run in _history)
-                        {
-                            <li><button type="button" class="iqr-link" @onclick="() => OpenRunAsync(run.RunId)">@run.CompletedAt.ToString("yyyy-MM-dd HH:mm") UTC</button> — @IntegrationReviewLabels.Outcome(run.Outcome) · @run.Topics topic(s) · @run.Findings finding(s)</li>
-                        }
-                    </ul>
-                </ReviewDisclosure>
+                var (runtimeAvailable, runtimeTotal) = IntegrationReviewPrerunPresentation.RuntimeAvailability(evidence);
+                var commonReason = IntegrationReviewPrerunPresentation.CommonUnavailableReason(evidence);
+                <section class="iqr-card" aria-labelledby="iqr-evidence-heading" data-testid="iqr-evidence-sources">
+                    <h3 id="iqr-evidence-heading">Runtime evidence <span class="iqr-muted" data-testid="iqr-evidence-count">· @runtimeAvailable of @runtimeTotal available</span></h3>
+                    @if (evidence.RuntimeSourcesTotal > 0)
+                    {
+                        @* Configured sources and Azure execution are two facts: Azure off is an instance setting, never an integration misconfiguration. *@
+                        <p data-testid="iqr-azure-runtime" data-azure="@(evidence.AzureRuntimeEnabled ? "enabled" : "disabled")">@IntegrationReviewPrerunPresentation.AzureRuntimeLine(evidence)@if (!evidence.AzureRuntimeEnabled && evidence.AzureRuntimeReason is { } azureReason) { <span class="iqr-muted"> — @azureReason Not an integration misconfiguration.</span> }</p>
+                    }
+                    @if (evidence.EvidenceAdapters.Count == 0)
+                    {
+                        <p class="iqr-muted" data-testid="iqr-no-evidence-sources">No platform is configured, so no runtime evidence source applies.</p>
+                    }
+                    else
+                    {
+                        var sources = IntegrationReviewPrerunPresentation.RuntimeSources(evidence);
+                        @if (commonReason is not null && commonReason != evidence.AzureRuntimeReason) { <p class="iqr-muted" data-testid="iqr-evidence-common-reason">@commonReason</p> }
+                        <div class="iqr-system-actions">
+                            @if (runtimeAvailable < runtimeTotal) { <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, IntegrationReviewPrerunPresentation.FocusRuntime)" data-testid="iqr-configure-runtime">Configure runtime evidence</a> }
+                            <ReviewDisclosure Text="@($"View {sources.Count} runtime evidence source{(sources.Count == 1 ? "" : "s")}")" CollapseText="Hide runtime evidence sources" TestId="iqr-evidence-details" Class="disclosure-inline">
+                                <ul class="iqr-sources" data-testid="iqr-evidence-list">
+                                    @for (var i = 0; i < sources.Count; i++)
+                                    {
+                                        var source = sources[i];
+                                        var adapter = evidence.EvidenceAdapters[i];
+                                        <li class="iqr-source" data-testid="iqr-evidence-source" data-source="@adapter.Source" data-state="@adapter.State">
+                                            <span class="iqr-pill iqr-pill-@IntegrationReviewResultPresentation.AdapterTone(adapter.State)">@IntegrationReviewLabels.EvidenceState(adapter.State)</span>
+                                            <span class="iqr-adapter-name">@source.Name@if (source.Platform is { } p) { <span class="iqr-muted"> · @p</span> }</span>
+                                            @if (commonReason is null && adapter.State != IntegrationEvidenceState.Available) { <span class="iqr-muted iqr-adapter-reason">@adapter.Reason</span> }
+                                        </li>
+                                    }
+                                </ul>
+                                <p class="iqr-muted">Configuration state only — nothing is contacted before the review runs. Each source is read-only and uses the BirkNext instance's own Azure identity.</p>
+                                <div class="iqr-tablewrap" tabindex="0" role="region" aria-label="Runtime evidence source details">
+                                    <table class="iqr-table iqr-table-compact" data-testid="iqr-evidence-detail-table">
+                                        <thead><tr><th scope="col">Source</th><th scope="col">State</th><th scope="col">Reason</th><th scope="col">Freshness</th><th scope="col">Last captured</th></tr></thead>
+                                        <tbody>
+                                            @foreach (var adapter in evidence.EvidenceAdapters)
+                                            {
+                                                <tr data-testid="iqr-evidence-detail-row"><td>@adapter.Adapter</td><td>@IntegrationReviewLabels.EvidenceState(adapter.State)</td><td>@adapter.Reason</td><td>Not read pre-run</td><td class="iqr-nowrap">@adapter.CapturedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</td></tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </ReviewDisclosure>
+                        </div>
+                    }
+                </section>
             }
+        </section>
+
+        @if (_readiness is { } areas)
+        {
+            <section class="iqr-group" aria-labelledby="iqr-group-areas-heading" data-testid="iqr-group-areas">
+                <h2 class="iqr-group-heading" id="iqr-group-areas-heading">Integration areas</h2>
+                <section class="iqr-card" aria-labelledby="iqr-systems-heading" data-testid="iqr-systems">
+                    <h3 id="iqr-systems-heading">Configured integration system@(areas.Systems.Count == 1 ? "" : "s")</h3>
+                    @if (areas.Systems.Count == 0)
+                    {
+                        <p class="iqr-muted" data-testid="iqr-no-systems">No enabled integration is configured for this Target Environment.</p>
+                    }
+                    @foreach (var system in areas.Systems)
+                    {
+                        <article class="iqr-system" data-testid="iqr-system">
+                            @* Generic heading: the configured group name (often naming a technology) is shown as data, never as the category. *@
+                            <h4 data-testid="iqr-system-title">@SourceIntegrationsPresentation.Title @if (system.PlatformName is { } platform) { <span class="iqr-muted">→ @platform</span> }</h4>
+                            <p class="iqr-muted" data-testid="iqr-system-group">Configured group: @system.SystemName</p>
+                            <dl class="iqr-dl">
+                                <div><dt>Topics</dt><dd data-testid="iqr-system-topics">@system.Topics</dd></div>
+                                <div><dt>Consumers</dt><dd data-testid="iqr-system-consumers">@IntegrationReviewPrerunPresentation.Consumers(system)</dd></div>
+                                @if (system.Kind == IntegrationKind.EventHub) { <div><dt>Consumer groups</dt><dd data-testid="iqr-system-groups">@IntegrationReviewPrerunPresentation.ConsumerGroups(system)</dd></div> }
+                                <div><dt>Contracts</dt><dd data-testid="iqr-system-contracts">@IntegrationReviewPrerunPresentation.Contracts(system)</dd></div>
+                                @if (!system.DomainReviewSupported) { <div><dt>Domain review</dt><dd>Not implemented for @IntegrationConfigurationRules.KindLabel(system.Kind) — configuration is reviewed</dd></div> }
+                            </dl>
+                            <div class="iqr-system-actions">
+                                @if (system.ConsumersSuggested + system.ConsumersNeedingConfirmation > 0)
+                                { <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, IntegrationReviewPrerunPresentation.FocusMappings)" data-testid="iqr-system-review-mappings">Review mappings</a> }
+                                @if (_catalog is { } catalog)
+                                {
+                                    <ReviewDisclosure Text="@($"View {system.Topics} topic{(system.Topics == 1 ? "" : "s")}")" CollapseText="Hide topics" TestId="@($"iqr-system-topics-{Slug(system.SystemName)}")" Class="disclosure-inline">
+                                        <ul class="iqr-topic-list">
+                                            @foreach (var topic in catalog.Integrations.Where(i => i.Enabled && (i.SystemName ?? i.DisplayName) == system.SystemName))
+                                            {
+                                                <li><span class="iqr-mono">@(topic.EndpointOrTopic ?? topic.DisplayName)</span> — @(topic.Consumer.DisplayName ?? "Consumer not assigned") <span class="iqr-pill iqr-pill-muted">@IntegrationConfigurationRules.MappingLabel(topic.Consumer.MappingState)</span></li>
+                                            }
+                                        </ul>
+                                    </ReviewDisclosure>
+                                }
+                            </div>
+                        </article>
+                    }
+                </section>
+
+                @if (areas.ServiceBus.Count > 0)
+                {
+                    @* Transport — Service Bus: configured topology and runtime metadata, separate from Event Hub sources and from Wolverine. *@
+                    <section class="iqr-card" aria-labelledby="iqr-servicebus-heading" data-testid="iqr-servicebus">
+                        <h3 id="iqr-servicebus-heading">Transport — Service Bus</h3>
+                        <ul class="iqr-sources iqr-messaging-list">
+                            @foreach (var serviceBus in areas.ServiceBus)
+                            {
+                                <li class="iqr-messaging-item" data-testid="iqr-servicebus-platform" data-platform="@serviceBus.PlatformId">
+                                    <span><strong>@serviceBus.PlatformName</strong> · Topology <span class="iqr-pill iqr-pill-observed" data-testid="iqr-servicebus-topology">@(serviceBus.Queues + serviceBus.Topics + serviceBus.Subscriptions > 0 ? "Configured" : "Not configured")</span>
+                                        · Runtime metadata <span class="iqr-pill iqr-pill-muted" data-testid="iqr-servicebus-runtime">@(serviceBus.RuntimeState == IntegrationEvidenceState.Available ? "Available" : IntegrationReviewLabels.EvidenceState(serviceBus.RuntimeState))</span></span>
+                                    @if (serviceBus.RuntimeState != IntegrationEvidenceState.Available) { <span class="iqr-muted" data-testid="iqr-servicebus-reason">@serviceBus.RuntimeReason</span> }
+                                </li>
+                            }
+                        </ul>
+                        <div class="iqr-system-actions">
+                            <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, ServiceBusPresentation.Focus)" data-testid="iqr-servicebus-manage">Open Service Bus in Integrations</a>
+                            <ReviewDisclosure Text="View topology" CollapseText="Hide topology" TestId="iqr-servicebus-details" Class="disclosure-inline">
+                                <ul class="iqr-domain-list">
+                                    @foreach (var serviceBus in areas.ServiceBus)
+                                    {
+                                        <li data-testid="iqr-servicebus-counts">@serviceBus.PlatformName: @serviceBus.Queues queue(s) · @serviceBus.Topics topic(s) · @serviceBus.Subscriptions subscription(s) · code routes @serviceBus.RoutesMatched of @serviceBus.RoutesTotal matched@(serviceBus.RoutesMismatched > 0 ? $", {serviceBus.RoutesMismatched} mismatch" : "")</li>
+                                    }
+                                </ul>
+                                <p class="iqr-muted">Transport evidence only: an entity that exists or a route that matches does not show that messages were processed.</p>
+                            </ReviewDisclosure>
+                        </div>
+                    </section>
+                }
+
+                @if (areas.Scim.Count > 0)
+                {
+                    @* Identity provisioning (SCIM): configured flow and stored source evidence. The run adds safe GET checks only — never a user write. *@
+                    <section class="iqr-card" aria-labelledby="iqr-scim-heading" data-testid="iqr-scim">
+                        <h3 id="iqr-scim-heading">Identity provisioning — SCIM</h3>
+                        <ul class="iqr-sources iqr-messaging-list">
+                            @foreach (var scim in areas.Scim)
+                            {
+                                <li class="iqr-messaging-item" data-testid="iqr-scim-platform" data-platform="@scim.PlatformId">
+                                    <span><strong>@scim.PlatformName</strong> · SCIM <span class="iqr-pill iqr-pill-observed" data-testid="iqr-scim-source">@(scim.Detected ? "Source verified" : scim.SourceAnalyzed ? "Not found in source" : "Source not analyzed")</span>
+                                        · Safe runtime checks <span class="iqr-pill iqr-pill-muted" data-testid="iqr-scim-runtime">@(scim.RuntimeState == IntegrationEvidenceState.Available ? "Available" : IntegrationReviewLabels.EvidenceState(scim.RuntimeState))</span>
+                                        · Synthetic mutation test <span class="iqr-pill iqr-pill-muted" data-testid="iqr-scim-mutation">@ScimLabels.Mutation(scim.SyntheticMutation)</span></span>
+                                    @if (scim.RuntimeState != IntegrationEvidenceState.Available) { <span class="iqr-muted" data-testid="iqr-scim-reason">@scim.RuntimeReason</span> }
+                                </li>
+                            }
+                        </ul>
+                        <div class="iqr-system-actions">
+                            <a class="iqr-link" href="@IntegrationReviewPrerunPresentation.Href(profile.Id, ScimPresentation.Focus)" data-testid="iqr-scim-manage">Open SCIM in Integrations</a>
+                            <ReviewDisclosure Text="View SCIM details" CollapseText="Hide SCIM details" TestId="iqr-scim-details" Class="disclosure-inline">
+                                <ul class="iqr-domain-list">
+                                    @foreach (var scim in areas.Scim)
+                                    {
+                                        <li data-testid="iqr-scim-counts">@scim.PlatformName: @(scim.SourceAnalyzed ? $"{scim.Operations} operation(s) · {scim.RequirementsImplemented} of {scim.RequirementsTotal} specification requirement(s) implemented · {scim.NeedsReview} source observation(s) need review" : "No source analysis yet.")</li>
+                                    }
+                                </ul>
+                                <p class="iqr-muted">Configuration and source evidence are not runtime success. The review never creates, changes, deletes or lists a user.</p>
+                            </ReviewDisclosure>
+                        </div>
+                    </section>
+                }
+
+                @if (areas.ApplicationMessaging.Count > 0)
+                {
+                    @* Application messaging (Wolverine) is source evidence beside the transport runtime sources — never counted among them. *@
+                    var apps = areas.ApplicationMessaging;
+                    <section class="iqr-card" aria-labelledby="iqr-messaging-heading" data-testid="iqr-messaging">
+                        <h3 id="iqr-messaging-heading">Application messaging</h3>
+                        <dl class="iqr-dl" data-testid="iqr-messaging-summary">
+                            <div><dt>Applications</dt><dd data-testid="iqr-messaging-summary-apps">@apps.Count</dd></div>
+                            <div><dt>Detection</dt><dd data-testid="iqr-messaging-summary-detection">@apps.Count(a => a.Detection == MessagingDetection.Confirmed) configured · @apps.Count(a => a.Detection != MessagingDetection.Confirmed) not confirmed</dd></div>
+                            <div><dt>Bound to a consumer</dt><dd data-testid="iqr-messaging-summary-bound">@apps.Count(a => a.BoundConsumer is not null) of @apps.Count</dd></div>
+                            <div><dt>Runtime evidence</dt><dd data-testid="iqr-messaging-summary-runtime">@apps.Count(a => a.RuntimeState == IntegrationEvidenceState.Available) of @apps.Count available</dd></div>
+                        </dl>
+                        <div class="iqr-system-actions">
+                            <a class="iqr-link" href="@IntegrationsHref(profile)" data-testid="iqr-messaging-manage">Manage in Target Environment → Integrations</a>
+                            <ReviewDisclosure Text="@($"View {apps.Count} application{(apps.Count == 1 ? "" : "s")}")" CollapseText="Hide applications" TestId="iqr-messaging-details" Class="disclosure-inline">
+                                <ul class="iqr-sources iqr-messaging-list">
+                                    @foreach (var app in apps)
+                                    {
+                                        <li class="iqr-messaging-item" data-testid="iqr-messaging-app" data-application="@app.ApplicationId">
+                                            <span><strong>@app.ApplicationId</strong> · @app.Technology · <span class="iqr-pill iqr-pill-@(app.Detection == MessagingDetection.Confirmed ? "observed" : "muted")" data-testid="iqr-messaging-detection">@(app.Detection == MessagingDetection.Confirmed ? "Configured" : ApplicationMessagingLabels.Detection(app.Detection))</span></span>
+                                            <span class="iqr-muted">Handler mapping @ApplicationMessagingLabels.Fact(app.HandlerMapping) · Retry policy @ApplicationMessagingLabels.Fact(app.RetryPolicy) · Outbox @ApplicationMessagingLabels.Fact(app.Outbox) · Error handling @ApplicationMessagingLabels.Fact(app.ErrorHandling)</span>
+                                            <span class="iqr-muted">@(app.BoundConsumer is { } consumer ? $"Bound to {consumer} ({app.BoundTopics} topic{(app.BoundTopics == 1 ? "" : "s")})." : "Not bound to an Integrations consumer, so it contributes no review checks.")</span>
+                                            <span class="iqr-muted" data-testid="iqr-messaging-copy">@ApplicationMessagingPresentation.PrerunCopy(app)</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </ReviewDisclosure>
+                        </div>
+                    </section>
+                }
+            </section>
         }
+
+        @* Active tests last: the component's own heading is the group heading; summary first, runner collapsed, every guard unchanged. *@
+        <div class="iqr-group iqr-group-active" data-testid="iqr-group-active-tests">
+            <ActiveCdcTestsPanel SummaryFirst="true" Profile="profile" Integrations="@(_catalog?.Integrations ?? [])" Selections="_sourceSelections" />
+        </div>
     }
     else if (_result is { } result)
     {
@@ -556,6 +637,12 @@
 @code {
     private readonly List<IqrSourceSelection> _sourceSelections = [];
     private bool _sourceBusy;
+    // Master-detail on "What can be reviewed": at most one domain detail open; none by default.
+    private IntegrationReviewDomain? _openDomain;
+    private void ToggleDomain(IntegrationReviewDomain domain) => _openDomain = _openDomain == domain ? null : domain;
+    private static string SourceSummary(int snapshots, int selected) =>
+        (snapshots == 0 ? "No source analysis yet" : $"{snapshots} source analysis snapshot{(snapshots == 1 ? "" : "s")} available")
+        + $" · {(selected == 0 ? "none" : selected.ToString())} selected for this review.";
     private FrontendAnalysisProfile? _profile;
     private FrontendAnalysisContext? _context;
     private IntegrationReviewReadiness? _readiness;

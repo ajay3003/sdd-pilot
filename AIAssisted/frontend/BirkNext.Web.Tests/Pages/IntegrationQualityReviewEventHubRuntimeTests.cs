@@ -137,17 +137,21 @@ public sealed class IntegrationQualityReviewEventHubRuntimeTests : BunitContext
     public void DomainCards_ExplainWhy_WithTheEvidenceTheyReadAndWhatIsMissing()
     {
         var cut = Render<IntegrationQualityReview>();
-        var flow = cut.FindAll("[data-testid=iqr-domain-readiness-card]").Single(c => c.GetAttribute("data-domain") == "MessageFlow");
+        AngleSharp.Dom.IElement Row(string domain) => cut.FindAll("[data-testid=iqr-domain-readiness-card]").Single(c => c.GetAttribute("data-domain") == domain);
+        AngleSharp.Dom.IElement Detail(string domain) { Row(domain).QuerySelector("[data-testid=iqr-domain-toggle]")!.Click(); return cut.Find("[data-testid=iqr-domain-detail]"); }
+        var flow = Row("MessageFlow");
         flow.GetAttribute("data-readiness").Should().Be("Partial");
         flow.QuerySelector(".iqr-pill")!.TextContent.Should().Be("Partial", "status is a text label, never colour alone");
         flow.QuerySelector(".iqr-pill")!.ClassList.Should().Contain("iqr-pill-observed");
-        flow.QuerySelector("[data-testid=iqr-domain-available]")!.TextContent.Should().Contain("$Default").And.Contain("configured assumption — mapping needs confirmation");
-        flow.QuerySelector("[data-testid=iqr-domain-missing]")!.TextContent.Should().Contain("End-to-end processing: never proven by transport evidence");
-        var observability = cut.FindAll("[data-testid=iqr-domain-readiness-card]").Single(c => c.GetAttribute("data-domain") == "Observability");
+        flow.QuerySelector("[data-testid=iqr-domain-limitation]")!.TextContent.Should().Be("Application-processing telemetry: not configured", "the main limitation is the first missing item");
+        var flowDetail = Detail("MessageFlow");
+        flowDetail.QuerySelector("[data-testid=iqr-domain-available]")!.TextContent.Should().Contain("$Default").And.Contain("configured assumption — mapping needs confirmation");
+        flowDetail.QuerySelector("[data-testid=iqr-domain-missing]")!.TextContent.Should().Contain("End-to-end processing: never proven by transport evidence");
+        var observability = Detail("Observability");
         observability.TextContent.Should().Contain("Dedicated Log Analytics workspace: Not configured — not required for this platform configuration");
         observability.QuerySelector("[data-testid=iqr-domain-missing]")!.TextContent.Should().NotContain("workspace");
-        cut.FindAll("[data-testid=iqr-domain-readiness-card]").Single(c => c.GetAttribute("data-domain") == "Configuration")
-            .QuerySelector("[data-testid=iqr-domain-action]").Should().BeNull("a Ready domain has no corrective action");
+        Row("Configuration").QuerySelector("[data-testid=iqr-domain-row-action]").Should().BeNull("a Ready domain has no corrective action");
+        Detail("Configuration").QuerySelector("[data-testid=iqr-domain-action]").Should().BeNull();
     }
 
     // ── Post-run ───────────────────────────────────────────────────────────────────────────────────────────────────
