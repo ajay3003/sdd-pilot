@@ -156,8 +156,9 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
     public void RuntimeEvidenceSourcesAreEditedAsIdentifiersAndASasUrlIsRejected()
     {
         var cut = Open();
-        cut.Find(".disclosure[data-testid^=ip-runtime-] > button").Click();
-        cut.Find("[data-testid=ip-runtime-summary]").TextContent.Should().Contain("Not configured").And.Contain("no lag threshold");
+        cut.Find("[data-testid=ip-runtime-sources-toggle]").Click();
+        cut.Find("[data-testid=ip-runtime-summary]").TextContent.Should().Contain("Not configured");
+        cut.Find("[data-testid=ip-runtime-policy-lag]").TextContent.Should().Be("Not configured");
         cut.Find("[data-testid=ip-runtime-edit]").Click();
         cut.Find("[data-testid=ip-runtime-blob-endpoint]").Change("https://acct.blob.core.windows.net/?sv=2024&sig=abc");
         cut.Find("[data-testid=ip-runtime-container]").Change("checkpoints");

@@ -6,7 +6,7 @@
 
     <fieldset class="ehr-section" data-testid="ip-runtime-section-a">
         <legend>A · Azure runtime access</legend>
-        <p class="ehr-muted">Azure runtime execution: <strong data-testid="ip-runtime-execution">@EventHubRuntimeEvidencePresentation.ExecutionStatus(AzureEnabled)</strong>@(AzureEnabled ? "" : " (IntegrationReview:Azure:Enabled is not true for this BirkNext instance; sources can still be configured).")</p>
+        <p class="ehr-muted">Runtime execution on this BirkNext instance: <strong data-testid="ip-runtime-execution">@EventHubRuntimeEvidencePresentation.ExecutionStatus(AzureEnabled)</strong>@(AzureEnabled ? "" : " (IntegrationReview:Azure:Enabled is not true for this BirkNext instance; it is an instance setting, not set in this form, and sources can still be configured).")</p>
         <label class="ip-field">Subscription name <input class="form-control ip-mono" @ref="_first" @bind="_m.SubscriptionName" data-testid="ip-runtime-subscription-name" /></label>
         <label class="ip-field">Subscription ID <input class="form-control ip-mono" @bind="_m.SubscriptionId" data-testid="ip-runtime-subscription" aria-describedby="ehr-subscription-help" /></label>
         <p class="ehr-muted" id="ehr-subscription-help">A GUID. With the namespace's resource group it enables the read-only consumer-group list.</p>

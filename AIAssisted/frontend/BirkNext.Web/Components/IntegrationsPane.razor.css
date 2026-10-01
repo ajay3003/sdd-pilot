@@ -25,9 +25,6 @@
 .ip-secondary { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; margin: 0; font-size: .8rem; color: var(--clr-text-muted); }
 .ip-secondary > div { display: flex; gap: .35rem; min-width: 0; }
 .ip-secondary dd { margin: 0; overflow-wrap: anywhere; }
-.ip-runtime-status { margin-top: .8rem; padding: .65rem 0; display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; border-top: 1px solid var(--clr-border); }
-.ip-runtime-status p { flex-basis: 100%; }
-.ip-runtime-saved { margin: .2rem 0 .4rem; font-size: .82rem; color: #065f46; }
 .ip-workflow { display: flex; flex-wrap: wrap; gap: .5rem 1rem; }
 .ip-status-help { display: block; font-size: .73rem; font-weight: normal; color: var(--clr-text-muted); max-width: 15rem; margin-top: .25rem; white-space: normal; }
 .ip-readiness { font-size: .73rem; min-width: 6rem; max-width: 15rem; white-space: normal; margin-top: .3rem; }

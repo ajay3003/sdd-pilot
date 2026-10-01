@@ -35,8 +35,9 @@
             <div><dt>Business integrations</dt><dd data-testid="ip-summary-configured">@summary.Configured</dd></div>
             <div><dt>Ready</dt><dd data-testid="ip-summary-ready">@summary.Ready</dd></div>
             <div><dt>Need confirmation</dt><dd data-testid="ip-summary-confirm">@summary.NeedsConfirmation</dd><button type="button" class="ip-link" data-testid="ip-review-mappings" @onclick="ReviewMappings">Review @summary.NeedsConfirmation mappings</button></div>
-            <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-attention" data-testid="ip-summary-runtime">@EventHubRuntimeEvidencePresentation.SourcesStatus(_catalog.Platforms.Where(p => p.Kind is not (IntegrationKind.ServiceBus or IntegrationKind.IdentityProvisioning)))</span>
-                <span class="ip-muted" data-testid="ip-summary-azure">Azure runtime execution: @EventHubRuntimeEvidencePresentation.ExecutionStatus(_catalog.AzureRuntimeEnabled)</span></dd></div>
+            @{ var eventHubPlatforms = _catalog.Platforms.Where(p => p.Kind is not (IntegrationKind.ServiceBus or IntegrationKind.IdentityProvisioning)).ToList(); }
+            <div><dt>Runtime evidence</dt><dd><span class="ip-pill ip-pill-@EventHubRuntimeEvidencePresentation.SourcesTone(eventHubPlatforms)" data-testid="ip-summary-runtime">@EventHubRuntimeEvidencePresentation.SourcesBadge(eventHubPlatforms)</span>
+                <span class="ip-pill ip-pill-@EventHubRuntimeEvidencePresentation.ExecutionTone(_catalog.AzureRuntimeEnabled)" data-testid="ip-summary-azure">@EventHubRuntimeEvidencePresentation.ExecutionBadge(_catalog.AzureRuntimeEnabled)</span></dd></div>
         </dl>
         <dl class="ip-secondary" data-testid="ip-secondary">
             <div><dt>Environment</dt><dd data-testid="ip-summary-env">@(string.IsNullOrWhiteSpace(Profile.Name) ? Profile.Id : Profile.Name)</dd></div>
@@ -89,33 +90,24 @@
                         <div><dt>Default partitions / retention</dt><dd>@(platform.DefaultPartitionCount?.ToString() ?? "—") / @(platform.DefaultRetentionDays is { } days ? $"{days} days" : "—")</dd></div>
                     </dl>
                 </ReviewDisclosure>
-                <div class="ip-runtime-status" data-testid="ip-runtime-status">
-                    @{ var sourcesStatus = EventHubRuntimeEvidencePresentation.SourcesStatus([platform]); }
-                    <strong>Runtime evidence</strong> <span class="ip-pill ip-pill-attention" data-testid="ip-runtime-sources-status">@sourcesStatus</span>
-                    <span class="ip-pill ip-pill-muted" data-testid="ip-runtime-execution-status">Azure runtime execution: @EventHubRuntimeEvidencePresentation.ExecutionStatus(_catalog.AzureRuntimeEnabled)</span>
-                    @if (sourcesStatus == "Not configured") { <p class="ip-muted">Event Hub metadata, consumer groups, checkpoints and Application Insights are not configured for this platform.</p> }
-                    <p class="ip-muted">@EventHubRuntimeEvidencePresentation.SourcesHint(platform)@(_catalog.AzureRuntimeEnabled ? "" : "; sources are configured separately from Azure execution, which is not enabled for this BirkNext instance"). Runtime evidence enables richer mapping checks and Message Flow, Reliability, Error handling, Observability and Performance checks in Integration Quality Review.</p>
-                    <button type="button" class="ip-link" data-testid="ip-configure-runtime" @onclick="() => BeginRuntime(platform)">Configure runtime evidence</button>
-                </div>
+                @* Runtime execution, the four counted evidence sources, supporting settings and evaluation policy are separate groups. *@
+                <EventHubRuntimeEvidenceOverview Platform="platform" AzureEnabled="_catalog.AzureRuntimeEnabled"
+                    SourcesExpanded="@(_runtimeExpanded == platform.Id)" SourcesExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)"
+                    OnConfigureAccess="() => BeginRuntime(platform)" OnEditSources="() => BeginRuntime(platform)"
+                    SavedMessage="@(_runtimeSaved == platform.Id ? EventHubRuntimeEvidencePresentation.SavedSummary(platform, _catalog.AzureRuntimeEnabled) : null)"
+                    EditContent="@(_editingRuntime == platform.Id ? RuntimeForm(platform) : null)" />
                 }
-                @if (platform.Kind != IntegrationKind.IdentityProvisioning)
+                @if (platform.Kind == IntegrationKind.ServiceBus)
                 {
-                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@(platform.Kind == IntegrationKind.ServiceBus ? ServiceBusPresentation.RuntimeConfiguration(platform).Label : EventHubRuntimeEvidencePresentation.SourcesHint(platform))" Expanded="@(_runtimeExpanded == platform.Id)" ExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
+                <ReviewDisclosure Text="Runtime evidence sources" CollapseText="Hide runtime evidence sources" Hint="@ServiceBusPresentation.RuntimeConfiguration(platform).Label" Expanded="@(_runtimeExpanded == platform.Id)" ExpandedChanged="@(value => _runtimeExpanded = value ? platform.Id : null)" TestId="@($"ip-runtime-{Slug(platform.Id)}")" Class="disclosure-inline">
                     <p class="ip-muted">Read-only sources Integration Quality Review may use for this platform. @EventHubRuntimeEvidencePresentation.IdentityText</p>
-                    @if (_editingRuntime == platform.Id && platform.Kind != IntegrationKind.ServiceBus)
-                    {
-                        <EventHubRuntimeEvidenceForm Platform="platform" AzureEnabled="_catalog.AzureRuntimeEnabled" OnSave="settings => SaveEventHubRuntimeAsync(platform, settings)" OnCancel="() => _editingRuntime = null" />
-                    }
-                    else if (_editingRuntime == platform.Id)
+                    @if (_editingRuntime == platform.Id)
                     {
                         <div class="ip-runtime-form" data-testid="ip-runtime-form">
-                            @if (platform.Kind == IntegrationKind.ServiceBus)
-                            {
-                                @* Service Bus metadata is read through Azure Resource Manager: subscription + resource group + namespace. No connection string. *@
-                                <label class="ip-field">Azure subscription id (Service Bus namespace metadata) <input class="form-control ip-mono" @ref="_runtimeFocus" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
-                                <p class="ip-muted">Resource group @(platform.ResourceGroup ?? "not configured") · namespace @(platform.Namespace ?? "not configured"). Read-only metadata GETs with the instance's Azure identity (Reader); no message is read.</p>
-                                <label class="ip-field">Review window (hours) <input type="number" min="1" max="168" class="form-control" @bind="_runtime.ReviewWindowHours" data-testid="ip-runtime-window" /></label>
-                            }
+                            @* Service Bus metadata is read through Azure Resource Manager: subscription + resource group + namespace. No connection string. *@
+                            <label class="ip-field">Azure subscription id (Service Bus namespace metadata) <input class="form-control ip-mono" @ref="_runtimeFocus" @bind="_runtime.SubscriptionId" data-testid="ip-runtime-subscription" /></label>
+                            <p class="ip-muted">Resource group @(platform.ResourceGroup ?? "not configured") · namespace @(platform.Namespace ?? "not configured"). Read-only metadata GETs with the instance's Azure identity (Reader); no message is read.</p>
+                            <label class="ip-field">Review window (hours) <input type="number" min="1" max="168" class="form-control" @bind="_runtime.ReviewWindowHours" data-testid="ip-runtime-window" /></label>
                             @if (_runtimeError is { } runtimeError) { <p class="ip-field-error" role="alert" data-testid="ip-runtime-error">@runtimeError</p> }
                             <div class="ip-editor-actions">
                                 <button type="button" class="btn-primary" data-testid="ip-runtime-save" @onclick="() => SaveRuntimeAsync(platform)">Save runtime evidence sources</button>
@@ -125,20 +117,12 @@
                     }
                     else
                     {
-                        @if (platform.Kind == IntegrationKind.ServiceBus)
-                        {
-                            <dl class="ip-dl ip-dl-technical" data-testid="ip-runtime-summary">
-                                <div><dt>Azure subscription</dt><dd class="ip-mono">@(runtime?.SubscriptionId ?? "Not configured")</dd></div>
-                                <div><dt>Resource group / namespace</dt><dd class="ip-mono">@(platform.ResourceGroup ?? "—") / @(platform.Namespace ?? "—")</dd></div>
-                                <div><dt>Review window</dt><dd>@(runtime?.ReviewWindowHours ?? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours) h</dd></div>
-                                <div><dt>Thresholds</dt><dd>None — message counts are reported as Observed, never judged.</dd></div>
-                            </dl>
-                        }
-                        else
-                        {
-                        @if (_runtimeSaved == platform.Id) { <p class="ip-runtime-saved" role="status" data-testid="ip-runtime-saved">@EventHubRuntimeEvidencePresentation.SavedSummary(platform, _catalog.AzureRuntimeEnabled)</p> }
-                        <div data-testid="ip-runtime-summary"><EventHubRuntimeReadinessList Rows="EventHubRuntimeEvidencePresentation.Readiness(platform, _catalog.AzureRuntimeEnabled)" /></div>
-                        }
+                        <dl class="ip-dl ip-dl-technical" data-testid="ip-runtime-summary">
+                            <div><dt>Azure subscription</dt><dd class="ip-mono">@(runtime?.SubscriptionId ?? "Not configured")</dd></div>
+                            <div><dt>Resource group / namespace</dt><dd class="ip-mono">@(platform.ResourceGroup ?? "—") / @(platform.Namespace ?? "—")</dd></div>
+                            <div><dt>Review window</dt><dd>@(runtime?.ReviewWindowHours ?? IntegrationRuntimeEvidenceSettings.DefaultReviewWindowHours) h</dd></div>
+                            <div><dt>Thresholds</dt><dd>None — message counts are reported as Observed, never judged.</dd></div>
+                        </dl>
                         <button type="button" class="ip-link" data-testid="ip-runtime-edit" @onclick="() => BeginRuntime(platform)">Edit runtime evidence sources</button>
                     }
                 </ReviewDisclosure>
@@ -591,6 +575,9 @@
 
     private Task RemoveContractAsync(IntegrationDefinition definition, IntegrationContractRole role) =>
         TrackAsync($"{role} contract removed from {definition.DisplayName}.", () => Api.RemoveContractAsync(Profile.Id, definition.Id, role));
+
+    private RenderFragment RuntimeForm(IntegrationPlatform platform) =>
+        @<EventHubRuntimeEvidenceForm Platform="platform" AzureEnabled="_catalog!.AzureRuntimeEnabled" OnSave="settings => SaveEventHubRuntimeAsync(platform, settings)" OnCancel="() => _editingRuntime = null" />;
 
     private void BeginRuntime(IntegrationPlatform platform)
     {

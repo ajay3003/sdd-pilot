@@ -32,7 +32,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     {
         var cut = Open();
         cut.FindAll(".ip-summary > div").Should().HaveCount(4);
-        cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Not configured");
+        cut.Find("[data-testid=ip-summary-runtime]").TextContent.Should().Be("Sources configured: 0/4");
         cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("Review 15 mappings");
         cut.Find("[data-testid=ip-review-mappings]").Click();
         cut.FindAll("[data-testid=ip-row]").Should().HaveCount(15);
@@ -106,7 +106,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=ip-configure-runtime]").Click();
         cut.Find("[data-testid=ip-runtime-form]");
-        cut.Find("[data-testid^=ip-runtime-].disclosure button").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("[data-testid=ip-runtime-section-a] legend").TextContent.Should().Be("A · Azure runtime access");
         cut.Find("[data-testid=ip-open-iqr]").GetAttribute("href").Should().Be("/integration-quality-review");
         _api.SavedPlatforms.Should().BeEmpty();
     }

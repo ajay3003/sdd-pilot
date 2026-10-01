@@ -1,0 +1,137 @@
+@using BirkNext.Integrations
+@* Runtime evidence of one Event Hub platform, in four groups that are never mixed: runtime execution (can this BirkNext instance call
+   Azure), the four counted evidence sources, supporting settings (expected consumer group, Log Analytics workspace — not counted) and the
+   evaluation policy (not a source). Configuration only: nothing here is observed; observations belong to the Integration Quality Review
+   result. Technical source details are collapsed by default. While the sources are edited, EditContent replaces the groups. *@
+<section class="ehro" data-testid="ip-runtime-status" aria-labelledby="@_headingId">
+    <div class="ehro-head">
+        <h4 id="@_headingId">Runtime evidence</h4>
+        <span class="ehro-badge ehro-badge-@EventHubRuntimeEvidencePresentation.SourcesTone([Platform])" data-testid="ip-runtime-sources-status">@EventHubRuntimeEvidencePresentation.SourcesBadge([Platform])</span>
+        <span class="ehro-badge ehro-badge-@EventHubRuntimeEvidencePresentation.ExecutionTone(AzureEnabled)" data-testid="ip-runtime-execution-status">@EventHubRuntimeEvidencePresentation.ExecutionBadge(AzureEnabled)</span>
+    </div>
+    @if (SavedMessage is { } saved) { <p class="ehro-saved" role="status" data-testid="ip-runtime-saved">@saved</p> }
+
+    @if (EditContent is not null)
+    {
+        @EditContent
+    }
+    else
+    {
+        var execution = EventHubRuntimeEvidencePresentation.Execution(AzureEnabled);
+        var sources = EventHubRuntimeEvidencePresentation.Sources(Platform);
+        var (configured, total) = EventHubRuntimeEvidencePresentation.SourceCount(Platform);
+        var group = EventHubRuntimeEvidencePresentation.ExpectedGroup(Platform.RuntimeEvidence);
+        var workspace = EventHubRuntimeEvidencePresentation.Workspace(Platform.RuntimeEvidence);
+        var policy = EventHubRuntimeEvidencePresentation.Policy(Platform.RuntimeEvidence);
+        <div class="ehro-body" data-testid="ip-runtime-summary">
+            <div class="ehro-group" data-testid="ip-runtime-execution-group" data-available="@(execution.Available ? "true" : "false")">
+                <div class="ehro-group-head">
+                    <h5>Runtime execution</h5>
+                    <span class="ehro-badge ehro-badge-@EventHubRuntimeEvidencePresentation.ExecutionTone(AzureEnabled)" data-testid="ip-runtime-execution-value">@execution.Label</span>
+                </div>
+                <p class="ehro-lead" data-testid="ip-runtime-execution-summary">@execution.Summary</p>
+                <div class="ehro-actions">
+                    <button type="button" class="ehro-toggle" aria-expanded="@(_executionDetails ? "true" : "false")" aria-controls="@_executionId" data-testid="ip-runtime-execution-toggle" @onclick="() => _executionDetails = !_executionDetails">
+                        <span aria-hidden="true">@(_executionDetails ? "▾" : "▸")</span> @(_executionDetails ? "Hide details" : "View details")<span class="ehro-sr"> about runtime execution</span>
+                    </button>
+                    <button type="button" class="ehro-link" data-testid="ip-configure-runtime" @onclick="OnConfigureAccess">Configure Azure runtime access</button>
+                </div>
+                <div id="@_executionId" class="ehro-detail" hidden="@(!_executionDetails)" data-testid="ip-runtime-execution-detail">
+                    <p>@execution.Detail</p>
+                    <p>@EventHubRuntimeEvidencePresentation.IdentityText Configure Azure runtime access edits the subscription used for these read-only reads; it does not enable execution, which is a setting of this BirkNext instance.</p>
+                </div>
+            </div>
+
+            <div class="ehro-group" data-testid="ip-runtime-sources">
+                <div class="ehro-group-head">
+                    <h5>Evidence sources</h5>
+                    <span class="ehro-badge ehro-badge-@(configured == total ? "ready" : "attention")" data-testid="ip-runtime-sources-count">@configured of @total configured</span>
+                </div>
+                <p class="ehro-lead">Read-only sources Integration Quality Review can use when runtime execution is available. Configured is not observed: nothing is read here.</p>
+                <ul class="ehro-sources" id="@_sourcesId" data-testid="ip-runtime-sources-list">
+                    @foreach (var source in sources)
+                    {
+                        <li class="ehro-source" data-testid="@($"ip-runtime-row-{source.Key}")" data-status="@source.Status">
+                            <span class="ehro-label">@source.Label</span>
+                            <span class="ehro-badge ehro-badge-@EventHubRuntimeEvidencePresentation.Tone(source.Status)">@EventHubRuntimeEvidencePresentation.StatusLabel(source.Status)</span>
+                            <span class="ehro-value">@source.Value</span>
+                            <dl class="ehro-facts ehro-source-detail" hidden="@(!SourcesExpanded)" data-testid="ip-runtime-source-detail">
+                                <div><dt>What BirkNext reads</dt><dd><ul class="ehro-reads">@foreach (var read in source.Reads) { <li>@read</li> }</ul></dd></div>
+                                <div><dt>Access</dt><dd>@source.Access</dd></div>
+                                <div><dt>Runtime execution</dt><dd>@(execution.Available ? "Read only when a review runs; nothing has been read here." : "Not available on this BirkNext instance; nothing has been read.")</dd></div>
+                                @if (source.Note is { } note) { <div><dt>@(source.Status == RuntimeSourceStatus.Configured ? "Provenance" : "Missing")</dt><dd>@note</dd></div> }
+                            </dl>
+                        </li>
+                    }
+                </ul>
+                <div class="ehro-actions">
+                    <button type="button" class="ehro-toggle" aria-expanded="@(SourcesExpanded ? "true" : "false")" aria-controls="@_sourcesId" data-testid="ip-runtime-sources-toggle" @onclick="ToggleSourcesAsync">
+                        <span aria-hidden="true">@(SourcesExpanded ? "▾" : "▸")</span> @(SourcesExpanded ? "Hide details" : "Show details")<span class="ehro-sr"> of the evidence sources</span>
+                    </button>
+                    <button type="button" class="ehro-link" data-testid="ip-runtime-edit" @onclick="OnEditSources">Edit runtime evidence sources</button>
+                </div>
+            </div>
+
+            <div class="ehro-group" data-testid="ip-runtime-supporting">
+                <div class="ehro-group-head"><h5>Supporting settings</h5></div>
+                <p class="ehro-lead">Not evidence sources and not counted above.</p>
+                <div class="ehro-setting" data-testid="ip-runtime-row-expected-group" data-status="@group.Status">
+                    <div class="ehro-setting-head">
+                        <span class="ehro-label">Expected consumer group</span>
+                        <span class="ehro-badge ehro-badge-@EventHubRuntimeEvidencePresentation.Tone(group.Status)" data-testid="ip-runtime-group-status">@EventHubRuntimeEvidencePresentation.StatusLabel(group.Status)</span>
+                    </div>
+                    <dl class="ehro-facts">
+                        <div><dt>Configuration</dt><dd class="ehro-mono" data-testid="ip-runtime-group-value">@group.Value</dd></div>
+                        @if (group.HowKnown is { } howKnown) { <div><dt>How it is known</dt><dd data-testid="ip-runtime-group-provenance">@howKnown</dd></div> }
+                        <div><dt>Mapping</dt><dd><span class="ehro-badge ehro-badge-attention" data-testid="ip-runtime-group-mapping">@group.Mapping</span></dd></div>
+                        @if (group.Note is { } groupNote) { <div><dt>Recorded observation</dt><dd data-testid="ip-runtime-group-note">@groupNote</dd></div> }
+                    </dl>
+                    <p class="ehro-caveat" data-testid="ip-runtime-group-caveat">@group.Caveat</p>
+                </div>
+                <div class="ehro-setting" data-testid="ip-runtime-row-workspace" data-status="@workspace.Status">
+                    <div class="ehro-setting-head">
+                        <span class="ehro-label">@workspace.Label</span>
+                        <span class="ehro-badge ehro-badge-@EventHubRuntimeEvidencePresentation.Tone(workspace.Status)">@EventHubRuntimeEvidencePresentation.StatusLabel(workspace.Status)</span>
+                        <span class="ehro-value">@workspace.Value</span>
+                    </div>
+                    <p class="ehro-muted">@workspace.Detail</p>
+                </div>
+            </div>
+
+            <div class="ehro-group" data-testid="ip-runtime-policy">
+                <div class="ehro-group-head"><h5>Evaluation policy</h5></div>
+                <dl class="ehro-facts ehro-policy">
+                    <div><dt>Observation window</dt><dd data-testid="ip-runtime-policy-window">@policy.WindowHours h</dd></div>
+                    <div><dt>Lag threshold</dt><dd data-testid="ip-runtime-policy-lag">@policy.LagThreshold</dd></div>
+                    <div><dt>Checkpoint-age threshold</dt><dd data-testid="ip-runtime-policy-age">@policy.CheckpointAgeThreshold</dd></div>
+                </dl>
+                <p class="ehro-muted" data-testid="ip-runtime-policy-semantics">@policy.Semantics</p>
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IntegrationPlatform Platform { get; set; } = new();
+    [Parameter] public bool AzureEnabled { get; set; }
+    /// <summary>Whether the technical details of the evidence sources are shown. Collapsed by default.</summary>
+    [Parameter] public bool SourcesExpanded { get; set; }
+    [Parameter] public EventCallback<bool> SourcesExpandedChanged { get; set; }
+    /// <summary>Opens the source form at "A · Azure runtime access". It never enables Azure execution itself.</summary>
+    [Parameter] public EventCallback OnConfigureAccess { get; set; }
+    [Parameter] public EventCallback OnEditSources { get; set; }
+    [Parameter] public string? SavedMessage { get; set; }
+    /// <summary>The source form while editing; replaces the groups.</summary>
+    [Parameter] public RenderFragment? EditContent { get; set; }
+
+    private readonly string _headingId = "ehro-" + Guid.NewGuid().ToString("N")[..8];
+    private string _executionId => _headingId + "-execution";
+    private string _sourcesId => _headingId + "-sources";
+    private bool _executionDetails;
+
+    private async Task ToggleSourcesAsync()
+    {
+        SourcesExpanded = !SourcesExpanded;
+        await SourcesExpandedChanged.InvokeAsync(SourcesExpanded);
+    }
+}
