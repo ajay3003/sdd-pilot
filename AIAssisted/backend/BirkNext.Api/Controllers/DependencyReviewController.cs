@@ -18,8 +18,10 @@ public sealed class DependencyReviewController(IDependencyReviewService reviews,
 
     /// <summary>Source Analysis snapshots of the environment (per repository) and, for a chosen primary, its related-source candidates.</summary>
     [HttpGet("source-scope")]
-    public async Task<ActionResult<SourceScopeOptions>> SourceScope([FromQuery] string environmentId, [FromQuery] Guid? primary, CancellationToken ct) =>
-        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await sourceScope.OptionsAsync(environmentId, primary, ct));
+    public async Task<ActionResult<ReviewSourceOptions>> SourceScope([FromQuery] string environmentId, [FromQuery] Guid? primary, [FromQuery] Guid[]? related,
+        [FromQuery] string[]? excluded, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
+            : Ok(await sourceScope.OptionsAsync(environmentId, primary is { } p ? new ReviewSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []], ExcludedSuggestions = [.. excluded ?? []] } : null, ct));
 
     /// <summary>Reviews exactly the selected snapshots (one primary, zero or more related); the run stores the scope with fingerprints.</summary>
     [HttpPost("source-runs")]

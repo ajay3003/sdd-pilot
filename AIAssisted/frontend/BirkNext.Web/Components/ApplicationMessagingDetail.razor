@@ -4,7 +4,7 @@
 <ReviewDisclosure Text="Overview" Expanded="true" TestId="am-detail-overview">
     <dl class="am-states">
         <div><dt>Application</dt><dd>@Application.ApplicationId</dd></div>
-        <div><dt>Project/source</dt><dd>Analyzed source archives · @Application.ApplicationId</dd></div>
+        <div><dt>Project/source</dt><dd>Analyzed source snapshot · @Application.ApplicationId</dd></div>
         <div><dt>Service / telemetry role</dt><dd>@(Application.ServiceName ?? Application.TelemetryRoleName ?? "Not established from analyzed source")</dd></div>
         <div><dt>Primary transports observed in source</dt><dd>@(Application.Routes.Count + Application.SdkRoutes.Count > 0 ? "Azure Service Bus" : "See configuration evidence")@if (Application.Fact("event-hub-consumer") is not null) { <span> · Event Hub consumption source evidence</span> }</dd></div>
         <div><dt>Messaging roles from source</dt><dd>@(Application.Routes.Count == 0 ? "See source evidence" : string.Join(", ", Application.Routes.Select(r => r.Direction).Distinct()))</dd></div>

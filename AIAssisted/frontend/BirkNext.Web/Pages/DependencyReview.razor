@@ -108,129 +108,20 @@
             <h3 id="dr-setup-heading" tabindex="-1" @ref="_sourceHeading">Source snapshot</h3>
             <p class="dr-muted">Declared dependencies and Renovate policy of source already analyzed by Source Analysis: one primary snapshot plus any related sources you include, each reviewed separately with its own provenance. Source Analysis owns source snapshots — nothing is uploaded here, nothing is written to a repository and Renovate is not run.</p>
             <p class="dr-scope"><strong>Can assess:</strong> Renovate coverage and policy per repository, declared dependencies, version differences across the selected sources.<br /><strong>Cannot assess:</strong> registry, advisories, licenses (run the dependency health review on the resulting inventory), packaged or deployed evidence.</p>
-            @if (!FeatureViz.SourceAnalysis)
-            {
-                <p class="dr-muted" role="note" data-testid="dr-source-disabled">Source Analysis is disabled in Feature Visibility, so its snapshots are not offered here. Existing inventory, SBOM and deployed evidence remain available; no data is removed.</p>
-            }
-            else if (_environmentId is null)
+            @if (FeatureViz.SourceAnalysis && _environmentId is null)
             {
                 <p class="dr-muted" data-testid="dr-source-no-target">Select a Target Environment to use its Source Analysis snapshots.</p>
             }
-            else if (_sources.Count == 0)
-            {
-                <div class="dr-empty" data-testid="dr-source-empty">
-                    <h4>No source snapshot available</h4>
-                    <p class="dr-muted">Dependency Review uses source snapshots managed by Source Analysis. Upload the repository archive there; it becomes an immutable snapshot you can review here.</p>
-                    <a class="btn-secondary" href="source-analysis" data-testid="dr-open-source-analysis">Open Source Analysis</a>
-                </div>
-            }
             else
             {
-                @if (_primaryId is null && CurrentSnapshot is { } current)
-                {
-                    <div class="dr-suggest" data-testid="dr-current-snapshot">
-                        <span>Current Source Analysis snapshot: <strong>@current.Repository</strong> · @current.ArchiveName · <code>@Short(current.Fingerprint)</code></span>
-                        <button type="button" class="btn-secondary" data-testid="dr-use-current" @onclick="() => PickPrimaryAsync(current.SnapshotId)">Use current snapshot</button>
-                    </div>
-                }
-                <label class="dr-field dr-primary-field">Primary source snapshot
-                    <select @ref="_primarySelect" class="form-control" data-testid="dr-primary" value="@(_primaryId?.ToString() ?? "")" @onchange="e => PickPrimaryAsync(Guid.TryParse(e.Value?.ToString(), out var id) ? id : null)" disabled="@_busy">
-                        <option value="">Choose a source snapshot</option>
-                        @foreach (var group in _sources.GroupBy(s => s.Repository))
-                        {
-                            <optgroup label="@group.Key">@foreach (var s in group) { <option value="@s.SnapshotId">@Option(s)</option> }</optgroup>
-                        }
-                    </select>
-                </label>
-                @if (Primary is { } p)
-                {
-                    <div class="dr-scope-card" data-testid="dr-primary-summary" data-snapshot="@p.SnapshotId">
-                        <p class="dr-scope-title"><span class="dr-badge dr-badge-info">Primary</span> <strong>@p.Repository</strong> <span class="dr-muted">· @p.IdentityBasis</span></p>
-                        <dl class="dr-inventory-summary">
-                            <div><dt>Archive</dt><dd>@p.ArchiveName</dd></div>
-                            <div><dt>Fingerprint</dt><dd><code title="@p.Fingerprint" data-testid="dr-primary-fingerprint">@Short(p.Fingerprint)</code></dd></div>
-                            <div><dt>Analyzed</dt><dd>@Utc(p.AnalyzedAt)</dd></div>
-                            <div><dt>Source Analysis</dt><dd data-testid="dr-primary-status">@p.SourceStatus <span class="dr-muted">(extraction status, not dependency health)</span></dd></div>
-                            <div><dt>Dependency evidence</dt><dd data-testid="dr-primary-evidence">@(p.HasDependencyEvidence ? p.DependencyEvidenceNote ?? $"{p.DeclaredDependencies} declared dependencies · {p.RenovateFiles} Renovate configuration file(s)" : "Not available")@if (!p.HasDependencyEvidence) { <span class="dr-muted"> — @p.DependencyEvidenceNote</span> }</dd></div>
-                        </dl>
-                        <div class="dr-actions">
-                            <button type="button" class="btn-secondary" data-testid="dr-change-snapshot" @onclick="FocusPrimaryAsync">Change snapshot</button>
-                            <a class="btn-secondary" href="source-analysis" data-testid="dr-primary-open-source-analysis">Open Source Analysis</a>
-                        </div>
-                        @if (Newer(p) is { } newer)
-                        {
-                            <div class="dr-newer" role="note" data-testid="dr-newer-snapshot">
-                                <p><strong>Newer source snapshot available</strong> — current scope @p.Repository · <code>@Short(p.Fingerprint)</code>; latest @newer.Repository · <code>@Short(newer.Fingerprint)</code> (@Utc(newer.AnalyzedAt)). The review is not switched automatically.</p>
-                                <div class="dr-actions"><button type="button" class="btn-secondary" data-testid="dr-review-newer" @onclick="() => PickPrimaryAsync(newer.SnapshotId)">Review change</button><button type="button" class="btn-secondary" data-testid="dr-keep-current" @onclick="() => _keptSnapshots.Add(p.SnapshotId)">Keep current</button></div>
-                            </div>
-                        }
-                    </div>
-
-                    <section class="dr-related" aria-labelledby="dr-related-heading" data-testid="dr-related">
-                        <h4 id="dr-related-heading">Related sources <span class="dr-muted" data-testid="dr-related-count">· @_related.Count included</span></h4>
-                        <p class="dr-muted">Detected from the primary snapshot's evidence. A detected source is never included until you include it, and is never merged into the primary.</p>
-                        @if (_candidatesLoading) { <p class="dr-muted" role="status">Checking the primary source for related sources…</p> }
-                        else if (_candidates.Count == 0) { <p class="dr-muted" data-testid="dr-related-none">No related source detected in the primary snapshot's evidence.</p> }
-                        <ul class="dr-related-list">
-                            @foreach (var c in _candidates)
-                            {
-                                var included = _related.ContainsKey(c.RepositoryKey);
-                                var choices = c.MatchingSnapshotIds.Select(id => _sources.FirstOrDefault(s => s.SnapshotId == id)).OfType<SourceScopeSnapshot>().ToList();
-                                var pick = _related.TryGetValue(c.RepositoryKey, out var inc) ? inc : _relatedChoice.TryGetValue(c.RepositoryKey, out var ch) ? ch : choices.FirstOrDefault()?.SnapshotId;
-                                <li class="dr-related-item" data-testid="dr-related-candidate" data-repository="@c.Repository" data-state="@c.State">
-                                    <p class="dr-scope-title"><strong>@c.Repository</strong> <span class="dr-badge dr-badge-muted">@c.Confidence</span> <span class="dr-badge dr-badge-@(c.State == RelatedSourceState.SnapshotAvailable ? "info" : c.State == RelatedSourceState.NeedsReview ? "attention" : "muted")" data-testid="dr-related-state">@RelatedState(c.State)</span>@if (included) { <span class="dr-badge dr-badge-info" data-testid="dr-related-included">✓ Included</span> }</p>
-                                    <p class="dr-muted" data-testid="dr-related-reason">@c.Reason</p>
-                                    <ReviewDisclosure Text="Evidence" CollapseText="Hide evidence" TestId="@($"dr-related-evidence-{c.RepositoryKey}")" Class="disclosure-inline" Hint="@($"{c.Evidence.Count} item(s)")">
-                                        <ul class="dr-list">@foreach (var e in c.Evidence) { <li><strong>@e.Kind</strong> — @e.Detail@(e.Projects > 0 ? $" ({e.Projects} project(s))" : "")@if (e.Examples.Count > 0) { <br /><span class="dr-muted">@string.Join(" · ", e.Examples)</span> }</li> }</ul>
-                                    </ReviewDisclosure>
-                                    @if (choices.Count == 0)
-                                    {
-                                        <p data-testid="dr-related-missing">No analyzed source snapshot is available. <a href="source-analysis" data-testid="dr-related-open-source-analysis">Open Source Analysis</a> to analyze it; the review can run without it.</p>
-                                    }
-                                    else
-                                    {
-                                        <div class="dr-actions">
-                                            @if (choices.Count > 1)
-                                            {
-                                                <label class="dr-field">Snapshot of @c.Repository <select class="form-control" data-testid="dr-related-snapshot" value="@pick" disabled="@(_busy || included)" @onchange="e => { if (Guid.TryParse(e.Value?.ToString(), out var id)) _relatedChoice[c.RepositoryKey] = id; }">@foreach (var s in choices) { <option value="@s.SnapshotId">@Option(s)</option> }</select></label>
-                                            }
-                                            else { <span class="dr-muted">Available snapshot: @choices[0].ArchiveName · <code>@Short(choices[0].Fingerprint)</code></span> }
-                                            @if (included) { <button type="button" class="btn-secondary" data-testid="dr-related-remove" @onclick="() => _related.Remove(c.RepositoryKey)">Remove<span class="visually-hidden"> @c.Repository</span></button> }
-                                            else { <button type="button" class="btn-secondary" data-testid="dr-related-include" disabled="@(pick is null || _busy)" @onclick="() => Include(c.RepositoryKey, pick!.Value)">Include in review<span class="visually-hidden"> @c.Repository</span></button> }
-                                        </div>
-                                    }
-                                </li>
-                            }
-                        </ul>
-                        @{ var manual = _sources.Where(s => s.RepositoryKey != p.RepositoryKey && !_related.ContainsKey(s.RepositoryKey) && !_candidates.Any(c => c.RepositoryKey == s.RepositoryKey)).ToList(); }
-                        @if (manual.Count > 0)
-                        {
-                            <label class="dr-field">Add another source snapshot (not detected)
-                                <select class="form-control" data-testid="dr-add-related" value="" disabled="@_busy" @onchange="e => { if (Guid.TryParse(e.Value?.ToString(), out var id) && _sources.FirstOrDefault(s => s.SnapshotId == id) is { } s) Include(s.RepositoryKey, id); }">
-                                    <option value="">Choose a related source snapshot</option>
-                                    @foreach (var s in manual) { <option value="@s.SnapshotId">@s.Repository · @Option(s)</option> }
-                                </select>
-                            </label>
-                        }
-                        @if (_related.Count > 0)
-                        {
-                            <ul class="dr-chips" data-testid="dr-related-included-list">
-                                @foreach (var (key, id) in _related.OrderBy(r => r.Key, StringComparer.Ordinal))
-                                {
-                                    var s = _sources.FirstOrDefault(x => x.SnapshotId == id);
-                                    <li data-testid="dr-related-chip"><span aria-hidden="true">✓ </span>@(s?.Repository ?? key) · <code>@Short(s?.Fingerprint ?? "")</code>@if (s is { HasDependencyEvidence: false }) { <span class="dr-muted"> · no dependency evidence</span> } <button type="button" class="dr-link" @onclick="() => _related.Remove(key)">Remove<span class="visually-hidden"> @(s?.Repository ?? key)</span></button></li>
-                                }
-                            </ul>
-                        }
-                        @if (NotIncludedAvailable.Count > 0)
-                        {
-                            <div class="dr-incomplete" role="note" data-testid="dr-scope-incomplete">
-                                <p><strong>Review scope may be incomplete</strong> — related source detected but not included: @string.Join(", ", NotIncludedAvailable.Select(c => c.Repository)). The review can still run; leaving it out is recorded as a scope limitation.</p>
-                                <label><input type="checkbox" data-testid="dr-continue-without" @bind="_continueWithout" /> Continue without it</label>
-                            </div>
-                        }
-                    </section>
-                }
+                <SourceEvidencePrerequisite State="_scope" Prefix="dr" SourceAnalysisEnabled="FeatureViz.SourceAnalysis" ConsumerName="Dependency Review" EmptyHeadingLevel="4" ReturnTo="dependency-review"
+                                            DisabledDetail="Existing inventory, SBOM and deployed evidence remain available"
+                                            OtherSectionsNote="Existing inventory, SBOM and deployed evidence modes do not need a source snapshot.">
+                    <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="dr" Busy="_busy" MissingEvidenceLabel="no dependency evidence" OnPrimaryChanged="PrimaryChangedAsync" />
+                    <ReviewSourceScopePanel State="_scope" Prefix="dr" Busy="_busy" EvidenceLabel="Dependency evidence" MissingEvidenceLabel="no dependency evidence" AllowManualRelated="true"
+                                            RelatedExplanation="Detected from the primary snapshot's package and project references (exact package ID or project file)."
+                                            OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusPrimaryAsync" />
+                </SourceEvidencePrerequisite>
             }
             <ReviewDisclosure Text="Add Renovate config override" CollapseText="Hide Renovate config override" TestId="dr-override" Class="disclosure-inline" Hint="optional">
                 <p class="dr-muted">The supplied file replaces the chosen repository's in-repository configuration for this review only; the source snapshot is not changed.</p>
@@ -731,15 +622,9 @@
 @code {
     // ── Source snapshot scope: Source Analysis snapshots only (read, never uploaded or changed here) ──
     private string? _environmentId;
-    private List<SourceScopeSnapshot> _sources = [];
-    private Guid? _primaryId;
-    private List<RelatedSourceCandidate> _candidates = [];
-    private bool _candidatesLoading, _continueWithout;
-    /// <summary>Included related sources: repository key → exact snapshot (explicit choices only).</summary>
-    private readonly Dictionary<string, Guid> _related = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, Guid> _relatedChoice = new(StringComparer.Ordinal);
-    private readonly HashSet<Guid> _keptSnapshots = [];
-    private ElementReference _primarySelect;
+    /// <summary>The source scope being edited with the shared source components (explicit choices only).</summary>
+    private readonly ReviewSourceScopeState _scope = new();
+    private SourceSnapshotSelector? _selector;
     private (string Name, byte[] Bytes)? _config;
     private string _overrideRepository = string.Empty;
     private DependencyReviewResult? _result;
@@ -796,9 +681,9 @@
     private ReadinessInput ReadinessSelections => new()
     {
         Mode = _mode, Inventory = SelectedInventory,
-        SourceAnalysisDisabled = !FeatureViz.SourceAnalysis, SourceSnapshotsAvailable = FeatureViz.SourceAnalysis && _sources.Count > 0,
-        PrimarySource = Primary is { } p ? $"{p.Repository} · {Short(p.Fingerprint)}" : null, PrimaryHasEvidence = Primary?.HasDependencyEvidence == true, PrimaryEvidenceNote = Primary?.DependencyEvidenceNote,
-        RelatedIncluded = _related.Count, RelatedSummary = string.Join(", ", _related.Values.Select(id => _sources.FirstOrDefault(s => s.SnapshotId == id)).OfType<SourceScopeSnapshot>().Select(s => $"{s.Repository} · {Short(s.Fingerprint)}")),
+        SourceAnalysisDisabled = !FeatureViz.SourceAnalysis, SourceSnapshotsAvailable = FeatureViz.SourceAnalysis && _scope.Snapshots.Count > 0,
+        PrimarySource = Primary is { } p ? $"{p.Repository} · {Short(p.Fingerprint)}" : null, PrimaryHasEvidence = Primary?.HasConsumerEvidence == true, PrimaryEvidenceNote = Primary?.ConsumerEvidenceNote,
+        RelatedIncluded = _scope.Related.Count, RelatedSummary = string.Join(", ", _scope.Related.Values.Select(id => _scope.Snapshots.FirstOrDefault(s => s.SnapshotId == id)).OfType<ReviewSourceSnapshot>().Select(s => $"{s.Repository} · {Short(s.Fingerprint)}")),
         RelatedNotIncluded = NotIncludedAvailable.Count, ScopeProblem = ScopeProblem, PendingSbom = _sbom?.Name, SbomInvalid = _validation is { Valid: false },
         PolicyInventory = _inventories.FirstOrDefault(i => i.Id == _policyInventoryId), Deployed = _inventories.FirstOrDefault(i => i.Id == _deployedId),
         DeploymentTarget = SelectedTarget?.Name, SbomReviewed = _validation is { Valid: true }, CanCaptureDeployed = CaptureUrl is not null,
@@ -827,8 +712,8 @@
         switch (NextStep.Action)
         {
             case DependencyReviewNextAction.ChooseReviewSource: _focusControl = () => _modeCards.TryGetValue(DependencyReviewMode.Source, out var card) ? card : null; break;
-            case DependencyReviewNextAction.ChooseSourceSnapshot: Choose(DependencyReviewMode.Source, () => _primarySelect); break;
-            case DependencyReviewNextAction.ResolveSourceScope: Choose(DependencyReviewMode.Source, () => _primarySelect); break;
+            case DependencyReviewNextAction.ChooseSourceSnapshot: Choose(DependencyReviewMode.Source, () => _selector?.SelectElement); break;
+            case DependencyReviewNextAction.ResolveSourceScope: Choose(DependencyReviewMode.Source, () => _selector?.SelectElement); break;
             case DependencyReviewNextAction.OpenSourceAnalysis: Navigation.NavigateTo("source-analysis"); break;
             case DependencyReviewNextAction.ChooseInventory: Choose(DependencyReviewMode.Inventory, () => _inventorySelect); break;
             case DependencyReviewNextAction.UploadSbom: Choose(DependencyReviewMode.Sbom, () => _sbomInput?.Element); break;
@@ -861,22 +746,16 @@
         try { await heading.FocusAsync(); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { }
     }
 
-    private SourceScopeSnapshot? Primary => _sources.FirstOrDefault(s => s.SnapshotId == _primaryId);
-    /// <summary>Source Analysis shows its newest snapshot by default: offered as the current snapshot, never selected automatically.</summary>
-    private SourceScopeSnapshot? CurrentSnapshot => _sources.MaxBy(s => s.AnalyzedAt);
-    private SourceScopeSnapshot? Newer(SourceScopeSnapshot s) => _keptSnapshots.Contains(s.SnapshotId) ? null
-        : _sources.Where(x => x.RepositoryKey == s.RepositoryKey && x.AnalyzedAt > s.AnalyzedAt).MaxBy(x => x.AnalyzedAt);
-    private List<RelatedSourceCandidate> NotIncludedAvailable => _continueWithout ? []
-        : _candidates.Where(c => c.State == RelatedSourceState.SnapshotAvailable && !_related.ContainsKey(c.RepositoryKey)).ToList();
-    private string? ScopeProblem => _related.Values.Select(id => (id, s: _sources.FirstOrDefault(x => x.SnapshotId == id))).Select(x =>
+    private ReviewSourceSnapshot? Primary => _scope.Primary;
+    /// <summary>Suggested related sources with a snapshot, neither included nor explicitly continued without.</summary>
+    private List<RelatedSourceCandidate> NotIncludedAvailable => _scope.NotIncluded.Where(c => c.State == RelatedSourceState.SnapshotAvailable && !_scope.Excluded.Contains(c.Repository)).ToList();
+    private string? ScopeProblem => _scope.Related.Values.Select(id => (id, s: _scope.Snapshots.FirstOrDefault(x => x.SnapshotId == id))).Select(x =>
             x.s is null ? "An included related snapshot is no longer available in Source Analysis. Remove it or choose another snapshot."
-            : !x.s.HasDependencyEvidence ? $"{x.s.Repository} · {Short(x.s.Fingerprint)} has no dependency evidence. Remove it or choose a newer snapshot." : null)
+            : !x.s.HasConsumerEvidence ? $"{x.s.Repository} · {Short(x.s.Fingerprint)} has no dependency evidence. Remove it or choose a newer snapshot." : null)
         .FirstOrDefault(m => m is not null);
-    private List<string> ScopeRepositories => Primary is null ? [] : [Primary.Repository, .. _related.Values.Select(id => _sources.FirstOrDefault(s => s.SnapshotId == id)?.Repository).OfType<string>()];
+    private List<string> ScopeRepositories => Primary is null ? [] : [Primary.Repository, .. _scope.Related.Values.Select(id => _scope.Snapshots.FirstOrDefault(s => s.SnapshotId == id)?.Repository).OfType<string>()];
     private static string Short(string fingerprint) => SourceAnalysisOverview.ShortFingerprint(fingerprint);
     private static string Utc(DateTimeOffset at) => SourceAnalysisOverview.Utc(at);
-    private static string Option(SourceScopeSnapshot s) => $"{s.ArchiveName} · {Utc(s.AnalyzedAt)} · {Short(s.Fingerprint)} · Source Analysis: {s.SourceStatus}{(s.HasDependencyEvidence ? "" : " · no dependency evidence")}{(s.Latest ? "" : " · older")}";
-    private static string RelatedState(RelatedSourceState state) => state switch { RelatedSourceState.SnapshotAvailable => "Snapshot available", RelatedSourceState.SnapshotUnavailable => "Snapshot unavailable", _ => "Needs review" };
 
     private async Task LoadSourcesAsync()
     {
@@ -884,34 +763,26 @@
         try
         {
             _environmentId = (await ContextFactory.GetActiveContextAsync()).ActiveProfile?.Id;
-            if (_environmentId is not null) _sources = (await Api.SourceScopeAsync(_environmentId, null)).Snapshots;
+            if (_environmentId is not null) _scope.Options = await Api.SourceScopeAsync(_environmentId, _scope.Request);
         }
         catch (HttpRequestException) { _status = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
     }
 
-    /// <summary>Selects the primary snapshot (explicit choice); related sources are reset and re-detected for it — never auto-included.</summary>
-    private async Task PickPrimaryAsync(Guid? id)
+    /// <summary>Re-reads the scope's options (candidates, newer snapshots, problems) after an explicit change — never auto-includes.</summary>
+    private async Task ReloadScopeAsync()
     {
-        _primaryId = id;
-        _related.Clear();
-        _relatedChoice.Clear();
-        _candidates = [];
-        _continueWithout = false;
-        if (Primary is { } p && !ScopeRepositories.Contains(_overrideRepository)) _overrideRepository = p.Repository;
-        if (id is null || _environmentId is null) return;
-        _candidatesLoading = true;
-        try { _candidates = (await Api.SourceScopeAsync(_environmentId, id)).Candidates; }
+        if (_environmentId is null) return;
+        try { _scope.Options = await Api.SourceScopeAsync(_environmentId, _scope.Request); }
         catch (HttpRequestException) { _error = "Related sources could not be checked (backend not reachable)."; }
-        finally { _candidatesLoading = false; }
     }
 
-    private void Include(string repositoryKey, Guid snapshotId)
+    private async Task PrimaryChangedAsync(Guid? id)
     {
-        if (Primary is { } p && _sources.FirstOrDefault(s => s.SnapshotId == snapshotId)?.RepositoryKey == p.RepositoryKey) return; // the primary's repository is not also related
-        _related[repositoryKey] = snapshotId;
+        await ReloadScopeAsync();
+        if (Primary is { } p && !ScopeRepositories.Contains(_overrideRepository)) _overrideRepository = p.Repository;
     }
 
-    private async Task FocusPrimaryAsync() { try { await _primarySelect.FocusAsync(); } catch (Exception ex) when (ex is JSException or InvalidOperationException) { } }
+    private async Task FocusPrimaryAsync() { if (_selector is not null) await _selector.FocusAsync(); }
 
     private async Task PickConfig(InputFileChangeEventArgs args)
     {
@@ -925,7 +796,7 @@
     /// <summary>Runs the source dependency analysis over exactly the selected snapshots (bound by ID and fingerprint in the result).</summary>
     private async Task RunAsync()
     {
-        if (_primaryId is not { } primary || _environmentId is null) return;
+        if (_scope.PrimaryId is not { } primary || _environmentId is null) return;
         _busy = true;
         _error = null;
         _status = "Analyzing dependencies from the selected source scope…";
@@ -933,8 +804,7 @@
         {
             var request = new SourceDependencyReviewRequest
             {
-                EnvironmentId = _environmentId, PrimarySnapshotId = primary, RelatedSnapshotIds = _related.OrderBy(r => r.Key, StringComparer.Ordinal).Select(r => r.Value).ToList(),
-                ExcludedSuggestions = _continueWithout ? _candidates.Where(c => !_related.ContainsKey(c.RepositoryKey)).Select(c => c.Repository).ToList() : [],
+                EnvironmentId = _environmentId, PrimarySnapshotId = primary, RelatedSnapshotIds = _scope.Request!.RelatedSnapshotIds, ExcludedSuggestions = _scope.Request.ExcludedSuggestions,
                 ConfigOverrides = _config is { } config && _overrideRepository.Length > 0 ? [new SourceConfigOverride(_overrideRepository, config.Name, System.Text.Encoding.UTF8.GetString(config.Bytes))] : [],
             };
             var (result, error) = await Api.RunSourceAsync(request);

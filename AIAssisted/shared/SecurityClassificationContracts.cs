@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using BirkNext.Dependencies;
 
 namespace BirkNext.Integrations;
 
@@ -87,16 +86,7 @@ public sealed record ClassificationFact
     public string Detail { get; init; } = "";
     public List<SourceLocation> Locations { get; init; } = [];
     /// <summary>The exact Source Analysis snapshot(s) the fact comes from, each with its own locations. Empty for legacy archive input.</summary>
-    public List<ClassificationSourceRef> Sources { get; init; } = [];
-}
-
-/// <summary>One Source Analysis snapshot a source fact cites: the exact snapshot id and fingerprint plus the locations in that snapshot.</summary>
-public sealed record ClassificationSourceRef
-{
-    public Guid SnapshotId { get; init; }
-    public string Repository { get; init; } = "";
-    public string Fingerprint { get; init; } = "";
-    public List<SourceLocation> Locations { get; init; } = [];
+    public List<ReviewSourceProvenance> Sources { get; init; } = [];
 }
 
 /// <summary>One pipeline stage with its source/configuration state and its runtime state kept apart.</summary>
@@ -144,7 +134,7 @@ public sealed record ClassificationSourceEvidence
     public List<ProposedRegressionTest> ProposedTests { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
     /// <summary>The Source Analysis snapshots this evidence was combined from (null for legacy uploaded archives).</summary>
-    public ClassificationSourceScope? Scope { get; init; }
+    public ReviewSourceScope? Scope { get; init; }
 }
 
 // ── Source Analysis snapshots as Security Classification's source ─────────────────────────────────────────────────────────
@@ -205,54 +195,13 @@ public sealed record ClassificationSnapshotEvidence
     public string? Unavailable { get; init; }
 }
 
-/// <summary>The source scope a run asks for: one primary snapshot plus explicitly included related snapshots.</summary>
-public sealed record ClassificationSourceScopeRequest
-{
-    public Guid PrimarySnapshotId { get; init; }
-    public List<Guid> RelatedSnapshotIds { get; init; } = [];
-    /// <summary>Suggested related sources the user chose to continue without; recorded as a scope limitation.</summary>
-    public List<string> ExcludedSuggestions { get; init; } = [];
-}
-
-/// <summary>The immutable source scope of a review: exact snapshots and fingerprints as they were at run time.</summary>
-public sealed record ClassificationSourceScope
-{
-    public SourceScopeEntry Primary { get; init; } = new();
-    public List<SourceScopeEntry> Related { get; init; } = [];
-    public List<string> ExcludedSuggestions { get; init; } = [];
-    public List<string> Limitations { get; init; } = [];
-}
-
-/// <summary>One Source Analysis snapshot as Security Classification offers it.</summary>
-public sealed record ClassificationSnapshotOption
-{
-    public Guid SnapshotId { get; init; }
-    public string RepositoryKey { get; init; } = "";
-    public string Repository { get; init; } = "";
-    public string IdentityBasis { get; init; } = "";
-    public string ArchiveName { get; init; } = "";
-    public string Fingerprint { get; init; } = "";
-    public DateTimeOffset AnalyzedAt { get; init; }
-    /// <summary>Source Analysis extraction status (not a security result).</summary>
-    public string SourceStatus { get; init; } = "";
-    public bool Latest { get; init; }
-    public bool HasClassificationEvidence { get; init; }
-    public string? EvidenceNote { get; init; }
-}
-
 public sealed record ClassificationCoverageRow(string Id, string Title, ClassificationCoverageState State, string Detail);
 
-/// <summary>Read-only view of Source Analysis for this review: snapshots, related-source candidates and, for a chosen scope, its combined evidence.</summary>
-public sealed record ClassificationScopeOptions
+/// <summary>Read-only view of Source Analysis for this review (shared source options) plus, for a chosen scope, its combined evidence.</summary>
+public sealed record ClassificationScopeOptions : ReviewSourceOptions
 {
-    public List<ClassificationSnapshotOption> Snapshots { get; init; } = [];
-    public List<RelatedSourceCandidate> Candidates { get; init; } = [];
-    public ClassificationSourceScope? Scope { get; init; }
     public ClassificationSourceEvidence? Evidence { get; init; }
     public List<ClassificationCoverageRow> Coverage { get; init; } = [];
-    /// <summary>Newer snapshots of the scope's repositories. Shown, never switched to automatically.</summary>
-    public List<ClassificationSnapshotOption> Newer { get; init; } = [];
-    public string? Error { get; init; }
 }
 
 /// <summary>The security source coverage summary of a source scope. Detected = found in source — never protected, secure or passed.</summary>
@@ -393,7 +342,7 @@ public sealed record ClassificationRunRequest
     public ClassificationCountEvidence? SourceCounts { get; init; }
     public ClassificationCountEvidence? TargetCounts { get; init; }
     /// <summary>The Source Analysis snapshots to review. Null = no source evidence (source/configuration checks from source are then not run).</summary>
-    public ClassificationSourceScopeRequest? SourceScope { get; init; }
+    public ReviewSourceScopeRequest? SourceScope { get; init; }
 }
 
 /// <summary>One safe GraphQL query observation for a configured test child. Derived facts only — no response body is kept.</summary>
@@ -450,7 +399,7 @@ public sealed record ClassificationCheck
     public string Detail { get; init; } = "";
     public IntegrationEvidenceSource Provenance { get; init; }
     public List<SourceLocation> Locations { get; init; } = [];
-    public List<ClassificationSourceRef> Sources { get; init; } = [];
+    public List<ReviewSourceProvenance> Sources { get; init; } = [];
 }
 
 public sealed record ClassificationFinding
@@ -463,7 +412,7 @@ public sealed record ClassificationFinding
     public List<string> Evidence { get; init; } = [];
     public string Recommendation { get; init; } = "";
     /// <summary>The exact source snapshots behind a source finding (a cross-source finding cites each one). Empty for runtime findings and legacy input.</summary>
-    public List<ClassificationSourceRef> Sources { get; init; } = [];
+    public List<ReviewSourceProvenance> Sources { get; init; } = [];
 }
 
 /// <summary>One row of the summary: an area and its state with the kind of evidence behind it.</summary>
@@ -541,7 +490,7 @@ public sealed record ClassificationReviewResult
     public List<string> Limitations { get; init; } = [];
     /// <summary>The exact Source Analysis snapshots this run reviewed. Null for runs without source and for legacy archive-based runs
     /// (those carry <see cref="SourceArchives"/>); no snapshot id is ever invented for them.</summary>
-    public ClassificationSourceScope? SourceScope { get; init; }
+    public ReviewSourceScope? SourceScope { get; init; }
 }
 
 /// <summary>

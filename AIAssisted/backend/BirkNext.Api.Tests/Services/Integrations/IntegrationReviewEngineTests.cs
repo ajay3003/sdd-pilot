@@ -608,6 +608,32 @@ public sealed class IntegrationReviewEngineTests
         system.PlatformChecks.Should().NotContain(c => c.Status == IntegrationCheckStatus.Pass);
     }
 
+    [Fact]
+    public async Task IqrBindsAnExactSourceAnalysisSnapshotToAnIntegrationAndNeverALegacyUpload()
+    {
+        await using var db = Db();
+        var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
+        var store = new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db);
+        using var stream = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using var w = new StreamWriter(zip.CreateEntry("P/src/Adapter/Adapter.csproj").Open()); w.Write("<Project/>");
+        }
+        var (snapshot, _) = await store.AnalyzeAsync(DevId, "source-analysis", "M2LB.zip", stream.ToArray());
+        var (legacy, _) = await store.AnalyzeAsync(DevId, "person-adapter", "M2LB.zip", stream.ToArray());
+        var service = new IntegrationReviewService(catalogService, Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance,
+            source: new BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider(store));
+        var integration = (await catalogService.GetAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
+
+        var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV", SourceSelections = [new(integration, snapshot!.Id)] }, "Development", DevUrl);
+        var refuse = () => service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, SourceSelections = [new(integration, legacy!.Id)] }, "Development", DevUrl);
+        var readiness = await service.ReadinessAsync(DevId, "Development", DevUrl);
+
+        run.SourceSnapshots.Should().ContainSingle(s => s.Id == snapshot.Id && s.IntegrationId == integration && s.Archive.Sha256 == snapshot.Archive.Sha256, "bound to the integration it was chosen for");
+        await refuse.Should().ThrowAsync<BirkNext.Api.Services.Integrations.SourceEvidence.InvalidSourceSelectionException>().WithMessage("*nothing is substituted*");
+        readiness.SourceSnapshots.Select(s => s.Id).Should().Equal(new[] { snapshot.Id }, "only Source Analysis snapshots are offered");
+    }
+
     // ── $Default as a configured assumption (seed v4) ──────────────────────────────────────────────────────────────
 
     [Fact]

@@ -10,7 +10,25 @@ public sealed class InvalidSourceSelectionException(string message) : Exception(
 
 public sealed class IqrSourceStore(AppDbContext db)
 {
+    /// <summary>The owner id of snapshots ingested by Source Analysis (the one source-upload entry point). Other owner ids are snapshots an
+    /// earlier version uploaded per integration in Integration Quality Review: kept and readable, never offered for new review scopes.</summary>
+    public const string SourceAnalysisOwner = "source-analysis";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    /// <summary>Source Analysis snapshots of an environment, newest first (deterministic: id breaks ties).</summary>
+    public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceAnalysisAsync(string environmentId, int take = 100, CancellationToken ct = default)
+    {
+        var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.EnvironmentId == environmentId && r.IntegrationId == SourceAnalysisOwner)
+            .OrderByDescending(r => r.AnalyzedAt).ThenByDescending(r => r.Id).Take(take).ToListAsync(ct);
+        return records.Select(r => JsonSerializer.Deserialize<IqrSourceSnapshot>(r.EvidenceJson, Json)!).ToList();
+    }
+
+    /// <summary>Exactly this Source Analysis snapshot of the environment, or null.</summary>
+    public async Task<IqrSourceSnapshot?> FindSourceAnalysisAsync(string environmentId, Guid id, CancellationToken ct = default)
+    {
+        var record = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.EnvironmentId == environmentId && r.IntegrationId == SourceAnalysisOwner, ct);
+        return record is null ? null : JsonSerializer.Deserialize<IqrSourceSnapshot>(record.EvidenceJson, Json);
+    }
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListAsync(string environmentId, CancellationToken ct = default)
     {
         var records = await db.IqrSourceSnapshots.AsNoTracking().Where(r => r.EnvironmentId == environmentId)
@@ -44,6 +62,12 @@ public sealed class IqrSourceStore(AppDbContext db)
         // Classification-relevant observations Security Classification consumes (facts with file:line, read by its own analyzer): captured once
         // here so Security Classification never needs the archive. Source Analysis neither shows nor judges them.
         snapshot = snapshot with { SecurityClassificationEvidence = SecurityClassification.ClassificationSourceAnalyzer.ExtractArchive(name, bytes) };
+        // Integration Quality Review's application-messaging and SCIM observations of this snapshot, read by their own analyzers.
+        snapshot = snapshot with
+        {
+            ApplicationMessagingEvidence = ApplicationMessaging.ApplicationMessagingStore.ExtractSnapshotEvidence(environmentId, name, bytes),
+            ScimEvidence = Scim.ScimEvidenceService.ExtractSnapshotEvidence(environmentId, name, bytes),
+        };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });

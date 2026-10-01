@@ -14,6 +14,10 @@ public sealed class SecurityExpectationDiscoveryController(ISecurityExpectationD
     [HttpGet("source-snapshot")]
     public async Task<ActionResult<BirkNext.Integrations.IqrSourceSnapshot>> Source(string environmentId, CancellationToken ct) =>
         Ok(await service.CurrentSourceAsync(environmentId, ct));
+    /// <summary>Source Analysis snapshots for discovery (metadata, related suggestions, newer snapshots). Read-only.</summary>
+    [HttpGet("source-scope")]
+    public async Task<ActionResult<BirkNext.SourceEvidence.ReviewSourceOptions>> SourceScope(string environmentId, [FromQuery] Guid? primary, [FromQuery] Guid[]? related, CancellationToken ct) =>
+        Ok(await service.SourceScopeAsync(environmentId, primary is { } p ? new BirkNext.SourceEvidence.ReviewSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []] } : null, ct));
     [HttpGet("discovery")]
     public async Task<ActionResult<IReadOnlyList<SecurityExpectationDiscoveryResult>>> List(string environmentId, CancellationToken ct) =>
         Ok(await service.ListAsync(environmentId, ct));

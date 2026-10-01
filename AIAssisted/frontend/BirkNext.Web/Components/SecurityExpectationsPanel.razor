@@ -3,6 +3,7 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using BirkNext.SourceEvidence
 @using Microsoft.Extensions.DependencyInjection
 @inject IServiceProvider Services
 @implements IDisposable
@@ -15,38 +16,20 @@
         <div><dt>Unique source candidates</dt><dd>@(_result is null ? "Not analyzed" : _result.Candidates.Count.ToString())</dd></div>
         <div><dt>Needs review</dt><dd>@(_result is null ? "Not analyzed" : _result.Candidates.Where(c => State(c) is SecurityCandidateState.Detected or SecurityCandidateState.Suggested or SecurityCandidateState.NeedsReview or SecurityCandidateState.Conflict).Select(c => c.FieldType).Distinct().Count().ToString())</dd></div>
         <div><dt>Supporting evidence</dt><dd>@(_result?.SupportingEvidenceCount.ToString() ?? "Not analyzed")</dd></div>
-        <div><dt>Source snapshot</dt><dd data-testid="sec-snapshot">@(_selected?.Archive.FileName ?? _result?.SourceDisplayName ?? "Unavailable") · @Short(_selected?.Archive.Sha256 ?? _result?.SourceFingerprint ?? "")</dd></div>
+        <div><dt>Source snapshot</dt><dd data-testid="sec-snapshot">@(Selected?.ArchiveName ?? _result?.SourceDisplayName ?? "Not selected") · @Short(Selected?.Fingerprint ?? _result?.SourceFingerprint ?? "")</dd></div>
     </dl>
     <div class="sec-actions">
-        <button type="button" class="btn-primary" data-testid="sec-discover" disabled="@(_busy || _selected is null || Api is null)" @onclick="DiscoverAsync">Refresh candidates</button>
+        <button type="button" class="btn-primary" data-testid="sec-discover" disabled="@(_busy || !_scope.Resolved || Api is null)" @onclick="DiscoverAsync">Refresh candidates</button>
         <button type="button" class="btn-secondary" aria-expanded="@(_reviewOpen ? "true" : "false")" aria-controls="sec-review" disabled="@(_result is null)" @onclick="() => _reviewOpen = !_reviewOpen">Review detected values</button>
     </div>
-    <p class="sec-muted">Analyzed @(_selected?.AnalyzedAt.ToUniversalTime().ToString("u") ?? _result?.SourceAnalyzedAt?.ToUniversalTime().ToString("u") ?? "Unknown (legacy discovery)") · Source Analysis: @_selected?.Status</p>
-    @if (_sources.Count > 0)
-    {
-    <label for="sec-source">Change source snapshot</label>
-    <select id="sec-source" value="@_selected?.Id" @onchange="ChangeSnapshot">
-        @foreach (var source in _sources) { <option value="@source.Id">@source.Archive.FileName · @Short(source.Archive.Sha256) · @source.AnalyzedAt.ToUniversalTime().ToString("u")</option> }
-    </select>
-    }
-    <a href="/source-analysis">Open Source Analysis</a>
-    @if (_sources.Count > 1)
-    {
-        <details><summary>Optional related source snapshots</summary>
-        <p>Include only sources relevant to this review. Related sources are never included automatically.</p>
-        @foreach (var source in _sources.Where(s => s.Id != _selected?.Id))
-        {
-            <label><input type="checkbox" checked="@_related.Contains(source.Id)" @onchange="e => ChangeRelated(source.Id, e.Value is true)" /> @source.Archive.FileName · @Short(source.Archive.Sha256)</label>
-        }
-        </details>
-    }
-    @if (_current is not null && _selected is not null && _current.Id != _selected.Id && _current.AnalyzedAt > _selected.AnalyzedAt)
-    {
-        <p>Newer source snapshot available: @_current.Archive.FileName · @Short(_current.Archive.Sha256)</p>
-        <button type="button" @onclick="() => SelectSnapshot(_current)">Review newer snapshot</button>
-        <button type="button" @onclick="KeepSnapshot">Keep current snapshot</button>
-    }
-    @if (_current is null) { <p class="sec-muted">No Source Analysis snapshot is available for this Target Environment. <a href="/source-analysis">Open Source Analysis</a> to analyze source.</p> }
+    <p class="sec-muted">Analyzed @(Selected?.AnalyzedAt.ToUniversalTime().ToString("u") ?? _result?.SourceAnalyzedAt?.ToUniversalTime().ToString("u") ?? "Unknown (legacy discovery)") · Source Analysis: @(Selected?.SourceStatus ?? "—")</p>
+    <SourceEvidencePrerequisite State="_scope" Prefix="sec" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" ConsumerName="Security Expectations" EmptyHeadingLevel="4"
+                                OtherSectionsNote="Approved expectations stay visible and editable without a snapshot; only source candidates need one.">
+        <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="sec" Busy="_busy" Label="Source snapshot for candidates" MissingEvidenceLabel="no expectation evidence" OnPrimaryChanged="PrimaryChangedAsync" />
+        <ReviewSourceScopePanel State="_scope" Prefix="sec" Busy="_busy" EvidenceLabel="Expectation evidence" MissingEvidenceLabel="no expectation evidence" AllowManualRelated="true"
+                                RelatedExplanation="Suggested when the primary references a source that yields expectation candidates of its own (shared identity or auth configuration). Include only sources relevant to this review."
+                                OnScopeChanged="ScopeChangedAsync" OnChangeSnapshot="FocusSelectorAsync" />
+    </SourceEvidencePrerequisite>
     @if (Editable) { <p class="sec-muted">Save or cancel manual edits before accepting or rejecting source candidates.</p> }
     <p class="sec-status" role="status" aria-live="polite" tabindex="-1" @ref="_statusRef" data-testid="sec-status">@_status</p>
     @if (_error is not null) { <p role="alert" class="sec-error">@_error</p> }
@@ -96,7 +79,7 @@
                             {
                                 var provenance = Settings.Origins.LastOrDefault(p => p.FieldType == field && p.NormalizedValue == SecurityExpectationValues.Normalize(field, value));
                                 <li>@SafeText(value) <span class="sec-state">@OriginLabel(SecurityExpectationValues.Origin(Settings, field, value))</span>
-                                    @if (provenance?.SourceSnapshotId is { } snapshot && snapshot != _current?.Id) { <span class="sec-muted">Source evidence is from an older snapshot; expectation remains approved.</span> }
+                                    @if (provenance?.SourceSnapshotId is { } snapshot && snapshot != _scope.Current?.SnapshotId) { <span class="sec-muted">Source evidence is from an older snapshot; expectation remains approved.</span> }
                                 </li>
                             }
                         </ul>
@@ -167,17 +150,32 @@
     [Parameter] public RenderFragment? Defaults { get; set; }
     private ISecurityExpectationApi? Api => Services.GetService<ISecurityExpectationApi>();
     private string? _loadedEnvironment;
-    private IqrSourceSnapshot? _current, _selected;
-    private IReadOnlyList<IqrSourceSnapshot> _sources = [];
-    private readonly HashSet<Guid> _related = [];
-    private void ChangeRelated(Guid id, bool include) { if(include) _related.Add(id); else _related.Remove(id); _result = null; _expandedField = null; }
+    /// <summary>The source scope for candidate discovery (shared source components; the current snapshot is offered, never chosen silently).</summary>
+    private readonly ReviewSourceScopeState _scope = new();
+    private SourceSnapshotSelector? _selector;
+    private ReviewSourceSnapshot? Selected => _scope.Primary;
+    private async Task FocusSelectorAsync() { if (_selector is not null) await _selector.FocusAsync(); }
+    private async Task ReloadScopeAsync()
+    {
+        if (Api is null) return;
+        try { _scope.Options = await Api.SourceScopeAsync(EnvironmentId, _scope.Request); }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error = "Source Analysis snapshots could not be loaded; approved expectations are unchanged."; }
+    }
+    /// <summary>Related sources changed: the previous discovery no longer matches the scope.</summary>
+    private async Task ScopeChangedAsync() { _result = null; _expandedField = null; await ReloadScopeAsync(); }
+    /// <summary>A snapshot was chosen: show its latest stored discovery (with that discovery's related sources) if there is one.</summary>
+    private async Task PrimaryChangedAsync(Guid? id)
+    {
+        _result = id is null ? null : _history.FirstOrDefault(r => r.SourceSnapshotId == id);
+        foreach (var related in _result?.SourceScope?.RelatedSourceSnapshotIds ?? [])
+            if (_scope.Snapshots.FirstOrDefault(s => s.SnapshotId == related) is { } s) _scope.Include(s.RepositoryKey, related);
+        _expandedField = null;
+        await ReloadScopeAsync();
+    }
     private SecurityExpectationField? _expandedField;
     private readonly HashSet<string> _evidenceOpen = [];
     private void ToggleEvidence(string id) { if (!_evidenceOpen.Add(id)) _evidenceOpen.Remove(id); }
     private static string Short(string fingerprint) => fingerprint[..Math.Min(8, fingerprint.Length)];
-    private void KeepSnapshot() => _status = "Kept selected source snapshot. Approved expectations are unchanged.";
-    private void SelectSnapshot(IqrSourceSnapshot source) { _selected = source; _related.Clear(); _result = _history.FirstOrDefault(r => r.SourceSnapshotId == source.Id); foreach(var id in _result?.SourceScope?.RelatedSourceSnapshotIds ?? []) _related.Add(id); _expandedField = null; }
-    private void ChangeSnapshot(ChangeEventArgs e) { var source = _sources.FirstOrDefault(s => s.Id.ToString() == e.Value?.ToString()); if(source is not null) SelectSnapshot(source); }
     private SecurityExpectationDiscoveryResult? _result;
     private IReadOnlyList<SecurityExpectationDiscoveryResult> _history = [];
     private bool _busy, _reviewOpen;
@@ -185,7 +183,7 @@
     private string _status = "";
     private string? _error;
     private ElementReference _statusRef;
-    private bool IsCurrent => _result is not null && _result.IsCurrent && (_selected is null || _result.SourceSnapshotId == _selected.Id);
+    private bool IsCurrent => _result is not null && _result.IsCurrent && (_scope.PrimaryId is null || _result.SourceSnapshotId == _scope.PrimaryId);
     private int ApprovedCount => Enum.GetValues<SecurityExpectationField>().Sum(f => SecurityExpectationValues.Values(Settings, f).Count());
     private static readonly (string Key, string Label, SecurityExpectationField[] Fields)[] Groups = [
         ("identity", "Identity expectations", [SecurityExpectationField.Authority, SecurityExpectationField.TenantId, SecurityExpectationField.ClientId, SecurityExpectationField.RedirectUrl]),
@@ -194,7 +192,7 @@
     protected override async Task OnParametersSetAsync()
     {
         if(_loadedEnvironment == EnvironmentId) return;
-        _loadedEnvironment = EnvironmentId; _result = null; _current = null; _selected = null; _expandedField = null; _related.Clear(); _sources = []; _history = []; _status = ""; _error = null;
+        _loadedEnvironment = EnvironmentId; _result = null; _scope.PickPrimary(null); _scope.Options = null; _expandedField = null; _history = []; _status = ""; _error = null;
         if(Api is null) return;
         try { await LoadAsync(); }
         catch(Exception e) when(e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error = "Source discovery is unavailable; approved expectations are unchanged."; }
@@ -202,14 +200,26 @@
     private async Task LoadAsync()
     {
         var env = EnvironmentId;
-        var initialLoad = _sources.Count == 0 && _result is null;
-        var sources = await Api!.SourcesAsync(env);
-        var history = await Api.HistoryAsync(env);
+        var initialLoad = _scope.Options is null && _result is null;
+        var history = await Api!.HistoryAsync(env);
+        var options = await Api.SourceScopeAsync(env, null);
         if(env != EnvironmentId) return;
-        _sources = sources; _current = sources.FirstOrDefault(); _history = history;
+        _history = history;
         _result ??= history.FirstOrDefault();
-        _selected ??= sources.FirstOrDefault(s => s.Id == _result?.SourceSnapshotId) ?? (_result is null ? _current : null);
-        if (initialLoad) foreach (var id in _result?.SourceScope?.RelatedSourceSnapshotIds ?? []) _related.Add(id);
+        if (initialLoad)
+        {
+            // The latest discovery's exact scope is proposed again. Without one, this panel's convention preselects the current snapshot —
+            // candidates are still only discovered on an explicit "Refresh candidates" click, and nothing is approved automatically.
+            _scope.Options = options;
+            if (_result is not null && options.Snapshots.Any(s => s.SnapshotId == _result.SourceSnapshotId))
+            {
+                _scope.PickPrimary(_result.SourceSnapshotId);
+                foreach (var related in _result.SourceScope?.RelatedSourceSnapshotIds ?? [])
+                    if (options.Snapshots.FirstOrDefault(s => s.SnapshotId == related) is { } s) _scope.Include(s.RepositoryKey, related);
+            }
+            else if (_result is null && _scope.Current is { } current) _scope.PickPrimary(current.SnapshotId);
+        }
+        _scope.Options = await Api.SourceScopeAsync(env, _scope.Request);
     }
     private bool Valid(SecurityExpectationCandidate c) => SecurityExpectationValues.Normalize(c.FieldType,c.Value) == c.NormalizedValue && c.NormalizedValue.Length > 0 &&
         c.EvidenceState is not (ArchitectureEvidenceState.Unresolved or ArchitectureEvidenceState.Conflict);
@@ -234,8 +244,8 @@
         _busy=true; _error=null;
         try {
             await LoadAsync();
-            if(_selected is null) { _status="No current source snapshot; no approved expectations were changed."; return; }
-            _result=await Api!.DiscoverAsync(EnvironmentId,new(_selected.Id,SecurityExpectationValues.Copy(Settings),_related.ToList()));
+            if(_scope.Request is not { } scope) { _status="No source snapshot selected; no approved expectations were changed."; return; }
+            _result=await Api!.DiscoverAsync(EnvironmentId,new(scope.PrimarySnapshotId,SecurityExpectationValues.Copy(Settings),scope.RelatedSnapshotIds));
             _expandedField = null;
             _history = new[] { _result }.Concat(_history).DistinctBy(r => r.Id).Take(30).ToList();
             _reviewOpen=true;

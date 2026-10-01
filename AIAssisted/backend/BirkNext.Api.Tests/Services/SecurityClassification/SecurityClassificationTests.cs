@@ -777,11 +777,11 @@ public sealed class SecurityClassificationTests
     }
 
     /// <summary>Source Analysis ingests the archive (the only upload path); the review gets its snapshot id.</summary>
-    private static async Task<ClassificationSourceScopeRequest> SnapshotAsync(AppDbContext db, string environmentId = "dev", string name = "M2LB.zip", byte[]? bytes = null)
+    private static async Task<ReviewSourceScopeRequest> SnapshotAsync(AppDbContext db, string environmentId = "dev", string name = "M2LB.zip", byte[]? bytes = null)
     {
         var (snapshot, error) = await new IqrSourceStore(db).AnalyzeAsync(environmentId, "source-analysis", name, bytes ?? Zip(Fixture().Concat(Docs)));
         error.Should().BeNull();
-        return new ClassificationSourceScopeRequest { PrimarySnapshotId = snapshot!.Id };
+        return new ReviewSourceScopeRequest { PrimarySnapshotId = snapshot!.Id };
     }
 
     [Fact]

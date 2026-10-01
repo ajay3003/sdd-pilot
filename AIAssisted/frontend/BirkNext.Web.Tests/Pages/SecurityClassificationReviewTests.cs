@@ -26,13 +26,13 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         public ClassificationRunRequest? LastRun { get; private set; }
         public ClassificationTestContext? Saved { get; private set; }
         public Task<ClassificationOverview> OverviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(Overview);
-        public List<ClassificationSnapshotOption> Snapshots { get; set; } = [AppOld, App, Shared];
+        public List<ReviewSourceSnapshot> Snapshots { get; set; } = [AppOld, App, Shared];
         public List<RelatedSourceCandidate> Candidates { get; set; } = [];
-        public List<ClassificationSnapshotOption> Newer { get; set; } = [];
+        public List<ReviewSourceSnapshot> Newer { get; set; } = [];
         public string? ScopeError { get; set; }
-        public List<ClassificationSourceScopeRequest?> ScopeRequests { get; } = [];
+        public List<ReviewSourceScopeRequest?> ScopeRequests { get; } = [];
         /// <summary>Mirrors the backend: read-only, the exact snapshots asked for, related sources only when asked for.</summary>
-        public Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default)
+        public Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default)
         {
             ScopeRequests.Add(scope);
             var options = new ClassificationScopeOptions { Snapshots = Snapshots, Coverage = ClassificationSourceCoverage.Rows(null) };
@@ -40,7 +40,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
             if (ScopeError is not null) return Task.FromResult(options with { Candidates = Candidates, Error = ScopeError });
             var selected = new[] { scope.PrimarySnapshotId }.Concat(scope.RelatedSnapshotIds).Select(id => Snapshots.First(s => s.SnapshotId == id)).ToList();
             var notIncluded = Candidates.Where(c => selected.Skip(1).All(s => s.RepositoryKey != c.RepositoryKey)).ToList();
-            var sourceScope = new ClassificationSourceScope
+            var sourceScope = new ReviewSourceScope
             {
                 Primary = Entry(selected[0]), Related = selected.Skip(1).Select(Entry).ToList(), ExcludedSuggestions = scope.ExcludedSuggestions,
                 Limitations = notIncluded.Select(c => $"Related source detected but not included in this review scope: {c.Repository} (snapshot available).").ToList(),
@@ -76,17 +76,17 @@ public sealed class SecurityClassificationReviewTests : BunitContext
 
     // ── Source Analysis snapshots (generic identities; the M2LB names are pilot data only) ─────────────────────────
 
-    private static ClassificationSnapshotOption Snapshot(string id, string repository, string archive, string fingerprint, string at, string status, bool latest, bool evidence = true) => new()
+    private static ReviewSourceSnapshot Snapshot(string id, string repository, string archive, string fingerprint, string at, string status, bool latest, bool evidence = true) => new()
     {
         SnapshotId = Guid.Parse(id), RepositoryKey = repository.ToLowerInvariant(), Repository = repository, IdentityBasis = "Archive file name", ArchiveName = archive,
         Fingerprint = fingerprint + new string('0', 64 - fingerprint.Length), AnalyzedAt = DateTimeOffset.Parse(at), SourceStatus = status, Latest = latest,
-        HasClassificationEvidence = evidence, EvidenceNote = evidence ? null : "Analyzed before security classification evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot.",
+        HasConsumerEvidence = evidence, ConsumerEvidenceNote = evidence ? null : "Analyzed before security classification evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot.",
     };
-    private static readonly ClassificationSnapshotOption AppOld = Snapshot("bbbbbbbb-0000-0000-0000-000000000001", "M2LB", "M2LB (1).zip", "0ld0ld00", "2026-09-30T07:21:00Z", "Partial", latest: false);
-    private static readonly ClassificationSnapshotOption App = Snapshot("bbbbbbbb-0000-0000-0000-000000000002", "M2LB", "M2LB _2_.zip", "c850a1b2", "2026-10-01T12:30:00Z", "Partial", latest: true);
-    private static readonly ClassificationSnapshotOption Shared = Snapshot("bbbbbbbb-0000-0000-0000-000000000003", "Shared.Security", "Shared.Security.zip", "a91c0000", "2026-10-01T09:00:00Z", "Ready", latest: true);
+    private static readonly ReviewSourceSnapshot AppOld = Snapshot("bbbbbbbb-0000-0000-0000-000000000001", "M2LB", "M2LB (1).zip", "0ld0ld00", "2026-09-30T07:21:00Z", "Partial", latest: false);
+    private static readonly ReviewSourceSnapshot App = Snapshot("bbbbbbbb-0000-0000-0000-000000000002", "M2LB", "M2LB _2_.zip", "c850a1b2", "2026-10-01T12:30:00Z", "Partial", latest: true);
+    private static readonly ReviewSourceSnapshot Shared = Snapshot("bbbbbbbb-0000-0000-0000-000000000003", "Shared.Security", "Shared.Security.zip", "a91c0000", "2026-10-01T09:00:00Z", "Ready", latest: true);
 
-    private static SourceScopeEntry Entry(ClassificationSnapshotOption s) => new()
+    private static SourceScopeEntry Entry(ReviewSourceSnapshot s) => new()
     {
         SnapshotId = s.SnapshotId, RepositoryKey = s.RepositoryKey, Repository = s.Repository, ArchiveName = s.ArchiveName, Fingerprint = s.Fingerprint, AnalyzedAt = s.AnalyzedAt, SourceStatus = s.SourceStatus,
     };
@@ -98,7 +98,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         MatchingSnapshotIds = [Shared.SnapshotId],
     };
 
-    private static ClassificationSourceRef Ref(ClassificationSnapshotOption s, string file, int line) => new() { SnapshotId = s.SnapshotId, Repository = s.Repository, Fingerprint = s.Fingerprint, Locations = [new(file, line)] };
+    private static ReviewSourceProvenance Ref(ReviewSourceSnapshot s, string file, int line) => new() { SnapshotId = s.SnapshotId, Repository = s.Repository, Fingerprint = s.Fingerprint, Locations = [new(file, line)] };
 
     private static readonly List<ClassificationLevel> Levels =
     [
@@ -126,7 +126,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
     private static ClassificationReviewResult Result() => new()
     {
         RunId = Guid.NewGuid(), EnvironmentId = "dev", CompletedAt = DateTimeOffset.UtcNow, Overall = ClassificationOverall.IssueDetected, Levels = Levels,
-        SourceScope = new ClassificationSourceScope { Primary = Entry(App) },
+        SourceScope = new ReviewSourceScope { Primary = Entry(App) },
         Summary =
         [
             new(ClassificationArea.Model, "Classification model", ClassificationState.SourceVerified, "Source evidence only"),
@@ -658,7 +658,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
 
         var empty = cut.Find("[data-testid='sc-source-empty']");
         empty.TextContent.Should().Contain("No source snapshot available").And.Contain("source snapshots managed by Source Analysis");
-        cut.Find("[data-testid='sc-open-source-analysis']").GetAttribute("href").Should().Be("source-analysis");
+        cut.Find("[data-testid='sc-open-source-analysis']").GetAttribute("href").Should().Be("source-analysis?returnTo=security-classification-review");
         cut.FindAll("input[type='file']").Should().BeEmpty();
         cut.Find("[data-item='source']").GetAttribute("data-status").Should().Be("Missing");
         cut.Find("[data-item='source-model']").GetAttribute("data-status").Should().Be("NotAssessed", "nothing to assess is not counted as missing");
@@ -673,7 +673,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         var cut = Page();
 
         cut.Find("[data-testid='sc-source-state']").TextContent.Should().Be("Not selected");
-        _api.ScopeRequests.Should().Equal(new ClassificationSourceScopeRequest?[] { null }, "nothing is selected silently");
+        _api.ScopeRequests.Should().Equal(new ReviewSourceScopeRequest?[] { null }, "nothing is selected silently");
         cut.Find("[data-testid='sc-current-snapshot']").TextContent.Should().Contain("M2LB").And.Contain("M2LB _2_.zip").And.Contain("c850a1b2…");
         cut.FindAll("[data-testid='sc-coverage-row']").Select(r => r.TextContent).Should().OnlyContain(t => t.Contains("Not assessed"));
         cut.FindAll("[data-testid='sc-primary'] option").Select(o => o.TextContent).Should().Contain(o => o.Contains("M2LB (1).zip") && !o.Contains("latest")).And.Contain(o => o.Contains("M2LB _2_.zip") && o.Contains("latest"));
@@ -684,7 +684,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         _api.ScopeRequests.Last()!.PrimarySnapshotId.Should().Be(App.SnapshotId);
         cut.Find("[data-testid='sc-source-state']").TextContent.Should().Be("Selected");
         cut.Find("[data-testid='sc-primary-fingerprint']").GetAttribute("title").Should().Be(App.Fingerprint);
-        cut.Find("[data-testid='sc-primary-status']").TextContent.Should().Contain("Partial").And.Contain("not a security result");
+        cut.Find("[data-testid='sc-primary-status']").TextContent.Should().Contain("Partial").And.Contain("not a review result");
         cut.Find("[data-testid='sc-coverage-row'][data-row='model']").TextContent.Should().Contain("Detected").And.Contain("4 level(s)");
         cut.Find("[data-testid='sc-coverage-row'][data-row='runtime']").TextContent.Should().Contain("Not assessed");
         cut.Find("[data-testid='sc-coverage-note']").TextContent.Should().Be("Source evidence shows implementation/configuration paths only. It does not prove runtime enforcement.");
@@ -707,7 +707,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
     [Fact]
     public void PreviousScopeIsKeptAndANewerSnapshotIsOnlyOffered()
     {
-        _api.Overview = new ClassificationOverview { Latest = Result() with { SourceScope = new ClassificationSourceScope { Primary = Entry(AppOld) } } };
+        _api.Overview = new ClassificationOverview { Latest = Result() with { SourceScope = new ReviewSourceScope { Primary = Entry(AppOld) } } };
         _api.Newer = [App];
         var cut = Page();
 
@@ -725,14 +725,14 @@ public sealed class SecurityClassificationReviewTests : BunitContext
     [Fact]
     public void ReviewChangeSwitchesOnlyWhenAsked()
     {
-        _api.Overview = new ClassificationOverview { Latest = Result() with { SourceScope = new ClassificationSourceScope { Primary = Entry(AppOld) } } };
+        _api.Overview = new ClassificationOverview { Latest = Result() with { SourceScope = new ReviewSourceScope { Primary = Entry(AppOld) } } };
         _api.Newer = [App];
         var cut = Page();
 
         cut.Find("[data-testid='sc-review-newer']").Click();
 
         _api.ScopeRequests.Last()!.PrimarySnapshotId.Should().Be(App.SnapshotId);
-        cut.Find("[data-testid='sc-status']").TextContent.Should().Contain("c850a1b2…");
+        cut.Find("[data-testid='sc-primary']").GetAttribute("value").Should().Be(App.SnapshotId.ToString(), "switched only on the explicit action");
     }
 
     [Fact]
@@ -742,7 +742,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         var cut = PageWithSource();
 
         var candidate = cut.Find("[data-testid='sc-related-candidate']");
-        candidate.TextContent.Should().Contain("Related source detected: Shared.Security").And.Contain("Suggested").And.Contain("Snapshot available");
+        candidate.TextContent.Should().Contain("Related source suggested: Shared.Security").And.Contain("Suggested").And.Contain("Snapshot available");
         cut.Find("[data-testid='sc-related-reason']").TextContent.Should().Be("Declares a classification type the primary source uses.");
         cut.Find("[data-testid='sc-related-evidence']").TextContent.Should().Contain("Type reference").And.Contain("CdcEvent");
         candidate.TextContent.Should().Contain("a91c0000…");
@@ -797,7 +797,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         var cut = PageWithSource();
 
         cut.Find("[data-testid='sc-related-state']").TextContent.Should().Be("No analyzed snapshot");
-        cut.Find("[data-testid='sc-related-missing']").TextContent.Should().Contain("No analyzed source snapshot").And.Contain("recorded as a limitation");
+        cut.Find("[data-testid='sc-related-missing']").TextContent.Should().Contain("No analyzed Source Analysis snapshot").And.Contain("recorded as a limitation");
         cut.Find("[data-testid='sc-related-open-source-analysis']").GetAttribute("href").Should().Be("source-analysis");
         cut.FindAll("[data-testid='sc-related-include']").Should().BeEmpty("nothing to include, and nothing uploaded here");
     }
@@ -817,7 +817,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
     [Fact]
     public void ScopeErrorBlocksTheRunUntilRepaired()
     {
-        _api.Overview = new ClassificationOverview { Latest = Result() with { SourceScope = new ClassificationSourceScope { Primary = Entry(AppOld) } } };
+        _api.Overview = new ClassificationOverview { Latest = Result() with { SourceScope = new ReviewSourceScope { Primary = Entry(AppOld) } } };
         _api.ScopeError = "Source snapshot bbbbbbbb-0000-0000-0000-000000000001 is unavailable in Source Analysis. Repair the source scope; nothing is substituted.";
         var cut = Page();
 
@@ -844,7 +844,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
     {
         _api.Overview = new ClassificationOverview
         {
-            Latest = Result() with { SourceScope = new ClassificationSourceScope { Primary = Entry(App), Related = [Entry(Shared)], Limitations = ["Related source detected but not included in this review scope: Other (no analyzed snapshot)."] } },
+            Latest = Result() with { SourceScope = new ReviewSourceScope { Primary = Entry(App), Related = [Entry(Shared)], Limitations = ["Related source detected but not included in this review scope: Other (no analyzed snapshot)."] } },
         };
         var cut = Page();
 
@@ -898,7 +898,7 @@ public sealed class SecurityClassificationReviewTests : BunitContext
         runtime.QuerySelectorAll("[data-testid='sc-primary'], [data-testid='sc-coverage-summary']").Should().BeEmpty();
         cut.Find("[data-testid='sc-primary']").ParentElement!.TagName.Should().Be("LABEL", "the snapshot selector has a visible label");
         cut.Find("[data-testid='sc-refresh-source']").TextContent.Should().Be("Refresh source evidence");
-        cut.Find("[data-testid='sc-change-snapshot']").TextContent.Should().Be("Change source snapshot");
+        cut.Find("[data-testid='sc-change-snapshot']").TextContent.Should().Be("Change snapshot");
         cut.Markup.Should().NotContain("Repository tests (M2LB)");
     }
 

@@ -20,13 +20,13 @@ public sealed class DependencyReviewPageTests : BunitContext
         public DependencyReviewResult? Result { get; set; }
         public List<DependencyReviewRunSummary> History { get; } = [];
         public SourceDependencyReviewRequest? LastSourceRequest { get; private set; }
-        public SourceScopeOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
+        public ReviewSourceOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
         public List<RelatedSourceCandidate> Candidates { get; set; } = [SourceScopeFixture.CommonCandidate];
         public PolicySimulationRequest? LastSimulation { get; private set; }
         public string? SimulationError { get; set; }
 
-        public Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) =>
-            Task.FromResult(primarySnapshotId is null ? Options : Options with { Candidates = Candidates });
+        public Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) =>
+            Task.FromResult(SourceScopeFixture.Resolve(Options, scope, Candidates));
         public Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)
         {
             LastSourceRequest = request;

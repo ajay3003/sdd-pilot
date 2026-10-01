@@ -14,6 +14,10 @@
 <PageTitle>Source Analysis</PageTitle>
 <div class="sa-page">
     <PageHeader Title="Source Analysis" Description="Architecture and database design derived from uploaded source snapshots." />
+    @if (ReturnTarget is { } back)
+    {
+        <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
+    }
     <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
     @if (_error is not null) { <p class="sa-error" role="alert" data-testid="sa-error">@_error</p> }
     @if (_profile is null)
@@ -157,6 +161,16 @@
     }
 </div>
 @code {
+    /// <summary>The review that sent the user here (an allow-listed internal route identifier — never an arbitrary URL).</summary>
+    [SupplyParameterFromQuery(Name = "returnTo")] public string? ReturnTo { get; set; }
+    private static readonly Dictionary<string, string> ReturnTargets = new(StringComparer.Ordinal)
+    {
+        ["dependency-review"] = "Dependency Review",
+        ["security-classification-review"] = "Security Classification",
+        ["integration-quality-review"] = "Integration Quality Review",
+    };
+    private (string Route, string Label)? ReturnTarget => ReturnTo is { } key && ReturnTargets.TryGetValue(key, out var label) ? (key, label) : null;
+
     private static readonly string[] Areas = ["Overview", "Architecture", "Database"];
     private string _area = "Overview";
     private string? _focusDatabase;

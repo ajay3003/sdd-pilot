@@ -504,4 +504,50 @@ public sealed class ApplicationMessagingEvidenceTests
                 $"{Path.GetFileName(file)} is read-only");
         }
     }
+
+    // ── Source Analysis owns the archive; application messaging consumes its snapshots ─────────────────────────────
+
+    [Fact]
+    public async Task MessagingEvidenceIsBuiltFromExactSourceAnalysisSnapshotsWithTheSameResultAsTheArchive()
+    {
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var sources = new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db);
+        var (snapshot, error) = await sources.AnalyzeAsync("dev", "source-analysis", "adapter.zip", Zip(Adapter));
+        error.Should().BeNull();
+        snapshot!.ApplicationMessagingEvidence.Should().NotBeNull("Source Analysis captures this review's observations at upload");
+        var store = new ApplicationMessagingStore(db, NullLogger<ApplicationMessagingStore>.Instance);
+
+        var options = await store.SourceScopeAsync("dev", null);
+        var (set, useError) = await store.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = snapshot.Id });
+
+        options.Snapshots.Should().ContainSingle(s => s.SnapshotId == snapshot.Id && s.HasConsumerEvidence && s.ConsumerSummary!.Contains("application(s)"));
+        useError.Should().BeNull();
+        var direct = WolverineSourceAnalyzer.Analyze("dev", [snapshot.Archive], SourceArchiveReader.Read("adapter.zip", Zip(Adapter)).Files, DateTimeOffset.UtcNow);
+        set!.Applications.Select(a => (a.ApplicationId, a.Detection, a.Handlers.Count, a.Routes.Count)).Should().Equal(direct.Applications.Select(a => (a.ApplicationId, a.Detection, a.Handlers.Count, a.Routes.Count)));
+        set.SourceScope!.Primary.Should().Match<BirkNext.SourceEvidence.SourceScopeEntry>(e => e.SnapshotId == snapshot.Id && e.Fingerprint == snapshot.Archive.Sha256);
+        (await store.GetAsync("dev"))!.SourceScope!.Primary.SnapshotId.Should().Be(snapshot.Id);
+        (await store.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = Guid.NewGuid() })).Error.Should().Contain("nothing is substituted");
+    }
+
+    [Fact]
+    public async Task MessagingRefusesSnapshotsWithoutItsEvidenceAndHonoursSourceAnalysisVisibility()
+    {
+        await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+        var store = new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db);
+        var (snapshot, _) = await store.AnalyzeAsync("dev", "source-analysis", "adapter.zip", Zip(Adapter));
+        var record = db.IqrSourceSnapshots.Single();
+        db.IqrSourceSnapshots.Remove(record);
+        db.IqrSourceSnapshots.Add(new BirkNext.Api.Models.IqrSourceSnapshotRecord { Id = record.Id, EnvironmentId = record.EnvironmentId, IntegrationId = record.IntegrationId, AnalyzedAt = record.AnalyzedAt,
+            EvidenceJson = JsonSerializer.Serialize(snapshot! with { ApplicationMessagingEvidence = null }, new JsonSerializerOptions(JsonSerializerDefaults.Web)) }); // analyzed before the evidence existed
+        await db.SaveChangesAsync();
+
+        var messaging = new ApplicationMessagingStore(db, NullLogger<ApplicationMessagingStore>.Instance);
+        (await messaging.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = snapshot.Id })).Error.Should().Contain("Analyze the archive again in Source Analysis");
+        var hidden = new ApplicationMessagingStore(db, NullLogger<ApplicationMessagingStore>.Instance, new BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider(store, sourceAnalysisEnabled: false));
+        (await hidden.SourceScopeAsync("dev", null)).Should().Match<BirkNext.SourceEvidence.ReviewSourceOptions>(o => !o.SourceAnalysisEnabled && o.Snapshots.Count == 0);
+        (await hidden.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = snapshot.Id })).Error.Should().Contain("Source Analysis is disabled");
+        db.IqrSourceSnapshots.Should().ContainSingle("hiding Source Analysis deletes nothing");
+        typeof(BirkNext.Api.Controllers.ApplicationMessagingController).GetMethods().SelectMany(m => m.GetCustomAttributes(typeof(Microsoft.AspNetCore.Mvc.HttpPostAttribute), false).Cast<Microsoft.AspNetCore.Mvc.HttpPostAttribute>())
+            .Select(a => a.Template).Should().Equal(new[] { "source-scope" }, "the archive upload endpoint is gone");
+    }
 }

@@ -185,6 +185,7 @@ public sealed class SecurityExpectationDiscoveryTests
         using var db=Db();
         var a=Snapshot(SecurityExpectationField.Authority,"https://identity.example.test/a");
         var b=Snapshot(SecurityExpectationField.Authority,different ? "https://identity.example.test/b" : "https://identity.example.test/a");
+        b=b with {Archive=b.Archive with {FileName="Shared.Identity.zip"}}; // a related source is another repository (one snapshot per repository)
         await Insert(db,a); await Insert(db,b);
         var service=new SecurityExpectationDiscoveryService(db);
         var primary=await service.DiscoverAsync("qa",new(a.Id,new())); primary.Candidates.Should().HaveCount(1);

@@ -1,0 +1,67 @@
+@* The shared source-evidence gate of a source-aware review. Guidance only: it says whether Source Analysis snapshots can be chosen and points
+   to Source Analysis (the one place source is uploaded). It never interprets a review result, never shows an upload control, and never
+   blocks more than the review's source-based part. Direct consumers use RequiredForSourceChecks; optional ones OptionalEnrichment. *@
+<div class="rse-gate rse-@Requirement" data-testid="@($"{Prefix}-source-gate")" data-state="@StateName">
+    @if (ShowStatusLine)
+    {
+        <p class="rse-line"><strong>@Title</strong> <span class="rse-badge rse-badge-@Tone" data-testid="@($"{Prefix}-source-state")">@StateLabel</span>
+            <span class="rse-muted">@(Requirement == ReviewSourceRequirement.RequiredForSourceChecks ? "Required for source checks" : "Optional — the review runs without it")</span></p>
+    }
+    @if (!SourceAnalysisEnabled)
+    {
+        <p class="rse-muted" role="note" data-testid="@($"{Prefix}-source-disabled")">Source Analysis is disabled in Feature Visibility, so its snapshots are not offered here@(Requirement == ReviewSourceRequirement.RequiredForSourceChecks ? " and source-based checks are not run" : "")@(DisabledDetail is null ? "" : $". {DisabledDetail}"). Stored reviews remain readable; no snapshot or result is removed.</p>
+    }
+    else if (State.Options is null)
+    {
+        <p class="rse-muted" role="status" data-testid="@($"{Prefix}-source-loading")">@(LoadError ?? "Loading Source Analysis snapshots…")</p>
+    }
+    else if (State.Snapshots.Count == 0)
+    {
+        <div class="rse-empty" data-testid="@($"{Prefix}-source-empty")">
+            @if (EmptyHeadingLevel == 4) { <h4>No source snapshot available</h4> } else { <h3>No source snapshot available</h3> }
+            <p class="rse-muted">@(Requirement == ReviewSourceRequirement.RequiredForSourceChecks
+                ? $"{ConsumerName} uses source snapshots managed by Source Analysis. This source-based part needs an analyzed snapshot; analyze the repository archive in Source Analysis and choose it here."
+                : $"Source enrichment is not available: no Source Analysis snapshot exists. {ConsumerName} runs without it.")</p>
+            @if (OtherSectionsNote is not null) { <p class="rse-muted" data-testid="@($"{Prefix}-source-other-sections")">@OtherSectionsNote</p> }
+            <div class="rse-actions"><a class="btn-secondary" href="@SourceAnalysisHref" data-testid="@($"{Prefix}-open-source-analysis")">@ReviewSourceScopes.OpenSourceAnalysis</a></div>
+        </div>
+    }
+    else
+    {
+        @ChildContent
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ReviewSourceScopeState State { get; set; } = new();
+    [Parameter] public ReviewSourceRequirement Requirement { get; set; } = ReviewSourceRequirement.RequiredForSourceChecks;
+    [Parameter] public bool SourceAnalysisEnabled { get; set; } = true;
+    [Parameter] public string Prefix { get; set; } = "src";
+    [Parameter] public string Title { get; set; } = "Source evidence";
+    /// <summary>The review's name in guidance sentences, e.g. "Dependency Review".</summary>
+    [Parameter] public string ConsumerName { get; set; } = "This review";
+    /// <summary>What else on the page stays usable without source (direct consumers).</summary>
+    [Parameter] public string? OtherSectionsNote { get; set; }
+    [Parameter] public string? DisabledDetail { get; set; }
+    [Parameter] public string? LoadError { get; set; }
+    /// <summary>The internal route identifier Source Analysis offers to return to (allow-listed there; never an arbitrary URL).</summary>
+    [Parameter] public string? ReturnTo { get; set; }
+    [Parameter] public bool ShowStatusLine { get; set; } = true;
+    [Parameter] public int EmptyHeadingLevel { get; set; } = 3;
+    /// <summary>A related source the consumer truly cannot do without is missing (rare; most related sources are optional).</summary>
+    [Parameter] public bool RequiredRelatedUnavailable { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string SourceAnalysisHref => ReturnTo is null ? ReviewSourceScopes.SourceAnalysisRoute : $"{ReviewSourceScopes.SourceAnalysisRoute}?returnTo={Uri.EscapeDataString(ReturnTo)}";
+    private ReviewSourceGateState Gate => State.Gate(SourceAnalysisEnabled, RequiredRelatedUnavailable);
+    private string StateName => Requirement == ReviewSourceRequirement.RequiredForSourceChecks ? Gate.ToString()
+        : ReviewSourceScopes.Optional(SourceAnalysisEnabled, State.Snapshots.Count, State.Resolved).ToString();
+    private string StateLabel => Requirement == ReviewSourceRequirement.RequiredForSourceChecks ? ReviewSourceScopes.GateLabel(Gate)
+        : ReviewSourceScopes.OptionalLabel(ReviewSourceScopes.Optional(SourceAnalysisEnabled, State.Snapshots.Count, State.Resolved));
+    private string Tone => Gate switch
+    {
+        ReviewSourceGateState.Selected or ReviewSourceGateState.NewerSnapshotAvailable or ReviewSourceGateState.RelatedSourceSuggested => "info",
+        ReviewSourceGateState.SelectedSnapshotUnavailable or ReviewSourceGateState.RequiredRelatedSourceUnavailable => "attention",
+        _ => "muted",
+    };
+}

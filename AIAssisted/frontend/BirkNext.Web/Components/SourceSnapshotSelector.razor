@@ -1,0 +1,49 @@
+@* Chooses the exact primary Source Analysis snapshot. The newest usable snapshot is offered ("Use this snapshot"), never chosen silently. *@
+@if (State.PrimaryId is null && State.Current is { } current)
+{
+    <div class="rse-suggest" data-testid="@($"{Prefix}-current-snapshot")">
+        <span>Current Source Analysis snapshot: <strong>@current.Repository</strong> · <span class="rse-wrap">@current.ArchiveName</span> · <code title="@current.Fingerprint">@ReviewSourceScopes.Short(current.Fingerprint)</code> · Source Analysis: @current.SourceStatus</span>
+        <span class="rse-actions">
+            <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-use-current")" disabled="@Busy" @onclick="() => PickAsync(current.SnapshotId)">Use this snapshot</button>
+            <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-choose-another")" @onclick="FocusAsync">Choose another</button>
+        </span>
+    </div>
+}
+<label class="rse-field rse-primary-field">@Label
+    <select @ref="_select" id="@SelectId" class="form-control" data-testid="@($"{Prefix}-primary")" value="@(State.PrimaryId?.ToString() ?? "")" disabled="@Busy"
+            @onchange="e => PickAsync(Guid.TryParse(e.Value?.ToString(), out var id) ? id : null)">
+        <option value="">Choose source snapshot (none selected)</option>
+        @foreach (var group in State.Snapshots.GroupBy(s => s.Repository))
+        {
+            <optgroup label="@group.Key">@foreach (var s in group) { <option value="@s.SnapshotId">@ReviewSourceScopeState.Option(s, MissingEvidenceLabel)</option> }</optgroup>
+        }
+    </select>
+</label>
+
+@code {
+    [Parameter, EditorRequired] public ReviewSourceScopeState State { get; set; } = new();
+    [Parameter] public string Prefix { get; set; } = "src";
+    [Parameter] public string Label { get; set; } = "Primary source snapshot";
+    /// <summary>How an option says the snapshot lacks this review's evidence (e.g. "no dependency evidence").</summary>
+    [Parameter] public string? MissingEvidenceLabel { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    /// <summary>Optional element id, for actions elsewhere on the page that move focus here.</summary>
+    [Parameter] public string? SelectId { get; set; }
+    /// <summary>Raised after the primary changed (the page reloads its options for the new scope).</summary>
+    [Parameter] public EventCallback<Guid?> OnPrimaryChanged { get; set; }
+
+    private ElementReference _select;
+    /// <summary>The snapshot select, for pages that move focus to it (e.g. a "next step" action).</summary>
+    public ElementReference SelectElement => _select;
+
+    private async Task PickAsync(Guid? id)
+    {
+        State.PickPrimary(id);
+        await OnPrimaryChanged.InvokeAsync(id);
+    }
+
+    public async Task FocusAsync()
+    {
+        try { await _select.FocusAsync(); } catch (Exception ex) when (ex is Microsoft.JSInterop.JSException or InvalidOperationException) { }
+    }
+}

@@ -9,7 +9,7 @@ public interface IClassificationReviewApiService
 {
     Task<ClassificationOverview> OverviewAsync(string environmentId, CancellationToken ct = default);
     /// <summary>Source Analysis snapshots for this review and, for a selected scope, its candidates and combined evidence (read-only).</summary>
-    Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default);
+    Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     Task<(ClassificationTestContext? Context, string? Error)> SaveContextAsync(string environmentId, ClassificationTestContext context, CancellationToken ct = default);
     /// <summary>Clears the temporary in-memory test context on the backend (no stored review is touched).</summary>
     Task ClearContextAsync(string environmentId, CancellationToken ct = default);
@@ -26,7 +26,7 @@ public sealed class ClassificationReviewApiService(HttpClient http) : IClassific
     public async Task<ClassificationOverview> OverviewAsync(string environmentId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<ClassificationOverview>($"api/security-classification?{Env(environmentId)}", Json, ct) ?? new ClassificationOverview();
 
-    public async Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default)
+    public async Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default)
     {
         var query = Env(environmentId);
         if (scope is not null)

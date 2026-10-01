@@ -3,6 +3,7 @@ using System.Text.Json;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
+using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.Api.Services.SecurityClassification;
 using BirkNext.Dependencies;
 using BirkNext.Integrations;
@@ -171,7 +172,7 @@ public sealed class SecurityClassificationSourceScopeTests
         return (new ClassificationReviewService(db, probe, new ClassificationTestContextStore(), NullLogger<ClassificationReviewService>.Instance), probe);
     }
 
-    private static ClassificationSourceScopeRequest Scope(IqrSourceSnapshot primary, params IqrSourceSnapshot[] related) =>
+    private static ReviewSourceScopeRequest Scope(IqrSourceSnapshot primary, params IqrSourceSnapshot[] related) =>
         new() { PrimarySnapshotId = primary.Id, RelatedSnapshotIds = related.Select(r => r.Id).ToList() };
 
     // ── Source Analysis captures the observations; nothing here is a verdict ───────────────────────────────────────
@@ -202,7 +203,7 @@ public sealed class SecurityClassificationSourceScopeTests
         var (_, files, _) = BirkNext.Api.Services.Integrations.Scim.ScimSourceReader.Read("Repo.zip", bytes, _ => false);
         var direct = ClassificationSourceAnalyzer.Analyze("dev", [], files, DateTimeOffset.UtcNow);
 
-        var (combined, error) = await new ClassificationSourceScopeService(new IqrSourceStore(db)).ResolveAsync("dev", Scope(snapshot));
+        var (combined, error) = await new ClassificationSourceScopeService(new ReviewSourceEvidenceProvider(new IqrSourceStore(db))).ResolveAsync("dev", Scope(snapshot));
 
         error.Should().BeNull();
         combined!.Facts.Select(f => (f.Id, f.State, f.Detail)).Should().Equal(direct.Facts.Select(f => (f.Id, f.State, f.Detail)), "the input refactor loses no evidence");
@@ -226,7 +227,7 @@ public sealed class SecurityClassificationSourceScopeTests
         var appAgain = await Upload(db, "AppRepo.zip", AppRepo(constant: false));
         var all = await new IqrSourceStore(db).ListAsync("dev");
 
-        ClassificationSourceScopeService.Validate(new ClassificationSourceScopeRequest(), all).Error.Should().Be("Choose a primary source snapshot.");
+        ClassificationSourceScopeService.Validate(new ReviewSourceScopeRequest(), all).Error.Should().Be("Choose a primary source snapshot.");
         ClassificationSourceScopeService.Validate(new() { PrimarySnapshotId = Guid.NewGuid() }, all).Error.Should().Contain("unavailable in Source Analysis").And.Contain("nothing is substituted");
         ClassificationSourceScopeService.Validate(new() { PrimarySnapshotId = app.Id, RelatedSnapshotIds = [app.Id] }, all).Error.Should().Contain("more than once");
         ClassificationSourceScopeService.Validate(Scope(app, appAgain), all).Error.Should().Contain("one snapshot per repository");
@@ -244,8 +245,8 @@ public sealed class SecurityClassificationSourceScopeTests
 
         var options = await service.SourceScopeAsync("dev", Scope(legacy));
 
-        options.Snapshots.Single().HasClassificationEvidence.Should().BeFalse();
-        options.Snapshots.Single().EvidenceNote.Should().Be(ClassificationSourceScopeService.NoEvidence);
+        options.Snapshots.Single().HasConsumerEvidence.Should().BeFalse();
+        options.Snapshots.Single().ConsumerEvidenceNote.Should().Be(ClassificationSourceScopeService.NoEvidence);
         options.Error.Should().Contain("Analyze the archive again in Source Analysis");
         var run = () => service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", SourceScope = Scope(legacy) });
         await run.Should().ThrowAsync<InvalidSourceSelectionException>();
@@ -498,7 +499,7 @@ public sealed class SecurityClassificationSourceScopeTests
     {
         await using var db = Db();
         var app = await Upload(db, "PolicyApp.zip", PolicyApp());
-        var (evidence, _) = await new ClassificationSourceScopeService(new IqrSourceStore(db)).ResolveAsync("dev", Scope(app));
+        var (evidence, _) = await new ClassificationSourceScopeService(new ReviewSourceEvidenceProvider(new IqrSourceStore(db))).ResolveAsync("dev", Scope(app));
 
         ClassificationFact F(string id) => evidence!.Facts.Single(f => f.Id == id);
         F("graphql-hentBarn").State.Should().Be(ClassificationState.SourceVerified);
@@ -518,7 +519,7 @@ public sealed class SecurityClassificationSourceScopeTests
         var app = await Upload(db, "PolicyApp.zip", PolicyApp());
         var auth = await Upload(db, "Shared.Auth.zip", SharedAuth());
         await Upload(db, "Shared.Common.zip", SharedCommon());
-        var scopes = new ClassificationSourceScopeService(new IqrSourceStore(db));
+        var scopes = new ClassificationSourceScopeService(new ReviewSourceEvidenceProvider(new IqrSourceStore(db)));
 
         var options = await scopes.OptionsAsync("dev", Scope(app));
         var (evidence, _) = await scopes.ResolveAsync("dev", Scope(app, auth));

@@ -175,8 +175,8 @@
             <section class="iqr-card" aria-labelledby="iqr-source-summary-heading" data-testid="iqr-source-evidence">
                 <h3 id="iqr-source-summary-heading">Source evidence</h3>
                 <p data-testid="iqr-source-summary">@SourceSummary(snapshots.Count, _sourceSelections.Count)</p>
-                <p class="iqr-muted">Uploaded application source is analyzed offline; nothing is contacted and no source is stored beyond the analysis snapshot.</p>
-                <ReviewDisclosure Text="Add or select source evidence" CollapseText="Hide source evidence" TestId="iqr-source-details" Class="disclosure-inline">
+                <p class="iqr-muted">Source evidence comes from Source Analysis snapshots (source is uploaded there and analyzed offline); choosing one contacts nothing. Runtime evidence is configured separately.</p>
+                <ReviewDisclosure Text="Select source evidence" CollapseText="Hide source evidence" TestId="iqr-source-details" Class="disclosure-inline">
                     <IqrSourceSetup ShowHeading="false" EnvironmentId="@profile.Id" Integrations="@(_catalog?.Integrations ?? [])" Snapshots="@snapshots" Selections="_sourceSelections" Analyzed="LoadReadinessAsync" BusyChanged="@(busy => _sourceBusy = busy)" />
                 </ReviewDisclosure>
             </section>

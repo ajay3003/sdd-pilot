@@ -76,6 +76,19 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     private static string Status(IRenderedComponent<SourceAnalysis> cut, string area) => cut.Find($"[data-testid=sa-area-card][data-area={area}] [data-testid=sa-area-status]").TextContent;
 
     [Fact]
+    public void AReviewCanAskToBeReturnedToButOnlyAnAllowListedInternalRoute()
+    {
+        var nav = Services.GetRequiredService<Microsoft.AspNetCore.Components.NavigationManager>();
+        nav.NavigateTo("source-analysis?returnTo=security-classification-review");
+        var cut = Render<SourceAnalysis>();
+        cut.Find("[data-testid=sa-return-link]").GetAttribute("href").Should().Be("security-classification-review");
+        cut.Find("[data-testid=sa-return-link]").TextContent.Should().Be("Back to Security Classification");
+
+        nav.NavigateTo("source-analysis?returnTo=https%3A%2F%2Fevil.example.test");
+        Render<SourceAnalysis>().FindAll("[data-testid=sa-return]").Should().BeEmpty("an arbitrary URL is never followed");
+    }
+
+    [Fact]
     public void EmptyState_IsPurposeful_WithNoFakeCounts()
     {
         var cut = Render<SourceAnalysis>();

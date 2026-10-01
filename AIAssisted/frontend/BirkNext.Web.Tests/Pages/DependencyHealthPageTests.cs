@@ -29,11 +29,11 @@ public sealed class DependencyHealthPageTests : BunitContext
         public Func<DependencyHealthRequest, DependencyHealthRun>? Build { get; set; }
         public int SourceUploads { get; private set; }
         public SourceDependencyReviewRequest? LastSourceRequest { get; private set; }
-        public SourceScopeOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
+        public ReviewSourceOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
         public List<RelatedSourceCandidate> Candidates { get; set; } = [SourceScopeFixture.CommonCandidate];
 
-        public Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) =>
-            Task.FromResult(primarySnapshotId is null ? Options : Options with { Candidates = Candidates });
+        public Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) =>
+            Task.FromResult(SourceScopeFixture.Resolve(Options, scope, Candidates));
         /// <summary>Counts source dependency analysis runs (the only source-review command; nothing is uploaded).</summary>
         public Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)
         { SourceUploads++; LastSourceRequest = request; return Task.FromResult<(DependencyReviewResult?, string?)>((null, "not used")); }

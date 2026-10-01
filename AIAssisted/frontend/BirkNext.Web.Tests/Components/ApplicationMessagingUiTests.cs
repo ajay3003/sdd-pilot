@@ -71,16 +71,18 @@ public sealed class ApplicationMessagingUiTests : BunitContext
     }
 
     [Fact]
-    public void TheActionIsNamedForWhatItAnalyzes()
+    public void SourceComesFromSourceAnalysisSnapshotsNotAnUpload()
     {
         var cut = Pane();
-        var upload = cut.Find("[data-testid=am-upload]");
-        upload.GetAttribute("aria-label").Should().Be("Analyze application messaging source archives (.zip)");
-        upload.ParentElement!.TextContent.Should().Contain("Analyze messaging source").And.NotContain("Analyze source archives");
-        cut.Find("[data-testid=am-analysis]").TextContent.Should().Contain("Wolverine messaging only");
+        cut.FindAll("[data-testid=am] input[type=file]").Should().BeEmpty("source is uploaded only in Source Analysis");
+        cut.Find("[data-testid=am-source-gate]").TextContent.Should().Contain("Messaging source").And.Contain("Required for source checks");
+        cut.Find("[data-testid=am-primary]").Id.Should().Be(ServiceBusPlatformPanel.MessagingUploadId);
+        cut.Find("[data-testid=am-use-scope]").HasAttribute("disabled").Should().BeTrue("nothing is chosen until the user picks a snapshot");
+        cut.Find("[data-testid=am-use-scope]").TextContent.Should().Be("Use messaging evidence from this snapshot");
+        cut.Find("[data-testid=am-analysis]").TextContent.Should().Contain("Wolverine messaging only").And.Contain("Source Analysis snapshots");
 
         _api.Messaging = Set();
-        Pane().Find("[data-testid=am-upload]").ParentElement!.TextContent.Should().Contain("Re-analyze messaging source");
+        Pane().Find("[data-testid=am-use-scope]").TextContent.Should().Be("Rebuild messaging evidence from this scope");
     }
 
     [Fact]
@@ -168,14 +170,17 @@ public sealed class ApplicationMessagingUiTests : BunitContext
     }
 
     [Fact]
-    public void UploadSendsArchivesAndShowsTheAnalysis()
+    public void UsingASnapshotBuildsTheEvidenceFromExactlyThatSnapshot()
     {
         _api.Messaging = null;
         var cut = Pane();
         _api.Messaging = Set();
-        cut.FindComponent<Microsoft.AspNetCore.Components.Forms.InputFile>().UploadFiles(InputFileContent.CreateFromBinary([0x50, 0x4b, 0x03, 0x04], "M2LB.zip"));
+        var snapshot = _api.SourceOptions.Snapshots[0];
+        cut.Find("[data-testid=am-use-current]").Click();
+        cut.Find("[data-testid=am-primary-fingerprint]").TextContent.Should().Be("c850a1b2…");
+        cut.Find("[data-testid=am-use-scope]").Click();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=am-app]").Should().HaveCount(3));
-        _api.Analyzed.Should().Equal("M2LB.zip");
+        _api.UsedScopes.Should().ContainSingle(s => s.PrimarySnapshotId == snapshot.SnapshotId && s.RelatedSnapshotIds.Count == 0);
         cut.Find("[data-testid=am-status]").TextContent.Should().StartWith("Saved.");
     }
 

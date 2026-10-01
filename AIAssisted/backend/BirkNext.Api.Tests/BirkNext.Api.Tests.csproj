@@ -33,4 +33,7 @@
     <ProjectReference Include="..\..\frontend\BirkNext.Web\BirkNext.Web.csproj" Aliases="WebProject" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="BirkNext.SourceEvidence" />
+  </ItemGroup>
 </Project>

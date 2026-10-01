@@ -1,15 +1,25 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services
-@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.DependencyInjection
 @inject IIntegrationCatalogApiService Api
+@inject IServiceProvider Services
 
 <section class="am" aria-labelledby="am-heading" data-testid="am">
     <div class="am-title">
         <h3 id="am-heading">Application messaging</h3>
-        <label class="am-file-button">
-            <InputFile id="@ServiceBusPlatformPanel.MessagingUploadId" class="am-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze application messaging source archives (.zip)" data-testid="am-upload" />
-            <span aria-hidden="true">@(Evidence is null ? "Analyze messaging source" : "Re-analyze messaging source")</span>
-        </label>
+    </div>
+    <div class="am-snapshot" data-testid="am-source-snapshots">
+        <SourceEvidencePrerequisite State="_scope" Prefix="am" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" Title="Messaging source"
+                                    ConsumerName="Application messaging" EmptyHeadingLevel="4"
+                                    OtherSectionsNote="Event Hub and Service Bus runtime evidence does not need a source snapshot.">
+            <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="am" Busy="_busy" Label="Source snapshot" SelectId="@ServiceBusPlatformPanel.MessagingUploadId" MissingEvidenceLabel="no messaging evidence" OnPrimaryChanged="_ => ReloadScopeAsync()" />
+            <ReviewSourceScopePanel State="_scope" Prefix="am" Busy="_busy" EvidenceLabel="Messaging evidence" MissingEvidenceLabel="no messaging evidence"
+                                    RelatedExplanation="Suggested when the primary references another source that hosts a Wolverine application of its own; each snapshot is analyzed on its own."
+                                    OnScopeChanged="ReloadScopeAsync" OnChangeSnapshot="FocusAsync" />
+            <div class="am-actions">
+                <button type="button" class="btn-primary" data-testid="am-use-scope" disabled="@(_busy || !_scope.Resolved)" @onclick="UseScopeAsync">@(Evidence is null ? "Use messaging evidence from this snapshot" : "Rebuild messaging evidence from this scope")</button>
+            </div>
+        </SourceEvidencePrerequisite>
     </div>
     <dl class="am-overview" data-testid="am-overview">
         @foreach (var row in ApplicationMessagingPresentation.Overview(Evidence))
@@ -26,7 +36,9 @@
     </dl>
     <p class="am-note" role="note" data-testid="am-note">Event Hub and Service Bus transport evidence is separate. Source shows what is configured — not that a handler ran.</p>
     <ReviewDisclosure Text="Analysis details" TestId="am-analysis">
-        <p class="am-muted">Wolverine messaging only. Up to 4 .zip files, 50 MB each. Read in memory; source code and configuration values are never stored.</p>
+        <p class="am-muted">Wolverine messaging only, read from Source Analysis snapshots (source is uploaded in Source Analysis). Source code and configuration values are never stored.</p>
+        @if (Evidence?.SourceScope is { } usedScope) { <p class="am-muted" data-testid="am-source-scope">Built from <SourceEvidenceProvenance Entry="usedScope.Primary" Role="Primary" />@foreach (var r in usedScope.Related) { <span> · </span><SourceEvidenceProvenance Entry="r" Role="Related" /> }</p> }
+        else if (Evidence is not null) { <p class="am-muted" data-testid="am-source-scope">Legacy source input: archives uploaded directly by an earlier version (@string.Join(", ", Evidence.Archives.Select(a => a.FileName))) — no Source Analysis snapshot id.</p> }
         @foreach (var row in ApplicationMessagingPresentation.Overview(Evidence)) { <p class="am-muted">@row.Label: @row.Detail</p> }
         @if (Evidence is not null)
         {
@@ -102,7 +114,6 @@
     [Parameter] public ApplicationMessagingEvidenceSet? Evidence { get; set; }
     [Parameter] public EventCallback<ApplicationMessagingEvidenceSet?> EvidenceChanged { get; set; }
 
-    private const long MaxArchiveBytes = 50L * 1024 * 1024;
     private bool _busy;
     private string _status = "";
     private string? _error;
@@ -124,38 +135,44 @@
 
     private void Select(ApplicationMessagingEvidence app) => _selected = app.ApplicationId;
 
-    private async Task AnalyzeAsync(InputFileChangeEventArgs args)
+    private readonly ReviewSourceScopeState _scope = new();
+    private SourceSnapshotSelector? _selector;
+
+    protected override async Task OnInitializedAsync()
     {
+        _scope.Restore(Evidence?.SourceScope);
+        await ReloadScopeAsync();
+
+    }
+
+    private async Task ReloadScopeAsync()
+    {
+        try { _scope.Options = await Api.ApplicationMessagingSourceScopeAsync(EnvironmentId, _scope.Request); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Source Analysis snapshots could not be loaded: the BirkNext backend did not answer."; }
+    }
+
+    private async Task FocusAsync() { if (_selector is not null) await _selector.FocusAsync(); }
+
+    /// <summary>Builds the messaging evidence from exactly the chosen Source Analysis snapshots (no upload here).</summary>
+    private async Task UseScopeAsync()
+    {
+        if (_scope.Request is not { } scope) return;
         _error = null;
-        var files = args.GetMultipleFiles(4);
-        if (files.Any(f => f.Size > MaxArchiveBytes)) { _error = "An archive is larger than the 50 MB limit; nothing was analyzed."; return; }
         _busy = true;
-        _status = "Analyzing messaging source…";
-        var streams = new List<(string, Stream)>();
+        _status = "Reading messaging evidence from the selected source snapshots…";
         try
         {
-            foreach (var file in files)
-            {
-                var buffer = new MemoryStream();
-                await using (var upload = file.OpenReadStream(MaxArchiveBytes)) await upload.CopyToAsync(buffer);
-                buffer.Position = 0;
-                streams.Add((file.Name, buffer));
-            }
-            var (set, error) = await Api.AnalyzeApplicationMessagingAsync(EnvironmentId, streams);
+            var (set, error) = await Api.UseApplicationMessagingSourceAsync(EnvironmentId, scope);
             if (error is not null) { _error = $"Not analyzed: {error}"; _status = ""; return; }
-            _status = $"Saved. Analyzed {set!.Archives.Sum(a => a.FilesAnalyzed)} files; {ApplicationMessagingPresentation.Listed(set).Count} application(s) with Wolverine evidence.";
+            _status = $"Saved. {ApplicationMessagingPresentation.Listed(set!).Count} application(s) with Wolverine evidence from {_scope.Label}.";
             await EvidenceChanged.InvokeAsync(set);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or IOException or System.Text.Json.JsonException)
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)
         {
-            _error = "The source archives could not be analyzed: the BirkNext backend did not answer. Nothing was stored.";
+            _error = "The messaging evidence could not be built: the BirkNext backend did not answer. Nothing was stored.";
             _status = "";
         }
-        finally
-        {
-            foreach (var (_, stream) in streams) await stream.DisposeAsync();
-            _busy = false;
-        }
+        finally { _busy = false; }
     }
 
     private async Task BindAsync(ApplicationMessagingEvidence app, string? consumer)

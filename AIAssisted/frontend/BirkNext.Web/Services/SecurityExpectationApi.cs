@@ -8,6 +8,8 @@ namespace BirkNext.Web.Services;
 public interface ISecurityExpectationApi
 {
     Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string environmentId);
+    /// <summary>Source Analysis snapshots for discovery and, for a chosen scope, its suggestions and problems (read-only metadata).</summary>
+    Task<BirkNext.SourceEvidence.ReviewSourceOptions> SourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest? scope);
     Task<IReadOnlyList<SecurityExpectationDiscoveryResult>> HistoryAsync(string environmentId);
     Task<SecurityExpectationDiscoveryResult> DiscoverAsync(string environmentId, SecurityDiscoveryRequest request);
     Task<SecurityCandidateReviewResponse> ReviewAsync(string environmentId, SecurityCandidateReviewRequest request, bool accept);
@@ -23,6 +25,8 @@ public sealed class SecurityExpectationApi(HttpClient http) : ISecurityExpectati
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadFromJsonAsync<List<IqrSourceSnapshot>>() ?? [];
     }
+    public async Task<BirkNext.SourceEvidence.ReviewSourceOptions> SourceScopeAsync(string env, BirkNext.SourceEvidence.ReviewSourceScopeRequest? scope) =>
+        await http.GetFromJsonAsync<BirkNext.SourceEvidence.ReviewSourceOptions>(Path(env) + "source-scope" + (scope is null ? "" : "?" + ReviewSourceQuery.Of(scope)[1..])) ?? new();
     public async Task<IReadOnlyList<SecurityExpectationDiscoveryResult>> HistoryAsync(string env) =>
         await http.GetFromJsonAsync<List<SecurityExpectationDiscoveryResult>>(Path(env) + "discovery") ?? [];
     public async Task<SecurityExpectationDiscoveryResult> DiscoverAsync(string env, SecurityDiscoveryRequest request) =>

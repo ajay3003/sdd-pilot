@@ -17,23 +17,20 @@ public sealed class ScimProvisioningController(IScimEvidenceService scim) : Cont
     public async Task<ActionResult<ScimEvidenceOverview>> Overview([FromQuery] string environmentId, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await scim.OverviewAsync(environmentId, ct));
 
-    [HttpPost("source")]
-    [RequestSizeLimit(4 * ScimSourceReader.MaxArchiveBytes)]
-    [RequestFormLimits(MultipartBodyLengthLimit = 4 * ScimSourceReader.MaxArchiveBytes)]
-    public async Task<ActionResult<ScimSourceEvidence>> Analyze([FromQuery] string environmentId, CancellationToken ct)
+    // Source ingestion belongs to Source Analysis: SCIM source evidence is taken from one of its snapshots; there is no upload here.
+
+    /// <summary>Source Analysis snapshots for SCIM provisioning (read-only).</summary>
+    [HttpGet("source-scope")]
+    public async Task<ActionResult<ReviewSourceOptions>> SourceScope([FromQuery] string environmentId, [FromQuery] Guid? primary, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
+            : Ok(await scim.SourceScopeAsync(environmentId, primary is { } p ? new ReviewSourceScopeRequest { PrimarySnapshotId = p } : null, ct));
+
+    /// <summary>Records the SCIM source evidence of exactly the chosen Source Analysis snapshot.</summary>
+    [HttpPost("source-scope")]
+    public async Task<ActionResult<ScimSourceEvidence>> UseSourceScope([FromQuery] string environmentId, [FromBody] ReviewSourceScopeRequest scope, CancellationToken ct)
     {
-        if (!Request.HasFormContentType) return BadRequest("Upload source archives as multipart form data.");
-        var form = await Request.ReadFormAsync(ct);
-        if (form.Files.Count is 0 or > 4) return BadRequest("Upload one to four source archives (.zip).");
-        var archives = new List<(string, byte[])>();
-        foreach (var file in form.Files)
-        {
-            if (file.Length > ScimSourceReader.MaxArchiveBytes) return BadRequest($"{file.FileName} is larger than the upload limit.");
-            using var buffer = new MemoryStream();
-            await file.CopyToAsync(buffer, ct);
-            archives.Add((file.FileName, buffer.ToArray()));
-        }
-        var (evidence, error) = await scim.AnalyzeAsync(environmentId, archives, ct);
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        var (evidence, error) = await scim.UseSourceScopeAsync(environmentId, scope, ct);
         return error is not null ? BadRequest(error) : Ok(evidence);
     }
 

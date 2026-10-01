@@ -1,6 +1,5 @@
-using BirkNext.Api.Services.DependencyReview;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
-using BirkNext.Dependencies;
+using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.SecurityClassification;
@@ -8,19 +7,19 @@ namespace BirkNext.Api.Services.SecurityClassification;
 public interface IClassificationSourceScopeService
 {
     /// <summary>Source Analysis snapshots as this review sees them, related-source candidates of a primary and the combined evidence of a scope. Read-only.</summary>
-    Task<ClassificationScopeOptions> OptionsAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default);
+    Task<ClassificationScopeOptions> OptionsAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     /// <summary>Validates a scope and combines the evidence of exactly those snapshots (no substitution, no latest rebind).</summary>
-    Task<(ClassificationSourceEvidence? Evidence, string? Error)> ResolveAsync(string environmentId, ClassificationSourceScopeRequest scope, CancellationToken ct = default);
+    Task<(ClassificationSourceEvidence? Evidence, string? Error)> ResolveAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default);
 }
 
 /// <summary>
-/// Security Classification's view of Source Analysis. It READS snapshots from the Source Analysis store (no second snapshot store, no upload,
+/// Security Classification's view of Source Analysis, through the shared <see cref="IReviewSourceEvidenceProvider"/> (no second snapshot store, no upload,
 /// no Azure, Event Hub, database, HTTP or GraphQL call, no mutation) and binds a review to the exact snapshot IDs and fingerprints chosen.
 /// Related sources are suggested only when actual source evidence ties them to this review: a classification type the primary uses but does
 /// not declare and the candidate declares, or a package/project reference to a source whose own snapshot carries classification or
 /// authorization evidence. Nothing is included without an explicit choice and nothing is merged.
 /// </summary>
-public sealed class ClassificationSourceScopeService(IqrSourceStore store) : IClassificationSourceScopeService
+public sealed class ClassificationSourceScopeService(IReviewSourceEvidenceProvider sources) : IClassificationSourceScopeService
 {
     public const string NoEvidence = "Analyzed before security classification evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot.";
 
@@ -31,9 +30,9 @@ public sealed class ClassificationSourceScopeService(IqrSourceStore store) : ICl
         ClassificationArea.GraphQL, ClassificationArea.AuditAccess, ClassificationArea.ChildAccess,
     ];
 
-    private static SourceRepositoryIdentity Identity(IqrSourceSnapshot s) => DependencyReviewSourceScopeService.IdentityOf(s);
+    private static SourceRepositoryIdentity Identity(IqrSourceSnapshot s) => ReviewSourceEvidenceProvider.Identity(s);
 
-    public static ClassificationSourceRef Ref(IqrSourceSnapshot s) => new() { SnapshotId = s.Id, Repository = Identity(s).DisplayName, Fingerprint = s.Archive.Sha256 };
+    public static ReviewSourceProvenance Ref(IqrSourceSnapshot s) => ReviewSourceEvidenceProvider.Provenance(s);
 
     /// <summary>The areas in which a snapshot's own evidence shows classification or authorization behaviour (empty = not relevant here).</summary>
     public static List<ClassificationArea> RelevantAreas(IqrSourceSnapshot s) => s.SecurityClassificationEvidence is { Unavailable: null } e
@@ -50,18 +49,12 @@ public sealed class ClassificationSourceScopeService(IqrSourceStore store) : ICl
         _ => null,
     };
 
-    public static List<ClassificationSnapshotOption> Describe(IReadOnlyList<IqrSourceSnapshot> snapshots)
-    {
-        var latest = snapshots.GroupBy(s => Identity(s).Key).ToDictionary(g => g.Key, g => g.MaxBy(s => s.AnalyzedAt)!.Id);
-        return snapshots.OrderBy(s => Identity(s).DisplayName, StringComparer.OrdinalIgnoreCase).ThenByDescending(s => s.AnalyzedAt).Select(s => Option(s, latest[Identity(s).Key] == s.Id)).ToList();
-    }
+    /// <summary>Whether a snapshot carries this review's security classification observations.</summary>
+    public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => new(s.SecurityClassificationEvidence is { Unavailable: null }, EvidenceNote(s));
 
-    private static ClassificationSnapshotOption Option(IqrSourceSnapshot s, bool latest) => new()
-    {
-        SnapshotId = s.Id, RepositoryKey = Identity(s).Key, Repository = Identity(s).DisplayName, IdentityBasis = Identity(s).Basis, ArchiveName = s.Archive.FileName,
-        Fingerprint = s.Archive.Sha256, AnalyzedAt = s.AnalyzedAt, SourceStatus = DependencyReviewSourceScopeService.SourceStatus(s.Status), Latest = latest,
-        HasClassificationEvidence = s.SecurityClassificationEvidence is { Unavailable: null }, EvidenceNote = EvidenceNote(s),
-    };
+    public static List<ReviewSourceSnapshot> Describe(IReadOnlyList<IqrSourceSnapshot> snapshots) => ReviewSourceEvidenceProvider.Describe(snapshots, Evidence);
+
+    private static string? Problem(IqrSourceSnapshot s) => s.SecurityClassificationEvidence is { Unavailable: null } ? null : s.SecurityClassificationEvidence?.Unavailable ?? NoEvidence;
 
     /// <summary>
     /// Related-source candidates of a primary snapshot, from explicit evidence only:
@@ -109,7 +102,7 @@ public sealed class ClassificationSourceScopeService(IqrSourceStore store) : ICl
 
         // (2) Package / project references, kept only when the referenced source shows classification or authorization evidence. Relevance is
         // judged on the snapshots that carry the evidence: one assessed and not relevant is not suggested; only all-unassessed is "unknown".
-        foreach (var reference in DependencyReviewSourceScopeService.Candidates(primary, all))
+        foreach (var reference in ReviewSourceEvidenceProvider.ReferenceCandidates(primary, all))
         {
             var matching = reference.MatchingSnapshotIds.Select(id => all.First(s => s.Id == id)).ToList();
             var relevant = matching.Where(s => RelevantAreas(s).Count > 0 || s.SecurityClassificationEvidence?.DeclaredNamespaces.Any(imported.ContainsKey) == true).ToList();
@@ -143,65 +136,41 @@ public sealed class ClassificationSourceScopeService(IqrSourceStore store) : ICl
         }).OrderBy(c => c.Repository, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
-    /// <summary>The scope rules: a primary is required; every ID resolves; no duplicates; one snapshot per repository; each carries classification evidence.</summary>
-    public static (List<IqrSourceSnapshot>? Selected, string? Error) Validate(ClassificationSourceScopeRequest request, IReadOnlyList<IqrSourceSnapshot> snapshots)
-    {
-        if (request.PrimarySnapshotId == Guid.Empty) return (null, "Choose a primary source snapshot.");
-        var ids = new[] { request.PrimarySnapshotId }.Concat(request.RelatedSnapshotIds).ToList();
-        if (ids.Distinct().Count() != ids.Count) return (null, "A source snapshot is selected more than once.");
-        var selected = new List<IqrSourceSnapshot>();
-        foreach (var id in ids)
-        {
-            if (snapshots.FirstOrDefault(s => s.Id == id) is not { } snapshot) return (null, $"Source snapshot {id} is unavailable in Source Analysis. Repair the source scope; nothing is substituted.");
-            if (snapshot.SecurityClassificationEvidence is not { Unavailable: null })
-                return (null, $"{Identity(snapshot).DisplayName} ({snapshot.Archive.Sha256[..Math.Min(8, snapshot.Archive.Sha256.Length)]}…): {snapshot.SecurityClassificationEvidence?.Unavailable ?? NoEvidence}");
-            selected.Add(snapshot);
-        }
-        var repeated = selected.GroupBy(s => Identity(s).Key).FirstOrDefault(g => g.Count() > 1);
-        if (repeated is not null) return (null, $"{Identity(repeated.First()).DisplayName} is selected more than once; a scope holds one snapshot per repository.");
-        return (selected, null);
-    }
+    /// <summary>The shared scope rules plus this review's own: every snapshot must carry security classification observations.</summary>
+    public static (List<IqrSourceSnapshot>? Selected, string? Error) Validate(ReviewSourceScopeRequest request, IReadOnlyList<IqrSourceSnapshot> snapshots, bool sourceAnalysisEnabled = true) =>
+        ReviewSourceEvidenceProvider.Validate(request, snapshots, Problem, sourceAnalysisEnabled);
 
     /// <summary>The immutable scope descriptor, including suggested sources the review continues without.</summary>
-    public static ClassificationSourceScope Scope(List<IqrSourceSnapshot> selected, IReadOnlyList<IqrSourceSnapshot> all, IEnumerable<string> excluded)
-    {
-        var notIncluded = Candidates(selected[0], all).Where(c => !selected.Skip(1).Any(s => Identity(s).Key == c.RepositoryKey)).ToList();
-        return new ClassificationSourceScope
-        {
-            Primary = DependencyReviewSourceScopeService.Entry(selected[0]), Related = selected.Skip(1).Select(DependencyReviewSourceScopeService.Entry).ToList(),
-            ExcludedSuggestions = excluded.Concat(notIncluded.Select(c => c.Repository)).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList(),
-            Limitations = notIncluded.Select(c => $"Related source detected but not included in this review scope: {c.Repository} ({c.State switch { RelatedSourceState.SnapshotAvailable => "snapshot available", RelatedSourceState.SnapshotUnavailable => "no analyzed snapshot", _ => "needs review" }}).").ToList(),
-        };
-    }
+    public static ReviewSourceScope Scope(List<IqrSourceSnapshot> selected, IReadOnlyList<IqrSourceSnapshot> all, IEnumerable<string> excluded) =>
+        ReviewSourceEvidenceProvider.Scope(selected, Candidates(selected[0], all), excluded);
 
     /// <summary>Each selected snapshot's own observations, combined at the review layer with per-snapshot provenance.</summary>
     public static ClassificationSourceEvidence Combine(string environmentId, List<IqrSourceSnapshot> selected, IReadOnlyList<IqrSourceSnapshot> all, IEnumerable<string> excluded, DateTimeOffset now)
     {
         var scope = Scope(selected, all, excluded);
-        var evidence = ClassificationSourceAnalyzer.Combine(environmentId, selected.Select(s => ((ClassificationSourceRef?)Ref(s), s.SecurityClassificationEvidence!)).ToList(), now);
+        var evidence = ClassificationSourceAnalyzer.Combine(environmentId, selected.Select(s => ((ReviewSourceProvenance?)Ref(s), s.SecurityClassificationEvidence!)).ToList(), now);
         return evidence with { Scope = scope, Limitations = [.. evidence.Limitations, .. scope.Limitations] };
     }
 
-    public async Task<(ClassificationSourceEvidence? Evidence, string? Error)> ResolveAsync(string environmentId, ClassificationSourceScopeRequest scope, CancellationToken ct = default)
+    public async Task<(ClassificationSourceEvidence? Evidence, string? Error)> ResolveAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default)
     {
-        var snapshots = await store.ListAsync(environmentId, ct);
-        var (selected, error) = Validate(scope, snapshots);
+        var snapshots = await sources.ListAsync(environmentId, ct);
+        var (selected, error) = Validate(scope, snapshots, sources.SourceAnalysisEnabled);
         return selected is null ? (null, error) : (Combine(environmentId, selected, snapshots, scope.ExcludedSuggestions, DateTimeOffset.UtcNow), null);
     }
 
-    public async Task<ClassificationScopeOptions> OptionsAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default)
+    public async Task<ClassificationScopeOptions> OptionsAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default)
     {
-        var snapshots = await store.ListAsync(environmentId, ct);
-        var options = new ClassificationScopeOptions { Snapshots = Describe(snapshots), Coverage = ClassificationSourceCoverage.Rows(null) };
-        if (scope is null || scope.PrimarySnapshotId == Guid.Empty) return options;
-        var primary = snapshots.FirstOrDefault(s => s.Id == scope.PrimarySnapshotId);
-        var candidates = primary is null ? [] : Candidates(primary, snapshots);
-        var (selected, error) = Validate(scope, snapshots);
-        if (selected is null) return options with { Candidates = candidates, Error = error };
-        var evidence = Combine(environmentId, selected, snapshots, scope.ExcludedSuggestions, DateTimeOffset.UtcNow);
-        var latest = snapshots.GroupBy(s => Identity(s).Key).ToDictionary(g => g.Key, g => g.MaxBy(s => s.AnalyzedAt)!);
-        var newer = selected.Select(s => latest[Identity(s).Key]).Where(l => selected.All(s => s.Id != l.Id) && selected.First(s => Identity(s).Key == Identity(l).Key).AnalyzedAt < l.AnalyzedAt)
-            .Select(l => Option(l, true)).ToList();
-        return options with { Candidates = candidates, Scope = evidence.Scope, Evidence = evidence, Coverage = ClassificationSourceCoverage.Rows(evidence), Newer = newer };
+        var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
+        var shared = ReviewSourceEvidenceProvider.Options(sources.SourceAnalysisEnabled, snapshots, Evidence, scope, primary => Candidates(primary, snapshots), Problem);
+        var options = new ClassificationScopeOptions
+        {
+            SourceAnalysisEnabled = shared.SourceAnalysisEnabled, Snapshots = shared.Snapshots, Candidates = shared.Candidates, Scope = shared.Scope, Newer = shared.Newer, Error = shared.Error,
+            Coverage = ClassificationSourceCoverage.Rows(null),
+        };
+        if (shared.Scope is null || scope is null) return options;
+        var (selected, _) = Validate(scope, snapshots);
+        var evidence = Combine(environmentId, selected!, snapshots, scope.ExcludedSuggestions, DateTimeOffset.UtcNow);
+        return options with { Evidence = evidence, Coverage = ClassificationSourceCoverage.Rows(evidence) };
     }
 }

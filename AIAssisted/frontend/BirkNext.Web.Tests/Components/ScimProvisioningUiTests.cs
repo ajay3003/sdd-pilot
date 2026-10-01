@@ -164,8 +164,9 @@ public sealed class ScimProvisioningUiTests : BunitContext
         var cut = Panel();
         cut.Find("[data-testid='scim-source-state'] .scim-badge").TextContent.Should().Be("Not analyzed");
         cut.Find("[data-testid='scim-source-summary']").TextContent.Should().Contain("not evidence that an implementation is missing").And.Contain("not that it ran");
-        cut.Find("[data-testid='scim-source-section'] [data-testid='scim-upload']").Should().NotBeNull("the analyze action sits with the source evidence");
-        cut.Find("[data-testid='scim-source-section']").TextContent.Should().Contain("Analyze SCIM source");
+        cut.Find("[data-testid='scim-source-section'] [data-testid='scimsrc-primary']").Should().NotBeNull("the snapshot choice sits with the source evidence");
+        cut.Find("[data-testid='scim-source-section']").TextContent.Should().Contain("Use SCIM evidence from this snapshot");
+        cut.FindAll("[data-testid='scim-source-section'] input[type=file]").Should().BeEmpty("source is uploaded only in Source Analysis");
         cut.FindAll("[data-testid='scim-source-provenance']").Should().BeEmpty();
     }
 
@@ -177,7 +178,7 @@ public sealed class ScimProvisioningUiTests : BunitContext
         cut.Find("[data-testid='scim-source-state'] .scim-badge").TextContent.Should().Be("Analyzed");
         cut.Find("[data-testid='scim-source-summary']").TextContent.Should().Contain("SCIM detected in M2LB.Autorisasjon.ScimAdapter: 2 operation(s)");
         cut.Find("[data-testid='scim-source-provenance']").TextContent.Should().Contain("M2LB (1).zip").And.Contain("M2LB.Autorisasjon.ScimAdapter");
-        cut.Find("[data-testid='scim-source-section']").TextContent.Should().Contain("Re-analyze SCIM source");
+        cut.Find("[data-testid='scim-source-section']").TextContent.Should().Contain("Replace SCIM evidence with this snapshot");
         Dimensions(Node(cut, ScimStage.ScimEndpoint)).Should().Be(("Configured", "Source verified", "Not assessed"));
         Dimensions(Node(cut, ScimStage.KjentBrukerPersistence)).Should().Be(("Configured", "Source verified", "Not assessed"));
         Dimensions(Node(cut, ScimStage.ServiceBusPublish)).Should().Be(("Configured", "Source verified", "Not assessed"));
@@ -274,7 +275,8 @@ public sealed class ScimProvisioningUiTests : BunitContext
     public void ActionsAreGroupedByPurposeAndAreNativeControls()
     {
         var cut = Panel();
-        cut.Find("[data-testid='scim-source-section'] [data-testid='scim-upload']").GetAttribute("aria-label").Should().Be("Analyze SCIM adapter source archives (.zip)");
+        cut.Find("[data-testid='scim-source-section'] [data-testid='scim-use-scope']").TagName.Should().Be("BUTTON");
+        cut.Find("[data-testid='scim-source-section'] [data-testid='scimsrc-primary']").ParentElement!.TagName.Should().Be("LABEL");
         var run = cut.Find("[data-testid='scim-runtime-section'] [data-testid='scim-safe'] [data-testid='scim-run']");
         run.TagName.Should().Be("BUTTON");
         run.GetAttribute("aria-label").Should().Contain("GET only");
@@ -344,14 +346,15 @@ public sealed class ScimProvisioningUiTests : BunitContext
     }
 
     [Fact]
-    public void AnalyzeUploadsArchivesAndReportsDetection()
+    public void UsingASnapshotRecordsItsScimEvidenceAndReportsDetection()
     {
         _api.ScimOverview = new ScimEvidenceOverview { Source = Source() };
         var cut = Panel();
 
-        cut.FindComponent<InputFile>().UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "M2LB (1).zip"), InputFileContent.CreateFromBinary([4], "M2LB.Common.zip"));
+        cut.Find("[data-testid='scimsrc-primary']").Change(_api.SourceOptions.Snapshots[0].SnapshotId.ToString());
+        cut.Find("[data-testid='scim-use-scope']").Click();
 
-        _api.Analyzed.Should().Equal("M2LB (1).zip", "M2LB.Common.zip");
+        _api.UsedScopes.Should().ContainSingle(s => s.PrimarySnapshotId == _api.SourceOptions.Snapshots[0].SnapshotId && s.RelatedSnapshotIds.Count == 0);
         cut.Find("[data-testid='scim-status']").TextContent.Should().Contain("SCIM detected in M2LB.Autorisasjon.ScimAdapter");
     }
 

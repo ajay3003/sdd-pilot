@@ -67,6 +67,7 @@
     <Compile Include="../../shared/ServiceBusContracts.cs" Link="Models/ServiceBusContracts.cs" />
     <Compile Include="../../shared/DependencyReviewContracts.cs" Link="Models/DependencyReviewContracts.cs" />
     <Compile Include="../../shared/SourceDependencyContracts.cs" Link="Models/SourceDependencyContracts.cs" />
+    <Compile Include="../../shared/ReviewSourceContracts.cs" Link="Models/ReviewSourceContracts.cs" />
     <Compile Include="../../shared/DependencyHealthContracts.cs" Link="Models/DependencyHealthContracts.cs" />
     <Compile Include="../../shared/ScimProvisioningContracts.cs" Link="Models/ScimProvisioningContracts.cs" />
     <Compile Include="../../shared/SecurityClassificationContracts.cs" Link="Models/SecurityClassificationContracts.cs" />
@@ -82,4 +83,7 @@
       <Content Include="@(_BirkNextCompanionFile)" Link="BrowserCompanion/%(_BirkNextCompanionFile.RecursiveDir)%(_BirkNextCompanionFile.Filename)%(_BirkNextCompanionFile.Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
+  <ItemGroup>
+    <Using Include="BirkNext.SourceEvidence" />
+  </ItemGroup>
 </Project>

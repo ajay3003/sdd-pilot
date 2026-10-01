@@ -37,13 +37,17 @@ public sealed record IqrSourceSnapshot
     /// <summary>Source-derived architecture of the same archive (null in snapshots analyzed before architecture extraction). Not deployed topology.</summary>
     public BirkNext.SourceArchitecture.ArchitectureSnapshot? Architecture { get; init; }
     /// <summary>Repository this snapshot belongs to (null in snapshots analyzed before repository identity was captured).</summary>
-    public BirkNext.Dependencies.SourceRepositoryIdentity? Repository { get; init; }
+    public BirkNext.SourceEvidence.SourceRepositoryIdentity? Repository { get; init; }
     /// <summary>Dependency-relevant evidence for Dependency Review (null in snapshots analyzed before it was captured).</summary>
     public BirkNext.Dependencies.SourceDependencyEvidence? DependencyEvidence { get; init; }
     /// <summary>Allow-listed security source facts, not approved expectations or runtime verification. Null in historical snapshots.</summary>
     public BirkNext.SecurityExpectations.SecuritySourceEvidence? SecurityExpectationsEvidence { get; init; }
     /// <summary>Classification-relevant source observations for Security Classification (facts and locations, never a review result). Null in historical snapshots.</summary>
     public ClassificationSnapshotEvidence? SecurityClassificationEvidence { get; init; }
+    /// <summary>Application-messaging (Wolverine) observations of this snapshot for Integration Quality Review. Null in historical snapshots.</summary>
+    public ApplicationMessagingEvidenceSet? ApplicationMessagingEvidence { get; init; }
+    /// <summary>SCIM provisioning source observations of this snapshot for Integration Quality Review. Null in historical snapshots.</summary>
+    public ScimSourceEvidence? ScimEvidence { get; init; }
     /// <summary>Source-only signals for source integration discovery (capture-technology markers, orchestration-declared channels). Empty in older snapshots.</summary>
     public List<SourceIntegrationSignal> IntegrationSignals { get; init; } = [];
 }

@@ -17,7 +17,7 @@ public interface IDependencyReviewService
     Task<(DependencyReviewResult? Result, string? Error)> RunAsync(string label, IReadOnlyList<(string FileName, byte[] Bytes)> archives,
         IReadOnlyList<(string Repository, string FileName, string Content)> configOverrides, CancellationToken ct = default);
     /// <summary>Reviews prepared sources (one per repository/snapshot) and stores the run with its source scope.</summary>
-    Task<DependencyReviewResult> ReviewAsync(string label, IReadOnlyList<(RepositoryInput Input, SourceDependencyEvidence Evidence)> sources, DependencyReviewSourceScope? scope, CancellationToken ct = default);
+    Task<DependencyReviewResult> ReviewAsync(string label, IReadOnlyList<(RepositoryInput Input, SourceDependencyEvidence Evidence)> sources, ReviewSourceScope? scope, CancellationToken ct = default);
     Task<IReadOnlyList<DependencyReviewRunSummary>> HistoryAsync(CancellationToken ct = default);
     Task<DependencyReviewResult?> GetAsync(Guid runId, CancellationToken ct = default);
     Task<(PolicySimulation? Simulation, string? Error)> SimulateAsync(PolicySimulationRequest request, CancellationToken ct = default);
@@ -84,7 +84,7 @@ public sealed class DependencyReviewService(AppDbContext db, ILogger<DependencyR
         return (await ReviewAsync(label, sources, null, ct), null);
     }
 
-    public async Task<DependencyReviewResult> ReviewAsync(string label, IReadOnlyList<(RepositoryInput Input, SourceDependencyEvidence Evidence)> sources, DependencyReviewSourceScope? scope, CancellationToken ct = default)
+    public async Task<DependencyReviewResult> ReviewAsync(string label, IReadOnlyList<(RepositoryInput Input, SourceDependencyEvidence Evidence)> sources, ReviewSourceScope? scope, CancellationToken ct = default)
     {
         var previous = await LatestAsync(ct);
         var repositories = new List<RepositoryDependencyReview>();

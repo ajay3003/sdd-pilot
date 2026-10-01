@@ -2,6 +2,7 @@ using System.Data;
 using System.Text.Json;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
+using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.Integrations;
 using BirkNext.SecurityExpectations;
 using BirkNext.SourceArchitecture;
@@ -13,43 +14,67 @@ public interface ISecurityExpectationDiscoveryService
 {
     Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string environmentId, CancellationToken ct = default);
     Task<IqrSourceSnapshot?> CurrentSourceAsync(string environmentId, CancellationToken ct = default);
+    /// <summary>Source Analysis snapshots for expectation discovery and, for a chosen scope, related-source suggestions and problems. Read-only.</summary>
+    Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     Task<SecurityExpectationDiscoveryResult> DiscoverAsync(string environmentId, SecurityDiscoveryRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<SecurityExpectationDiscoveryResult>> ListAsync(string environmentId, CancellationToken ct = default);
     Task<SecurityCandidateReviewResponse> ReviewAsync(string environmentId, SecurityCandidateReviewRequest request, bool accept, CancellationToken ct = default);
 }
 public sealed class SecurityDiscoveryReviewException(string message) : Exception(message);
-public sealed class SecurityExpectationDiscoveryService(AppDbContext db) : ISecurityExpectationDiscoveryService
+/// <summary>
+/// Security Expectations' source discovery. Snapshots come from Source Analysis through the shared <see cref="IReviewSourceEvidenceProvider"/>
+/// (exact resolution, no substitution); this service owns candidate extraction, de-duplication, the approved-vs-detected comparison and the
+/// human review. Approved expectations never depend on a snapshot being available.
+/// </summary>
+public sealed class SecurityExpectationDiscoveryService(AppDbContext db, IReviewSourceEvidenceProvider? sources = null) : ISecurityExpectationDiscoveryService
 {
-    public async Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string environmentId, CancellationToken ct = default)
-    {
-        var rows = await db.IqrSourceSnapshots.AsNoTracking().Where(s => s.EnvironmentId == environmentId && s.IntegrationId == "source-analysis")
-            .OrderByDescending(s => s.AnalyzedAt).ThenByDescending(s => s.Id).ToListAsync(ct);
-        return rows.Select(s => {
-            var snapshot = JsonSerializer.Deserialize<IqrSourceSnapshot>(s.EvidenceJson, Json)!;
-            return new IqrSourceSnapshot { Id = snapshot.Id, IntegrationId = snapshot.IntegrationId, Archive = snapshot.Archive,
-                AnalyzedAt = snapshot.AnalyzedAt, Status = snapshot.Status, AnalyzerVersion = snapshot.AnalyzerVersion,
-                Commit = snapshot.Commit, Branch = snapshot.Branch };
+    private readonly IReviewSourceEvidenceProvider _sources = sources ?? new ReviewSourceEvidenceProvider(new Integrations.SourceEvidence.IqrSourceStore(db));
+
+    /// <summary>Snapshot metadata only (captured evidence stays on the backend).</summary>
+    public async Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string environmentId, CancellationToken ct = default) =>
+        !_sources.SourceAnalysisEnabled ? [] : (await _sources.ListAsync(environmentId, ct)).Select(snapshot => new IqrSourceSnapshot
+        {
+            Id = snapshot.Id, IntegrationId = snapshot.IntegrationId, Archive = snapshot.Archive, AnalyzedAt = snapshot.AnalyzedAt, Status = snapshot.Status,
+            AnalyzerVersion = snapshot.AnalyzerVersion, Commit = snapshot.Commit, Branch = snapshot.Branch, Repository = snapshot.Repository,
         }).ToList();
-    }
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-    public async Task<IqrSourceSnapshot?> CurrentSourceAsync(string env, CancellationToken ct = default)
+    public async Task<IqrSourceSnapshot?> CurrentSourceAsync(string env, CancellationToken ct = default) =>
+        !_sources.SourceAnalysisEnabled ? null : (await _sources.ListAsync(env, ct)).FirstOrDefault();
+
+    public const string NoEvidence = "Analyzed before security expectation evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot.";
+
+    /// <summary>Whether a snapshot can yield expectation candidates (captured evidence, or an architecture snapshot of the same source).</summary>
+    public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => s.SecurityExpectationsEvidence is { } e
+        ? new(true, e.Candidates.Count == 0 ? "No security expectation candidate was found in this snapshot." : null, $"{e.Candidates.Count} candidate(s)")
+        : s.Architecture is not null ? new(true, "Candidates are derived from this snapshot's architecture evidence.") : new(false, NoEvidence);
+
+    /// <summary>Related sources for expectations: exact package/project references to sources whose own snapshot yields expectation candidates
+    /// (shared identity/auth configuration). Other references are not suggested.</summary>
+    public static List<RelatedSourceCandidate> Candidates(IqrSourceSnapshot primary, IReadOnlyList<IqrSourceSnapshot> all) =>
+        ReviewSourceEvidenceProvider.ReferenceCandidates(primary, all).Select(c => c with
+        {
+            MatchingSnapshotIds = c.MatchingSnapshotIds.Where(id => all.FirstOrDefault(s => s.Id == id)?.SecurityExpectationsEvidence?.Candidates.Count > 0).ToList(),
+        }).Where(c => c.MatchingSnapshotIds.Count > 0).ToList();
+
+    public async Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default)
     {
-        var row = await db.IqrSourceSnapshots.AsNoTracking().Where(s => s.EnvironmentId == env && s.IntegrationId == "source-analysis")
-            .OrderByDescending(s => s.AnalyzedAt).ThenByDescending(s => s.Id).FirstOrDefaultAsync(ct);
-        return row is null ? null : JsonSerializer.Deserialize<IqrSourceSnapshot>(row.EvidenceJson, Json);
+        var snapshots = _sources.SourceAnalysisEnabled ? await _sources.ListAsync(environmentId, ct) : [];
+        return ReviewSourceEvidenceProvider.Options(_sources.SourceAnalysisEnabled, snapshots, Evidence, scope, p => Candidates(p, snapshots));
     }
     public async Task<SecurityExpectationDiscoveryResult> DiscoverAsync(string environmentId, SecurityDiscoveryRequest request, CancellationToken ct = default)
     {
-        var row = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.EnvironmentId == environmentId && s.Id == request.SourceSnapshotId && s.IntegrationId == "source-analysis", ct)
+        if (!_sources.SourceAnalysisEnabled) throw new SecurityDiscoveryReviewException(ReviewSourceEvidenceProvider.Disabled);
+        var snapshot = await _sources.ResolveAsync(environmentId, request.SourceSnapshotId, ct)
             ?? throw new SecurityDiscoveryReviewException("Select an existing Source Analysis snapshot for this Target Environment.");
-        var snapshot = JsonSerializer.Deserialize<IqrSourceSnapshot>(row.EvidenceJson, Json)!;
         var result = Project(snapshot, environmentId, request.Approved) with { IsCurrent = true };
         var related = new List<SecurityExpectationDiscoveryResult>();
         foreach (var id in (request.RelatedSourceSnapshotIds ?? []).Where(id => id != snapshot.Id).Distinct())
         {
-            var relatedRow = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.EnvironmentId == environmentId && s.Id == id && s.IntegrationId == "source-analysis", ct)
+            var relatedSnapshot = await _sources.ResolveAsync(environmentId, id, ct)
                 ?? throw new SecurityDiscoveryReviewException("Related source must be an existing Source Analysis snapshot.");
-            related.Add(Project(JsonSerializer.Deserialize<IqrSourceSnapshot>(relatedRow.EvidenceJson, Json)!, environmentId, request.Approved));
+            if (ReviewSourceEvidenceProvider.Identity(relatedSnapshot).Key == ReviewSourceEvidenceProvider.Identity(snapshot).Key)
+                throw new SecurityDiscoveryReviewException("A related source must be another repository; a scope holds one snapshot per repository.");
+            related.Add(Project(relatedSnapshot, environmentId, request.Approved));
         }
         if (related.Count > 0)
         {

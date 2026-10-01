@@ -24,7 +24,7 @@ public sealed class SecurityClassificationController(IClassificationReviewServic
     public async Task<ActionResult<ClassificationScopeOptions>> SourceScope([FromQuery] string environmentId, [FromQuery] Guid? primary, [FromQuery] Guid[]? related,
         [FromQuery] string[]? excluded, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
-            : Ok(await reviews.SourceScopeAsync(environmentId, primary is { } p ? new ClassificationSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []], ExcludedSuggestions = [.. excluded ?? []] } : null, ct));
+            : Ok(await reviews.SourceScopeAsync(environmentId, primary is { } p ? new ReviewSourceScopeRequest { PrimarySnapshotId = p, RelatedSnapshotIds = [.. related ?? []], ExcludedSuggestions = [.. excluded ?? []] } : null, ct));
 
     [HttpPut("context")]
     public async Task<ActionResult<ClassificationTestContext>> SaveContext([FromQuery] string environmentId, [FromBody] ClassificationTestContext context, CancellationToken ct)

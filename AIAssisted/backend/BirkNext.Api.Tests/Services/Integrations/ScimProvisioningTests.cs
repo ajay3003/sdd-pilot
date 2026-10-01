@@ -835,6 +835,30 @@ public sealed class ScimProvisioningTests
         check.Stages.Single(s => s.Stage == ScimStage.ServiceBusRoute).Source.Should().Be(ScimEvidenceState.Matched);
         JsonSerializer.Serialize(evidence).Should().NotContain("@example.com").And.NotContain("SharedAccessKey").And.NotContain("M2LB_Dev123");
     }
+    // ── Source Analysis owns the archive; SCIM consumes one snapshot ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task ScimEvidenceComesFromExactlyOneSourceAnalysisSnapshot()
+    {
+        await using var db = Db();
+        var catalog = Catalog(db);
+        var service = new ScimEvidenceService(db, catalog, new FixedProbe(new ScimRuntimeEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "No base URL." }), NullLogger<ScimEvidenceService>.Instance);
+        var (snapshot, error) = await new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db).AnalyzeAsync("dev", "source-analysis", "M2LB.zip", Zip(Adapter()));
+        error.Should().BeNull();
+
+        var (evidence, useError) = await service.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = snapshot!.Id });
+        var (direct, _) = await service.AnalyzeAsync("other", [("M2LB.zip", Zip(Adapter()))]);
+
+        useError.Should().BeNull();
+        evidence!.Detected.Should().BeTrue();
+        evidence.Facts.Select(f => (f.Id, f.State)).Should().Equal(direct!.Facts.Select(f => (f.Id, f.State)), "the same analyzer read the same archive");
+        evidence.SourceScope!.Primary.SnapshotId.Should().Be(snapshot.Id);
+        (await service.OverviewAsync("dev")).Source!.SourceScope!.Primary.Fingerprint.Should().Be(snapshot.Archive.Sha256);
+        (await service.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = snapshot.Id, RelatedSnapshotIds = [Guid.NewGuid()] })).Error.Should().Contain("one source snapshot");
+        typeof(BirkNext.Api.Controllers.ScimProvisioningController).GetMethods().SelectMany(m => m.GetCustomAttributes(typeof(Microsoft.AspNetCore.Mvc.HttpPostAttribute), false).Cast<Microsoft.AspNetCore.Mvc.HttpPostAttribute>())
+            .Select(a => a.Template).Should().NotContain("source", "the archive upload endpoint is gone");
+    }
+
 }
 
 /// <summary>A SCIM runtime probe that contacts nothing and records the environment type it was asked for.</summary>
@@ -848,4 +872,5 @@ internal sealed class StubScimRuntimeProbe : IScimRuntimeProbe
             ? new ScimRuntimeEvidence { State = gate.State, Reason = gate.Reason, CapturedAt = DateTimeOffset.UtcNow }
             : new ScimRuntimeEvidence { State = IntegrationEvidenceState.Unavailable, Reason = "Stub: not contacted.", CapturedAt = DateTimeOffset.UtcNow });
     }
+
 }

@@ -1,0 +1,38 @@
+/* Shared source-evidence components (SourceEvidencePrerequisite, SourceSnapshotSelector, ReviewSourceScopePanel, SourceEvidenceProvenance):
+   one visual pattern for every source-aware review. Long repository/archive names wrap; fingerprints stay short; nothing widens the page. */
+.rse-gate { display: grid; gap: .5rem; min-width: 0; }
+.rse-line { margin: 0; display: flex; flex-wrap: wrap; gap: .35rem .5rem; align-items: center; font-size: .9rem; }
+.rse-muted { color: var(--clr-text-muted); font-size: .83rem; margin: 0; }
+.rse-error { margin: 0; font-size: .84rem; color: var(--clr-danger, #b91c1c); overflow-wrap: anywhere; }
+.rse-wrap { overflow-wrap: anywhere; min-width: 0; }
+.rse-mono { font-family: var(--font-mono); font-size: .76rem; overflow-wrap: anywhere; }
+.rse-gate code, .rse-prov code { font-size: .78rem; }
+.rse-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .8rem; }
+.rse-field { display: grid; gap: .2rem; font-size: .8rem; color: var(--clr-text-muted); max-width: 40rem; min-width: 0; }
+.rse-field select { max-width: 100%; }
+.rse-badge { display: inline-block; padding: .05rem .45rem; border-radius: 999px; font-size: .7rem; font-weight: 600; border: 1px solid var(--clr-border); white-space: nowrap; }
+.rse-badge-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.rse-badge-attention { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.rse-badge-muted { background: var(--clr-surface); color: var(--clr-text-muted); }
+.rse-empty, .rse-suggest, .rse-newer, .rse-incomplete { border: 1px dashed var(--clr-border); border-radius: var(--radius-md); padding: .6rem .75rem; display: grid; gap: .35rem; min-width: 0; font-size: .86rem; overflow-wrap: anywhere; }
+.rse-empty h3, .rse-empty h4 { margin: 0; font-size: .92rem; }
+.rse-empty p, .rse-newer p, .rse-incomplete p { margin: 0; }
+.rse-suggest { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .4rem .8rem; }
+.rse-newer, .rse-incomplete { border-style: solid; border-left: 3px solid #b45309; background: #fffbeb; }
+.rse-scope-card { border: 1px solid var(--clr-border); border-left: 3px solid var(--clr-link, #2563eb); border-radius: var(--radius-md); padding: .6rem .75rem; display: grid; gap: .45rem; min-width: 0; }
+.rse-title { margin: 0; display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; overflow-wrap: anywhere; }
+.rse-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: .3rem .9rem; margin: 0; }
+.rse-facts dt { font-size: .72rem; color: var(--clr-text-muted); }
+.rse-facts dd { margin: .1rem 0 0; font-size: .82rem; overflow-wrap: anywhere; min-width: 0; }
+.rse-related { display: grid; gap: .45rem; min-width: 0; }
+.rse-related h4 { margin: .2rem 0 0; font-size: .92rem; }
+.rse-related-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.rse-related-item { border: 1px solid var(--clr-border-subtle, #eef2f7); border-radius: var(--radius-md); padding: .5rem .65rem; display: grid; gap: .3rem; min-width: 0; overflow-wrap: anywhere; }
+.rse-related-item p { margin: 0; font-size: .85rem; }
+.rse-list { margin: 0; padding-left: 1.1rem; font-size: .83rem; display: grid; gap: .25rem; overflow-wrap: anywhere; }
+.rse-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem; }
+.rse-chips li { border: 1px solid var(--clr-border); border-radius: 999px; padding: .1rem .6rem; font-size: .82rem; display: inline-flex; flex-wrap: wrap; align-items: center; gap: .3rem; overflow-wrap: anywhere; }
+.rse-link { background: none; border: 0; padding: 0; color: var(--clr-link, #2563eb); text-decoration: underline; cursor: pointer; font-size: .82rem; }
+.rse-link:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.rse-prov { display: inline-flex; flex-wrap: wrap; gap: .25rem; align-items: center; overflow-wrap: anywhere; min-width: 0; }
+.rse-optional { display: flex; flex-wrap: wrap; gap: .3rem .6rem; align-items: center; font-size: .83rem; }

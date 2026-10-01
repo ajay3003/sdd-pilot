@@ -13,15 +13,19 @@ public interface IIntegrationCatalogApiService
 {
     Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
     Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source analysis is unavailable."));
-    Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeIqrSourceAsync(string environmentId, string integrationId, string fileName, Stream content, CancellationToken ct = default) =>
-        Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source evidence upload is unavailable."));
+    /// <summary>Source Analysis snapshots for binding one to an integration (read-only metadata; no upload).</summary>
+    Task<ReviewSourceOptions> IqrSourceScopeAsync(string environmentId, Guid? primary, CancellationToken ct = default) => Task.FromResult(new ReviewSourceOptions());
     Task<IntegrationReviewResult> RunWithSourceAsync(FrontendAnalysisProfile profile, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default) =>
         selections.Count == 0 ? RunAsync(profile, ct) : throw new InvalidOperationException("Source snapshot selection is unavailable.");
     Task<IntegrationMappingEvidenceCheck> CheckMappingAsync(string environmentId, string integrationId, CancellationToken ct = default);
     /// <summary>The environment's application-messaging (Wolverine) evidence, or null when no source was analyzed.</summary>
     Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default);
     /// <summary>Uploads source archives for read-only analysis; returns the new evidence or the reason nothing was stored.</summary>
-    Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeApplicationMessagingAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default);
+    /// <summary>Source Analysis snapshots for application messaging (read-only metadata).</summary>
+    Task<ReviewSourceOptions> ApplicationMessagingSourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) => Task.FromResult(new ReviewSourceOptions());
+    /// <summary>Builds the application-messaging evidence from exactly these Source Analysis snapshots (no upload).</summary>
+    Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> UseApplicationMessagingSourceAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default) =>
+        Task.FromResult<(ApplicationMessagingEvidenceSet?, string?)>((null, "Application messaging is unavailable."));
     Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default);
     /// <summary>Read-only "Test Service Bus" of one Service Bus platform (topology, code routes and — when configured — runtime metadata).</summary>
     Task<ServiceBusEvidenceCheck> CheckServiceBusAsync(string environmentId, string platformId, CancellationToken ct = default);
@@ -50,8 +54,11 @@ public interface IIntegrationCatalogApiService
     /// <summary>"Discover from source": re-runs discovery on the stored source snapshot (no runtime call, no archive re-processing).</summary>
     Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<SourceIntegrationsReport?>(null);
     /// <summary>Uploads repository archives for read-only SCIM source analysis.</summary>
-    Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeScimSourceAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default) =>
-        Task.FromResult<(ScimSourceEvidence?, string?)>((null, "SCIM source analysis is not available."));
+    /// <summary>Source Analysis snapshots for SCIM provisioning (read-only metadata).</summary>
+    Task<ReviewSourceOptions> ScimSourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) => Task.FromResult(new ReviewSourceOptions());
+    /// <summary>Records the SCIM source evidence of exactly this Source Analysis snapshot (no upload).</summary>
+    Task<(ScimSourceEvidence? Evidence, string? Error)> UseScimSourceAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default) =>
+        Task.FromResult<(ScimSourceEvidence?, string?)>((null, "SCIM evidence is unavailable."));
     /// <summary>"Run safe SCIM checks": GET-only runtime checks plus source/configuration evidence. Never mutates or lists users.</summary>
     Task<(ScimEvidenceCheck? Check, string? Error)> RunScimChecksAsync(FrontendAnalysisProfile profile, string platformId, CancellationToken ct = default) =>
         Task.FromResult<(ScimEvidenceCheck?, string?)>((null, "SCIM checks are not available."));
@@ -62,7 +69,8 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
 {
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
     public Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => UploadSource($"api/source-analysis/snapshots?{Env(environmentId)}", fileName, content, ct);
-    public Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeIqrSourceAsync(string environmentId, string integrationId, string fileName, Stream content, CancellationToken ct = default) => UploadSource($"api/integration-review/source/{Uri.EscapeDataString(integrationId)}?{Env(environmentId)}", fileName, content, ct);
+    public async Task<ReviewSourceOptions> IqrSourceScopeAsync(string environmentId, Guid? primary, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<ReviewSourceOptions>($"api/integration-review/source/scope?{Env(environmentId)}{(primary is { } id ? $"&primary={id}" : "")}", Json, ct) ?? new();
     private async Task<(IqrSourceSnapshot? Snapshot, string? Error)> UploadSource(string route, string fileName, Stream content, CancellationToken ct)
     {
         using var body = new MultipartFormDataContent();
@@ -97,16 +105,12 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
         return response.StatusCode == System.Net.HttpStatusCode.NoContent ? null : await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct);
     }
 
-    public async Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeApplicationMessagingAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    public async Task<ReviewSourceOptions> ApplicationMessagingSourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<ReviewSourceOptions>($"api/integrations/application-messaging/source-scope?{Env(environmentId)}{ReviewSourceQuery.Of(scope)}", Json, ct) ?? new();
+
+    public async Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> UseApplicationMessagingSourceAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default)
     {
-        using var form = new MultipartFormDataContent();
-        foreach (var (name, content) in archives)
-        {
-            var part = new StreamContent(content);
-            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
-            form.Add(part, "archives", name);
-        }
-        using var response = await http.PostAsync($"api/integrations/application-messaging?{Env(environmentId)}", form, ct);
+        using var response = await http.PostAsJsonAsync($"api/integrations/application-messaging/source-scope?{Env(environmentId)}", scope, Json, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct), null);
@@ -125,16 +129,12 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
     public async Task<ScimEvidenceOverview> ScimOverviewAsync(string environmentId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<ScimEvidenceOverview>($"api/integrations/scim?{Env(environmentId)}", Json, ct) ?? new ScimEvidenceOverview();
 
-    public async Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeScimSourceAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    public async Task<ReviewSourceOptions> ScimSourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<ReviewSourceOptions>($"api/integrations/scim/source-scope?{Env(environmentId)}{ReviewSourceQuery.Of(scope)}", Json, ct) ?? new();
+
+    public async Task<(ScimSourceEvidence? Evidence, string? Error)> UseScimSourceAsync(string environmentId, ReviewSourceScopeRequest scope, CancellationToken ct = default)
     {
-        using var form = new MultipartFormDataContent();
-        foreach (var (name, content) in archives)
-        {
-            var part = new StreamContent(content);
-            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
-            form.Add(part, "archives", name);
-        }
-        using var response = await http.PostAsync($"api/integrations/scim/source?{Env(environmentId)}", form, ct);
+        using var response = await http.PostAsJsonAsync($"api/integrations/scim/source-scope?{Env(environmentId)}", scope, Json, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ScimSourceEvidence>(Json, ct), null);

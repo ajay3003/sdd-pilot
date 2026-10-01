@@ -33,11 +33,20 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public string? ScimCheckError { get; set; }
     public List<string?> ScimCheckEnvironmentTypes { get; } = [];
     public Task<ScimEvidenceOverview> ScimOverviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(ScimOverview);
-    public Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeScimSourceAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    /// <summary>Source Analysis snapshots the review panels may choose from (metadata only; nothing is uploaded in a review).</summary>
+    public BirkNext.SourceEvidence.ReviewSourceOptions SourceOptions { get; set; } = new()
     {
-        Analyzed.AddRange(archives.Select(a => a.FileName));
-        Calls.Add("analyze-scim");
-        return Task.FromResult<(ScimSourceEvidence?, string?)>(ScimOverview.Source is { } source ? (source, null) : (null, "No archive analyzed (test)."));
+        Snapshots = [new() { SnapshotId = Guid.Parse("cccccccc-0000-0000-0000-000000000001"), RepositoryKey = "m2lb", Repository = "M2LB", IdentityBasis = "Archive file name", ArchiveName = "M2LB (1).zip",
+            Fingerprint = "c850a1b2" + new string('0', 56), AnalyzedAt = DateTimeOffset.Parse("2026-10-01T12:30:00Z"), SourceStatus = "Partial", Latest = true }],
+    };
+    public List<BirkNext.SourceEvidence.ReviewSourceScopeRequest> UsedScopes { get; } = [];
+    public Task<BirkNext.SourceEvidence.ReviewSourceOptions> ScimSourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest? scope, CancellationToken ct = default) =>
+        Task.FromResult(BirkNext.Web.Tests.Pages.SourceScopeFixture.Resolve(SourceOptions, scope, []));
+    public Task<(ScimSourceEvidence? Evidence, string? Error)> UseScimSourceAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest scope, CancellationToken ct = default)
+    {
+        UsedScopes.Add(scope);
+        Calls.Add("use-scim-source");
+        return Task.FromResult<(ScimSourceEvidence?, string?)>(ScimOverview.Source is { } source ? (source, null) : (null, "No snapshot evidence (test)."));
     }
     public Task<(ScimEvidenceCheck? Check, string? Error)> RunScimChecksAsync(FrontendAnalysisProfile profile, string platformId, CancellationToken ct = default)
     {
@@ -52,11 +61,13 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
     public List<(string Application, string? Consumer)> Bindings { get; } = [];
     public List<string> Analyzed { get; } = [];
     public Task<ApplicationMessagingEvidenceSet?> ApplicationMessagingAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(Messaging);
-    public Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeApplicationMessagingAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default)
+    public Task<BirkNext.SourceEvidence.ReviewSourceOptions> ApplicationMessagingSourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest? scope, CancellationToken ct = default) =>
+        Task.FromResult(BirkNext.Web.Tests.Pages.SourceScopeFixture.Resolve(SourceOptions, scope, []));
+    public Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> UseApplicationMessagingSourceAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest scope, CancellationToken ct = default)
     {
-        Analyzed.AddRange(archives.Select(a => a.FileName));
-        Calls.Add("analyze-messaging");
-        return Task.FromResult<(ApplicationMessagingEvidenceSet?, string?)>(Messaging is null ? (null, "No archive analyzed (test).") : (Messaging, null));
+        UsedScopes.Add(scope);
+        Calls.Add("use-messaging-source");
+        return Task.FromResult<(ApplicationMessagingEvidenceSet?, string?)>(Messaging is null ? (null, "No snapshot evidence (test).") : (Messaging, null));
     }
     public Task<ApplicationMessagingEvidenceSet> BindApplicationMessagingAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default)
     {

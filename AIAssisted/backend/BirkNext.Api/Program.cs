@@ -403,7 +403,11 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
-builder.Services.AddScoped<BirkNext.Api.Services.SecurityExpectations.ISecurityExpectationDiscoveryService, BirkNext.Api.Services.SecurityExpectations.SecurityExpectationDiscoveryService>();
+// Shared read-only access to Source Analysis snapshots for every source-aware review (Source Analysis owns ingestion; reviews own meaning).
+builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(sp => BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider.FromConfiguration(
+    sp.GetRequiredService<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>(), sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddScoped<BirkNext.Api.Services.SecurityExpectations.ISecurityExpectationDiscoveryService>(sp => new BirkNext.Api.Services.SecurityExpectations.SecurityExpectationDiscoveryService(
+    sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetRequiredService<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>()));
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceDiscovery.SourceIntegrationService>();
 // Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
@@ -435,8 +439,9 @@ builder.Services.AddSingleton<BirkNext.Api.Services.SecurityClassification.Class
 builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.IClassificationReviewService>(sp => new BirkNext.Api.Services.SecurityClassification.ClassificationReviewService(
     sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetRequiredService<BirkNext.Api.Services.SecurityClassification.IClassificationLiveProbe>(),
     sp.GetRequiredService<BirkNext.Api.Services.SecurityClassification.ClassificationTestContextStore>(), sp.GetRequiredService<ILogger<BirkNext.Api.Services.SecurityClassification.ClassificationReviewService>>(),
-    sp.GetService<IHttpContextAccessor>()?.HttpContext?.User.Identity is { IsAuthenticated: true, Name: { Length: > 0 } name } ? name : "local"));
-// Dependency / supply-chain review (Renovate policy): offline, read-only analysis of uploaded repository archives.
+    sp.GetService<IHttpContextAccessor>()?.HttpContext?.User.Identity is { IsAuthenticated: true, Name: { Length: > 0 } name } ? name : "local",
+    sp.GetRequiredService<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>()));
+// Dependency / supply-chain review (Renovate policy): offline, read-only analysis of Source Analysis snapshots, inventories and SBOMs.
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewSourceScopeService, BirkNext.Api.Services.DependencyReview.DependencyReviewSourceScopeService>();
 // Dependency health over stored inventories (no source upload): nuget.org registry metadata (GET only) and OSV advisories, bounded and cached;

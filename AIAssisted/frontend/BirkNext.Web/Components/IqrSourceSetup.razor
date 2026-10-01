@@ -1,23 +1,27 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Services
-@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.DependencyInjection
 @inject IIntegrationCatalogApiService Api
+@inject IServiceProvider Services
 
+@* Integration Quality Review's source evidence: one Source Analysis snapshot bound per integration (exact id, chosen here, never the latest
+   one automatically). Source upload belongs to Source Analysis; runtime integration evidence never needs a snapshot. *@
 <section class="iqr-source-setup" aria-labelledby="@(ShowHeading ? "iqr-source-heading" : null)" aria-label="@(ShowHeading ? null : "Source evidence setup")" data-testid="iqr-source-setup">
     @if (ShowHeading) { <h2 id="iqr-source-heading">Source evidence</h2> }
-    <p>BirkNext analyzes the supplied source snapshot and stores the resulting review evidence. The full extracted source tree is not required for historical IQR rendering.</p>
+    <p>Source evidence comes from snapshots managed by Source Analysis: choose the snapshot that holds an integration's implementation. The review keeps the evidence it used, so history does not depend on the snapshot later. Runtime evidence is configured separately.</p>
     <label for="iqr-source-integration">Integration</label>
-    <select id="iqr-source-integration" @bind="_integrationId" disabled="@_busy"><option value="">Select an integration</option>@foreach (var integration in Integrations.Where(i => i.Enabled)) { <option value="@integration.Id">@integration.DisplayName</option> }</select>
-    <label for="iqr-source-file">Upload source archive (.zip, maximum 50 MB)</label>
-    <InputFile id="iqr-source-file" accept=".zip" OnChange="Upload" disabled="@(_busy || string.IsNullOrEmpty(_integrationId))" />
-    <label for="iqr-source-existing">Use existing analysis for this integration</label>
-    <select id="iqr-source-existing" value="@SelectedId" @onchange="Select" disabled="@_busy">
-        <option value="">Not configured — no source selected</option>
-        @foreach (var snapshot in Snapshots.Where(s => s.IntegrationId == _integrationId)) { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.Status · @snapshot.AnalyzedAt.ToString("u")</option> }
-    </select>
-    @if (_busy) { <p role="status">Analyzing source snapshot…</p> }
-    @if (_error is not null) { <p role="alert">@_error</p> }
-    @if (Snapshots.FirstOrDefault(s => s.Id.ToString() == SelectedId) is { } selected) { <IqrSourceDetails Snapshot="selected" /> }
+    <select id="iqr-source-integration" value="@_integrationId" @onchange="IntegrationChangedAsync" disabled="@_busy"><option value="">Select an integration</option>@foreach (var integration in Integrations.Where(i => i.Enabled)) { <option value="@integration.Id">@integration.DisplayName</option> }</select>
+    @if (_integrationId.Length > 0)
+    {
+        var state = StateFor(_integrationId);
+        <SourceEvidencePrerequisite State="state" Prefix="iqr" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" ConsumerName="Integration Quality Review"
+                                    ShowStatusLine="true" ReturnTo="integration-quality-review" LoadError="@_error"
+                                    OtherSectionsNote="Configuration, connectivity and other runtime evidence of this integration do not need a source snapshot.">
+            <SourceSnapshotSelector @ref="_selector" State="state" Prefix="iqr" Busy="_busy" Label="Source snapshot for this integration" OnPrimaryChanged="PrimaryChangedAsync" />
+            <ReviewSourceScopePanel State="state" Prefix="iqr" Busy="_busy" SupportsRelated="false" EvidenceLabel="Integration source evidence" OnChangeSnapshot="FocusAsync" />
+        </SourceEvidencePrerequisite>
+        @if (state.PrimaryId is { } id && Snapshots.FirstOrDefault(s => s.Id == id) is { } selected) { <IqrSourceDetails Snapshot="selected" /> }
+    }
 </section>
 
 @code {
@@ -32,31 +36,41 @@
     private string _integrationId = "";
     private bool _busy;
     private string? _error;
-    private string SelectedId => Selections.FirstOrDefault(s => s.IntegrationId == _integrationId)?.SnapshotId.ToString() ?? "";
-    private void Select(ChangeEventArgs e)
+    private SourceSnapshotSelector? _selector;
+    private readonly Dictionary<string, ReviewSourceScopeState> _states = new(StringComparer.Ordinal);
+
+    private ReviewSourceScopeState StateFor(string integrationId)
     {
-        Selections.RemoveAll(s => s.IntegrationId == _integrationId);
-        if (Guid.TryParse(e.Value?.ToString(), out var id)) Selections.Add(new(_integrationId, id));
+        if (!_states.TryGetValue(integrationId, out var state))
+        {
+            _states[integrationId] = state = new ReviewSourceScopeState();
+            if (Selections.FirstOrDefault(s => s.IntegrationId == integrationId) is { } chosen) state.PickPrimary(chosen.SnapshotId);
+        }
+        return state;
     }
-    private async Task Upload(InputFileChangeEventArgs e)
+
+    private async Task IntegrationChangedAsync(ChangeEventArgs e)
     {
-        _error = null;
-        if (string.IsNullOrEmpty(_integrationId)) return;
+        _integrationId = e.Value?.ToString() ?? "";
+        if (_integrationId.Length > 0) await LoadAsync(StateFor(_integrationId));
+    }
+
+    private async Task LoadAsync(ReviewSourceScopeState state)
+    {
         _busy = true;
         await BusyChanged.InvokeAsync(true);
-        try
-        {
-            using var stream = e.File.OpenReadStream(50 * 1024 * 1024);
-            var (snapshot, error) = await Api.AnalyzeIqrSourceAsync(EnvironmentId, _integrationId, e.File.Name, stream);
-            _error = error;
-            if (snapshot is not null)
-            {
-                Selections.RemoveAll(s => s.IntegrationId == _integrationId);
-                Selections.Add(new(_integrationId, snapshot.Id));
-                await Analyzed.InvokeAsync();
-            }
-        }
-        catch (Exception ex) when (ex is IOException or HttpRequestException or InvalidOperationException) { _error = "Source upload failed. Check ZIP format, size limits and backend availability."; }
+        try { state.Options = await Api.IqrSourceScopeAsync(EnvironmentId, state.PrimaryId); _error = null; }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException) { _error = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
         finally { _busy = false; await BusyChanged.InvokeAsync(false); }
     }
+
+    private async Task PrimaryChangedAsync(Guid? id)
+    {
+        Selections.RemoveAll(s => s.IntegrationId == _integrationId);
+        if (id is { } chosen) Selections.Add(new(_integrationId, chosen));
+        await LoadAsync(StateFor(_integrationId));
+        await Analyzed.InvokeAsync();
+    }
+
+    private async Task FocusAsync() { if (_selector is not null) await _selector.FocusAsync(); }
 }

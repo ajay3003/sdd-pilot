@@ -180,7 +180,7 @@ public sealed record DependencyReviewResult
     public List<RepositoryDependencyReview> Repositories { get; init; } = [];
     public List<ReviewCategory> Categories { get; init; } = [];
     /// <summary>The exact Source Analysis snapshots reviewed. Null for legacy runs over directly uploaded archives (never back-filled).</summary>
-    public DependencyReviewSourceScope? SourceScope { get; init; }
+    public ReviewSourceScope? SourceScope { get; init; }
     public List<CrossSourceObservation> CrossSource { get; init; } = [];
     public List<SourceRelationship> SourceRelationships { get; init; } = [];
 }

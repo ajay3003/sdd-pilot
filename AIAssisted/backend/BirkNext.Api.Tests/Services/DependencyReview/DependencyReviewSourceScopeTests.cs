@@ -4,6 +4,7 @@ using System.Text;
 using BirkNext.Api.Data;
 using BirkNext.Api.Services.DependencyReview;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
+using BirkNext.Api.Services.SourceAnalysis;
 using BirkNext.Dependencies;
 using BirkNext.Integrations;
 using FluentAssertions;
@@ -70,7 +71,7 @@ public sealed class DependencyReviewSourceScopeTests : IDisposable
         await _db.SaveChangesAsync();
     }
 
-    private DependencyReviewSourceScopeService Service() => new(new IqrSourceStore(_db), new DependencyReviewService(_db, NullLogger<DependencyReviewService>.Instance));
+    private DependencyReviewSourceScopeService Service() => new(new ReviewSourceEvidenceProvider(new IqrSourceStore(_db)), new DependencyReviewService(_db, NullLogger<DependencyReviewService>.Instance));
 
     // ── Source Analysis evidence ────────────────────────────────────────────────────────────────────────────────────
 
@@ -221,7 +222,7 @@ public sealed class DependencyReviewSourceScopeTests : IDisposable
         legacy!.SourceScope.Should().BeNull("legacy runs are never given a fake snapshot id");
         var old = new IqrSourceSnapshot { Id = Guid.NewGuid(), Archive = new SourceArchive("M2LB _2_.zip", "c850a1b2ffff", 3), AnalyzedAt = DateTimeOffset.UtcNow, Status = SourceAnalysisStatus.Partial };
         var described = DependencyReviewSourceScopeService.Describe([old]).Single();
-        (described.Repository, described.HasDependencyEvidence, described.SourceStatus).Should().Be(("M2LB", false, "Partial"));
-        described.DependencyEvidenceNote.Should().Contain("Analyze the archive again in Source Analysis");
+        (described.Repository, described.HasConsumerEvidence, described.SourceStatus).Should().Be(("M2LB", false, "Partial"));
+        described.ConsumerEvidenceNote.Should().Contain("Analyze the archive again in Source Analysis");
     }
 }

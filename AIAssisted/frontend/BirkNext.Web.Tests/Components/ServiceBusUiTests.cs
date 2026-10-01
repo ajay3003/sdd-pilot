@@ -272,7 +272,7 @@ public sealed class ServiceBusUiTests : BunitContext
         Text(cut, "sb-messaging-runtime").Should().Be("Not assessed");
         cut.Find("[data-testid=sb-analyze-messaging]").Click();
         JSInterop.Invocations.Should().Contain(i => i.Identifier == "birknextFocusElement" && (string)i.Arguments[0]! == ServiceBusPlatformPanel.MessagingUploadId);
-        cut.Find("[data-testid=am-upload]").Id.Should().Be(ServiceBusPlatformPanel.MessagingUploadId, "the action points at the one real upload");
+        cut.Find("[data-testid=am-primary]").Id.Should().Be(ServiceBusPlatformPanel.MessagingUploadId, "the action points at the messaging source snapshot choice");
     }
 
     [Fact]

@@ -181,6 +181,8 @@ public sealed record ScimSourceEvidence
 {
     public string EnvironmentId { get; init; } = "";
     public DateTimeOffset AnalyzedAt { get; init; }
+    /// <summary>The Source Analysis snapshot this evidence came from (null when it was uploaded directly by an earlier version).</summary>
+    public BirkNext.SourceEvidence.ReviewSourceScope? SourceScope { get; init; }
     public int AnalyzerVersion { get; init; }
     public List<SourceArchive> Archives { get; init; } = [];
     /// <summary>True only when a SCIM route surface is mapped. Service Bus usage alone never detects SCIM.</summary>

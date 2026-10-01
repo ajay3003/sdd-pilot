@@ -13,7 +13,8 @@ namespace BirkNext.Web.Services;
 public interface IDependencyReviewApiService
 {
     /// <summary>Source Analysis snapshots of the environment and, for a chosen primary, its related-source candidates. Reads only.</summary>
-    Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default);
+    /// <summary>Source Analysis snapshots and, for a chosen scope, its related-source candidates, newer snapshots and problems (read-only).</summary>
+    Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     /// <summary>Reviews exactly the selected snapshots; a config override is optional and replaces that repository's in-repository configuration.</summary>
     Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<DependencyReviewRunSummary>> HistoryAsync(CancellationToken ct = default);
@@ -34,8 +35,8 @@ public sealed class DependencyReviewApiService(HttpClient http) : IDependencyRev
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public async Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) =>
-        await http.GetFromJsonAsync<SourceScopeOptions>($"api/dependency-review/source-scope?environmentId={Uri.EscapeDataString(environmentId)}{(primarySnapshotId is { } id ? $"&primary={id}" : "")}", Json, ct) ?? new();
+    public async Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<ReviewSourceOptions>($"api/dependency-review/source-scope?environmentId={Uri.EscapeDataString(environmentId)}{ReviewSourceQuery.Of(scope)}", Json, ct) ?? new();
 
     public async Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)
     {

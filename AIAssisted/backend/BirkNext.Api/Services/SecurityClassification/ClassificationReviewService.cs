@@ -11,7 +11,7 @@ public interface IClassificationReviewService
 {
     Task<ClassificationOverview> OverviewAsync(string environmentId, CancellationToken ct = default);
     /// <summary>Source Analysis snapshots, related-source candidates and the combined evidence of a scope. Read-only: no upload, no runtime call.</summary>
-    Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default);
+    Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     Task<(ClassificationTestContext? Context, string? Error)> SaveContextAsync(string environmentId, ClassificationTestContext context, CancellationToken ct = default);
     /// <summary>Removes the temporary in-memory context of this environment. Touches no stored row.</summary>
     void ClearContext(string environmentId);
@@ -33,12 +33,12 @@ public interface IClassificationReviewService
 /// synthetic test children only; the default is no live check at all.
 /// </summary>
 public sealed class ClassificationReviewService(AppDbContext db, IClassificationLiveProbe probe, ClassificationTestContextStore contexts, ILogger<ClassificationReviewService> logger,
-    string? scope = null) : IClassificationReviewService
+    string? scope = null, SourceAnalysis.IReviewSourceEvidenceProvider? sources = null) : IClassificationReviewService
 {
     /// <summary>Caller scope of the in-memory context (the authenticated principal, or "local").</summary>
     public string Scope { get; set; } = scope ?? "local";
     private ClassificationTestContext ActiveContext(string environmentId) => contexts.Get(Scope, environmentId) ?? new();
-    private readonly ClassificationSourceScopeService _scopes = new(new IqrSourceStore(db));
+    private readonly ClassificationSourceScopeService _scopes = new(sources ?? new SourceAnalysis.ReviewSourceEvidenceProvider(new IqrSourceStore(db)));
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     /// <summary>Legacy uploaded-archive analyses (no longer written).</summary>
@@ -78,9 +78,9 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
         return runs.Select(r => JsonSerializer.Deserialize<ClassificationReviewResult>(r.Json, Json)).OfType<ClassificationReviewResult>().ToList();
     }
 
-    public Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default) => _scopes.OptionsAsync(environmentId, scope, ct);
+    public Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default) => _scopes.OptionsAsync(environmentId, scope, ct);
 
-    private static ClassificationSourceScopeRequest Request(ClassificationSourceScope scope) => new()
+    private static ReviewSourceScopeRequest Request(ReviewSourceScope scope) => new()
     {
         PrimarySnapshotId = scope.Primary.SnapshotId, RelatedSnapshotIds = scope.Related.Select(r => r.SnapshotId).ToList(), ExcludedSuggestions = scope.ExcludedSuggestions,
     };

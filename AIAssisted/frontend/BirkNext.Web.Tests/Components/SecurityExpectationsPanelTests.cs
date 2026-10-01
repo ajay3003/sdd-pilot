@@ -52,7 +52,8 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         _api.AdditionalSources=[_api.Snapshot with {Id=Guid.NewGuid(),Archive=new("newer.zip",new string('b',64),2),AnalyzedAt=_api.Snapshot.AnalyzedAt.AddMinutes(1)}];
         var cut=Panel();cut.Markup.Should().Contain("Newer source snapshot available");
         cut.Find("[data-testid=sec-snapshot]").TextContent.Should().Contain("generic.zip").And.NotContain("newer.zip");
-        cut.Find("#sec-source").GetAttribute("value").Should().Be(_api.Snapshot.Id.ToString());
+        cut.Find("[data-testid=sec-primary]").GetAttribute("value").Should().Be(_api.Snapshot.Id.ToString(), "the newer snapshot is offered, never switched to");
+        cut.Find("[data-testid=sec-newer-snapshot]").TextContent.Should().Contain("not switched automatically");
         _api.DiscoverCalls.Should().Be(1);
     }
     [Fact] public void DiscoverShowsCandidatesSnapshotAndEvidenceButChangesNoApprovedValue()
@@ -205,6 +206,17 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         public SecurityExpectationCandidate Make(string id,SecurityExpectationField field,string value)=>new() {Id=id,FieldType=field,Value=value,NormalizedValue=SecurityExpectationValues.Normalize(field,value)??"",
             SourceSnapshotId=Snapshot.Id,SourceComponent="Shop.Ui",SourceFile="Shop.Ui/appsettings.json",SourceSymbol="GraphQl:Endpoint",Explanation="Explicit source configuration, no runtime observation.",EvidenceState=ArchitectureEvidenceState.Confirmed};
         public Task<IReadOnlyList<IqrSourceSnapshot>> SourcesAsync(string env)=>Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>(AdditionalSources.Concat([Snapshot]).ToList());
+        public List<ReviewSourceScopeRequest?> ScopeRequests {get;}=[];
+        /// <summary>The shared source options for the panel: metadata of the same snapshots (one repository per archive name).</summary>
+        public Task<ReviewSourceOptions> SourceScopeAsync(string env, ReviewSourceScopeRequest? scope)
+        {
+            ScopeRequests.Add(scope);
+            var all=AdditionalSources.Concat([Snapshot]).ToList();
+            var latest=all.MaxBy(s=>s.AnalyzedAt)!;
+            var options=new ReviewSourceOptions {Snapshots=all.Select(s=>new ReviewSourceSnapshot {SnapshotId=s.Id,RepositoryKey="generic",Repository="Generic",
+                IdentityBasis="Archive file name",ArchiveName=s.Archive.FileName,Fingerprint=s.Archive.Sha256,AnalyzedAt=s.AnalyzedAt,SourceStatus=s.Status.ToString(),Latest=true}).ToList()};
+            return Task.FromResult(BirkNext.Web.Tests.Pages.SourceScopeFixture.Resolve(options,scope,[]));
+        }
         public Task<IReadOnlyList<SecurityExpectationDiscoveryResult>> HistoryAsync(string env)=>Task.FromResult<IReadOnlyList<SecurityExpectationDiscoveryResult>>(_result is null?[]:[_result]);
         public Task<SecurityExpectationDiscoveryResult> DiscoverAsync(string env,SecurityDiscoveryRequest request) {DiscoverCalls++;_result=new() {Id=Guid.NewGuid(),TargetEnvironmentId=env,SourceSnapshotId=Snapshot.Id,SourceFingerprint=Snapshot.Archive.Sha256,IsCurrent=ResultCurrent,Status=ArchitectureStatus.Complete,Candidates=[..Candidates]};return Task.FromResult(_result);}
         public async Task<SecurityCandidateReviewResponse> ReviewAsync(string env,SecurityCandidateReviewRequest request,bool accept)

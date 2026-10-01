@@ -27,21 +27,43 @@ public sealed class IqrSourceEvidenceUiTests : BunitContext
         cut.FindAll("details > summary").Should().HaveCount(5);
         cut.Find("[role=region]").GetAttribute("tabindex").Should().Be("0");
     }
-    [Fact] public void SetupAllowsExplicitExistingSelectionPerIntegration()
+    [Fact] public void SetupBindsAnExactSourceAnalysisSnapshotPerIntegrationWithoutAnyUpload()
     {
-        Services.AddSingleton(Mock.Of<IIntegrationCatalogApiService>());
-        JSInterop.Mode = JSRuntimeMode.Loose;
+        var api = new Mock<IIntegrationCatalogApiService>();
         var snapshot = Snapshot();
+        var option = new BirkNext.SourceEvidence.ReviewSourceSnapshot { SnapshotId = snapshot.Id, RepositoryKey = "m2lb", Repository = "M2LB", ArchiveName = snapshot.Archive.FileName, Fingerprint = snapshot.Archive.Sha256, AnalyzedAt = snapshot.AnalyzedAt, SourceStatus = "Partial", Latest = true };
+        api.Setup(a => a.IqrSourceScopeAsync("dev", It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync((string _, Guid? primary, CancellationToken _) => new BirkNext.SourceEvidence.ReviewSourceOptions
+        {
+            Snapshots = [option],
+            Scope = primary is null ? null : new BirkNext.SourceEvidence.ReviewSourceScope { Primary = new() { SnapshotId = option.SnapshotId, Repository = "M2LB", RepositoryKey = "m2lb", Fingerprint = option.Fingerprint, ArchiveName = option.ArchiveName } },
+        });
+        Services.AddSingleton(api.Object);
+        JSInterop.Mode = JSRuntimeMode.Loose;
         var selections = new List<IqrSourceSelection>();
         var cut = Render<IqrSourceSetup>(p => p.Add(c => c.EnvironmentId, "dev").Add(c => c.Integrations, new List<IntegrationDefinition> { new() { Id = "person", DisplayName = "Person Adapter", Enabled = true } })
             .Add(c => c.Snapshots, new List<IqrSourceSnapshot> { snapshot }).Add(c => c.Selections, selections));
         cut.Find("#iqr-source-integration").Change("person");
-        cut.Find("#iqr-source-existing").Change(snapshot.Id.ToString());
+        cut.Find("[data-testid=iqr-current-snapshot]").TextContent.Should().Contain("M2LB").And.Contain("aaaaaaaa…");
+        selections.Should().BeEmpty("the current snapshot is only offered");
+        cut.Find("[data-testid=iqr-primary]").Change(snapshot.Id.ToString());
         selections.Should().ContainSingle(s => s.IntegrationId == "person" && s.SnapshotId == snapshot.Id);
-        cut.Find("#iqr-source-file").GetAttribute("accept").Should().Be(".zip");
-        cut.FindAll("label[for]").Should().HaveCount(3);
-        cut.Find("#iqr-source-existing").Change("");
+        cut.Find("[data-testid=iqr-primary-fingerprint]").GetAttribute("title").Should().Be(snapshot.Archive.Sha256);
+        cut.FindAll("input[type=file]").Should().BeEmpty("source is uploaded only in Source Analysis");
+        cut.Markup.Should().NotContain("Upload source archive");
+        cut.Find("[data-testid=iqr-primary]").Change("");
         selections.Should().BeEmpty();
+    }
+
+    [Fact] public void SetupWithoutSnapshotsPointsToSourceAnalysisAndLeavesRuntimeAlone()
+    {
+        var api = new Mock<IIntegrationCatalogApiService>();
+        api.Setup(a => a.IqrSourceScopeAsync("dev", It.IsAny<Guid?>(), It.IsAny<CancellationToken>())).ReturnsAsync(new BirkNext.SourceEvidence.ReviewSourceOptions());
+        Services.AddSingleton(api.Object);
+        var cut = Render<IqrSourceSetup>(p => p.Add(c => c.EnvironmentId, "dev").Add(c => c.Integrations, new List<IntegrationDefinition> { new() { Id = "person", DisplayName = "Person Adapter", Enabled = true } }));
+        cut.Find("#iqr-source-integration").Change("person");
+        cut.Find("[data-testid=iqr-source-empty]").TextContent.Should().Contain("No source snapshot available");
+        cut.Find("[data-testid=iqr-open-source-analysis]").GetAttribute("href").Should().Be("source-analysis?returnTo=integration-quality-review");
+        cut.Find("[data-testid=iqr-source-other-sections]").TextContent.Should().Contain("runtime evidence").And.Contain("do not need a source snapshot");
     }
     [Fact] public void ExportUsesImmutableEvidenceAndExcludesSourceAndSecrets()
     {

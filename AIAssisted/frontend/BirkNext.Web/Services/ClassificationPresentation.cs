@@ -127,7 +127,7 @@ public static class ClassificationPresentation
     public static string ShortFingerprint(string fingerprint) => fingerprint.Length > 8 ? fingerprint[..8] + "…" : fingerprint;
 
     /// <summary>"M2LB · c850a1b2…" for each snapshot a fact, check or finding cites.</summary>
-    public static string Sources(IEnumerable<ClassificationSourceRef> sources) => string.Join(" · ", sources.Select(s => $"{s.Repository} {ShortFingerprint(s.Fingerprint)}"));
+    public static string Sources(IEnumerable<ReviewSourceProvenance> sources) => string.Join(" · ", sources.Select(s => $"{s.Repository} {ShortFingerprint(s.Fingerprint)}"));
 
     /// <summary>A run's source as recorded: the exact Source Analysis scope, legacy uploaded archives, or none.</summary>
     public static string ScopeLine(ClassificationReviewResult result) => result.SourceScope is { } scope

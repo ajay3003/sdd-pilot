@@ -27,4 +27,7 @@
     <ProjectReference Include="..\BirkNext.Web\BirkNext.Web.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Using Include="BirkNext.SourceEvidence" />
+  </ItemGroup>
 </Project>

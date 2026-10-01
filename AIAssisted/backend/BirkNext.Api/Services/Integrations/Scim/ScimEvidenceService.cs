@@ -11,6 +11,10 @@ public interface IScimEvidenceService
 {
     Task<ScimEvidenceOverview> OverviewAsync(string environmentId, CancellationToken ct = default);
     Task<ScimSourceEvidence?> SourceAsync(string environmentId, CancellationToken ct = default);
+    /// <summary>Source Analysis snapshots for SCIM provisioning (one snapshot per review). Read-only.</summary>
+    Task<BirkNext.SourceEvidence.ReviewSourceOptions> SourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest? scope, CancellationToken ct = default);
+    /// <summary>Records the SCIM source evidence of exactly this Source Analysis snapshot (no upload, no substitution).</summary>
+    Task<(ScimSourceEvidence? Evidence, string? Error)> UseSourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest scope, CancellationToken ct = default);
     Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default);
     /// <summary>"Run safe SCIM checks": stored source evidence + safe GET checks + Service Bus correlation. Stored as an immutable snapshot.</summary>
     Task<(ScimEvidenceCheck? Check, string? Error)> RunSafeChecksAsync(string environmentId, string platformId, string? environmentType, string? targetUrl, CancellationToken ct = default);
@@ -26,9 +30,51 @@ public interface IScimEvidenceService
 /// message is published. Synthetic mutation testing is modelled as a capability that is off by default and not executed in this version.
 /// </summary>
 public sealed class ScimEvidenceService(AppDbContext db, IIntegrationCatalogService catalog, IScimRuntimeProbe probe, ILogger<ScimEvidenceService> logger,
-    ServiceBusEvidenceService? serviceBus = null) : IScimEvidenceService
+    ServiceBusEvidenceService? serviceBus = null, SourceAnalysis.IReviewSourceEvidenceProvider? sources = null) : IScimEvidenceService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    public const string NoEvidence = "Analyzed before SCIM evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot.";
+    private SourceAnalysis.IReviewSourceEvidenceProvider Sources => sources ?? new SourceAnalysis.ReviewSourceEvidenceProvider(new SourceEvidence.IqrSourceStore(db));
+
+    /// <summary>Source Analysis' capture step: this analyzer over one archive (never throws).</summary>
+    public static ScimSourceEvidence? ExtractSnapshotEvidence(string environmentId, string name, byte[] bytes)
+    {
+        try
+        {
+            var (archive, files, error) = ScimSourceReader.Read(name, bytes);
+            return error is not null || archive is null ? null : ScimSourceAnalyzer.Analyze(environmentId, [archive], files, DateTimeOffset.UtcNow);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException) { return null; }
+    }
+
+    public static SourceAnalysis.ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => s.ScimEvidence is not { } e ? new(false, NoEvidence)
+        : new(true, e.Detected ? null : "No SCIM route surface was found in this snapshot.", e.Detected ? $"{e.Operations.Count} SCIM operation(s) · {e.Requirements.Count} requirement(s)" : null);
+
+    private static string? Problem(IqrSourceSnapshot s) => s.ScimEvidence is null ? NoEvidence : null;
+
+    public async Task<BirkNext.SourceEvidence.ReviewSourceOptions> SourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest? scope, CancellationToken ct = default)
+    {
+        var snapshots = Sources.SourceAnalysisEnabled ? await Sources.ListAsync(environmentId, ct) : [];
+        var options = SourceAnalysis.ReviewSourceEvidenceProvider.Options(Sources.SourceAnalysisEnabled, snapshots, Evidence, scope, _ => [], Problem);
+        return scope is { RelatedSnapshotIds.Count: > 0 } ? options with { Scope = null, Error = OneSnapshot } : options;
+    }
+
+    private const string OneSnapshot = "SCIM provisioning evidence is read from one source snapshot (the repository hosting the SCIM adapter).";
+
+    public async Task<(ScimSourceEvidence? Evidence, string? Error)> UseSourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest scope, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return (null, "An analysis must belong to a Target Environment.");
+        if (scope.RelatedSnapshotIds.Count > 0) return (null, OneSnapshot);
+        var snapshots = await Sources.ListAsync(environmentId, ct);
+        var (selected, error) = SourceAnalysis.ReviewSourceEvidenceProvider.Validate(scope, snapshots, Problem, Sources.SourceAnalysisEnabled);
+        if (selected is null) return (null, error);
+        var evidence = selected[0].ScimEvidence! with { EnvironmentId = environmentId, SourceScope = SourceAnalysis.ReviewSourceEvidenceProvider.Scope(selected, [], scope.ExcludedSuggestions) };
+        db.ScimEvidence.Add(new ScimEvidenceRecord { Id = Guid.NewGuid(), EnvironmentId = environmentId, Kind = SourceKind, CreatedAt = DateTimeOffset.UtcNow, Json = JsonSerializer.Serialize(evidence, Json) });
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("SCIM source evidence for {EnvironmentId} taken from Source Analysis snapshot {Fingerprint}: detected {Detected}.",
+            environmentId, selected[0].Archive.Sha256[..Math.Min(12, selected[0].Archive.Sha256.Length)], evidence.Detected);
+        return (evidence, null);
+    }
     private const string SourceKind = "source";
     private const string CheckKind = "check";
 

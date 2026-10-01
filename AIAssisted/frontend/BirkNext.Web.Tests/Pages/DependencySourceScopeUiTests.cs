@@ -15,13 +15,14 @@ public sealed class DependencySourceScopeUiTests : BunitContext
 {
     private sealed class FakeApi : IDependencyReviewApiService
     {
-        public SourceScopeOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
+        public ReviewSourceOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
         public List<RelatedSourceCandidate> Candidates { get; set; } = [SourceScopeFixture.CommonCandidate];
         public List<Guid?> ScopeCalls { get; } = [];
         public SourceDependencyReviewRequest? LastRequest { get; private set; }
         public DependencyReviewResult? Result { get; set; }
-        public Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default)
-        { ScopeCalls.Add(primarySnapshotId); return Task.FromResult(primarySnapshotId is null ? Options : Options with { Candidates = Candidates }); }
+        public List<ReviewSourceScopeRequest?> ScopeRequests { get; } = [];
+        public Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default)
+        { ScopeCalls.Add(scope?.PrimarySnapshotId); ScopeRequests.Add(scope); return Task.FromResult(SourceScopeFixture.Resolve(Options, scope, Candidates)); }
         public Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)
         { LastRequest = request; return Task.FromResult<(DependencyReviewResult?, string?)>((Result ?? Run(scoped: true), null)); }
         public Task<IReadOnlyList<DependencyReviewRunSummary>> HistoryAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<DependencyReviewRunSummary>>([]);
@@ -61,7 +62,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
     {
         RunId = Guid.NewGuid(), CompletedAt = DateTimeOffset.Parse("2026-10-01T12:00:00Z"), Label = "M2LB + M2LB.Common", EvaluationMechanism = "subset",
         Repositories = [new() { Repository = "M2LB", ArchiveSha256 = SourceScopeFixture.App.Fingerprint, Coverage = RenovateCoverage.Configured }, new() { Repository = "M2LB.Common", ArchiveSha256 = SourceScopeFixture.Common.Fingerprint, Coverage = RenovateCoverage.Missing }],
-        SourceScope = scoped ? new DependencyReviewSourceScope
+        SourceScope = scoped ? new ReviewSourceScope
         {
             Primary = new() { SnapshotId = SourceScopeFixture.App.SnapshotId, Repository = "M2LB", ArchiveName = "M2LB (1).zip", Fingerprint = SourceScopeFixture.App.Fingerprint, SourceStatus = "Partial" },
             Related = [new() { SnapshotId = SourceScopeFixture.Common.SnapshotId, Repository = "M2LB.Common", ArchiveName = "M2LB.Common.zip", Fingerprint = SourceScopeFixture.Common.Fingerprint, SourceStatus = "Ready" }],
@@ -77,7 +78,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
         _api.Options = new();
         var cut = Open();
         cut.Find("[data-testid='dr-source-empty']").TextContent.Should().Contain("No source snapshot available").And.Contain("managed by Source Analysis");
-        cut.Find("[data-testid='dr-open-source-analysis']").GetAttribute("href").Should().Be("source-analysis");
+        cut.Find("[data-testid='dr-open-source-analysis']").GetAttribute("href").Should().Be("source-analysis?returnTo=dependency-review");
         cut.FindAll("[data-testid='dr-setup'] input[type=file]").Select(i => i.GetAttribute("accept")).Should().Equal(new[] { ".json,.json5,.renovaterc" }, "only the optional Renovate config override remains — no source ZIP");
         Next(cut).Should().Be("Open Source Analysis");
         cut.Find("[data-testid='dr-readiness-state']").ClassList.Should().NotContain("dr-badge-attention", "no snapshot is not a failure");
@@ -90,13 +91,13 @@ public sealed class DependencySourceScopeUiTests : BunitContext
         var cut = Open();
         cut.FindAll("[data-testid='dr-primary'] optgroup").Select(g => g.GetAttribute("label")).Should().Equal("M2LB", "M2LB.Common");
         var option = cut.FindAll("[data-testid='dr-primary'] option").Single(o => o.GetAttribute("value") == SourceScopeFixture.App.SnapshotId.ToString()).TextContent;
-        option.Should().Be("M2LB (1).zip · 2026-10-01 11:14 UTC · c850a1b2… · Source Analysis: Partial");
+        option.Should().Be("M2LB (1).zip · c850a1b2… · 2026-10-01 11:14 UTC · Source Analysis: Partial · latest");
         option.Should().NotContain(SourceScopeFixture.App.Fingerprint);
         cut.Find("[data-testid='dr-current-snapshot']").TextContent.Should().Contain("M2LB").And.Contain("c850a1b2…");
         cut.Find("[data-testid='dr-use-current']").Click();
         cut.Find("[data-testid='dr-primary-summary']").GetAttribute("data-snapshot").Should().Be(SourceScopeFixture.App.SnapshotId.ToString());
         _api.LastRequest.Should().BeNull("choosing a snapshot never starts a review");
-        cut.Find("[data-testid='dr-primary-status']").TextContent.Should().Contain("Partial").And.Contain("not dependency health");
+        cut.Find("[data-testid='dr-primary-status']").TextContent.Should().Contain("Partial").And.Contain("not a review result");
     }
 
     [Fact]
@@ -107,7 +108,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
         var candidate = cut.Find("[data-testid='dr-related-candidate']");
         candidate.TextContent.Should().Contain("M2LB.Common").And.Contain("Suggested").And.Contain("Snapshot available").And.Contain("Referenced by 15 project(s)");
         candidate.QuerySelector("[data-testid='dr-related-included']").Should().BeNull("detected is not included");
-        cut.Find("[data-testid='dr-related-count']").TextContent.Should().Contain("0 included");
+        cut.Find("[data-testid='dr-related-count']").TextContent.Should().Contain("None included");
         cut.Find("[data-testid='dr-scope-incomplete']").TextContent.Should().Contain("Review scope may be incomplete").And.Contain("M2LB.Common");
         cut.Find("[data-testid='dr-run']").HasAttribute("disabled").Should().BeFalse("a suggested source is optional");
 
@@ -121,7 +122,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
 
         cut.Find("[data-testid='dr-mode'][data-mode='Source']").Click();
         cut.Find("[data-testid='dr-related-remove']").Click();
-        cut.Find("[data-testid='dr-related-count']").TextContent.Should().Contain("0 included");
+        cut.Find("[data-testid='dr-related-count']").TextContent.Should().Contain("None included");
         cut.Find("[data-testid='dr-primary-summary']").Should().NotBeNull("removing a related source keeps the primary");
     }
 
@@ -136,7 +137,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
         var missing = cut.FindAll("[data-testid='dr-related-candidate']").Single(c => c.GetAttribute("data-repository") == "Shared.Contracts");
-        missing.QuerySelector("[data-testid='dr-related-missing']")!.TextContent.Should().Contain("No analyzed source snapshot is available");
+        missing.QuerySelector("[data-testid='dr-related-missing']")!.TextContent.Should().Contain("No analyzed Source Analysis snapshot is available");
         missing.QuerySelector("[data-testid='dr-related-open-source-analysis']")!.GetAttribute("href").Should().Be("source-analysis");
         missing.QuerySelector("[data-testid='dr-related-include']").Should().BeNull("nothing to include");
         cut.FindAll("[data-testid='dr-related-candidate']").Single(c => c.GetAttribute("data-repository") == "M2LB.Common").QuerySelector("[data-testid='dr-related-state']")!.TextContent.Should().Be("Needs review");
@@ -150,7 +151,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
     {
         var cut = Open();
         cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
-        cut.Find("[data-testid='dr-continue-without']").Change(true);
+        cut.Find("[data-testid='dr-continue-without']").Click();
         cut.Find("[data-testid='dr-run']").Click();
         _api.LastRequest!.ExcludedSuggestions.Should().Equal("M2LB.Common");
     }
@@ -189,7 +190,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
     [Fact]
     public void SnapshotWithoutDependencyEvidence_IsNotAvailable_NotFailed()
     {
-        var old = SourceScopeFixture.App with { HasDependencyEvidence = false, DependencyEvidenceNote = "Analyzed before dependency evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot." };
+        var old = SourceScopeFixture.App with { HasConsumerEvidence = false, ConsumerEvidenceNote = "Analyzed before dependency evidence was captured. Analyze the archive again in Source Analysis to create a new snapshot." };
         _api.Options = new() { Snapshots = [old] };
         var cut = Open();
         cut.Find("[data-testid='dr-primary']").Change(old.SnapshotId.ToString());
@@ -204,7 +205,7 @@ public sealed class DependencySourceScopeUiTests : BunitContext
     public void SourceAnalysisDisabled_OffersNoSnapshots_OtherEvidenceRemains()
     {
         var cut = Open(sourceAnalysisEnabled: false);
-        cut.Find("[data-testid='dr-source-disabled']").TextContent.Should().Contain("Source Analysis is disabled").And.Contain("no data is removed");
+        cut.Find("[data-testid='dr-source-disabled']").TextContent.Should().Contain("Source Analysis is disabled").And.Contain("no snapshot or result is removed").And.Contain("inventory, SBOM and deployed evidence remain available");
         _api.ScopeCalls.Should().BeEmpty("hidden Source Analysis is not bypassed");
         Next(cut).Should().Be("Choose other dependency evidence");
         cut.FindAll("[data-testid='dr-mode']").Should().HaveCount(4, "existing inventory, SBOM and deployed evidence stay available");

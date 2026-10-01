@@ -1,0 +1,148 @@
+@* The chosen source scope of a review: the exact primary snapshot, newer snapshots (offered, never switched to), and — when the review
+   supports them — related sources suggested from evidence (never included without an explicit choice, never merged). The review decides
+   which related sources are relevant; this panel only shows its candidates and records the user's choices. *@
+@if (State.Options?.Error is { } scopeError)
+{
+    <p class="rse-error" role="alert" data-testid="@($"{Prefix}-scope-error")">@scopeError</p>
+}
+@if (State.Primary is { } p)
+{
+    <div class="rse-scope-card" data-testid="@($"{Prefix}-primary-summary")" data-snapshot="@p.SnapshotId">
+        <p class="rse-title"><span class="rse-badge rse-badge-info">Primary</span> <strong>@p.Repository</strong> <span class="rse-muted">· @p.IdentityBasis</span></p>
+        <dl class="rse-facts">
+            <div><dt>Archive</dt><dd class="rse-wrap">@p.ArchiveName</dd></div>
+            <div><dt>Fingerprint</dt><dd><code title="@p.Fingerprint" data-testid="@($"{Prefix}-primary-fingerprint")">@ReviewSourceScopes.Short(p.Fingerprint)</code></dd></div>
+            <div><dt>Analyzed</dt><dd>@ReviewSourceScopeState.Utc(p.AnalyzedAt)</dd></div>
+            <div><dt>Source Analysis</dt><dd data-testid="@($"{Prefix}-primary-status")">@p.SourceStatus <span class="rse-muted">(extraction status, not a review result)</span></dd></div>
+            <div><dt>@EvidenceLabel</dt><dd data-testid="@($"{Prefix}-primary-evidence")">@(p.HasConsumerEvidence ? p.ConsumerEvidenceNote ?? p.ConsumerSummary ?? "Available" : "Not available")@if (!p.HasConsumerEvidence) { <span class="rse-muted"> — @p.ConsumerEvidenceNote</span> }</dd></div>
+        </dl>
+        @PrimaryDetails
+        <div class="rse-actions">
+            <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-change-snapshot")" @onclick="OnChangeSnapshot">Change snapshot</button>
+            <a class="btn-secondary" href="@ReviewSourceScopes.SourceAnalysisRoute" data-testid="@($"{Prefix}-primary-open-source-analysis")">@ReviewSourceScopes.OpenSourceAnalysis</a>
+            @if (OnRefresh.HasDelegate) { <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-refresh-source")" disabled="@Busy" @onclick="OnRefresh">Refresh source evidence</button> }
+        </div>
+        @foreach (var newer in State.Newer)
+        {
+            var currentEntry = State.Options?.Scope is { } sc ? new[] { sc.Primary }.Concat(sc.Related).FirstOrDefault(e => e.RepositoryKey == newer.RepositoryKey) : null;
+            <div class="rse-newer" role="note" data-testid="@($"{Prefix}-newer-snapshot")" data-repository="@newer.Repository">
+                <p><strong>Newer source snapshot available</strong> — current review source @newer.Repository · <code>@ReviewSourceScopes.Short(currentEntry?.Fingerprint ?? "")</code>@(currentEntry is null ? "" : $" ({ReviewSourceScopeState.Utc(currentEntry.AnalyzedAt)})"); latest · <code>@ReviewSourceScopes.Short(newer.Fingerprint)</code> (@ReviewSourceScopeState.Utc(newer.AnalyzedAt)). The review is not switched automatically.</p>
+                <div class="rse-actions">
+                    <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-review-newer")" disabled="@Busy" @onclick="() => ChangedAsync(() => State.UseNewer(newer))">Review newer snapshot<span class="visually-hidden"> for @newer.Repository</span></button>
+                    <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-keep-current")" @onclick="() => State.KeptNewer.Add(newer.SnapshotId)">Keep current<span class="visually-hidden"> for @newer.Repository</span></button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (SupportsRelated)
+    {
+        <section class="rse-related" aria-labelledby="@($"{Prefix}-related-heading")" data-testid="@($"{Prefix}-related")">
+            <h4 id="@($"{Prefix}-related-heading")">Related sources <span class="rse-muted" data-testid="@($"{Prefix}-related-count")">· @(State.Related.Count == 0 ? "None included" : $"{State.Related.Count} included")</span></h4>
+            <p class="rse-muted">@RelatedExplanation A suggestion is never included until you include it, and is never merged into the primary.</p>
+            @if ((State.Options?.Candidates.Count ?? 0) == 0) { <p class="rse-muted" data-testid="@($"{Prefix}-related-none")">@NoRelatedText</p> }
+            <ul class="rse-related-list">
+                @foreach (var c in State.Options?.Candidates ?? [])
+                {
+                    var included = State.Related.ContainsKey(c.RepositoryKey);
+                    var choices = c.MatchingSnapshotIds.Select(id => State.Snapshots.FirstOrDefault(s => s.SnapshotId == id)).OfType<ReviewSourceSnapshot>().ToList();
+                    var pick = State.Related.TryGetValue(c.RepositoryKey, out var inc) ? inc : State.RelatedChoice.TryGetValue(c.RepositoryKey, out var ch) ? ch : choices.FirstOrDefault()?.SnapshotId;
+                    <li class="rse-related-item" data-testid="@($"{Prefix}-related-candidate")" data-repository="@c.Repository" data-state="@c.State">
+                        <p class="rse-title"><strong>@(included ? "Related source included" : "Related source suggested"): @c.Repository</strong> <span class="rse-badge rse-badge-muted">@c.Confidence</span> <span class="rse-badge rse-badge-@(c.State == RelatedSourceState.SnapshotAvailable ? "info" : c.State == RelatedSourceState.NeedsReview ? "attention" : "muted")" data-testid="@($"{Prefix}-related-state")">@RelatedState(c.State)</span>@if (included) { <span class="rse-badge rse-badge-info" data-testid="@($"{Prefix}-related-included")">✓ Included</span> }</p>
+                        <p class="rse-muted" data-testid="@($"{Prefix}-related-reason")">@c.Reason</p>
+                        <ul class="rse-list" data-testid="@($"{Prefix}-related-evidence")">@foreach (var e in c.Evidence) { <li><strong>@e.Kind</strong> — @e.Detail@(e.Projects > 0 ? $" ({e.Projects} project(s))" : "")@if (e.Examples.Count > 0) { <br /><span class="rse-muted rse-mono">@string.Join(" · ", e.Examples.Take(3))</span> }</li> }</ul>
+                        @if (choices.Count == 0)
+                        {
+                            <p data-testid="@($"{Prefix}-related-missing")">No analyzed Source Analysis snapshot is available. <a href="@ReviewSourceScopes.SourceAnalysisRoute" data-testid="@($"{Prefix}-related-open-source-analysis")">@ReviewSourceScopes.OpenSourceAnalysis</a> to analyze it; the review can run without it (recorded as a limitation).</p>
+                        }
+                        else
+                        {
+                            <div class="rse-actions">
+                                @if (choices.Count > 1)
+                                {
+                                    <label class="rse-field">Snapshot of @c.Repository <select class="form-control" data-testid="@($"{Prefix}-related-snapshot")" value="@pick" disabled="@(Busy || included)" @onchange="e => { if (Guid.TryParse(e.Value?.ToString(), out var id)) State.RelatedChoice[c.RepositoryKey] = id; }">@foreach (var s in choices) { <option value="@s.SnapshotId">@ReviewSourceScopeState.Option(s)</option> }</select></label>
+                                }
+                                else { <span class="rse-muted">Available snapshot: <span class="rse-wrap">@choices[0].ArchiveName</span> · <code>@ReviewSourceScopes.Short(choices[0].Fingerprint)</code></span> }
+                                @if (included) { <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-related-remove")" disabled="@Busy" @onclick="() => ChangedAsync(() => State.Remove(c.RepositoryKey))">Remove<span class="visually-hidden"> @c.Repository</span></button> }
+                                else { <button type="button" class="btn-secondary" data-testid="@($"{Prefix}-related-include")" disabled="@(pick is null || Busy)" @onclick="() => ChangedAsync(() => State.Include(c.RepositoryKey, pick!.Value))">Include in review<span class="visually-hidden"> @c.Repository</span></button> }
+                            </div>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (AllowManualRelated)
+            {
+                var manual = State.Snapshots.Where(s => s.RepositoryKey != p.RepositoryKey && !State.Related.ContainsKey(s.RepositoryKey) && !(State.Options?.Candidates ?? []).Any(c => c.RepositoryKey == s.RepositoryKey)).ToList();
+                @if (manual.Count > 0)
+                {
+                    <label class="rse-field">Add another source snapshot (not detected)
+                        <select class="form-control" data-testid="@($"{Prefix}-add-related")" value="" disabled="@Busy" @onchange="AddManualAsync">
+                            <option value="">Choose a related source snapshot</option>
+                            @foreach (var s in manual) { <option value="@s.SnapshotId">@s.Repository · @ReviewSourceScopeState.Option(s, MissingEvidenceLabel)</option> }
+                        </select>
+                    </label>
+                }
+                @if (State.Related.Count > 0)
+                {
+                    <ul class="rse-chips" data-testid="@($"{Prefix}-related-included-list")">
+                        @foreach (var (key, id) in State.Related.OrderBy(r => r.Key, StringComparer.Ordinal))
+                        {
+                            var s = State.Snapshots.FirstOrDefault(x => x.SnapshotId == id);
+                            <li data-testid="@($"{Prefix}-related-chip")"><span aria-hidden="true">✓ </span>@(s?.Repository ?? key) · <code>@ReviewSourceScopes.Short(s?.Fingerprint ?? "")</code>@if (s is { HasConsumerEvidence: false }) { <span class="rse-muted"> · @(MissingEvidenceLabel ?? "no evidence for this review")</span> } <button type="button" class="rse-link" @onclick="() => ChangedAsync(() => State.Remove(key))">Remove<span class="visually-hidden"> @(s?.Repository ?? key)</span></button></li>
+                        }
+                    </ul>
+                }
+            }
+            @{ var notIncluded = State.NotIncluded; }
+            @if (notIncluded.Count > 0 && !notIncluded.All(c => State.Excluded.Contains(c.Repository)))
+            {
+                <div class="rse-incomplete" role="note" data-testid="@($"{Prefix}-scope-incomplete")">
+                    <p><strong>Review scope may be incomplete</strong> — related source detected but not included: @string.Join(", ", notIncluded.Select(c => c.Repository)). The review can still run; leaving it out is recorded as a scope limitation in the result.</p>
+                    <div class="rse-actions"><button type="button" class="btn-secondary" data-testid="@($"{Prefix}-continue-without")" disabled="@Busy" @onclick="() => ChangedAsync(State.ContinueWithout)">Continue without</button></div>
+                </div>
+            }
+            else if (notIncluded.Count > 0)
+            {
+                <p class="rse-muted" data-testid="@($"{Prefix}-continued-without")">Continuing without @string.Join(", ", notIncluded.Select(c => c.Repository)) — recorded as a scope limitation.</p>
+            }
+        </section>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public ReviewSourceScopeState State { get; set; } = new();
+    [Parameter] public string Prefix { get; set; } = "src";
+    [Parameter] public bool Busy { get; set; }
+    /// <summary>How the review names its own evidence in a snapshot, e.g. "Dependency evidence".</summary>
+    [Parameter] public string EvidenceLabel { get; set; } = "Evidence for this review";
+    [Parameter] public string? MissingEvidenceLabel { get; set; }
+    [Parameter] public bool SupportsRelated { get; set; } = true;
+    [Parameter] public bool AllowManualRelated { get; set; }
+    [Parameter] public string RelatedExplanation { get; set; } = "Detected from the primary snapshot's evidence.";
+    [Parameter] public string NoRelatedText { get; set; } = "No related source detected in the primary snapshot's evidence.";
+    [Parameter] public RenderFragment? PrimaryDetails { get; set; }
+    /// <summary>Raised after the scope changed (include/remove/continue without/review newer): the page reloads its options.</summary>
+    [Parameter] public EventCallback OnScopeChanged { get; set; }
+    [Parameter] public EventCallback OnChangeSnapshot { get; set; }
+    /// <summary>When set, a "Refresh source evidence" action re-reads Source Analysis for the same exact scope.</summary>
+    [Parameter] public EventCallback OnRefresh { get; set; }
+
+    private async Task ChangedAsync(Action change)
+    {
+        change();
+        await OnScopeChanged.InvokeAsync();
+    }
+
+    private async Task AddManualAsync(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id) && State.Snapshots.FirstOrDefault(s => s.SnapshotId == id) is { } s && State.Include(s.RepositoryKey, id))
+            await OnScopeChanged.InvokeAsync();
+    }
+
+    public static string RelatedState(RelatedSourceState state) => state switch
+    {
+        RelatedSourceState.SnapshotAvailable => "Snapshot available",
+        RelatedSourceState.SnapshotUnavailable => "No analyzed snapshot",
+        _ => "Needs review",
+    };
+}

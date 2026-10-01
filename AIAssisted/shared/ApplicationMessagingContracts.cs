@@ -124,6 +124,8 @@ public sealed record ApplicationMessagingEvidenceSet
     public List<SourceArchive> Archives { get; init; } = [];
     public List<ApplicationMessagingEvidence> Applications { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>The Source Analysis snapshots this set was built from (null when it was uploaded directly by an earlier version).</summary>
+    public BirkNext.SourceEvidence.ReviewSourceScope? SourceScope { get; init; }
 }
 
 /// <summary>Runtime application-messaging telemetry of one application in one run. Aggregates only — no message body, no payload field.</summary>

@@ -1,8 +1,9 @@
 @using BirkNext.Integrations
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
-@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.Extensions.DependencyInjection
 @inject IIntegrationCatalogApiService Api
+@inject IServiceProvider Services
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
 
@@ -67,7 +68,8 @@
         <p class="scim-muted" data-testid="scim-source-summary">@sourceView.Summary Source shows what the code does — not that it ran.</p>
         @if (_overview?.Source is { } analyzed)
         {
-            <p class="scim-muted" data-testid="scim-source-provenance">Source analyzed @analyzed.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @string.Join(", ", analyzed.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..Math.Min(12, a.Sha256.Length)]})"))@(analyzed.Project is { } project ? $" · {project}" : "")</p>
+            <p class="scim-muted" data-testid="scim-source-provenance">Source analyzed @analyzed.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @string.Join(", ", analyzed.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..Math.Min(12, a.Sha256.Length)]})"))@(analyzed.Project is { } project ? $" · {project}" : "")
+                @if (analyzed.SourceScope is { } usedScope) { <span> · from Source Analysis <SourceEvidenceProvenance Entry="usedScope.Primary" ShowArchive="false" /></span> } else { <span> · legacy source input (uploaded directly by an earlier version; no snapshot id)</span> }</p>
             @if (analyzed.Facts.Count > 0 || analyzed.Limitations.Count > 0)
             {
                 <ReviewDisclosure Text="View source evidence" CollapseText="Hide source evidence" TestId="scim-source-details" Class="disclosure-inline disclosure-small">
@@ -81,12 +83,15 @@
                 </ReviewDisclosure>
             }
         }
-        <div class="scim-actions">
-            <label class="scim-file-button">
-                <InputFile class="scim-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze SCIM adapter source archives (.zip)" data-testid="scim-upload" />
-                <span aria-hidden="true">@(_overview?.Source is null ? "Analyze SCIM source" : "Re-analyze SCIM source")</span>
-            </label>
-        </div>
+        <SourceEvidencePrerequisite State="_scope" Prefix="scimsrc" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" Title="SCIM source"
+                                    ConsumerName="SCIM provisioning" EmptyHeadingLevel="4"
+                                    OtherSectionsNote="Configuration and the safe runtime checks below do not need a source snapshot.">
+            <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="scimsrc" Busy="_busy" Label="Source snapshot of the SCIM adapter" MissingEvidenceLabel="no SCIM evidence" OnPrimaryChanged="_ => ReloadScopeAsync()" />
+            <ReviewSourceScopePanel State="_scope" Prefix="scimsrc" Busy="_busy" SupportsRelated="false" EvidenceLabel="SCIM evidence" OnChangeSnapshot="FocusSelectorAsync" />
+            <div class="scim-actions">
+                <button type="button" class="btn-secondary" data-testid="scim-use-scope" disabled="@(_busy || !_scope.Resolved)" @onclick="UseScopeAsync">@(_overview?.Source is null ? "Use SCIM evidence from this snapshot" : "Replace SCIM evidence with this snapshot")</button>
+            </div>
+        </SourceEvidencePrerequisite>
     </section>
 
     <section class="scim-section" aria-labelledby="@($"{_id}-runtime")" data-testid="scim-runtime-section">
@@ -308,7 +313,6 @@
     /// <summary>Saves new SCIM settings on the platform (the pane stores and reloads); returns whether it was stored.</summary>
     [Parameter] public Func<ScimProvisioningSettings, Task<bool>>? SaveSettings { get; set; }
 
-    private const long MaxArchiveBytes = 50 * 1024 * 1024;
     private readonly string _id = "scim-" + Guid.NewGuid().ToString("N")[..8];
     private ScimEvidenceOverview? _overview;
     private ScimEvidenceCheck? _check;
@@ -342,8 +346,10 @@
         {
             _overview = await Api.ScimOverviewAsync(Profile.Id);
             _check = _overview.Latest?.PlatformId == Platform.Id ? _overview.Latest : null;
+            _scope.Restore(_overview.Source?.SourceScope); // the snapshot the current SCIM evidence came from (never the latest one)
         }
         catch (HttpRequestException) { _error = "SCIM evidence could not be loaded (backend not reachable)."; }
+        await ReloadScopeAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -352,31 +358,33 @@
         if (_focusResult) { _focusResult = false; await _resultRef.FocusAsync(); }
     }
 
-    private async Task AnalyzeAsync(InputFileChangeEventArgs args)
+    private readonly ReviewSourceScopeState _scope = new();
+    private SourceSnapshotSelector? _selector;
+
+    private async Task ReloadScopeAsync()
     {
+        try { _scope.Options = await Api.ScimSourceScopeAsync(Profile.Id, _scope.Request); }
+        catch (HttpRequestException) { _error = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
+    }
+
+    private async Task FocusSelectorAsync() { if (_selector is not null) await _selector.FocusAsync(); }
+
+    /// <summary>Takes the SCIM source evidence of exactly the chosen Source Analysis snapshot (no upload here).</summary>
+    private async Task UseScopeAsync()
+    {
+        if (_scope.Request is not { } scope) return;
         _error = null;
-        var files = args.GetMultipleFiles(5);
-        if (files.Count > 4) { _error = "Choose at most four archives; nothing was analyzed."; return; }
-        if (files.Any(f => f.Size > MaxArchiveBytes)) { _error = "An archive is larger than the 50 MB limit; nothing was analyzed."; return; }
         _busy = true;
-        _status = "Analyzing SCIM source…";
+        _status = "Reading SCIM evidence from the selected source snapshot…";
         try
         {
-            var streams = new List<(string, Stream)>();
-            foreach (var file in files)
-            {
-                var buffer = new MemoryStream();
-                await file.OpenReadStream(MaxArchiveBytes).CopyToAsync(buffer);
-                buffer.Position = 0;
-                streams.Add((file.Name, buffer));
-            }
-            var (evidence, error) = await Api.AnalyzeScimSourceAsync(Profile.Id, streams);
+            var (evidence, error) = await Api.UseScimSourceAsync(Profile.Id, scope);
             if (error is not null) { _error = error; _status = null; return; }
             _overview = (_overview ?? new ScimEvidenceOverview()) with { Source = evidence };
             _status = evidence!.Detected ? $"Saved. SCIM detected in {evidence.Project}: {evidence.Operations.Count} operation(s), {evidence.Requirements.Count} requirement(s) classified. Run safe SCIM checks to combine it with configuration and runtime evidence."
-                : "Saved. SCIM was not detected in the analyzed source.";
+                : "Saved. SCIM was not detected in the selected source snapshot.";
         }
-        catch (HttpRequestException) { _error = "The source could not be analyzed (backend not reachable)."; _status = null; }
+        catch (HttpRequestException) { _error = "The SCIM evidence could not be read (backend not reachable)."; _status = null; }
         finally { _busy = false; }
     }
 

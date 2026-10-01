@@ -305,8 +305,9 @@
     /// <summary>The runtime access form while it is edited (owned by the Integrations pane).</summary>
     [Parameter] public RenderFragment? RuntimeEditor { get; set; }
 
-    /// <summary>The Application messaging upload input (ApplicationMessagingPanel) that "Analyze messaging source" moves focus to.</summary>
-    public const string MessagingUploadId = "am-upload-input";
+    /// <summary>The Application messaging source-snapshot selector (ApplicationMessagingPanel) that "Analyze messaging source" moves focus to.</summary>
+    /// <summary>The application-messaging source snapshot selector (source comes from Source Analysis; there is no upload here).</summary>
+    public const string MessagingUploadId = "am-source-snapshot";
     private readonly string _id = "sb-" + Guid.NewGuid().ToString("N")[..8];
 
     private ServiceBusEvidenceCheck? _result;

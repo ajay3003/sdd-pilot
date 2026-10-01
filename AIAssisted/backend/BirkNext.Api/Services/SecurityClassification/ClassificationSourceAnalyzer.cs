@@ -102,11 +102,11 @@ public static class ClassificationSourceAnalyzer
     /// facts the more severe one is kept — and every kept fact cites each source it came from. Cross-source facts (terminology vs the model,
     /// mapper vs guard input) cite every source involved. No source is merged into another.
     /// </summary>
-    public static ClassificationSourceEvidence Combine(string environmentId, IReadOnlyList<(ClassificationSourceRef? Source, ClassificationSnapshotEvidence Evidence)> parts, DateTimeOffset now)
+    public static ClassificationSourceEvidence Combine(string environmentId, IReadOnlyList<(ReviewSourceProvenance? Source, ClassificationSnapshotEvidence Evidence)> parts, DateTimeOffset now)
     {
-        ClassificationSourceRef? Ref(ClassificationSourceRef? source, IEnumerable<SourceLocation> locations) => source is null ? null : source with { Locations = locations.Distinct().Take(6).ToList() };
-        List<ClassificationSourceRef> Refs(params ClassificationSourceRef?[] refs) =>
-            refs.OfType<ClassificationSourceRef>().GroupBy(r => r.SnapshotId).Select(g => g.First() with { Locations = g.SelectMany(r => r.Locations).Distinct().Take(6).ToList() }).ToList();
+        ReviewSourceProvenance? Ref(ReviewSourceProvenance? source, IEnumerable<SourceLocation> locations) => source is null ? null : source with { Locations = locations.Distinct().Take(6).ToList() };
+        List<ReviewSourceProvenance> Refs(params ReviewSourceProvenance?[] refs) =>
+            refs.OfType<ReviewSourceProvenance>().GroupBy(r => r.SnapshotId).Select(g => g.First() with { Locations = g.SelectMany(r => r.Locations).Distinct().Take(6).ToList() }).ToList();
 
         var groups = new List<(string Id, List<ClassificationFact> Members)>();
         foreach (var (source, evidence) in parts)
