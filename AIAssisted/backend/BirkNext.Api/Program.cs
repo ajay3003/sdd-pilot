@@ -438,6 +438,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.SecurityClassification.IClassif
     sp.GetService<IHttpContextAccessor>()?.HttpContext?.User.Identity is { IsAuthenticated: true, Name: { Length: > 0 } name } ? name : "local"));
 // Dependency / supply-chain review (Renovate policy): offline, read-only analysis of uploaded repository archives.
 builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewService, BirkNext.Api.Services.DependencyReview.DependencyReviewService>();
+builder.Services.AddScoped<BirkNext.Api.Services.DependencyReview.IDependencyReviewSourceScopeService, BirkNext.Api.Services.DependencyReview.DependencyReviewSourceScopeService>();
 // Dependency health over stored inventories (no source upload): nuget.org registry metadata (GET only) and OSV advisories, bounded and cached;
 // Renovate runtime from the existing Azure DevOps options (GET only, Not configured otherwise); deployed Blazor boot-manifest evidence.
 builder.Services.Configure<BirkNext.Api.Services.DependencyReview.DependencyHealthOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.DependencyReview.DependencyHealthOptions.SectionName));

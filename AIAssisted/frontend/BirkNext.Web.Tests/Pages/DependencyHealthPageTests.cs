@@ -28,9 +28,15 @@ public sealed class DependencyHealthPageTests : BunitContext
         public DeployedCaptureRequest? LastCapture { get; private set; }
         public Func<DependencyHealthRequest, DependencyHealthRun>? Build { get; set; }
         public int SourceUploads { get; private set; }
+        public SourceDependencyReviewRequest? LastSourceRequest { get; private set; }
+        public SourceScopeOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
+        public List<RelatedSourceCandidate> Candidates { get; set; } = [SourceScopeFixture.CommonCandidate];
 
-        public Task<(DependencyReviewResult? Result, string? Error)> RunAsync(string label, IReadOnlyList<(string FileName, Stream Content)> archives, (string Repository, string FileName, Stream Content)? configOverride, CancellationToken ct = default)
-        { SourceUploads++; return Task.FromResult<(DependencyReviewResult?, string?)>((null, "not used")); }
+        public Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) =>
+            Task.FromResult(primarySnapshotId is null ? Options : Options with { Candidates = Candidates });
+        /// <summary>Counts source dependency analysis runs (the only source-review command; nothing is uploaded).</summary>
+        public Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)
+        { SourceUploads++; LastSourceRequest = request; return Task.FromResult<(DependencyReviewResult?, string?)>((null, "not used")); }
         public Task<IReadOnlyList<DependencyReviewRunSummary>> HistoryAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<DependencyReviewRunSummary>>([]);
         public Task<DependencyReviewResult?> GetAsync(Guid runId, CancellationToken ct = default) => Task.FromResult<DependencyReviewResult?>(null);
         public Task<(PolicySimulation? Simulation, string? Error)> SimulateAsync(PolicySimulationRequest request, CancellationToken ct = default) => throw new NotSupportedException();
@@ -143,6 +149,7 @@ public sealed class DependencyHealthPageTests : BunitContext
     {
         _api.Inventories.AddRange([Build, OldSource]);
         Services.AddSingleton<IDependencyReviewApiService>(_api);
+        SourceScopeFixture.Register(this);
         Services.AddSingleton<IReportExportService, ReportExportService>();
         var targets = new Moq.Mock<IFrontendAnalysisSettingsService>();
         targets.SetupGet(t => t.IsLoaded).Returns(true);
@@ -170,11 +177,12 @@ public sealed class DependencyHealthPageTests : BunitContext
         var cut = Render<DependencyReview>();
 
         cut.FindAll("[data-testid='dr-sources'] > section").Select(s => s.GetAttribute("data-testid")).Should().Equal("dr-setup", "dh-inventory-card", "dh-sbom-card", "dh-deployed-card");
-        cut.Find("[data-testid='dr-setup']").TextContent.Should().Contain("Review from source").And.Contain("Test Renovate policy");
+        cut.Find("[data-testid='dr-setup']").TextContent.Should().Contain("Source snapshot").And.Contain("Run source dependency analysis").And.Contain("nothing is uploaded here").And.NotContain("repository archives");
         cut.Find("[data-testid='dh-inventory-card']").TextContent.Should().Contain("without uploading source").And.Contain("Cannot assess");
         cut.Find("[data-testid='dh-run']").HasAttribute("disabled").Should().BeTrue();
         cut.FindAll("[data-testid='dh-sbom-run']").Should().BeEmpty("the SBOM action appears once a document is chosen");
-        cut.FindComponents<InputFile>().Select(f => f.Instance.AdditionalAttributes!["aria-label"]).Should().Equal("Choose repository archives (.zip)", "Choose a Renovate config file", "Choose an SBOM or packages.lock.json");
+        cut.FindComponents<InputFile>().Select(f => f.Instance.AdditionalAttributes!["aria-label"]).Should().Equal(new object[] { "Choose a Renovate config file", "Choose an SBOM or packages.lock.json" }, "Dependency Review no longer takes source archives");
+        cut.FindAll("input[type=file]").Should().NotContain(i => (i.GetAttribute("accept") ?? "").Contains(".zip"), "source ZIP upload belongs to Source Analysis");
     }
 
     [Fact]
@@ -275,7 +283,7 @@ public sealed class DependencyHealthPageTests : BunitContext
         _api.ImportResult = new InventoryImportResult(new SbomValidation { Format = SbomFormat.CycloneDxJson, SpecVersion = "1.5", Valid = true, Components = 2, Direct = 1, Transitive = 1, Ecosystems = new() { ["nuget"] = 2 }, HasDependencyGraph = true, WithHashes = 2 }, sbom, null);
         var cut = Render<DependencyReview>();
 
-        cut.FindComponents<InputFile>()[2].UploadFiles(InputFileContent.CreateFromText("{}", "qa.cdx.json"));
+        cut.FindComponents<InputFile>()[1].UploadFiles(InputFileContent.CreateFromText("{}", "qa.cdx.json"));
         cut.Find("[data-testid='dh-sbom-role']").Change(SbomRole.DeployedArtifact.ToString());
         cut.Find("[data-testid='dh-sbom-env']").Change("qa");
         cut.Find("[data-testid='dh-sbom-run']").Click();
@@ -294,7 +302,7 @@ public sealed class DependencyHealthPageTests : BunitContext
             "The document is not a valid CycloneDX JSON; no inventory was created.");
         var cut = Render<DependencyReview>();
 
-        cut.FindComponents<InputFile>()[2].UploadFiles(InputFileContent.CreateFromText("{}", "bad.json"));
+        cut.FindComponents<InputFile>()[1].UploadFiles(InputFileContent.CreateFromText("{}", "bad.json"));
         cut.Find("[data-testid='dh-sbom-run']").Click();
 
         cut.Find("[data-testid='dh-error']").GetAttribute("role").Should().Be("alert");
@@ -422,15 +430,15 @@ public sealed class DependencyHealthPageTests : BunitContext
         new[] { "dh-inventory-card", "dh-sbom-card", "dh-deployed-card" }.Should().OnlyContain(id => cut.Find($"[data-testid='{id}']").HasAttribute("hidden"));
         cut.Find("[data-testid='dr-override-toggle']").TextContent.Should().Contain("Add Renovate config override");
         cut.Find("[data-testid='dr-override-toggle']").GetAttribute("aria-expanded").Should().Be("false");
-        cut.Find("[data-testid='dr-run-help']").TextContent.Should().Contain("Choose one to four repository archives");
-        cut.Find("[data-testid='dr-ready-row'][data-row='source']").TextContent.Should().Contain("Review from source");
-        cut.Find("[data-testid='dr-ready-row'][data-row='renovate']").TextContent.Should().Contain("Waiting for repository archives");
+        cut.Find("[data-testid='dr-run-help']").TextContent.Should().Contain("Choose a primary source snapshot");
+        cut.Find("[data-testid='dr-ready-row'][data-row='source']").TextContent.Should().Contain("Source snapshot");
+        cut.Find("[data-testid='dr-ready-row'][data-row='renovate']").TextContent.Should().Contain("Waiting for source snapshot");
 
-        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1], "M2LB (1).zip"));
+        cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
 
-        cut.Find("[data-testid='dr-ready-row'][data-row='renovate']").TextContent.Should().Contain("Ready to test");
+        cut.Find("[data-testid='dr-ready-row'][data-row='renovate']").TextContent.Should().Contain("Ready to analyze");
         cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready");
-        cut.Find("[data-testid='dr-next-text']").TextContent.Should().Be("Test Renovate policy");
+        cut.Find("[data-testid='dr-next-text']").TextContent.Should().Be("Run source dependency analysis");
         cut.FindAll("[data-testid='dr-run-help']").Should().BeEmpty();
     }
 
@@ -484,7 +492,7 @@ public sealed class DependencyHealthPageTests : BunitContext
         cut.FindAll("[data-testid='dh-sbom-metadata']").Should().BeEmpty();
         cut.Find("[data-testid='dh-sbom-card']").TextContent.Should().Contain("CycloneDX JSON/XML").And.Contain("SPDX JSON").And.Contain("packages.lock.json");
 
-        cut.FindComponents<InputFile>()[2].UploadFiles(InputFileContent.CreateFromText("{}", "bad.cdx.json"));
+        cut.FindComponents<InputFile>()[1].UploadFiles(InputFileContent.CreateFromText("{}", "bad.cdx.json"));
 
         cut.Find("[data-testid='dh-sbom-metadata']").TextContent.Should().Contain("The SBOM describes (provenance)");
         cut.FindAll("[data-testid='dh-sbom-role'] option").Select(o => o.GetAttribute("value")).Should().Equal("BuildArtifact", "DeployedArtifact");
@@ -545,7 +553,7 @@ public sealed class DependencyHealthPageTests : BunitContext
     {
         var inputs = new[]
         {
-            new ReadinessInput(), new ReadinessInput { Mode = DependencyReviewMode.Source, Archives = 2 }, new ReadinessInput { Inventory = Build, Deployed = OldSource },
+            new ReadinessInput(), new ReadinessInput { Mode = DependencyReviewMode.Source, SourceSnapshotsAvailable = true, PrimarySource = "M2LB · c850a1b2…", PrimaryHasEvidence = true }, new ReadinessInput { Inventory = Build, Deployed = OldSource },
             new ReadinessInput { PendingSbom = "x.json", SbomInvalid = true }, new ReadinessInput { Mode = DependencyReviewMode.Deployed, DeploymentTarget = "Dev" },
         };
         foreach (var view in inputs.Select(DependencyReviewReadiness.Evaluate))
@@ -574,7 +582,7 @@ public sealed class DependencyHealthPageTests : BunitContext
         cut.FindAll("[data-testid='dr-step']").Select(s => (s.GetAttribute("data-step"), s.GetAttribute("data-state"))).Should().Equal(("1", "current"), ("2", "pending"), ("3", "pending"));
         cut.Find("[data-testid='dr-step'][data-step='1']").GetAttribute("aria-current").Should().Be("step");
         cut.Find("[data-testid='dr-readiness']").TextContent.Should().NotContainAny(ResultWords);
-        cut.Find("[data-testid='dr-run-none']").TextContent.Should().Contain("Choose a review source");
+        cut.Find("[data-testid='dr-run-none']").TextContent.Should().Contain("Choose dependency evidence");
 
         cut.Find("[data-testid='dr-next-action']").Click();
         cut.FindAll("[data-testid='dr-mode']").Should().OnlyContain(m => m.GetAttribute("aria-pressed") == "false", "the action points at the cards; it chooses nothing itself");
@@ -588,12 +596,13 @@ public sealed class DependencyHealthPageTests : BunitContext
 
         cut.FindAll("[data-testid='dr-ready-group']").Select(g => g.GetAttribute("data-group")).Should().Equal("Inputs", "Analysis", "Comparison");
         string[] Rows(string group) => cut.FindAll($"[data-testid='dr-ready-group'][data-group='{group}'] [data-testid='dr-ready-row']").Select(r => r.GetAttribute("data-row")!).ToArray();
-        Rows("Inputs").Should().Equal("source", "inventory", "target");
-        Rows("Analysis").Should().Equal("renovate", "registry", "security", "license", "policy");
+        Rows("Inputs").Should().Equal("source", "primary", "related", "inventory", "target");
+        Rows("Analysis").Should().Equal("declared", "renovate", "registry", "security", "license", "policy");
         Rows("Comparison").Should().Equal("deployment");
         string Depends(string row) => cut.Find($"[data-testid='dr-ready-row'][data-row='{row}'] [data-testid='dr-ready-depends']").TextContent;
         (Depends("renovate"), Depends("registry"), Depends("security"), Depends("license"), Depends("policy"), Depends("deployment"))
-            .Should().Be(("Repository archives", "Inventory", "Inventory", "Inventory", "Inventory + source review", "Inventory + deployed evidence"));
+            .Should().Be(("Source scope", "Inventory", "Inventory", "Inventory", "Inventory + source review", "Inventory + deployed evidence"));
+        Depends("declared").Should().Be("Source scope");
         States(cut)["target"].Should().Be("Not required");
         cut.FindAll("[data-testid='dr-ready-row']").Should().OnlyContain(r => r.QuerySelectorAll(".dr-badge").Length == 1, "one state indicator per row");
         cut.Find("[data-testid='dr-ready-row'][data-row='policy']").TextContent.Should().NotContain("Needs an inventory", "the dependency column already says it");
@@ -618,26 +627,28 @@ public sealed class DependencyHealthPageTests : BunitContext
     }
 
     [Fact]
-    public void SourceMode_NextStepIsChooseArchives_ThenTestRenovatePolicy_RegistryStillWaitsForAnInventory()
+    public void SourceMode_NextStepIsChooseSnapshot_ThenRunSourceAnalysis_RegistryStillWaitsForAnInventory()
     {
         var cut = Render<DependencyReview>();
         cut.Find("[data-testid='dr-mode'][data-mode='Source']").Click();
 
-        Next(cut).Should().Be("Choose repository archives");
+        Next(cut).Should().Be("Choose source snapshot");
         cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Not ready");
-        States(cut).Should().Contain(new Dictionary<string, string> { ["renovate"] = "Waiting for repository archives", ["registry"] = "Waiting for inventory", ["security"] = "Waiting for inventory", ["license"] = "Waiting for inventory", ["policy"] = "Not assessed" });
+        States(cut).Should().Contain(new Dictionary<string, string> { ["primary"] = "Not selected", ["declared"] = "Waiting for source snapshot", ["renovate"] = "Waiting for source snapshot", ["registry"] = "Waiting for inventory", ["security"] = "Waiting for inventory", ["license"] = "Waiting for inventory", ["policy"] = "Not assessed" });
         cut.Find("[data-testid='dr-next-action']").Click();
-        _api.SourceUploads.Should().Be(0, "choosing archives runs nothing");
+        _api.SourceUploads.Should().Be(0, "choosing a snapshot runs nothing");
         cut.Find("[data-testid='dr-setup']").HasAttribute("hidden").Should().BeFalse();
 
-        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1], "M2LB.zip"));
+        cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
 
         cut.Find("[data-testid='dr-readiness-state']").TextContent.Should().Be("Ready");
-        Next(cut).Should().Be("Test Renovate policy");
-        cut.Find("[data-testid='dr-next-reason']").TextContent.Should().Contain("registry, advisory and license checks need an inventory");
-        States(cut).Should().Contain(new Dictionary<string, string> { ["renovate"] = "Ready to test", ["registry"] = "Waiting for inventory", ["policy"] = "Not assessed" }, "source selected ≠ registry checked; Renovate needs an inventory too");
+        Next(cut).Should().Be("Run source dependency analysis");
+        cut.Find("[data-testid='dr-next-reason']").TextContent.Should().Contain("Registry, advisory and license checks need the resulting inventory").And.Contain("detected related source is not included");
+        States(cut).Should().Contain(new Dictionary<string, string> { ["primary"] = "Selected", ["declared"] = "Ready to analyze", ["renovate"] = "Ready to analyze", ["registry"] = "Waiting for inventory", ["policy"] = "Not assessed" }, "a selected snapshot ≠ reviewed; registry still needs an inventory");
         cut.Find("[data-testid='dr-next-action']").Click();
-        _api.SourceUploads.Should().Be(1, "the next step calls the panel's own Test Renovate policy command");
+        _api.SourceUploads.Should().Be(1, "the next step calls the panel's own run command");
+        _api.LastSourceRequest!.PrimarySnapshotId.Should().Be(SourceScopeFixture.App.SnapshotId);
+        _api.LastSourceRequest.RelatedSnapshotIds.Should().BeEmpty("related sources are never included automatically");
     }
 
     [Fact]
@@ -707,17 +718,19 @@ public sealed class DependencyHealthPageTests : BunitContext
     {
         var cut = Render<DependencyReview>();
         cut.Find("[data-testid='dr-mode'][data-mode='Source']").Click();
-        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1], "M2LB.zip"));
+        cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
+        cut.Find("[data-testid='dr-related-include']").Click();
         cut.Find("[data-testid='dr-mode'][data-mode='Inventory']").Click();
         cut.Find("[data-testid='dh-inventory']").Change(Build.Id.ToString());
         cut.Find("[data-testid='dr-mode'][data-mode='Sbom']").Click();
 
         Next(cut).Should().Be("Upload SBOM", "the next step follows the selected source");
-        States(cut).Should().Contain(new Dictionary<string, string> { ["renovate"] = "Ready to test", ["inventory"] = "Ready" }, "switching does not discard archives or the inventory");
+        States(cut).Should().Contain(new Dictionary<string, string> { ["renovate"] = "Ready to analyze", ["related"] = "1 included", ["inventory"] = "Ready" }, "switching does not discard the source scope or the inventory");
 
         cut.Find("[data-testid='dr-mode'][data-mode='Source']").Click();
-        cut.Find("[data-testid='dr-picked']").TextContent.Should().Contain("M2LB.zip");
-        Next(cut).Should().Be("Test Renovate policy");
+        cut.Find("[data-testid='dr-primary-summary']").TextContent.Should().Contain("M2LB");
+        cut.FindAll("[data-testid='dr-related-chip']").Should().ContainSingle();
+        Next(cut).Should().Be("Run source dependency analysis");
         cut.Find("[data-testid='dr-mode'][data-mode='Inventory']").Click();
         cut.Find("[data-testid='dh-inventory-summary']").TextContent.Should().Contain(Build.Name);
     }
@@ -727,7 +740,7 @@ public sealed class DependencyHealthPageTests : BunitContext
     {
         var inputs = new[]
         {
-            new ReadinessInput(), new ReadinessInput { Mode = DependencyReviewMode.Source }, new ReadinessInput { Mode = DependencyReviewMode.Source, Archives = 2 },
+            new ReadinessInput(), new ReadinessInput { Mode = DependencyReviewMode.Source }, new ReadinessInput { Mode = DependencyReviewMode.Source, SourceSnapshotsAvailable = true, PrimarySource = "M2LB · c850a1b2…", PrimaryHasEvidence = true },
             new ReadinessInput { Mode = DependencyReviewMode.Inventory }, new ReadinessInput { Mode = DependencyReviewMode.Inventory, Inventory = Build },
             new ReadinessInput { Mode = DependencyReviewMode.Sbom }, new ReadinessInput { Mode = DependencyReviewMode.Sbom, PendingSbom = "x.json", SbomInvalid = true },
             new ReadinessInput { Mode = DependencyReviewMode.Sbom, PendingSbom = "x.json" }, new ReadinessInput { Mode = DependencyReviewMode.Sbom, PendingSbom = "x.json", SbomReviewed = true, Inventory = Build },
@@ -735,7 +748,7 @@ public sealed class DependencyHealthPageTests : BunitContext
             new ReadinessInput { Mode = DependencyReviewMode.Deployed, Deployed = OldSource }, new ReadinessInput { Mode = DependencyReviewMode.Deployed, Deployed = OldSource, Inventory = Build },
         };
         var steps = inputs.Select(DependencyReviewReadiness.NextStep).ToList();
-        steps.Select(s => s.Action.ToString()).Should().Equal("ChooseReviewSource", "ChooseSourceArchive", "RunSourceReview", "ChooseInventory", "RunHealthReview",
+        steps.Select(s => s.Action.ToString()).Should().Equal("ChooseReviewSource", "OpenSourceAnalysis", "RunSourceReview", "ChooseInventory", "RunHealthReview",
             "UploadSbom", "UploadSbom", "ReviewSbom", "UploadSbom", "ChooseTarget", "CaptureDeployed", "ChooseInventory", "RunHealthReview");
         steps.Select(s => s.Ready).Should().Equal(false, false, true, false, true, false, false, true, true, false, false, false, true);
         foreach (var step in steps)

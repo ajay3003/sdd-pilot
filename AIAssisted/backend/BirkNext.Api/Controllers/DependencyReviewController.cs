@@ -12,29 +12,22 @@ namespace BirkNext.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/dependency-review")]
-public sealed class DependencyReviewController(IDependencyReviewService reviews, IDependencyHealthService health) : ControllerBase
+public sealed class DependencyReviewController(IDependencyReviewService reviews, IDependencyHealthService health, IDependencyReviewSourceScopeService sourceScope) : ControllerBase
 {
-    [HttpPost("runs")]
-    [RequestSizeLimit(4 * DependencyReviewService.MaxArchiveBytes)]
-    [RequestFormLimits(MultipartBodyLengthLimit = 4 * DependencyReviewService.MaxArchiveBytes)]
-    public async Task<ActionResult<DependencyReviewResult>> Run(CancellationToken ct)
+    // Source ingestion belongs to Source Analysis: the source review reads its immutable snapshots; there is no archive upload here.
+
+    /// <summary>Source Analysis snapshots of the environment (per repository) and, for a chosen primary, its related-source candidates.</summary>
+    [HttpGet("source-scope")]
+    public async Task<ActionResult<SourceScopeOptions>> SourceScope([FromQuery] string environmentId, [FromQuery] Guid? primary, CancellationToken ct) =>
+        string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await sourceScope.OptionsAsync(environmentId, primary, ct));
+
+    /// <summary>Reviews exactly the selected snapshots (one primary, zero or more related); the run stores the scope with fingerprints.</summary>
+    [HttpPost("source-runs")]
+    [RequestSizeLimit(4 * 1024 * 1024)]
+    public async Task<ActionResult<DependencyReviewResult>> RunSource([FromBody] SourceDependencyReviewRequest request, CancellationToken ct)
     {
-        if (!Request.HasFormContentType) return BadRequest("Upload repository archives as multipart form data.");
-        var form = await Request.ReadFormAsync(ct);
-        var archives = new List<(string, byte[])>();
-        var overrides = new List<(string, string, string)>();
-        foreach (var file in form.Files)
-        {
-            if (file.Length > DependencyReviewService.MaxArchiveBytes) return BadRequest($"{file.FileName} is larger than the upload limit.");
-            using var buffer = new MemoryStream();
-            await file.CopyToAsync(buffer, ct);
-            // Form field "config:<repository>" = a separately supplied Renovate config for that repository; everything else is an archive.
-            if (file.Name.StartsWith("config:", StringComparison.Ordinal))
-                overrides.Add((file.Name["config:".Length..], file.FileName, System.Text.Encoding.UTF8.GetString(buffer.ToArray())));
-            else archives.Add((file.FileName, buffer.ToArray()));
-        }
-        if (archives.Count is 0 or > 4) return BadRequest("Upload one to four repository archives (.zip).");
-        var (result, error) = await reviews.RunAsync(form["label"].ToString(), archives, overrides, ct);
+        if (request.ConfigOverrides.Any(o => o.Content.Length > 1024 * 1024)) return BadRequest("A Renovate config override is larger than 1 MB.");
+        var (result, error) = await sourceScope.RunAsync(request, ct);
         return error is not null ? BadRequest(error) : Ok(result);
     }
 

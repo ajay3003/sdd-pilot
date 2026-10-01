@@ -12,8 +12,12 @@ namespace BirkNext.Api.Services.DependencyReview;
 
 public interface IDependencyReviewService
 {
+    /// <summary>Not exposed over HTTP (source ingestion belongs to Source Analysis): reviews archives through the same evidence bridge Source
+    /// Analysis uses, so archive-based tests exercise exactly the snapshot pipeline.</summary>
     Task<(DependencyReviewResult? Result, string? Error)> RunAsync(string label, IReadOnlyList<(string FileName, byte[] Bytes)> archives,
         IReadOnlyList<(string Repository, string FileName, string Content)> configOverrides, CancellationToken ct = default);
+    /// <summary>Reviews prepared sources (one per repository/snapshot) and stores the run with its source scope.</summary>
+    Task<DependencyReviewResult> ReviewAsync(string label, IReadOnlyList<(RepositoryInput Input, SourceDependencyEvidence Evidence)> sources, DependencyReviewSourceScope? scope, CancellationToken ct = default);
     Task<IReadOnlyList<DependencyReviewRunSummary>> HistoryAsync(CancellationToken ct = default);
     Task<DependencyReviewResult?> GetAsync(Guid runId, CancellationToken ct = default);
     Task<(PolicySimulation? Simulation, string? Error)> SimulateAsync(PolicySimulationRequest request, CancellationToken ct = default);
@@ -67,16 +71,26 @@ public sealed class DependencyReviewService(AppDbContext db, ILogger<DependencyR
     public async Task<(DependencyReviewResult? Result, string? Error)> RunAsync(string label, IReadOnlyList<(string FileName, byte[] Bytes)> archives,
         IReadOnlyList<(string Repository, string FileName, string Content)> configOverrides, CancellationToken ct = default)
     {
-        if (archives.Count == 0) return (null, "Upload at least one repository archive (.zip).");
-        var previous = await LatestAsync(ct);
-        var repositories = new List<RepositoryDependencyReview>();
+        if (archives.Count == 0) return (null, "Provide at least one repository archive (.zip).");
+        var sources = new List<(RepositoryInput, SourceDependencyEvidence)>();
         foreach (var (name, bytes) in archives)
         {
-            var (files, error) = ReadArchive(name, bytes);
-            if (error is not null) return (null, error);
             var repository = RepositoryName(name);
+            var (evidence, error) = SourceDependencyEvidenceExtractor.Extract(repository, bytes, name);
+            if (evidence is null) return (null, error);
             var over = configOverrides.FirstOrDefault(o => string.Equals(o.Repository, repository, StringComparison.OrdinalIgnoreCase));
-            var input = new RepositoryInput(repository, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), files, over.Content is null ? null : (over.FileName, over.Content));
+            sources.Add((SourceDependencyEvidenceExtractor.Input(repository, Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant(), evidence, over.Content is null ? null : (over.FileName, over.Content)), evidence));
+        }
+        return (await ReviewAsync(label, sources, null, ct), null);
+    }
+
+    public async Task<DependencyReviewResult> ReviewAsync(string label, IReadOnlyList<(RepositoryInput Input, SourceDependencyEvidence Evidence)> sources, DependencyReviewSourceScope? scope, CancellationToken ct = default)
+    {
+        var previous = await LatestAsync(ct);
+        var repositories = new List<RepositoryDependencyReview>();
+        foreach (var (input, _) in sources)
+        {
+            var repository = input.Name;
             var review = DependencyReviewBuilder.Build(input, previous?.Repositories.FirstOrDefault(r => r.Repository == repository));
             repositories.Add(review);
             logger.LogInformation("Dependency review {Repository}: Renovate {Coverage}, {Files} config file(s), {Dependencies} dependencies, {Rules} rule(s), {Simulations} simulation(s), {Findings} finding(s).",
@@ -86,10 +100,47 @@ public sealed class DependencyReviewService(AppDbContext db, ILogger<DependencyR
         {
             RunId = Guid.NewGuid(), CompletedAt = DateTimeOffset.UtcNow, Label = string.IsNullOrWhiteSpace(label) ? string.Join(" + ", repositories.Select(r => r.Repository)) : label.Trim(),
             EvaluationMechanism = Mechanism, UnsupportedSemantics = [.. RenovatePolicyEvaluator.Unsupported], Repositories = repositories, Categories = Categories(repositories),
+            SourceScope = scope, CrossSource = CrossSource(repositories), SourceRelationships = Relationships(sources),
         };
         db.DependencyReviewRuns.Add(new DependencyReviewRunRecord { Id = result.RunId, CompletedAt = result.CompletedAt, Label = result.Label, ResultJson = JsonSerializer.Serialize(result, Json) });
         await db.SaveChangesAsync(ct);
-        return (result, null);
+        return result;
+    }
+
+    /// <summary>
+    /// The same dependency (manager + package name) declared with different values in different selected sources. Values are compared as
+    /// declared; equal values produce nothing. An observation to review — never a failure, vulnerability or incompatibility.
+    /// </summary>
+    public static List<CrossSourceObservation> CrossSource(IReadOnlyList<RepositoryDependencyReview> repositories)
+    {
+        if (repositories.Count < 2) return [];
+        var result = new List<CrossSourceObservation>();
+        foreach (var group in repositories.SelectMany(r => r.Dependencies.Select(d => (Repo: r.Repository, Dep: d)))
+                     .GroupBy(x => (x.Dep.Manager, Name: x.Dep.PackageName.ToLowerInvariant())).OrderBy(g => g.Key.Name, StringComparer.Ordinal))
+        {
+            var perRepo = group.GroupBy(x => x.Repo).Select(g => new CrossSourceValue(g.Key, string.Join(", ", g.Select(x => x.Dep.CurrentValue ?? "(no version)").Distinct().Order(StringComparer.Ordinal)),
+                g.SelectMany(x => new[] { x.Dep.OwnerFile }.Concat(x.Dep.ReferencedBy)).Where(f => f.Length > 0).Distinct().Take(6).ToList())).ToList();
+            if (perRepo.Count < 2 || perRepo.Select(v => v.Value).Distinct(StringComparer.Ordinal).Count() < 2) continue;
+            var ranged = group.Any(x => x.Dep.IsRange || (x.Dep.CurrentValue?.Contains('*') ?? false));
+            result.Add(new(ranged ? "Version range difference observed" : "Version difference observed", group.Key.Manager, group.First().Dep.PackageName, perRepo));
+        }
+        return result;
+    }
+
+    /// <summary>A selected source references a package another selected source declares it produces (exact package ID).</summary>
+    public static List<SourceRelationship> Relationships(IReadOnlyList<(RepositoryInput Input, SourceDependencyEvidence Evidence)> sources)
+    {
+        var result = new List<SourceRelationship>();
+        foreach (var (from, fromEvidence) in sources)
+        foreach (var (to, toEvidence) in sources.Where(s => s.Input.Name != from.Name))
+        foreach (var published in toEvidence.PublishedPackages)
+        {
+            var uses = fromEvidence.Dependencies.Where(d => d.Manager == "nuget" && string.Equals(d.PackageName, published.PackageId, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (uses.Count == 0) continue;
+            result.Add(new(from.Name, published.PackageId, uses.Select(d => d.CurrentValue ?? "(no version)").Distinct().Order(StringComparer.Ordinal).ToList(),
+                uses.SelectMany(d => d.ReferencedBy.Count > 0 ? d.ReferencedBy : [d.OwnerFile]).Distinct().Count(), to.Name, published.Version));
+        }
+        return result;
     }
 
     public static List<ReviewCategory> Categories(List<RepositoryDependencyReview> repos)

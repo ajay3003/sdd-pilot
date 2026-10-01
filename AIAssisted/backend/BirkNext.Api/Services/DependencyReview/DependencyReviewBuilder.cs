@@ -6,7 +6,16 @@ using BirkNext.Dependencies;
 namespace BirkNext.Api.Services.DependencyReview;
 
 /// <summary>A repository to review: its files (in memory), and optionally a separately supplied config that replaces the in-repository one.</summary>
-public sealed record RepositoryInput(string Name, string ArchiveSha256, IReadOnlyList<RepositoryFile> Files, (string Name, string Content)? ConfigOverride = null);
+public sealed record RepositoryInput(string Name, string ArchiveSha256, IReadOnlyList<RepositoryFile> Files, (string Name, string Content)? ConfigOverride = null)
+{
+    /// <summary>Evidence already extracted by Source Analysis (Files then hold only the redacted Renovate configs). Null: extract from Files.</summary>
+    public ExtractedEvidence? Extracted { get; init; }
+    /// <summary>Exact hash of a config file: the original file's hash when the content is the redacted copy.</summary>
+    public string Hash(string path, string content) => Extracted?.ConfigHashes.GetValueOrDefault(path) ?? RenovateConfig.Hash(content);
+}
+
+/// <summary>Pre-extracted dependency evidence of one source snapshot (see SourceDependencyEvidenceExtractor).</summary>
+public sealed record ExtractedEvidence(List<DeclaredDependency> Dependencies, List<DependencyInventory.ManagerFiles> Managers, List<string> Automation, Dictionary<string, string> ConfigHashes);
 
 /// <summary>
 /// Builds one repository's static Renovate review: config discovery (Renovate's order), syntax and subset checks, managers and declared
@@ -19,7 +28,7 @@ public static class DependencyReviewBuilder
     {
         var repo = input.Name;
         var files = input.Files;
-        var (dependencies, managerFiles) = DependencyInventory.Build(repo, files);
+        var (dependencies, managerFiles) = input.Extracted is { } extracted ? (extracted.Dependencies, extracted.Managers) : DependencyInventory.Build(repo, files);
 
         // Config discovery: an explicitly supplied config wins; otherwise the first file in Renovate's order at the repository root.
         var configFiles = new List<RenovateConfigFile>();
@@ -33,13 +42,13 @@ public static class DependencyReviewBuilder
             var isUsed = used is null;
             configFiles.Add(new RenovateConfigFile
             {
-                Repository = repo, Path = file.Path, Sha256 = RenovateConfig.Hash(file.Content), Used = isUsed, SyntaxValid = parsed.Root is not null, SyntaxError = parsed.Error,
+                Repository = repo, Path = file.Path, Sha256 = input.Hash(file.Path, file.Content), Used = isUsed, SyntaxValid = parsed.Root is not null, SyntaxError = parsed.Error,
                 Note = isUsed ? "Renovate reads this file (first in its config-file order)." : input.ConfigOverride is not null ? "Replaced by the separately supplied configuration for this review." : "Not read: an earlier file in Renovate's config-file order exists.",
             });
             used ??= (file.Path, file.Content);
         }
         foreach (var stray in files.Where(f => RenovateConfig.IsConfigCandidate(f.Path) && !RenovateConfig.FileOrder.Contains(f.Path, StringComparer.OrdinalIgnoreCase)))
-            configFiles.Add(new RenovateConfigFile { Repository = repo, Path = stray.Path, Sha256 = RenovateConfig.Hash(stray.Content), Used = false, SyntaxValid = RenovateConfig.Parse(stray.Path, stray.Content).Root is not null,
+            configFiles.Add(new RenovateConfigFile { Repository = repo, Path = stray.Path, Sha256 = input.Hash(stray.Path, stray.Content), Used = false, SyntaxValid = RenovateConfig.Parse(stray.Path, stray.Content).Root is not null,
                 Note = "Not a repository-root config location: Renovate does not read it as this repository's configuration." });
         if (input.ConfigOverride is { } over)
         {
@@ -49,7 +58,7 @@ public static class DependencyReviewBuilder
         }
 
         var managers = managerFiles.Select(m => new ManagerCoverage { Manager = m.Manager, Files = m.Files.Count, Dependencies = dependencies.Count(d => d.Manager == m.Manager), State = ManagerState.NoConfig }).ToList();
-        var automation = AutomationEvidence(files);
+        var automation = input.Extracted?.Automation ?? AutomationEvidence(files);
         if (used is null)
         {
             var deps = dependencies.Select(d => d with { IgnoredBy = "No Renovate configuration in this repository." }).ToList();
@@ -70,7 +79,7 @@ public static class DependencyReviewBuilder
         }
 
         var root = RenovateConfig.Parse(used.Value.Path, used.Value.Content);
-        var configHash = RenovateConfig.Hash(used.Value.Content);
+        var configHash = input.ConfigOverride is not null ? RenovateConfig.Hash(used.Value.Content) : input.Hash(used.Value.Path, used.Value.Content);
         if (root.Root is null)
         {
             return new RepositoryDependencyReview
@@ -293,7 +302,7 @@ public static class DependencyReviewBuilder
     }
 
     /// <summary>Renovate automation defined in the source (e.g. a pipeline running the Renovate image). Presence only — never "runs successfully".</summary>
-    private static List<string> AutomationEvidence(IReadOnlyList<RepositoryFile> files)
+    internal static List<string> AutomationEvidence(IReadOnlyList<RepositoryFile> files)
     {
         var evidence = new List<string>();
         foreach (var file in files.Where(f => (f.Path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) || f.Path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))

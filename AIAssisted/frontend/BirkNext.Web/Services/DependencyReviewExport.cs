@@ -20,6 +20,23 @@ public static class DependencyReviewExport
         foreach (var limitation in result.UnsupportedSemantics) sb.Append($"<li>{esc(limitation)}</li>");
         sb.Append("</ul><p>Simulated versions are synthetic candidates for testing policy only — not observed, available or published versions. The source review uses no vulnerability source: nothing here is a vulnerability status (advisories are checked in the dependency health review).</p></section>\n");
 
+        // The exact source scope (every snapshot, not only the primary) and cross-source observations.
+        sb.Append("<section class=\"block\"><h2>Source scope</h2>");
+        if (result.SourceScope is { } scope)
+        {
+            sb.Append(table(["Role", "Repository", "Archive", "Fingerprint", "Source Analysis", "Analyzed"], new[] { ("Primary", scope.Primary) }.Concat(scope.Related.Select(r => ("Related", r)))
+                .Select(x => new[] { esc(x.Item1), esc(x.Item2.Repository), esc(x.Item2.ArchiveName), esc(x.Item2.Fingerprint), esc(x.Item2.SourceStatus), x.Item2.AnalyzedAt.ToString("u") })));
+            foreach (var limitation in scope.Limitations) sb.Append($"<p>{esc(limitation)}</p>");
+        }
+        else sb.Append("<p>Legacy source input: repository archives uploaded directly to Dependency Review. No Source Analysis snapshot is linked.</p>");
+        if (result.CrossSource.Count > 0)
+        {
+            sb.Append("<h3>Cross-source differences</h3><p>Observations to review — not failures, vulnerabilities or incompatibilities.</p>");
+            sb.Append(table(["Dependency", "Manager", "Declared per source", "State"], result.CrossSource.Select(o => new[] { esc(o.PackageName), esc(o.Manager), esc(string.Join("; ", o.Values.Select(v => $"{v.Repository}: {v.Value}"))), badge(o.Kind) })));
+        }
+        foreach (var r in result.SourceRelationships) sb.Append($"<p>{esc(r.FromRepository)} references {esc(r.PackageName)} {esc(string.Join(", ", r.ReferencedValues))} — produced by {esc(r.ToRepository)}{(r.PublishedVersion is { } v ? esc($" (declares {v})") : "")}.</p>");
+        sb.Append("</section>\n");
+
         foreach (var repo in result.Repositories)
         {
             sb.Append($"<section class=\"block\"><h2>{esc(repo.Repository)}</h2>");

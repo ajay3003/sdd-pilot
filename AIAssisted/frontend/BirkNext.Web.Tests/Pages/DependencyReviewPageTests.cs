@@ -19,15 +19,17 @@ public sealed class DependencyReviewPageTests : BunitContext
     {
         public DependencyReviewResult? Result { get; set; }
         public List<DependencyReviewRunSummary> History { get; } = [];
-        public List<string> Uploaded { get; } = [];
-        public (string Repository, string FileName)? Override { get; private set; }
+        public SourceDependencyReviewRequest? LastSourceRequest { get; private set; }
+        public SourceScopeOptions Options { get; set; } = new() { Snapshots = [SourceScopeFixture.App, SourceScopeFixture.Common] };
+        public List<RelatedSourceCandidate> Candidates { get; set; } = [SourceScopeFixture.CommonCandidate];
         public PolicySimulationRequest? LastSimulation { get; private set; }
         public string? SimulationError { get; set; }
 
-        public Task<(DependencyReviewResult? Result, string? Error)> RunAsync(string label, IReadOnlyList<(string FileName, Stream Content)> archives, (string Repository, string FileName, Stream Content)? configOverride, CancellationToken ct = default)
+        public Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) =>
+            Task.FromResult(primarySnapshotId is null ? Options : Options with { Candidates = Candidates });
+        public Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)
         {
-            Uploaded.AddRange(archives.Select(a => a.FileName));
-            Override = configOverride is { } o ? (o.Repository, o.FileName) : null;
+            LastSourceRequest = request;
             History.Insert(0, new DependencyReviewRunSummary(Result!.RunId, Result.CompletedAt, Result.Label, Result.Repositories.Count, 3));
             return Task.FromResult<(DependencyReviewResult?, string?)>((Result, null));
         }
@@ -126,17 +128,19 @@ public sealed class DependencyReviewPageTests : BunitContext
             new BirkNext.Web.Models.FrontendAnalysisProfile { Id = "blank", Name = "No URL", EnvironmentType = BirkNext.Web.Models.FrontendEnvironmentType.QA },
         ] });
         Services.AddSingleton(targets.Object);
+        SourceScopeFixture.Register(this);
         JSInterop.Mode = JSRuntimeMode.Loose;
     }
 
     private IRenderedComponent<DependencyReview> RunReview(bool withConfig = false)
     {
         var cut = Render<DependencyReview>();
-        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "M2LB (1).zip"), InputFileContent.CreateFromBinary([4, 5], "M2LB.Common.zip"));
+        cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
+        cut.Find("[data-testid='dr-related-include']").Click();
         if (withConfig)
         {
             cut.Find("[data-testid='dr-override'] button").Click();
-            cut.FindComponents<InputFile>()[1].UploadFiles(InputFileContent.CreateFromText("{}", "renovate.json"));
+            cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromText("{}", "renovate.json"));
         }
         cut.Find("[data-testid='dr-run']").Click();
         cut.WaitForElement("[data-testid='dr-summary']");
@@ -144,14 +148,14 @@ public sealed class DependencyReviewPageTests : BunitContext
     }
 
     [Fact]
-    public void RunIsDisabledUntilArchivesAreChosen()
+    public void RunIsDisabledUntilASourceSnapshotIsChosen()
     {
         var cut = Render<DependencyReview>();
 
         cut.Find("[data-testid='dr-run']").HasAttribute("disabled").Should().BeTrue();
-        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1], "M2LB (1).zip"));
+        cut.Find("[data-testid='dr-primary']").Change(SourceScopeFixture.App.SnapshotId.ToString());
         cut.Find("[data-testid='dr-run']").HasAttribute("disabled").Should().BeFalse();
-        cut.Find("[data-testid='dr-picked']").TextContent.Should().Contain("M2LB (1).zip → M2LB");
+        cut.Find("[data-testid='dr-primary-summary']").TextContent.Should().Contain("M2LB").And.Contain("c850a1b2…");
         cut.FindAll("[data-testid='dr-summary']").Should().BeEmpty();
     }
 
@@ -160,7 +164,7 @@ public sealed class DependencyReviewPageTests : BunitContext
     {
         var cut = RunReview();
 
-        _api.Uploaded.Should().Equal("M2LB (1).zip", "M2LB.Common.zip");
+        (_api.LastSourceRequest!.PrimarySnapshotId, _api.LastSourceRequest.RelatedSnapshotIds.Single()).Should().Be((SourceScopeFixture.App.SnapshotId, SourceScopeFixture.Common.SnapshotId));
         var tabs = cut.FindAll("[data-testid='dr-repo-tab']");
         tabs.Select(t => t.GetAttribute("data-repository")).Should().Equal("M2LB", "M2LB.Common");
         tabs[1].TextContent.Should().Contain("Missing");
@@ -176,7 +180,7 @@ public sealed class DependencyReviewPageTests : BunitContext
     {
         RunReview(withConfig: true);
 
-        _api.Override.Should().Be(("M2LB", "renovate.json"));
+        _api.LastSourceRequest!.ConfigOverrides.Single().Should().Match<SourceConfigOverride>(o => o.Repository == "M2LB" && o.FileName == "renovate.json");
     }
 
     [Fact]
@@ -303,6 +307,5 @@ public sealed class DependencyReviewPageTests : BunitContext
         DependencyReviewPresentation.Tone(PolicyResult.DeferredBySchedule).Should().NotBe(DependencyReviewPresentation.Tone(PolicyResult.Blocked));
         DependencyLabels.Result(PolicyResult.Ignored).Should().Be("Ignored by Renovate");
         DependencyReviewPresentation.Outcome(Sim("x", "Major", "2.0.0", DependencyUpdateType.Major, PolicyResult.Allowed, "", automerge: null)).Should().Be("Allowed · Automerge not set");
-        DependencyReview.RepositoryName("M2LB (1).zip").Should().Be("M2LB");
     }
 }

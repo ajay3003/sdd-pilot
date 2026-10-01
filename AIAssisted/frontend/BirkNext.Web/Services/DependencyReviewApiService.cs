@@ -5,15 +5,17 @@ using BirkNext.Dependencies;
 namespace BirkNext.Web.Services;
 
 /// <summary>
-/// Client for the backend Dependency Review. Source review: archives are uploaded for read-only, in-memory analysis; nothing is written to a
-/// repository and Renovate is never run; simulations use synthetic candidate versions only. Dependency health: runs over a stored inventory
+/// Client for the backend Dependency Review. Source review: reviews Source Analysis snapshots (one primary + explicitly included related
+/// snapshots) — Dependency Review uploads no source; nothing is written to a repository and Renovate is never run; simulations use synthetic
+/// candidate versions only. Dependency health: runs over a stored inventory
 /// (no source upload); stored runs are returned exactly as recorded and a refresh creates a new run.
 /// </summary>
 public interface IDependencyReviewApiService
 {
-    /// <summary>Runs a review of the uploaded archives; a config is optional and replaces that repository's in-repository configuration.</summary>
-    Task<(DependencyReviewResult? Result, string? Error)> RunAsync(string label, IReadOnlyList<(string FileName, Stream Content)> archives,
-        (string Repository, string FileName, Stream Content)? configOverride, CancellationToken ct = default);
+    /// <summary>Source Analysis snapshots of the environment and, for a chosen primary, its related-source candidates. Reads only.</summary>
+    Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default);
+    /// <summary>Reviews exactly the selected snapshots; a config override is optional and replaces that repository's in-repository configuration.</summary>
+    Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<DependencyReviewRunSummary>> HistoryAsync(CancellationToken ct = default);
     Task<DependencyReviewResult?> GetAsync(Guid runId, CancellationToken ct = default);
     Task<(PolicySimulation? Simulation, string? Error)> SimulateAsync(PolicySimulationRequest request, CancellationToken ct = default);
@@ -32,24 +34,12 @@ public sealed class DependencyReviewApiService(HttpClient http) : IDependencyRev
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
-    public async Task<(DependencyReviewResult? Result, string? Error)> RunAsync(string label, IReadOnlyList<(string FileName, Stream Content)> archives,
-        (string Repository, string FileName, Stream Content)? configOverride, CancellationToken ct = default)
+    public async Task<SourceScopeOptions> SourceScopeAsync(string environmentId, Guid? primarySnapshotId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<SourceScopeOptions>($"api/dependency-review/source-scope?environmentId={Uri.EscapeDataString(environmentId)}{(primarySnapshotId is { } id ? $"&primary={id}" : "")}", Json, ct) ?? new();
+
+    public async Task<(DependencyReviewResult? Result, string? Error)> RunSourceAsync(SourceDependencyReviewRequest request, CancellationToken ct = default)
     {
-        using var form = new MultipartFormDataContent();
-        form.Add(new StringContent(label), "label");
-        foreach (var (name, content) in archives)
-        {
-            var part = new StreamContent(content);
-            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/zip");
-            form.Add(part, "archives", name);
-        }
-        if (configOverride is { } config)
-        {
-            var part = new StreamContent(config.Content);
-            part.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
-            form.Add(part, $"config:{config.Repository}", config.FileName);
-        }
-        using var response = await http.PostAsync("api/dependency-review/runs", form, ct);
+        using var response = await http.PostAsJsonAsync("api/dependency-review/source-runs", request, Json, ct);
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<DependencyReviewResult>(Json, ct), null);

@@ -36,6 +36,10 @@ public sealed record IqrSourceSnapshot
     public BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? DatabaseArchitecture { get; init; }
     /// <summary>Source-derived architecture of the same archive (null in snapshots analyzed before architecture extraction). Not deployed topology.</summary>
     public BirkNext.SourceArchitecture.ArchitectureSnapshot? Architecture { get; init; }
+    /// <summary>Repository this snapshot belongs to (null in snapshots analyzed before repository identity was captured).</summary>
+    public BirkNext.Dependencies.SourceRepositoryIdentity? Repository { get; init; }
+    /// <summary>Dependency-relevant evidence for Dependency Review (null in snapshots analyzed before it was captured).</summary>
+    public BirkNext.Dependencies.SourceDependencyEvidence? DependencyEvidence { get; init; }
     /// <summary>Allow-listed security source facts, not approved expectations or runtime verification. Null in historical snapshots.</summary>
     public BirkNext.SecurityExpectations.SecuritySourceEvidence? SecurityExpectationsEvidence { get; init; }
     /// <summary>Source-only signals for source integration discovery (capture-technology markers, orchestration-declared channels). Empty in older snapshots.</summary>
