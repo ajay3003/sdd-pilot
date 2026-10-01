@@ -1298,7 +1298,7 @@
 
 /* ── Frontend Review Engines ─────────────────────────────────────────────────── */
 
-.fa-engines { display: flex; flex-direction: column; gap: .5rem; }
+.fa-engines { display: flex; flex-direction: column; gap: .5rem; container-type: inline-size; min-width: 0; }
 .fa-engines .fa-card-heading {
     display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
     gap: .4rem 1rem; margin-bottom: .25rem;
@@ -1346,10 +1346,27 @@
 .fa-engines-note { margin: .35rem 0 0; font-size: .78rem; color: var(--clr-text-muted); }
 .fa-engines-link { color: var(--clr-primary); }
 
-@media (max-width: 720px) {
+/* The per-row meaning is for assistive technology; the labelled help above the table shows it once visually. */
+.fa-engine-policy-help { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.fa-engine-capability { font-size: .78rem; color: var(--clr-text-muted); white-space: nowrap; }
+.fa-engines-help { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: .4rem 1rem; font-size: .78rem; }
+.fa-engines-help > div { min-width: 0; }
+.fa-engines-help dt { font-weight: 600; color: var(--clr-text-heading); }
+.fa-engines-help dd { margin: .1rem 0 0; color: var(--clr-text-muted); }
+.fa-engines-tablewrap:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; }
+.fa-engines-links { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; font-size: .82rem; }
+.fa-engines-link:focus-visible { outline: 2px solid var(--clr-primary); outline-offset: 2px; border-radius: 2px; }
+.fa-engines-confirm { display: grid; gap: .3rem; padding: .5rem .7rem; border: 1px solid var(--clr-border); border-radius: 10px; font-size: .82rem; max-width: 42rem; }
+.fa-engines-confirm p { margin: 0; }
+.fa-engines-confirm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; }
+.fa-engines-cancel { background: none; border: 0; padding: 0; font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* The section's own width decides (the settings content is narrow even on wide screens): rows stack with their labels. */
+@container (max-width: 640px) {
     .fa-engines-table thead { display: none; }
     .fa-engines-table tbody tr { display: block; padding: .4rem 0; border-bottom: 1px solid var(--clr-border-subtle); }
     .fa-engines-table tbody td, .fa-engines-table tbody th { display: block; border: 0; padding: .15rem .7rem; }
+    .fa-engines-table tbody td[data-label]::before { content: attr(data-label) ": "; font-size: .72rem; font-weight: 600; color: var(--clr-text-muted); }
 }
 
 /* ── Verification card: status first, then the action ────────────────────────── */

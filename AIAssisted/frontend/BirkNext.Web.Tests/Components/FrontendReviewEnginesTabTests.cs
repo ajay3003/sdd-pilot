@@ -94,7 +94,7 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
 
         var table = cut.Find("[data-testid=frontend-review-engines-table]");
         table.QuerySelectorAll("thead th").Select(h => h.TextContent.Trim())
-            .Should().Equal("Engine", "Enabled", "Policy", "Requires");
+            .Should().Equal("Engine", "Saved state", "Coverage policy", "Prerequisites", "Capability");
 
         var lighthouse = cut.FindAll("[data-testid=engine-row]").Single(r => r.GetAttribute("data-engine-id") == "Lighthouse");
         lighthouse.QuerySelector("[data-testid=engine-enabled]")!.TextContent.Trim().Should().Be("Enabled");
@@ -102,7 +102,7 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
 
         // The page says in words that Enabled is not a capability claim.
         cut.Find("[data-testid=engines-capability-note]").TextContent
-            .Should().Contain("not a capability").And.Contain("live capability status");
+            .Should().Contain("Enabled is saved target configuration, not proof that the engine is available");
         cut.Find("[data-testid=engines-open-review]").GetAttribute("href").Should().Be("/frontend-quality-review");
     }
 
@@ -174,7 +174,7 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
 
         var scope = cut.Find("[data-testid=engines-scope-note]").TextContent;
         scope.Should().Contain("Frontend Quality Review only");
-        scope.Should().Contain("API Quality Review").And.Contain("Integration Quality Review").And.Contain("not affected");
+        scope.Should().Contain("API Quality Review").And.Contain("Integration Quality Review").And.Contain("use their own review configuration");
 
         // No engine row claims an API or Integration review concern.
         foreach (var name in EngineNames(cut))
@@ -208,10 +208,12 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
         var cut = Open("""{"enableSecurityEngine": false, "enableBrowserQualityEngine": true}""");
 
         var actions = cut.FindAll(".fa-reset-row button").Select(b => b.TextContent.Trim()).ToList();
-        actions.Should().Equal("Restore default engine configuration");
+        actions.Should().Equal("Restore default engine selection");
         actions.Should().NotContain("Enable Core Features").And.NotContain("Disable Future Features");
 
-        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Restore default engine configuration").Click();
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Restore default engine selection").Click();
+        _settings.Settings.Profiles.Single(p => p.Id == "dev").Features.EnableSecurityEngine.Should().BeFalse("opening the confirmation changes nothing");
+        cut.Find("[data-testid=engines-restore-confirm] button").Click();
 
         var persisted = _settings.Settings.Profiles.Single(p => p.Id == "dev").Features;
         persisted.EnableSecurityEngine.Should().BeTrue("the Required engine returns to its default");
@@ -250,5 +252,127 @@ public sealed class FrontendReviewEnginesTabTests : BunitContext
             .QuerySelector("[data-testid=engine-enabled]")!.TextContent.Trim().Should().Be("Disabled");
         _settings.Settings.Profiles.Single(p => p.Id == "dev").Features.EnableLighthouseEngine
             .Should().BeTrue("the change lives in the draft until Save changes");
+    }
+
+    // ── Clarity cleanup: owners per column, neutral Disabled, explicit help, scoped restore ──
+
+    private static AngleSharp.Dom.IElement Engine(IRenderedComponent<Component> cut, string id) =>
+        cut.FindAll("[data-testid=engine-row]").Single(r => r.GetAttribute("data-engine-id") == id);
+
+    [Fact]
+    public void AnEnabledRequiredHttpEngineReadsAsSavedStatePolicyPrerequisiteAndFqrCapability()
+    {
+        var cut = Open();
+        var row = Engine(cut, "StaticSecurity");
+        row.QuerySelector(".fa-engine-clarification")!.TextContent.Should().Be("Anonymous HTTP security review");
+        row.QuerySelector("[data-testid=engine-enabled]")!.TextContent.Trim().Should().Be("Enabled");
+        row.QuerySelector("[data-testid=engine-policy]")!.TextContent.Trim().Should().Be("Required");
+        row.QuerySelector("[data-testid=engine-policy-help]")!.TextContent.Should().Be("Must be assessed for required coverage. It does not have to pass.");
+        row.QuerySelector("[data-testid=engine-requires]")!.TextContent.Trim().Should().Be("Public HTTP");
+        row.QuerySelector("[data-testid=engine-capability]")!.TextContent.Trim().Should().Be("Checked in FQR");
+        foreach (var (cell, label) in new[] { (1, "Saved state"), (2, "Coverage policy"), (3, "Prerequisites"), (4, "Capability") })
+            row.Children[cell].GetAttribute("data-label").Should().Be(label, "stacked rows keep their column label");
+    }
+
+    [Fact]
+    public void EveryRowNamesFqrAsCapabilityOwner_NeverALiveAvailabilityState()
+    {
+        var cut = Open("""{"enableBrowserRuntimeEngine": false}""");
+        cut.FindAll("[data-testid=engine-capability]").Select(c => c.TextContent.Trim()).Should().HaveCount(8).And.OnlyContain(t => t == "Checked in FQR");
+        var table = cut.Find("[data-testid=frontend-review-engines-table]").TextContent;
+        table.Should().NotContainAny("Available", "Unavailable", "Ready", "Missing", "Not installed", "Failed");
+        cut.Find("[data-testid=engines-capability-help]").TextContent.Should().Be("Actual availability is checked by Frontend Quality Review at review time. This page runs no capability checks.");
+        cut.FindAll("thead th").Single(h => h.TextContent.Trim() == "Capability").GetAttribute("aria-describedby").Should().Be("engines-help-capability");
+        cut.Find("#engines-help-capability").Should().NotBeNull("the header's help target exists");
+    }
+
+    [Fact]
+    public void ADisabledOptionalEngineRendersNeutrally()
+    {
+        var cut = Open("""{"enableBrowserRuntimeEngine": false}""");
+        var row = Engine(cut, "BrowserRuntime");
+        row.GetAttribute("data-enabled").Should().Be("false");
+        row.QuerySelector("[data-testid=engine-enabled]")!.TextContent.Trim().Should().Be("Disabled");
+        row.QuerySelector("[data-testid=engine-policy]")!.TextContent.Trim().Should().Be("Optional");
+        row.QuerySelector("[data-testid=engine-policy-help]")!.TextContent.Should().Contain("not required for required coverage completion");
+        row.QuerySelector("[data-testid=engine-requires]")!.TextContent.Trim().Should().Be("Browser DOM (Playwright)");
+        row.InnerHtml.Should().NotContainAny("error", "fail", "danger", "warning", "Unavailable");
+        cut.FindAll("[data-testid=engines-required-disabled]").Should().BeEmpty("disabling an Optional engine is not an inconsistency");
+    }
+
+    [Fact]
+    public void ADisabledRequiredEngineKeepsItsRequiredPolicy()
+    {
+        var cut = Open("""{"enablePerformanceEngine": false}""");
+        var row = Engine(cut, "PassivePerformance");
+        (row.QuerySelector("[data-testid=engine-enabled]")!.TextContent.Trim(), row.QuerySelector("[data-testid=engine-policy]")!.TextContent.Trim()).Should().Be(("Disabled", "Required"));
+        cut.Find("[data-testid=engines-required-disabled]").TextContent.Should().Contain("Passive Performance");
+    }
+
+    [Fact]
+    public void HelpExplainsEnabledRequiredAndCapabilityCompactly()
+    {
+        var cut = Open();
+        var help = cut.Find("[data-testid=engines-help]");
+        help.QuerySelectorAll("dt").Select(d => d.TextContent).Should().Equal("Saved state", "Coverage policy", "Capability");
+        cut.Find("[data-testid=engines-policy-note]").TextContent.Should().Contain("Required means the engine must be assessed for required coverage. It does not mean the engine must pass");
+        cut.Find("[data-testid=engines-capability-note]").TextContent.Should().Contain("Controls whether the engine is selected for this target");
+        cut.FindAll(".fa-engines-note").Should().BeEmpty("the long footer prose is replaced by the labelled help");
+    }
+
+    [Fact]
+    public void LinksAreExplicitAndSeparate()
+    {
+        var cut = Open();
+        var links = cut.Find("[data-testid=engines-links]").QuerySelectorAll("a");
+        links.Select(a => (a.TextContent.Trim(), a.GetAttribute("href"))).Should().Equal(
+            ("Open Frontend Quality Review", "/frontend-quality-review"), ("View system capability details", "/admin/system-settings?section=frontend-quality-engines"));
+    }
+
+    [Fact]
+    public void RestoreNeedsConfirmation_StatesItsScope_AndCancelChangesNothing()
+    {
+        var cut = Open("""{"enableSecurityEngine": false}""");
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Restore default engine selection").Click();
+        var confirm = cut.Find("[data-testid=engines-restore-confirm]");
+        confirm.GetAttribute("role").Should().Be("group");
+        cut.Find("[data-testid=engines-restore-text]").TextContent.Should().Be(
+            "This restores the default Enabled/Disabled selection for this Target Environment. Coverage policy, other Target Environments, system capabilities, installed tools and Frontend Quality Review history are not changed.");
+        cut.Find("[data-testid=engines-restore-cancel]").Click();
+        cut.FindAll("[data-testid=engines-restore-confirm]").Should().BeEmpty();
+        _settings.Settings.Profiles.Single(p => p.Id == "dev").Features.EnableSecurityEngine.Should().BeFalse("cancel leaves the saved selection as it was");
+    }
+
+    [Fact]
+    public void RestoreChangesOnlyThisTargetsSelection_NotPolicyOrOtherTargets()
+    {
+        JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult($$$"""
+        {"activeProfileId":"dev","profiles":[
+          {"id":"dev","name":"Dev","environmentType":"Development","targetUrl":"{{{Url}}}","features":{"enableSecurityEngine":false,"enableLighthouseEngine":false},"engineRequirements":{"accessibility":"Required"}},
+          {"id":"qa","name":"QA","environmentType":"QA","targetUrl":"https://qa.example.test/","features":{"enableSecurityEngine":false}}
+        ]}
+        """);
+        var cut = Render<Component>();
+        cut.FindAll(".fa-profile-chip").Single(b => b.TextContent.Contains("Dev")).Click();
+        OpenEngines(cut);
+        cut.FindAll("button").Single(b => b.TextContent.Trim() == "Restore default engine selection").Click();
+        cut.Find("[data-testid=engines-restore-confirm] button").Click();
+
+        var dev = _settings.Settings.Profiles.Single(p => p.Id == "dev");
+        var qa = _settings.Settings.Profiles.Single(p => p.Id == "qa");
+        (dev.Features.EnableSecurityEngine, dev.Features.EnableLighthouseEngine).Should().Be((true, true), "this target returns to the default selection");
+        dev.EngineRequirements.Accessibility.Should().Be(FrontendQualityEngineRequirement.Required, "coverage policy is not part of the restore");
+        qa.Features.EnableSecurityEngine.Should().BeFalse("another Target Environment is never touched");
+        JSInterop.Invocations.Select(i => i.Identifier).Should().OnlyContain(i => i.StartsWith("birkNextStorage."), "load, save and restore call no capability probe");
+    }
+
+    [Fact]
+    public void ControlsAreNativeAndKeyboardReachable()
+    {
+        var cut = Open();
+        cut.Find(".fa-engines-tablewrap").GetAttribute("tabindex").Should().Be("0");
+        cut.FindAll("[data-testid=engines-links] a").Should().OnlyContain(a => a.HasAttribute("href"));
+        cut.FindAll(".fa-reset-row button").Should().ContainSingle().Which.GetAttribute("type").Should().Be("button");
+        cut.FindAll("[data-testid=frontend-review-engines-table] button, [data-testid=frontend-review-engines-table] a").Should().BeEmpty("no nested interactive controls in view mode");
     }
 }

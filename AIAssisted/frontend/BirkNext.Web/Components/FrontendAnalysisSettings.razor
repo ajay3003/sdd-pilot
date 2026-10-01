@@ -1212,30 +1212,38 @@
                         </p>
                     }
 
-                    <div class="fa-engines-tablewrap">
+                    @* Each column has one owner: saved state and coverage policy belong to this target; capability belongs to FQR. *@
+                    <dl class="fa-engines-help" data-testid="engines-help">
+                        <div><dt>Saved state</dt><dd id="engines-help-saved" data-testid="engines-capability-note">@FrontendReviewEnginePresentation.SavedStateHelp</dd></div>
+                        <div><dt>Coverage policy</dt><dd id="engines-help-policy" data-testid="engines-policy-note">@FrontendReviewEnginePresentation.CoveragePolicyHelp</dd></div>
+                        <div><dt>Capability</dt><dd id="engines-help-capability" data-testid="engines-capability-help">@FrontendReviewEnginePresentation.CapabilityHelp</dd></div>
+                    </dl>
+
+                    <div class="fa-engines-tablewrap" tabindex="0" role="region" aria-label="Frontend Quality Review engines">
                         <table class="fa-engines-table" data-testid="frontend-review-engines-table">
                             <thead>
                                 <tr>
                                     <th scope="col">Engine</th>
-                                    <th scope="col">Enabled</th>
-                                    <th scope="col">Policy</th>
-                                    <th scope="col">Requires</th>
+                                    <th scope="col" aria-describedby="engines-help-saved">Saved state</th>
+                                    <th scope="col" aria-describedby="engines-help-policy">Coverage policy</th>
+                                    <th scope="col">Prerequisites</th>
+                                    <th scope="col" aria-describedby="engines-help-capability">Capability</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 @foreach (var row in engineRows)
                                 {
-                                    <tr data-testid="engine-row" data-engine-id="@row.EngineId">
+                                    <tr data-testid="engine-row" data-engine-id="@row.EngineId" data-enabled="@(row.Enabled ? "true" : "false")">
                                         <th scope="row">
                                             <span class="fa-engine-name">@row.DisplayName</span>
                                             <span class="fa-engine-clarification">@row.Clarification</span>
                                         </th>
-                                        <td>
+                                        <td data-label="Saved state">
                                             @if (_isEditMode && _editProfile is not null)
                                             {
                                                 <label class="fa-check-row">
                                                     <input type="checkbox" checked="@row.Enabled"
-                                                           aria-label="@($"Enable {row.DisplayName}")"
+                                                           aria-label="@($"Enable {row.DisplayName} for this target")"
                                                            data-testid="engine-enabled-input"
                                                            @onchange="@((ChangeEventArgs e) => FrontendReviewEnginePresentation.SetEnabled(_editProfile.Features, row.EngineId, (bool)e.Value!))" />
                                                     <span class="fa-engine-state" data-testid="engine-enabled">@(row.Enabled ? "Enabled" : "Disabled")</span>
@@ -1246,28 +1254,40 @@
                                                 <span class="fa-engine-state" data-testid="engine-enabled">@(row.Enabled ? "Enabled" : "Disabled")</span>
                                             }
                                         </td>
-                                        <td><span class="fa-engine-policy fa-engine-policy-@row.Policy.ToString().ToLowerInvariant()" data-testid="engine-policy">@row.Policy</span></td>
-                                        <td><span class="fa-engine-requires" data-testid="engine-requires">@row.Requires</span></td>
+                                        <td data-label="Coverage policy"><span class="fa-engine-policy fa-engine-policy-@row.Policy.ToString().ToLowerInvariant()" data-testid="engine-policy">@row.Policy</span>
+                                            <span class="fa-engine-policy-help" data-testid="engine-policy-help">@FrontendReviewEnginePresentation.PolicyHelp(row.Policy)</span></td>
+                                        <td data-label="Prerequisites"><span class="fa-engine-requires" data-testid="engine-requires">@row.Requires</span></td>
+                                        <td data-label="Capability"><span class="fa-engine-capability" data-testid="engine-capability">@FrontendReviewEnginePresentation.CapabilityCell</span></td>
                                     </tr>
                                 }
                             </tbody>
                         </table>
                     </div>
 
-                    @* Enabled is configuration; whether the engine can actually run is reported on the review page. *@
-                    <p class="fa-engines-note" data-testid="engines-capability-note">@FrontendReviewEnginePresentation.EnabledVersusAvailableNote</p>
-                    <p class="fa-engines-note" data-testid="engines-policy-note">@FrontendReviewEnginePresentation.RequiredPolicyNote</p>
-                    @* Two-way relationship: this tab is what the profile wants; the other two say what can run and what ran. *@
-                    <p class="fa-engines-note">
-                        <a class="fa-engines-link" href="/frontend-quality-review" data-testid="engines-open-review">Open Frontend Quality Review to see live capability status</a>
-                        <span class="fa-engines-sep"> · </span>
+                    @* This tab is what the target wants; FQR says what can run and what ran; system capability details own the tooling. *@
+                    <div class="fa-engines-links" data-testid="engines-links">
+                        <a class="fa-engines-link" href="/frontend-quality-review" data-testid="engines-open-review">Open Frontend Quality Review</a>
                         <a class="fa-engines-link" href="@FrontendQualityTargetAccess.FrontendEngineCapabilitiesHref" data-testid="engines-open-capabilities">View system capability details</a>
-                    </p>
+                    </div>
 
                     @if (!_isEditMode)
                     {
-                        <div class="fa-reset-row">
-                            <SecondaryButton OnClick="RestoreFeatureTogglesAsync" Class="fa-btn-sm">Restore default engine configuration</SecondaryButton>
+                        <div class="fa-reset-row" data-testid="engines-defaults">
+                            @if (_confirmRestoreEngines)
+                            {
+                                <div class="fa-engines-confirm" role="group" aria-labelledby="engines-restore-heading" data-testid="engines-restore-confirm">
+                                    <p id="engines-restore-heading"><strong>@(FrontendReviewEnginePresentation.RestoreLabel)?</strong></p>
+                                    <p data-testid="engines-restore-text">@FrontendReviewEnginePresentation.RestoreConfirmation</p>
+                                    <div class="fa-engines-confirm-actions">
+                                        <SecondaryButton OnClick="RestoreFeatureTogglesAsync" Class="fa-btn-sm">@FrontendReviewEnginePresentation.RestoreLabel</SecondaryButton>
+                                        <button type="button" class="fa-engines-link fa-engines-cancel" data-testid="engines-restore-cancel" @onclick="() => _confirmRestoreEngines = false">Cancel</button>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <SecondaryButton OnClick="() => _confirmRestoreEngines = true" Class="fa-btn-sm">@FrontendReviewEnginePresentation.RestoreLabel</SecondaryButton>
+                            }
                         </div>
                     }
                 </section>
@@ -2782,11 +2802,16 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         await FaSettings.SaveAsync(JS);
     }
 
+    /// <summary>Opens the restore confirmation of the Frontend Review Engines tab (nothing changes until confirmed).</summary>
+    private bool _confirmRestoreEngines;
+
+    /// <summary>Restores only this target's Enabled/Disabled engine selection; coverage policy and capabilities are untouched.</summary>
     private async Task RestoreFeatureTogglesAsync()
     {
         if (_selectedProfileId is null) return;
         FaSettings.RestoreDefaultFeatureToggles(_selectedProfileId);
         await FaSettings.SaveAsync(JS);
+        _confirmRestoreEngines = false;
     }
 
     // "Enable Core Features" and "Disable Future Features" were removed with the thirteen legacy flags: both mutated

@@ -35,13 +35,33 @@ public sealed record FrontendReviewEngineRow(
 public static class FrontendReviewEnginePresentation
 {
     public const string ScopeNote =
-        "These engines apply to Frontend Quality Review only. API Quality Review and Integration Quality Review are not affected by them.";
+        "These settings apply to Frontend Quality Review only. API Quality Review and Integration Quality Review use their own review configuration.";
 
-    public const string EnabledVersusAvailableNote =
-        "Enabled is saved configuration, not a capability. An enabled engine still needs its prerequisite to be available; Frontend Quality Review reports the live capability status before a review runs.";
+    /// <summary>Help for the Saved state column: persisted per-target selection — never availability.</summary>
+    public const string SavedStateHelp =
+        "Controls whether the engine is selected for this target. Enabled is saved target configuration, not proof that the engine is available.";
 
-    public const string RequiredPolicyNote =
-        "Required means the engine must be assessed for required coverage to complete. It does not mean the engine must pass, and it does not prevent you from switching the engine off.";
+    /// <summary>Help for the Coverage policy column. Required is about assessment, never about passing, and never locks the engine on.</summary>
+    public const string CoveragePolicyHelp =
+        "Required means the engine must be assessed for required coverage. It does not mean the engine must pass, and you can still switch it off. Optional engines may add coverage but are not needed to complete required coverage.";
+
+    /// <summary>Help for the Capability column: this page owns no capability; it is evaluated by Frontend Quality Review.</summary>
+    public const string CapabilityHelp =
+        "Actual availability is checked by Frontend Quality Review at review time. This page runs no capability checks.";
+
+    /// <summary>The Capability cell of every row: ownership, not a state. Live capability is never computed or cached here.</summary>
+    public const string CapabilityCell = "Checked in FQR";
+
+    /// <summary>What the restore action does: it resets only the Enabled/Disabled selection of this target (never coverage policy).</summary>
+    public const string RestoreLabel = "Restore default engine selection";
+
+    public const string RestoreConfirmation =
+        "This restores the default Enabled/Disabled selection for this Target Environment. Coverage policy, other Target Environments, system capabilities, installed tools and Frontend Quality Review history are not changed.";
+
+    /// <summary>Short per-row meaning of the coverage policy value.</summary>
+    public static string PolicyHelp(FrontendQualityEngineRequirement policy) => policy == FrontendQualityEngineRequirement.Required
+        ? "Must be assessed for required coverage. It does not have to pass."
+        : "May contribute additional coverage but is not required for required coverage completion.";
 
     public static string RequiredButDisabledWarning(IEnumerable<FrontendReviewEngineRow> rows) =>
         $"Required engine(s) disabled — {string.Join(", ", rows.Where(r => r.RequiredButDisabled).Select(r => r.DisplayName))}. Required coverage cannot complete until they are enabled.";
