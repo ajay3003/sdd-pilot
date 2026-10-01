@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BirkNext.Dependencies;
 
 namespace BirkNext.Integrations;
 
@@ -21,9 +22,18 @@ public enum ClassificationState
     NotApplicable, NoIndicatorsObserved, DocumentedOnly, NotFound, NotAssessedHere,
 }
 
-/// <summary>What completing the review needs, in the order a test lead acts on it. Missing evidence is never a finding.</summary>
+/// <summary>What completing the review needs, in the order a test lead acts on it. Missing evidence is never a finding.
+/// RequiredForLiveChecks is the runtime test context (the stored name is kept so recorded runs stay readable).</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ClassificationMissingGroup { RequiredForLiveChecks, RuntimeEvidence, Secondary }
+public enum ClassificationMissingGroup { RequiredForLiveChecks, RuntimeEvidence, Secondary, SourceEvidence }
+
+/// <summary>Readiness of one review prerequisite. Never Pass/Fail: a prerequisite is present or not, never a security result.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ClassificationReadiness { Ready, Partial, Missing, NotAssessed, NotAvailable, Disabled }
+
+/// <summary>How much classification-relevant source the selected source scope shows for one area. Coverage, not a verdict.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ClassificationCoverageState { Detected, Partial, NotFound, NotAssessed }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ClassificationTestType { Static, Functional, Negative, NonFunctional, DataConsistency }
@@ -76,6 +86,17 @@ public sealed record ClassificationFact
     public ClassificationState State { get; init; }
     public string Detail { get; init; } = "";
     public List<SourceLocation> Locations { get; init; } = [];
+    /// <summary>The exact Source Analysis snapshot(s) the fact comes from, each with its own locations. Empty for legacy archive input.</summary>
+    public List<ClassificationSourceRef> Sources { get; init; } = [];
+}
+
+/// <summary>One Source Analysis snapshot a source fact cites: the exact snapshot id and fingerprint plus the locations in that snapshot.</summary>
+public sealed record ClassificationSourceRef
+{
+    public Guid SnapshotId { get; init; }
+    public string Repository { get; init; } = "";
+    public string Fingerprint { get; init; } = "";
+    public List<SourceLocation> Locations { get; init; } = [];
 }
 
 /// <summary>One pipeline stage with its source/configuration state and its runtime state kept apart.</summary>
@@ -96,6 +117,8 @@ public sealed record RepositoryTestCoverage
     public RepositoryTestCoverageState State { get; init; }
     public List<string> Tests { get; init; } = [];
     public string Note { get; init; } = "";
+    /// <summary>Repositories whose own tests this row describes (empty for legacy archive input).</summary>
+    public List<string> Repositories { get; init; } = [];
 }
 
 /// <summary>A regression test BirkNext proposes for the analyzed repository. Text only — BirkNext never runs or commits it.</summary>
@@ -120,6 +143,178 @@ public sealed record ClassificationSourceEvidence
     public List<RepositoryTestCoverage> TestCoverage { get; init; } = [];
     public List<ProposedRegressionTest> ProposedTests { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>The Source Analysis snapshots this evidence was combined from (null for legacy uploaded archives).</summary>
+    public ClassificationSourceScope? Scope { get; init; }
+}
+
+// ── Source Analysis snapshots as Security Classification's source ─────────────────────────────────────────────────────────
+// Source Analysis owns upload, immutable snapshots, fingerprints and history. When it analyzes an archive it also asks this review's analyzer
+// for the classification-relevant observations of THAT snapshot (ClassificationSnapshotEvidence: facts with file:line, never a verdict).
+// Security Classification combines the observations of an explicit scope (one primary + explicitly included related snapshots) at review
+// time, keeping each fact tied to its own snapshot. Nothing is merged into a synthetic snapshot.
+
+/// <summary>The CDC classification path as one snapshot's source shows it (names and locations only).</summary>
+public sealed record ClassificationCdcSummary
+{
+    public string? EventType { get; init; }
+    /// <summary>True when the event type is declared in this snapshot; false when it is only constructed here (declared elsewhere).</summary>
+    public bool EventDeclared { get; init; }
+    public string? LevelParameter { get; init; }
+    public string? DeserializerType { get; init; }
+    public string? DeserializerMethod { get; init; }
+    public SourceLocation? DeserializerLocation { get; init; }
+    public bool ConstantGuardInput { get; init; }
+    public int? ConstantValue { get; init; }
+    public bool DeleteFromBefore { get; init; }
+    public string? GuardType { get; init; }
+    public List<int> GuardedLevels { get; init; } = [];
+    public bool RouterFound { get; init; }
+    public bool GuardBeforeMapping { get; init; }
+    public bool DeletesDiscarded { get; init; }
+    public string? PayloadField { get; init; }
+    public SourceLocation? MapperLocation { get; init; }
+}
+
+public sealed record ReferencedNamespace(string Name, int Files, List<string> Examples);
+
+/// <summary>A place that names a level with a Kode 6/7 label (documentation or a test name); compared with the reference data at review time.</summary>
+public sealed record ClassificationTerminologyMention(string Kind, int Level, string Code, string Where, SourceLocation Location);
+
+/// <summary>
+/// Classification-relevant source observations of ONE Source Analysis snapshot, captured when Source Analysis analyzes the archive. Facts and
+/// locations only: no review result, no Pass, no "secure" — Security Classification interprets them per review. Null on snapshots analyzed
+/// before it was captured.
+/// </summary>
+public sealed record ClassificationSnapshotEvidence
+{
+    public int AnalyzerVersion { get; init; }
+    public List<ClassificationLevel> Levels { get; init; } = [];
+    public List<ClassificationFact> Facts { get; init; } = [];
+    public ClassificationCdcSummary Cdc { get; init; } = new();
+    public List<ClassificationTerminologyMention> Terminology { get; init; } = [];
+    public List<RepositoryTestCoverage> TestCoverage { get; init; } = [];
+    /// <summary>Classification-relevant types declared here (reference model, CDC event, guard).</summary>
+    public List<string> DeclaredTypes { get; init; } = [];
+    /// <summary>Classification-relevant types this snapshot uses but does not declare.</summary>
+    public List<string> ReferencedTypes { get; init; } = [];
+    /// <summary>Security-named namespaces declared here (e.g. a shared authorization package).</summary>
+    public List<string> DeclaredNamespaces { get; init; } = [];
+    /// <summary>Security-named namespaces this snapshot imports but does not declare (exact names, with how many files import them).</summary>
+    public List<ReferencedNamespace> ReferencedNamespaces { get; init; } = [];
+    /// <summary>Why no observations could be extracted from the archive (null when extraction ran).</summary>
+    public string? Unavailable { get; init; }
+}
+
+/// <summary>The source scope a run asks for: one primary snapshot plus explicitly included related snapshots.</summary>
+public sealed record ClassificationSourceScopeRequest
+{
+    public Guid PrimarySnapshotId { get; init; }
+    public List<Guid> RelatedSnapshotIds { get; init; } = [];
+    /// <summary>Suggested related sources the user chose to continue without; recorded as a scope limitation.</summary>
+    public List<string> ExcludedSuggestions { get; init; } = [];
+}
+
+/// <summary>The immutable source scope of a review: exact snapshots and fingerprints as they were at run time.</summary>
+public sealed record ClassificationSourceScope
+{
+    public SourceScopeEntry Primary { get; init; } = new();
+    public List<SourceScopeEntry> Related { get; init; } = [];
+    public List<string> ExcludedSuggestions { get; init; } = [];
+    public List<string> Limitations { get; init; } = [];
+}
+
+/// <summary>One Source Analysis snapshot as Security Classification offers it.</summary>
+public sealed record ClassificationSnapshotOption
+{
+    public Guid SnapshotId { get; init; }
+    public string RepositoryKey { get; init; } = "";
+    public string Repository { get; init; } = "";
+    public string IdentityBasis { get; init; } = "";
+    public string ArchiveName { get; init; } = "";
+    public string Fingerprint { get; init; } = "";
+    public DateTimeOffset AnalyzedAt { get; init; }
+    /// <summary>Source Analysis extraction status (not a security result).</summary>
+    public string SourceStatus { get; init; } = "";
+    public bool Latest { get; init; }
+    public bool HasClassificationEvidence { get; init; }
+    public string? EvidenceNote { get; init; }
+}
+
+public sealed record ClassificationCoverageRow(string Id, string Title, ClassificationCoverageState State, string Detail);
+
+/// <summary>Read-only view of Source Analysis for this review: snapshots, related-source candidates and, for a chosen scope, its combined evidence.</summary>
+public sealed record ClassificationScopeOptions
+{
+    public List<ClassificationSnapshotOption> Snapshots { get; init; } = [];
+    public List<RelatedSourceCandidate> Candidates { get; init; } = [];
+    public ClassificationSourceScope? Scope { get; init; }
+    public ClassificationSourceEvidence? Evidence { get; init; }
+    public List<ClassificationCoverageRow> Coverage { get; init; } = [];
+    /// <summary>Newer snapshots of the scope's repositories. Shown, never switched to automatically.</summary>
+    public List<ClassificationSnapshotOption> Newer { get; init; } = [];
+    public string? Error { get; init; }
+}
+
+/// <summary>The security source coverage summary of a source scope. Detected = found in source — never protected, secure or passed.</summary>
+public static class ClassificationSourceCoverage
+{
+    public const string RuntimeNote = "Source evidence shows implementation/configuration paths only. It does not prove runtime enforcement.";
+    private static readonly ClassificationArea[] AuthorizationAreas = [ClassificationArea.DirectAccess, ClassificationArea.Search, ClassificationArea.GraphQL, ClassificationArea.ChildAccess, ClassificationArea.AuditAccess];
+
+    private static bool Found(ClassificationFact? f) => f is not null && f.State is not (ClassificationState.NotFound or ClassificationState.NotApplicable);
+
+    public static List<ClassificationCoverageRow> Rows(ClassificationSourceEvidence? evidence)
+    {
+        const string runtime = "Runtime authorization is assessed only by the safe live checks.";
+        if (evidence is null)
+            return
+            [
+                new("model", "Classification model", ClassificationCoverageState.NotAssessed, "No source snapshot selected."),
+                new("cdc", "CDC classification path", ClassificationCoverageState.NotAssessed, "No source snapshot selected."),
+                new("authorization", "Authorization path", ClassificationCoverageState.NotAssessed, "No source snapshot selected."),
+                new("guard", "Graded-access guard", ClassificationCoverageState.NotAssessed, "No source snapshot selected."),
+                new("runtime", "Runtime authorization", ClassificationCoverageState.NotAssessed, runtime),
+            ];
+        ClassificationFact? F(string id) => evidence.Facts.FirstOrDefault(f => f.Id == id);
+        string Issues(IEnumerable<ClassificationFact> facts) => facts.Count(f => f.State == ClassificationState.IssueDetected) is var n and > 0 ? $" {n} source issue(s) — see findings." : "";
+        if (!evidence.Detected)
+        {
+            const string skipped = "Not assessed: no classification model was found, so the rest of the source was not analyzed.";
+            return
+            [
+                new("model", "Classification model", ClassificationCoverageState.NotFound, F("model-reference")?.Detail ?? "No classification reference model was found in the selected source scope."),
+                new("cdc", "CDC classification path", ClassificationCoverageState.NotAssessed, skipped),
+                new("authorization", "Authorization path", ClassificationCoverageState.NotAssessed, skipped),
+                new("guard", "Graded-access guard", ClassificationCoverageState.NotAssessed, skipped),
+                new("runtime", "Runtime authorization", ClassificationCoverageState.NotAssessed, runtime),
+            ];
+        }
+        var graded = evidence.Levels.Where(l => l.KreverGradertTilgang).Select(l => l.Nivaa).ToList();
+        var model = new ClassificationCoverageRow("model", "Classification model", ClassificationCoverageState.Detected,
+            $"{evidence.Levels.Count} level(s) from the reference data{(graded.Count > 0 ? $"; graded access for level {string.Join(", ", graded)}" : "")}.");
+        var cdcParts = new (string Id, string Name)[] { ("cdc-event", "event field"), ("cdc-deserializer", "production deserializer"), ("cdc-router", "guard-before-mapping router"), ("cdc-field-name", "payload mapper") };
+        var cdcFound = cdcParts.Where(p => Found(F(p.Id))).Select(p => p.Name).ToList();
+        var cdcState = Found(F("cdc-deserializer")) && Found(F("cdc-field-name")) ? ClassificationCoverageState.Detected : cdcFound.Count > 0 ? ClassificationCoverageState.Partial : ClassificationCoverageState.NotFound;
+        var cdc = new ClassificationCoverageRow("cdc", "CDC classification path", cdcState,
+            (cdcFound.Count > 0 ? $"Found: {string.Join(", ", cdcFound)}." : "No production CDC classification path was found.") + Issues(evidence.Facts.Where(f => f.Area == ClassificationArea.Pipeline)));
+        var authFacts = evidence.Facts.Where(f => AuthorizationAreas.Contains(f.Area) && Found(f)).ToList();
+        var areas = authFacts.Select(f => f.Area).Distinct().ToList();
+        var auth = new ClassificationCoverageRow("authorization", "Authorization path",
+            areas.Count >= 2 ? ClassificationCoverageState.Detected : areas.Count == 1 ? ClassificationCoverageState.Partial : ClassificationCoverageState.NotFound,
+            (areas.Count > 0 ? $"Found: {string.Join(", ", areas.Select(ClassificationLabels.Area))}." : "No access path for graded children was found.") + Issues(authFacts));
+        var guardFact = F("guard-logic");
+        var guard = new ClassificationCoverageRow("guard", "Graded-access guard", Found(guardFact) ? ClassificationCoverageState.Detected : ClassificationCoverageState.NotFound,
+            Found(guardFact) ? $"{guardFact!.Title} found in source. Whether it receives the real level is part of the CDC path." : "No guard evaluating the classification was found.");
+        return [model, cdc, auth, guard, new("runtime", "Runtime authorization", ClassificationCoverageState.NotAssessed, runtime)];
+    }
+
+    public static string Label(ClassificationCoverageState state) => state switch
+    {
+        ClassificationCoverageState.Detected => "Detected",
+        ClassificationCoverageState.Partial => "Partial",
+        ClassificationCoverageState.NotFound => "Not found",
+        _ => "Not assessed",
+    };
 }
 
 /// <summary>A configured synthetic/approved test child. Opaque ids only — never a name, national id or address.</summary>
@@ -197,6 +392,8 @@ public sealed record ClassificationRunRequest
     /// <summary>Optional, operator-supplied classification count evidence (timestamped observations, never expectations).</summary>
     public ClassificationCountEvidence? SourceCounts { get; init; }
     public ClassificationCountEvidence? TargetCounts { get; init; }
+    /// <summary>The Source Analysis snapshots to review. Null = no source evidence (source/configuration checks from source are then not run).</summary>
+    public ClassificationSourceScopeRequest? SourceScope { get; init; }
 }
 
 /// <summary>One safe GraphQL query observation for a configured test child. Derived facts only — no response body is kept.</summary>
@@ -253,6 +450,7 @@ public sealed record ClassificationCheck
     public string Detail { get; init; } = "";
     public IntegrationEvidenceSource Provenance { get; init; }
     public List<SourceLocation> Locations { get; init; } = [];
+    public List<ClassificationSourceRef> Sources { get; init; } = [];
 }
 
 public sealed record ClassificationFinding
@@ -264,6 +462,8 @@ public sealed record ClassificationFinding
     public string Detail { get; init; } = "";
     public List<string> Evidence { get; init; } = [];
     public string Recommendation { get; init; } = "";
+    /// <summary>The exact source snapshots behind a source finding (a cross-source finding cites each one). Empty for runtime findings and legacy input.</summary>
+    public List<ClassificationSourceRef> Sources { get; init; } = [];
 }
 
 /// <summary>One row of the summary: an area and its state with the kind of evidence behind it.</summary>
@@ -283,6 +483,28 @@ public sealed record ClassificationMissingItem
     public string Title { get; init; } = "";
     public string Detail { get; init; } = "";
     public bool ConfiguresContext { get; init; }
+}
+
+/// <summary>One prerequisite row of the readiness card (ready rows included), grouped Source evidence / Runtime test context / Runtime evidence.</summary>
+public sealed record ClassificationReadinessRow
+{
+    public string Id { get; init; } = "";
+    public ClassificationMissingGroup Group { get; init; }
+    public string Title { get; init; } = "";
+    public ClassificationReadiness Status { get; init; }
+    public string Detail { get; init; } = "";
+    public bool ConfiguresContext { get; init; }
+    /// <summary>Counted as missing evidence (Missing or Not available outside the secondary group).</summary>
+    [JsonIgnore]
+    public bool Counts => Group != ClassificationMissingGroup.Secondary && Status is ClassificationReadiness.Missing or ClassificationReadiness.NotAvailable;
+}
+
+/// <summary>The source part of readiness: Source Analysis visibility, whether a scope is selected, and its coverage.</summary>
+public sealed record ClassificationSourceReadiness(bool Disabled, string? Scope, IReadOnlyList<ClassificationCoverageRow> Coverage)
+{
+    public static ClassificationSourceReadiness For(ClassificationSourceEvidence? evidence, bool disabled = false) =>
+        new(disabled, evidence?.Scope is { } s ? string.Join(" + ", new[] { s.Primary }.Concat(s.Related).Select(e => $"{e.Repository} · {e.Fingerprint[..Math.Min(8, e.Fingerprint.Length)]}…"))
+            : evidence is null ? null : "Legacy source input", ClassificationSourceCoverage.Rows(evidence));
 }
 
 /// <summary>A stored, immutable review run (source snapshot + configuration + safe runtime observations + counts).</summary>
@@ -314,7 +536,12 @@ public sealed record ClassificationReviewResult
     public List<string> Missing { get; init; } = [];
     /// <summary>Structured, prioritized missing evidence as of this run (empty for runs recorded before it existed; <see cref="Missing"/> then applies).</summary>
     public List<ClassificationMissingItem> MissingItems { get; init; } = [];
+    /// <summary>The grouped readiness rows as of this run (empty for runs recorded before it existed).</summary>
+    public List<ClassificationReadinessRow> Readiness { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
+    /// <summary>The exact Source Analysis snapshots this run reviewed. Null for runs without source and for legacy archive-based runs
+    /// (those carry <see cref="SourceArchives"/>); no snapshot id is ever invented for them.</summary>
+    public ClassificationSourceScope? SourceScope { get; init; }
 }
 
 /// <summary>
@@ -323,38 +550,61 @@ public sealed record ClassificationReviewResult
 /// </summary>
 public static class ClassificationPrerequisites
 {
-    public static List<ClassificationMissingItem> Evaluate(bool sourceAnalyzed, IReadOnlyList<ClassificationLevel> levels, ClassificationTestContext context,
+    /// <summary>Missing evidence (the rows that count, plus secondary items), in readiness order.</summary>
+    public static List<ClassificationMissingItem> Evaluate(ClassificationSourceReadiness source, IReadOnlyList<ClassificationLevel> levels, ClassificationTestContext context,
+        bool countsAvailable, string? metricName, bool telemetryObserved) =>
+        Readiness(source, levels, context, countsAvailable, metricName, telemetryObserved).Where(r => r.Counts || r.Group == ClassificationMissingGroup.Secondary)
+            .Select(r => new ClassificationMissingItem { Id = r.Id, Group = r.Group, Title = r.Title, Detail = r.Detail, ConfiguresContext = r.ConfiguresContext }).ToList();
+
+    /// <summary>
+    /// Every prerequisite with its readiness, grouped: Source evidence (a Source Analysis snapshot and what it shows — never an archive to
+    /// upload here), Runtime test context (what live checks need), Runtime evidence (counts, telemetry), then secondary items.
+    /// </summary>
+    public static List<ClassificationReadinessRow> Readiness(ClassificationSourceReadiness source, IReadOnlyList<ClassificationLevel> levels, ClassificationTestContext context,
         bool countsAvailable, string? metricName, bool telemetryObserved)
     {
-        var items = new List<ClassificationMissingItem>();
-        void Add(string id, ClassificationMissingGroup group, string title, string detail, bool configures = false) =>
-            items.Add(new ClassificationMissingItem { Id = id, Group = group, Title = title, Detail = detail, ConfiguresContext = configures });
-        if (!sourceAnalyzed)
-            Add("source", ClassificationMissingGroup.RequiredForLiveChecks, "M2LB source archive", "Upload the repository archive to analyze the classification model, the CDC path and the access paths.");
+        var rows = new List<ClassificationReadinessRow>();
+        void Add(string id, ClassificationMissingGroup group, string title, ClassificationReadiness status, string detail, bool configures = false) =>
+            rows.Add(new ClassificationReadinessRow { Id = id, Group = group, Title = title, Status = status, Detail = detail, ConfiguresContext = configures && status != ClassificationReadiness.Ready });
+        const ClassificationMissingGroup S = ClassificationMissingGroup.SourceEvidence, C = ClassificationMissingGroup.RequiredForLiveChecks, R = ClassificationMissingGroup.RuntimeEvidence;
+        if (source.Disabled && source.Scope is null)
+            Add("source", S, "Source Analysis snapshot", ClassificationReadiness.Disabled, "Source Analysis is disabled in Feature Visibility; source checks are not run. Stored reviews stay readable.");
+        else if (source.Scope is null)
+            Add("source", S, "Source Analysis snapshot", ClassificationReadiness.Missing, "Not selected — choose a source snapshot managed by Source Analysis. Source checks are not run without one.");
+        else
+            Add("source", S, "Source Analysis snapshot", ClassificationReadiness.Ready, source.Scope);
+        foreach (var row in source.Coverage.Where(r => r.Id is "model" or "cdc" or "authorization"))
+            Add($"source-{row.Id}", S, row.Title, row.State switch
+            {
+                ClassificationCoverageState.Detected => ClassificationReadiness.Ready,
+                ClassificationCoverageState.Partial => ClassificationReadiness.Partial,
+                ClassificationCoverageState.NotFound => ClassificationReadiness.Missing,
+                _ => ClassificationReadiness.NotAssessed,
+            }, row.Detail);
         var env = context.Environment?.Trim().ToUpperInvariant();
-        var contextGaps = new List<string>();
-        if (env is not ("DEV" or "QA")) contextGaps.Add("a DEV or QA environment");
-        if (string.IsNullOrWhiteSpace(context.GraphQlEndpoint)) contextGaps.Add("the Person GraphQL endpoint");
-        if (!context.ApprovedByTestLead) contextGaps.Add("test-lead approval");
-        if (contextGaps.Count > 0)
-            Add("context", ClassificationMissingGroup.RequiredForLiveChecks, "Approved DEV/QA security test context", $"Not configured: {string.Join(", ", contextGaps)}.", configures: true);
-        foreach (var level in levels.Where(l => !context.TestChildren.Any(c => c.Nivaa == l.Nivaa && c.BarnRegistreringId is not null)))
+        Add("context-environment", C, "Approved DEV/QA environment", env is "DEV" or "QA" ? ClassificationReadiness.Ready : ClassificationReadiness.Missing,
+            env is "DEV" or "QA" ? env : "Not configured (DEV or QA only — Production is never tested).", configures: true);
+        Add("context-endpoint", C, "Person GraphQL endpoint", string.IsNullOrWhiteSpace(context.GraphQlEndpoint) ? ClassificationReadiness.Missing : ClassificationReadiness.Ready,
+            string.IsNullOrWhiteSpace(context.GraphQlEndpoint) ? "Not configured." : "Configured.", configures: true);
+        Add("context-approval", C, "Test-lead approval", context.ApprovedByTestLead ? ClassificationReadiness.Ready : ClassificationReadiness.Missing,
+            context.ApprovedByTestLead ? "Approved." : "Not approved.", configures: true);
+        foreach (var level in levels)
         {
+            var configured = context.TestChildren.Any(c => c.Nivaa == level.Nivaa && c.BarnRegistreringId is not null);
             var codes = string.Join(" / ", new[] { level.BiRKKode, level.ElementsKode }.OfType<string>().Where(c => c.Length > 0).Distinct());
-            Add($"child-{level.Nivaa}", ClassificationMissingGroup.RequiredForLiveChecks, $"Synthetic level {level.Nivaa} test child ({level.Verdi}{(codes.Length > 0 ? $" / {codes}" : "")})",
-                "A synthetic or approved test child with this level, identified by id only.", configures: true);
+            Add($"child-{level.Nivaa}", C, $"Synthetic level {level.Nivaa} test child ({level.Verdi}{(codes.Length > 0 ? $" / {codes}" : "")})", configured ? ClassificationReadiness.Ready : ClassificationReadiness.Missing,
+                configured ? "Configured (id only)." : "A synthetic or approved test child with this level, identified by id only.", configures: true);
         }
-        if (string.IsNullOrWhiteSpace(context.UnauthorizedIdentityLabel))
-            Add("identity-unauthorized", ClassificationMissingGroup.RequiredForLiveChecks, "Unauthorized test identity", "A test identity without graded access (label only; its token is given per run).", configures: true);
-        if (string.IsNullOrWhiteSpace(context.AuthorizedIdentityLabel))
-            Add("identity-authorized", ClassificationMissingGroup.RequiredForLiveChecks, "Authorized graded identity", "A test identity with graded access (label only; its token is given per run).", configures: true);
-        if (!countsAvailable)
-            Add("counts", ClassificationMissingGroup.RuntimeEvidence, "Classification count evidence from BiRK and M2LB", "Counts per level from both systems, captured at aligned times (run option).");
-        if (!telemetryObserved)
-            Add("telemetry", ClassificationMissingGroup.RuntimeEvidence, $"Runtime telemetry for {metricName ?? "the Kode 6/7 rejection metric"}",
-                "No telemetry source is connected: the runtime value is Not available (never 0 rejections).");
-        Add("browser", ClassificationMissingGroup.Secondary, "Browser storage / route leakage checks", "Not part of this version (Browser Companion). Browser evidence would not prove server authorization.");
-        return items;
+        Add("identity-unauthorized", C, "Unauthorized test identity", string.IsNullOrWhiteSpace(context.UnauthorizedIdentityLabel) ? ClassificationReadiness.Missing : ClassificationReadiness.Ready,
+            string.IsNullOrWhiteSpace(context.UnauthorizedIdentityLabel) ? "A test identity without graded access (label only; its token is given per run)." : "Configured (label only; token per run).", configures: true);
+        Add("identity-authorized", C, "Authorized graded identity", string.IsNullOrWhiteSpace(context.AuthorizedIdentityLabel) ? ClassificationReadiness.Missing : ClassificationReadiness.Ready,
+            string.IsNullOrWhiteSpace(context.AuthorizedIdentityLabel) ? "A test identity with graded access (label only; its token is given per run)." : "Configured (label only; token per run).", configures: true);
+        Add("counts", R, "Aligned classification counts (source and target system)", countsAvailable ? ClassificationReadiness.Ready : ClassificationReadiness.Missing,
+            countsAvailable ? "Supplied for this run — data consistency only, never authorization." : "Counts per level from both systems (e.g. BiRK and the consuming service), captured at aligned times (run option).");
+        Add("telemetry", R, $"Runtime telemetry for {metricName ?? "the Kode 6/7 rejection metric"}", telemetryObserved ? ClassificationReadiness.Ready : ClassificationReadiness.NotAvailable,
+            telemetryObserved ? "Observed." : "No telemetry source is connected: the runtime value is Not available (never 0 rejections).");
+        Add("browser", ClassificationMissingGroup.Secondary, "Browser storage / route leakage checks", ClassificationReadiness.NotAssessed, "Not part of this version (Browser Companion). Browser evidence would not prove server authorization.");
+        return rows;
     }
 }
 
@@ -362,6 +612,8 @@ public sealed record ClassificationRunSummary(Guid RunId, DateTimeOffset Complet
 
 public sealed record ClassificationOverview
 {
+    /// <summary>No longer set: source evidence comes from the Source Analysis scope chosen on the page (see <see cref="ClassificationScopeOptions"/>).
+    /// Kept so clients that read it get null instead of a stale uploaded-archive analysis.</summary>
     public ClassificationSourceEvidence? Source { get; init; }
     public ClassificationTestContext Context { get; init; } = new();
     public ClassificationReviewResult? Latest { get; init; }
@@ -396,9 +648,17 @@ public static class ClassificationLabels
 
     public static string MissingGroup(ClassificationMissingGroup group) => group switch
     {
-        ClassificationMissingGroup.RequiredForLiveChecks => "Required for live authorization checks",
+        ClassificationMissingGroup.SourceEvidence => "Source evidence",
+        ClassificationMissingGroup.RequiredForLiveChecks => "Runtime test context",
         ClassificationMissingGroup.RuntimeEvidence => "Runtime evidence",
         _ => "Optional / secondary",
+    };
+
+    public static string Readiness(ClassificationReadiness status) => status switch
+    {
+        ClassificationReadiness.NotAssessed => "Not assessed",
+        ClassificationReadiness.NotAvailable => "Not available",
+        _ => status.ToString(),
     };
 
     public static string TestType(ClassificationTestType type) => type switch

@@ -5,6 +5,7 @@ using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Api.Services.Integrations.ApplicationMessaging;
 using BirkNext.Api.Services.Integrations.Scim;
+using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.SecurityClassification;
 using BirkNext.Integrations;
 using FluentAssertions;
@@ -569,9 +570,13 @@ public sealed class SecurityClassificationTests
         var empty = ClassificationEvaluator.Evaluate("dev", source, new ClassificationTestContext(), new ClassificationLiveEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "No context." }, null, null, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var partial = Evaluate(source);
 
-        empty.MissingItems.Select(i => i.Id).Should().Equal("context", "child-0", "child-1", "child-2", "child-3", "identity-unauthorized", "identity-authorized", "counts", "telemetry", "browser");
-        empty.MissingItems.Take(7).Should().OnlyContain(i => i.Group == ClassificationMissingGroup.RequiredForLiveChecks && i.ConfiguresContext);
-        empty.MissingItems.Single(i => i.Id == "context").Title.Should().Be("Approved DEV/QA security test context");
+        empty.MissingItems.Select(i => i.Id).Should().Equal("context-environment", "context-endpoint", "context-approval", "child-0", "child-1", "child-2", "child-3", "identity-unauthorized", "identity-authorized", "counts", "telemetry", "browser");
+        empty.MissingItems.Take(9).Should().OnlyContain(i => i.Group == ClassificationMissingGroup.RequiredForLiveChecks && i.ConfiguresContext);
+        empty.MissingItems.Single(i => i.Id == "context-environment").Title.Should().Be("Approved DEV/QA environment");
+        empty.MissingItems.Should().NotContain(i => i.Group == ClassificationMissingGroup.SourceEvidence, "the analyzed source shows the model, the CDC path and the access paths");
+        empty.Readiness.Where(r => r.Group == ClassificationMissingGroup.SourceEvidence).Select(r => (r.Id, r.Status)).Should().Equal(
+            new[] { ("source", ClassificationReadiness.Ready), ("source-model", ClassificationReadiness.Ready), ("source-cdc", ClassificationReadiness.Ready), ("source-authorization", ClassificationReadiness.Ready) });
+        empty.Readiness.Single(r => r.Id == "telemetry").Status.Should().Be(ClassificationReadiness.NotAvailable, "no telemetry is Not available, never 0");
         empty.MissingItems.Single(i => i.Id == "child-3").Title.Should().Contain("Kode6");
         empty.MissingItems.Single(i => i.Id == "telemetry").Should().Match<ClassificationMissingItem>(i => i.Group == ClassificationMissingGroup.RuntimeEvidence && i.Title.Contains("birk.kode67.rejections") && i.Detail.Contains("never 0"));
         empty.MissingItems.Single(i => i.Id == "browser").Group.Should().Be(ClassificationMissingGroup.Secondary);
@@ -771,19 +776,29 @@ public sealed class SecurityClassificationTests
         return stream.ToArray();
     }
 
+    /// <summary>Source Analysis ingests the archive (the only upload path); the review gets its snapshot id.</summary>
+    private static async Task<ClassificationSourceScopeRequest> SnapshotAsync(AppDbContext db, string environmentId = "dev", string name = "M2LB.zip", byte[]? bytes = null)
+    {
+        var (snapshot, error) = await new IqrSourceStore(db).AnalyzeAsync(environmentId, "source-analysis", name, bytes ?? Zip(Fixture().Concat(Docs)));
+        error.Should().BeNull();
+        return new ClassificationSourceScopeRequest { PrimarySnapshotId = snapshot!.Id };
+    }
+
     [Fact]
     public async Task RunsAreImmutableSnapshotsAndTokensAreNeverStored()
     {
         await using var db = Db();
         var server = new FakePerson();
         var service = new ClassificationReviewService(db, new GraphQlClassificationProbe(new HttpClient(server), NullLogger<GraphQlClassificationProbe>.Instance), new ClassificationTestContextStore(), NullLogger<ClassificationReviewService>.Instance);
-        (await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Fixture().Concat(Docs)))])).Error.Should().BeNull();
+        var scope = await SnapshotAsync(db);
         (await service.SaveContextAsync("dev", Context())).Error.Should().BeNull();
 
-        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = "tok-unauth-SECRET", AuthorizedToken = "tok-auth" });
+        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = "tok-unauth-SECRET", AuthorizedToken = "tok-auth", SourceScope = scope });
 
         run.Live.State.Should().Be(IntegrationEvidenceState.Available);
         db.SecurityClassificationEvidence.Select(r => r.Json).ToList().Should().OnlyContain(j => !j.Contains("tok-unauth-SECRET") && !j.Contains("tok-auth"));
+        db.IqrSourceSnapshots.Select(r => r.EvidenceJson).ToList().Should().OnlyContain(j => !j.Contains("tok-unauth-SECRET") && !j.Contains("tok-auth"));
+        run.SourceScope!.Primary.SnapshotId.Should().Be(scope.PrimarySnapshotId);
         (await service.GetRunAsync(run.RunId))!.Findings.Count.Should().Be(run.Findings.Count);
         var overview = await service.OverviewAsync("dev");
         overview.History.Should().ContainSingle();
@@ -834,12 +849,12 @@ public sealed class SecurityClassificationTests
         await db.SaveChangesAsync();
         var legacyJson = legacy.Json;
         var (service, log) = Service(db, new ClassificationTestContextStore());
-        (await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Fixture().Concat(Docs)))])).Error.Should().BeNull();
+        var scope = await SnapshotAsync(db);
         var contextRowsBefore = db.SecurityClassificationEvidence.Count(r => r.Kind == ClassificationReviewService.LegacyContextKind);
 
         (await service.SaveContextAsync("dev", SentinelContext())).Error.Should().BeNull();
         (await service.SaveContextAsync("dev", SentinelContext() with { ApprovedByTestLead = true })).Error.Should().BeNull();
-        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = SentinelToken, AuthorizedToken = SentinelToken + "-2" });
+        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = SentinelToken, AuthorizedToken = SentinelToken + "-2", SourceScope = scope });
         service.ClearContext("dev");
 
         run.Live.State.Should().Be(IntegrationEvidenceState.Available, "the existing probes still run against the in-memory context");
@@ -867,12 +882,12 @@ public sealed class SecurityClassificationTests
         db.SecurityClassificationEvidence.Add(LegacyContextFixtureRow("dev"));
         await db.SaveChangesAsync();
         var (service, _) = Service(db, new ClassificationTestContextStore());
-        (await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Fixture().Concat(Docs)))])).Error.Should().BeNull();
+        var scope = await SnapshotAsync(db);
 
         (await service.OverviewAsync("dev")).Context.Should().BeEquivalentTo(new ClassificationTestContext());
-        (await service.ReviewAsync("dev", "Development"))!.ContextSummary!.ConfiguredLevels.Should().BeEmpty();
-        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = "t" });
+        var run = await service.RunAsync("dev", new ClassificationRunRequest { EnvironmentType = "Development", UnauthorizedToken = "t", SourceScope = scope });
         run.Live.State.Should().Be(IntegrationEvidenceState.NotConfigured, "a stored context row (seeded compatibility fixture) never makes live checks runnable");
+        (await service.ReviewAsync("dev", "Development"))!.ContextSummary!.ConfiguredLevels.Should().BeEmpty();
     }
 
     [Fact]

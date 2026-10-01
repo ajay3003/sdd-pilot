@@ -1,23 +1,25 @@
 @page "/security-classification-review"
+@using BirkNext.Dependencies
 @using BirkNext.Integrations
 @using BirkNext.Web.Components
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
-@using Microsoft.AspNetCore.Components.Forms
 @inject IClassificationReviewApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IReportExportService ExportService
+@inject FeatureVisibilityService FeatureViz
 @inject IJSRuntime JS
 
 <PageTitle>Security Classification</PageTitle>
 
-@* Security Classification / Gradert tilgang. The classification model comes from the analyzed source. Source evidence, the approved test
-   context and live observations are shown separately: a guard that exists is not a guard that receives the level, UI hiding is not
-   authorization, and a count match is not access control. Live checks are fixed GraphQL queries for configured synthetic test children in
-   DEV/QA only; Production is refused; tokens are used for one run and never stored; no mutation and no search for real classified children. *@
+@* Security Classification / Gradert tilgang. Source evidence comes from Source Analysis snapshots chosen here (one primary plus explicitly
+   included related snapshots; nothing is uploaded on this page). Source evidence, the temporary runtime test context and live observations are
+   shown separately: a guard that exists is not a guard that receives the level, UI hiding is not authorization, and a count match is not access
+   control. Live checks are fixed GraphQL queries for configured synthetic test children in DEV/QA only; Production is refused; tokens are used
+   for one run and never stored; no mutation and no search for real classified children. Selecting snapshots only reads Source Analysis. *@
 <div class="sc-page">
     <PageHeader Title="Security Classification / Gradert tilgang"
-                Description="Does the security classification survive the BiRK → Debezium → Event Hub → adapter pipeline, and is a Kode 6 / Kode 7 child protected from unauthorized access?">
+                Description="Does the security classification survive the change-capture (CDC) pipeline into the consuming service, and is a Kode 6 / Kode 7 child protected from unauthorized access? The detected pipeline is shown from the selected source.">
         @if (_result is not null) { <button type="button" class="btn-secondary" data-testid="sc-export" @onclick="ExportAsync">Export HTML</button> }
     </PageHeader>
 
@@ -27,20 +29,173 @@
     }
     else
     {
-        <section class="sc-card" aria-labelledby="sc-setup-heading" data-testid="sc-setup">
-            <h2 id="sc-setup-heading">Evidence</h2>
-            <p class="sc-muted">Target Environment <strong>@_profile.Name</strong> (@_profile.EnvironmentType). @(_profile.EnvironmentType == FrontendEnvironmentType.Production ? "Production is never tested — only source and configuration checks run." : "")</p>
-            <div class="sc-actions">
-                <label class="sc-file-button">
-                    <InputFile class="sc-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze M2LB source archives (.zip)" data-testid="sc-upload" />
-                    <span aria-hidden="true">@(_overview?.Source is null ? "Analyze M2LB source" : "Re-analyze M2LB source")</span>
-                </label>
-                <button type="button" class="sc-link" data-testid="sc-configure" aria-expanded="@(_editing ? "true" : "false")" @onclick="BeginEdit">Configure test context</button>
-            </div>
-            @if (_overview?.Source is { } source)
+        <section class="sc-card sc-source" aria-labelledby="sc-source-heading" data-testid="sc-source-evidence">
+            <h2 id="sc-source-heading" tabindex="-1" @ref="_sourceHeading">Source evidence <span class="sc-badge sc-badge-@(SourceSelected ? "info" : "muted")" data-testid="sc-source-state">@SourceStateLabel</span></h2>
+            <p class="sc-muted">Security source analysis uses snapshots managed by Source Analysis — one primary snapshot plus any related source you include, each kept with its own fingerprint. Nothing is uploaded here, and choosing a snapshot only reads Source Analysis (no runtime, Azure, database or GraphQL call).</p>
+            @if (!FeatureViz.SourceAnalysis)
             {
-                <p class="sc-muted" data-testid="sc-source">Source analyzed @source.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @string.Join(", ", source.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..Math.Min(12, a.Sha256.Length)]})")) · @(source.Detected ? $"{source.Levels.Count} classification levels" : "no classification model found")</p>
+                <p class="sc-muted" role="note" data-testid="sc-source-disabled">Source Analysis is disabled in Feature Visibility, so its snapshots are not offered here and source checks are not run. Stored reviews remain readable; no snapshot or result is removed.</p>
             }
+            else if (_options is null)
+            {
+                <p class="sc-muted" role="status" data-testid="sc-source-loading">@(_sourceError ?? "Loading Source Analysis snapshots…")</p>
+            }
+            else if (_options.Snapshots.Count == 0)
+            {
+                <div class="sc-empty" data-testid="sc-source-empty">
+                    <h3>No source snapshot available</h3>
+                    <p class="sc-muted">This review uses source snapshots managed by Source Analysis. Analyze the repository archive there; it becomes an immutable snapshot you can choose here.</p>
+                    <div class="sc-actions"><a class="btn-secondary" href="source-analysis" data-testid="sc-open-source-analysis">Open Source Analysis</a></div>
+                </div>
+            }
+            else
+            {
+                @if (_primaryId is null && CurrentSnapshot is { } current)
+                {
+                    <div class="sc-suggest" data-testid="sc-current-snapshot">
+                        <span>Current Source Analysis snapshot: <strong>@current.Repository</strong> · @current.ArchiveName · <code>@ClassificationPresentation.ShortFingerprint(current.Fingerprint)</code></span>
+                        <button type="button" class="btn-secondary" data-testid="sc-use-current" disabled="@_busy" @onclick="() => PickPrimaryAsync(current.SnapshotId)">Use current snapshot</button>
+                    </div>
+                }
+                <label class="sc-field sc-primary-field">Primary source snapshot
+                    <select @ref="_primarySelect" class="form-control" data-testid="sc-primary" value="@(_primaryId?.ToString() ?? "")" disabled="@_busy"
+                            @onchange="e => PickPrimaryAsync(Guid.TryParse(e.Value?.ToString(), out var id) ? id : null)">
+                        <option value="">Choose source snapshot (none selected)</option>
+                        @foreach (var group in _options.Snapshots.GroupBy(s => s.Repository))
+                        {
+                            <optgroup label="@group.Key">@foreach (var s in group) { <option value="@s.SnapshotId">@Option(s)</option> }</optgroup>
+                        }
+                    </select>
+                </label>
+                @if (_options.Error is { } scopeError)
+                {
+                    <p class="sc-error" role="alert" data-testid="sc-scope-error">@scopeError</p>
+                }
+                @if (Primary is { } p)
+                {
+                    <div class="sc-scope-card" data-testid="sc-primary-summary" data-snapshot="@p.SnapshotId">
+                        <p class="sc-scope-title"><span class="sc-badge sc-badge-info">Primary</span> <strong>@p.Repository</strong> <span class="sc-muted">· @p.IdentityBasis</span></p>
+                        <dl class="sc-context">
+                            <div><dt>Archive</dt><dd class="sc-wrap">@p.ArchiveName</dd></div>
+                            <div><dt>Fingerprint</dt><dd><code title="@p.Fingerprint" data-testid="sc-primary-fingerprint">@ClassificationPresentation.ShortFingerprint(p.Fingerprint)</code></dd></div>
+                            <div><dt>Analyzed</dt><dd>@Utc(p.AnalyzedAt)</dd></div>
+                            <div><dt>Source Analysis</dt><dd data-testid="sc-primary-status">@p.SourceStatus <span class="sc-muted">(extraction status, not a security result)</span></dd></div>
+                            <div><dt>Security source evidence</dt><dd data-testid="sc-primary-evidence">@(p.HasClassificationEvidence ? p.EvidenceNote ?? "Available" : "Not available")@if (!p.HasClassificationEvidence) { <span class="sc-muted"> — @p.EvidenceNote</span> }</dd></div>
+                        </dl>
+                        <div class="sc-actions">
+                            <button type="button" class="btn-secondary" data-testid="sc-change-snapshot" @onclick="FocusPrimaryAsync">Change source snapshot</button>
+                            <a class="btn-secondary" href="source-analysis" data-testid="sc-primary-open-source-analysis">Open Source Analysis</a>
+                            <button type="button" class="btn-secondary" data-testid="sc-refresh-source" disabled="@_busy" @onclick="RefreshSourceAsync">Refresh source evidence</button>
+                        </div>
+                        @foreach (var newer in _options.Newer.Where(n => !_keptNewer.Contains(n.SnapshotId)))
+                        {
+                            var currentEntry = ScopeEntries.FirstOrDefault(e => e.RepositoryKey == newer.RepositoryKey);
+                            <div class="sc-newer" role="note" data-testid="sc-newer-snapshot" data-repository="@newer.Repository">
+                                <p><strong>Newer source snapshot available</strong> — current review source @newer.Repository · <code>@ClassificationPresentation.ShortFingerprint(currentEntry?.Fingerprint ?? "")</code>@(currentEntry is null ? "" : $" ({Utc(currentEntry.AnalyzedAt)})"); latest · <code>@ClassificationPresentation.ShortFingerprint(newer.Fingerprint)</code> (@Utc(newer.AnalyzedAt)). The review is not switched automatically.</p>
+                                <div class="sc-actions">
+                                    <button type="button" class="btn-secondary" data-testid="sc-review-newer" disabled="@_busy" @onclick="() => UseNewerAsync(newer)">Review change<span class="visually-hidden"> for @newer.Repository</span></button>
+                                    <button type="button" class="btn-secondary" data-testid="sc-keep-current" @onclick="() => _keptNewer.Add(newer.SnapshotId)">Keep current<span class="visually-hidden"> for @newer.Repository</span></button>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    <section class="sc-related" aria-labelledby="sc-related-heading" data-testid="sc-related">
+                        <h3 id="sc-related-heading">Related sources <span class="sc-muted" data-testid="sc-related-count">· @(_related.Count == 0 ? "None included" : $"{_related.Count} included")</span></h3>
+                        <p class="sc-muted">Suggested only when the primary snapshot's evidence ties another source to classification or authorization (a classification type it uses but does not declare, or a reference to a source with its own security evidence). A suggestion is never included until you include it, and is never merged into the primary.</p>
+                        @if (_options.Candidates.Count == 0) { <p class="sc-muted" data-testid="sc-related-none">No related security source detected in the primary snapshot's evidence.</p> }
+                        <ul class="sc-related-list">
+                            @foreach (var c in _options.Candidates)
+                            {
+                                var included = _related.ContainsKey(c.RepositoryKey);
+                                var choices = c.MatchingSnapshotIds.Select(id => _options.Snapshots.FirstOrDefault(s => s.SnapshotId == id)).OfType<ClassificationSnapshotOption>().ToList();
+                                var pick = _related.TryGetValue(c.RepositoryKey, out var inc) ? inc : _relatedChoice.TryGetValue(c.RepositoryKey, out var ch) ? ch : choices.FirstOrDefault()?.SnapshotId;
+                                <li class="sc-related-item" data-testid="sc-related-candidate" data-repository="@c.Repository" data-state="@c.State">
+                                    <p class="sc-scope-title"><strong>@(included ? "Related source included" : "Related source detected"): @c.Repository</strong> <span class="sc-badge sc-badge-muted">@c.Confidence</span> <span class="sc-badge sc-badge-@(c.State == RelatedSourceState.SnapshotAvailable ? "info" : c.State == RelatedSourceState.NeedsReview ? "attention" : "muted")" data-testid="sc-related-state">@RelatedState(c.State)</span>@if (included) { <span class="sc-badge sc-badge-info" data-testid="sc-related-included">✓ Included</span> }</p>
+                                    <p class="sc-muted" data-testid="sc-related-reason">@c.Reason</p>
+                                    <ul class="sc-facts" data-testid="sc-related-evidence">@foreach (var e in c.Evidence) { <li><strong>@e.Kind</strong> — @e.Detail@(e.Projects > 0 ? $" ({e.Projects} project(s))" : "")@if (e.Examples.Count > 0) { <br /><span class="sc-muted sc-mono">@string.Join(" · ", e.Examples.Take(3))</span> }</li> }</ul>
+                                    @if (choices.Count == 0)
+                                    {
+                                        <p data-testid="sc-related-missing">No analyzed source snapshot with security classification evidence is available. <a href="source-analysis" data-testid="sc-related-open-source-analysis">Open Source Analysis</a> to analyze it; the review can run without it (recorded as a limitation).</p>
+                                    }
+                                    else
+                                    {
+                                        <div class="sc-actions">
+                                            @if (choices.Count > 1)
+                                            {
+                                                <label class="sc-field">Snapshot of @c.Repository <select class="form-control" data-testid="sc-related-snapshot" value="@pick" disabled="@(_busy || included)" @onchange="e => { if (Guid.TryParse(e.Value?.ToString(), out var id)) _relatedChoice[c.RepositoryKey] = id; }">@foreach (var s in choices) { <option value="@s.SnapshotId">@Option(s)</option> }</select></label>
+                                            }
+                                            else { <span class="sc-muted">Available snapshot: @choices[0].ArchiveName · <code>@ClassificationPresentation.ShortFingerprint(choices[0].Fingerprint)</code></span> }
+                                            @if (included) { <button type="button" class="btn-secondary" data-testid="sc-related-remove" disabled="@_busy" @onclick="() => RemoveRelatedAsync(c.RepositoryKey)">Remove<span class="visually-hidden"> @c.Repository</span></button> }
+                                            else { <button type="button" class="btn-secondary" data-testid="sc-related-include" disabled="@(pick is null || _busy)" @onclick="() => IncludeAsync(c.RepositoryKey, pick!.Value)">Include in review<span class="visually-hidden"> @c.Repository</span></button> }
+                                        </div>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                        @if (NotIncluded.Count > 0 && !NotIncluded.All(c => _excluded.Contains(c.Repository)))
+                        {
+                            <div class="sc-incomplete" role="note" data-testid="sc-scope-incomplete">
+                                <p><strong>Review scope may be incomplete</strong> — related source detected but not included: @string.Join(", ", NotIncluded.Select(c => c.Repository)). The review can still run; leaving it out is recorded as a scope limitation in the result and export.</p>
+                                <div class="sc-actions"><button type="button" class="btn-secondary" data-testid="sc-continue-without" disabled="@_busy" @onclick="ContinueWithoutAsync">Continue without</button></div>
+                            </div>
+                        }
+                        else if (NotIncluded.Count > 0)
+                        {
+                            <p class="sc-muted" data-testid="sc-continued-without">Continuing without @string.Join(", ", NotIncluded.Select(c => c.Repository)) — recorded as a scope limitation.</p>
+                        }
+                    </section>
+                }
+
+                <section class="sc-coverage" aria-labelledby="sc-coverage-heading" data-testid="sc-coverage-summary">
+                    <h3 id="sc-coverage-heading">Security source coverage</h3>
+                    <dl class="sc-coverage-list">
+                        @foreach (var row in _options.Coverage)
+                        {
+                            <div data-testid="sc-coverage-row" data-row="@row.Id"><dt>@row.Title</dt><dd><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(row.State)">@ClassificationSourceCoverage.Label(row.State)</span> <span class="sc-muted">@row.Detail</span></dd></div>
+                        }
+                    </dl>
+                    <p class="sc-muted" data-testid="sc-coverage-note">@ClassificationSourceCoverage.RuntimeNote</p>
+                </section>
+
+                @if (_options.Evidence is { } evidence)
+                {
+                    <ReviewDisclosure Text="View source evidence" CollapseText="Hide source evidence" TestId="sc-source-details" Class="disclosure-inline" Hint="@($"{evidence.Facts.Count} fact(s)")">
+                        @foreach (var groupName in ClassificationPresentation.EvidenceGroups)
+                        {
+                            var facts = evidence.Facts.Where(f => ClassificationPresentation.EvidenceGroup(f.Area) == groupName).ToList();
+                            if (facts.Count == 0) continue;
+                            <h4 class="sc-evidence-heading">@groupName</h4>
+                            <ul class="sc-facts" data-testid="sc-source-group" data-group="@groupName">
+                                @foreach (var f in facts)
+                                {
+                                    <li data-testid="sc-source-fact" data-fact="@f.Id"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(f.State)">@ClassificationLabels.State(f.State)</span> <strong>@f.Title</strong> @f.Detail
+                                        @if (f.Sources.Count > 0) { <span class="sc-muted" data-testid="sc-source-fact-source"> · Source: @ClassificationPresentation.Sources(f.Sources)</span> }
+                                        @if (f.Locations.Count > 0) { <span class="sc-muted sc-mono"> @ClassificationPresentation.Locations(f.Locations)</span> }</li>
+                                }
+                            </ul>
+                        }
+                        <h4 class="sc-evidence-heading">Tests</h4>
+                        <ul class="sc-facts" data-testid="sc-source-tests">
+                            @foreach (var t in evidence.TestCoverage)
+                            {
+                                <li><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(t.State)">@ClassificationLabels.Coverage(t.State)</span> @t.Scenario@if (t.Repositories.Count > 0) { <span class="sc-muted"> · @string.Join(", ", t.Repositories)</span> }</li>
+                            }
+                        </ul>
+                        <p class="sc-muted">Developer tests are source evidence: a passing repository test is not a runtime result.</p>
+                        <h4 class="sc-evidence-heading">Known limitations</h4>
+                        <ul class="sc-facts" data-testid="sc-source-limitations">@foreach (var l in evidence.Limitations) { <li>@l</li> }</ul>
+                    </ReviewDisclosure>
+                }
+            }
+        </section>
+
+        <section class="sc-card" aria-labelledby="sc-setup-heading" data-testid="sc-setup">
+            <h2 id="sc-setup-heading">Runtime test context</h2>
+            <p class="sc-muted">Target Environment <strong>@_profile.Name</strong> (@_profile.EnvironmentType). @(_profile.EnvironmentType == FrontendEnvironmentType.Production ? "Production is never tested — only source and configuration checks run." : "Live checks run only in an approved DEV/QA test context.")</p>
+            <div class="sc-actions">
+                <button type="button" class="btn-secondary" data-testid="sc-configure" aria-expanded="@(_editing ? "true" : "false")" @onclick="BeginEdit">Configure test context</button>
+            </div>
 
             @if (_editing)
             {
@@ -64,6 +219,7 @@
                             <label class="sc-field">BiRK id (exact-id search) <input class="form-control sc-mono" @bind="row.BirkId" data-testid="@($"sc-context-child-birk-{level.Nivaa}")" /></label>
                         </div>
                     }
+                    @if (Levels.Count == 0) { <p class="sc-muted" data-testid="sc-context-no-levels">Test children are configured per classification level; the levels come from the selected source evidence.</p> }
                     <label class="sc-field">Unauthorized test identity (label) <input class="form-control" @bind="_draft.Unauthorized" data-testid="sc-context-unauthorized" /></label>
                     <label class="sc-field">Authorized graded identity (label) <input class="form-control" @bind="_draft.Authorized" data-testid="sc-context-authorized" /></label>
                     <label class="sc-check"><input type="checkbox" @bind="_draft.Approved" data-testid="sc-context-approved" /> Approved by the test lead</label>
@@ -114,10 +270,21 @@
                     </div>
                 }
             </ReviewDisclosure>
+        </section>
+
+        @if (_result is null && _overview is not null) { @NeededCard }
+
+        <section class="sc-card" aria-labelledby="sc-run-heading" data-testid="sc-run-card">
+            <h2 id="sc-run-heading">Run review</h2>
             @{ var (canRun, reason) = ClassificationPresentation.LiveReadiness(Context, _profile.EnvironmentType.ToString(), !string.IsNullOrWhiteSpace(_unauthorizedToken) || !string.IsNullOrWhiteSpace(_authorizedToken)); }
+            <p class="sc-muted" data-testid="sc-run-source"><strong>Source checks:</strong> @(RunScope is null ? "Not run — no source snapshot selected." : $"On {ScopeLabel} (exact snapshots, bound to the result).")</p>
             <p class="sc-muted" data-testid="sc-live-readiness"><strong>Live checks:</strong> @(canRun ? "Available" : "Not run") — @reason</p>
+            @if (_options?.Error is not null && _primaryId is not null)
+            {
+                <p class="sc-error" data-testid="sc-run-blocked">Repair the source scope (or choose no source snapshot) before running.</p>
+            }
             <div class="sc-actions">
-                <button type="button" class="btn-primary" data-testid="sc-run" disabled="@_busy" @onclick="RunAsync">@(_busy ? "Checking…" : "Run safe security checks")</button>
+                <button type="button" class="btn-primary" data-testid="sc-run" disabled="@(_busy || RunBlocked)" @onclick="RunAsync">@(_busy ? "Checking…" : "Run safe security checks")</button>
             </div>
             <p class="sc-status" role="status" aria-live="polite" data-testid="sc-status">@_status</p>
             @if (_error is { } error) { <p class="sc-error" role="alert" data-testid="sc-error">@error</p> }
@@ -132,14 +299,17 @@
             }
         </section>
 
-        @if (_result is null && _overview is not null) { @NeededCard }
-
         @if (_result is { } result)
         {
             <section class="sc-card" aria-labelledby="sc-summary-heading" data-testid="sc-summary" tabindex="-1" @ref="_resultRef">
                 <h2 id="sc-summary-heading">Security classification <span class="sc-badge sc-badge-@ClassificationPresentation.Tone(result.Overall)" data-testid="sc-overall">@ClassificationLabels.Overall(result.Overall)</span></h2>
                 <p class="sc-muted" data-testid="sc-headline">@ClassificationPresentation.Headline(result) · @result.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</p>
                 <p class="sc-orientation" data-testid="sc-orientation">@ClassificationPresentation.Orientation(result, MissingNow.Count)</p>
+                <p class="sc-muted sc-wrap" data-testid="sc-result-scope"><strong>Source scope:</strong> @ClassificationPresentation.ScopeLine(result)</p>
+                @if (result.SourceScope is { Limitations.Count: > 0 } resultScope)
+                {
+                    <ul class="sc-facts" data-testid="sc-result-scope-limitations">@foreach (var l in resultScope.Limitations) { <li>@l</li> }</ul>
+                }
                 <ul class="sc-summary">
                     @foreach (var row in result.Summary)
                     {
@@ -171,7 +341,8 @@
             </section>
 
             <section class="sc-card" aria-labelledby="sc-pipeline-heading" data-testid="sc-pipeline">
-                <h2 id="sc-pipeline-heading">CDC pipeline</h2>
+                <h2 id="sc-pipeline-heading">CDC / change-capture pipeline (detected from source)</h2>
+                <p class="sc-muted">Stages as the selected source shows them; source state and runtime state are separate. A source relationship does not prove runtime continuity.</p>
                 <ol class="sc-pipeline">
                     @foreach (var stage in result.Pipeline)
                     {
@@ -223,6 +394,7 @@
                         {
                             <li data-testid="sc-finding" data-rule="@finding.RuleId"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(finding.Severity)">@finding.Severity</span> <strong>@finding.Title</strong> <span class="sc-muted">(@ClassificationLabels.Area(finding.Area))</span>
                                 <p>@finding.Detail</p>
+                                @if (finding.Sources.Count > 0) { <p class="sc-muted" data-testid="sc-finding-source">Source finding — @ClassificationPresentation.Sources(finding.Sources) (selected snapshot evidence, not an observed runtime breach)</p> }
                                 @if (finding.Evidence.Count > 0) { <p class="sc-muted sc-mono">@string.Join(" · ", finding.Evidence)</p> }
                                 <p class="sc-muted">Recommendation: @finding.Recommendation</p></li>
                         }
@@ -260,18 +432,18 @@
                         <ul class="sc-facts" data-testid="sc-check-group" data-type="@type">
                             @foreach (var c in items)
                             {
-                                <li><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(c.State)">@ClassificationLabels.State(c.State)</span> <strong>@c.Title</strong> <span class="sc-muted">(@ClassificationLabels.Area(c.Area) · @IntegrationReviewLabels.Source(c.Provenance))</span> @c.Detail
+                                <li><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(c.State)">@ClassificationLabels.State(c.State)</span> <strong>@c.Title</strong> <span class="sc-muted">(@ClassificationLabels.Area(c.Area) · @IntegrationReviewLabels.Source(c.Provenance)@(c.Sources.Count > 0 ? $" · {ClassificationPresentation.Sources(c.Sources)}" : ""))</span> @c.Detail
                                     @if (c.Locations.Count > 0) { <span class="sc-muted sc-mono"> @ClassificationPresentation.Locations(c.Locations)</span> }</li>
                             }
                         </ul>
                     }
                 </ReviewDisclosure>
-                <ReviewDisclosure Text="Repository tests (M2LB)" CollapseText="Hide repository tests" TestId="sc-coverage" Class="disclosure-inline">
-                    <p class="sc-muted">M2LB's own tests, shown separately from BirkNext's checks. A unit test with a constructed event is not production-path coverage.</p>
+                <ReviewDisclosure Text="Repository tests (from source)" CollapseText="Hide repository tests" TestId="sc-coverage" Class="disclosure-inline">
+                    <p class="sc-muted">The analyzed repositories' own tests, shown separately from BirkNext's checks. A unit test with a constructed event is not production-path coverage, and a passing repository test is not a runtime result.</p>
                     <ul class="sc-facts" data-testid="sc-coverage-list">
                         @foreach (var t in result.TestCoverage)
                         {
-                            <li data-testid="sc-coverage-item"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(t.State)">@ClassificationLabels.Coverage(t.State)</span> @t.Scenario @if (t.Tests.Count > 0) { <span class="sc-muted sc-mono">· @string.Join(", ", t.Tests.Take(2))</span> } @if (t.Note.Length > 0) { <span class="sc-muted">· @t.Note</span> }</li>
+                            <li data-testid="sc-coverage-item"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(t.State)">@ClassificationLabels.Coverage(t.State)</span> @t.Scenario @if (t.Tests.Count > 0) { <span class="sc-muted sc-mono">· @string.Join(", ", t.Tests.Take(2))</span> } @if (t.Note.Length > 0) { <span class="sc-muted">· @t.Note</span> } @if (t.Repositories.Count > 0) { <span class="sc-muted">· @string.Join(", ", t.Repositories)</span> }</li>
                         }
                     </ul>
                     @foreach (var p in result.ProposedTests)
@@ -288,19 +460,29 @@
 </div>
 
 @code {
-    private const long MaxArchiveBytes = 50 * 1024 * 1024;
     private FrontendAnalysisProfile? _profile;
     private ClassificationOverview? _overview;
     private ClassificationReviewResult? _result;
+    private ClassificationScopeOptions? _options;
+    private Guid? _primaryId;
+    /// <summary>Explicitly included related sources: repository key → exact snapshot id.</summary>
+    private readonly Dictionary<string, Guid> _related = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Guid> _relatedChoice = new(StringComparer.Ordinal);
+    /// <summary>Suggested related sources the user chose to continue without (recorded as a limitation).</summary>
+    private readonly HashSet<string> _excluded = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<Guid> _keptNewer = [];
     private bool _busy;
     private string? _status;
     private string? _error;
+    private string? _sourceError;
     private bool _editing;
     private string? _formError;
     private string? _unauthorizedToken;
     private string? _authorizedToken;
     private ElementReference _focus;
     private ElementReference _resultRef;
+    private ElementReference _primarySelect;
+    private ElementReference _sourceHeading;
     private bool _focusForm;
     private bool _focusResult;
     private ContextDraft _draft = new();
@@ -333,14 +515,112 @@
 
     private bool _showAllMissing;
 
-    /// <summary>The latest review follows the current context; an opened historical review shows its own recorded snapshot.</summary>
+    // ── Source scope (read from Source Analysis; bound to a run only when it is run) ─────────────────────────────────
+
+    private ClassificationSnapshotOption? Primary => _primaryId is { } id ? _options?.Snapshots.FirstOrDefault(s => s.SnapshotId == id) : null;
+    private ClassificationSnapshotOption? CurrentSnapshot => _options?.Snapshots.Where(s => s.Latest && s.HasClassificationEvidence).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault();
+    private IEnumerable<SourceScopeEntry> ScopeEntries => _options?.Scope is { } scope ? new[] { scope.Primary }.Concat(scope.Related) : [];
+    private bool SourceSelected => FeatureViz.SourceAnalysis && _options?.Scope is not null;
+    private string SourceStateLabel => !FeatureViz.SourceAnalysis ? "Source Analysis disabled" : _options?.Scope is not null ? "Selected" : _primaryId is not null && _options?.Error is not null ? "Needs repair" : "Not selected";
+    private string ScopeLabel => _options?.Scope is { } s ? string.Join(" + ", new[] { s.Primary }.Concat(s.Related).Select(e => $"{e.Repository} · {ClassificationPresentation.ShortFingerprint(e.Fingerprint)}")) : "";
+    private List<RelatedSourceCandidate> NotIncluded => _options?.Candidates.Where(c => !_related.ContainsKey(c.RepositoryKey)).ToList() ?? [];
+
+    private ClassificationSourceScopeRequest? Selection => _primaryId is { } primary
+        ? new ClassificationSourceScopeRequest { PrimarySnapshotId = primary, RelatedSnapshotIds = [.. _related.OrderBy(r => r.Key, StringComparer.Ordinal).Select(r => r.Value)], ExcludedSuggestions = [.. _excluded.Order(StringComparer.OrdinalIgnoreCase)] }
+        : null;
+    /// <summary>The scope a run binds to: only a selection Source Analysis resolved (and only while Source Analysis is visible).</summary>
+    private ClassificationSourceScopeRequest? RunScope => FeatureViz.SourceAnalysis && _options is { Scope: not null, Error: null } ? Selection : null;
+    private bool RunBlocked => FeatureViz.SourceAnalysis && _primaryId is not null && _options?.Error is not null;
+
+    private static string Option(ClassificationSnapshotOption s) =>
+        $"{s.ArchiveName} · {ClassificationPresentation.ShortFingerprint(s.Fingerprint)} · {Utc(s.AnalyzedAt)}{(s.Latest ? " · latest" : "")}{(s.HasClassificationEvidence ? "" : " · no security source evidence")}";
+    private static string Utc(DateTimeOffset at) => at.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") + " UTC";
+    private static string RelatedState(RelatedSourceState state) => state switch
+    {
+        RelatedSourceState.SnapshotAvailable => "Snapshot available",
+        RelatedSourceState.SnapshotUnavailable => "No analyzed snapshot",
+        _ => "Needs review",
+    };
+
+    private async Task LoadScopeAsync()
+    {
+        if (_profile is null || !FeatureViz.SourceAnalysis) return; // feature visibility is respected: hidden Source Analysis offers no snapshots here
+        try
+        {
+            _options = await Api.SourceScopeAsync(_profile.Id, Selection);
+            _sourceError = null;
+        }
+        catch (HttpRequestException) { _sourceError = "Source Analysis snapshots could not be loaded (backend not reachable)."; }
+    }
+
+    private async Task PickPrimaryAsync(Guid? id)
+    {
+        _primaryId = id;
+        _related.Clear();
+        _relatedChoice.Clear();
+        _excluded.Clear();
+        _busy = true;
+        try { await LoadScopeAsync(); }
+        finally { _busy = false; }
+        _status = id is null ? "No source snapshot selected — source checks will not run." : _options?.Scope is not null ? $"Source scope: {ScopeLabel}." : null;
+    }
+
+    private async Task IncludeAsync(string repositoryKey, Guid snapshotId)
+    {
+        _related[repositoryKey] = snapshotId;
+        _busy = true;
+        try { await LoadScopeAsync(); }
+        finally { _busy = false; }
+    }
+
+    private async Task RemoveRelatedAsync(string repositoryKey)
+    {
+        _related.Remove(repositoryKey);
+        _busy = true;
+        try { await LoadScopeAsync(); }
+        finally { _busy = false; }
+    }
+
+    private async Task ContinueWithoutAsync()
+    {
+        foreach (var c in NotIncluded) _excluded.Add(c.Repository);
+        _busy = true;
+        try { await LoadScopeAsync(); }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Re-reads Source Analysis for the same exact scope (read-only; a newer snapshot is offered, never switched to).</summary>
+    private async Task RefreshSourceAsync()
+    {
+        _busy = true;
+        try { await LoadScopeAsync(); }
+        finally { _busy = false; }
+        _status = _options?.Scope is not null ? $"Source evidence refreshed for {ScopeLabel}." : _status;
+    }
+
+    private async Task UseNewerAsync(ClassificationSnapshotOption newer)
+    {
+        if (Primary?.RepositoryKey == newer.RepositoryKey) _primaryId = newer.SnapshotId;
+        else _related[newer.RepositoryKey] = newer.SnapshotId;
+        _busy = true;
+        try { await LoadScopeAsync(); }
+        finally { _busy = false; }
+        _status = $"Review scope now uses {newer.Repository} · {ClassificationPresentation.ShortFingerprint(newer.Fingerprint)}.";
+    }
+
+    private async Task FocusPrimaryAsync() => await _primarySelect.FocusAsync();
+
+    // ── Readiness ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>The latest review follows the current scope and context; an opened historical review shows its own recorded snapshot.</summary>
     private bool IsLatest => _result is null || _overview?.Latest?.RunId == _result.RunId;
-    private ClassificationPresentation.MissingView MissingNow => ClassificationPresentation.Missing(_result, IsLatest, Context, _overview?.Source);
+    private ClassificationPresentation.MissingView MissingNow => ClassificationPresentation.Missing(_result, IsLatest, Context,
+        ClassificationSourceReadiness.For(FeatureViz.SourceAnalysis ? _options?.Evidence : null, disabled: !FeatureViz.SourceAnalysis), Levels, _options?.Evidence);
 
     private RenderFragment NeededCard => __builder =>
     {
         var view = MissingNow;
-        if (view.Count == 0)
+        if (view.Count == 0 && view.Rows.Count == 0)
         {
             <section class="sc-card sc-needed sc-needed-done" aria-labelledby="sc-needed-heading" data-testid="sc-needed" data-count="0">
                 <h2 id="sc-needed-heading">Review prerequisites complete <span class="sc-badge sc-badge-ready">Complete</span></h2>
@@ -352,31 +632,54 @@
             return;
         }
         var shown = 0;
-        <section class="sc-card sc-needed" aria-labelledby="sc-needed-heading" data-testid="sc-needed" data-count="@view.Count">
-            <h2 id="sc-needed-heading">What’s needed to complete this review <span class="sc-badge sc-badge-attention" data-testid="sc-needed-count">@view.Count item@(view.Count == 1 ? "" : "s")</span></h2>
-            <p data-testid="sc-needed-lead">@(view.BlocksLiveChecks ? "Runtime authorization testing cannot run yet: required test context or evidence is missing. These are prerequisites, not security findings." : "Live authorization checks can run; the remaining items add runtime evidence. These are not security findings.")</p>
+        <section class="sc-card sc-needed @(view.Count == 0 ? "sc-needed-done" : "")" aria-labelledby="sc-needed-heading" data-testid="sc-needed" data-count="@view.Count">
+            <h2 id="sc-needed-heading">@(view.Count == 0 ? "Review prerequisites complete" : "What’s needed to complete this review") <span class="sc-badge sc-badge-@(view.Count == 0 ? "ready" : "attention")" data-testid="@(view.Count == 0 ? null : "sc-needed-count")">@(view.Count == 0 ? "Complete" : $"{view.Count} item{(view.Count == 1 ? "" : "s")}")</span></h2>
+            <p data-testid="sc-needed-lead">@(view.BlocksLiveChecks ? "Runtime authorization checks cannot run yet: required test context is missing. These are prerequisites, not security findings." : "Runtime authorization checks can run; remaining items add evidence. These are prerequisites, not security findings.")</p>
             @if (view.Recorded)
             {
                 <p class="sc-muted" data-testid="sc-needed-recorded">As recorded with the review from @_result!.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC — not recalculated against today's configuration.</p>
             }
             <div id="sc-needed-list">
-                @if (view.LegacyItems.Count > 0)
+                @if (view.Rows.Count > 0)
                 {
-                    <ul class="sc-needed-items" data-testid="sc-needed-items">
-                        @foreach (var legacy in view.LegacyItems.Take(_showAllMissing ? int.MaxValue : ClassificationPresentation.MissingPreview)) { <li data-testid="sc-needed-item">@legacy</li> }
-                    </ul>
+                    @foreach (var group in ClassificationPresentation.GroupOrder)
+                    {
+                        var rows = view.Rows.Where(r => r.Group == group).ToList();
+                        if (rows.Count == 0) continue;
+                        <h3 data-testid="sc-needed-group" data-group="@group">@ClassificationLabels.MissingGroup(group) <span class="sc-muted">· @rows.Count(r => r.Counts) missing</span></h3>
+                        <div class="sc-tablewrap" tabindex="0" role="region" aria-label="@($"{ClassificationLabels.MissingGroup(group)} readiness")">
+                            <table class="sc-table sc-readiness">
+                                <thead><tr><th scope="col">Prerequisite</th><th scope="col">Status</th><th scope="col">Detail</th></tr></thead>
+                                <tbody>
+                                    @foreach (var row in rows)
+                                    {
+                                        <tr data-testid="sc-needed-item" data-item="@row.Id" data-status="@row.Status"><th scope="row">@row.Title</th><td data-label="Status"><span class="sc-badge sc-badge-@ClassificationPresentation.Tone(row.Status)">@ClassificationLabels.Readiness(row.Status)</span></td><td data-label="Detail" class="sc-wrap">@row.Detail</td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
                 }
-                @foreach (var group in view.Items.GroupBy(i => i.Group).OrderBy(g => g.Key))
+                else
                 {
-                    var visible = group.Where(_ => _showAllMissing || shown++ < ClassificationPresentation.MissingPreview).ToList();
-                    if (visible.Count == 0) continue;
-                    <h3 data-testid="sc-needed-group" data-group="@group.Key">@ClassificationLabels.MissingGroup(group.Key)</h3>
-                    <ul class="sc-needed-items">
-                        @foreach (var item in visible)
-                        {
-                            <li data-testid="sc-needed-item" data-item="@item.Id"><strong>@item.Title</strong> <span class="sc-muted">— @item.Detail</span></li>
-                        }
-                    </ul>
+                    @if (view.LegacyItems.Count > 0)
+                    {
+                        <ul class="sc-needed-items" data-testid="sc-needed-items">
+                            @foreach (var legacy in view.LegacyItems.Take(_showAllMissing ? int.MaxValue : ClassificationPresentation.MissingPreview)) { <li data-testid="sc-needed-item">@legacy</li> }
+                        </ul>
+                    }
+                    @foreach (var group in view.Items.GroupBy(i => i.Group).OrderBy(g => Array.IndexOf(ClassificationPresentation.GroupOrder, g.Key)))
+                    {
+                        var visible = group.Where(_ => _showAllMissing || shown++ < ClassificationPresentation.MissingPreview).ToList();
+                        if (visible.Count == 0) continue;
+                        <h3 data-testid="sc-needed-group" data-group="@group.Key">@ClassificationLabels.MissingGroup(group.Key)</h3>
+                        <ul class="sc-needed-items">
+                            @foreach (var item in visible)
+                            {
+                                <li data-testid="sc-needed-item" data-item="@item.Id"><strong>@item.Title</strong> <span class="sc-muted">— @item.Detail</span></li>
+                            }
+                        </ul>
+                    }
                 }
             </div>
             <div class="sc-actions">
@@ -384,8 +687,12 @@
                 {
                     <button type="button" class="btn-primary" data-testid="sc-needed-configure" @onclick="BeginEdit">Configure test context</button>
                 }
+                @if (!view.Recorded && FeatureViz.SourceAnalysis && _options?.Scope is null && _options?.Snapshots.Count > 0)
+                {
+                    <button type="button" class="btn-secondary" data-testid="sc-needed-choose-source" @onclick="ChooseSourceAsync">Choose source snapshot</button>
+                }
                 @{ var total = view.Items.Count + view.LegacyItems.Count; }
-                @if (total > ClassificationPresentation.MissingPreview)
+                @if (view.Rows.Count == 0 && total > ClassificationPresentation.MissingPreview)
                 {
                     <button type="button" class="btn-secondary" data-testid="sc-needed-all" aria-expanded="@(_showAllMissing ? "true" : "false")" aria-controls="sc-needed-list"
                             @onclick="() => _showAllMissing = !_showAllMissing">@(_showAllMissing ? "Show fewer" : $"View all missing evidence ({total})")</button>
@@ -393,6 +700,8 @@
             </div>
         </section>
     };
+
+    private async Task ChooseSourceAsync() => await _primarySelect.FocusAsync();
 
     private ClassificationTestContext Context => _overview?.Context ?? new();
     /// <summary>A temporary context is held in backend memory for this Target Environment (never a stored row).</summary>
@@ -413,7 +722,8 @@
         catch (HttpRequestException) { _error = "The test context could not be cleared (backend not reachable)."; }
         finally { _busy = false; }
     }
-    private IReadOnlyList<ClassificationLevel> Levels => _overview?.Source?.Levels is { Count: > 0 } levels ? levels : _result?.Levels ?? [];
+    /// <summary>Levels from the selected source evidence; otherwise those recorded with the shown review.</summary>
+    private IReadOnlyList<ClassificationLevel> Levels => FeatureViz.SourceAnalysis && _options?.Evidence?.Levels is { Count: > 0 } levels ? levels : _result?.Levels ?? [];
     private ClassificationTestChild? Child(int level) => Context.TestChildren.FirstOrDefault(c => c.Nivaa == level && c.BarnRegistreringId is not null);
 
     protected override async Task OnInitializedAsync()
@@ -424,6 +734,14 @@
             if (_profile is null) { _error = "No active Target Environment."; return; }
             _overview = await Api.OverviewAsync(_profile.Id);
             _result = _overview.Latest;
+            // The previous run's exact scope is proposed again (never the latest snapshot silently); a newer snapshot is only offered.
+            if (_overview.Latest?.SourceScope is { } scope)
+            {
+                _primaryId = scope.Primary.SnapshotId;
+                foreach (var related in scope.Related) _related[related.RepositoryKey] = related.SnapshotId;
+                foreach (var excluded in scope.ExcludedSuggestions) _excluded.Add(excluded);
+            }
+            await LoadScopeAsync();
         }
         catch (HttpRequestException) { _error = "The review could not be loaded (backend not reachable)."; }
     }
@@ -432,33 +750,6 @@
     {
         if (_focusForm) { _focusForm = false; await _focus.FocusAsync(); }
         if (_focusResult) { _focusResult = false; await _resultRef.FocusAsync(); }
-    }
-
-    private async Task AnalyzeAsync(InputFileChangeEventArgs args)
-    {
-        if (_profile is null) return;
-        _error = null;
-        var files = args.GetMultipleFiles(5);
-        if (files.Count > 4 || files.Any(f => f.Size > MaxArchiveBytes)) { _error = "Choose up to four archives of at most 50 MB; nothing was analyzed."; return; }
-        _busy = true;
-        _status = "Analyzing source…";
-        try
-        {
-            var streams = new List<(string, Stream)>();
-            foreach (var file in files)
-            {
-                var buffer = new MemoryStream();
-                await file.OpenReadStream(MaxArchiveBytes).CopyToAsync(buffer);
-                buffer.Position = 0;
-                streams.Add((file.Name, buffer));
-            }
-            var (evidence, error) = await Api.AnalyzeAsync(_profile.Id, streams);
-            if (error is not null) { _error = error; _status = null; return; }
-            _overview = (_overview ?? new ClassificationOverview()) with { Source = evidence };
-            _status = evidence!.Detected ? $"Saved. {evidence.Levels.Count} classification levels and {evidence.Facts.Count(f => f.State == ClassificationState.IssueDetected)} source issue(s) found. Run safe security checks to combine source, context and live evidence." : "Saved. No classification model was found in the analyzed source.";
-        }
-        catch (HttpRequestException) { _error = "The source could not be analyzed (backend not reachable)."; _status = null; }
-        finally { _busy = false; }
     }
 
     private void BeginEdit()
@@ -503,7 +794,7 @@
 
     private async Task RunAsync()
     {
-        if (_profile is null) return;
+        if (_profile is null || RunBlocked) return;
         _busy = true;
         _error = null;
         _status = "Running safe security checks…";
@@ -513,7 +804,7 @@
             _result = await Api.RunAsync(_profile.Id, new ClassificationRunRequest
             {
                 EnvironmentType = _profile.EnvironmentType.ToString(), UnauthorizedToken = _unauthorizedToken, AuthorizedToken = _authorizedToken,
-                SourceCounts = _sourceCounts.ToEvidence(), TargetCounts = _targetCounts.ToEvidence(),
+                SourceCounts = _sourceCounts.ToEvidence(), TargetCounts = _targetCounts.ToEvidence(), SourceScope = RunScope,
             });
             _unauthorizedToken = null;
             _authorizedToken = null;
@@ -523,6 +814,7 @@
             if (hadContext && !ContextReady) _error = "Test context is no longer available. Configure temporary test context again.";
             _focusResult = true;
         }
+        catch (InvalidOperationException e) { _error = e.Message; _status = null; }
         catch (HttpRequestException) { _error = "The review could not be run (backend not reachable)."; _status = null; }
         finally { _busy = false; }
     }
@@ -532,7 +824,7 @@
         if (!Guid.TryParse(e.Value?.ToString(), out var id)) return;
         try
         {
-            if (await Api.GetRunAsync(id) is { } run) { _result = run; _status = $"Showing the stored review from {run.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC."; }
+            if (await Api.GetRunAsync(id) is { } run) { _result = run; _status = $"Showing the stored review from {run.CompletedAt.ToUniversalTime():yyyy-MM-dd HH:mm} UTC with its recorded source scope."; }
         }
         catch (HttpRequestException) { _error = "The stored review could not be loaded."; }
     }

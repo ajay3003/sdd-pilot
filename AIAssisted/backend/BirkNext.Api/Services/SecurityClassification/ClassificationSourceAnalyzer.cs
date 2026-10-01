@@ -13,15 +13,39 @@ namespace BirkNext.Api.Services.SecurityClassification;
 /// The classification levels and their meaning are READ from the source's reference data, never assumed. The production CDC path is followed
 /// as written: which method builds the CdcEvent, what value the guard input gets, whether the mapper reads the same field. A guard that
 /// exists is reported separately from the value it receives; a unit test that constructs a CdcEvent directly is not production-path coverage.
+/// Two steps: <see cref="Extract"/> reads ONE source (a Source Analysis snapshot, at upload) into observations with file:line;
+/// <see cref="Combine"/> interprets the observations of a review's source scope (primary + explicitly included related snapshots), keeping
+/// every fact tied to the snapshot it came from. For a single source the combined result is exactly what one analysis of that source gives.
 /// </summary>
 public static class ClassificationSourceAnalyzer
 {
-    public const int Version = 1;
+    /// <summary>2: declarative [Authorize] policies, positive guard patterns (incl. a fail-closed null), Evaluate* authorization calls,
+    /// authorization handlers and allow-all clients, security namespaces for related-source matching.</summary>
+    public const int Version = 2;
     private static readonly CSharpParseOptions Parse = new(LanguageVersion.Preview);
 
     internal sealed record Code(string Path, CompilationUnitSyntax Root, string Text, string? Project, bool IsTest);
 
-    public static ClassificationSourceEvidence Analyze(string environmentId, IReadOnlyList<SourceArchive> archives, ScimSourceSet files, DateTimeOffset now)
+    /// <summary>One source analyzed on its own (legacy archive input and tests): Extract + Combine without snapshot provenance.</summary>
+    public static ClassificationSourceEvidence Analyze(string environmentId, IReadOnlyList<SourceArchive> archives, ScimSourceSet files, DateTimeOffset now) =>
+        Combine(environmentId, [(null, Extract(files))], now) with { Archives = archives.ToList() };
+
+    /// <summary>Reads a Source Analysis archive for <see cref="Extract"/>. Never throws: a source that cannot be read records why.</summary>
+    public static ClassificationSnapshotEvidence ExtractArchive(string name, byte[] bytes)
+    {
+        try
+        {
+            var (_, files, error) = ScimSourceReader.Read(name, bytes, p => p.Contains("/docs/", StringComparison.OrdinalIgnoreCase) || p.Contains("/specs/", StringComparison.OrdinalIgnoreCase));
+            return error is not null ? new ClassificationSnapshotEvidence { AnalyzerVersion = Version, Unavailable = error } : Extract(files);
+        }
+        catch (Exception e) when (e is not OutOfMemoryException)
+        {
+            return new ClassificationSnapshotEvidence { AnalyzerVersion = Version, Unavailable = "The archive could not be read for security classification evidence." };
+        }
+    }
+
+    /// <summary>The classification-relevant observations of one source: syntax only, facts with locations, no verdict.</summary>
+    public static ClassificationSnapshotEvidence Extract(ScimSourceSet files)
     {
         var projects = files.Code.Where(f => f.Path.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
             .Select(f => (Dir: Dir(f.Path), Name: System.IO.Path.GetFileNameWithoutExtension(f.Path),
@@ -36,38 +60,148 @@ public static class ClassificationSourceAnalyzer
         var production = code.Where(c => !c.IsTest).ToList();
         var tests = code.Where(c => c.IsTest).ToList();
         var facts = new List<ClassificationFact>();
-        var limitations = new List<string> { "Syntax-only analysis: behaviour of referenced libraries whose source was not uploaded is not assessed." };
 
-        // ── Classification model ─────────────────────────────────────────────────────────────────────────────────────
-        var (levels, modelFacts) = Model(production);
+        // Classification model, CDC pipeline, Person module access paths. Everything is read even without a model here: in a multi-source
+        // scope the model may live in another snapshot. Whether anything beyond the model counts is decided by Combine.
+        var (levels, modelFacts, modelType) = Model(production);
         facts.AddRange(modelFacts);
-        if (levels.Count == 0)
-            return new ClassificationSourceEvidence
-            {
-                EnvironmentId = environmentId, AnalyzedAt = now, AnalyzerVersion = Version, Archives = archives.ToList(), Detected = false, Facts = facts,
-                Limitations = ["No classification reference data (levels with KreverGradertTilgang) was found; nothing else was analyzed."],
-            };
-        facts.AddRange(Terminology(levels, files.Documents, tests));
-
-        // ── CDC pipeline ─────────────────────────────────────────────────────────────────────────────────────────────
-        var cdc = CdcPath(production);
-        facts.AddRange(cdc.Facts);
-
-        // ── Person module access paths ───────────────────────────────────────────────────────────────────────────────
+        var (cdcFacts, cdc) = CdcPath(production);
+        facts.AddRange(cdcFacts);
         facts.AddRange(AccessPaths(production));
         facts.AddRange(Resolvers(production));
         facts.AddRange(GrantsAndEmergency(production, files.Documents));
         facts.AddRange(PrivacyAndObservability(production));
+        var (declaredNamespaces, referencedNamespaces) = SecurityNamespaces(production);
+        return new ClassificationSnapshotEvidence
+        {
+            AnalyzerVersion = Version, Levels = levels, Facts = facts, Cdc = cdc, Terminology = TerminologyMentions(files.Documents, tests), TestCoverage = TestCoverage(tests),
+            DeclaredTypes = new[] { modelType, cdc.EventDeclared ? cdc.EventType : null, cdc.GuardType }.OfType<string>().Distinct().ToList(),
+            ReferencedTypes = cdc is { EventDeclared: false, EventType: { } used } ? [used] : [],
+            DeclaredNamespaces = declaredNamespaces, ReferencedNamespaces = referencedNamespaces,
+        };
+    }
 
-        var coverage = TestCoverage(tests);
-        var pipeline = PipelineStages(cdc, levels);
-        var proposed = cdc.Deserializer is { } d ? Proposed(d.Type, d.Method, cdc.GuardType ?? "SecurityClassificationGuard", cdc.EventType ?? "CdcEvent", cdc.PayloadField ?? "Sikkerhetsnivå") : [];
-        if (cdc.Deserializer is null) limitations.Add("No production method that builds the CDC event was found; the CDC propagation path is not assessed.");
+    /// <summary>A namespace with a security-named segment (Auth*, Autoris*, Security*, Sikkerhet*, Classif*, Gradert*, Polic*).</summary>
+    private static readonly Regex SecurityNamespace = new(@"(^|\.)(Auth|Autoris|Security|Sikkerhet|Classif|Gradert|Polic)\w*(\.|$)", RegexOptions.IgnoreCase);
+
+    /// <summary>Security-named namespaces this source declares, and those it imports without declaring (exact names, used to match related sources).</summary>
+    private static (List<string> Declared, List<ReferencedNamespace> Referenced) SecurityNamespaces(List<Code> production)
+    {
+        var declared = production.SelectMany(c => c.Root.DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>().Select(n => n.Name.ToString())).Distinct().ToHashSet(StringComparer.Ordinal);
+        var referenced = production.SelectMany(c => c.Root.Usings.Where(u => u.Alias is null && u.StaticKeyword.IsKind(SyntaxKind.None)).Select(u => (Name: u.Name?.ToString() ?? "", c.Path)))
+            .Where(u => SecurityNamespace.IsMatch(u.Name) && !declared.Contains(u.Name) && !Regex.IsMatch(u.Name, @"^(System|Microsoft|HotChocolate)(\.|$)"))
+            .GroupBy(u => u.Name).Select(g => new ReferencedNamespace(g.Key, g.Select(x => x.Path).Distinct().Count(), g.Select(x => x.Path).Distinct().Take(3).ToList())).OrderBy(r => r.Name, StringComparer.Ordinal).ToList();
+        return (declared.Where(n => SecurityNamespace.IsMatch(n)).Order(StringComparer.Ordinal).ToList(), referenced);
+    }
+
+    private static readonly ClassificationState[] Absent = [ClassificationState.NotFound, ClassificationState.NotApplicable];
+
+    /// <summary>
+    /// The review-layer interpretation of a source scope. Each part is one source's observations (with its snapshot reference, or none for
+    /// legacy input). Facts with the same id are reconciled — a fact found in one source wins over "not found" in another, and of two found
+    /// facts the more severe one is kept — and every kept fact cites each source it came from. Cross-source facts (terminology vs the model,
+    /// mapper vs guard input) cite every source involved. No source is merged into another.
+    /// </summary>
+    public static ClassificationSourceEvidence Combine(string environmentId, IReadOnlyList<(ClassificationSourceRef? Source, ClassificationSnapshotEvidence Evidence)> parts, DateTimeOffset now)
+    {
+        ClassificationSourceRef? Ref(ClassificationSourceRef? source, IEnumerable<SourceLocation> locations) => source is null ? null : source with { Locations = locations.Distinct().Take(6).ToList() };
+        List<ClassificationSourceRef> Refs(params ClassificationSourceRef?[] refs) =>
+            refs.OfType<ClassificationSourceRef>().GroupBy(r => r.SnapshotId).Select(g => g.First() with { Locations = g.SelectMany(r => r.Locations).Distinct().Take(6).ToList() }).ToList();
+
+        var groups = new List<(string Id, List<ClassificationFact> Members)>();
+        foreach (var (source, evidence) in parts)
+            foreach (var fact in evidence.Facts)
+            {
+                var tagged = fact with { Sources = Refs(Ref(source, fact.Locations)) };
+                var index = groups.FindIndex(g => g.Id == fact.Id);
+                if (index < 0) groups.Add((fact.Id, [tagged])); else groups[index].Members.Add(tagged);
+            }
+        var facts = groups.Select(g =>
+        {
+            if (g.Members.Count == 1) return g.Members[0];
+            var found = g.Members.Where(f => !Absent.Contains(f.State)).ToList();
+            if (found.Count == 0) return g.Members[0] with { Sources = Refs([.. g.Members.SelectMany(m => m.Sources)]) };
+            return found.OrderBy(f => ClassificationEvaluator.RankOf(f.State)).First() with { Sources = Refs([.. found.SelectMany(m => m.Sources)]) };
+        }).ToList();
+
+        var levelPart = parts.FirstOrDefault(p => p.Evidence.Levels.Count > 0);
+        var levels = levelPart.Evidence?.Levels ?? [];
+        var undeclared = parts.SelectMany(p => p.Evidence.ReferencedTypes).Distinct().Where(t => !parts.Any(p => p.Evidence.DeclaredTypes.Contains(t))).ToList();
+        var undeclaredNote = undeclared.Count == 0 ? null
+            : $"Classification types used but not declared in the selected source scope: {string.Join(", ", undeclared)}. Their declarations may live in a related source that is not included.";
+        if (levels.Count == 0)
+            return new ClassificationSourceEvidence
+            {
+                EnvironmentId = environmentId, AnalyzedAt = now, AnalyzerVersion = Version, Detected = false, Facts = facts.Where(f => f.Area == ClassificationArea.Model).ToList(),
+                Limitations = ["No classification reference data (levels with KreverGradertTilgang) was found; nothing else was analyzed.", .. new[] { undeclaredNote }.OfType<string>(), .. parts.Select(p => p.Evidence.Unavailable).OfType<string>()],
+            };
+        var limitations = new List<string> { "Syntax-only analysis: behaviour of referenced libraries whose source was not uploaded is not assessed." };
+        limitations.AddRange(parts.Select(p => p.Evidence.Unavailable).OfType<string>());
+
+        // Terminology: every source's Kode 6/7 mentions against the reference data, wherever the model lives.
+        var codes = levels.Where(l => l.BiRKKode is not null).ToDictionary(l => l.Nivaa, l => Regex.Replace(l.BiRKKode!, @"\s+", " "));
+        var conflicts = parts.SelectMany(p => p.Evidence.Terminology.Select(m => (p.Source, Mention: m)))
+            .Where(x => codes.TryGetValue(x.Mention.Level, out var expected) && (x.Mention.Kind == "test"
+                ? !expected.EndsWith(x.Mention.Code, StringComparison.Ordinal)
+                : !string.Equals(Regex.Replace(x.Mention.Code, @"\s+", " "), expected, StringComparison.OrdinalIgnoreCase))).ToList();
+        if (conflicts.Count > 0)
+        {
+            var terminology = Fact("model-terminology", ClassificationArea.Model, "Kode 6/7 naming conflicts with the reference data", ClassificationState.Warning,
+                $"The reference data defines {string.Join(" and ", codes.Select(c => $"level {c.Key} = {c.Value}"))}, but {conflicts.Count} place(s) state the opposite: {string.Join("; ", conflicts.Take(4).Select(c => c.Mention.Where))}. The numeric level decides behaviour; the text can mislead reviewers.",
+                conflicts.Select(c => c.Mention.Location));
+            terminology = terminology with { Sources = Refs([.. conflicts.GroupBy(c => c.Source?.SnapshotId).Select(g => Ref(g.First().Source, g.Select(c => c.Mention.Location)))]) };
+            facts.Insert(facts.FindLastIndex(f => f.Area == ClassificationArea.Model) + 1, terminology);
+        }
+
+        // The CDC path as the scope shows it: each part of the path from the first source (primary first) that has it.
+        var deserializer = parts.FirstOrDefault(p => p.Evidence.Cdc.DeserializerType is not null);
+        var eventPart = parts.FirstOrDefault(p => p.Evidence.Cdc.EventDeclared);
+        var guardPart = parts.Any(p => p.Evidence.Cdc.GuardedLevels.Count > 0) ? parts.First(p => p.Evidence.Cdc.GuardedLevels.Count > 0) : parts.FirstOrDefault(p => p.Evidence.Cdc.GuardType is not null);
+        var mapperPart = parts.FirstOrDefault(p => p.Evidence.Cdc.PayloadField is not null);
+        var routerPart = parts.FirstOrDefault(p => p.Evidence.Cdc.RouterFound);
+        var d = deserializer.Evidence?.Cdc;
+        var cdc = new ClassificationCdcSummary
+        {
+            EventType = eventPart.Evidence?.Cdc.EventType ?? d?.EventType, EventDeclared = eventPart.Evidence is not null,
+            LevelParameter = eventPart.Evidence?.Cdc.LevelParameter ?? d?.LevelParameter,
+            DeserializerType = d?.DeserializerType, DeserializerMethod = d?.DeserializerMethod, DeserializerLocation = d?.DeserializerLocation,
+            ConstantGuardInput = d?.ConstantGuardInput ?? false, ConstantValue = d?.ConstantValue, DeleteFromBefore = d?.DeleteFromBefore ?? false,
+            GuardType = guardPart.Evidence?.Cdc.GuardType, GuardedLevels = guardPart.Evidence?.Cdc.GuardedLevels ?? [],
+            RouterFound = routerPart.Evidence is not null, GuardBeforeMapping = routerPart.Evidence?.Cdc.GuardBeforeMapping ?? false, DeletesDiscarded = routerPart.Evidence?.Cdc.DeletesDiscarded ?? false,
+            PayloadField = mapperPart.Evidence?.Cdc.PayloadField, MapperLocation = mapperPart.Evidence?.Cdc.MapperLocation,
+        };
+        if (mapperPart.Evidence is not null && cdc.MapperLocation is { } at)
+        {
+            var constant = cdc.ConstantGuardInput;
+            var consistency = Fact("cdc-mapper-guard-consistency", ClassificationArea.Pipeline, "Mapper and guard read the classification from different sources",
+                constant ? ClassificationState.IssueDetected : ClassificationState.SourceVerified,
+                constant ? $"The mapper reads \"{cdc.PayloadField}\" from the payload, while the guard reads {cdc.EventType}.{cdc.LevelParameter}, which the production path sets to {cdc.ConstantValue}. For a level-2/3 row the guard allows the event and the mapper then forwards the real level — the two values diverge."
+                    : "Guard and mapper derive the classification from the same payload.", [at]);
+            consistency = consistency with { Sources = Refs(Ref(mapperPart.Source, [at]), constant && cdc.DeserializerLocation is { } dl ? Ref(deserializer.Source, [dl]) : null) };
+            var after = facts.FindIndex(f => f.Id == "cdc-field-name");
+            facts.Insert(after < 0 ? facts.Count : after + 1, consistency);
+        }
+        if (undeclaredNote is not null) limitations.Add(undeclaredNote);
+        if (cdc.DeserializerType is null) limitations.Add("No production method that builds the CDC event was found; the CDC propagation path is not assessed.");
+
+        // Repository tests: per behaviour, the best coverage any source shows, naming the repositories.
+        var coverage = parts.SelectMany(p => p.Evidence.TestCoverage.Select(t => (p.Source, Test: t))).GroupBy(x => x.Test.Scenario).Select(group =>
+        {
+            var best = group.OrderBy(x => x.Test.State switch { RepositoryTestCoverageState.Present => 0, RepositoryTestCoverageState.UnitOnly => 1, _ => 2 }).First();
+            var covering = group.Where(x => x.Test.State != RepositoryTestCoverageState.Missing).ToList();
+            return best.Test with
+            {
+                Tests = covering.SelectMany(x => x.Test.Tests).Distinct().Take(5).ToList(),
+                Repositories = (covering.Count > 0 ? covering : group.ToList()).Select(x => x.Source?.Repository).OfType<string>().Distinct().ToList(),
+            };
+        }).ToList();
 
         return new ClassificationSourceEvidence
         {
-            EnvironmentId = environmentId, AnalyzedAt = now, AnalyzerVersion = Version, Archives = archives.ToList(), Detected = true, Levels = levels,
-            Facts = facts, Pipeline = pipeline, TestCoverage = coverage, ProposedTests = proposed, Limitations = limitations,
+            EnvironmentId = environmentId, AnalyzedAt = now, AnalyzerVersion = Version, Detected = true, Levels = levels,
+            Facts = facts, Pipeline = PipelineStages(cdc, levels), TestCoverage = coverage,
+            ProposedTests = cdc.DeserializerType is { } type ? Proposed(type, cdc.DeserializerMethod!, cdc.GuardType ?? "SecurityClassificationGuard", cdc.EventType ?? "CdcEvent", cdc.PayloadField ?? "Sikkerhetsnivå") : [],
+            Limitations = limitations,
         };
     }
 
@@ -100,7 +234,7 @@ public static class ClassificationSourceAnalyzer
 
     // ── Model ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private static (List<ClassificationLevel> Levels, List<ClassificationFact> Facts) Model(List<Code> production)
+    private static (List<ClassificationLevel> Levels, List<ClassificationFact> Facts, string? Type) Model(List<Code> production)
     {
         var facts = new List<ClassificationFact>();
         var type = production.SelectMany(c => c.Root.DescendantNodes().OfType<ClassDeclarationSyntax>().Select(t => (Code: c, Type: t)))
@@ -109,7 +243,7 @@ public static class ClassificationSourceAnalyzer
         if (type.Type is null)
         {
             facts.Add(Fact("model-reference", ClassificationArea.Model, "Classification reference data", ClassificationState.NotFound, "No type with Nivaa and KreverGradertTilgang was found."));
-            return ([], facts);
+            return ([], facts, null);
         }
         var typeName = type.Type.Identifier.Text;
         var levels = new List<ClassificationLevel>();
@@ -130,7 +264,7 @@ public static class ClassificationSourceAnalyzer
         facts.Add(Fact("model-reference", ClassificationArea.Model, "Classification reference data", levels.Count > 0 ? ClassificationState.SourceVerified : ClassificationState.NotFound,
             levels.Count > 0 ? $"{typeName} seed rows: {string.Join("; ", levels.Select(l => $"{l.Nivaa} = {l.Verdi}{(l.BiRKKode is not null ? $" ({l.BiRKKode}" + (l.ElementsKode is not null ? $" / {l.ElementsKode})" : ")") : "")}{(l.KreverGradertTilgang ? ", KreverGradertTilgang" : "")}"))}."
                 : $"{typeName} exists, but no seed rows with a numeric Nivaa were found.", levels.Select(l => l.Location).OfType<SourceLocation>().Prepend(location)));
-        if (levels.Count == 0) return (levels, facts);
+        if (levels.Count == 0) return (levels, facts, typeName);
         var graded = levels.Where(l => l.KreverGradertTilgang).Select(l => l.Nivaa).ToList();
         facts.Add(Fact("model-graded-levels", ClassificationArea.Model, "Levels requiring graded access", graded.SequenceEqual(levels.Where(l => l.Nivaa >= 2).Select(l => l.Nivaa)) ? ClassificationState.SourceVerified : ClassificationState.Warning,
             $"KreverGradertTilgang = true for level(s) {string.Join(", ", graded)}; false for {string.Join(", ", levels.Where(l => !l.KreverGradertTilgang).Select(l => l.Nivaa))}. Levels with graded access use the same flag — the source has no separate, higher permission for one of them.",
@@ -149,37 +283,30 @@ public static class ClassificationSourceAnalyzer
                 $"{(threshold.Method.Parent as TypeDeclarationSyntax)?.Identifier.Text}.KreverGradertTilgang computes it from Nivaa {rule.Value} while the reference data carries a KreverGradertTilgang flag; access paths use the flag. They agree for the seeded rows, but they are two sources of truth.",
                 [Loc(threshold.Code, threshold.Method)]));
         }
-        return (levels, facts);
+        return (levels, facts, typeName);
     }
 
-    private static IEnumerable<ClassificationFact> Terminology(List<ClassificationLevel> levels, List<SourceFile> documents, List<Code> tests)
+    /// <summary>Places naming a level with a Kode 6/7 label; compared with the reference data (possibly from another source) in Combine.</summary>
+    private static List<ClassificationTerminologyMention> TerminologyMentions(List<SourceFile> documents, List<Code> tests)
     {
-        var code = levels.Where(l => l.BiRKKode is not null).ToDictionary(l => l.Nivaa, l => Regex.Replace(l.BiRKKode!, @"\s+", " "));
-        var conflicts = new List<(string Where, SourceLocation Location)>();
+        var mentions = new List<ClassificationTerminologyMention>();
         foreach (var doc in documents)
             foreach (Match m in Regex.Matches(doc.Content, @"(?:level|nivå|nivaa|security level)\s*(\d)\s*\((Kode\s*[67])\)", RegexOptions.IgnoreCase))
-                if (code.TryGetValue(int.Parse(m.Groups[1].Value), out var expected) && !string.Equals(Regex.Replace(m.Groups[2].Value, @"\s+", " "), expected, StringComparison.OrdinalIgnoreCase))
-                    conflicts.Add(($"\"{m.Value}\"", new SourceLocation(doc.Path, ScimSourceAnalyzer.Line(doc.Content, m.Value))));
+                mentions.Add(new("doc", int.Parse(m.Groups[1].Value), m.Groups[2].Value, $"\"{m.Value}\"", new SourceLocation(doc.Path, ScimSourceAnalyzer.Line(doc.Content, m.Value))));
         foreach (var t in tests)
             foreach (var method in t.Root.DescendantNodes().OfType<MethodDeclarationSyntax>())
             {
                 var named = Regex.Match(method.Identifier.Text, @"Kode([67])");
                 var level = Regex.Match(method.Body?.ToString() ?? method.ExpressionBody?.ToString() ?? "", @"level:\s*(\d)");
-                if (named.Success && level.Success && code.TryGetValue(int.Parse(level.Groups[1].Value), out var expected) && !expected.EndsWith(named.Groups[1].Value, StringComparison.Ordinal))
-                    conflicts.Add(($"test {method.Identifier.Text} uses level {level.Groups[1].Value}", Loc(t, method)));
+                if (named.Success && level.Success)
+                    mentions.Add(new("test", int.Parse(level.Groups[1].Value), named.Groups[1].Value, $"test {method.Identifier.Text} uses level {level.Groups[1].Value}", Loc(t, method)));
             }
-        if (conflicts.Count > 0)
-            yield return Fact("model-terminology", ClassificationArea.Model, "Kode 6/7 naming conflicts with the reference data", ClassificationState.Warning,
-                $"The reference data defines {string.Join(" and ", code.Select(c => $"level {c.Key} = {c.Value}"))}, but {conflicts.Count} place(s) state the opposite: {string.Join("; ", conflicts.Take(4).Select(c => c.Where))}. The numeric level decides behaviour; the text can mislead reviewers.",
-                conflicts.Select(c => c.Location));
+        return mentions;
     }
 
     // ── CDC path ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    internal sealed record CdcResult(List<ClassificationFact> Facts, (string Type, string Method)? Deserializer, string? GuardType, string? EventType, string? PayloadField,
-        bool ConstantGuardInput, int? ConstantValue, bool GuardBeforeMapping, bool MapperReadsPayload, List<int> GuardedLevels, bool DeleteFromBefore, bool DeletesDiscarded);
-
-    private static CdcResult CdcPath(List<Code> production)
+    private static (List<ClassificationFact> Facts, ClassificationCdcSummary Summary) CdcPath(List<Code> production)
     {
         var facts = new List<ClassificationFact>();
         // The CDC event type: a record with a Sikkerhetsnivaa parameter.
@@ -187,6 +314,13 @@ public static class ClassificationSourceAnalyzer
             .FirstOrDefault(r => r.Record.ParameterList?.Parameters.Any(p => p.Identifier.Text == "Sikkerhetsnivaa" && p.Type?.ToString() is "int" or "int?") == true);
         var eventType = eventRecord.Record?.Identifier.Text;
         var levelParameter = eventRecord.Record?.ParameterList!.Parameters.Select((p, i) => (p.Identifier.Text, i)).First(p => p.Text == "Sikkerhetsnivaa");
+        // Declared in another source (e.g. a shared contract package): a production method returning T that constructs T with a named
+        // Sikkerhetsnivaa argument. The type is then recorded as used-but-not-declared so the scope can resolve it.
+        if (eventRecord.Record is null)
+            foreach (var (_, m) in Methods(production))
+                if (m.ReturnType.ToString().TrimEnd('?') is var returned && m.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
+                        .Any(o => o.Type.ToString() == returned && o.ArgumentList?.Arguments.Any(a => a.NameColon?.Name.Identifier.Text == "Sikkerhetsnivaa") == true))
+                { eventType = returned; levelParameter = ("Sikkerhetsnivaa", int.MaxValue); break; }
         if (eventRecord.Record is not null)
             facts.Add(Fact("cdc-event", ClassificationArea.Pipeline, $"{eventType}.{levelParameter!.Value.Text}", ClassificationState.SourceVerified,
                 $"The CDC event carries the classification as {levelParameter.Value.Text} (the guard's input).", [Loc(eventRecord.Code, eventRecord.Record)]));
@@ -201,6 +335,7 @@ public static class ClassificationSourceAnalyzer
         int? constantValue = null;
         string? comment = null;
         (string, string)? deserializer = null;
+        SourceLocation? deserializerAt = null;
         if (builder is { } b)
         {
             deserializer = ((b.Method.Parent as TypeDeclarationSyntax)?.Identifier.Text ?? "?", b.Method.Identifier.Text);
@@ -212,6 +347,7 @@ public static class ClassificationSourceAnalyzer
             readsPayload = !constant && Regex.IsMatch(b.Method.ToString(), @"Sikkerhetsniv");
             deleteFromBefore = Regex.IsMatch(b.Method.ToString(), @"==\s*""d""\s*\?\s*""before""");
             var where = argument is null ? Loc(b.Code, b.Creation) : Loc(b.Code, argument);
+            deserializerAt = where;
             facts.Add(Fact("cdc-deserializer", ClassificationArea.Pipeline, $"Production deserialization ({deserializer.Value.Item1}.{deserializer.Value.Item2})",
                 constant ? ClassificationState.IssueDetected : readsPayload ? ClassificationState.SourceVerified : ClassificationState.Warning,
                 constant ? $"The production path builds {eventType} with {levelParameter?.Text}: {constantValue}{(comment is not null ? $" (\"// {comment}\")" : "")} — a constant, whatever the payload says. Security classification is present in the payload/model, but the production guard input is populated with a constant/default value."
@@ -226,19 +362,23 @@ public static class ClassificationSourceAnalyzer
         var guard = production.SelectMany(c => c.Root.DescendantNodes().OfType<ClassDeclarationSyntax>().Select(t => (Code: c, Type: t)))
             .FirstOrDefault(t => eventType is not null && t.Type.Members.OfType<MethodDeclarationSyntax>().Any(m => m.ParameterList.Parameters.Any(p => p.Type?.ToString() == eventType) && m.ToString().Contains(levelParameter?.Text ?? "Sikkerhetsnivaa", StringComparison.Ordinal)));
         var guarded = new List<int>();
+        var rejectsMissing = false;
         if (guard.Type is not null)
         {
             var text = guard.Type.ToString();
             var pattern = Regex.Match(text, @"is\s+not\s+\(([\d\s or]+)\)");
+            // The rejected set written positively ("Sikkerhetsnivaa is null or 2 or 3"); a null in it rejects a missing level (fail-closed).
+            var positive = Regex.Match(text, @"Sikkerhetsnivaa\s+is\s+((?:null|\d)(?:\s+or\s+(?:null|\d))+)");
             if (pattern.Success) guarded = Regex.Matches(pattern.Groups[1].Value, @"\d").Select(m => int.Parse(m.Value)).ToList();
+            else if (positive.Success) { guarded = Regex.Matches(positive.Groups[1].Value, @"\d").Select(m => int.Parse(m.Value)).ToList(); rejectsMissing = positive.Groups[1].Value.Contains("null", StringComparison.Ordinal); }
             else if (Regex.Match(text, @"Sikkerhetsnivaa\s*>=\s*(\d)") is { Success: true } ge) guarded = Enumerable.Range(int.Parse(ge.Groups[1].Value), 4 - int.Parse(ge.Groups[1].Value)).ToList();
             var metric = Regex.Match(text, @"CreateCounter<\w+>\(""([^""]+)""\)");
             facts.Add(Fact("guard-logic", ClassificationArea.Guard, guard.Type.Identifier.Text, guarded.Count > 0 ? ClassificationState.SourceVerified : ClassificationState.Warning,
-                guarded.Count > 0 ? $"Rejects an event whose {levelParameter?.Text} is {string.Join(" or ", guarded)}{(text.Contains("LogCritical", StringComparison.Ordinal) ? "; logs Critical with table name and time only" : "")}{(text.Contains("Alert", StringComparison.Ordinal) ? "; raises an alert" : "")}{(metric.Success ? $"; increments {metric.Groups[1].Value}" : "")}. The guard logic is correct for its input — it only protects when the input carries the real level."
+                guarded.Count > 0 ? $"Rejects an event whose {levelParameter?.Text} is {string.Join(" or ", guarded)}{(rejectsMissing ? ", or missing (fail-closed)" : "")}{(text.Contains("LogCritical", StringComparison.Ordinal) ? "; logs Critical with table name and time only" : "")}{(text.Contains("Alert", StringComparison.Ordinal) ? "; raises an alert" : "")}{(metric.Success ? $"; increments {metric.Groups[1].Value}" : "")}. The guard logic is correct for its input — it only protects when the input carries the real level."
                     : "The guard's rejection rule was not recognised.", [Loc(guard.Code, guard.Type)]));
             if (metric.Success)
                 facts.Add(Fact("guard-metric", ClassificationArea.Observability, $"Metric {metric.Groups[1].Value}", ClassificationState.SourceVerified,
-                    $"Defined in source. Runtime value not read (no telemetry source): Not available — never reported as 0 rejections. With a constant guard input the counter cannot increase.", [Loc(guard.Code, guard.Type)], ClassificationTestType.NonFunctional));
+                    $"Defined in source. Runtime value not read (no telemetry source): Not available — never reported as 0 rejections.{(constant ? " With a constant guard input the counter cannot increase." : "")}", [Loc(guard.Code, guard.Type)], ClassificationTestType.NonFunctional));
         }
         else facts.Add(Fact("guard-logic", ClassificationArea.Guard, "Classification guard", ClassificationState.NotFound, "No guard evaluating the CDC event's classification was found."));
 
@@ -257,15 +397,15 @@ public static class ClassificationSourceAnalyzer
         }
         var mapper = production.Select(c => (Code: c, Match: Regex.Match(c.Text, @"\(\s*\w+\.Payload\s*,\s*""(Sikkerhetsniv[^""]*)""\s*\)"))).FirstOrDefault(x => x.Match.Success);
         var payloadField = mapper.Code is null ? null : mapper.Match.Groups[1].Value;
+        SourceLocation? mapperAt = null;
         if (mapper.Code is not null)
         {
             var at = Loc(mapper.Code, mapper.Match.Index);
+            mapperAt = at;
             facts.Add(Fact("cdc-field-name", ClassificationArea.Pipeline, $"Payload field \"{payloadField}\"", payloadField!.Contains('å') ? ClassificationState.SourceVerified : ClassificationState.Warning,
                 $"The mapper reads \"{payloadField}\"{(payloadField.Contains('å') ? " (Unicode å, U+00E5)" : " — the BiRK column is spelled with å; verify the transliteration")}; the event property is spelled {levelParameter?.Text ?? "Sikkerhetsnivaa"}.", [at]));
-            facts.Add(Fact("cdc-mapper-guard-consistency", ClassificationArea.Pipeline, "Mapper and guard read the classification from different sources",
-                constant ? ClassificationState.IssueDetected : ClassificationState.SourceVerified,
-                constant ? $"The mapper reads \"{payloadField}\" from the payload, while the guard reads {eventType}.{levelParameter?.Text}, which the production path sets to {constantValue}. For a level-2/3 row the guard allows the event and the mapper then forwards the real level — the two values diverge."
-                    : "Guard and mapper derive the classification from the same payload.", [at]));
+            // "Mapper and guard read the classification from different sources" compares this mapper with the guard input of the whole
+            // scope, so it is decided in Combine (the deserializer may be in another source).
             var mapMethod = mapper.Code.Root.DescendantNodes().OfType<MethodDeclarationSyntax>().FirstOrDefault(m => m.Identifier.Text.Contains("Sikkerhetsniv", StringComparison.Ordinal));
             var unknown = mapMethod is null ? Match.Empty : Regex.Match(mapMethod.ToString(), @"_\s*=>\s*new Guid\(""[^""]+""\),?\s*//\s*default\s*(\w+)");
             if (unknown.Success)
@@ -273,7 +413,14 @@ public static class ClassificationSourceAnalyzer
                     $"A missing, null or unknown value (null, negative, 4+, non-numeric) is mapped to \"{unknown.Groups[1].Value}\" (level 0) with a warning log. No authoritative rule for unknown levels was found (reject, quarantine or default) — a decision is needed; BirkNext does not assume fail-closed.",
                     [Loc(mapper.Code, mapMethod!)]));
         }
-        return new CdcResult(facts, deserializer, guard.Type?.Identifier.Text, eventType, payloadField, constant, constantValue, guardFirst, mapper.Code is not null, guarded, deleteFromBefore, deletesDiscarded);
+        return (facts, new ClassificationCdcSummary
+        {
+            EventType = eventType, EventDeclared = eventRecord.Record is not null, LevelParameter = levelParameter?.Text,
+            DeserializerType = deserializer?.Item1, DeserializerMethod = deserializer?.Item2, DeserializerLocation = deserializerAt,
+            ConstantGuardInput = constant, ConstantValue = constantValue, DeleteFromBefore = deleteFromBefore,
+            GuardType = guard.Type?.Identifier.Text, GuardedLevels = guarded, RouterFound = route.Method is not null, GuardBeforeMapping = guardFirst, DeletesDiscarded = deletesDiscarded,
+            PayloadField = payloadField, MapperLocation = mapperAt,
+        });
     }
 
     public const string BiRKStageDetail = "BiRK source filtering of Kode 6/7 is documented as the primary protection layer, but that implementation is outside the analyzed source.";
@@ -295,18 +442,18 @@ public static class ClassificationSourceAnalyzer
         Facts = source.Facts.Select(f => f.Id == "guard-metric" && f.State == ClassificationState.Configured ? f with { State = ClassificationState.SourceVerified } : f).ToList(),
     };
 
-    private static List<ClassificationStageEvidence> PipelineStages(CdcResult cdc, List<ClassificationLevel> levels) =>
+    private static List<ClassificationStageEvidence> PipelineStages(ClassificationCdcSummary cdc, List<ClassificationLevel> levels) =>
     [
         new() { Stage = ClassificationPipelineStage.BiRK, Title = ClassificationLabels.Stage(ClassificationPipelineStage.BiRK), Source = ClassificationState.NotAssessedHere,
             SourceDetail = BiRKStageDetail, RuntimeDetail = "BiRK data is not read." },
-        new() { Stage = ClassificationPipelineStage.Debezium, Title = "Debezium", Source = cdc.MapperReadsPayload ? ClassificationState.SourceVerified : ClassificationState.NotTested,
-            SourceDetail = cdc.MapperReadsPayload ? $"The Barn payload carries \"{cdc.PayloadField}\" (read by the mapper)." : "The payload field was not found.", RuntimeDetail = "No CDC event is consumed by BirkNext." },
+        new() { Stage = ClassificationPipelineStage.Debezium, Title = cdc.DeleteFromBefore ? "Change capture (Debezium envelope)" : "Change capture", Source = cdc.PayloadField is not null ? ClassificationState.SourceVerified : ClassificationState.NotTested,
+            SourceDetail = cdc.PayloadField is not null ? $"The Barn payload carries \"{cdc.PayloadField}\" (read by the mapper)." : "The payload field was not found.", RuntimeDetail = "No CDC event is consumed by BirkNext." },
         new() { Stage = ClassificationPipelineStage.EventHub, Title = "Event Hub", Source = ClassificationState.NotAssessedHere, SourceDetail = EventHubStageDetail, RuntimeDetail = "No event is read." },
         new() { Stage = ClassificationPipelineStage.PersonAdapterDeserialization, Title = ClassificationLabels.Stage(ClassificationPipelineStage.PersonAdapterDeserialization),
-            Source = cdc.Deserializer is null ? ClassificationState.NotFound : cdc.ConstantGuardInput ? ClassificationState.IssueDetected : ClassificationState.SourceVerified,
-            SourceDetail = cdc.Deserializer is { } d ? $"{d.Type}.{d.Method}: {(cdc.ConstantGuardInput ? $"sets the classification to the constant {cdc.ConstantValue}" : "reads the classification from the payload")}." : "Not found." },
+            Source = cdc.DeserializerType is null ? ClassificationState.NotFound : cdc.ConstantGuardInput ? ClassificationState.IssueDetected : ClassificationState.SourceVerified,
+            SourceDetail = cdc.DeserializerType is { } d ? $"{d}.{cdc.DeserializerMethod}: {(cdc.ConstantGuardInput ? $"sets the classification to the constant {cdc.ConstantValue}" : "reads the classification from the payload")}." : "Not found." },
         new() { Stage = ClassificationPipelineStage.GuardInput, Title = ClassificationLabels.Stage(ClassificationPipelineStage.GuardInput),
-            Source = cdc.ConstantGuardInput ? ClassificationState.IssueDetected : cdc.Deserializer is null ? ClassificationState.NotTested : ClassificationState.SourceVerified,
+            Source = cdc.ConstantGuardInput ? ClassificationState.IssueDetected : cdc.DeserializerType is null ? ClassificationState.NotTested : ClassificationState.SourceVerified,
             SourceDetail = cdc.ConstantGuardInput ? $"Expected: the row's level (2 or 3 for graded children). Source path: {cdc.ConstantValue} for every event." : "The row's level." },
         new() { Stage = ClassificationPipelineStage.Guard, Title = ClassificationLabels.Stage(ClassificationPipelineStage.Guard),
             Source = cdc.GuardedLevels.Count > 0 ? ClassificationState.SourceVerified : ClassificationState.NotFound,
@@ -326,7 +473,7 @@ public static class ClassificationSourceAnalyzer
         {
             var text = profile.Method.ToString();
             var both = Regex.Matches(text, @"throw new PersonNotFoundException").Count >= 2;
-            var childSpecific = Regex.IsMatch(text, @"EvaluerOperasjon\([^)]*""Person:SeGradertBarn""\s*,\s*\w+");
+            var childSpecific = Regex.IsMatch(text, @"(?:EvaluerOperasjon|Evaluate\w*)\([^)]*""Person:SeGradertBarn""\s*,\s*\w+");
             var publish = text.IndexOf("PublishAsync", StringComparison.Ordinal);
             var returns = text.LastIndexOf("return ", StringComparison.Ordinal);
             var failClosed = publish > 0 && publish < returns && !profile.Method.DescendantNodes().OfType<TryStatementSyntax>().Any(t => t.Block.ToString().Contains("PublishAsync", StringComparison.Ordinal));
@@ -367,13 +514,42 @@ public static class ClassificationSourceAnalyzer
             yield return Fact("search-grant-source", ClassificationArea.ChildAccess, "Search treats any child-specific role as graded access", ClassificationState.Warning,
                 "The granted ids for search are every child in the caller's child-specific access list (any role or emergency access), while the profile evaluates Person:SeGradertBarn for the child. The two predicates can differ.",
                 [Loc(grants.Code, grants.Method)]);
-        var client = production.SelectMany(c => c.Root.DescendantNodes().OfType<ClassDeclarationSyntax>().Select(t => (Code: c, Type: t))).FirstOrDefault(t => t.Type.Members.OfType<MethodDeclarationSyntax>().Any(m => m.Identifier.Text == "EvaluerOperasjon" && m.Body is not null) && !t.Type.Identifier.Text.StartsWith("Dev", StringComparison.Ordinal));
+        // Authorization clients: the method that asks whether an operation is allowed (EvaluerOperasjon / Evaluate*).
+        static bool Evaluates(MethodDeclarationSyntax m) => m.Identifier.Text is "EvaluerOperasjon" || m.Identifier.Text.StartsWith("Evaluate", StringComparison.Ordinal) && m.ReturnType.ToString().Contains("bool", StringComparison.Ordinal);
+        var clients = production.SelectMany(c => c.Root.DescendantNodes().OfType<ClassDeclarationSyntax>().Select(t => (Code: c, Type: t)))
+            .Where(t => t.Type.Members.OfType<MethodDeclarationSyntax>().Any(m => Evaluates(m) && (m.Body is not null || m.ExpressionBody is not null))).ToList();
+        static bool AllowsAll(ClassDeclarationSyntax t) => t.Members.OfType<MethodDeclarationSyntax>().Where(Evaluates).Any(m => Regex.IsMatch(m.ToString(), @"FromResult\(true\)|=>\s*true\s*;|return\s+true\s*;"));
+        var client = clients.FirstOrDefault(t => !t.Type.Identifier.Text.StartsWith("Dev", StringComparison.Ordinal) && !AllowsAll(t.Type));
         if (client.Type is not null)
         {
             var text = client.Type.ToString();
-            var failClosed = text.Contains("?? false", StringComparison.Ordinal) && Regex.IsMatch(text, @"catch \(Exception[^)]*\)\s*\{[^}]*throw new");
+            // Syntax, not text: braces inside log templates ("{OperasjonId}") must not end the catch block.
+            var throwsOnFailure = client.Type.DescendantNodes().OfType<CatchClauseSyntax>().Any(c =>
+                (c.Declaration is null || c.Declaration.Type.ToString() is "Exception" or "System.Exception")
+                && c.Block.DescendantNodes().OfType<ThrowStatementSyntax>().Any(t => t.Expression is ObjectCreationExpressionSyntax));
+            var failClosed = throwsOnFailure && (text.Contains("?? false", StringComparison.Ordinal) || !Regex.IsMatch(text, @"\?\?\s*true|return\s+true\s*;|FromResult\(true\)"));
             yield return Fact("access-authz-fail-closed", ClassificationArea.ChildAccess, "Authorization client fails closed", failClosed ? ClassificationState.SourceVerified : ClassificationState.Warning,
                 failClosed ? $"{client.Type.Identifier.Text}: a missing answer is 'not allowed' and any failure throws — access is never granted by error." : "Fail-closed handling of authorization errors was not recognised.", [Loc(client.Code, client.Type)]);
+        }
+        foreach (var allowAll in clients.Where(t => AllowsAll(t.Type)))
+        {
+            var name = allowAll.Type.Identifier.Text;
+            var registered = Methods(production).Where(m => Regex.IsMatch(m.Method.ToString(), $@"Add(Scoped|Singleton|Transient)<[^>]*\b{Regex.Escape(name)}>")).ToList();
+            yield return Fact($"access-authz-allow-all-{name}", ClassificationArea.ChildAccess, $"Allow-all authorization client {name}", ClassificationState.Warning,
+                $"{name} answers 'allowed' for every operation{(registered.Count > 0 ? $"; registered by {string.Join(", ", registered.Select(r => $"{(r.Method.Parent as TypeDeclarationSyntax)?.Identifier.Text}.{r.Method.Identifier.Text}").Distinct())}" : "")}. Verify it can never be registered outside local development — where it is registered at runtime is not assessed from source.",
+                registered.Select(r => Loc(r.Code, r.Method)).Prepend(Loc(allowAll.Code, allowAll.Type)));
+        }
+        // Declarative policies: an AuthorizationHandler that evaluates the operation and denies on failure.
+        var handler = production.SelectMany(c => c.Root.DescendantNodes().OfType<ClassDeclarationSyntax>().Select(t => (Code: c, Type: t)))
+            .FirstOrDefault(t => t.Type.BaseList?.ToString().Contains("AuthorizationHandler<", StringComparison.Ordinal) == true && Regex.IsMatch(t.Type.ToString(), @"\.(EvaluerOperasjon|Evaluate\w*)\("));
+        if (handler.Type is not null)
+        {
+            var text = handler.Type.ToString();
+            var deniesOnError = handler.Type.DescendantNodes().OfType<CatchClauseSyntax>().Any(c => c.Block.DescendantNodes().OfType<InvocationExpressionSyntax>().Any(i => Name(i) == "Fail"))
+                && text.Contains(".Succeed(", StringComparison.Ordinal);
+            yield return Fact("access-policy-handler", ClassificationArea.ChildAccess, $"Declarative policy handler {handler.Type.Identifier.Text}", deniesOnError ? ClassificationState.SourceVerified : ClassificationState.Warning,
+                deniesOnError ? $"{handler.Type.Identifier.Text} evaluates each [Authorize] policy through the authorization client and denies when the client is unavailable; it succeeds only on an allowed answer." : $"{handler.Type.Identifier.Text} evaluates [Authorize] policies; deny-on-error handling was not recognised.",
+                [Loc(handler.Code, handler.Type)]);
         }
         var cache = production.FirstOrDefault(c => c.Project?.Contains("Person", StringComparison.Ordinal) == true && Regex.IsMatch(c.Text, @"IMemoryCache|IDistributedCache|AddOutputCache|ResponseCache|\bOutputCache\b"));
         yield return Fact("cache-server", ClassificationArea.Caching, "Server-side response cache", cache is null ? ClassificationState.NotApplicable : ClassificationState.Warning,
@@ -389,16 +565,20 @@ public static class ClassificationSourceAnalyzer
         foreach (var (c, t, m) in resolvers)
         {
             var text = m.ToString();
-            var operations = Regex.Matches(text, @"KrevOperasjon\(""([^""]+)""").Select(x => x.Groups[1].Value).Distinct().ToList();
+            var attributes = m.AttributeLists.ToString() + " " + t.AttributeLists.ToString();
+            var policies = Regex.Matches(attributes, @"Authorize\(\s*Policy\s*=\s*""([^""]+)""").Select(x => x.Groups[1].Value).ToList();
+            // [Authorize] without a policy requires an authenticated caller only — authenticated is not authorized.
+            var authenticatedOnly = policies.Count == 0 && Regex.IsMatch(attributes, @"\bAuthorize\s*(\]|\(\s*\))");
+            var operations = Regex.Matches(text, @"KrevOperasjon\(""([^""]+)""").Select(x => x.Groups[1].Value).Concat(policies).Distinct().ToList();
             var touchesChild = Regex.IsMatch(text, @"barnRegistreringId|eksternId|BarnRegistrering|repository\.", RegexOptions.IgnoreCase);
             var field = char.ToLowerInvariant(m.Identifier.Text[0]) + m.Identifier.Text[1..].Replace("Async", "");
             if (operations.Count == 0 && touchesChild)
                 yield return Fact($"graphql-{field}", ClassificationArea.GraphQL, $"GraphQL {field} has no authorization check", ClassificationState.IssueDetected,
-                    $"{t.Identifier.Text}.{m.Identifier.Text} reads child data without any KrevOperasjon call{(Regex.Match(text, @"//\s*(.+)") is { Success: true } cm ? $" (\"// {cm.Groups[1].Value.Trim()}\")" : "")}, and the lookup it calls applies no classification filter. It answers whether a registration with a given id exists — also for a graded child — and returns its registration id. The endpoint has no global authorization policy, so reachability decides who can ask.",
+                    $"{t.Identifier.Text}.{m.Identifier.Text} reads child data without any KrevOperasjon call or [Authorize] policy{(authenticatedOnly ? " ([Authorize] without a policy only requires an authenticated caller — authenticated is not authorized)" : "")}{(Regex.Match(text, @"//\s*(.+)") is { Success: true } cm ? $" (\"// {cm.Groups[1].Value.Trim()}\")" : "")}, and the lookup it calls applies no classification filter. It answers whether a registration with a given id exists — also for a graded child — and returns its registration id. The endpoint has no global authorization policy, so reachability decides who can ask.",
                     [Loc(c, m)], ClassificationTestType.Negative);
             else if (operations.Count > 0 && touchesChild)
                 yield return Fact($"graphql-{field}", ClassificationArea.GraphQL, $"GraphQL {field} authorization", ClassificationState.SourceVerified,
-                    $"Requires {string.Join(" + ", operations)}{(text.Contains("PersonNotFoundException", StringComparison.Ordinal) && text.Contains("return null", StringComparison.Ordinal) ? "; not-found maps to null (anti-disclosure)" : "")}. Server-side, independent of any UI hiding.",
+                    $"Requires {string.Join(" + ", operations)}{(policies.Count > 0 ? $" ([Authorize] policy — enforced by the registered authorization handler{(production.Any(c => c.Text.Contains("AuthorizationHandler<", StringComparison.Ordinal)) ? "" : ", which is not in this snapshot")})" : "")}{(text.Contains("PersonNotFoundException", StringComparison.Ordinal) && text.Contains("return null", StringComparison.Ordinal) ? "; not-found maps to null (anti-disclosure)" : "")}. Server-side, independent of any UI hiding.",
                     [Loc(c, m)], ClassificationTestType.Negative);
             if (text.Contains("Revisjonslogg", StringComparison.Ordinal) && text.Contains("throw new PersonNotFoundException", StringComparison.Ordinal) && !text.Contains("catch (PersonNotFoundException", StringComparison.Ordinal))
                 yield return Fact("audit-log-access", ClassificationArea.AuditAccess, "Revision log: graded check and response shape", ClassificationState.Warning,

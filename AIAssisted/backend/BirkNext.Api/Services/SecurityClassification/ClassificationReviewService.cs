@@ -1,7 +1,7 @@
 using System.Text.Json;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
-using BirkNext.Api.Services.Integrations.Scim;
+using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Integrations;
 using Microsoft.EntityFrameworkCore;
 
@@ -10,11 +10,12 @@ namespace BirkNext.Api.Services.SecurityClassification;
 public interface IClassificationReviewService
 {
     Task<ClassificationOverview> OverviewAsync(string environmentId, CancellationToken ct = default);
-    Task<ClassificationSourceEvidence?> SourceAsync(string environmentId, CancellationToken ct = default);
-    Task<(ClassificationSourceEvidence? Evidence, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default);
+    /// <summary>Source Analysis snapshots, related-source candidates and the combined evidence of a scope. Read-only: no upload, no runtime call.</summary>
+    Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default);
     Task<(ClassificationTestContext? Context, string? Error)> SaveContextAsync(string environmentId, ClassificationTestContext context, CancellationToken ct = default);
     /// <summary>Removes the temporary in-memory context of this environment. Touches no stored row.</summary>
     void ClearContext(string environmentId);
+    /// <summary>Runs the review on the request's exact source scope. Throws <see cref="InvalidSourceSelectionException"/> for an invalid scope.</summary>
     Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default);
     Task<ClassificationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
     /// <summary>The source/configuration part for Integration Quality Review (no live checks, not stored separately).</summary>
@@ -22,8 +23,11 @@ public interface IClassificationReviewService
 }
 
 /// <summary>
-/// Security Classification / Gradert tilgang review. Source analyses and runs are immutable rows (facts and derived observations — never PII,
-/// tokens or raw payloads). The test context is temporary: it lives in <see cref="ClassificationTestContextStore"/> (process memory) and is
+/// Security Classification / Gradert tilgang review. Source evidence comes from Source Analysis snapshots chosen per run (one primary plus
+/// explicitly included related snapshots, read through <see cref="ClassificationSourceScopeService"/> from the Source Analysis store); this
+/// review uploads no source. Runs are immutable rows (facts and derived observations — never PII, tokens or raw payloads) that keep the exact
+/// source scope. Rows of kind "source" written by earlier versions (uploaded archives) stay untouched; they are read only as legacy input for
+/// the Integration Quality Review contribution when no run has a source scope yet. The test context is temporary: it lives in <see cref="ClassificationTestContextStore"/> (process memory) and is
 /// never written to the database; runs keep only a value-free <see cref="ClassificationContextSummary"/>. A row of kind "context" that an earlier
 /// version may have written is left untouched and is never read as the active context. Live checks are safe GraphQL queries for configured
 /// synthetic test children only; the default is no live check at all.
@@ -34,8 +38,10 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
     /// <summary>Caller scope of the in-memory context (the authenticated principal, or "local").</summary>
     public string Scope { get; set; } = scope ?? "local";
     private ClassificationTestContext ActiveContext(string environmentId) => contexts.Get(Scope, environmentId) ?? new();
+    private readonly ClassificationSourceScopeService _scopes = new(new IqrSourceStore(db));
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    /// <summary>Legacy uploaded-archive analyses (no longer written).</summary>
     private const string SourceKind = "source";
     /// <summary>The kind earlier versions used for a stored context; never written or read as the active context any more.</summary>
     public const string LegacyContextKind = "context";
@@ -55,42 +61,29 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
         await db.SaveChangesAsync(ct);
     }
 
-    public Task<ClassificationSourceEvidence?> SourceAsync(string environmentId, CancellationToken ct = default) => LatestAsync<ClassificationSourceEvidence>(environmentId, SourceKind, ct);
-
     public async Task<ClassificationOverview> OverviewAsync(string environmentId, CancellationToken ct = default)
     {
-        var runs = await db.SecurityClassificationEvidence.AsNoTracking().Where(r => r.EnvironmentId == environmentId && r.Kind == RunKind).OrderByDescending(r => r.CreatedAt).Take(20).ToListAsync(ct);
-        var parsed = runs.Select(r => JsonSerializer.Deserialize<ClassificationReviewResult>(r.Json, Json)).OfType<ClassificationReviewResult>().ToList();
+        var parsed = await RunsAsync(environmentId, ct);
+        // No "current source" here: the page proposes the latest run's exact scope (or none) and asks Source Analysis for its evidence.
         return new ClassificationOverview
         {
-            Source = await SourceAsync(environmentId, ct), Context = ActiveContext(environmentId), Latest = parsed.FirstOrDefault(),
+            Context = ActiveContext(environmentId), Latest = parsed.FirstOrDefault(),
             History = parsed.Select(r => new ClassificationRunSummary(r.RunId, r.CompletedAt, r.Overall, r.Findings.Count, r.Live.Observations.Count)).ToList(),
         };
     }
 
-    public async Task<(ClassificationSourceEvidence? Evidence, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default)
+    private async Task<List<ClassificationReviewResult>> RunsAsync(string environmentId, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(environmentId)) return (null, "An analysis must belong to a Target Environment.");
-        if (archives.Count == 0) return (null, "Upload at least one source archive (.zip).");
-        var metadata = new List<SourceArchive>();
-        var code = new List<Integrations.ApplicationMessaging.SourceFile>();
-        var documents = new List<Integrations.ApplicationMessaging.SourceFile>();
-        var settings = new List<ScimSettingsFile>();
-        foreach (var (name, bytes) in archives)
-        {
-            var (archive, files, error) = ScimSourceReader.Read(name, bytes, p => p.Contains("/docs/", StringComparison.OrdinalIgnoreCase) || p.Contains("/specs/", StringComparison.OrdinalIgnoreCase));
-            if (error is not null) return (null, error);
-            metadata.Add(archive!);
-            code.AddRange(files.Code);
-            documents.AddRange(files.Documents);
-            settings.AddRange(files.Settings);
-        }
-        var evidence = ClassificationSourceAnalyzer.Analyze(environmentId, metadata, new ScimSourceSet(code, documents, settings), DateTimeOffset.UtcNow);
-        await StoreAsync(environmentId, SourceKind, evidence.AnalyzedAt, evidence, null, ct);
-        logger.LogInformation("Security classification source analysis for {EnvironmentId}: detected {Detected}, {Levels} level(s), {Facts} fact(s), {Issues} issue(s), archives {Hashes}.",
-            environmentId, evidence.Detected, evidence.Levels.Count, evidence.Facts.Count, evidence.Facts.Count(f => f.State == ClassificationState.IssueDetected), string.Join(",", metadata.Select(m => m.Sha256[..12])));
-        return (evidence, null);
+        var runs = await db.SecurityClassificationEvidence.AsNoTracking().Where(r => r.EnvironmentId == environmentId && r.Kind == RunKind).OrderByDescending(r => r.CreatedAt).Take(20).ToListAsync(ct);
+        return runs.Select(r => JsonSerializer.Deserialize<ClassificationReviewResult>(r.Json, Json)).OfType<ClassificationReviewResult>().ToList();
     }
+
+    public Task<ClassificationScopeOptions> SourceScopeAsync(string environmentId, ClassificationSourceScopeRequest? scope, CancellationToken ct = default) => _scopes.OptionsAsync(environmentId, scope, ct);
+
+    private static ClassificationSourceScopeRequest Request(ClassificationSourceScope scope) => new()
+    {
+        PrimarySnapshotId = scope.Primary.SnapshotId, RelatedSnapshotIds = scope.Related.Select(r => r.SnapshotId).ToList(), ExcludedSuggestions = scope.ExcludedSuggestions,
+    };
 
     public async Task<(ClassificationTestContext? Context, string? Error)> SaveContextAsync(string environmentId, ClassificationTestContext context, CancellationToken ct = default)
     {
@@ -112,19 +105,29 @@ public sealed class ClassificationReviewService(AppDbContext db, IClassification
     public async Task<ClassificationReviewResult> RunAsync(string environmentId, ClassificationRunRequest request, CancellationToken ct = default)
     {
         var started = DateTimeOffset.UtcNow;
-        var source = await SourceAsync(environmentId, ct);
+        ClassificationSourceEvidence? source = null;
+        if (request.SourceScope is { } scope)
+        {
+            var (resolved, error) = await _scopes.ResolveAsync(environmentId, scope, ct);
+            source = resolved ?? throw new InvalidSourceSelectionException(error ?? "The source scope is invalid.");
+        }
         var context = ActiveContext(environmentId);
         var live = await probe.ProbeAsync(context, request, source?.Levels ?? [], ct);
         var result = ClassificationEvaluator.Evaluate(environmentId, source, context, live, request.SourceCounts, request.TargetCounts, started, DateTimeOffset.UtcNow);
         await StoreAsync(environmentId, RunKind, result.CompletedAt, result, result.RunId, ct);
-        logger.LogInformation("Security classification review for {EnvironmentId}: {Overall}, live {Live} ({Observations} observation(s)), {Findings} finding(s).",
-            environmentId, result.Overall, live.State, live.Observations.Count, result.Findings.Count);
+        logger.LogInformation("Security classification review for {EnvironmentId}: {Overall}, live {Live} ({Observations} observation(s)), {Findings} finding(s), source scope {Scope}.",
+            environmentId, result.Overall, live.State, live.Observations.Count, result.Findings.Count,
+            source?.Scope is { } s ? string.Join(",", new[] { s.Primary }.Concat(s.Related).Select(e => e.Fingerprint[..Math.Min(12, e.Fingerprint.Length)])) : "none");
         return result;
     }
 
     public async Task<ClassificationReviewResult?> ReviewAsync(string environmentId, string? environmentType, CancellationToken ct = default)
     {
-        var source = await SourceAsync(environmentId, ct);
+        // The latest run's exact source scope (never a newer snapshot); before any such run, a legacy uploaded-archive analysis if one exists.
+        ClassificationSourceEvidence? source = null;
+        if ((await RunsAsync(environmentId, ct)).FirstOrDefault(r => r.SourceScope is not null)?.SourceScope is { } scope)
+            source = (await _scopes.ResolveAsync(environmentId, Request(scope), ct)).Evidence;
+        source ??= await LatestAsync<ClassificationSourceEvidence>(environmentId, SourceKind, ct);
         if (source is null) return null;
         var context = ActiveContext(environmentId);
         var live = new ClassificationLiveEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "Integration Quality Review does not run live security checks (they need per-run test identities).", CapturedAt = DateTimeOffset.UtcNow };
@@ -167,6 +170,9 @@ public static class ClassificationEvaluator
         }).ToList();
     }
 
+    /// <summary>Severity order of a state (lower = worse).</summary>
+    public static int RankOf(ClassificationState state) => Array.IndexOf(Rank, state);
+
     private static readonly ClassificationState[] Rank =
     [
         ClassificationState.Fail, ClassificationState.IssueDetected, ClassificationState.NeedsDecision, ClassificationState.Warning, ClassificationState.DocumentedOnly, ClassificationState.NotFound,
@@ -191,7 +197,7 @@ public static class ClassificationEvaluator
         bool Has(string id, params ClassificationState[] states) => F(id) is { } f && (states.Length == 0 || states.Contains(f.State));
         var checks = new List<ClassificationCheck>();
         if (source is not null)
-            checks.AddRange(source.Facts.Select(f => new ClassificationCheck { CheckId = f.Id, Area = f.Area, TestType = f.TestType, Title = f.Title, State = f.State, Detail = f.Detail, Provenance = IntegrationEvidenceSource.SourceCode, Locations = f.Locations }));
+            checks.AddRange(source.Facts.Select(f => new ClassificationCheck { CheckId = f.Id, Area = f.Area, TestType = f.TestType, Title = f.Title, State = f.State, Detail = f.Detail, Provenance = IntegrationEvidenceSource.SourceCode, Locations = f.Locations, Sources = f.Sources }));
         // Configuration: the test context (ids and labels only).
         var levels = source?.Levels ?? [];
         foreach (var level in levels.Select(l => l.Nivaa).DefaultIfEmpty().Distinct().Where(_ => levels.Count > 0))
@@ -231,26 +237,32 @@ public static class ClassificationEvaluator
 
         // ── Findings ─────────────────────────────────────────────────────────────────────────────────────────────────
         var findings = new List<ClassificationFinding>();
-        void Add(string rule, ClassificationSeverity severity, ClassificationArea area, string title, string detail, IEnumerable<SourceLocation> locations, string recommendation) =>
-            findings.Add(new ClassificationFinding { RuleId = rule, Severity = severity, Area = area, Title = title, Detail = detail, Evidence = locations.Select(l => $"{l.File}:{l.Line}").Distinct().Take(6).ToList(), Recommendation = recommendation });
+        // A source finding keeps the exact snapshot(s) its facts came from; a cross-source finding cites each one.
+        void Add(string rule, ClassificationSeverity severity, ClassificationArea area, string title, string detail, IEnumerable<SourceLocation> locations, string recommendation, params ClassificationFact?[] from) =>
+            findings.Add(new ClassificationFinding
+            {
+                RuleId = rule, Severity = severity, Area = area, Title = title, Detail = detail, Evidence = locations.Select(l => $"{l.File}:{l.Line}").Distinct().Take(6).ToList(), Recommendation = recommendation,
+                Sources = from.OfType<ClassificationFact>().SelectMany(f => f.Sources).GroupBy(s => s.SnapshotId).Select(g => g.First() with { Locations = g.SelectMany(s => s.Locations).Distinct().Take(6).ToList() }).ToList(),
+            });
         if (Has("cdc-deserializer", ClassificationState.IssueDetected))
             Add("cdc-classification-constant", ClassificationSeverity.High, ClassificationArea.Pipeline, "Security classification is reset to a constant in the production CDC path",
                 $"{F("cdc-deserializer")!.Detail} {F("cdc-mapper-guard-consistency")?.Detail} The Kode 6/7 guard therefore allows every event; a level-2/3 row that reaches the adapter is forwarded instead of rejected. The documented primary protection is BiRK's source filtering, which BirkNext cannot observe.",
                 F("cdc-deserializer")!.Locations.Concat(F("cdc-mapper-guard-consistency")?.Locations ?? []),
-                "Read the classification from the envelope's record (\"after\", or \"before\" for deletes) using the exact column name, and add the proposed raw-Debezium regression tests.");
+                "Read the classification from the envelope's record (\"after\", or \"before\" for deletes) using the exact column name, and add the proposed raw-Debezium regression tests.",
+                F("cdc-deserializer"), F("cdc-mapper-guard-consistency"));
         foreach (var unguarded in source?.Facts.Where(f => f.Area == ClassificationArea.GraphQL && f.State == ClassificationState.IssueDetected) ?? [])
             Add("graphql-unguarded", ClassificationSeverity.High, ClassificationArea.GraphQL, unguarded.Title, unguarded.Detail, unguarded.Locations,
-                "Require an operation (and the graded check for graded children) before answering, and apply the classification filter in the lookup.");
+                "Require an operation (and the graded check for graded children) before answering, and apply the classification filter in the lookup.", unguarded);
         if (Has("access-profile-query-excludes"))
             Add("profile-graded-unreachable", ClassificationSeverity.Medium, ClassificationArea.DirectAccess, "Authorized graded access to the profile and revision log is not possible", F("access-profile-query-excludes")!.Detail,
-                F("access-profile-query-excludes")!.Locations, "Decide whether graded children are in scope; if they are, let the query return them and keep the service's per-child Person:SeGradertBarn check.");
+                F("access-profile-query-excludes")!.Locations, "Decide whether graded children are in scope; if they are, let the query return them and keep the service's per-child Person:SeGradertBarn check.", F("access-profile-query-excludes"));
         if (Has("cdc-unknown-level"))
             Add("unknown-level-default", ClassificationSeverity.Medium, ClassificationArea.Pipeline, "Unknown classification defaults to level 0", F("cdc-unknown-level")!.Detail, F("cdc-unknown-level")!.Locations,
-                "Decide the rule for missing/unknown levels (reject, quarantine or default) and document it; test it with null, negative, 4+ and non-numeric values.");
+                "Decide the rule for missing/unknown levels (reject, quarantine or default) and document it; test it with null, negative, 4+ and non-numeric values.", F("cdc-unknown-level"));
         if (Has("grant-implementation", ClassificationState.DocumentedOnly, ClassificationState.NotFound))
-            Add("grant-not-implemented", ClassificationSeverity.Medium, ClassificationArea.Grants, "Granting graded access is not implemented", F("grant-implementation")!.Detail, F("grant-implementation")!.Locations, "Implement or remove the documented workflow.");
+            Add("grant-not-implemented", ClassificationSeverity.Medium, ClassificationArea.Grants, "Granting graded access is not implemented", F("grant-implementation")!.Detail, F("grant-implementation")!.Locations, "Implement or remove the documented workflow.", F("grant-implementation"));
         foreach (var id in new[] { "graphql-endpoint-auth", "audit-log-access", "search-grant-source", "model-terminology", "privacy-logging" }.Where(id => Has(id, ClassificationState.Warning, ClassificationState.IssueDetected)))
-            Add(id, id is "graphql-endpoint-auth" ? ClassificationSeverity.Medium : ClassificationSeverity.Low, F(id)!.Area, F(id)!.Title, F(id)!.Detail, F(id)!.Locations, "Review.");
+            Add(id, id is "graphql-endpoint-auth" ? ClassificationSeverity.Medium : ClassificationSeverity.Low, F(id)!.Area, F(id)!.Title, F(id)!.Detail, F(id)!.Locations, "Review.", F(id));
         foreach (var o in live.Observations.Where(o => o.State == ClassificationState.Fail))
         {
             var disclosure = o.Identity == ClassificationIdentity.Unauthorized;
@@ -307,17 +319,19 @@ public static class ClassificationEvaluator
 
         // ── Missing ──────────────────────────────────────────────────────────────────────────────────────────────────
         var missing = new List<string>();
-        if (source is null) missing.Add("M2LB source — upload the repository archive to analyze the classification model, the CDC path and the access paths.");
+        if (source is null) missing.Add("Source evidence — choose a Source Analysis snapshot to analyze the classification model, the CDC path and the access paths.");
         if (live.State != IntegrationEvidenceState.Available) missing.Add($"Live security checks: {live.Reason}");
         foreach (var level in levels.Where(l => !context.TestChildren.Any(c => c.Nivaa == l.Nivaa && c.BarnRegistreringId is not null)))
             missing.Add($"A synthetic level {level.Nivaa} ({level.Verdi}) test child in the approved context.");
         if (comparisons.All(c => c.State == CountComparisonState.NotAvailable)) missing.Add("Classification count evidence from the source (BiRK) and target (M2LB) captured at aligned times.");
         missing.Add("Telemetry for birk.kode67.rejections and security log events (runtime).");
         var metricFact = F("guard-metric");
-        var missingItems = ClassificationPrerequisites.Evaluate(source is not null, levels, context,
+        var readiness = ClassificationPrerequisites.Readiness(ClassificationSourceReadiness.For(source), levels, context,
             countsAvailable: comparisons.Any(c => c.State is CountComparisonState.Match or CountComparisonState.Mismatch),
             metricName: metricFact is null ? null : metricFact.Title.StartsWith("Metric ") ? metricFact.Title[7..] : metricFact.Title,
             telemetryObserved: checks.Any(c => c.CheckId == "metric-runtime" && ClassificationLabels.IsRuntimeResult(c.State)));
+        var missingItems = readiness.Where(r => r.Counts || r.Group == ClassificationMissingGroup.Secondary)
+            .Select(r => new ClassificationMissingItem { Id = r.Id, Group = r.Group, Title = r.Title, Detail = r.Detail, ConfiguresContext = r.ConfiguresContext }).ToList();
 
         var overall = findings.Any(f => f.Severity is ClassificationSeverity.Critical or ClassificationSeverity.High) || checks.Any(c => c.State is ClassificationState.Fail) ? ClassificationOverall.IssueDetected
             : source is null && live.Observations.Count == 0 ? ClassificationOverall.NotTestable
@@ -328,11 +342,12 @@ public static class ClassificationEvaluator
             RunId = Guid.NewGuid(), EnvironmentId = environmentId, StartedAt = started, CompletedAt = completed, Overall = overall,
             SourceAnalyzedAt = source?.AnalyzedAt, SourceArchives = source?.Archives ?? [], Levels = levels, Summary = summary, Pipeline = pipeline, Checks = checks,
             Findings = findings.OrderBy(f => f.Severity).ToList(), Live = live, SourceCounts = sourceCounts, TargetCounts = targetCounts, CountComparisons = comparisons,
-            TestCoverage = source?.TestCoverage ?? [], ProposedTests = source?.ProposedTests ?? [], ContextSummary = ClassificationContextSummary.From(context), Missing = missing, MissingItems = missingItems,
+            TestCoverage = source?.TestCoverage ?? [], ProposedTests = source?.ProposedTests ?? [], ContextSummary = ClassificationContextSummary.From(context), Missing = missing, MissingItems = missingItems, Readiness = readiness, SourceScope = source?.Scope,
             Limitations =
             [
                 "Live checks are GraphQL queries for configured synthetic test children only; no mutation, classification change, grant or broad search is ever performed.",
-                "Source evidence describes the analyzed archive, not necessarily the deployed revision.",
+                source?.Scope is null ? "Source evidence describes the analyzed archive, not necessarily the deployed revision." : "Source evidence describes the selected Source Analysis snapshot(s), not necessarily the deployed revision.",
+                "Source evidence shows implementation/configuration paths only; it does not prove runtime enforcement.",
                 "Timing differences between responses are not measured.",
                 .. source?.Limitations ?? [],
             ],

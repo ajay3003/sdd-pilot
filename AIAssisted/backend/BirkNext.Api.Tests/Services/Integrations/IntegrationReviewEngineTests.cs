@@ -589,14 +589,18 @@ public sealed class IntegrationReviewEngineTests
         using var stream = new MemoryStream();
         using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
             foreach (var f in files) { using var w = new StreamWriter(zip.CreateEntry(f.Path).Open()); w.Write(f.Content); }
-        (await classification.AnalyzeAsync(DevId, [("M2LB.zip", stream.ToArray())])).Error.Should().BeNull();
+        // Source Analysis owns the archive; a Security Classification run binds its exact snapshot, which IQR then reuses (never a newer one).
+        var (snapshot, error) = await new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db).AnalyzeAsync(DevId, "source-analysis", "M2LB.zip", stream.ToArray());
+        error.Should().BeNull();
+        await classification.RunAsync(DevId, new ClassificationRunRequest { EnvironmentType = "Development", SourceScope = new() { PrimarySnapshotId = snapshot!.Id } });
+        var liveCallsBefore = probe.Calls;
         var engine = new IntegrationReviewEngine(new Probe(true), new Metadata(null), new Groups(null), new Checkpoints(null), new Telemetry(null), new HttpClient(), NullLogger<IntegrationReviewEngine>.Instance, classification: classification);
         var service = new IntegrationReviewService(catalogService, engine, new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance);
         await catalogService.GetAsync(DevId, "Development", DevUrl);
 
         var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV" }, "Development", DevUrl);
 
-        probe.Calls.Should().Be(0, "IQR never runs live security checks");
+        probe.Calls.Should().Be(liveCallsBefore, "IQR never runs live security checks");
         run.SecurityClassificationSnapshot.Should().NotBeNull();
         var system = run.Systems.Single(s => s.SystemName.StartsWith("Security classification"));
         system.PlatformChecks.Should().Contain(c => c.CheckId == "classification-model-reference" && c.Status == IntegrationCheckStatus.Detected);

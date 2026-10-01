@@ -42,6 +42,8 @@ public sealed record IqrSourceSnapshot
     public BirkNext.Dependencies.SourceDependencyEvidence? DependencyEvidence { get; init; }
     /// <summary>Allow-listed security source facts, not approved expectations or runtime verification. Null in historical snapshots.</summary>
     public BirkNext.SecurityExpectations.SecuritySourceEvidence? SecurityExpectationsEvidence { get; init; }
+    /// <summary>Classification-relevant source observations for Security Classification (facts and locations, never a review result). Null in historical snapshots.</summary>
+    public ClassificationSnapshotEvidence? SecurityClassificationEvidence { get; init; }
     /// <summary>Source-only signals for source integration discovery (capture-technology markers, orchestration-declared channels). Empty in older snapshots.</summary>
     public List<SourceIntegrationSignal> IntegrationSignals { get; init; } = [];
 }

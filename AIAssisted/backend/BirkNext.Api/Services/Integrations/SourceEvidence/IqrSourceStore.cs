@@ -41,6 +41,9 @@ public sealed class IqrSourceStore(AppDbContext db)
         // captured once here so Dependency Review never needs the archive again. Source Analysis supplies evidence; it does not review dependencies.
         var repository = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);
         snapshot = snapshot with { Repository = repository, DependencyEvidence = DependencyReview.SourceDependencyEvidenceExtractor.Extract(repository.DisplayName, bytes, name).Evidence };
+        // Classification-relevant observations Security Classification consumes (facts with file:line, read by its own analyzer): captured once
+        // here so Security Classification never needs the archive. Source Analysis neither shows nor judges them.
+        snapshot = snapshot with { SecurityClassificationEvidence = SecurityClassification.ClassificationSourceAnalyzer.ExtractArchive(name, bytes) };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });

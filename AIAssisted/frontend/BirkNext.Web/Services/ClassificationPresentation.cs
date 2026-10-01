@@ -75,30 +75,77 @@ public static class ClassificationPresentation
         return $"{result.Findings.Count} finding(s) · {high} high/critical · Runtime checks: {(runtime == 0 ? "Not run" : $"{runtime} observation(s)")} · Missing evidence: {missing}";
     }
 
-    /// <summary>What the "What's needed" card shows. Recorded = a historical review's own snapshot (not today's configuration).</summary>
-    public sealed record MissingView(IReadOnlyList<ClassificationMissingItem> Items, bool Recorded, IReadOnlyList<string> LegacyItems)
+    /// <summary>
+    /// What the readiness card shows. Rows = grouped readiness (current, or recorded with a run); Items/LegacyItems = what older runs recorded.
+    /// Recorded = a historical review's own snapshot (not today's configuration).
+    /// </summary>
+    public sealed record MissingView(IReadOnlyList<ClassificationReadinessRow> Rows, bool Recorded, IReadOnlyList<ClassificationMissingItem> Items, IReadOnlyList<string> LegacyItems)
     {
-        /// <summary>Items that block completing the review (secondary items are listed but not counted).</summary>
-        public int Count => LegacyItems.Count > 0 ? LegacyItems.Count : Items.Count(i => i.Group != ClassificationMissingGroup.Secondary);
-        public bool BlocksLiveChecks => Items.Any(i => i.Group == ClassificationMissingGroup.RequiredForLiveChecks) || LegacyItems.Count > 0;
-        public bool NeedsContext => Items.Any(i => i.ConfiguresContext) || LegacyItems.Count > 0;
+        /// <summary>Missing review prerequisites (Missing / Not available rows; secondary items are listed but not counted).</summary>
+        public int Count => Rows.Count > 0 ? Rows.Count(r => r.Counts) : LegacyItems.Count > 0 ? LegacyItems.Count : Items.Count(i => i.Group != ClassificationMissingGroup.Secondary);
+        public bool BlocksLiveChecks => Rows.Any(r => r.Group == ClassificationMissingGroup.RequiredForLiveChecks && r.Status == ClassificationReadiness.Missing)
+            || Items.Any(i => i.Group == ClassificationMissingGroup.RequiredForLiveChecks) || LegacyItems.Count > 0;
+        public bool NeedsContext => Rows.Any(r => r.ConfiguresContext) || Items.Any(i => i.ConfiguresContext) || LegacyItems.Count > 0;
     }
 
+    /// <summary>Display order of the readiness groups: source evidence, runtime test context, runtime evidence, secondary.</summary>
+    public static readonly ClassificationMissingGroup[] GroupOrder =
+        [ClassificationMissingGroup.SourceEvidence, ClassificationMissingGroup.RequiredForLiveChecks, ClassificationMissingGroup.RuntimeEvidence, ClassificationMissingGroup.Secondary];
+
+    public static string Tone(ClassificationReadiness status) => status switch
+    {
+        ClassificationReadiness.Ready => "ready",
+        ClassificationReadiness.Partial => "attention",
+        ClassificationReadiness.Missing => "attention",
+        _ => "muted",
+    };
+
+    public static string Tone(ClassificationCoverageState state) => state switch
+    {
+        ClassificationCoverageState.Detected => "info",
+        ClassificationCoverageState.Partial or ClassificationCoverageState.NotFound => "attention",
+        _ => "muted",
+    };
+
     /// <summary>
-    /// The latest review (or none yet): computed from the CURRENT test context with the shared prerequisite rule, so configuring the context
-    /// removes its items immediately. A historical review: that run's recorded snapshot, never recalculated against today's configuration.
+    /// The latest review (or none yet): computed from the CURRENT source scope and test context with the shared prerequisite rule, so selecting
+    /// a snapshot or configuring the context updates it immediately. A historical review: that run's recorded snapshot, never recalculated.
     /// </summary>
-    public static MissingView Missing(ClassificationReviewResult? result, bool isLatest, ClassificationTestContext context, ClassificationSourceEvidence? source)
+    public static MissingView Missing(ClassificationReviewResult? result, bool isLatest, ClassificationTestContext context, ClassificationSourceReadiness source, IReadOnlyList<ClassificationLevel> levels,
+        ClassificationSourceEvidence? evidence)
     {
         if (result is not null && !isLatest)
-            return result.MissingItems.Count > 0 ? new MissingView(result.MissingItems, true, []) : new MissingView([], true, result.Missing);
-        var metric = source?.Facts.FirstOrDefault(f => f.Id == "guard-metric")?.Title ?? result?.Checks.FirstOrDefault(c => c.CheckId == "guard-metric")?.Title;
-        var items = ClassificationPrerequisites.Evaluate(source is not null || result?.SourceAnalyzedAt is not null, source?.Levels ?? result?.Levels ?? [], context,
+            return result.Readiness.Count > 0 ? new MissingView(result.Readiness, true, [], []) : result.MissingItems.Count > 0 ? new MissingView([], true, result.MissingItems, []) : new MissingView([], true, [], result.Missing);
+        var metric = evidence?.Facts.FirstOrDefault(f => f.Id == "guard-metric")?.Title ?? result?.Checks.FirstOrDefault(c => c.CheckId == "guard-metric")?.Title;
+        var rows = ClassificationPrerequisites.Readiness(source, levels, context,
             countsAvailable: result?.CountComparisons.Any(c => c.State is CountComparisonState.Match or CountComparisonState.Mismatch) ?? false,
             metricName: metric is null ? null : metric.StartsWith("Metric ") ? metric[7..] : metric,
             telemetryObserved: result?.Checks.Any(c => c.CheckId == "metric-runtime" && ClassificationLabels.IsRuntimeResult(c.State)) ?? false);
-        return new MissingView(items, false, []);
+        return new MissingView(rows, false, [], []);
     }
+
+    public static string ShortFingerprint(string fingerprint) => fingerprint.Length > 8 ? fingerprint[..8] + "…" : fingerprint;
+
+    /// <summary>"M2LB · c850a1b2…" for each snapshot a fact, check or finding cites.</summary>
+    public static string Sources(IEnumerable<ClassificationSourceRef> sources) => string.Join(" · ", sources.Select(s => $"{s.Repository} {ShortFingerprint(s.Fingerprint)}"));
+
+    /// <summary>A run's source as recorded: the exact Source Analysis scope, legacy uploaded archives, or none.</summary>
+    public static string ScopeLine(ClassificationReviewResult result) => result.SourceScope is { } scope
+        ? $"Primary {scope.Primary.Repository} · {ShortFingerprint(scope.Primary.Fingerprint)}" + (scope.Related.Count > 0 ? $" · Related {string.Join(", ", scope.Related.Select(r => $"{r.Repository} · {ShortFingerprint(r.Fingerprint)}"))}" : " · No related source included")
+        : result.SourceArchives.Count > 0 ? $"Legacy source input: {string.Join(", ", result.SourceArchives.Select(a => $"{a.FileName} (sha256 {ShortFingerprint(a.Sha256)})"))} — uploaded before Source Analysis owned source; no snapshot id"
+        : "No source snapshot was selected for this review — source checks were not run.";
+
+    /// <summary>Groups for "View source evidence".</summary>
+    public static string EvidenceGroup(ClassificationArea area) => area switch
+    {
+        ClassificationArea.Model => "Classification model",
+        ClassificationArea.Pipeline or ClassificationArea.Guard => "Propagation path",
+        ClassificationArea.GraphQL => "GraphQL / access path",
+        ClassificationArea.Caching or ClassificationArea.Privacy or ClassificationArea.Observability => "Privacy and observability",
+        _ => "Authorization",
+    };
+
+    public static readonly string[] EvidenceGroups = ["Classification model", "Propagation path", "Authorization", "GraphQL / access path", "Privacy and observability"];
 
     public const int MissingPreview = 6;
 
