@@ -35,6 +35,8 @@ public sealed class IqrSourceStore(AppDbContext db)
             out var architectureInput, out var architectureResults) };
         snapshot = snapshot with { SecurityExpectationsEvidence = SecurityExpectations.SecurityExpectationSourceAnalyzer.Analyze(snapshot, architectureInput,
             architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct) };
+        // Source integration discovery signals (capture-technology markers, orchestration-declared channels): identifiers only, read from the same workspace.
+        snapshot = snapshot with { IntegrationSignals = SourceDiscovery.SourceIntegrationSignalExtractor.Extract(workspace, snapshot.Architecture) };
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });

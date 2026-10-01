@@ -38,6 +38,8 @@ public sealed record IqrSourceSnapshot
     public BirkNext.SourceArchitecture.ArchitectureSnapshot? Architecture { get; init; }
     /// <summary>Allow-listed security source facts, not approved expectations or runtime verification. Null in historical snapshots.</summary>
     public BirkNext.SecurityExpectations.SecuritySourceEvidence? SecurityExpectationsEvidence { get; init; }
+    /// <summary>Source-only signals for source integration discovery (capture-technology markers, orchestration-declared channels). Empty in older snapshots.</summary>
+    public List<SourceIntegrationSignal> IntegrationSignals { get; init; } = [];
 }
 
 // ── Multi-stage integration path (analyzer v2) ────────────────────────────────────────────────────────────────────────

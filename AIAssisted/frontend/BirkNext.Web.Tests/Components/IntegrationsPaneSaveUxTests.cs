@@ -100,6 +100,8 @@ public sealed class IntegrationsPaneSaveUxTests : BunitContext
         _api.Saved.Should().BeEmpty("rendering a suggestion never saves it");
         cut.Find("[data-testid=ip-mapping-suggested]").TextContent.Should().Contain("Receiver rights never confirm a mapping");
         cut.Find("[data-testid=ip-mapping-confirm]").Click();
+        _api.Saved.Should().BeEmpty("opening the confirmation saves nothing");
+        cut.Find("[data-testid=ip-confirm-mapping]").Click();
         cut.WaitForAssertion(() => _api.Saved.Should().ContainSingle());
         var saved = _api.Saved.Single();
         saved.Id.Should().Be(id);

@@ -116,7 +116,9 @@
                 @foreach (var system in readiness.Systems)
                 {
                     <article class="iqr-system" data-testid="iqr-system">
-                        <h3>@system.SystemName @if (system.PlatformName is { } platform) { <span class="iqr-muted">→ @platform</span> }</h3>
+                        @* Generic heading: the configured group name (often naming a technology) is shown as data, never as the category. *@
+                        <h3 data-testid="iqr-system-title">@SourceIntegrationsPresentation.Title @if (system.PlatformName is { } platform) { <span class="iqr-muted">→ @platform</span> }</h3>
+                        <p class="iqr-muted" data-testid="iqr-system-group">Configured group: @system.SystemName</p>
                         <dl class="iqr-dl">
                             <div><dt>Topics</dt><dd data-testid="iqr-system-topics">@system.Topics</dd></div>
                             <div><dt>Consumers</dt><dd data-testid="iqr-system-consumers">@IntegrationReviewPrerunPresentation.Consumers(system)</dd></div>

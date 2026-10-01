@@ -61,7 +61,8 @@ public static class IntegrationsPanePresentation
     {
         var platform = Platform(catalog, definition);
         var (state, missing, unconfirmed) = IntegrationConfigurationRules.Evaluate(definition, platform);
-        var shortName = definition.SourceResource?.Split(".dbo.").LastOrDefault() is { Length: > 0 } table && definition.SystemName is not null ? table : definition.DisplayName;
+        // The configured resource's last segment ("…dbo.Person" → "Person"); no schema or source system is assumed.
+        var shortName = definition.SourceResource?.Split('.', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() is { Length: > 0 } entity ? entity : definition.DisplayName;
         var topic = definition.EndpointOrTopic;
         var topicShort = topic is null ? "Not configured"
             : platform?.TopicPrefix is { Length: > 0 } prefix && topic.StartsWith(prefix + ".", StringComparison.Ordinal) && topic.LastIndexOf(".dbo.", StringComparison.Ordinal) is var at and >= 0
@@ -109,12 +110,8 @@ public static class IntegrationsPanePresentation
     /// <summary>Review readiness labels in filter order. Values are the ones <see cref="ReviewReadiness"/> produces — no extra states.</summary>
     public static readonly string[] ReadinessLabels = ["Ready", "Partial", "Configuration only", "Not included"];
 
-    private static string ProducerShort(string? producer) => producer switch
-    {
-        null or "" => "Not configured",
-        var p when p.StartsWith("Debezium", StringComparison.OrdinalIgnoreCase) => "Debezium",
-        var p => p,
-    };
+    /// <summary>The configured producer text as entered — no technology is special-cased.</summary>
+    private static string ProducerShort(string? producer) => string.IsNullOrWhiteSpace(producer) ? "Not configured" : producer;
 
     public static string StateTone(IntegrationConfigurationState state) => state switch
     {

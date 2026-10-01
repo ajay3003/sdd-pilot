@@ -109,3 +109,34 @@
 /* The table keeps its 44rem minimum and scrolls; the expanded detail stays within the visible part of the scroll region. */
 .ip-tablewrap { container-type: inline-size; }
 .ip-detail-row > td > * { position: sticky; left: .6rem; max-width: calc(100cqw - 1.2rem); box-sizing: border-box; }
+/* Source integrations: one generic section (no technology or source system in its title). */
+.ip-pill-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+.ip-sources { display: grid; gap: .55rem; min-width: 0; margin-top: .4rem; }
+.ip-sources-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: .5rem 1rem; }
+.ip-sources-head h3 { margin: 0; font-size: 1rem; }
+.ip-sources-head p { margin: .15rem 0 0; }
+.ip-source-analysis { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .6rem; font-size: .82rem; overflow-wrap: anywhere; }
+.ip-discovery-report { border-left: 3px solid #93c5fd; background: #eff6ff; color: #1e3a8a; padding: .4rem .65rem; font-size: .82rem; border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.ip-discovery-report ul { margin: .2rem 0 0; padding-left: 1.1rem; }
+.ip-sources-summary { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin: 0; }
+.ip-sources-summary dt { font-size: .72rem; color: var(--clr-text-muted); }
+.ip-sources-summary dd { margin: .15rem 0 0; display: flex; flex-wrap: wrap; gap: .25rem .7rem; font-size: .84rem; }
+.ip-count { white-space: nowrap; }
+.ip-table tbody th { background: none; color: inherit; font-size: .84rem; font-weight: 400; vertical-align: top; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); }
+.ip-cell-sub { display: block; font-size: .74rem; color: var(--clr-text-muted); overflow-wrap: anywhere; }
+.ip-cell-first { display: block; }
+.ip-detected { color: #1d4ed8; }
+.ip-source-note { display: inline-block; margin-top: .2rem; white-space: normal; }
+.ip-confirm-panel { display: grid; gap: .4rem; padding: .55rem .7rem; border: 1px solid #bfdbfe; border-radius: var(--radius-md); background: #f8fbff; }
+.ip-confirm-panel h4 { margin: 0; font-size: .9rem; }
+.ip-confirm-panel h4:focus { outline: none; }
+.ip-confirm-panel h4:focus-visible { outline: 2px solid var(--clr-link, #2563eb); outline-offset: 2px; }
+.ip-evidence-list { margin: .2rem 0 0; padding-left: 1.1rem; font-size: .8rem; display: grid; gap: .2rem; overflow-wrap: anywhere; }
+.ip-source-detail { display: grid; gap: .45rem; margin-bottom: .6rem; padding-bottom: .5rem; border-bottom: 1px solid var(--clr-border-subtle, #eef2f7); }
+.ip-evidence-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: .6rem 1rem; min-width: 0; }
+.ip-evidence-split h4 { margin: 0 0 .2rem; font-size: .84rem; }
+.ip-evidence-split > div { min-width: 0; }
+.ip-table th.ip-cell-source { min-width: 8rem; }
+.ip-table td[data-testid=ip-row-channel] { min-width: 8rem; }
+.ip-table td[data-testid=ip-row-producer] { min-width: 9.5rem; }
+.ip-table td[data-testid=ip-row-consumer] { min-width: 10rem; }

@@ -48,7 +48,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         var cut = Open();
         var play = Row(cut).QuerySelector("[data-testid=ip-test-mapping]")!;
         play.GetAttribute("aria-label").Should().Contain("Tiltak").And.Contain("Tjeneste API");
-        play.GetAttribute("title").Should().Be("Test mapping");
+        play.TextContent.Trim().Should().Be("Test mapping", "the action is labelled, not an unlabelled play icon");
         cut.FindAll("[data-testid=ip-test-mapping]").Should().HaveCount(15);
         cut.FindAll("[data-mapping=NeedsConfirmation]").Should().OnlyContain(c => c.TextContent.Contains("Not assigned") && !c.TextContent.Contains("Needs confirmation"));
         cut.Find("[data-testid=ip-technical]").QuerySelectorAll("[data-testid=ip-test-mapping]").Should().BeEmpty();
@@ -77,6 +77,9 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         Row(cut).GetAttribute("data-configuration").Should().Be("NeedsConfirmation");
         Row(cut).QuerySelector("[data-testid=ip-row-consumer]")!.TextContent.Should().Contain("Suggested");
         Row(cut).QuerySelector("[data-testid=ip-inline-confirm]")!.Click();
+        cut.Find("[data-testid=ip-confirm-consumer]").TextContent.Should().Be("Tjeneste API");
+        _api.Saved.Should().BeEmpty("the confirmation needs the explicit Confirm mapping action");
+        cut.Find("[data-testid=ip-confirm-mapping]").Click();
         cut.WaitForAssertion(() => Row(cut).GetAttribute("data-configuration").Should().Be("Ready"));
         Row(cut).QuerySelector("[data-testid=ip-row-consumer]")!.TextContent.Should().Contain("Confirmed");
         _api.Saved.Single().Consumer.MappingConfirmedAt.Should().NotBeNull();
@@ -131,6 +134,8 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         var cut = Open();
         cut.Find("[data-testid=ip-review-mappings]").Click();
         Row(cut).QuerySelector("[data-testid=ip-inline-confirm]")!.Click();
+        _api.Saved.Should().BeEmpty("opening the confirmation saves nothing");
+        cut.Find("[data-testid=ip-confirm-mapping]").Click();
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=ip-row]").Should().HaveCount(14));
         cut.Find("[data-testid=ip-review-mappings]").TextContent.Should().Be("Review 14 mappings");
     }
@@ -141,7 +146,9 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         var play = Row(Open()).QuerySelector("[data-testid=ip-test-mapping]")!;
         play.GetAttribute("aria-label").Should().Be("Test suggested mapping for Tiltak and Tjeneste API");
         play.TagName.Should().Be("BUTTON");
-        Row(Open()).TextContent.Should().Contain("BirkNext has a suggested consumer mapping, but the relationship has not yet been verified.");
+        var row = Row(Open());
+        row.TextContent.Should().NotContain("BirkNext has a suggested consumer mapping", "the explanation is not repeated in every row");
+        row.QuerySelector("[data-testid=ip-row-mapping]")!.GetAttribute("title").Should().Contain("has not been confirmed");
     }
 
     [Fact]
@@ -199,6 +206,8 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         Row(cut).GetAttribute("data-configuration").Should().Be("NeedsConfirmation");
         _api.Saved.Should().BeEmpty();
         cut.Find("[data-testid=mapping-confirm]").Click();
+        _api.Saved.Should().BeEmpty();
+        cut.Find("[data-testid=ip-confirm-mapping]").Click();
         cut.WaitForAssertion(() => Row(cut).GetAttribute("data-configuration").Should().Be("Ready"));
         Row(cut).QuerySelector("[data-testid=ip-row-consumer]")!.TextContent.Should().Contain("Confirmed");
         _api.Saved.Should().ContainSingle().Which.Consumer.MappingState.Should().Be(ConsumerMappingState.Confirmed);
@@ -225,7 +234,7 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
         var cut = Open();
         var configuration = cut.FindAll("[data-testid=ip-row-configuration]").Select(b => b.TextContent.Trim()).Distinct().ToList();
         configuration.Should().Contain(["Ready", "Needs confirmation", "Needs configuration", "Disabled"]);
-        cut.FindAll("[data-testid=ip-row-consumer] .ip-pill").Select(b => b.TextContent.Trim()).Distinct().Should().BeEquivalentTo(["Suggested", "Confirmed"]);
+        cut.FindAll("[data-testid=ip-row-consumer] .ip-pill").Select(b => b.TextContent.Trim()).Distinct().Should().BeEquivalentTo(["Suggested", "Confirmed", "Unassigned"]);
         cut.FindAll("[data-testid=ip-row-readiness] .ip-pill").Select(b => b.TextContent.Trim()).Should().Contain("Partial");
         cut.FindAll("[data-testid=ip-row-consumer]").Should().NotContain(c => c.TextContent.Contains("(suggested)"));
     }
@@ -259,7 +268,8 @@ public sealed class IntegrationMappingWorkflowTests : BunitContext
     {
         var cut = Open();
         cut.Find("[data-testid=ip-technical] .disclosure-body").HasAttribute("hidden").Should().BeTrue();
-        cut.Find("[data-testid=ip-technical]").TextContent.Should().Contain("excluded from IQR business-integration counts");
+        cut.Find("[data-testid=ip-technical]").TextContent.Should().Contain("excluded from business integration counts");
+        cut.Find("[data-testid=ip-technical-toggle]").TextContent.Should().Contain("Technical integration channels").And.NotContain("Event Hub");
         cut.Find("[data-testid=ip-summary-configured]").TextContent.Should().Be("16");
     }
 }

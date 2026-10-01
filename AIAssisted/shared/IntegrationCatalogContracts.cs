@@ -291,6 +291,8 @@ public sealed record IntegrationConsumer
     /// <summary>What the mapping rests on ("Confirmed in BirkNext Integrations"). Receiver rights alone never confirm a mapping.</summary>
     public string? MappingEvidence { get; init; }
     public DateTimeOffset? MappingConfirmedAt { get; init; }
+    /// <summary>The source snapshot whose discovery evidence the person confirmed against (null when confirmed without source evidence).</summary>
+    public Guid? MappingSourceSnapshotId { get; init; }
 }
 
 /// <summary>One configured, expected integration (for Event Hubs: one business topic and its producer/consumer relationship).</summary>

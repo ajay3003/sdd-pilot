@@ -45,6 +45,10 @@ public interface IIntegrationCatalogApiService
     // SCIM identity provisioning. Default members keep other implementations (test fakes) valid; the backend client overrides them.
     /// <summary>The environment's latest SCIM source analysis and stored safe-check history.</summary>
     Task<ScimEvidenceOverview> ScimOverviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(new ScimEvidenceOverview());
+    /// <summary>Source integrations: the latest source snapshot's discovery reconciled with the catalog. Source-only; never writes or confirms.</summary>
+    Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<SourceIntegrationsReport?>(null);
+    /// <summary>"Discover from source": re-runs discovery on the stored source snapshot (no runtime call, no archive re-processing).</summary>
+    Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<SourceIntegrationsReport?>(null);
     /// <summary>Uploads repository archives for read-only SCIM source analysis.</summary>
     Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeScimSourceAsync(string environmentId, IReadOnlyList<(string FileName, Stream Content)> archives, CancellationToken ct = default) =>
         Task.FromResult<(ScimSourceEvidence?, string?)>((null, "SCIM source analysis is not available."));
@@ -106,6 +110,16 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
         if (response.StatusCode == System.Net.HttpStatusCode.BadRequest) return (null, (await response.Content.ReadAsStringAsync(ct)).Trim('"'));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ApplicationMessagingEvidenceSet>(Json, ct), null);
+    }
+
+    public async Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<SourceIntegrationsReport>($"api/integrations/source-integrations?{Env(environmentId)}", Json, ct);
+
+    public async Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default)
+    {
+        using var response = await http.PostAsync($"api/integrations/source-integrations/discover?{Env(environmentId)}", null, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<SourceIntegrationsReport>(Json, ct);
     }
 
     public async Task<ScimEvidenceOverview> ScimOverviewAsync(string environmentId, CancellationToken ct = default) =>

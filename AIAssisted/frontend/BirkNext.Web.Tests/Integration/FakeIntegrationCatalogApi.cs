@@ -15,6 +15,18 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         Calls.Add("servicebus-evidence:" + platformId);
         return Task.FromResult(ServiceBusCheck?.Invoke(platformId) ?? new ServiceBusEvidenceCheck { PlatformId = platformId, OverallState = ServiceBusEvidenceState.NotTestable });
     }
+    // Source integrations (records calls; no HTTP). Null = no report (the pane shows configured integrations only).
+    public Func<IntegrationCatalog, SourceIntegrationsReport?>? SourceReport { get; set; }
+    public Task<SourceIntegrationsReport?> SourceIntegrationsAsync(string environmentId, CancellationToken ct = default)
+    {
+        Calls.Add("source-integrations");
+        return Task.FromResult(SourceReport?.Invoke(Catalog));
+    }
+    public Task<SourceIntegrationsReport?> DiscoverSourceIntegrationsAsync(string environmentId, CancellationToken ct = default)
+    {
+        Calls.Add("discover-source-integrations");
+        return Task.FromResult(SourceReport?.Invoke(Catalog));
+    }
     // SCIM identity provisioning (records calls; no HTTP).
     public ScimEvidenceOverview ScimOverview { get; set; } = new();
     public Func<string, ScimEvidenceCheck?>? ScimCheck { get; set; }
