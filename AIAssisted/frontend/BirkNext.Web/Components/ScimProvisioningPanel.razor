@@ -7,49 +7,114 @@
 @inject IJSRuntime JS
 
 @* Identity provisioning (Microsoft Entra ID → SCIM adapter → KjentBruker → Service Bus → Autorisasjon): its own flow, never Event Hub CDC.
-   Each stage shows SOURCE/configuration evidence and RUNTIME evidence separately. "Run safe SCIM checks" sends GET requests only (health,
+   Each stage shows configuration, source evidence and runtime evidence as three separate states; testability and actions are grouped by purpose. "Run safe SCIM checks" sends GET requests only (health,
    authentication challenge on a random id, metadata): it never creates, changes, deletes or lists a user and never publishes a message.
    The synthetic mutation test is a capability model — off by default, and not executed in this version. *@
 <div class="scim" data-testid="scim">
     @{
         var settings = Platform.ScimProvisioning ?? new ScimProvisioningSettings();
         var environment = FrontendEnvironmentTypeName.From(Profile.EnvironmentType);
-        var safe = ScimPresentation.SafeChecks(settings, environment);
+        var safe = ScimPresentation.SafeChecksView(settings, environment);
+        var sourceView = ScimPresentation.SourceAnalysis(_overview?.Source);
+        var mutation = ScimPresentation.Mutation(settings);
     }
-    <p class="scim-muted">Inbound user provisioning from @settings.Provider over @settings.Protocol. Configuration and source evidence are not runtime success; a published deactivation is not revoked access.</p>
+    <p class="scim-muted">Inbound user provisioning from @settings.Provider over @settings.Protocol.</p>
+    <div class="scim-note" role="note" data-testid="scim-limitation">
+        <p>Source and configuration evidence do not prove runtime success.</p>
+        <p>A published deactivation event does not prove that access was revoked.</p>
+    </div>
 
+    <h4 id="@($"{_id}-flow")">Provisioning path</h4>
     <ol class="scim-flow" aria-label="Provisioning flow" data-testid="scim-flow">
-        @foreach (var (title, detail, stages) in ScimPresentation.Flow(settings))
+        @foreach (var node in ScimPresentation.FlowNodes(Platform, _overview?.Source, _check))
         {
-            var (nodeSource, nodeRuntime) = _check is null ? (NodeFallback(stages), ScimEvidenceState.NotAssessed) : ScimPresentation.NodeState(_check, stages);
-            <li class="scim-node" data-testid="scim-node" data-stage="@stages[0]">
-                <span class="scim-node-title">@title</span>
-                @if (detail is not null) { <span class="scim-mono">@detail</span> }
-                <span class="scim-node-states">
-                    <span class="scim-badge scim-badge-@ScimPresentation.Tone(nodeSource)" title="Source / configuration">@ScimLabels.State(nodeSource)</span>
-                    <span class="scim-badge scim-badge-@ScimPresentation.Tone(nodeRuntime)" title="Runtime">Runtime: @ScimLabels.State(nodeRuntime)</span>
-                </span>
+            <li class="scim-node" data-testid="scim-node" data-stage="@node.Stage">
+                <span class="scim-node-title">@node.Title</span>
+                @if (node.Detail is not null) { <span class="scim-mono">@node.Detail</span> }
+                <dl class="scim-node-states">
+                    <div data-testid="scim-node-configuration"><dt>Configuration</dt><dd><span class="scim-badge scim-badge-@node.Configuration.Tone">@node.Configuration.Label</span></dd></div>
+                    <div data-testid="scim-node-source"><dt>Source evidence</dt><dd><span class="scim-badge scim-badge-@node.Source.Tone">@node.Source.Label</span></dd></div>
+                    <div data-testid="scim-node-runtime"><dt>Runtime evidence</dt><dd><span class="scim-badge scim-badge-@node.Runtime.Tone">@node.Runtime.Label</span></dd></div>
+                </dl>
             </li>
         }
     </ol>
 
-    <dl class="scim-summary" data-testid="scim-summary">
-        @foreach (var (label, value, state, testId) in ScimPresentation.Summary(Platform, _overview?.Source, environment))
-        {
-            <div data-testid="@testId"><dt>@label</dt><dd><span class="scim-badge scim-badge-@ScimPresentation.Tone(state)">@ScimLabels.State(state)</span> <span class="scim-value">@value</span></dd></div>
-        }
-    </dl>
-    <p class="scim-muted" data-testid="scim-safe-detail">@safe.Detail</p>
+    <section class="scim-section" aria-labelledby="@($"{_id}-config")" data-testid="scim-configuration">
+        <h4 id="@($"{_id}-config")">SCIM configuration</h4>
+        <p class="scim-muted">Settings only — configured is not reachable, verified or observed.</p>
+        <dl class="scim-rows">
+            @foreach (var row in ScimPresentation.Configuration(Platform))
+            {
+                <div data-testid="@($"scim-row-{row.Key}")"><dt>@row.Label</dt><dd><span class="scim-badge scim-badge-@row.Status.Tone">@row.Status.Label</span> <span class="scim-value">@row.Value</span></dd></div>
+            }
+        </dl>
+        <ReviewDisclosure Text="View configuration details" CollapseText="Hide configuration details" TestId="scim-config-details" Class="disclosure-inline disclosure-small">
+            <dl class="scim-rows">
+                <div><dt>Authentication</dt><dd>@(settings.Authentication ?? "Not configured")</dd></div>
+                <div><dt>Users resource</dt><dd class="scim-mono">@settings.BasePath@settings.UsersResource</dd></div>
+                <div><dt>Health paths</dt><dd class="scim-mono">@(settings.HealthLivePath ?? "—") · @(settings.HealthReadyPath ?? "—")</dd></div>
+                <div><dt>Downstream</dt><dd>@(settings.Downstream ?? "Not configured")</dd></div>
+                @if (settings.ContainerApp is { } app) { <div><dt>Container app</dt><dd class="scim-mono">@app@(settings.ResourceGroup is { } rg ? $" · {rg}" : "")</dd></div> }
+            </dl>
+            @if (settings.ConfigurationNotes.Count > 0) { <ul class="scim-facts" data-testid="scim-config-notes">@foreach (var note in settings.ConfigurationNotes) { <li>@note</li> }</ul> }
+        </ReviewDisclosure>
+    </section>
 
-    <div class="scim-actions">
-        <label class="scim-file-button">
-            <InputFile class="scim-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze SCIM adapter source archives (.zip)" data-testid="scim-upload" />
-            <span aria-hidden="true">@(_overview?.Source is null ? "Analyze SCIM source" : "Re-analyze SCIM source")</span>
-        </label>
-        <button type="button" class="btn-secondary" data-testid="scim-run" disabled="@_busy" aria-label="@($"Run safe SCIM checks for {Platform.Name} (read-only, GET only)")" @onclick="RunAsync">@(_busy ? "Checking…" : "Run safe SCIM checks")</button>
-        <button type="button" class="scim-link" data-testid="scim-configure" aria-expanded="@(_editing ? "true" : "false")" @onclick="BeginEdit">Configure synthetic test context</button>
-        @if (_check is not null) { <button type="button" class="scim-link" data-testid="scim-export" @onclick="ExportAsync">Export HTML</button> }
-    </div>
+    <section class="scim-section" aria-labelledby="@($"{_id}-source")" data-testid="scim-source-section">
+        <h4 id="@($"{_id}-source")">Source evidence</h4>
+        <div class="scim-state-row" data-testid="scim-source-state"><span class="scim-state-label">SCIM source analysis</span> <span class="scim-badge scim-badge-@sourceView.Status.Tone">@sourceView.Status.Label</span></div>
+        <p class="scim-muted" data-testid="scim-source-summary">@sourceView.Summary Source shows what the code does — not that it ran.</p>
+        @if (_overview?.Source is { } analyzed)
+        {
+            <p class="scim-muted" data-testid="scim-source-provenance">Source analyzed @analyzed.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @string.Join(", ", analyzed.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..Math.Min(12, a.Sha256.Length)]})"))@(analyzed.Project is { } project ? $" · {project}" : "")</p>
+            @if (analyzed.Facts.Count > 0 || analyzed.Limitations.Count > 0)
+            {
+                <ReviewDisclosure Text="View source evidence" CollapseText="Hide source evidence" TestId="scim-source-details" Class="disclosure-inline disclosure-small">
+                    <ul class="scim-facts" data-testid="scim-source-facts">
+                        @foreach (var fact in analyzed.Facts)
+                        {
+                            <li><span class="scim-badge scim-badge-@ScimPresentation.Tone(fact.State)">@ScimLabels.State(fact.State)</span> <strong>@fact.Title</strong> @fact.Detail @if (fact.Locations.Count > 0) { <span class="scim-muted scim-mono">(@ScimPresentation.Locations(fact.Locations))</span> }</li>
+                        }
+                        @foreach (var limitation in analyzed.Limitations) { <li class="scim-muted">@limitation</li> }
+                    </ul>
+                </ReviewDisclosure>
+            }
+        }
+        <div class="scim-actions">
+            <label class="scim-file-button">
+                <InputFile class="scim-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze SCIM adapter source archives (.zip)" data-testid="scim-upload" />
+                <span aria-hidden="true">@(_overview?.Source is null ? "Analyze SCIM source" : "Re-analyze SCIM source")</span>
+            </label>
+        </div>
+    </section>
+
+    <section class="scim-section" aria-labelledby="@($"{_id}-runtime")" data-testid="scim-runtime-section">
+        <h4 id="@($"{_id}-runtime")">Runtime verification</h4>
+        <div class="scim-block" data-testid="scim-safe">
+            <div class="scim-state-row"><span class="scim-state-label">Safe runtime checks</span> <span class="scim-badge scim-badge-@safe.Status.Tone" data-testid="scim-safe-status">@safe.Status.Label</span></div>
+            <dl class="scim-rows" data-testid="scim-safe-detail">
+                @if (safe.Reason is { } reason) { <div><dt>Reason</dt><dd data-testid="scim-safe-reason">@reason</dd></div> }
+                <div><dt>@(safe.CanContactEndpoint ? "What runs" : "Impact")</dt><dd data-testid="scim-safe-impact">@safe.Impact</dd></div>
+                @if (_check is { } last)
+                {
+                    <div><dt>Last review</dt><dd data-testid="scim-safe-last">Runtime: @IntegrationReviewLabels.EvidenceState(last.Runtime.State) — @last.Runtime.Reason@(last.Runtime.Observations.Count > 0 ? $" · {last.Runtime.Observations.Count} GET observation(s)" : "")</dd></div>
+                }
+            </dl>
+            <div class="scim-actions">
+                <button type="button" class="btn-secondary" data-testid="scim-run" disabled="@_busy" aria-label="@($"Run safe SCIM checks for {Platform.Name} (read-only, GET only)")" @onclick="RunAsync">@(_busy ? "Checking…" : "Run safe SCIM checks")</button>
+                @if (safe.Status.Label == "Limited") { <button type="button" class="scim-link" data-testid="scim-set-base-url" @onclick="BeginEdit">Set public SCIM base URL</button> }
+            </div>
+            <p class="scim-muted" data-testid="scim-run-scope">@(safe.CanContactEndpoint ? "GET only — never creates, changes, deletes or lists a user, and never publishes a message." : "Runs the SCIM review from source and configuration evidence; no SCIM endpoint is called.")</p>
+        </div>
+        <div class="scim-block" data-testid="scim-synthetic">
+            <div class="scim-state-row"><span class="scim-state-label">Synthetic mutation test</span> <span class="scim-badge scim-badge-@mutation.Status.Tone" data-testid="scim-mutation-status">@mutation.Status.Label</span></div>
+            <p class="scim-muted" data-testid="scim-mutation-purpose">@mutation.Purpose</p>
+            <div class="scim-actions">
+                <button type="button" class="scim-link" data-testid="scim-configure" aria-expanded="@(_editing ? "true" : "false")" @onclick="BeginEdit">Configure synthetic test context</button>
+            </div>
+        </div>
+    </section>
     <p class="scim-muted" role="status" aria-live="polite" data-testid="scim-status">@_status</p>
     @if (_error is { } error) { <p class="scim-error" role="alert" data-testid="scim-error">@error</p> }
 
@@ -81,15 +146,11 @@
         </fieldset>
     }
 
-    @if (_overview?.Source is { } source)
-    {
-        <p class="scim-muted" data-testid="scim-source-provenance">Source analyzed @source.AnalyzedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC · @string.Join(", ", source.Archives.Select(a => $"{a.FileName} (sha256 {a.Sha256[..Math.Min(12, a.Sha256.Length)]})"))@(source.Project is { } project ? $" · {project}" : "")</p>
-    }
-
     @if (_check is { } check)
     {
         <section class="scim-result" aria-labelledby="scim-result-heading" data-testid="scim-result" tabindex="-1" @ref="_resultRef">
-            <h4 id="scim-result-heading">SCIM provisioning review <span class="scim-badge scim-badge-@ScimPresentation.Tone(check.OverallState)" data-testid="scim-overall">@ScimLabels.Overall(check.OverallState)</span></h4>
+            <h4 id="scim-result-heading">SCIM provisioning review <span class="scim-badge scim-badge-@ScimPresentation.Tone(check.OverallState)" data-testid="scim-overall">@ScimLabels.Overall(check.OverallState)</span>
+                <button type="button" class="scim-link" data-testid="scim-export" @onclick="ExportAsync">Export HTML</button></h4>
             <p class="scim-muted" data-testid="scim-headline">@ScimPresentation.Headline(check) · checked @check.CompletedAt.ToUniversalTime().ToString("yyyy-MM-dd HH:mm") UTC</p>
 
             <div class="scim-highlights">
@@ -218,7 +279,16 @@
     }
     else if (_overview is not null)
     {
-        <p class="scim-muted" data-testid="scim-empty">No SCIM check yet. Run safe SCIM checks to combine source, configuration and (when a base URL is configured) safe runtime evidence per stage.</p>
+        <div class="scim-empty" data-testid="scim-empty">
+            <p>No SCIM review has been run yet.</p>
+            <ReviewDisclosure Text="What a SCIM review combines" CollapseText="Hide what a SCIM review combines" TestId="scim-empty-help" Class="disclosure-inline disclosure-small">
+                <ul class="scim-facts">
+                    <li>Source evidence from the analyzed SCIM adapter source.</li>
+                    <li>Configuration evidence from the settings above.</li>
+                    <li>Runtime evidence from the GET-only safe checks, when a public base URL is configured. Without it, only source and configuration evidence is assessed.</li>
+                </ul>
+            </ReviewDisclosure>
+        </div>
     }
 
     @if (_overview is { History.Count: > 1 } overview)
@@ -239,6 +309,7 @@
     [Parameter] public Func<ScimProvisioningSettings, Task<bool>>? SaveSettings { get; set; }
 
     private const long MaxArchiveBytes = 50 * 1024 * 1024;
+    private readonly string _id = "scim-" + Guid.NewGuid().ToString("N")[..8];
     private ScimEvidenceOverview? _overview;
     private ScimEvidenceCheck? _check;
     private bool _busy;
@@ -280,16 +351,6 @@
         if (_focusForm) { _focusForm = false; await _focus.FocusAsync(); }
         if (_focusResult) { _focusResult = false; await _resultRef.FocusAsync(); }
     }
-
-    private ScimEvidenceState NodeFallback(ScimStage[] stages) => stages[0] switch
-    {
-        ScimStage.EntraProvisioning => ScimEvidenceState.NotAssessed,
-        ScimStage.ScimEndpoint when _overview?.Source is { Detected: true } => ScimEvidenceState.SourceVerified,
-        ScimStage.KjentBrukerPersistence when _overview?.Source?.Facts.Any(f => f.Id == "scim-persistence" && f.State == ScimEvidenceState.SourceVerified) == true => ScimEvidenceState.SourceVerified,
-        ScimStage.ServiceBusPublish when Platform.ScimProvisioning?.Topic is not null => ScimEvidenceState.Configured,
-        ScimStage.DownstreamProcessing => ScimEvidenceState.NotAssessed,
-        _ => Platform.ScimProvisioning is null ? ScimEvidenceState.NotConfigured : ScimEvidenceState.Configured,
-    };
 
     private async Task AnalyzeAsync(InputFileChangeEventArgs args)
     {

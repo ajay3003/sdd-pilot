@@ -76,24 +76,101 @@ public static class ScimPresentation
     /// <summary>The weakest state among several (a node is only as established as its weakest stage).</summary>
     public static ScimEvidenceState Worst(IEnumerable<ScimEvidenceState> states) => states.OrderBy(s => Array.IndexOf(StateRank, s)).DefaultIfEmpty(ScimEvidenceState.NotAssessed).First();
 
-    /// <summary>Pre-run summary rows from configuration and stored source evidence (nothing contacted).</summary>
-    public static IReadOnlyList<(string Label, string Value, ScimEvidenceState State, string TestId)> Summary(IntegrationPlatform platform, ScimSourceEvidence? source, FrontendEnvironmentTypeName environment)
+    // ── Three separate dimensions per stage: configuration (settings), source evidence (analyzed code), runtime evidence (a run) ──
+
+    public static readonly ScimStatus NotAnalyzed = new("Not analyzed", "muted");
+    public static readonly ScimStatus NotAssessed = new("Not assessed", "muted");
+    private static readonly ScimStatus Configured = new("Configured", "info");
+    private static readonly ScimStatus NotConfiguredStatus = new("Not configured", "attention");
+
+    /// <summary>The five flow nodes, each with configuration, source evidence and runtime evidence kept apart (never one combined badge).</summary>
+    public static IReadOnlyList<ScimFlowNode> FlowNodes(IntegrationPlatform platform, ScimSourceEvidence? source, ScimEvidenceCheck? check)
     {
         var settings = platform.ScimProvisioning ?? new ScimProvisioningSettings();
-        ScimSourceFact? F(string id) => source?.Facts.FirstOrDefault(f => f.Id == id);
-        var detected = source?.Detected == true;
-        var sourceState = source is null ? ScimEvidenceState.NotAssessed : detected ? ScimEvidenceState.SourceVerified : ScimEvidenceState.NotFound;
+        ScimStatus Setting(object? value) => platform.ScimProvisioning is null || value is null ? NotConfiguredStatus : Configured;
+        // BirkNext reads neither the Entra provisioning job nor the downstream consumer's configuration: Not assessed, never "Configured".
+        ScimStatus[] configuration = [NotAssessed, Setting(platform.ScimProvisioning), Setting(settings.Persistence), Setting(settings.Topic), NotAssessed];
+        return Flow(settings).Select((node, i) => new ScimFlowNode(node.Stages[0], node.Title, node.Detail, configuration[i], SourceStatus(node.Stages, source, check), RuntimeStatus(node.Stages, check))).ToList();
+    }
+
+    private static ScimStatus SourceStatus(ScimStage[] stages, ScimSourceEvidence? source, ScimEvidenceCheck? check)
+    {
+        if (source is null) return NotAnalyzed;
+        if (check is not null && check.Stages.Any(s => stages.Contains(s.Stage))) return SourceLabel(NodeState(check, stages).Source);
+        // Before a review: only what the stored analysis itself states.
+        return stages[0] switch
+        {
+            ScimStage.ScimEndpoint => SourceLabel(source.Detected ? ScimEvidenceState.SourceVerified : ScimEvidenceState.NotFound),
+            ScimStage.KjentBrukerPersistence => SourceLabel(source.Facts.FirstOrDefault(f => f.Id == "scim-persistence")?.State ?? ScimEvidenceState.Configured),
+            ScimStage.ServiceBusPublish => SourceLabel(source.Events.Count > 0 ? ScimEvidenceState.SourceVerified : ScimEvidenceState.Configured),
+            _ => NotAssessed,
+        };
+    }
+
+    /// <summary>A source-dimension state as a label. "Configured" here only means no source fact decided it — shown as Not established.</summary>
+    private static ScimStatus SourceLabel(ScimEvidenceState state) => state switch
+    {
+        ScimEvidenceState.Configured or ScimEvidenceState.NotConfigured or ScimEvidenceState.NotTested => new("Not established", "muted"),
+        ScimEvidenceState.NotAssessed => NotAssessed,
+        _ => new(ScimLabels.State(state), Tone(state)),
+    };
+
+    private static ScimStatus RuntimeStatus(ScimStage[] stages, ScimEvidenceCheck? check)
+    {
+        if (check is null) return NotAssessed;
+        var runtime = NodeState(check, stages).Runtime;
+        // No base URL / not reachable by design is a missing capability, not a misconfiguration of SCIM: Not assessed.
+        return runtime is ScimEvidenceState.NotConfigured or ScimEvidenceState.NotAssessed ? NotAssessed : new(ScimLabels.State(runtime), Tone(runtime));
+    }
+
+    /// <summary>What is configured (settings only). No runtime status ever appears here.</summary>
+    public static IReadOnlyList<ScimConfigRow> Configuration(IntegrationPlatform platform)
+    {
+        var s = platform.ScimProvisioning;
+        ScimConfigRow Row(string key, string label, string? value, string? detail = null) =>
+            new(key, label, s is null || value is null ? NotConfiguredStatus : Configured, value ?? "Not configured", detail);
         return
         [
-            ("SCIM", source is null ? "Configured — source not analyzed" : detected ? "Confirmed from source" : "Not found in the analyzed source", source is null ? ScimEvidenceState.Configured : sourceState, "scim-row-scim"),
-            ("Endpoint", detected ? $"{source!.BasePath} ({source.Operations.Count} operations)" : settings.BasePath, detected ? ScimEvidenceState.SourceVerified : ScimEvidenceState.Configured, "scim-row-endpoint"),
-            ("Authentication", settings.Authentication ?? "Not configured", F("scim-auth-required") is not null ? ScimEvidenceState.SourceVerified : settings.Authentication is null ? ScimEvidenceState.NotConfigured : ScimEvidenceState.Configured, "scim-row-auth"),
-            ("Persistence", settings.Persistence ?? "Not configured", F("scim-persistence")?.State ?? (settings.Persistence is null ? ScimEvidenceState.NotConfigured : ScimEvidenceState.Configured), "scim-row-persistence"),
-            ("Outbound", settings.Topic is null ? "Not configured" : $"Service Bus {settings.Topic}", settings.Topic is null ? ScimEvidenceState.NotConfigured : ScimEvidenceState.Configured, "scim-row-outbound"),
-            ("Events", string.Join(", ", settings.Events.DefaultIfEmpty("Not configured")), source?.Events.Count > 0 ? ScimEvidenceState.SourceVerified : ScimEvidenceState.Configured, "scim-row-events"),
-            ("Safe runtime checks", SafeChecks(settings, environment).Label, SafeChecks(settings, environment).State, "scim-row-runtime"),
-            ("Synthetic mutation test", ScimLabels.Mutation(MutationState(settings)), ScimEvidenceState.NotConfigured, "scim-row-mutation"),
+            Row("endpoint", "Endpoint", s?.BasePath),
+            Row("auth", "Authentication", s?.Authentication is { } auth ? ShortMechanism(auth) : null, s?.Authentication),
+            Row("persistence", "Persistence", s?.Persistence),
+            Row("outbound", "Outbound", s?.Topic is { } topic ? $"Service Bus {topic}" : null),
+            Row("events", "Events", s is { Events.Count: > 0 } ? string.Join(", ", s.Events) : null),
         ];
+    }
+
+    /// <summary>The mechanism without its technical qualifier: "Entra ID JWT from the provisioning service (…): …" → "Entra ID JWT from the provisioning service".</summary>
+    public static string ShortMechanism(string authentication)
+    {
+        var cut = authentication.IndexOfAny(['(', ':']);
+        return cut > 0 ? authentication[..cut].Trim() : authentication.Trim();
+    }
+
+    /// <summary>The stored source analysis as one state of its own: Not analyzed / Analyzed (SCIM detected or not found).</summary>
+    public static ScimSourceView SourceAnalysis(ScimSourceEvidence? source) => source switch
+    {
+        null => new(NotAnalyzed, "No SCIM adapter source has been analyzed. Not analyzed is not evidence that an implementation is missing."),
+        { Detected: true } => new(new("Analyzed", "info"),
+            $"SCIM detected in {source.Project ?? "the analyzed source"}: {source.Operations.Count} operation(s), {source.Events.Count} event(s), {source.Requirements.Count} requirement(s) classified."),
+        _ => new(new("Analyzed", "info"), "SCIM was not detected in the analyzed source."),
+    };
+
+    /// <summary>Whether the GET-only safe checks can reach the endpoint. Limited (base URL unknown) is a missing capability, never a failure.</summary>
+    public static ScimSafeChecksView SafeChecksView(ScimProvisioningSettings settings, FrontendEnvironmentTypeName environment)
+    {
+        var (_, state, detail) = SafeChecks(settings, environment);
+        if (state == ScimEvidenceState.NotSupported) return new(new("Not available", "muted"), detail, "Only source and configuration evidence can be assessed for this environment.", false);
+        if (state == ScimEvidenceState.NotConfigured)
+            return new(new("Limited", "attention"), "Public SCIM base URL is unknown.",
+                "Only source and configuration evidence can currently be assessed; runtime endpoint behavior cannot yet be verified.", false);
+        return new(new("Available", "info"), null, detail, true);
+    }
+
+    public static ScimMutationView Mutation(ScimProvisioningSettings settings)
+    {
+        var state = MutationState(settings);
+        return new(new(ScimLabels.Mutation(state), state == ScimMutationState.NotConfigured ? "muted" : "info"),
+            "Controlled runtime mutation verification: create, activate and deactivate a synthetic user (DEV or QA only, approved, with a cleanup plan). Optional — not required for the SCIM review, and never run automatically; executing the lifecycle is not part of this version.");
     }
 
     /// <summary>Mirrors the backend gate: never Production, a known non-production type and a configured base URL.</summary>
@@ -152,6 +229,21 @@ public static class ScimPresentation
         return $"{ScimLabels.Overall(check.OverallState)} · {runtime} of {check.Stages.Count} stages with runtime evidence · {check.Findings.Count} finding(s){(high > 0 ? $", {high} high" : "")}";
     }
 }
+
+/// <summary>One labelled state; the tone is cosmetic, the label always carries the meaning.</summary>
+public sealed record ScimStatus(string Label, string Tone);
+
+/// <summary>A flow node with its three dimensions kept apart.</summary>
+public sealed record ScimFlowNode(ScimStage Stage, string Title, string? Detail, ScimStatus Configuration, ScimStatus Source, ScimStatus Runtime);
+
+public sealed record ScimConfigRow(string Key, string Label, ScimStatus Status, string Value, string? Detail);
+
+public sealed record ScimSourceView(ScimStatus Status, string Summary);
+
+/// <summary>Safe runtime checks testability: state, why, and what it means for the review.</summary>
+public sealed record ScimSafeChecksView(ScimStatus Status, string? Reason, string Impact, bool CanContactEndpoint);
+
+public sealed record ScimMutationView(ScimStatus Status, string Purpose);
 
 /// <summary>The Target Environment type as the SCIM gate reads it (a string, so the gate matches the backend's exactly).</summary>
 public readonly record struct FrontendEnvironmentTypeName(string Value)

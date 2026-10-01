@@ -1,15 +1,31 @@
-.scim { display: grid; gap: .55rem; min-width: 0; }
-.scim h4 { margin: 0; font-size: .95rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.scim { display: grid; gap: .55rem; min-width: 0; container-type: inline-size; }
+.scim h4 { margin: 0; font-size: .95rem; font-weight: 700; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .scim h5 { margin: .5rem 0 .2rem; font-size: .84rem; }
 .scim-muted { color: var(--clr-text-muted); font-size: .82rem; margin: 0; }
 .scim-mono { font-family: var(--font-mono); font-size: .76rem; overflow-wrap: anywhere; }
 .scim-error { margin: 0; font-size: .84rem; color: var(--clr-danger, #b91c1c); }
 .scim-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.scim-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .4rem; counter-reset: stage; }
+.scim-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .4rem .9rem; counter-reset: stage; }
 .scim-node { position: relative; border: 1px solid var(--clr-border); border-radius: var(--radius-md); padding: .45rem .55rem; display: grid; gap: .2rem; align-content: start; min-width: 0; background: var(--clr-surface); }
-.scim-node:not(:last-child)::after { content: "→"; position: absolute; right: -.62rem; top: .5rem; color: var(--clr-text-muted); font-size: .8rem; }
+.scim-node:not(:last-child)::after { content: "→" / ""; position: absolute; right: -.8rem; top: .45rem; color: var(--clr-text-muted); font-size: .85rem; line-height: 1; }
 .scim-node-title { font-weight: 600; font-size: .84rem; overflow-wrap: anywhere; }
-.scim-node-states { display: flex; flex-wrap: wrap; gap: .2rem; }
+.scim-node-states { margin: .15rem 0 0; display: grid; gap: .2rem; }
+.scim-node-states > div { display: grid; gap: .05rem; min-width: 0; }
+.scim-node-states dt { font-size: .68rem; color: var(--clr-text-muted); }
+.scim-node-states dd { margin: 0; }
+.scim-note { border-left: 3px solid #93c5fd; background: #eff6ff; color: #1e3a8a; padding: .4rem .6rem; font-size: .82rem; border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+.scim-note p { margin: 0; }
+.scim-section { border-top: 1px solid var(--clr-border-subtle, #eef2f7); padding-top: .5rem; display: grid; gap: .35rem; min-width: 0; }
+.scim-rows { margin: 0; display: grid; gap: .25rem; font-size: .82rem; min-width: 0; }
+.scim-rows > div { display: grid; grid-template-columns: minmax(7rem, 10rem) minmax(0, 1fr); gap: .6rem; align-items: baseline; min-width: 0; }
+.scim-rows dt { color: var(--clr-text-muted); font-weight: 600; font-size: .78rem; }
+.scim-rows dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.scim-value { overflow-wrap: anywhere; }
+.scim-state-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; }
+.scim-state-label { font-weight: 600; font-size: .84rem; }
+.scim-block { display: grid; gap: .3rem; padding: .45rem .6rem; border: 1px solid var(--clr-border); border-radius: var(--radius-md); min-width: 0; }
+.scim-empty { display: grid; gap: .2rem; font-size: .84rem; }
+.scim-empty p { margin: 0; }
 .scim-summary { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .3rem .9rem; margin: 0; }
 .scim-summary > div { min-width: 0; }
 .scim-summary dt { font-size: .72rem; color: var(--clr-text-muted); }
@@ -54,10 +70,19 @@
 .scim-cell { display: block; margin-top: .15rem; overflow-wrap: anywhere; font-weight: 400; }
 .scim-history { max-width: 30rem; }
 
-@media (max-width: 900px) {
-    .scim-flow { grid-template-columns: 1fr; }
-    .scim-node:not(:last-child)::after { content: "↓"; right: auto; left: 50%; top: auto; bottom: -.72rem; }
+/* The panel's own width decides: the settings pane is narrow even on wide screens. */
+@container (max-width: 760px) {
+    .scim-flow { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+    .scim-node:not(:last-child)::after { content: "↓" / ""; right: auto; left: 1rem; top: auto; bottom: -.78rem; }
+    .scim-node-states { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+@container (max-width: 480px) {
+    .scim-node-states { grid-template-columns: minmax(0, 1fr); }
+    .scim-node-states > div { grid-template-columns: minmax(6.5rem, auto) minmax(0, 1fr); align-items: center; gap: .4rem; }
+    .scim-rows > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .scim-badge { white-space: normal; }
+}
+
 @media (max-width: 640px) {
     .scim-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .scim-table, .scim-table tbody, .scim-table tr, .scim-table th, .scim-table td { display: block; }

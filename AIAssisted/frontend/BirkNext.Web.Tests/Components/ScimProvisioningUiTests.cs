@@ -92,34 +92,124 @@ public sealed class ScimProvisioningUiTests : BunitContext
             .Add(c => c.Platform, Platform(baseUrl))
             .Add(c => c.SaveSettings, s => { _saved.Add(s); return Task.FromResult(true); }));
 
-    [Fact]
-    public void FlowShowsFiveNodesWithSourceAndRuntimeSeparately()
-    {
-        _api.ScimOverview = new ScimEvidenceOverview { Source = Source() };
+    private static AngleSharp.Dom.IElement Node(IRenderedComponent<ScimProvisioningPanel> cut, ScimStage stage) => cut.Find($"[data-testid='scim-node'][data-stage='{stage}']");
 
+    private static (string Configuration, string Source, string Runtime) Dimensions(AngleSharp.Dom.IElement node) => (
+        node.QuerySelector("[data-testid='scim-node-configuration'] .scim-badge")!.TextContent,
+        node.QuerySelector("[data-testid='scim-node-source'] .scim-badge")!.TextContent,
+        node.QuerySelector("[data-testid='scim-node-runtime'] .scim-badge")!.TextContent);
+
+    private IRenderedComponent<ScimProvisioningPanel> PanelWith(ScimSyntheticTestContext synthetic) =>
+        Render<ScimProvisioningPanel>(p => p
+            .Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development })
+            .Add(c => c.Platform, Platform() with { ScimProvisioning = Platform().ScimProvisioning! with { SyntheticTest = synthetic } }));
+
+    [Fact]
+    public void ConfiguredWithoutSourceOrRunShowsThreeSeparateDimensionsPerNode()
+    {
         var cut = Panel();
 
         var nodes = cut.FindAll("[data-testid='scim-node']");
         nodes.Should().HaveCount(5);
-        nodes[0].TextContent.Should().Contain("Microsoft Entra ID").And.Contain("Not assessed");
-        nodes[1].TextContent.Should().Contain("SCIM adapter").And.Contain("/scim/v2").And.Contain("Source verified").And.Contain("Runtime: Not assessed");
-        nodes[3].TextContent.Should().Contain("entra.brukere");
         cut.Find("[data-testid='scim-flow']").GetAttribute("aria-label").Should().Be("Provisioning flow");
+        nodes.Select(n => n.QuerySelector(".scim-node-title")!.TextContent).Should().Equal("Microsoft Entra ID", "SCIM adapter", "KjentBruker", "Service Bus", "Autorisasjon");
+        Dimensions(Node(cut, ScimStage.EntraProvisioning)).Should().Be(("Not assessed", "Not analyzed", "Not assessed"));
+        Dimensions(Node(cut, ScimStage.ScimEndpoint)).Should().Be(("Configured", "Not analyzed", "Not assessed"));
+        Node(cut, ScimStage.ScimEndpoint).TextContent.Should().Contain("/scim/v2");
+        Dimensions(Node(cut, ScimStage.KjentBrukerPersistence)).Should().Be(("Configured", "Not analyzed", "Not assessed"));
+        Dimensions(Node(cut, ScimStage.ServiceBusPublish)).Should().Be(("Configured", "Not analyzed", "Not assessed"));
+        Node(cut, ScimStage.ServiceBusPublish).TextContent.Should().Contain("entra.brukere");
+        Dimensions(Node(cut, ScimStage.DownstreamProcessing)).Should().Be(("Not assessed", "Not analyzed", "Not assessed"));
+        foreach (var node in nodes)
+            node.QuerySelectorAll("dt").Select(d => d.TextContent).Should().Equal("Configuration", "Source evidence", "Runtime evidence");
+        cut.Markup.Should().NotContain("Runtime: ", "a node never carries an unlabeled runtime badge next to a configuration badge");
     }
 
     [Fact]
-    public void PreRunShowsConfiguredVsSourceAndLimitedRuntime()
+    public void ConfigurationSectionListsSettingsOnlyAndNeverImpliesRuntime()
+    {
+        var cut = Panel();
+        var configuration = cut.Find("[data-testid='scim-configuration']");
+        configuration.QuerySelectorAll("dl.scim-rows > div[data-testid]").Select(r => r.GetAttribute("data-testid")).Should().Equal(
+            "scim-row-endpoint", "scim-row-auth", "scim-row-persistence", "scim-row-outbound", "scim-row-events");
+        cut.Find("[data-testid='scim-row-endpoint']").TextContent.Should().Contain("Configured").And.Contain("/scim/v2");
+        cut.Find("[data-testid='scim-row-auth']").TextContent.Should().Contain("Entra ID JWT").And.NotContain("SyncFabric", "the technical qualifier is in the collapsed details");
+        cut.Find("[data-testid='scim-row-persistence']").TextContent.Should().Contain("KjentBruker");
+        cut.Find("[data-testid='scim-row-outbound']").TextContent.Should().Contain("Service Bus entra.brukere");
+        cut.Find("[data-testid='scim-row-events']").TextContent.Should().Contain("BrukerAktivert, BrukerDeaktivert");
+        configuration.QuerySelectorAll("dl.scim-rows > div[data-testid] .scim-badge").Select(b => b.TextContent).Should().OnlyContain(t => t == "Configured" || t == "Not configured");
+        configuration.TextContent.Should().NotContainAny("Runtime", "Observed", "Reachable", "Published", "Verified", "Limited");
+        configuration.TextContent.Should().Contain("configured is not reachable, verified or observed");
+    }
+
+    [Fact]
+    public void TechnicalDetailsAreCollapsedByDefault()
+    {
+        _api.ScimOverview = new ScimEvidenceOverview { Source = Source() with { Limitations = ["Package wiring outside the archive is not visible."] } };
+        var cut = Panel();
+        foreach (var id in new[] { "scim-config-details", "scim-source-details", "scim-empty-help" })
+        {
+            cut.Find($"[data-testid='{id}-toggle']").GetAttribute("aria-expanded").Should().Be("false", id);
+            cut.Find($"[data-testid='{id}-body']").HasAttribute("hidden").Should().BeTrue(id);
+        }
+        cut.Find("[data-testid='scim-config-details-body']").TextContent.Should().Contain("Microsoft.Azure.SyncFabric").And.Contain("ServiceBus__FQDN");
+        cut.Find("[data-testid='scim-config-details-toggle']").Click();
+        cut.Find("[data-testid='scim-config-details-toggle']").GetAttribute("aria-expanded").Should().Be("true");
+        cut.Find("[data-testid='scim-config-details-body']").HasAttribute("hidden").Should().BeFalse();
+    }
+
+    [Fact]
+    public void SourceNotAnalyzedHasItsOwnStateAndIsNotMissingImplementation()
+    {
+        var cut = Panel();
+        cut.Find("[data-testid='scim-source-state'] .scim-badge").TextContent.Should().Be("Not analyzed");
+        cut.Find("[data-testid='scim-source-summary']").TextContent.Should().Contain("not evidence that an implementation is missing").And.Contain("not that it ran");
+        cut.Find("[data-testid='scim-source-section'] [data-testid='scim-upload']").Should().NotBeNull("the analyze action sits with the source evidence");
+        cut.Find("[data-testid='scim-source-section']").TextContent.Should().Contain("Analyze SCIM source");
+        cut.FindAll("[data-testid='scim-source-provenance']").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SourceAnalyzedShowsSourceEvidenceButRuntimeStaysNotAssessed()
     {
         _api.ScimOverview = new ScimEvidenceOverview { Source = Source() };
-
         var cut = Panel();
-
-        cut.Find("[data-testid='scim-row-scim']").TextContent.Should().Contain("Confirmed from source");
-        cut.Find("[data-testid='scim-row-auth']").TextContent.Should().Contain("Source verified");
-        cut.Find("[data-testid='scim-row-runtime']").TextContent.Should().Contain("Limited — base URL unknown");
-        cut.Find("[data-testid='scim-row-mutation']").TextContent.Should().Contain("Not configured");
+        cut.Find("[data-testid='scim-source-state'] .scim-badge").TextContent.Should().Be("Analyzed");
+        cut.Find("[data-testid='scim-source-summary']").TextContent.Should().Contain("SCIM detected in M2LB.Autorisasjon.ScimAdapter: 2 operation(s)");
         cut.Find("[data-testid='scim-source-provenance']").TextContent.Should().Contain("M2LB (1).zip").And.Contain("M2LB.Autorisasjon.ScimAdapter");
-        cut.Find("[data-testid='scim-empty']").TextContent.Should().Contain("No SCIM check yet");
+        cut.Find("[data-testid='scim-source-section']").TextContent.Should().Contain("Re-analyze SCIM source");
+        Dimensions(Node(cut, ScimStage.ScimEndpoint)).Should().Be(("Configured", "Source verified", "Not assessed"));
+        Dimensions(Node(cut, ScimStage.KjentBrukerPersistence)).Should().Be(("Configured", "Source verified", "Not assessed"));
+        Dimensions(Node(cut, ScimStage.ServiceBusPublish)).Should().Be(("Configured", "Source verified", "Not assessed"));
+        Dimensions(Node(cut, ScimStage.DownstreamProcessing)).Runtime.Should().Be("Not assessed");
+        cut.Find("[data-testid='scim-source-section']").TextContent.Should().NotContainAny("Observed", "Runtime evidence", "End-to-end");
+        cut.Find("[data-testid='scim-empty']").TextContent.Should().Contain("No SCIM review has been run yet.");
+    }
+
+    [Fact]
+    public void BaseUrlUnknownIsLimitedNeverFailedAndOnlySourceAndConfigurationCanBeAssessed()
+    {
+        var cut = Panel();
+        var status = cut.Find("[data-testid='scim-safe-status']");
+        status.TextContent.Should().Be("Limited");
+        status.ClassList.Should().Contain("scim-badge-attention").And.NotContain("scim-badge-fail");
+        cut.Find("[data-testid='scim-safe-reason']").TextContent.Should().Be("Public SCIM base URL is unknown.");
+        cut.Find("[data-testid='scim-safe-impact']").TextContent.Should().Contain("Only source and configuration evidence can currently be assessed").And.Contain("cannot yet be verified");
+        cut.Find("[data-testid='scim-run-scope']").TextContent.Should().Contain("no SCIM endpoint is called");
+        cut.Find("[data-testid='scim-set-base-url']").Click();
+        cut.Find("[data-testid='scim-base-url']").Should().NotBeNull("the base URL is set in the SCIM settings form");
+        cut.Find("[data-testid='scim-runtime-section']").TextContent.Should().NotContainAny("SCIM unavailable", "Failed", "Misconfigured");
+    }
+
+    [Fact]
+    public void BaseUrlConfiguredMakesSafeChecksAvailableGetOnly()
+    {
+        var cut = Panel(baseUrl: "https://scim.example.test");
+        cut.Find("[data-testid='scim-safe-status']").TextContent.Should().Be("Available");
+        cut.FindAll("[data-testid='scim-safe-reason']").Should().BeEmpty();
+        cut.Find("[data-testid='scim-safe-impact']").TextContent.Should().Contain("GET only");
+        cut.Find("[data-testid='scim-run-scope']").TextContent.Should().Contain("never creates, changes, deletes or lists a user");
+        cut.FindAll("[data-testid='scim-set-base-url']").Should().BeEmpty();
     }
 
     [Fact]
@@ -127,17 +217,70 @@ public sealed class ScimProvisioningUiTests : BunitContext
     {
         var cut = Panel(FrontendEnvironmentType.Production, "https://scim.example.test");
 
-        cut.Find("[data-testid='scim-row-runtime']").TextContent.Should().Contain("Not allowed (Production)");
+        cut.Find("[data-testid='scim-safe-status']").TextContent.Should().Be("Not available");
         cut.Find("[data-testid='scim-safe-detail']").TextContent.Should().Contain("Production is never contacted");
     }
 
     [Fact]
-    public void WithoutSourceTheScimRowSaysConfiguredNotConfirmed()
+    public void AStoredRunShowsTheRuntimeResultWithoutTurningConfigurationIntoRuntime()
+    {
+        _api.ScimCheck = _ => Check();
+        _api.ScimOverview = new ScimEvidenceOverview { Source = Source() };
+        var cut = Panel();
+        cut.Find("[data-testid='scim-run']").Click();
+
+        cut.Find("[data-testid='scim-safe-last']").TextContent.Should().Contain("Runtime: Not configured — No SCIM base URL is configured.");
+        Dimensions(Node(cut, ScimStage.KjentBrukerPersistence)).Should().Be(("Configured", "Source verified", "Not tested"));
+        Dimensions(Node(cut, ScimStage.ScimEndpoint)).Runtime.Should().Be("Not assessed", "no base URL is a missing capability, not a SCIM misconfiguration");
+        Dimensions(Node(cut, ScimStage.ServiceBusPublish)).Configuration.Should().Be("Configured");
+        Dimensions(Node(cut, ScimStage.DownstreamProcessing)).Source.Should().Be("Not found");
+        cut.FindAll("[data-testid='scim-empty']").Should().BeEmpty();
+        cut.Find("[data-testid='scim-export']").Should().NotBeNull();
+    }
+
+    [Fact]
+    public void SyntheticMutationTestIsSeparateOptionalAndNeverRunAutomatically()
     {
         var cut = Panel();
+        var synthetic = cut.Find("[data-testid='scim-synthetic']");
+        synthetic.QuerySelector("[data-testid='scim-mutation-status']")!.TextContent.Should().Be("Not configured");
+        synthetic.QuerySelector("[data-testid='scim-mutation-status']")!.ClassList.Should().Contain("scim-badge-muted");
+        cut.Find("[data-testid='scim-mutation-purpose']").TextContent.Should().Contain("Controlled runtime mutation verification").And.Contain("not required for the SCIM review").And.Contain("never run automatically");
+        synthetic.QuerySelector("[data-testid='scim-configure']")!.TextContent.Should().Be("Configure synthetic test context");
+        cut.Find("[data-testid='scim-safe']").QuerySelector("[data-testid='scim-configure']").Should().BeNull("the synthetic test is apart from the safe checks");
+        _api.Calls.Should().NotContain(c => c.StartsWith("scim-checks:"), "rendering never runs a check");
+    }
 
-        cut.Find("[data-testid='scim-row-scim']").TextContent.Should().Contain("Configured — source not analyzed");
-        cut.Find("[data-testid='scim-row-endpoint']").TextContent.Should().Contain("Configured");
+    [Fact]
+    public void SyntheticMutationTestConfiguredIsStillNotExecuted()
+    {
+        var configured = new ScimSyntheticTestContext { Environment = "QA", TestUserPrefix = ScimSyntheticTestContext.RequiredPrefix, CleanupPlan = "Delete the synthetic user", ApprovedByTestLead = true, Enabled = true };
+        PanelWith(configured).Find("[data-testid='scim-mutation-status']").TextContent.Should().Be("Not available in this version");
+        PanelWith(configured with { Enabled = false }).Find("[data-testid='scim-mutation-status']").TextContent.Should().Be("Disabled");
+    }
+
+    [Fact]
+    public void DeactivationWordingNeverImpliesRevokedAccess()
+    {
+        var cut = Panel();
+        var note = cut.Find("[data-testid='scim-limitation']");
+        note.GetAttribute("role").Should().Be("note");
+        note.TextContent.Should().Contain("Source and configuration evidence do not prove runtime success.").And.Contain("A published deactivation event does not prove that access was revoked.");
+        note.ClassList.Should().NotContain("scim-error");
+        cut.Markup.Should().NotContainAny("Access revoked", "access revoked", "Revoked access", "Deactivation verified");
+    }
+
+    [Fact]
+    public void ActionsAreGroupedByPurposeAndAreNativeControls()
+    {
+        var cut = Panel();
+        cut.Find("[data-testid='scim-source-section'] [data-testid='scim-upload']").GetAttribute("aria-label").Should().Be("Analyze SCIM adapter source archives (.zip)");
+        var run = cut.Find("[data-testid='scim-runtime-section'] [data-testid='scim-safe'] [data-testid='scim-run']");
+        run.TagName.Should().Be("BUTTON");
+        run.GetAttribute("aria-label").Should().Contain("GET only");
+        cut.Find("[data-testid='scim-runtime-section'] [data-testid='scim-synthetic'] [data-testid='scim-configure']").TagName.Should().Be("BUTTON");
+        cut.FindAll("[data-testid='scim-flow'] button, [data-testid='scim-flow'] a, [data-testid='scim-flow'] [tabindex]").Should().BeEmpty("the flow is static: no nested interactive controls");
+        cut.Find("[data-testid='scim-empty']").TextContent.Should().Contain("No SCIM review has been run yet.");
     }
 
     [Fact]

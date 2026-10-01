@@ -8,20 +8,26 @@
    here, because handler telemetry is read only during an Integration Quality Review run. Bindings are explicit and saved immediately. *@
 <section class="am" aria-labelledby="am-heading" data-testid="am">
     <h3 id="am-heading">Application messaging</h3>
-    <p class="am-muted">Wolverine evidence from analyzed application source. Event Hub and Service Bus transport evidence is separate. Source shows what is configured — not that a handler ran.</p>
+    <p class="am-note" role="note" data-testid="am-note">Wolverine evidence from analyzed application source. Event Hub and Service Bus transport evidence is separate. Source shows what is configured — not that a handler ran.</p>
+    <dl class="am-overview" data-testid="am-overview">
+        @foreach (var row in ApplicationMessagingPresentation.Overview(Evidence))
+        {
+            <div data-testid="@($"am-overview-{row.Key}")"><dt>@row.Label</dt><dd><span class="am-badge am-badge-@row.Tone">@row.Status</span> <span class="am-muted">@row.Detail</span></dd></div>
+        }
+    </dl>
     <div class="am-upload">
         <label class="am-file-button">
-            <InputFile class="am-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze application source archives (.zip)" data-testid="am-upload" />
-            <span aria-hidden="true">@(Evidence is null ? "Analyze source archives" : "Re-analyze source archives")</span>
+            <InputFile class="am-file-input" multiple accept=".zip" OnChange="AnalyzeAsync" disabled="@_busy" aria-label="Analyze application messaging source archives (.zip)" data-testid="am-upload" />
+            <span aria-hidden="true">@(Evidence is null ? "Analyze messaging source" : "Re-analyze messaging source")</span>
         </label>
-        <span class="am-muted">Up to 4 .zip files, 50 MB each. Read in memory; source code and configuration values are never stored.</span>
+        <span class="am-muted">Wolverine messaging only. Up to 4 .zip files, 50 MB each. Read in memory; source code and configuration values are never stored.</span>
     </div>
     <p class="am-status" role="status" aria-live="polite" data-testid="am-status">@_status</p>
     @if (_error is { } error) { <p class="am-error" role="alert" data-testid="am-error">@error</p> }
 
     @if (Evidence is null)
     {
-        <p class="am-muted" data-testid="am-empty">No application source analyzed. Wolverine configuration and runtime processing are Not assessed.</p>
+        <p class="am-muted" data-testid="am-empty">No application source analyzed yet.</p>
     }
     else
     {
@@ -115,7 +121,7 @@
         var files = args.GetMultipleFiles(4);
         if (files.Any(f => f.Size > MaxArchiveBytes)) { _error = "An archive is larger than the 50 MB limit; nothing was analyzed."; return; }
         _busy = true;
-        _status = "Analyzing source archives…";
+        _status = "Analyzing messaging source…";
         var streams = new List<(string, Stream)>();
         try
         {

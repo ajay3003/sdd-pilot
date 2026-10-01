@@ -53,12 +53,71 @@ public sealed class ApplicationMessagingUiTests : BunitContext
     private IRenderedComponent<IntegrationsPane> Pane() =>
         Render<IntegrationsPane>(p => p.Add(c => c.Profile, new FrontendAnalysisProfile { Id = "dev", Name = "Dev", EnvironmentType = FrontendEnvironmentType.Development }));
 
+    private static string Overview(IRenderedComponent<IntegrationsPane> cut, string key) => cut.Find($"[data-testid=am-overview-{key}] .am-badge").TextContent;
+
     [Fact]
-    public void WithoutAnalyzedSourceEverythingIsNotAssessed()
+    public void WithoutAnalyzedSourceEverythingIsNotAssessedAndNothingIsAbsent()
     {
         var cut = Pane();
-        cut.Find("[data-testid=am-empty]").TextContent.Should().Contain("Not assessed");
-        cut.Find("[data-testid=am-upload]").GetAttribute("aria-label").Should().Contain("source archives");
+        Overview(cut, "source").Should().Be("Not analyzed");
+        Overview(cut, "wolverine").Should().Be("Not assessed");
+        Overview(cut, "runtime").Should().Be("Not assessed");
+        Overview(cut, "transport").Should().Be("Separate");
+        cut.Find("[data-testid=am-overview-source]").TextContent.Should().Contain("not evidence that Wolverine is absent");
+        cut.Find("[data-testid=am-empty]").TextContent.Should().Be("No application source analyzed yet.");
+        cut.Find("[data-testid=am-note]").GetAttribute("role").Should().Be("note");
+        cut.Find("[data-testid=am-note]").TextContent.Should().Contain("Event Hub and Service Bus transport evidence is separate").And.Contain("not that a handler ran");
+        cut.Find("[data-testid=am] .am-overview").TextContent.Should().NotContainAny("Failed", "Absent", "Unsupported");
+    }
+
+    [Fact]
+    public void TheActionIsNamedForWhatItAnalyzes()
+    {
+        var cut = Pane();
+        var upload = cut.Find("[data-testid=am-upload]");
+        upload.GetAttribute("aria-label").Should().Be("Analyze application messaging source archives (.zip)");
+        upload.ParentElement!.TextContent.Should().Contain("Analyze messaging source").And.NotContain("Analyze source archives");
+        cut.Find("[data-testid=am] .am-upload").TextContent.Should().Contain("Wolverine messaging only");
+
+        _api.Messaging = Set();
+        Pane().Find("[data-testid=am-upload]").ParentElement!.TextContent.Should().Contain("Re-analyze messaging source");
+    }
+
+    [Fact]
+    public void AnalyzedWithWolverineIsDetectedConfigurationNeverHandlerExecution()
+    {
+        _api.Messaging = Set();
+        var cut = Pane();
+        Overview(cut, "source").Should().Be("Analyzed");
+        Overview(cut, "wolverine").Should().Be("Detected");
+        cut.Find("[data-testid=am-overview-wolverine]").TextContent.Should().Contain("In 2 application(s)").And.Contain("Configured is not a handled message");
+        Overview(cut, "runtime").Should().Be("Not assessed", "source never becomes runtime processing");
+        cut.FindAll("[data-testid=am-runtime]").Should().OnlyContain(r => r.TextContent == "Not assessed");
+    }
+
+    [Fact]
+    public void AnalyzedWithoutWolverineIsNotDetectedNotAbsentOrFailed()
+    {
+        _api.Messaging = Set() with { Applications = [new() { ApplicationId = "M2LB.Person.Api", Detection = MessagingDetection.NotDetected, HandlerMapping = MessagingFactState.NotApplicable }] };
+        var cut = Pane();
+        Overview(cut, "source").Should().Be("Analyzed");
+        Overview(cut, "wolverine").Should().Be("Not detected");
+        cut.Find("[data-testid=am-overview-wolverine]").TextContent.Should().Contain("package wiring outside it is not visible");
+        cut.Find("[data-testid=am-overview-wolverine] .am-badge").ClassList.Should().Contain("am-badge-muted");
+        Overview(cut, "runtime").Should().Be("Not assessed");
+    }
+
+    [Fact]
+    public void TransportEvidenceNeverBecomesWolverineOrHandlerEvidence()
+    {
+        // The platforms carry Event Hub and Service Bus transport settings; the messaging section still reports no Wolverine or handler evidence.
+        _api.Catalog = M2lbFixture.SeededCatalog(azureEnabled: true);
+        var cut = Pane();
+        Overview(cut, "transport").Should().Be("Separate");
+        cut.Find("[data-testid=am-overview-transport]").TextContent.Should().Contain("never counts as Wolverine handler evidence");
+        Overview(cut, "wolverine").Should().Be("Not assessed");
+        Overview(cut, "runtime").Should().Be("Not assessed");
+        cut.FindAll("[data-testid=am-app]").Should().BeEmpty();
     }
 
     [Fact]

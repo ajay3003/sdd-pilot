@@ -52,8 +52,35 @@ public static class ApplicationMessagingPresentation
         _ => "Wolverine is configured, but runtime behaviour has not been verified.",
     };
 
+    /// <summary>
+    /// The section's state rows, one dimension each: source evidence, Wolverine configuration (from source), runtime processing (always Not
+    /// assessed here) and transport evidence (reviewed separately — never Wolverine or handler evidence). No source is never "absent".
+    /// </summary>
+    public static IReadOnlyList<MessagingOverviewRow> Overview(ApplicationMessagingEvidenceSet? set)
+    {
+        var confirmed = set?.Applications.Count(a => a.Detection == MessagingDetection.Confirmed) ?? 0;
+        var likely = set?.Applications.Count(a => a.Detection == MessagingDetection.Likely) ?? 0;
+        return
+        [
+            set is null
+                ? new("source", "Source evidence", "Not analyzed", "muted", "No application source analyzed — not evidence that Wolverine is absent.")
+                : new("source", "Source evidence", "Analyzed", "info", $"{set.Archives.Count} archive(s), {set.Archives.Sum(a => a.FilesAnalyzed)} files, {set.Applications.Count} application(s)."),
+            set is null
+                ? new("wolverine", "Wolverine configuration", "Not assessed", "muted", "Needs analyzed application source.")
+                : confirmed + likely > 0
+                    ? new("wolverine", "Wolverine configuration", "Detected", "info",
+                        $"In {confirmed + likely} application(s){(likely > 0 ? $" ({likely} likely: registration in source that was not analyzed)" : "")}. Configured is not a handled message.")
+                    : new("wolverine", "Wolverine configuration", "Not detected", "muted", "Not found in the analyzed source; package wiring outside it is not visible."),
+            new("runtime", "Runtime processing", "Not assessed", "muted", "Handler telemetry is read only during an Integration Quality Review run, for bound applications."),
+            new("transport", "Transport evidence", "Separate", "muted", "Event Hub and Service Bus transport evidence is reviewed separately and never counts as Wolverine handler evidence."),
+        ];
+    }
+
     /// <summary>Pre-run supporting copy for an application summary (runtime state is configuration-only before the run).</summary>
     public static string PrerunCopy(ApplicationMessagingSummary summary) => summary.RuntimeState == IntegrationEvidenceState.Available
         ? "Source/build evidence is available. Runtime handler logs will be read during the review."
         : $"Source/build evidence is available. Runtime processing evidence is not yet available: {summary.RuntimeReason}";
 }
+
+/// <summary>One labelled state of the application-messaging section; the tone is cosmetic.</summary>
+public sealed record MessagingOverviewRow(string Key, string Label, string Status, string Tone, string Detail);
