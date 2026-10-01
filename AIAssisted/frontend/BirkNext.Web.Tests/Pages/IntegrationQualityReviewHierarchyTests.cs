@@ -95,7 +95,8 @@ public sealed class IntegrationQualityReviewHierarchyTests : BunitContext
         var cut = Open();
         var semantics = Semantics(cut);
         if (Environment.GetEnvironmentVariable("IQR_SEMANTICS_OUT") is { } path) File.WriteAllText(path, semantics);
-        semantics.Should().Be(ExpectedSemantics, "the restructuring changes presentation only");
+        // Line-ending independent: a CRLF checkout must not change the snapshot.
+        semantics.Should().Be(ExpectedSemantics.ReplaceLineEndings("\n"), "the restructuring changes presentation only");
     }
 
     private static int Position(IRenderedComponent<IntegrationQualityReview> cut, string testId)
