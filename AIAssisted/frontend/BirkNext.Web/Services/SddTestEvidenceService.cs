@@ -261,10 +261,12 @@ public static class SddTestEvidenceService
             foreach (var definition in row.SourceTests.Where(d => d.Currentness == "Current" && !row.Executions.Any(e => e.TestDefinitionId == d.Definition.TestDefinitionId)))
                 findings.Add(new("LinkedSourceTestWithoutExecutionEvidence", "NotAssessed", row.RequirementId,
                     $"{definition.Definition.FullyQualifiedName} references this requirement but no imported run contains it.", $"test-definition:{definition.Definition.TestDefinitionId}"));
-            foreach (var definition in row.CandidateSourceTests.Where(d => d.Currentness == "Current"))
+            // One observation per requirement: informal mentions are review cues, not one finding per test.
+            var candidates = row.CandidateSourceTests.Where(d => d.Currentness == "Current").ToList();
+            if (candidates.Count > 0)
                 findings.Add(new("RequirementTestLinkUnresolved", "NeedsReview", row.RequirementId,
-                    $"{definition.Definition.FullyQualifiedName} mentions this requirement only informally ({string.Join("; ", definition.Definition.References.Where(r => r.Id.Equals(row.RequirementId, StringComparison.OrdinalIgnoreCase)).Select(r => r.Basis))}); confirm with an explicit reference.",
-                    $"test-definition:{definition.Definition.TestDefinitionId}"));
+                    $"{candidates.Count} source test(s) mention this requirement only informally (comments or strings), e.g. {candidates[0].Definition.FullyQualifiedName}; add an explicit reference (trait or structured comment) to link them.",
+                    $"test-definition:{candidates[0].Definition.TestDefinitionId}"));
             foreach (var definition in row.SourceTests.Where(d => d.Currentness == "PotentiallyStale"))
                 findings.Add(new("StaleSourceTestEvidence", "NeedsReview", row.RequirementId, definition.CurrentnessReason ?? "The source test may be stale.", $"test-definition:{definition.Definition.TestDefinitionId}"));
         }
@@ -275,4 +277,11 @@ public static class SddTestEvidenceService
     /// <summary>Exact evidence reference: execution, run and artifact ids (Quality Review links resolve it to the test detail).</summary>
     public static string Reference(SddTestExecutionEvidence e) => $"test-execution:{e.Id}";
     private static string Short(string id) => id.Length > 8 ? id[..8] : id;
+}
+
+/// <summary>Raised after test evidence changes (import, recorded definitions) so sibling views over the same lifecycle re-render.</summary>
+public sealed class SddTestEvidenceNotifier
+{
+    public event Action? Changed;
+    public void Notify() => Changed?.Invoke();
 }

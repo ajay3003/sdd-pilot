@@ -6,6 +6,7 @@
 @inject SddEvidenceGraphService Graph
 @inject IServiceProvider Services
 @inject NavigationManager Navigation
+@implements IDisposable
 
 @* Provider test evidence for the shared SDD graph: import of execution-result artifacts (TRX), source test definitions from Source Analysis,
    run history and per-test detail. Designed ≠ source-discovered ≠ executed ≠ passed; nothing here is a separate review or score. *@
@@ -14,12 +15,37 @@
     <p class="sd-muted">Import the test result files your pipeline already produces. A result file says what ran and what happened; Source Analysis says which tests exist and
         which requirements they reference. Only explicit references link a test to a requirement, and a passed linked test is evidence, not proof that the requirement is complete.</p>
 
+    <section class="te-source" aria-labelledby="te-source-title" data-testid="te-source">
+        <h3 id="te-source-title">Source tests</h3>
+        <p class="sd-muted">Source Analysis discovers the tests in an uploaded source archive. Record a snapshot's test definitions so results can be matched to exact source tests
+            and their explicit requirement references. @SourceTestsSummary</p>
+        <div class="te-form">
+            <label for="te-source-env">Source Analysis environment ID<input id="te-source-env" @bind="_sourceEnvironment" maxlength="200" data-testid="te-source-env" /></label>
+            @if (_sourceSnapshots.Count > 0)
+            {
+                <label for="te-source-pick">Snapshot
+                    <select id="te-source-pick" @bind="_sourcePick" data-testid="te-source-pick">
+                        @foreach (var snap in _sourceSnapshots)
+                        { <option value="@snap.Id">@snap.Archive.FileName · @snap.AnalyzedAt.ToLocalTime().ToString("g") · @(snap.TestInventory is { } inv ? $"{inv.Definitions.Count} tests" : "no test discovery")</option> }
+                    </select>
+                </label>
+            }
+        </div>
+        <div class="te-actions">
+            <button type="button" class="btn-secondary" @onclick="LoadSourceSnapshotsAsync" disabled="@(_busy || string.IsNullOrWhiteSpace(_sourceEnvironment))" data-testid="te-source-load">Load snapshots</button>
+            @if (_sourceSnapshots.Count > 0)
+            {
+                <button type="button" class="btn-secondary" @onclick="RecordPickedAsync" disabled="@_busy" data-testid="te-record-definitions">Record source test definitions</button>
+            }
+            else if (CurrentSnapshot is { } current)
+            {
+                <button type="button" class="btn-secondary" @onclick="() => RecordDefinitionsAsync(current)" disabled="@_busy" data-testid="te-record-definitions">Record source test definitions</button>
+            }
+        </div>
+    </section>
+
     <div class="te-actions">
         <button type="button" class="btn-primary" aria-expanded="@(_importOpen ? "true" : "false")" aria-controls="te-import" @onclick="ToggleImport" disabled="@(Api is null)" data-testid="te-import-open">Import test results</button>
-        @if (CurrentSnapshot is { } current)
-        {
-            <button type="button" class="btn-secondary" @onclick="() => RecordDefinitionsAsync(current)" disabled="@_busy" data-testid="te-record-definitions">Record source test definitions</button>
-        }
         <span role="status" aria-live="polite" class="sd-muted" data-testid="te-message">@_message</span>
     </div>
 
@@ -191,6 +217,8 @@
 </section>
 
 @code {
+    /// <summary>Raised after evidence changes so the hosting page re-renders its own evidence views.</summary>
+    [Parameter] public EventCallback OnChanged { get; set; }
     private bool _importOpen, _busy, _bindSource, _focusImport;
     private IBrowserFile? _file;
     private string _snapshotId = "", _build = "", _commit = "", _environment = "", _filter = "all";
@@ -203,6 +231,51 @@
     private const long MaxUploadBytes = 20 * 1024 * 1024;
 
     private ITestEvidenceApiService? Api => Services.GetService(typeof(ITestEvidenceApiService)) as ITestEvidenceApiService;
+    private ISddEvidenceApiService? Sources => Services.GetService(typeof(ISddEvidenceApiService)) as ISddEvidenceApiService;
+    private SddTestEvidenceNotifier? Notifier => Services.GetService(typeof(SddTestEvidenceNotifier)) as SddTestEvidenceNotifier;
+    private string _sourceEnvironment = "";
+    private string _sourcePick = "";
+    private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot> _sourceSnapshots = [];
+
+    private string SourceTestsSummary
+    {
+        get
+        {
+            var current = Workspace.SddLifecycle.TestDefinitions?.Where(d => d.Currentness == "Current").ToList() ?? [];
+            return current.Count == 0 ? "No source test definitions are recorded in this workspace yet."
+                : $"{current.Count} current source test definition(s) recorded from {current.Select(d => d.SourceSnapshotId).Distinct().Count()} snapshot(s).";
+        }
+    }
+
+    private async Task LoadSourceSnapshotsAsync()
+    {
+        if (Sources is not { } sources) { _message = "Source Analysis snapshots are unavailable in this host."; return; }
+        _busy = true;
+        try
+        {
+            _sourceSnapshots = (await sources.SourceSnapshotsAsync(_sourceEnvironment.Trim())).Where(s => s.Status != BirkNext.Integrations.SourceAnalysisStatus.Failed).ToList();
+            _sourcePick = _sourceSnapshots.FirstOrDefault()?.Id.ToString() ?? "";
+            _message = _sourceSnapshots.Count == 0 ? "No usable Source Analysis snapshot exists for this environment." : $"{_sourceSnapshots.Count} snapshot(s) available. Nothing was recorded yet.";
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _message = $"Source Analysis is unavailable: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    /// <summary>Records the picked snapshot's metadata (as the selected source of this workspace) and its test definitions.</summary>
+    private async Task RecordPickedAsync()
+    {
+        var snapshot = _sourceSnapshots.FirstOrDefault(s => s.Id.ToString() == _sourcePick);
+        if (snapshot is null) return;
+        if (snapshot.TestInventory is null) { _message = "This snapshot was analyzed before source test discovery existed. Upload the source again to discover tests."; return; }
+        SddEvidenceGraphService.RecordSourceSnapshot(Workspace.SddLifecycle, snapshot, _sourceEnvironment.Trim());
+        SddEvidenceGraphService.SourceSnapshotChanged(Workspace.SddLifecycle, snapshot.Id, snapshot.Archive.Sha256);
+        var added = SddTestEvidenceService.RecordDefinitions(Workspace.SddLifecycle, snapshot.TestInventory, RequirementIds, AcceptanceIds);
+        _message = added == 0 ? "Source test definitions of this snapshot are already recorded; it is now the selected source."
+            : $"Recorded {added} source test definition(s) from {snapshot.TestInventory.Projects.Count} test project(s) ({snapshot.TestInventory.Status}). Discovery is not execution.";
+        _snapshotId = snapshot.Id.ToString();
+        Notifier?.Notify(); await OnChanged.InvokeAsync();
+        await AutoSave.SaveNowAsync();
+    }
     private SddSourceSnapshotReference? CurrentSnapshot => Api is null ? null : Workspace.SddLifecycle.SourceSnapshots.FirstOrDefault(s => s.Currentness == "Current");
     private IReadOnlyList<SddRequirementGraphRow> Rows => Graph.Build(Workspace);
     private IEnumerable<string> RequirementIds => Rows.Select(r => r.Requirement.Id);
@@ -211,16 +284,33 @@
     protected override void OnInitialized()
     {
         if (Api is null) _message = "Test result import is unavailable in this host (no test-evidence service).";
-        // Deep link from Quality Review: ?test-execution={id} opens that test's detail and its run.
-        var query = new Uri(Navigation.Uri).Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+        _sourceEnvironment = Workspace.SddLifecycle.SourceSnapshots.FirstOrDefault(s => s.Currentness == "Current")?.EnvironmentReference ?? "";
+        ApplyQuery(Navigation.Uri);
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    // Links within the same page (requirement rows, Quality Review) change only the query string, so the panel follows location changes.
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (ApplyQuery(e.Location)) _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+
+    /// <summary>Deep link: ?test-execution={id} opens that test's detail and its run; ?test-definition={id} opens a source test.</summary>
+    private bool ApplyQuery(string uri)
+    {
+        var query = new Uri(uri).Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Select(p => p.Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => Uri.UnescapeDataString(p[0]), p => Uri.UnescapeDataString(p[1]));
         if (query.TryGetValue("test-execution", out var id) && Guid.TryParse(id, out var executionId)
             && Workspace.SddLifecycle.TestExecutions?.FirstOrDefault(e => e.Id == executionId) is { } execution)
         {
             _detail = SddTestEvidenceService.TestKey(execution);
             _runId = execution.RunId;
+            return true;
         }
-        else if (query.TryGetValue("test-definition", out var definition)) _detail = definition;
+        if (query.TryGetValue("test-definition", out var definition)) { _detail = definition; return true; }
+        return false;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -269,6 +359,7 @@
             _runId = _summary.RunId;
             _importOpen = false;
             _preview = null;
+            Notifier?.Notify(); await OnChanged.InvokeAsync();
             await AutoSave.SaveNowAsync();
         }
         catch (ArgumentException ex) { _message = $"Not imported: {ex.Message}"; }
@@ -285,6 +376,7 @@
             var added = SddTestEvidenceService.RecordDefinitions(Workspace.SddLifecycle, inventory, RequirementIds, AcceptanceIds);
             _message = added == 0 ? "Source test definitions of this snapshot are already recorded."
                 : $"Recorded {added} source test definition(s) from {inventory.Projects.Count} test project(s) ({inventory.Status}). Discovery is not execution.";
+            Notifier?.Notify(); await OnChanged.InvokeAsync();
             await AutoSave.SaveNowAsync();
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _message = $"Source test definitions are unavailable: {ex.Message}"; }

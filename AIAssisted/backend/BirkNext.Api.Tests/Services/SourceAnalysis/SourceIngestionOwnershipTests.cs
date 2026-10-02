@@ -24,6 +24,7 @@ public sealed class SourceIngestionOwnershipTests
         {
             ["Controllers/IqrSourceEvidenceController.cs"] = "POST api/source-analysis/snapshots — the single source ingestion",
             ["Controllers/DependencyReviewController.cs"] = "SBOM / lock-file import: deployed-inventory evidence, not a source repository",
+            ["Controllers/TestEvidenceController.cs"] = "one .trx test-result artifact: execution evidence, never source (source tests come from the Source Analysis snapshot)",
         };
         Sources().Where(f => f.Rel.StartsWith("Controllers/") && Regex.IsMatch(f.Text, @"ReadFormAsync|IFormFile")).Select(f => f.Rel)
             .Should().BeEquivalentTo(allowed.Keys, "a new multipart endpoint must not become a second source upload");

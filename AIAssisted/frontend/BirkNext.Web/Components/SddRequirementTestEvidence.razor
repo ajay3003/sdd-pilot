@@ -2,6 +2,8 @@
 @using BirkNext.Web.Services
 @inject IWorkspaceSessionService Workspace
 @inject SddEvidenceGraphService Graph
+@inject IServiceProvider Services
+@implements IDisposable
 
 @* Per requirement, from the shared graph: test design, source-discovered tests, executions and result stay separate dimensions — never one
    "Covered" column. Shared by Implementation Review and Requirements Traceability. *@
@@ -64,6 +66,15 @@
     private IReadOnlyList<SddRequirementTestEvidenceRow> Rows => SddTestEvidenceService.RequirementRows(Workspace.SddLifecycle, Graph.Build(Workspace));
 
     private void Toggle(string id) { if (!_open.Remove(id)) _open.Add(id); }
+
+    private SddTestEvidenceNotifier? _notifier;
+    protected override void OnInitialized()
+    {
+        _notifier = Services.GetService(typeof(SddTestEvidenceNotifier)) as SddTestEvidenceNotifier;
+        if (_notifier is not null) _notifier.Changed += OnEvidenceChanged;
+    }
+    private void OnEvidenceChanged() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() { if (_notifier is not null) _notifier.Changed -= OnEvidenceChanged; }
 
     private static string Name(SddRequirementTestEvidenceRow row, string key) =>
         row.SourceTests.FirstOrDefault(d => d.Definition.TestDefinitionId == key)?.Definition.FullyQualifiedName

@@ -85,7 +85,20 @@ When a different source archive is selected, old source-backed evidence is retai
 
 `SddTestExecutionEvidence` is distinct from designed `SddTestEvidence`. A generic structured JSON import accepts explicit requirement and acceptance-criterion references and preserves provider/result source, execution state, result, timestamps, environment/build/source references, provider result ID, and fingerprint. Execution state and result are independent: for example, a completed failed test is `Completed/Failed`, while a provider failure is `ExecutionFailed/Unknown`. Imports are deduplicated by provider result ID or deterministic record fingerprint. Designed scenarios never become executed or passed automatically. Requirement/AC changes make linked execution evidence potentially stale while preserving the immutable old result.
 
-No framework-specific JUnit, TRX, CI, or external test-management provider is implemented yet; the import record is the stable generic integration boundary. Runtime behavior is not inferred from test results.
+The first concrete provider pair is implemented (see `docs/test-execution-evidence.md`):
+
+- **Source discovery, owned by Source Analysis.** `test.discovery.dotnet.xunit` writes `TestInventory` onto each source snapshot. It records test projects from project metadata, `[Fact]`/`[Theory]` definitions with runner identity, traits, a conservative test kind, and explicit requirement/AC references with placement-based confidence. References use the same identifier grammar as Specification parsing (`RequirementReferenceParser`).
+- **Execution import.** `test.execution.trx` reads TRX files from the VSTest logger and the Microsoft.Testing.Platform TrxReport extension. Parsing is hardened and outcomes are normalized exactly.
+- **Correlation.** A deterministic shared `TestEvidenceCorrelation` connects executions to source tests: FQN, then class + method, then a declared display name. Ambiguity is never auto-linked.
+- **Persistence.** `SddTestEvidenceService` records artifacts, runs, immutable executions and source test definitions in this same lifecycle, deduplicated by artifact fingerprint, run id and result id.
+
+Linking and currentness rules:
+
+- Executions inherit only the Confirmed/StronglySupported references of a Confirmed source test. Informal mentions stay candidates.
+- A run is bound to a source version only when the user states it. Otherwise its source currentness is `NotAssessed`.
+- A new snapshot re-resolves definitions per repository. A changed or removed test marks its executions potentially stale without touching their results.
+
+JUnit, Playwright, NUnit/MSTest source discovery and Azure DevOps retrieval are not implemented. The generic JSON import record remains available. Runtime behavior is not inferred from test results.
 
 ## Shared graph consumers
 
@@ -93,7 +106,7 @@ Requirements Traceability is now a view over `SddEvidenceGraphService`, not its 
 
 ## Remaining implementation gaps
 
-The graph remains a versioned JSON document inside each workspace, not a normalized graph database. There is no complete source file/symbol inventory in the Source Analysis projection, so CodeLink targets cannot be re-resolved against a new snapshot. Test execution currently has only the generic structured import boundary; provider adapters and raw report retention are future work. Rich active-conflict resolution and exception approval workflows, richer/custom artifact-role mapping, cross-role baseline manifests, and external E2E/performance test providers remain incomplete. The current requirements extractor also limits how completely arbitrary acceptance-criterion IDs can be normalized. One important authority boundary remains: graph rows currently project the active shared `ReviewContext` selection and do not reconstruct a separate non-selected Baseline revision from its retained content. Authority metadata is explicit, but baseline-driven graph selection still needs implementation before the graph can claim it always represents authoritative intent. These limitations must remain explicit; no unavailable capability should be reported as a failed project requirement.
+The graph remains a versioned JSON document inside each workspace, not a normalized graph database. There is no complete source file/symbol inventory in the Source Analysis projection, so CodeLink targets cannot be re-resolved against a new snapshot. Test execution has TRX import and xUnit source discovery. Other result formats, pipeline retrieval and raw report retention (deliberately not retained) remain future work. Rich active-conflict resolution and exception approval workflows, richer/custom artifact-role mapping, cross-role baseline manifests, and external E2E/performance test providers remain incomplete. The current requirements extractor also limits how completely arbitrary acceptance-criterion IDs can be normalized. One important authority boundary remains: graph rows currently project the active shared `ReviewContext` selection and do not reconstruct a separate non-selected Baseline revision from its retained content. Authority metadata is explicit, but baseline-driven graph selection still needs implementation before the graph can claim it always represents authoritative intent. These limitations must remain explicit; no unavailable capability should be reported as a failed project requirement.
 # Projection and source target validation hardening
 
 The graph query has explicit `ActiveWorkspace`, `AuthoritativeBaseline`, and `HistoricalBaseline` modes. A captured `SddBaselineManifest` is an immutable list of references to artifact revision IDs. It does not duplicate content and is not inferred from the latest artifact or active editor selection. A projection returns mode, baseline ID, revision IDs/fingerprints, generation time, and limitations. Formal Quality Review chooses the current authoritative baseline when present and otherwise records ActiveWorkspace. Implementation Review and Requirements Traceability let the user select the view and visibly label it.

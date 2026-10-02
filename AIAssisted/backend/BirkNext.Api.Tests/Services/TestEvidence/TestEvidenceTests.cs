@@ -548,6 +548,8 @@ public sealed class TestEvidenceTests
             ["M2LB.CdcReplay.Tests", "M2LB.Person.Api.Tests", "M2LB.Person.Application.Tests", "M2LB.Person.Domain.Tests"], "a name that does not state the kind stays Unknown");
         inventory.Definitions.Select(d => d.TestDefinitionId).Should().OnlyHaveUniqueItems();
         inventory.TrxConfiguration.Should().Contain(e => e.Kind == "TrxGeneration").And.Contain(e => e.Kind == "TrxPublication");
+        inventory.TrxConfiguration.Where(e => e.Kind == "TrxPublication" && e.File.EndsWith(".pipeline/runtests.yml")).Should().HaveCount(10)
+            .And.OnlyContain(e => e.Detail.Contains("publishes TRX"));
         inventory.Projects.Should().NotContain(p => p.Packages.Any(x => x.Contains("Playwright")), "no Playwright in this source");
 
         var references = inventory.Definitions.SelectMany(d => d.References.Select(r => (d, r))).ToList();
@@ -570,6 +572,9 @@ public sealed class TestEvidenceTests
         var inventory = DotNetXunitTestDiscoveryProvider.Discover(Guid.NewGuid(), workspace!.Archive.Sha256, "M2LB.Common", workspace);
         inventory.Projects.Should().ContainSingle(p => p.Name == "M2LB.Common.Tests" && p.Framework == "xUnit" && p.TrxReportConfigured);
         inventory.Definitions.Should().HaveCount(113);
+        inventory.TrxConfiguration.Should().Contain(e => e.Kind == "TrxGeneration" && e.File.EndsWith(".pipeline/runtests.yml"))
+            .And.Contain(e => e.Kind == "TrxPublication" && e.Detail.Contains("publishes TRX"));
+        inventory.Definitions.SelectMany(d => d.References).Should().BeEmpty("M2LB.Common tests declare no requirement identifiers");
         inventory.Definitions.Should().OnlyContain(d => d.StableIdentity.StartsWith("M2LB.Common::"));
         // Partial only because two files use syntax newer than the bundled parser; their tests are still all discovered.
         inventory.Status.Should().Be(SourceTestDiscoveryStatus.Partial);

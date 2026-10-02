@@ -35,6 +35,7 @@ public sealed class TestEvidenceUiTests : BunitContext
         Services.AddSingleton(new Mock<ISddEvidenceApiService>().Object);
         Services.AddSingleton(_api.Object);
         Services.AddScoped<SddEvidenceGraphService>();
+        Services.AddScoped<SddTestEvidenceNotifier>();
         _api.Setup(x => x.PreviewAsync(It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<TestResultUploadContext>(), It.IsAny<CancellationToken>()))
             .Callback<string, Stream, TestResultUploadContext, CancellationToken>((_, _, c, _) => _lastContext = c)
             .ReturnsAsync((S.FirstRun(bound: false), (string?)null));
@@ -42,11 +43,13 @@ public sealed class TestEvidenceUiTests : BunitContext
             .ReturnsAsync((S.Inventory(S.SnapshotA, "sha-a", S.Discount, S.Rounding, S.Square, S.Plain), (string?)null));
     }
 
-    // The graph service reads requirements from the review context; reuse the fixture's specification.
+    // The graph service reads requirements from the review context; reuse the fixture's specification. One open clarification without an id
+    // (as in real Spec-Kit "- Q: … → A: …" sessions) guards the Implementation Review clarification inputs.
     private static ReviewContext GraphContext(SddEvidenceGraphService _) => new()
     {
         Specification = new SpecificationSemanticModel
         {
+            Clarifications = [new SemanticClarification { Question = "Should both events be added?", Answer = "Yes" }],
             Requirements = new[] { "FR-023", "FR-026", "FR-031", "JIRA-123" }.Select(id => new SemanticRequirement
             {
                 Id = id, Text = $"Requirement {id}",
@@ -158,6 +161,29 @@ public sealed class TestEvidenceUiTests : BunitContext
     }
 
     [Fact]
+    public void SourceTests_LoadsSnapshotsAndRecordsTheSelectedSourceWithItsDefinitions()
+    {
+        var snapshot = new BirkNext.Integrations.IqrSourceSnapshot
+        {
+            Id = S.SnapshotB, Archive = new BirkNext.Integrations.SourceArchive("contoso.zip", "sha-b", 10), AnalyzedAt = DateTimeOffset.Parse("2026-10-01T08:00:00Z"),
+            Status = BirkNext.Integrations.SourceAnalysisStatus.Ready, TestInventory = S.Inventory(S.SnapshotB, "sha-b", S.Discount, S.Square),
+        };
+        var sources = new Mock<ISddEvidenceApiService>();
+        sources.Setup(x => x.SourceSnapshotsAsync("pilot", It.IsAny<CancellationToken>())).ReturnsAsync([snapshot]);
+        Services.AddSingleton(sources.Object);
+        var cut = Render<SddTestEvidencePanel>();
+        cut.Find("[data-testid=te-source-env]").GetAttribute("value").Should().Be("dev", "prefilled from the current snapshot");
+        cut.Find("[data-testid=te-source-env]").Change("pilot");
+        cut.Find("[data-testid=te-source-load]").Click();
+        cut.WaitForElement("[data-testid=te-source-pick]").TextContent.Should().Contain("2 tests");
+        cut.Find("[data-testid=te-record-definitions]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=te-message]").TextContent.Should().Contain("Recorded 2 source test definition(s)"));
+        _repository.SddLifecycle.SourceSnapshots.Single(s => s.Currentness == "Current").SnapshotId.Should().Be(S.SnapshotB.ToString());
+        _repository.SddLifecycle.TestDefinitions.Should().HaveCount(2).And.OnlyContain(d => d.SourceSnapshotId == S.SnapshotB.ToString());
+        cut.Find("[data-testid=te-source]").TextContent.Should().Contain("2 current source test definition(s)");
+    }
+
+    [Fact]
     public void RequirementTable_KeepsDesignedSourceExecutedAndResultSeparate()
     {
         SddTestEvidenceService.RecordDefinitions(_repository.SddLifecycle, S.Inventory(S.SnapshotA, "sha-a", S.Discount, S.Rounding, S.Square), ["FR-023", "FR-026", "FR-031", "JIRA-123"], ["AC-007"]);
@@ -189,6 +215,16 @@ public sealed class TestEvidenceUiTests : BunitContext
         cut.Find("[data-testid=te-panel]").Should().NotBeNull();
         cut.Find("[data-testid=te-req]").Should().NotBeNull();
         cut.Find("#test-result-import").Should().NotBeNull("the generic structured import remains");
+        cut.FindAll("input[id^=resolution-Q-]").Should().HaveCount(1, "an open clarification without an id renders its resolution input instead of throwing");
+    }
+
+    [Fact]
+    public void ImplementationReview_RequirementTableFollowsChangesMadeInThePanel()
+    {
+        var cut = Render<ImplementationReview>();
+        cut.Find("[data-requirement='FR-023'] [data-testid=te-req-source]").TextContent.Should().Be("None");
+        cut.Find("[data-testid=te-record-definitions]").Click();
+        cut.WaitForAssertion(() => cut.Find("[data-requirement='FR-023'] [data-testid=te-req-source]").TextContent.Should().Be("1 source test(s)"));
     }
 
     [Fact]
@@ -212,6 +248,10 @@ public sealed class TestEvidenceUiTests : BunitContext
         var deepLinked = Render<SddTestEvidencePanel>();
         deepLinked.Find("[data-testid=te-detail]").TextContent.Should().Contain("Contoso.Tests.OrderTests.Square");
         deepLinked.Find("[data-testid=te-run-tests]").Should().NotBeNull();
-        panel.Should().NotBeNull();
+        // Same page, new query string (requirement-row link): the already rendered panel follows it too.
+        panel.WaitForAssertion(() => panel.Find("[data-testid=te-detail]").TextContent.Should().Contain("Contoso.Tests.OrderTests.Square"));
+        var rounding = _repository.SddLifecycle.TestExecutions.First(e => e.TestDefinitionId == S.Rounding.TestDefinitionId);
+        nav.NavigateTo($"/implementation-review?test-execution={rounding.Id}#test-evidence");
+        panel.WaitForAssertion(() => panel.Find("[data-testid=te-detail]").TextContent.Should().Contain("Contoso.Tests.OrderTests.Rounding"));
     }
 }
