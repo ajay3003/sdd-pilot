@@ -146,6 +146,7 @@ else if (_settings is not null)
                 <div class="ss-nav-group-label">Analysis</div>
                 @NavItem("target-environments", "Target Environments")
                 @NavItem("frontend-quality-engines", "Frontend Engine Capabilities")
+                @NavItem("performance-test-engines", "Performance Test Engines")
                 @NavItem("ai",                 "AI")
             </div>
             <div class="ss-nav-group">
@@ -647,6 +648,14 @@ else if (_settings is not null)
             }
 
             @* â•â• Platform â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• *@
+            @if (_activeSection == "performance-test-engines")
+            {
+                <div class="settings-card settings-card-full-width">
+                    <div class="settings-card-title">Performance Test Engines</div>
+                    <BirkNext.Web.Components.PerformanceTestEngineStatus />
+                </div>
+            }
+
             @if (_activeSection == "frontend-quality-engines")
             {
                 @* Admin/diagnostic surface: what this INSTALLATION can run. Per-Target-Environment activation is a

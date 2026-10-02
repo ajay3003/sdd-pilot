@@ -198,6 +198,9 @@ builder.Services.AddHttpClient<IAzureEnvironmentApiService, AzureEnvironmentApiS
 builder.Services.AddHttpClient<ITechnologyCoverageApiService, TechnologyCoverageApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddScoped<ProjectApplicabilityState>();
+// Performance Test Review: definitions, readiness, runs, baselines (backend owns safety and execution).
+builder.Services.AddHttpClient<IPerformanceTestApiService, PerformanceTestApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IPipelineReviewApiService, PipelineReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>

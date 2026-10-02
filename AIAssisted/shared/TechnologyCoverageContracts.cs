@@ -277,6 +277,7 @@ public static class ReviewCatalog
         new("frontend-quality-review", "Frontend Quality Review", "frontend-quality-review", [Capability.FrontendApplication, Capability.BrowserTarget], "Accessibility, performance and security of a browser frontend."),
         new("api-quality-review", "API Quality Review", "api-quality-review", [Capability.ApiTarget], "REST and GraphQL contract, security and performance against a configured target."),
         new("integration-quality-review", "Integration Quality Review", "integration-quality-review", [Capability.IntegrationCatalog], "Configuration, contracts and runtime evidence of configured integrations."),
+        new("performance-test-review", "Performance Test Review", "performance-test-review", [Capability.ApiTarget], "Controlled HTTP/API load tests with explicit latency, throughput and error expectations."),
         new("dependency-review", "Dependency Review", "dependency-review", [Capability.PackageInventory], "Package freshness and advisories."),
         new("pipeline-review", "Pipeline Review", "pipeline-review", [Capability.Pipeline], "Build and deployment pipeline structure."),
         new("azure-environment", "Azure Environment", "azure-environment", [Capability.CloudHosted], "Read-only Azure Resource Manager inventory."),
@@ -308,6 +309,7 @@ public static class ApplicabilityEvaluator
                 ? Result(review, ApplicabilityStatus.Applicable, "A browser target is configured.", input)
                 : NeedsTargetOrNotApplicable(review, input, Capability.FrontendApplication, "Configure a target application URL."),
             "api-quality-review" => Api(review, input),
+            "performance-test-review" => Performance(review, input),
             "integration-quality-review" => Integration(review, input),
             "dependency-review" => Dependency(review, input),
             "pipeline-review" => Pipeline(review, input),
@@ -370,6 +372,21 @@ public static class ApplicabilityEvaluator
         if (input.HasSourceSnapshot && !input.Has(Capability.BackendApplication))
             return Result(review, ApplicabilityStatus.NotApplicable, "No API was detected in the analyzed source and no target is configured.", input);
         return Result(review, ApplicabilityStatus.NeedsConfiguration, "No API target is configured.", input, "Configure a target and discover endpoints.");
+    }
+
+    /// <summary>HTTP/API load tests need an HTTP target; SOAP/gRPC-only services are not supported by the HTTP providers.</summary>
+    private static ReviewApplicability Performance(ReviewDescriptor review, ProjectApplicabilityInput input)
+    {
+        var http = input.Has(Capability.RestApi) || input.Has(Capability.GraphQlApi);
+        var other = input.Has(Capability.SoapApi) || input.Has(Capability.GrpcApi);
+        if (input.HasApiTarget)
+            return other && !http
+                ? Result(review, ApplicabilityStatus.PartiallyApplicable, "A target is configured, but the detected API style (SOAP/gRPC) is not supported by the HTTP load-test providers.", input)
+                : Result(review, ApplicabilityStatus.Applicable, "An HTTP target is configured; define a scenario, workload and thresholds.", input);
+        if (http) return Result(review, ApplicabilityStatus.NeedsConfiguration, "The source exposes an HTTP API, but no target is configured.", input, "Configure a target application URL.");
+        if (input.HasSourceSnapshot && !input.Has(Capability.BackendApplication) && !input.Has(Capability.FrontendApplication))
+            return Result(review, ApplicabilityStatus.NotApplicable, "No HTTP/API target was detected in the analyzed source and no target is configured.", input);
+        return Result(review, ApplicabilityStatus.NeedsConfiguration, "No HTTP target is configured.", input, "Configure a target application URL.");
     }
 
     private static ReviewApplicability Integration(ReviewDescriptor review, ProjectApplicabilityInput input)

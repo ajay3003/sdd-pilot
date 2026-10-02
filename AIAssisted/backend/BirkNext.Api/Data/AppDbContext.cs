@@ -31,6 +31,10 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationMessageFlowRecord> IntegrationMessageFlows => Set<IntegrationMessageFlowRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
+    public DbSet<PerformanceTestDefinitionRecord> PerformanceTestDefinitions => Set<PerformanceTestDefinitionRecord>();
+    public DbSet<PerformanceTestRunRecord> PerformanceTestRuns => Set<PerformanceTestRunRecord>();
+    public DbSet<PerformanceBaselineRecord> PerformanceBaselines => Set<PerformanceBaselineRecord>();
+    public DbSet<PerformanceTestDataProfileRecord> PerformanceTestDataProfiles => Set<PerformanceTestDataProfileRecord>();
     public DbSet<DependencyInventoryRecord> DependencyInventories => Set<DependencyInventoryRecord>();
     public DbSet<DependencyHealthRunRecord> DependencyHealthRuns => Set<DependencyHealthRunRecord>();
     public DbSet<ScimEvidenceRecord> ScimEvidence => Set<ScimEvidenceRecord>();
@@ -664,6 +668,59 @@ public class AppDbContext : DbContext
             entity.Property(r => r.CreatedAt).HasColumnName("created_at");
             entity.Property(r => r.Json).HasColumnName("json").HasColumnType("text").IsRequired();
             entity.HasIndex(r => new { r.EnvironmentId, r.Kind, r.CreatedAt }).HasDatabaseName("ix_scim_evidence_environment_kind_created");
+        });
+
+        modelBuilder.Entity<PerformanceTestDefinitionRecord>(entity =>
+        {
+            entity.ToTable("performance_test_definitions");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id").HasMaxLength(64);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.Version).HasColumnName("version");
+            entity.Property(r => r.Archived).HasColumnName("archived");
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => r.EnvironmentId).HasDatabaseName("ix_performance_test_definitions_environment");
+        });
+
+        modelBuilder.Entity<PerformanceTestRunRecord>(entity =>
+        {
+            entity.ToTable("performance_test_runs");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.DefinitionId).HasColumnName("definition_id").HasMaxLength(64).IsRequired();
+            entity.Property(r => r.State).HasColumnName("state").HasMaxLength(40).IsRequired();
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.CreatedAt }).HasDatabaseName("ix_performance_test_runs_environment_created");
+            entity.HasIndex(r => r.DefinitionId).HasDatabaseName("ix_performance_test_runs_definition");
+        });
+
+        modelBuilder.Entity<PerformanceBaselineRecord>(entity =>
+        {
+            entity.ToTable("performance_baselines");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id").HasMaxLength(64);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.DefinitionId).HasColumnName("definition_id").HasMaxLength(64).IsRequired();
+            entity.Property(r => r.ComparisonFingerprint).HasColumnName("comparison_fingerprint").HasMaxLength(64).IsRequired();
+            entity.Property(r => r.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
+            entity.Property(r => r.Version).HasColumnName("version");
+            entity.Property(r => r.CreatedAt).HasColumnName("created_at");
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.DefinitionId }).HasDatabaseName("ix_performance_baselines_scope");
+        });
+
+        modelBuilder.Entity<PerformanceTestDataProfileRecord>(entity =>
+        {
+            entity.ToTable("performance_test_data_profiles");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id").HasMaxLength(64);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => r.EnvironmentId).HasDatabaseName("ix_performance_test_data_profiles_environment");
         });
 
         modelBuilder.Entity<DependencyReviewRunRecord>(entity =>

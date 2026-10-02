@@ -1,0 +1,39 @@
+@using BirkNext.PerformanceTests
+@inject IServiceProvider ServiceProvider
+
+@* Installation-level performance-test engines: installed?, version, capabilities. Per-test scenario/workload/thresholds live in Performance
+   Test Review; the target and its environment live in Target Environment. A missing engine is a tool limitation, never a test failure. *@
+<div data-testid="pte-status">
+    <p class="settings-card-note">What this BirkNext installation can run for Performance Test Review. Capabilities an engine lacks are shown as not supported.</p>
+    @if (_providers is null) { <p role="status">Checking engines…</p> }
+    else if (_providers.Count == 0) { <p data-testid="pte-none">No performance test engine status is available (the backend did not answer).</p> }
+    else
+    {
+        @foreach (var p in _providers)
+        {
+            <dl class="settings-layers" data-testid="pte-provider" data-availability="@p.Availability">
+                <div><dt>Engine</dt><dd>@p.DisplayName <code>@p.ProviderId</code></dd></div>
+                <div><dt>Status</dt><dd data-testid="pte-availability">@(p.Availability == ProviderAvailability.Available ? "Installed" : p.Availability.ToString()) — @p.Detail</dd></div>
+                <div><dt>Version</dt><dd>@(p.Version ?? "—")</dd></div>
+                <div><dt>HTTP</dt><dd>@Yes(p.Capabilities.Http)</dd></div>
+                <div><dt>GraphQL (query)</dt><dd>@Yes(p.Capabilities.GraphQl)</dd></div>
+                <div><dt>Virtual-user workload</dt><dd>@Yes(p.Capabilities.Modes.Contains(WorkloadMode.VirtualUsers))</dd></div>
+                <div><dt>Arrival-rate workload</dt><dd>@Yes(p.Capabilities.Modes.Contains(WorkloadMode.ArrivalRate))</dd></div>
+                <div><dt>Cancellation</dt><dd>@Yes(p.Capabilities.Cancellation)</dd></div>
+                <div><dt>External executable</dt><dd>@(p.Capabilities.RequiresExternalExecutable ? "Required (PerformanceTests:K6ExecutablePath or PATH)" : "Not required")</dd></div>
+            </dl>
+        }
+    }
+</div>
+
+@code {
+    private List<PerformanceProviderStatus>? _providers;
+
+    private static string Yes(bool supported) => supported ? "Supported" : "Not supported";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var api = ServiceProvider.GetService(typeof(IPerformanceTestApiService)) as IPerformanceTestApiService;
+        _providers = api is null ? [] : await api.ProvidersAsync();
+    }
+}

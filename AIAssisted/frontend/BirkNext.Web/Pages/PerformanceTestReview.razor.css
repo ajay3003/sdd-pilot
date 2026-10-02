@@ -1,0 +1,18 @@
+.pt-page { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.pt-title { margin: 0; font-size: 1.5rem; }
+.pt-small { font-size: .9rem !important; overflow-wrap: anywhere; }
+.pt-bar { align-items: end; }
+.pt-section { display: grid; gap: .6rem; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.pt-section h2 { margin: 0; font-size: 1.15rem; }
+.pt-section h3 { margin: .4rem 0 0; font-size: 1rem; }
+.pt-form { display: grid; gap: .6rem .9rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); }
+.pt-form label { display: grid; gap: .2rem; font-size: .88rem; min-width: 0; }
+.pt-form input, .pt-form select, .pt-form textarea, .pt-section > label input, .pt-section > label select { max-width: 100%; min-width: 0; }
+.pt-wide { grid-column: 1 / -1; }
+.pt-wide textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
+.pt-readonly { display: grid; gap: .1rem; font-size: .88rem; min-width: 0; overflow-wrap: anywhere; }
+.pt-step legend { font-weight: 600; font-size: .95rem; }
+.pt-savebar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.pt-timeline { margin: 0; padding-left: 1.2rem; font-family: ui-monospace, Consolas, monospace; font-size: .85rem; }
+.pt-details > summary { cursor: pointer; font-weight: 600; }
+.pt-history-table { min-width: 64rem !important; }

@@ -405,6 +405,14 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
+// Performance Test Review: generic definitions/runs/baselines; k6 is the first provider (external executable, generated script, no user scripts).
+builder.Services.AddSingleton(sp => BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IProcessRunner, BirkNext.Api.Services.PerformanceTests.SystemProcessRunner>();
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider, BirkNext.Api.Services.PerformanceTests.K6PerformanceTestProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>();
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestExecutionService>();
+builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceTestStore>();
 // Shared read-only access to Source Analysis snapshots for every source-aware review (Source Analysis owns ingestion; reviews own meaning).
 builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(sp => BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider.FromConfiguration(
     sp.GetRequiredService<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>(), sp.GetRequiredService<IConfiguration>()));

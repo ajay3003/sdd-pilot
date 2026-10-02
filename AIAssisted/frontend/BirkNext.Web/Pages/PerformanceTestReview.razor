@@ -1,0 +1,705 @@
+@page "/performance-test-review"
+@using System.Globalization
+@using BirkNext.Applicability
+@using BirkNext.PerformanceTests
+@using BirkNext.Web.Models
+@using P = BirkNext.Web.Services.PerformanceTestPresentation
+@using PerformanceThreshold = BirkNext.PerformanceTests.PerformanceThreshold
+@using PerformanceMetric = BirkNext.PerformanceTests.PerformanceMetric
+@using PerformanceReadinessState = BirkNext.PerformanceTests.PerformanceReadinessState
+@inject IPerformanceTestApiService Api
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Performance Test Review</PageTitle>
+
+@* Performance Test Review: controlled HTTP/API load tests against the configured Target Environment. Configured ≠ Ready ≠ Executed ≠ Passed;
+   a metric without a threshold is measured, not passed; a missing provider is a tool limitation, never a performance failure. The backend owns
+   every safety rule (production refused, relative paths only, read-only methods, query-only GraphQL, load limits). *@
+<div class="sd-workspace pt-page" data-testid="pt-page">
+    <h1 class="pt-title">Performance Test Review</h1>
+    <p class="sd-muted" data-testid="pt-purpose">Measure how configured HTTP/API targets behave under controlled load and verify latency, throughput and errors against explicit expectations.</p>
+
+    @if (!_loaded)
+    {
+        <p class="sd-muted" role="status">Loading…</p>
+    }
+    else if (_profile is null)
+    {
+        <p class="sd-empty" data-testid="pt-no-target">Select a Target Environment to define performance tests for its HTTP/API target.</p>
+    }
+    else if (_overview is null)
+    {
+        <p class="sd-reason" role="alert" data-testid="pt-unavailable">The BirkNext backend did not answer. Performance tests are stored and executed by the backend.</p>
+    }
+    else
+    {
+        <dl class="sd-summary" data-testid="pt-hero">
+            <div><dt>Target</dt><dd class="pt-small" data-testid="pt-hero-target">@(string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? "Not configured" : _draft.TargetOrigin)</dd></div>
+            <div><dt>Environment</dt><dd class="pt-small" data-testid="pt-hero-environment">@_draft.EnvironmentName (@_draft.EnvironmentType)</dd></div>
+            <div><dt>Provider</dt><dd class="pt-small" data-testid="pt-hero-provider">@ProviderText</dd></div>
+            <div><dt>Supported targets</dt><dd class="pt-small">REST, GraphQL (query), HTTP</dd></div>
+            <div><dt>Readiness</dt><dd class="pt-small" data-testid="pt-hero-readiness">@ReadinessText</dd></div>
+        </dl>
+
+        <div class="sd-filterbar pt-bar" data-testid="pt-definition-bar">
+            <label>Test definition
+                <select value="@(_draft.Id)" @onchange="SelectDefinition" data-testid="pt-definition-select">
+                    @foreach (var d in _overview.Definitions) { <option value="@d.Id">@d.Name · v@(d.Version)</option> }
+                    @if (_isNew) { <option value="">(new, not saved)</option> }
+                </select>
+            </label>
+            <button type="button" class="btn-secondary" @onclick="NewDefinition" data-testid="pt-new">New definition</button>
+            <button type="button" class="btn-secondary" @onclick="() => _tab = Tab.Scenario" data-testid="pt-configure">Configure test</button>
+            <button type="button" class="btn-primary" @onclick="() => _tab = Tab.Run" disabled="@(!CanRun)" data-testid="pt-run-open">Run test</button>
+        </div>
+        @if (_message is { } message) { <p class="sd-reason" role="status" data-testid="pt-message">@message</p> }
+
+        <div class="sd-tabs" role="group" aria-label="Performance test sections" data-testid="pt-tabs">
+            @foreach (var t in Enum.GetValues<Tab>())
+            {
+                <button type="button" class="btn-secondary" aria-pressed="@(_tab == t ? "true" : "false")" @onclick="() => _tab = t" data-testid="pt-tab-@t.ToString().ToLowerInvariant()">@t</button>
+            }
+        </div>
+
+        @switch (_tab)
+        {
+            case Tab.Overview: @Overview() break;
+            case Tab.Scenario: @Scenario() break;
+            case Tab.Workload: @Workload() break;
+            case Tab.Thresholds: @Thresholds() break;
+            case Tab.Readiness: @ReadinessView() break;
+            case Tab.Run: @RunView() break;
+            case Tab.Results: @Results() break;
+            case Tab.Compare: @CompareView() break;
+            case Tab.History: @History() break;
+        }
+    }
+</div>
+
+@code {
+    private enum Tab { Overview, Scenario, Workload, Thresholds, Readiness, Run, Results, Compare, History }
+    private enum HistoryFilter { All, Baselines, Regressions, ThresholdFailures, Cancelled, ExecutionFailures }
+
+    private bool _loaded;
+    private FrontendAnalysisProfile? _profile;
+    private PerformanceTestOverview? _overview;
+    private PerformanceTestDefinition _draft = new();
+    private bool _isNew;
+    private bool _dirty;
+    private PerformanceTestReadiness? _readiness;
+    private List<PerformanceTestRun> _runs = [];
+    private List<PerformanceBaseline> _baselines = [];
+    private PerformanceTestRun? _selectedRun;
+    private PerformanceRunComparison? _comparison;
+    private string? _compareCurrent;
+    private string _compareReference = "active";
+    private string? _message;
+    private List<string> _startBlockers = [];
+    private string? _versionLabel;
+    private Tab _tab = Tab.Overview;
+    private HistoryFilter _filter = HistoryFilter.All;
+    private Guid? _promoteRunId;
+    private string? _promoteReason;
+    private bool _promoteAcceptFailures;
+    private string? _promoteError;
+    private string _dataName = "";
+    private string _dataColumns = "";
+    private string _dataRows = "";
+    private bool _dataApproved;
+    private TestDataSelection _dataSelection = TestDataSelection.RoundRobin;
+    private System.Threading.Timer? _poll;
+
+    private bool CanRun => !_isNew && !_dirty && _readiness?.Ready == true && !(_runs.FirstOrDefault()?.IsActive ?? false);
+    private PerformanceTestRun? ActiveRun => _runs.FirstOrDefault(r => r.IsActive);
+    private PerformanceBaseline? ActiveBaseline => _baselines.FirstOrDefault(b => b.Status == PerformanceBaselineStatus.Active && b.ComparisonFingerprint == _draft.ComparisonFingerprint);
+
+    private string ProviderText => _overview?.Provider is { } p
+        ? p.Availability == ProviderAvailability.Available ? $"{p.DisplayName} {p.Version}" : $"{p.DisplayName}: {p.Availability} (tool limitation)"
+        : "Unknown";
+
+    private string ReadinessText => _isNew ? "Not saved yet" : _dirty ? "Unsaved changes" : _readiness is null ? "—" : _readiness.Ready ? "Ready" : $"Blocked — {_readiness.Blockers.Count} item(s)";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _profile = (await ContextFactory.GetActiveContextAsync()).ActiveProfile;
+        if (_profile is not null) await ReloadAsync(null);
+        _loaded = true;
+    }
+
+    private async Task ReloadAsync(string? select)
+    {
+        _overview = await Api.OverviewAsync(_profile!.Id);
+        if (_overview is null) return;
+        var chosen = _overview.Definitions.FirstOrDefault(d => d.Id == select) ?? _overview.Definitions.FirstOrDefault();
+        if (chosen is null) { _draft = P.NewDefinition(_profile); _isNew = true; }
+        else { _draft = chosen; _isNew = false; }
+        _dirty = false;
+        await RefreshDefinitionStateAsync();
+    }
+
+    private async Task RefreshDefinitionStateAsync()
+    {
+        if (_isNew) { _readiness = null; _runs = []; _baselines = []; _selectedRun = null; return; }
+        _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id);
+        _runs = await Api.RunsAsync(_profile.Id, _draft.Id);
+        _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
+        _selectedRun = _runs.FirstOrDefault(r => r.RunId == _selectedRun?.RunId) ?? _runs.FirstOrDefault();
+        if (ActiveRun is not null) StartPolling();
+    }
+
+    private async Task SelectDefinition(ChangeEventArgs e)
+    {
+        var id = e.Value?.ToString();
+        if (string.IsNullOrEmpty(id)) return;
+        _message = null;
+        await ReloadAsync(id);
+    }
+
+    private void NewDefinition()
+    {
+        _draft = P.NewDefinition(_profile!);
+        _isNew = true; _dirty = true; _readiness = null; _runs = []; _baselines = []; _selectedRun = null; _tab = Tab.Scenario;
+    }
+
+    private void Changed(PerformanceTestDefinition next) { _draft = next; _dirty = true; }
+
+    private async Task SaveAsync()
+    {
+        var result = await Api.SaveDefinitionAsync(_profile!.Id, _draft, _isNew);
+        if (result.Value is null) { _message = $"Not saved: {result.Error}"; return; }
+        _message = $"Saved as version {result.Value.Version}. Earlier runs keep the version they ran with.";
+        await ReloadAsync(result.Value.Id);
+    }
+
+    // ── Run / poll / cancel ───────────────────────────────────────────────────────────────────────────────────────────
+
+    private async Task StartAsync()
+    {
+        _startBlockers = [];
+        var result = await Api.StartAsync(_profile!.Id, new PerformanceRunRequest { DefinitionId = _draft.Id, VersionLabel = _versionLabel });
+        if (result.Value is null) { _message = result.Error; _startBlockers = result.Blockers; return; }
+        _message = "Performance test started.";
+        _runs.Insert(0, result.Value);
+        _selectedRun = result.Value;
+        StartPolling();
+    }
+
+    private void StartPolling()
+    {
+        _poll ??= new System.Threading.Timer(async _ => await InvokeAsync(PollAsync), null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
+    }
+
+    private async Task PollAsync()
+    {
+        if (_profile is null || ActiveRun is not { } active) { StopPolling(); return; }
+        if (await Api.RunAsync(_profile.Id, active.RunId) is { } latest)
+        {
+            var i = _runs.FindIndex(r => r.RunId == latest.RunId);
+            if (i >= 0) _runs[i] = latest;
+            if (_selectedRun?.RunId == latest.RunId) _selectedRun = latest;
+            if (!latest.IsActive)
+            {
+                StopPolling();
+                _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
+                _message = $"Run {P.Short(latest.RunId)} finished: {P.Label(latest.State)}.";
+            }
+        }
+        StateHasChanged();
+    }
+
+    private void StopPolling() { _poll?.Dispose(); _poll = null; }
+
+    private async Task CancelAsync()
+    {
+        if (ActiveRun is not { } active) return;
+        if (await Api.CancelAsync(_profile!.Id, active.RunId) is { } cancelling)
+        {
+            var i = _runs.FindIndex(r => r.RunId == cancelling.RunId);
+            if (i >= 0) _runs[i] = cancelling;
+            _message = "Cancellation requested; the backend terminates the provider.";
+        }
+    }
+
+    public void Dispose() => StopPolling();
+
+    // ── Baselines / compare ───────────────────────────────────────────────────────────────────────────────────────────
+
+    private async Task PromoteAsync()
+    {
+        if (_promoteRunId is not { } runId) return;
+        var result = await Api.PromoteAsync(_profile!.Id, new PerformanceBaselinePromotion { RunId = runId, Reason = _promoteReason, AcceptThresholdFailures = _promoteAcceptFailures });
+        if (result.Error is not null) { _promoteError = result.Error; return; }
+        _message = $"Run {P.Short(runId)} is now baseline v{result.Baseline!.Version}{(result.Superseded is { } s ? $"; v{s.Version} is superseded and kept in history" : "")}.";
+        _promoteRunId = null; _promoteReason = null; _promoteAcceptFailures = false; _promoteError = null;
+        _baselines = await Api.BaselinesAsync(_profile.Id, _draft.Id);
+    }
+
+    private async Task CompareAsync()
+    {
+        _comparison = null;
+        if (!Guid.TryParse(_compareCurrent ?? _selectedRun?.RunId.ToString(), out var current)) return;
+        if (_compareReference == "active")
+        {
+            var run = _runs.FirstOrDefault(r => r.RunId == current);
+            var active = _baselines.FirstOrDefault(b => b.Status == PerformanceBaselineStatus.Active && b.ComparisonFingerprint == run?.ComparisonFingerprint);
+            if (active is null) { _message = "No active baseline for this run's scope."; return; }
+            _comparison = await Api.CompareAsync(_profile!.Id, current, null, active.BaselineId);
+        }
+        else if (_compareReference.StartsWith("b:", StringComparison.Ordinal)) _comparison = await Api.CompareAsync(_profile!.Id, current, null, _compareReference[2..]);
+        else if (Guid.TryParse(_compareReference, out var reference)) _comparison = await Api.CompareAsync(_profile!.Id, current, reference, null);
+    }
+
+    private async Task SaveDataProfileAsync()
+    {
+        var columns = _dataColumns.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+        var rows = _dataRows.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(l => l.Split(',', StringSplitOptions.TrimEntries).ToList()).ToList();
+        var result = await Api.SaveDataProfileAsync(_profile!.Id, new PerformanceTestDataProfile { Name = _dataName, Columns = columns, Rows = rows, Selection = _dataSelection, ApprovedSynthetic = _dataApproved });
+        if (result.Value is null) { _message = $"Test data not saved: {result.Error}"; return; }
+        _overview = await Api.OverviewAsync(_profile.Id) ?? _overview;
+        Changed(_draft with { Scenario = _draft.Scenario with { TestDataProfileId = result.Value.Id } });
+        _message = $"Test data profile '{result.Value.Name}' saved and selected. Save the definition to use it.";
+        _dataName = _dataColumns = _dataRows = ""; _dataApproved = false;
+    }
+
+    private async Task ExportAsync(PerformanceTestRun run) =>
+        await JS.InvokeVoidAsync("downloadHtmlFile", $"performance-test-{P.Short(run.RunId)}.html", P.Export(run));
+
+    private const string Slash = "/", Get = "GET", Post = "POST", JsonType = "application/json";
+    private static string Str(ChangeEventArgs e, string fallback = "") => e.Value?.ToString() ?? fallback;
+
+    private static int? Int(object? v) => int.TryParse(v?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : null;
+    private static double? Dbl(object? v) => double.TryParse(v?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : null;
+
+    private void UpdateStep(int index, Func<HttpPerformanceStep, HttpPerformanceStep> change)
+    {
+        var steps = _draft.Scenario.Steps.ToList();
+        steps[index] = change(steps[index]);
+        Changed(_draft with { Scenario = _draft.Scenario with { Steps = steps } });
+    }
+
+    private void AddStep()
+    {
+        var graphQl = _draft.TargetType == PerformanceTargetType.GraphQlHttp;
+        var step = new HttpPerformanceStep { Name = $"step-{_draft.Scenario.Steps.Count + 1}", Method = graphQl ? "POST" : "GET", RelativePath = graphQl ? "/graphql" : "/" };
+        Changed(_draft with { Scenario = _draft.Scenario with { Steps = [.. _draft.Scenario.Steps, step] } });
+    }
+
+    private void UpdateWorkload(Func<PerformanceWorkload, PerformanceWorkload> change) => Changed(_draft with { Workload = change(_draft.Workload) });
+
+    private void UpdateThreshold(int index, Func<PerformanceThreshold, PerformanceThreshold> change)
+    {
+        var list = _draft.Thresholds.ToList(); list[index] = change(list[index]); Changed(_draft with { Thresholds = list });
+    }
+
+    private void UpdateDrift(int index, Func<PerformanceDriftPolicy, PerformanceDriftPolicy> change)
+    {
+        var list = _draft.DriftPolicies.ToList(); list[index] = change(list[index]); Changed(_draft with { DriftPolicies = list });
+    }
+
+    private IEnumerable<PerformanceTestRun> FilteredRuns => _filter switch
+    {
+        HistoryFilter.Baselines => _runs.Where(r => _baselines.Any(b => b.RunId == r.RunId)),
+        HistoryFilter.Regressions => _runs.Where(r => r.Drift?.State == PerformanceDriftState.Regression),
+        HistoryFilter.ThresholdFailures => _runs.Where(r => r.Verdict == PerformanceQualityVerdict.Fail),
+        HistoryFilter.Cancelled => _runs.Where(r => r.State == PerformanceRunState.Cancelled),
+        HistoryFilter.ExecutionFailures => _runs.Where(r => r.State is PerformanceRunState.ExecutionFailed or PerformanceRunState.TimedOut),
+        _ => _runs,
+    };
+
+    private RenderFragment SaveBar() => @<div class="pt-savebar">
+        <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@(!_dirty && !_isNew)" data-testid="pt-save">Save definition</button>
+        <span class="sd-muted" data-testid="pt-save-state">@(_isNew ? "Not saved yet." : _dirty ? "Unsaved changes — saving creates a new version; earlier runs keep theirs." : "Saved.")</span>
+    </div>;
+
+    // ── Tabs ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private RenderFragment Overview() => @<section class="pt-section" aria-labelledby="pt-overview-h" data-testid="pt-overview">
+        <h2 id="pt-overview-h">Overview</h2>
+        <dl class="sd-summary">
+            <div><dt>Scenario</dt><dd class="pt-small">@_draft.Scenario.Name · @_draft.Scenario.Steps.Count step(s)</dd></div>
+            <div><dt>Workload</dt><dd class="pt-small">@_draft.Workload.Purpose · @P.Load(_draft.Workload) · @P.Duration(_draft.Workload.TotalSeconds)</dd></div>
+            <div><dt>Thresholds</dt><dd data-testid="pt-overview-thresholds">@_draft.Thresholds.Count</dd></div>
+            <div><dt>Latest run</dt><dd class="pt-small" data-testid="pt-overview-latest">@(_runs.FirstOrDefault() is { } l ? $"{P.Label(l.State)} · {P.Label(l.Verdict)}" : "No run yet")</dd></div>
+        </dl>
+        <div class="sd-panel" data-testid="pt-baseline-card">
+            <h3>Active baseline</h3>
+            @if (ActiveBaseline is { } b && _runs.FirstOrDefault(r => r.RunId == b.RunId) is var br)
+            {
+                <p>v@(b.Version) · run @P.Short(b.RunId) · since @P.Utc(b.EffectiveFrom) · @((DateTimeOffset.UtcNow - b.EffectiveFrom).Days) day(s) old</p>
+                <p class="sd-muted">P95 @PerformanceTestRules.Format(br?.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms) · @PerformanceTestRules.Format(br?.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)@(b.Reason is null ? "" : $" · Reason: {b.Reason}")</p>
+            }
+            else { <p class="sd-muted">No baseline selected. A baseline is chosen explicitly from a completed run (History → Promote to baseline).</p> }
+        </div>
+        <p class="sd-muted">Load-test metrics are their own evidence: they are not API Quality Review's single-request latency and not browser performance (Lighthouse / Core Web Vitals).</p>
+    </section>;
+
+    private RenderFragment Scenario() => @<section class="pt-section" aria-labelledby="pt-scenario-h" data-testid="pt-scenario">
+        <h2 id="pt-scenario-h">Scenario</h2>
+        <div class="pt-form">
+            <label>Definition name <input value="@_draft.Name" @onchange="e => Changed(_draft with { Name = Str(e) })" data-testid="pt-name" /></label>
+            <label>Scenario name <input value="@_draft.Scenario.Name" @onchange="e => Changed(_draft with { Scenario = _draft.Scenario with { Name = Str(e) } })" /></label>
+            <label>Target type
+                <select value="@_draft.TargetType" @onchange="e => Changed(_draft with { TargetType = Enum.Parse<PerformanceTargetType>(e.Value!.ToString()!) })" data-testid="pt-target-type">
+                    <option value="RestHttp">REST over HTTP</option><option value="GraphQlHttp">GraphQL over HTTP (query only)</option><option value="GenericHttp">Generic HTTP</option>
+                </select>
+            </label>
+            <div class="pt-readonly"><span>Target (from the Target Environment)</span><strong data-testid="pt-target">@(_draft.TargetOrigin.Length == 0 ? "Not configured" : _draft.TargetOrigin)</strong><span class="sd-muted">Change it in Target Environment; steps are paths under it.</span></div>
+            <div class="pt-readonly"><span>Authentication</span><strong>None</strong><span class="sd-muted">Authenticated load tests need an approved non-interactive test credential, which BirkNext does not issue yet.</span></div>
+        </div>
+        <h3>Steps</h3>
+        @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp) { <p class="sd-muted" data-testid="pt-graphql-note">GraphQL: query operations only. Mutations and subscriptions are blocked.</p> }
+        @for (var i = 0; i < _draft.Scenario.Steps.Count; i++)
+        {
+            var index = i; var s = _draft.Scenario.Steps[i];
+            <fieldset class="sd-panel pt-step" data-testid="pt-step">
+                <legend>Step @(index + 1)</legend>
+                <div class="pt-form">
+                    <label>Name <input value="@s.Name" @onchange="e => UpdateStep(index, x => x with { Name = Str(e) })" data-testid="pt-step-name" /></label>
+                    <label>Method
+                        <select value="@s.Method" @onchange="e => UpdateStep(index, x => x with { Method = Str(e, Get) })" data-testid="pt-step-method">
+                            @foreach (var m in new[] { "GET", "HEAD", "OPTIONS", "POST" }) { <option value="@m">@m</option> }
+                        </select>
+                    </label>
+                    <label>Relative path <input value="@s.RelativePath" @onchange="e => UpdateStep(index, x => x with { RelativePath = Str(e, Slash) })" data-testid="pt-step-path" /></label>
+                    <label>Expected status codes <input value="@string.Join(", ", s.ExpectedStatusCodes)" @onchange="e => UpdateStep(index, x => x with { ExpectedStatusCodes = (Str(e)).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(Int).Where(c => c is not null).Select(c => c!.Value).ToList() })" /></label>
+                    <label>Think time (ms) <input type="number" min="0" max="60000" value="@s.ThinkTimeMs" @onchange="e => UpdateStep(index, x => x with { ThinkTimeMs = Int(e.Value) })" /></label>
+                    @if (s.Method == "POST" && _draft.TargetType != PerformanceTargetType.GraphQlHttp)
+                    {
+                        <label class="sd-check"><input type="checkbox" checked="@s.PostIsSafeRead" @onchange="e => UpdateStep(index, x => x with { PostIsSafeRead = e.Value is true })" /> This POST only reads (search/query API)</label>
+                        <label class="pt-wide">Body (JSON; {placeholders} from test data) <textarea rows="3" @onchange="e => UpdateStep(index, x => x with { BodyTemplate = e.Value?.ToString(), ContentType = JsonType })">@s.BodyTemplate</textarea></label>
+                    }
+                    @if (_draft.TargetType == PerformanceTargetType.GraphQlHttp)
+                    {
+                        <label class="pt-wide">GraphQL query <textarea rows="4" @onchange="e => UpdateStep(index, x => x with { GraphQlQuery = e.Value?.ToString(), Method = Post })" data-testid="pt-step-graphql">@s.GraphQlQuery</textarea></label>
+                        <label class="pt-wide">Variables (JSON object) <textarea rows="2" @onchange="e => UpdateStep(index, x => x with { GraphQlVariablesJson = e.Value?.ToString() })">@s.GraphQlVariablesJson</textarea></label>
+                    }
+                </div>
+                <button type="button" class="sd-link" @onclick="() => Changed(_draft with { Scenario = _draft.Scenario with { Steps = _draft.Scenario.Steps.Where((_, j) => j != index).ToList() } })">Remove step</button>
+            </fieldset>
+        }
+        <button type="button" class="btn-secondary" @onclick="AddStep" data-testid="pt-add-step">Add step</button>
+
+        <h3>Test data</h3>
+        <label>Profile
+            <select value="@(_draft.Scenario.TestDataProfileId ?? "")" @onchange="e => Changed(_draft with { Scenario = _draft.Scenario with { TestDataProfileId = string.IsNullOrEmpty(e.Value?.ToString()) ? null : e.Value!.ToString() } })" data-testid="pt-data-select">
+                <option value="">None</option>
+                @foreach (var p in _overview!.DataProfiles) { <option value="@p.Id">@p.Name (@p.Rows.Count rows@(p.ApprovedSynthetic ? "" : ", not approved"))</option> }
+            </select>
+        </label>
+        <details class="pt-details">
+            <summary>Add a synthetic test data profile</summary>
+            <div class="pt-form">
+                <label>Name <input @bind="_dataName" /></label>
+                <label>Columns (comma-separated) <input @bind="_dataColumns" placeholder="personId, caseId" /></label>
+                <label>Selection <select @bind="_dataSelection">@foreach (var sel in Enum.GetValues<TestDataSelection>()) { <option value="@sel">@sel</option> }</select></label>
+                <label class="pt-wide">Rows (one per line, comma-separated) <textarea rows="4" @bind="_dataRows"></textarea></label>
+                <label class="sd-check"><input type="checkbox" @bind="_dataApproved" /> These are synthetic or approved test values (no real identities, no secrets)</label>
+            </div>
+            <button type="button" class="btn-secondary" @onclick="SaveDataProfileAsync" data-testid="pt-data-save">Save test data profile</button>
+        </details>
+        @SaveBar()
+    </section>;
+
+    private RenderFragment Workload() => @<section class="pt-section" aria-labelledby="pt-workload-h" data-testid="pt-workload">
+        <h2 id="pt-workload-h">Workload</h2>
+        <div class="pt-form">
+            <label>Purpose
+                <select value="@_draft.Workload.Purpose" @onchange="e => UpdateWorkload(w => w with { Purpose = Enum.Parse<WorkloadPurpose>(e.Value!.ToString()!) })" data-testid="pt-purpose">
+                    @foreach (var p in _overview!.Provider?.Capabilities.Purposes ?? []) { <option value="@p">@p</option> }
+                </select>
+            </label>
+            <label>Mode
+                <select value="@_draft.Workload.Mode" @onchange="e => UpdateWorkload(w => w with { Mode = Enum.Parse<WorkloadMode>(e.Value!.ToString()!) })" data-testid="pt-mode">
+                    @foreach (var m in _overview!.Provider?.Capabilities.Modes ?? [WorkloadMode.VirtualUsers]) { <option value="@m">@(m == WorkloadMode.VirtualUsers ? "Virtual users" : "Arrival rate (req/s)")</option> }
+                </select>
+            </label>
+            <label>@(_draft.Workload.Mode == WorkloadMode.VirtualUsers ? "Virtual users" : "Maximum generator virtual users") <input type="number" min="1" value="@_draft.Workload.VirtualUsers" @onchange="e => UpdateWorkload(w => w with { VirtualUsers = Int(e.Value) })" data-testid="pt-vus" /></label>
+            @if (_draft.Workload.Mode == WorkloadMode.ArrivalRate)
+            {
+                <label>Start rate (req/s) <input type="number" min="0" step="0.1" value="@_draft.Workload.StartRequestsPerSecond?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateWorkload(w => w with { StartRequestsPerSecond = Dbl(e.Value) })" /></label>
+                <label>Target rate (req/s) <input type="number" min="0.1" step="0.1" value="@_draft.Workload.RequestsPerSecond?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateWorkload(w => w with { RequestsPerSecond = Dbl(e.Value) })" data-testid="pt-rate" /></label>
+            }
+            <label>Warm-up (s) <input type="number" min="0" value="@_draft.Workload.WarmupSeconds" @onchange="e => UpdateWorkload(w => w with { WarmupSeconds = Int(e.Value) ?? 0 })" /></label>
+            <label>Ramp-up (s) <input type="number" min="0" value="@_draft.Workload.RampUpSeconds" @onchange="e => UpdateWorkload(w => w with { RampUpSeconds = Int(e.Value) ?? 0 })" /></label>
+            <label>Steady state (s) <input type="number" min="10" value="@_draft.Workload.SteadyStateSeconds" @onchange="e => UpdateWorkload(w => w with { SteadyStateSeconds = Int(e.Value) ?? 0 })" data-testid="pt-steady" /></label>
+            <label>Ramp-down (s) <input type="number" min="0" value="@_draft.Workload.RampDownSeconds" @onchange="e => UpdateWorkload(w => w with { RampDownSeconds = Int(e.Value) ?? 0 })" /></label>
+        </div>
+        <h3>Timeline</h3>
+        <ol class="pt-timeline" data-testid="pt-timeline">@foreach (var line in PerformanceTestRules.Timeline(_draft.Workload)) { <li>@line</li> }</ol>
+        <h3>Safety</h3>
+        @if (_overview!.Limits is { } lim)
+        {
+            <dl class="sd-mini" data-testid="pt-safety">
+                <div><dt>Max virtual users</dt><dd>@lim.MaxVirtualUsers</dd></div>
+                <div><dt>Max rate</dt><dd>@lim.MaxRequestsPerSecond.ToString("0.##", CultureInfo.InvariantCulture) req/s</dd></div>
+                <div><dt>Max duration</dt><dd>@P.Duration(lim.MaxDurationSeconds) (soak @P.Duration(lim.MaxSoakDurationSeconds))</dd></div>
+                <div><dt>Max requests</dt><dd>@lim.MaxTotalRequests.ToString("N0", CultureInfo.InvariantCulture)</dd></div>
+                <div><dt>This workload</dt><dd>@P.Load(_draft.Workload), @P.Duration(_draft.Workload.TotalSeconds)</dd></div>
+            </dl>
+            <p class="sd-muted">The backend enforces these limits; a workload beyond them cannot run.</p>
+        }
+        @SaveBar()
+    </section>;
+
+    private RenderFragment Thresholds() => @<section class="pt-section" aria-labelledby="pt-thresholds-h" data-testid="pt-thresholds">
+        <h2 id="pt-thresholds-h">Thresholds</h2>
+        <p class="sd-muted">Absolute expectations, evaluated by BirkNext after the run. A metric without a threshold is measured, not passed.</p>
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Thresholds">
+            <table data-testid="pt-threshold-table">
+                <thead><tr><th scope="col">Metric</th><th scope="col">Operator</th><th scope="col">Value</th><th scope="col">Severity</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+                <tbody>
+                    @for (var i = 0; i < _draft.Thresholds.Count; i++)
+                    {
+                        var index = i; var t = _draft.Thresholds[i];
+                        <tr data-testid="pt-threshold-row">
+                            <td><select aria-label="Metric" value="@t.Metric" @onchange="e => UpdateThreshold(index, x => x with { Metric = Enum.Parse<PerformanceMetric>(e.Value!.ToString()!) })">@foreach (var m in Enum.GetValues<PerformanceMetric>()) { <option value="@m">@PerformanceTestRules.Label(m)</option> }</select></td>
+                            <td><select aria-label="Operator" value="@t.Operator" @onchange="e => UpdateThreshold(index, x => x with { Operator = Enum.Parse<ThresholdOperator>(e.Value!.ToString()!) })">@foreach (var o in Enum.GetValues<ThresholdOperator>()) { <option value="@o">@PerformanceTestRules.Symbol(o)</option> }</select></td>
+                            <td><input aria-label="Value (@PerformanceTestRules.Unit(t.Metric))" type="number" step="any" value="@t.Value.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateThreshold(index, x => x with { Value = Dbl(e.Value) ?? 0 })" /> @PerformanceTestRules.Unit(t.Metric)</td>
+                            <td><select aria-label="Severity" value="@t.Severity" @onchange="e => UpdateThreshold(index, x => x with { Severity = Enum.Parse<ThresholdSeverity>(e.Value!.ToString()!) })"><option value="Required">Required</option><option value="Advisory">Advisory</option></select></td>
+                            <td><button type="button" class="sd-link" @onclick="() => Changed(_draft with { Thresholds = _draft.Thresholds.Where((_, j) => j != index).ToList() })">Remove</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <button type="button" class="btn-secondary" @onclick="() => Changed(_draft with { Thresholds = [.. _draft.Thresholds, new PerformanceThreshold { Metric = PerformanceMetric.LatencyP95Ms, Value = 500 }] })" data-testid="pt-add-threshold">Add threshold</button>
+
+        <h3>Drift policy (optional)</h3>
+        <p class="sd-muted">Accepted change against the active baseline. Without a policy, comparisons show deltas only — never “Regression”.</p>
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Drift policy">
+            <table data-testid="pt-drift-table">
+                <thead><tr><th scope="col">Metric</th><th scope="col">Accepted worsening (%)</th><th scope="col">Accepted worsening (absolute)</th><th scope="col">Severity</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+                <tbody>
+                    @for (var i = 0; i < _draft.DriftPolicies.Count; i++)
+                    {
+                        var index = i; var p = _draft.DriftPolicies[i];
+                        <tr>
+                            <td><select aria-label="Drift metric" value="@p.Metric" @onchange="e => UpdateDrift(index, x => x with { Metric = Enum.Parse<PerformanceMetric>(e.Value!.ToString()!) })">@foreach (var m in PerformanceTestRules.ComparedMetrics) { <option value="@m">@PerformanceTestRules.Label(m)</option> }</select></td>
+                            <td><input aria-label="Accepted relative change" type="number" step="any" value="@p.AllowedRelativeChangePercent?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateDrift(index, x => x with { AllowedRelativeChangePercent = Dbl(e.Value) })" /></td>
+                            <td><input aria-label="Accepted absolute change" type="number" step="any" value="@p.AllowedAbsoluteChange?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateDrift(index, x => x with { AllowedAbsoluteChange = Dbl(e.Value) })" /></td>
+                            <td><select aria-label="Drift severity" value="@p.Severity" @onchange="e => UpdateDrift(index, x => x with { Severity = Enum.Parse<ThresholdSeverity>(e.Value!.ToString()!) })"><option value="Required">Required</option><option value="Advisory">Advisory</option></select></td>
+                            <td><button type="button" class="sd-link" @onclick="() => Changed(_draft with { DriftPolicies = _draft.DriftPolicies.Where((_, j) => j != index).ToList() })">Remove</button></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        <button type="button" class="btn-secondary" @onclick="() => Changed(_draft with { DriftPolicies = [.. _draft.DriftPolicies, new PerformanceDriftPolicy { Metric = PerformanceMetric.LatencyP95Ms, AllowedRelativeChangePercent = 20 }] })" data-testid="pt-add-drift">Add drift policy</button>
+        @SaveBar()
+    </section>;
+
+    private RenderFragment ReadinessView() => @<section class="pt-section" aria-labelledby="pt-readiness-h" data-testid="pt-readiness">
+        <h2 id="pt-readiness-h">Readiness</h2>
+        @if (_isNew || _dirty) { <p class="sd-muted" data-testid="pt-readiness-unsaved">Save the definition to evaluate readiness on the backend.</p> }
+        else if (_readiness is null) { <p class="sd-reason">Readiness could not be loaded.</p> }
+        else
+        {
+            <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : "Cannot run yet:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests." : "")</p>
+            <ul class="sd-list" data-testid="pt-readiness-items">
+                @foreach (var item in _readiness.Items)
+                {
+                    <li data-testid="pt-readiness-item" data-key="@item.Key" data-state="@item.State"><span class="sd-pill sd-pill-@P.Tone(item.State)">@P.Label(item.State)</span> <strong>@item.Label</strong> — @item.Detail</li>
+                }
+            </ul>
+        }
+    </section>;
+
+    private RenderFragment RunView() => @<section class="pt-section" aria-labelledby="pt-run-h" data-testid="pt-run">
+        <h2 id="pt-run-h">Run</h2>
+        <dl class="sd-mini">
+            <div><dt>Target</dt><dd>@_draft.TargetOrigin</dd></div>
+            <div><dt>Environment</dt><dd>@_draft.EnvironmentName (@_draft.EnvironmentType)</dd></div>
+            <div><dt>Load</dt><dd>@_draft.Workload.Purpose, @P.Load(_draft.Workload)</dd></div>
+            <div><dt>Estimated duration</dt><dd>@P.Duration(_draft.Workload.TotalSeconds)</dd></div>
+            <div><dt>Provider</dt><dd>@ProviderText</dd></div>
+        </dl>
+        <p class="sd-muted">This applies real load to @(_draft.TargetOrigin). Production is refused by the backend; make sure the target owners expect the test.</p>
+        @if (ActiveRun is { } active)
+        {
+            <div class="sd-panel" data-testid="pt-progress">
+                <p role="status" aria-live="polite" data-testid="pt-progress-state"><span class="sd-pill sd-pill-@P.Tone(active.State)">@P.Label(active.State)</span>
+                    @(active.StartedAt is { } s ? $" · elapsed {P.Duration((int)(DateTimeOffset.UtcNow - s).TotalSeconds)}" : "")</p>
+                <p class="sd-muted">Live metrics are not reported by the provider during the run; results appear when it finishes.</p>
+                <button type="button" class="btn-secondary" @onclick="CancelAsync" disabled="@(active.State == PerformanceRunState.Cancelling)" data-testid="pt-cancel">Cancel test</button>
+            </div>
+        }
+        else
+        {
+            <label>Release / version label (optional) <input @bind="_versionLabel" maxlength="100" data-testid="pt-version-label" /></label>
+            <button type="button" class="btn-primary" @onclick="StartAsync" disabled="@(!CanRun)" data-testid="pt-run-start">Run performance test</button>
+            @if (!CanRun) { <p class="sd-muted" data-testid="pt-run-disabled">@(_isNew || _dirty ? "Save the definition first." : _readiness?.Ready == true ? "" : "Not ready — see Readiness.")</p> }
+            @if (_startBlockers.Count > 0) { <ul class="sd-list" data-testid="pt-start-blockers">@foreach (var b in _startBlockers) { <li>@b</li> }</ul> }
+        }
+    </section>;
+
+    private RenderFragment Results() => @<section class="pt-section" aria-labelledby="pt-results-h" data-testid="pt-results">
+        <h2 id="pt-results-h">Results</h2>
+        @if (_selectedRun is not { } r) { <p class="sd-empty" data-testid="pt-no-results">No run yet.</p> }
+        else
+        {
+            var assessed = r.ThresholdResults.Count(t => ScoreSemantics.IsAssessed(t.Outcome));
+            <p class="sd-muted">Run @P.Short(r.RunId) · @P.Utc(r.StartedAt ?? r.CreatedAt) · definition v@(r.DefinitionVersion)@(r.VersionLabel is null ? "" : $" · version {r.VersionLabel}")
+                <button type="button" class="sd-link" @onclick="() => ExportAsync(r)" data-testid="pt-export">Export HTML</button></p>
+            <dl class="sd-summary" data-testid="pt-result-summary">
+                <div><dt>Execution</dt><dd class="pt-small" data-testid="pt-result-state"><span class="sd-pill sd-pill-@P.Tone(r.State)">@P.Label(r.State)</span></dd></div>
+                <div><dt>Quality</dt><dd class="pt-small" data-testid="pt-result-quality"><span class="sd-pill sd-pill-@P.Tone(r.Verdict)">@P.Label(r.Verdict)</span>@(r.Quality?.QualityPercent is { } q ? $" {q.ToString("0.#", CultureInfo.InvariantCulture)} %" : "")</dd></div>
+                <div><dt>Coverage</dt><dd class="pt-small" data-testid="pt-result-coverage">@assessed of @r.ThresholdResults.Count threshold(s) assessed</dd></div>
+                <div><dt>Requests</dt><dd class="pt-small">@(r.Metrics is { } m0 ? $"{m0.RequestCount:N0} ({m0.SuccessfulRequests:N0} ok, {m0.FailedRequests:N0} failed)" : "—")</dd></div>
+                <div><dt>Throughput</dt><dd class="pt-small" data-testid="pt-result-rps">@PerformanceTestRules.Format(r.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</dd></div>
+                <div><dt>Error rate</dt><dd class="pt-small" data-testid="pt-result-errors">@PerformanceTestRules.Format(r.Metrics?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</dd></div>
+            </dl>
+            @if (r.StateReason is { } reason) { <p class="sd-reason" data-testid="pt-result-reason">@reason</p> }
+            @if (r.Metrics is { } m)
+            {
+                <h3>Latency</h3>
+                <dl class="sd-mini" data-testid="pt-latency">
+                    @foreach (var (label, value) in new[] { ("P50", m.Latency.P50Ms), ("P90", m.Latency.P90Ms), ("P95", m.Latency.P95Ms), ("P99", m.Latency.P99Ms), ("Mean", m.Latency.MeanMs), ("Max", m.Latency.MaxMs) })
+                    { <div><dt>@label</dt><dd>@PerformanceTestRules.Format(value, PerformanceMetric.LatencyMeanMs)</dd></div> }
+                </dl>
+            }
+            <h3>Thresholds</h3>
+            @if (r.ThresholdResults.Count == 0) { <p class="sd-muted" data-testid="pt-no-thresholds">No thresholds: metrics are measured, not assessed. Quality: Not assessed (no score).</p> }
+            else
+            {
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Threshold results">
+                    <table data-testid="pt-threshold-results">
+                        <thead><tr><th scope="col">Metric</th><th scope="col">Measured</th><th scope="col">Expected</th><th scope="col">Result</th><th scope="col">Severity</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in r.ThresholdResults)
+                            {
+                                <tr data-testid="pt-threshold-result" data-outcome="@t.Outcome"><th scope="row">@PerformanceTestRules.Label(t.Metric)</th><td>@PerformanceTestRules.Format(t.Measured, t.Metric)</td>
+                                    <td>@PerformanceTestRules.Symbol(t.Operator) @PerformanceTestRules.Format(t.Expected, t.Metric)</td><td><span class="sd-pill sd-pill-@P.Tone(t.Outcome)">@P.Label(t.Outcome)</span></td><td>@t.Severity</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            <h3>Baseline comparison</h3>
+            @if (r.Drift is { } d) { @DriftView(d, "pt-result-drift") }
+            else { <p class="sd-muted" data-testid="pt-result-nobaseline">@(r.BaselineIdAtRun is null ? "Not configured — no active baseline when this run started." : "Not assessed — this run has no complete metrics.")</p> }
+            @if (r.Limitations.Count > 0) { <h3>Limitations</h3><ul class="sd-list">@foreach (var l in r.Limitations) { <li>@l</li> }</ul> }
+            <details class="pt-details"><summary>Provenance</summary>
+                <p class="sd-muted">Provider @r.ProviderId @r.ProviderVersion · @r.MetricsSource · definition v@(r.DefinitionVersion) (@r.DefinitionFingerprint) · window @P.Utc(r.StartedAt) – @P.Utc(r.FinishedAt) · observability: @r.Observability@(r.Host is { } h ? $" · generator {h.OperatingSystem}, {h.LogicalProcessors} logical CPUs" : "")</p>
+            </details>
+        }
+    </section>;
+
+    private RenderFragment DriftView(PerformanceDriftAssessment d, string testId) => @<div class="sd-panel" data-testid="@testId" data-state="@d.State">
+        <p>Baseline v@(d.BaselineVersion) / run @P.Short(d.BaselineRunId) · <span class="sd-pill sd-pill-@P.Tone(d.State)">@P.Label(d.State)</span></p>
+        @foreach (var n in d.CompatibilityNotes) { <p class="sd-reason">@n</p> }
+        @DeltaTable(d.Deltas)
+        <p class="sd-muted">Drift is change relative to the baseline; thresholds are absolute expectations. Both are shown; neither explains why performance changed.</p>
+    </div>;
+
+    private RenderFragment DeltaTable(List<PerformanceMetricDelta> deltas) => @<div class="sd-scroll" tabindex="0" role="region" aria-label="Metric changes">
+        <table data-testid="pt-deltas">
+            <thead><tr><th scope="col">Metric</th><th scope="col">Reference</th><th scope="col">This run</th><th scope="col">Change</th><th scope="col">Direction</th><th scope="col">Drift policy</th></tr></thead>
+            <tbody>
+                @foreach (var x in deltas)
+                {
+                    <tr data-testid="pt-delta" data-metric="@x.Metric"><th scope="row">@PerformanceTestRules.Label(x.Metric)</th><td>@PerformanceTestRules.Format(x.Reference, x.Metric)</td><td>@PerformanceTestRules.Format(x.Current, x.Metric)</td>
+                        <td>@P.Delta(x)</td><td>@x.Direction</td><td>@(x.PolicyState is { } s ? $"{P.Label(s)} ({x.PolicyText})" : "—")</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>;
+
+    private RenderFragment CompareView() => @<section class="pt-section" aria-labelledby="pt-compare-h" data-testid="pt-compare">
+        <h2 id="pt-compare-h">Compare</h2>
+        @if (_runs.Count == 0) { <p class="sd-empty">No runs to compare yet.</p> }
+        else
+        {
+            <div class="sd-filterbar">
+                <label>Run <select @bind="_compareCurrent" data-testid="pt-compare-current">
+                    @foreach (var r in _runs) { <option value="@r.RunId">@P.Short(r.RunId) · @P.Utc(r.CreatedAt) · @r.State</option> }
+                </select></label>
+                <label>Compare with <select @bind="_compareReference" data-testid="pt-compare-reference">
+                    <option value="active">Active baseline</option>
+                    @foreach (var b in _baselines) { <option value="b:@b.BaselineId">Baseline v@(b.Version) (@b.Status)</option> }
+                    @foreach (var r in _runs) { <option value="@r.RunId">Run @P.Short(r.RunId)</option> }
+                </select></label>
+                <button type="button" class="btn-secondary" @onclick="CompareAsync" data-testid="pt-compare-go">Compare</button>
+            </div>
+            @if (_comparison is { } c)
+            {
+                <p data-testid="pt-compare-kind">@(c.AdHoc ? "Ad-hoc comparison (not the run's original result)." : "The run's original baseline comparison.") @(c.Compatible ? "Compatible runs." : "")</p>
+                @foreach (var n in c.CompatibilityNotes) { <p class="sd-reason" data-testid="pt-compare-note">@n</p> }
+                @if (c.Drift is { } d) { @DriftView(d, "pt-compare-drift") } else { @DeltaTable(c.Deltas) }
+            }
+        }
+    </section>;
+
+    private RenderFragment History() => @<section class="pt-section" aria-labelledby="pt-history-h" data-testid="pt-history">
+        <h2 id="pt-history-h">History</h2>
+        <label>Show <select @bind="_filter" data-testid="pt-history-filter">@foreach (var f in Enum.GetValues<HistoryFilter>()) { <option value="@f">@f</option> }</select></label>
+        @if (_runs.Count == 0) { <p class="sd-empty" data-testid="pt-history-empty">No runs yet.</p> }
+        else
+        {
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Run history">
+                <table class="pt-history-table" data-testid="pt-history-table">
+                    <thead><tr><th scope="col">Run</th><th scope="col">Date</th><th scope="col">Environment</th><th scope="col">Workload</th><th scope="col">Execution</th><th scope="col">Quality</th><th scope="col">P95</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Baseline</th><th scope="col">Actions</th></tr></thead>
+                    <tbody>
+                        @foreach (var r in FilteredRuns)
+                        {
+                            var baseline = _baselines.FirstOrDefault(b => b.RunId == r.RunId);
+                            <tr data-testid="pt-history-row" data-state="@r.State">
+                                <th scope="row">@P.Short(r.RunId)<span class="sd-context">v@(r.DefinitionVersion)</span></th>
+                                <td>@P.Utc(r.CreatedAt)</td><td>@r.DefinitionSnapshot.EnvironmentName</td><td>@r.DefinitionSnapshot.Workload.Purpose · @P.Load(r.DefinitionSnapshot.Workload)</td>
+                                <td>@P.Label(r.State)</td><td>@P.Label(r.Verdict)</td>
+                                <td>@PerformanceTestRules.Format(r.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</td><td>@PerformanceTestRules.Format(r.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</td>
+                                <td>@PerformanceTestRules.Format(r.Metrics?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</td>
+                                <td>@(baseline is null ? "—" : $"v{baseline.Version} ({baseline.Status})")</td>
+                                <td>
+                                    <button type="button" class="sd-link" @onclick="() => { _selectedRun = r; _tab = Tab.Results; }">View</button>
+                                    <button type="button" class="sd-link" @onclick="() => { _compareCurrent = r.RunId.ToString(); _tab = Tab.Compare; }">Compare</button>
+                                    @if (r.State == PerformanceRunState.Completed && r.Metrics is not null && !r.MetricsPartial && baseline is null)
+                                    {
+                                        <button type="button" class="sd-link" @onclick="() => { _promoteRunId = r.RunId; _promoteError = null; }" data-testid="pt-promote-open">Promote to baseline</button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        @if (_promoteRunId is { } promote && _runs.FirstOrDefault(r => r.RunId == promote) is { } candidate)
+        {
+            <div class="sd-panel" data-testid="pt-promote">
+                <h3>Promote run @P.Short(promote) to baseline</h3>
+                <p>Current baseline: @(ActiveBaseline is { } cur ? $"v{cur.Version} (run {P.Short(cur.RunId)})" : "none")</p>
+                @if (ActiveBaseline is { } current && _runs.FirstOrDefault(r => r.RunId == current.RunId) is { } currentRun) { @DeltaTable(PerformanceTestRules.Deltas(currentRun.Metrics, candidate.Metrics)) }
+                <label>Reason (optional) <input @bind="_promoteReason" maxlength="300" placeholder="e.g. infrastructure upgraded" data-testid="pt-promote-reason" /></label>
+                @if (candidate.Verdict == PerformanceQualityVerdict.Fail)
+                {
+                    <label class="sd-check"><input type="checkbox" @bind="_promoteAcceptFailures" /> Required thresholds failed in this run — use it as the baseline anyway</label>
+                }
+                @if (_promoteError is { } pe) { <p class="sd-reason" role="alert">@pe</p> }
+                <button type="button" class="btn-primary" @onclick="PromoteAsync" data-testid="pt-promote-confirm">Set as new baseline</button>
+                <button type="button" class="btn-secondary" @onclick="() => _promoteRunId = null">Cancel</button>
+            </div>
+        }
+        <h3>Baselines</h3>
+        @if (_baselines.Count == 0) { <p class="sd-muted">No baseline selected yet.</p> }
+        else
+        {
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Baseline history">
+                <table data-testid="pt-baselines">
+                    <thead><tr><th scope="col">Version</th><th scope="col">Run</th><th scope="col">Effective</th><th scope="col">P95</th><th scope="col">P99</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Reason</th><th scope="col">Status</th></tr></thead>
+                    <tbody>
+                        @foreach (var b in _baselines)
+                        {
+                            var br = _runs.FirstOrDefault(r => r.RunId == b.RunId);
+                            <tr data-testid="pt-baseline-row" data-status="@b.Status"><th scope="row">v@(b.Version)</th><td>@P.Short(b.RunId)</td><td>@P.Utc(b.EffectiveFrom) – @(b.SupersededAt is null ? "now" : P.Utc(b.SupersededAt))</td>
+                                <td>@PerformanceTestRules.Format(br?.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</td><td>@PerformanceTestRules.Format(br?.Metrics?.Latency.P99Ms, PerformanceMetric.LatencyP99Ms)</td>
+                                <td>@PerformanceTestRules.Format(br?.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</td><td>@PerformanceTestRules.Format(br?.Metrics?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</td>
+                                <td>@(b.Reason ?? "—")</td><td>@b.Status</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>;
+}
