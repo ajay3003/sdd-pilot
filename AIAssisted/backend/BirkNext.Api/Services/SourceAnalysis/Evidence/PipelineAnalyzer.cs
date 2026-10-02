@@ -11,10 +11,13 @@ namespace BirkNext.Api.Services.SourceAnalysis.Evidence;
 /// </summary>
 internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
 {
-    public const int Version = 1;
+    /// <summary>v2: job dependencies/conditions, step conditions/continueOnError/strategy phase/artifact publish+consume, pipeline and repository
+    /// resources, template uses with level and literal parameters, smoke/API/contract/performance tests, health checks, rollback, manual approval.</summary>
+    public const int Version = 2;
     public DomainAnalyzerInfo Info { get; } = SourceEvidenceAnalyzer.Info(SourceEvidenceDomain.CiCd, "CI/CD pipeline analyzer", Version, 1,
         ["Azure Pipelines", "GitHub Actions", "GitLab CI", "Jenkins"], [],
-        ["Pipelines", "Triggers", "Stages", "Jobs", "Steps by kind", "Deployment environments", "Templates", "Secret references (names)", "Dependency automation"]);
+        ["Pipelines", "Triggers", "Stages", "Jobs", "Job and stage dependencies", "Conditions", "Steps by kind", "Artifacts published/consumed", "Pipeline and repository resources",
+         "Deployment environments", "Template uses", "Secret references (names)", "Dependency automation"]);
 
     public void Failed(SourceEvidenceContext context, string reason) => context.CiCd = context.Envelope(new PipelineEvidence
     { Status = SourceDomainStatus.FailedAnalysis, StatusReason = reason, Limitations = [SourceDomainText.SourceBoundary] }, SourceEvidenceDomain.CiCd, Version);
@@ -46,8 +49,16 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         (R(@"\b(az\s+containerapp\s+(update|create|up)|az\s+webapp\s+(deploy|deployment|config\s+container\s+set)|az\s+functionapp\s+(deployment|config)|func\s+azure\s+functionapp\s+publish)\b"), PipelineStepKind.ApplicationDeploy, "Azure CLI deploy"),
         (R(@"\b(docker\s+(buildx\s+)?build|az\s+acr\s+build|podman\s+build|buildah\s+bud)\b"), PipelineStepKind.ContainerBuild, "container build"),
         (R(@"\b(docker|podman)\s+push\b"), PipelineStepKind.ContainerPush, "container push"),
-        (R(@"\b(dotnet\s+ef\s+(migrations\s+script|database\s+update|migrations\s+bundle)|sqlcmd|flyway|liquibase|efbundle)\b"), PipelineStepKind.DatabaseMigration, "database migration"),
+        // Generating a migration script or bundle is build work; applying one (database update, sqlcmd, flyway/liquibase, running the bundle) is a deployment.
+        (R(@"\bdotnet\s+ef\s+migrations\s+(script|bundle)\b"), PipelineStepKind.Build, "migration bundle/script build"),
+        (R(@"\b(dotnet\s+ef\s+database\s+update|sqlcmd|flyway\s+(migrate|repair)|liquibase\s+update|\./efbundle|efbundle\.exe|\befbundle\s+--)"), PipelineStepKind.DatabaseMigration, "database migration"),
         (R(@"\baz\s+keyvault\s+secret\s+(show|download)\b"), PipelineStepKind.SecretRetrieval, "Key Vault secret read"),
+        (R(@"\b(newman\s+run|karate\b|postman\s+collection)"), PipelineStepKind.ApiTest, "API tests"),
+        (R(@"\b(pact(-broker)?\s+(verify|can-i-deploy|publish)|schemathesis|openapi-diff|oasdiff|graphql-inspector)"), PipelineStepKind.ContractTest, "contract checks"),
+        (R(@"\b(k6\s+run|jmeter\s+-n|artillery\s+run|locust\b|nbomber)"), PipelineStepKind.PerformanceTest, "performance tests"),
+        (R(@"\b(curl|wget|Invoke-WebRequest|Invoke-RestMethod|iwr)\b[^\n]*(/health|/healthz|/ready|/readiness|/alive|/liveness|/ping)\b"), PipelineStepKind.HealthCheck, "health check"),
+        (R(@"\b(kubectl\s+rollout\s+undo|helm\s+rollback)\b"), PipelineStepKind.Rollback, "rollback"),
+        (R(@"\baz\s+webapp\s+deployment\s+slot\s+swap\b"), PipelineStepKind.ApplicationDeploy, "slot swap"),
     ];
 
     private static readonly Dictionary<string, (PipelineStepKind Kind, string Tool)> Tasks = new(StringComparer.OrdinalIgnoreCase)
@@ -99,6 +110,32 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         public HashSet<string> Variables { get; } = new(StringComparer.Ordinal);
         public bool Federated { get; set; }
         public bool Approvals { get; set; }
+        public List<PipelineJob> JobDetails { get; } = [];
+        public List<PipelineResource> Resources { get; } = [];
+        public List<PipelineTemplateUse> TemplateUses { get; } = [];
+        public List<string> Parameters { get; } = [];
+        public Dictionary<string, string> ParameterDefaults { get; } = new(StringComparer.Ordinal);
+        /// <summary>Per-step metadata of the YAML step node being read (applies to every step derived from it).</summary>
+        public StepMeta Meta { get; set; } = StepMeta.None;
+
+        public void Use(string template, string level, string? stage, string? job, YamlNode node, int order)
+        {
+            var path = template.Split('@')[0].Trim();
+            var alias = template.Contains('@') ? template[(template.IndexOf('@') + 1)..].Trim() : null;
+            var external = alias is not null && !alias.Equals("self", StringComparison.OrdinalIgnoreCase);
+            var resolved = external || path.Contains("${{") || path.Contains("$(") ? null : ResolveFile(this, path);
+            var parameters = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (node["parameters"] is { Kind: YamlKind.Map } p)
+                foreach (var (key, value) in p.Entries.Take(40))
+                    if (value.Kind == YamlKind.Scalar && !SourceEvidenceRedaction.SensitiveKey(key) && SourceEvidenceRedaction.SafeLiteral(key, value.Value) is { } safe)
+                        parameters[SourceEvidenceRedaction.SafePath(key)] = safe;
+            TemplateUses.Add(new PipelineTemplateUse
+            {
+                Template = SourceEvidenceRedaction.SafePath(template), ResolvedPath = resolved is null ? null : SourceEvidenceRedaction.SafePath(resolved),
+                RepositoryAlias = alias is null ? null : SourceEvidenceRedaction.SafePath(alias), Level = level, Stage = stage is null ? null : SourceEvidenceRedaction.SafePath(stage),
+                Job = job is null ? null : SourceEvidenceRedaction.SafePath(job), Parameters = parameters, Line = node.Line, Order = order,
+            });
+        }
         public SourceEnvironmentLabel FileEnvironment { get; set; } = SourceEnvironmentLabel.Default;
 
         public void Step(string name, PipelineStepKind kind, string tool, string? stage, string? job, string? workingDirectory, string? environment, IEnumerable<string> targets, int line) =>
@@ -108,6 +145,8 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                 Tool = SourceEvidenceRedaction.SafePath(tool), Stage = stage is null ? null : SourceEvidenceRedaction.SafePath(stage), Job = job is null ? null : SourceEvidenceRedaction.SafePath(job),
                 WorkingDirectory = workingDirectory is null ? null : SourceEvidenceRedaction.SafePath(workingDirectory), Environment = environment is null ? null : SourceEvidenceRedaction.SafePath(environment),
                 Targets = targets.Select(SourceEvidenceRedaction.SafePath).Where(t => t.Length > 0).Distinct().Take(8).ToList(), Line = line,
+                Condition = Meta.Condition, ContinueOnError = Meta.ContinueOnError, StrategyPhase = Meta.Phase, Order = Meta.Order,
+                ArtifactsPublished = [.. Meta.Published], ArtifactsConsumed = [.. Meta.Consumed],
             });
 
         public void Variable(string name, string? raw, int line)
@@ -118,10 +157,25 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         }
     }
 
+    internal sealed record StepMeta(string? Condition, bool ContinueOnError, string? Phase, int Order, List<string> Published, List<PipelineArtifactUse> Consumed)
+    {
+        public static readonly StepMeta None = new(null, false, null, 0, [], []);
+    }
+
+    /// <summary>A condition/expression as display-safe text: secret-shaped tokens redacted, characters restricted, length bounded. Never evaluated.</summary>
+    internal static string? SafeExpression(string? expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression)) return null;
+        var e = Regex.Replace(expression.Trim(), @"\s+", " ");
+        e = Regex.Replace(e, @"[A-Za-z0-9+/=_\-]{32,}", m => SourceEvidenceRedaction.SecretShaped(m.Value) ? "[redacted]" : m.Value);
+        e = Regex.Replace(e, @"[^\p{L}\p{N}_./<>\[\]{}*~^=@$() `:+?,\-#!|'""&]", "_");
+        return e.Length > 240 ? e[..240] + "…" : e;
+    }
+
     public void Analyze(SourceEvidenceContext context, CancellationToken ct)
     {
         context.Capabilities.AddRange([
-            new(SourceEvidenceDomain.CiCd, "Azure Pipelines", DomainSupport.Partial, "Triggers, path filters, stages, jobs, deployment environments, tasks and templates via a YAML subset reader; commands inside scripts are recognized by pattern; template expressions and conditions are not evaluated; templates are not expanded into the including pipeline."),
+            new(SourceEvidenceDomain.CiCd, "Azure Pipelines", DomainSupport.Partial, "Triggers, path filters, pipeline/repository resources, stages and jobs with dependsOn and conditions, deployment environments and strategies, tasks, artifact publish/download and template uses (with literal parameters) via a YAML subset reader; commands inside scripts are recognized by pattern; conditions and template expressions are recorded as written, never evaluated; templates stay separate files (consumers compose them)."),
             new(SourceEvidenceDomain.CiCd, "GitHub Actions", DomainSupport.Partial, "on: triggers, jobs, environments, actions and run commands by pattern; reusable workflows are listed, not expanded."),
             new(SourceEvidenceDomain.CiCd, "GitLab CI", DomainSupport.Partial, "Stages, jobs, environments, rules/only and scripts by pattern; includes are not resolved."),
             new(SourceEvidenceDomain.CiCd, "Jenkins", DomainSupport.Partial, "Declarative stage names, sh/bat commands and triggers by pattern; Groovy is not evaluated."),
@@ -157,6 +211,7 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                 IsTemplate = template, Triggers = b.Triggers, Stages = b.Stages, Jobs = [.. b.Jobs.Distinct()], Steps = b.Steps, Environments = [.. b.Environments.Order(StringComparer.Ordinal)],
                 Artifacts = [.. b.Artifacts.Order(StringComparer.Ordinal)], Templates = [.. b.Templates.Order(StringComparer.Ordinal)], SecretReferences = [.. b.Secrets.Order(StringComparer.Ordinal)],
                 VariableNames = [.. b.Variables.Order(StringComparer.Ordinal)], UsesFederatedCredentials = b.Federated, ApprovalsDeclared = b.Approvals,
+                JobDetails = b.JobDetails, Resources = b.Resources, TemplateUses = b.TemplateUses, Parameters = [.. b.Parameters.Distinct()], ParameterDefaults = b.ParameterDefaults,
             });
         }
         var automation = context.Files.Where(f => Regex.IsMatch(f.Path, @"(^|/)(\.github/)?(renovate\.json5?|\.renovaterc(\.json)?|dependabot\.ya?ml)$", RegexOptions.IgnoreCase))
@@ -181,65 +236,153 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         foreach (var schedule in doc.List("schedules"))
             b.Triggers.Add(new PipelineTrigger { Type = "schedule", Schedule = SourceEvidenceRedaction.SafePath(schedule.Str("cron") ?? ""), BranchesInclude = Branches(schedule["branches"], "include"), Line = schedule.Line });
         foreach (var resource in doc["resources"]?.List("pipelines") ?? [])
-            if (resource.Has("trigger")) b.Triggers.Add(new PipelineTrigger { Type = "pipeline-resource", BranchesInclude = [SourceEvidenceRedaction.SafePath(resource.Str("source") ?? resource.Str("pipeline") ?? "")], Line = resource.Line });
+        {
+            var trigger = resource["trigger"];
+            var declared = trigger is not null && trigger.Value is not ("none" or "false");
+            if (declared) b.Triggers.Add(new PipelineTrigger { Type = "pipeline-resource", BranchesInclude = [SourceEvidenceRedaction.SafePath(resource.Str("source") ?? resource.Str("pipeline") ?? "")], Line = resource.Line });
+            b.Resources.Add(new PipelineResource
+            {
+                Kind = "pipeline", Alias = SourceEvidenceRedaction.SafePath(resource.Str("pipeline") ?? ""), Source = SourceEvidenceRedaction.SafePath(resource.Str("source") ?? resource.Str("pipeline") ?? ""),
+                Project = resource.Str("project") is { } project ? SourceEvidenceRedaction.SafePath(project) : null, TriggerDeclared = declared,
+                TriggerBranches = trigger is { Kind: YamlKind.Map } tm ? Branches(tm["branches"], "include") : declared ? ["(all branches)"] : [], Line = resource.Line,
+            });
+        }
+        foreach (var repository in doc["resources"]?.List("repositories") ?? [])
+            b.Resources.Add(new PipelineResource
+            {
+                Kind = "repository", Alias = SourceEvidenceRedaction.SafePath(repository.Str("repository") ?? ""), Source = SourceEvidenceRedaction.SafePath(repository.Str("name") ?? ""),
+                RepositoryType = repository.Str("type") is { } type ? SourceEvidenceRedaction.SafePath(type) : null, Ref = repository.Str("ref") is { } rf ? SourceEvidenceRedaction.SafePath(rf) : null,
+                TriggerDeclared = repository.Has("trigger") && repository["trigger"]?.Value is not ("none" or "false"), Line = repository.Line,
+            });
+        foreach (var parameter in doc.List("parameters"))
+            if (parameter.Str("name") is { } pn)
+            {
+                b.Parameters.Add(SourceEvidenceRedaction.SafePath(pn));
+                if (parameter["default"] is { Kind: YamlKind.Scalar } d && !SourceEvidenceRedaction.SensitiveKey(pn) && SourceEvidenceRedaction.SafeLiteral(pn, d.Value) is { } safe)
+                    b.ParameterDefaults[SourceEvidenceRedaction.SafePath(pn)] = safe;
+            }
+        if (doc["parameters"] is { Kind: YamlKind.Map } parameterMap) foreach (var (pn, _) in parameterMap.Entries) b.Parameters.Add(SourceEvidenceRedaction.SafePath(pn));
         Variables(b, doc["variables"]);
-        if (doc["extends"]?.Str("template") is { } extends) b.Templates.Add(Resolve(b, extends));
+        if (doc["extends"] is { } ext && ext.Str("template") is { } extends) { b.Templates.Add(Resolve(b, extends)); b.Use(extends, "extends", null, null, ext, 0); }
+        var stageOrder = 0;
         foreach (var stage in doc.List("stages"))
         {
-            if (stage.Str("template") is { } t) { b.Templates.Add(Resolve(b, t)); b.Step($"template {t}", PipelineStepKind.Template, "template", null, null, null, null, [Resolve(b, t)], stage.Line); continue; }
+            if (stage.Str("template") is { } t)
+            {
+                b.Templates.Add(Resolve(b, t)); b.Use(t, "stages", null, null, stage, stageOrder++);
+                b.Step($"template {t}", PipelineStepKind.Template, "template", null, null, null, null, [Resolve(b, t)], stage.Line); continue;
+            }
             var name = stage.Str("stage") ?? "(stage)";
             var jobs = stage.List("jobs").ToList();
             var deployment = jobs.Any(j => j.Has("deployment"));
             var env = jobs.Select(EnvironmentName).FirstOrDefault(e => e is not null);
             b.Stages.Add(new PipelineStage(SourceEvidenceRedaction.SafePath(name), stage.Str("displayName") is { } d ? SourceEvidenceRedaction.SafePath(d) : null,
-                stage.List("dependsOn").Select(x => SourceEvidenceRedaction.SafePath(x.Value ?? "")).Where(x => x.Length > 0).ToList(), deployment, env is null ? null : SourceEvidenceRedaction.SafePath(env), stage.Line));
+                stage.List("dependsOn").Select(x => SourceEvidenceRedaction.SafePath(x.Value ?? "")).Where(x => x.Length > 0).ToList(), deployment, env is null ? null : SourceEvidenceRedaction.SafePath(env), stage.Line)
+            { DependsOnDeclared = stage.Has("dependsOn"), Condition = SafeExpression(stage.Str("condition")), Order = stageOrder++ });
             Variables(b, stage["variables"]);
-            foreach (var job in jobs) Job(b, job, name);
+            var jobOrder = 0;
+            foreach (var job in jobs) Job(b, job, name, jobOrder++);
         }
-        foreach (var job in doc.List("jobs")) Job(b, job, null);
+        var topJob = 0;
+        foreach (var job in doc.List("jobs")) Job(b, job, null, topJob++);
         Steps(b, doc.List("steps"), null, null, null);
     }
 
     private static string? EnvironmentName(YamlNode job) => job["environment"] switch { { Kind: YamlKind.Scalar } s => s.Value, { Kind: YamlKind.Map } m => m.Str("name"), _ => null };
 
-    private static void Job(PipelineBuilder b, YamlNode job, string? stage)
+    private static void Job(PipelineBuilder b, YamlNode job, string? stage, int order = 0)
     {
-        if (job.Str("template") is { } t) { b.Templates.Add(Resolve(b, t)); b.Step($"template {t}", PipelineStepKind.Template, "template", stage, null, null, null, [Resolve(b, t)], job.Line); return; }
+        if (job.Str("template") is { } t)
+        {
+            b.Templates.Add(Resolve(b, t)); b.Use(t, "jobs", stage, null, job, order);
+            b.Step($"template {t}", PipelineStepKind.Template, "template", stage, null, null, null, [Resolve(b, t)], job.Line); return;
+        }
         var name = job.Str("job") ?? job.Str("deployment") ?? "(job)";
         b.Jobs.Add(SourceEvidenceRedaction.SafePath(name));
         var env = EnvironmentName(job);
         if (env is not null) b.Environments.Add(SourceEvidenceRedaction.SafePath(env));
+        var strategyName = job["strategy"] is { Kind: YamlKind.Map } sm ? sm.Entries.Select(e => e.Key).FirstOrDefault() : null;
+        b.JobDetails.Add(new PipelineJob
+        {
+            Name = SourceEvidenceRedaction.SafePath(name), DisplayName = job.Str("displayName") is { } dn ? SourceEvidenceRedaction.SafePath(dn) : null,
+            Stage = stage is null ? null : SourceEvidenceRedaction.SafePath(stage), DependsOn = job.List("dependsOn").Select(x => SourceEvidenceRedaction.SafePath(x.Value ?? "")).Where(x => x.Length > 0).ToList(),
+            DependsOnDeclared = job.Has("dependsOn"), Condition = SafeExpression(job.Str("condition")), Deployment = job.Has("deployment"),
+            Environment = env is null ? null : SourceEvidenceRedaction.SafePath(env), Strategy = strategyName is null ? null : SourceEvidenceRedaction.SafePath(strategyName),
+            ContinueOnError = job.Str("continueOnError") is "true" or "True", Order = order, Line = job.Line,
+        });
         Variables(b, job["variables"]);
-        Steps(b, job.List("steps"), stage, name, env);
+        var stepOrder = Steps(b, job.List("steps"), stage, name, env, null, 0);
         // Deployment strategies nest their steps (runOnce/rolling/canary → preDeploy/deploy/routeTraffic/postRouteTraffic/on.success|failure).
         if (job["strategy"] is { Kind: YamlKind.Map } strategy)
             foreach (var (_, phaseSet) in strategy.Entries)
-                foreach (var (_, phase) in phaseSet.Entries)
+                foreach (var (phaseName, phase) in phaseSet.Entries)
                 {
-                    Steps(b, phase.List("steps"), stage, name, env);
-                    foreach (var (_, outcome) in phase.Entries.Where(e => e.Value.Kind == YamlKind.Map)) Steps(b, outcome.List("steps"), stage, name, env);
+                    stepOrder = Steps(b, phase.List("steps"), stage, name, env, phaseName, stepOrder);
+                    foreach (var (outcomeName, outcome) in phase.Entries.Where(e => e.Value.Kind == YamlKind.Map))
+                        stepOrder = Steps(b, outcome.List("steps"), stage, name, env, $"{phaseName}.{outcomeName}", stepOrder);
                 }
     }
 
-    private static void Steps(PipelineBuilder b, IEnumerable<YamlNode> steps, string? stage, string? job, string? environment)
+    private static void Steps(PipelineBuilder b, IEnumerable<YamlNode> steps, string? stage, string? job, string? environment) => Steps(b, steps, stage, job, environment, null, 0);
+
+    /// <summary>Reads the steps of one job (or strategy phase) in order; returns the next step position.</summary>
+    private static int Steps(PipelineBuilder b, IEnumerable<YamlNode> steps, string? stage, string? job, string? environment, string? phase, int order)
     {
         foreach (var step in steps.Where(s => s.Kind == YamlKind.Map))
         {
             var display = step.Str("displayName") ?? step.Str("name");
             var wd = step.Str("workingDirectory") ?? step["inputs"]?.Str("workingDirectory");
+            var meta = new StepMeta(SafeExpression(step.Str("condition")), step.Str("continueOnError") is "true" or "True", phase is null ? null : SourceEvidenceRedaction.SafePath(phase), order++, [], []);
+            b.Meta = meta;
+            try
+            {
             if (step.Str("template") is { } t)
             {
-                b.Templates.Add(Resolve(b, t));
+                b.Templates.Add(Resolve(b, t)); b.Use(t, "steps", stage, job, step, meta.Order);
                 b.Step(display ?? $"template {t}", PipelineStepKind.Template, "template", stage, job, wd, environment, [Resolve(b, t)], step.Line);
                 continue;
             }
-            if (step.Str("publish") is { } publish) { b.Artifacts.Add(SourceEvidenceRedaction.SafePath(step.Str("artifact") ?? publish)); b.Step(display ?? "publish artifact", PipelineStepKind.Publish, "publish", stage, job, wd, environment, [], step.Line); continue; }
-            if (step.Has("download") || step.Has("checkout")) continue;
+            if (step.Str("publish") is { } publish)
+            {
+                var artifact = SourceEvidenceRedaction.SafePath(step.Str("artifact") ?? publish);
+                b.Artifacts.Add(artifact);
+                b.Meta = meta with { Published = [artifact] };
+                b.Step(display ?? "publish artifact", PipelineStepKind.Publish, "publish", stage, job, wd, environment, [], step.Line);
+                continue;
+            }
+            if (step.Str("download") is { } download)
+            {
+                if (download is "none") { b.Meta = meta with { Consumed = [new("(none)", "none")] }; b.Step(display ?? "download none", PipelineStepKind.ArtifactDownload, "download none", stage, job, wd, environment, [], step.Line); continue; }
+                var artifact = step.Str("artifact") is { } da ? SourceEvidenceRedaction.SafePath(da) : "(all artifacts)";
+                b.Meta = meta with { Consumed = [new(artifact, SourceEvidenceRedaction.SafePath(download))] };
+                b.Step(display ?? $"download {download}", PipelineStepKind.ArtifactDownload, "download", stage, job, wd, environment, [], step.Line);
+                continue;
+            }
+            if (step.Has("checkout")) continue;
             if (step.Str("task") is { } task)
             {
                 var taskName = task.Split('@')[0];
-                if (taskName.Equals("ManualValidation", StringComparison.OrdinalIgnoreCase)) b.Approvals = true;
+                if (taskName.Equals("ManualValidation", StringComparison.OrdinalIgnoreCase))
+                {
+                    b.Approvals = true;
+                    b.Step(display ?? task, PipelineStepKind.ManualApproval, "ManualValidation", stage, job, wd, environment, [], step.Line);
+                    continue;
+                }
                 var inputs = step["inputs"];
+                if (taskName is "PublishPipelineArtifact" or "PublishBuildArtifacts")
+                {
+                    var artifact = SourceEvidenceRedaction.SafePath(inputs?.Str("artifact") ?? inputs?.Str("artifactName") ?? inputs?.Str("ArtifactName") ?? "drop");
+                    b.Artifacts.Add(artifact);
+                    b.Meta = meta with { Published = [artifact] };
+                }
+                if (taskName is "DownloadPipelineArtifact" or "DownloadBuildArtifacts")
+                {
+                    var source = inputs?.Str("source") ?? inputs?.Str("buildType") ?? "current";
+                    var from = source is "current" ? "current" : (inputs?.Str("pipeline") ?? inputs?.Str("definition")) is { } def ? $"pipeline:{def}" : source;
+                    b.Meta = meta with { Consumed = [new(SourceEvidenceRedaction.SafePath(inputs?.Str("artifact") ?? inputs?.Str("artifactName") ?? "(all artifacts)"), SourceEvidenceRedaction.SafePath(from))] };
+                    b.Step(display ?? task, PipelineStepKind.ArtifactDownload, "Download pipeline artifact", stage, job, wd, environment, [], step.Line);
+                    continue;
+                }
                 if (taskName.Equals("AzureKeyVault", StringComparison.OrdinalIgnoreCase)) b.Secrets.Add($"Key Vault task: {SourceEvidenceRedaction.SafePath(inputs?.Str("KeyVaultName") ?? "(vault)")}");
                 if (inputs?.Str("azureSubscription") is not null || inputs?.Str("connectedServiceNameARM") is not null || inputs?.Str("environmentServiceNameAzureRM") is not null)
                     b.Secrets.Add($"service connection: {SourceEvidenceRedaction.SafePath(inputs?.Str("azureSubscription") ?? inputs?.Str("connectedServiceNameARM") ?? inputs?.Str("environmentServiceNameAzureRM") ?? "")}");
@@ -252,7 +395,7 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                 }
                 else if (taskName.Equals("DotNetCoreCLI", StringComparison.OrdinalIgnoreCase) && command is not null)
                 {
-                    var kind = command switch { "test" => TestKind(inputs?.Str("projects") ?? display ?? ""), "build" => PipelineStepKind.Build, "restore" => PipelineStepKind.Restore, "publish" or "pack" or "push" => PipelineStepKind.Publish, _ => PipelineStepKind.Other };
+                    var kind = command switch { "test" => TestKind($"{inputs?.Str("projects")} {display}"), "build" => PipelineStepKind.Build, "restore" => PipelineStepKind.Restore, "publish" or "pack" or "push" => PipelineStepKind.Publish, _ => PipelineStepKind.Other };
                     b.Step(display ?? task, kind, $"dotnet {command}", stage, job, wd, environment, inputs?.Str("projects") is { } p ? [p] : [], step.Line);
                     if (kind is PipelineStepKind.Test or PipelineStepKind.UnitTest or PipelineStepKind.IntegrationTest or PipelineStepKind.E2ETest && (inputs?.Str("arguments") ?? "").Contains("Code Coverage", StringComparison.OrdinalIgnoreCase))
                         b.Step(display ?? task, PipelineStepKind.Coverage, "code coverage", stage, job, wd, environment, [], step.Line);
@@ -277,12 +420,19 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                 foreach (var (name, value) in env.Entries)
                     if (value.Value is { } v && Regex.IsMatch(v, @"\$\((?:[A-Za-z0-9_.]*(secret|token|password|key|pat|accesstoken)[A-Za-z0-9_.]*)\)", RegexOptions.IgnoreCase))
                         b.Secrets.Add($"secret variable: {SourceEvidenceRedaction.SafePath(Regex.Match(v, @"\$\(([^)]+)\)").Groups[1].Value)}");
+            }
+            finally { b.Meta = StepMeta.None; }
         }
+        return order;
     }
 
-    private static PipelineStepKind TestKind(string hint) => hint switch
+    internal static PipelineStepKind TestKind(string hint) => hint switch
     {
-        _ when Regex.IsMatch(hint, @"(?i)(e2e|endtoend|end-to-end|playwright|acceptance|ui\.?tests|smoke)") => PipelineStepKind.E2ETest,
+        _ when Regex.IsMatch(hint, @"(?i)smoke") => PipelineStepKind.SmokeTest,
+        _ when Regex.IsMatch(hint, @"(?i)(contract|pact)") => PipelineStepKind.ContractTest,
+        _ when Regex.IsMatch(hint, @"(?i)(perf|load|stress|k6|jmeter|nbomber)") => PipelineStepKind.PerformanceTest,
+        _ when Regex.IsMatch(hint, @"(?i)(e2e|endtoend|end-to-end|playwright|acceptance|ui\.?tests)") => PipelineStepKind.E2ETest,
+        _ when Regex.IsMatch(hint, @"(?i)(api\.?tests?|apitest|newman|postman)") => PipelineStepKind.ApiTest,
         _ when Regex.IsMatch(hint, @"(?i)integration") => PipelineStepKind.IntegrationTest,
         _ when Regex.IsMatch(hint, @"(?i)(unit)") => PipelineStepKind.UnitTest,
         _ when Regex.IsMatch(hint, @"(?i)(a11y|accessibility|axe)") => PipelineStepKind.AccessibilityTest,
@@ -323,6 +473,15 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
                     foreach (Match v in Regex.Matches(statement, @"-var-file[= ]""?([^""\s]+)")) targets.Add(v.Groups[1].Value);
                     foreach (Match f in Regex.Matches(statement, @"--template-file\s+""?([^""\s]+)|-TemplateFile\s+""?([^""\s]+)")) targets.Add(f.Groups[1].Success ? f.Groups[1].Value : f.Groups[2].Value);
                 }
+                // v2: what a build builds — project/solution paths and the container build context (paths only; arguments and values are not kept).
+                if (stepKind is PipelineStepKind.Build or PipelineStepKind.Publish)
+                    foreach (Match p in Regex.Matches(statement, @"(?:--project\s+|\b(?:build|publish|pack|bundle)\s+)""?([\w./\\-]+(?:\.(?:csproj|fsproj|sln|slnx))?)""?", RegexOptions.IgnoreCase))
+                        if (p.Groups[1].Value.Contains('/') || p.Groups[1].Value.Contains('\\') || Regex.IsMatch(p.Groups[1].Value, @"\.(csproj|fsproj|sln|slnx)$", RegexOptions.IgnoreCase)) targets.Add(p.Groups[1].Value.Replace('\\', '/'));
+                if (kind == PipelineStepKind.ContainerBuild)
+                {
+                    if (Regex.Match(statement, @"\s(?:-f|--file)\s+""?([^""\s]+)") is { Success: true } dockerfile) targets.Add(dockerfile.Groups[1].Value.Replace('\\', '/'));
+                    if (Regex.Match(statement.TrimEnd(), @"\s([^\s-][^\s]*)$") is { Success: true } context && context.Groups[1].Value.Contains('/') && !context.Groups[1].Value.Contains(':') && Regex.IsMatch(statement, @"\b(docker|podman)\s+(buildx\s+)?build\b|\baz\s+acr\s+build\b")) targets.Add(context.Groups[1].Value.Replace('\\', '/'));
+                }
                 if (kind == PipelineStepKind.ApplicationDeploy && Regex.Match(statement, @"helm\s+(?:upgrade|install)\s+(?:--install\s+)?\S+\s+(\S+)") is { Success: true } chart) targets.Add(chart.Groups[1].Value);
                 if (kind == PipelineStepKind.ApplicationDeploy && Regex.Match(statement, @"kubectl\s+apply\s+(?:-k|-f)\s+(\S+)") is { Success: true } manifests) targets.Add(manifests.Groups[1].Value);
                 b.Step(name, stepKind, tool, stage, job, workingDirectory, environment, targets.Where(t => !t.Contains("$(") && !t.Contains("${")), line);
@@ -358,7 +517,7 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
         }
         if (node.Kind == YamlKind.Scalar)
         {
-            if (node.Value is "none" or "false") b.Triggers.Add(new PipelineTrigger { Type = "none", Line = node.Line });
+            if (node.Value is "none" or "false") b.Triggers.Add(new PipelineTrigger { Type = "none", Disables = type, Line = node.Line });
             else if (node.Value is { } branch) b.Triggers.Add(new PipelineTrigger { Type = type, BranchesInclude = [SourceEvidenceRedaction.SafePath(branch)], Line = node.Line });
             return;
         }
@@ -388,6 +547,13 @@ internal sealed class PipelineAnalyzer : ISourceEvidenceDomainAnalyzer
             else if (item.Str("template") is { } t) b.Templates.Add(Resolve(b, t));
             else if (item.Str("name") is { } name) b.Variable(name, item.Str("value"), item.Line);
         }
+    }
+
+    /// <summary>The snapshot file a local template path names, or null when it is not in the snapshot.</summary>
+    private static string? ResolveFile(PipelineBuilder b, string path)
+    {
+        var resolved = path.StartsWith('/') ? path.TrimStart('/') : SourceArchitecture.ArchitectureInput.Normalize($"{b.File.Directory}/{path}");
+        return (b.Context.Files.FirstOrDefault(f => f.Path == resolved) ?? b.Context.Files.FirstOrDefault(f => f.Path.EndsWith("/" + resolved, StringComparison.Ordinal)))?.Path;
     }
 
     private static string Resolve(PipelineBuilder b, string template)

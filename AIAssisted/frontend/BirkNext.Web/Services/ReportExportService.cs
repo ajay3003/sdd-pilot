@@ -430,6 +430,7 @@ public sealed class ReportExportService : IReportExportService
     public string ExportDependencyHealth(BirkNext.Dependencies.DependencyHealthRun run) => DependencyHealthExport.Build(run, Table, Badge, Esc, BuildHtml);
     public string ExportScimCheck(BirkNext.Integrations.ScimEvidenceCheck check) => ScimExport.Build(check, Table, Badge, Esc, BuildHtml);
     public string ExportClassificationReview(BirkNext.Integrations.ClassificationReviewResult result) => ClassificationExport.Build(result, Table, Badge, Esc, BuildHtml);
+    public string ExportPipelineReview(BirkNext.PipelineReview.PipelineReviewResult result) => PipelineReviewExport.Build(result, Table, Badge, Esc, BuildHtml);
 
     private static string StatusLabel(bool? value) => value switch
     {

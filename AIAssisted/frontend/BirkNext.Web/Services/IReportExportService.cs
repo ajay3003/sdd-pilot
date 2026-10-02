@@ -14,6 +14,7 @@ public interface IReportExportService
     string ExportDependencyHealth(BirkNext.Dependencies.DependencyHealthRun run);
     string ExportScimCheck(BirkNext.Integrations.ScimEvidenceCheck check);
     string ExportClassificationReview(BirkNext.Integrations.ClassificationReviewResult result);
+    string ExportPipelineReview(BirkNext.PipelineReview.PipelineReviewResult result) => throw new NotSupportedException();
     string ExportSecurityReview(WasmSecurityReviewReport report, string? projectName);
     string ExportPerformanceReview(WasmPerformanceReviewReport report, string? projectName);
     string ExportArtifactTraceability(ArtifactTraceabilityReport report, string? projectName);
