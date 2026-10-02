@@ -12,8 +12,22 @@ namespace BirkNext.Api.Controllers;
 [ApiController]
 [Route("api/performance-tests")]
 public sealed class PerformanceTestsController(PerformanceTestStore store, PerformanceTestReadinessService readiness, PerformanceTestExecutionService execution,
-    PerformanceTestProviderRegistry providers, PerformanceTestOptions options, TimeProvider? clock = null) : ControllerBase
+    PerformanceTestProviderRegistry providers, PerformanceTestOptions options, TimeProvider? clock = null, Services.PerformanceTests.Resources.ResourceObservationRegistry? resources = null) : ControllerBase
 {
+    /// <summary>Approved Resource Stability targets of an environment with their provider status (configured targets only — no container enumeration).</summary>
+    [HttpGet("resource-targets")]
+    public async Task<ActionResult<IReadOnlyList<ResourceTargetStatus>>> ResourceTargets([FromQuery] string environmentId, [FromQuery] string? environmentType, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        if (resources is null) return Ok(Array.Empty<ResourceTargetStatus>());
+        return Ok(await resources.TargetStatusAsync(environmentId, environmentType ?? "", ct));
+    }
+
+    /// <summary>Resource observation providers and what each can measure here (separate from the k6 provider status).</summary>
+    [HttpGet("resource-providers")]
+    public async Task<ActionResult<IReadOnlyList<ResourceProviderCapability>>> ResourceProviders(CancellationToken ct) =>
+        Ok(resources is null ? Array.Empty<ResourceProviderCapability>() : await resources.CapabilitiesAsync(ct));
+
     private DateTimeOffset Now => (clock ?? TimeProvider.System).GetUtcNow();
 
     [HttpGet]
@@ -166,6 +180,8 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
             AdHoc = !original, CurrentRunId = run.RunId, ReferenceRunId = other.RunId, ReferenceBaselineId = baseline?.BaselineId, Compatible = notes.Count == 0, CompatibilityNotes = notes,
             Deltas = PerformanceTestRules.Deltas(other.Metrics, run.Metrics),
             Drift = original ? run.Drift : baseline is not null ? PerformanceTestRules.Drift(run, other, baseline, run.DefinitionSnapshot.DriftPolicies) : null,
+            ResourceDrift = original ? run.ResourceDrift
+                : Services.PerformanceTests.Resources.ResourceStabilityAnalyzer.Drift(run, other, baseline?.BaselineId, run.DefinitionSnapshot.ResourceObservation?.DriftPolicies ?? []),
         });
     }
 }

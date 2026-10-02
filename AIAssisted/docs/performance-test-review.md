@@ -283,6 +283,33 @@ Finished runs are immutable: saving a finished run throws.
 - Threshold PASS with drift REGRESSION: P95 400 ms is under the 500 ms threshold but +33 % against a 300 ms baseline, beyond +20 %.
 - Threshold FAIL with drift IMPROVED: P95 600 ms misses the 500 ms threshold, but the baseline was 700 ms.
 
+## Resource Stability
+
+Optional, per definition (Resources tab); described in full in `docs/performance-resource-stability.md`.
+
+**What it observes.** During the run, BirkNext samples **approved** components at a low frequency (default every 10 s):
+- containers through `resource.podman`;
+- BirkNext's own API process through `resource.dotnet.runtime`;
+- the k6 container, separately, as load-generator health.
+
+**How it is analysed.**
+- The warm-up is excluded from the trend.
+- Early and late steady state are compared as medians of thirds, with a least-squares trend and R² confidence. Single samples are never compared.
+- Each component is assessed against explicit `ResourceStabilityPolicy`s. Without a policy the result is descriptive only, never Pass.
+- Resource drift against the run's baseline is kept separate from the absolute resource policies.
+
+**Possible states:** StableWithinPolicy, IncreasingWithinTolerance, PotentialRegression, Regression (an explicit policy violated on sufficient evidence), InsufficientEvidence, NotComparable (restart/discontinuity), NotAssessed and Unavailable.
+
+**What it does not claim.**
+- **BirkNext does not claim generic memory-leak detection.** GC timing is nondeterministic, warm-up growth is normal, and a heap sawtooth is expected. Container memory is not the managed heap, and a browser JS heap is not Blazor's managed heap.
+- A Regression means "this policy was violated for this scenario", not "this application leaks".
+
+**Where its limits are.**
+- Unavailable metrics are never shown as 0. On rootless Podman without a memory controller, container memory is Unavailable.
+- Provider failures never fail the performance run.
+- Samples are bounded and downsampled.
+- Collectors stop on completion, cancel, timeout and API shutdown.
+
 ## Observability
 
 Optional enrichment. The run window (start/end) is persisted so a telemetry provider (Application Insights first; OpenTelemetry or others later) can be correlated with the same interval.
@@ -301,6 +328,10 @@ Optional enrichment. The run window (start/end) is persisted so a telemetry prov
 - The live Podman/k6 integration test is gated (skipped when Podman or the pinned images are unavailable).
 - **Resource limits:** on rootless Podman without delegated cgroup controllers, the k6 container runs without memory/cpu/pid limits (reported per run).
 - **Windows-loopback targets:** services bound only to Windows `127.0.0.1` are not reachable from Podman containers. Publish or bind them beyond loopback; the readiness network check reports this.
+- **Resource Stability:**
+  - .NET managed-memory evidence exists only for BirkNext's own process. Other targets have container-level evidence only; exported runtime telemetry (OpenTelemetry/App Insights) is not implemented.
+  - Container memory needs a delegated memory cgroup controller.
+  - Resource Stability is never a memory-leak verdict.
 
 ## Adding another provider
 

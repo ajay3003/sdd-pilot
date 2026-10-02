@@ -186,6 +186,10 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
         if (current?.Fingerprint == fingerprint) return;
 
         if (current is not null) current.IsCurrentSelection = false;
+        // Content seen before (switching A → B → A) re-selects its existing revision instead of storing another full copy: revisions are captured
+        // for new fingerprints only, so repeated workspace switching cannot grow the lifecycle (memory and persisted JSON) without bound.
+        var existing = SddLifecycle.Revisions.LastOrDefault(x => x.Role == role && x.Fingerprint == fingerprint);
+        if (existing is not null) { existing.IsCurrentSelection = true; return; }
         SddLifecycle.Revisions.Add(new SddArtifactRevision
         {
             Role = role,

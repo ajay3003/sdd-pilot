@@ -416,7 +416,12 @@ builder.Services.AddSingleton<BirkNext.Api.Services.ContainerRuntime.IContainerE
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider, BirkNext.Api.Services.PerformanceTests.K6PerformanceTestProvider>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
+// Resource Stability: provider-based observation of approved components (Podman container stats; .NET runtime counters of BirkNext's own process).
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.PodmanResourceObservationProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.IResourceObservationProvider, BirkNext.Api.Services.PerformanceTests.Resources.DotNetRuntimeSelfObservationProvider>();
+builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.Resources.ResourceObservationRegistry>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestExecutionService>();
+builder.Services.AddSingleton<IHostedService, BirkNext.Api.Services.PerformanceTests.Resources.PerformanceTestShutdownService>();
 builder.Services.AddScoped<BirkNext.Api.Services.PerformanceTests.PerformanceTestStore>();
 // Shared read-only access to Source Analysis snapshots for every source-aware review (Source Analysis owns ingestion; reviews own meaning).
 builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>(sp => BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider.FromConfiguration(

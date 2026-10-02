@@ -20,6 +20,8 @@ public sealed record PerformanceTestOptions
     public bool AllowSoakTest { get; init; } = true;
     /// <summary>Container execution of providers (Podman). k6 is never part of the BirkNext images or repository.</summary>
     public PerformanceContainerOptions Container { get; init; } = new();
+    /// <summary>Resource Stability observation: approved targets, sampling bounds and the per-component sample cap.</summary>
+    public BirkNext.Api.Services.PerformanceTests.Resources.PerformanceResourceOptions Resources { get; init; } = new();
     /// <summary>Extra time beyond the workload before the provider process is killed.</summary>
     public int ProviderTimeoutGraceSeconds { get; init; } = 120;
     public int MaxProviderOutputBytes { get; init; } = 64 * 1024;
@@ -42,6 +44,7 @@ public sealed record PerformanceTestOptions
             AllowStressTest = s.GetValue("AllowStressTest", d.AllowStressTest),
             AllowSoakTest = s.GetValue("AllowSoakTest", d.AllowSoakTest),
             Container = PerformanceContainerOptions.From(s.GetSection("Container")),
+            Resources = BirkNext.Api.Services.PerformanceTests.Resources.PerformanceResourceOptions.From(s.GetSection("Resources")),
             ProviderTimeoutGraceSeconds = Math.Clamp(s.GetValue("ProviderTimeoutGraceSeconds", d.ProviderTimeoutGraceSeconds), 10, 1800),
             MaxProviderOutputBytes = Math.Clamp(s.GetValue("MaxProviderOutputBytes", d.MaxProviderOutputBytes), 1024, 1024 * 1024),
             BlockedHosts = s.GetSection("BlockedHosts").GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0).ToList(),

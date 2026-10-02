@@ -49,6 +49,33 @@ public static partial class PerformanceTestSafety
     }
 
     /// <summary>Every rule a definition must satisfy. Empty = safe to run (provider availability is checked separately).</summary>
+    /// <summary>Resource observation may only name approved targets (no free-form container ids) and stay within the sampling/cooldown bounds.</summary>
+    public static IEnumerable<Issue> ResourceIssues(PerformanceTestDefinition d, PerformanceTestOptions options)
+    {
+        if (d.ResourceObservation is not { Enabled: true } r) yield break;
+        var o = options.Resources;
+        Issue I(string message) => new(PerformanceReadinessState.NeedsConfiguration, "resources", message);
+        var approved = Resources.ResourceObservationRegistry.ApprovedTargets(o, d.EnvironmentId, d.EnvironmentType).Select(t => t.Target.Id).ToHashSet(StringComparer.Ordinal);
+        if (r.TargetComponentIds.Count == 0 && !r.ObserveLoadGenerator) yield return I("Resource observation is enabled but no component is selected.");
+        if (r.TargetComponentIds.Count > 10) yield return I("At most 10 components can be observed in one run.");
+        foreach (var id in r.TargetComponentIds.Where(id => !approved.Contains(id)).Distinct())
+            yield return I($"'{(id.Length > 40 ? id[..40] : id)}' is not an approved resource target for this environment (targets are configured by the BirkNext administrator).");
+        if (r.SampleIntervalSeconds < o.MinSampleIntervalSeconds || r.SampleIntervalSeconds > o.MaxSampleIntervalSeconds)
+            yield return I($"The sample interval must be between {o.MinSampleIntervalSeconds} and {o.MaxSampleIntervalSeconds} seconds.");
+        if (r.CooldownSeconds < 0 || r.CooldownSeconds > o.MaxCooldownSeconds) yield return I($"The cooldown must be between 0 and {o.MaxCooldownSeconds} seconds.");
+        if (r.WarmupExclusionSeconds is { } wu && (wu < 0 || wu >= d.Workload.TotalSeconds)) yield return I("The warm-up exclusion must be shorter than the workload.");
+        if (r.Policies.Count + r.DriftPolicies.Count > 50) yield return I("At most 50 resource policies are allowed.");
+        foreach (var p in r.Policies)
+        {
+            if (new[] { p.AllowedAbsoluteGrowth, p.AllowedRelativeGrowthPercent, p.AllowedSlopePerMinute, p.MaxValue }.Any(v => v is < 0 || v is { } x && !double.IsFinite(x)))
+                yield return I($"Resource policy for {ResourceFormat.Label(p.Metric)}: limits must be zero or positive.");
+            if (p.MinimumObservationSeconds is < 0 || p.MinimumSampleCount is < 0) yield return I($"Resource policy for {ResourceFormat.Label(p.Metric)}: minimum evidence must be zero or positive.");
+            if (p.TargetComponentId is { } t && !r.TargetComponentIds.Contains(t)) yield return I($"Resource policy for {ResourceFormat.Label(p.Metric)} names a component that is not observed.");
+        }
+        foreach (var p in r.DriftPolicies.Where(p => p.AllowedAbsoluteChange is < 0 || p.AllowedRelativeChangePercent is < 0))
+            yield return I($"Resource drift policy for {ResourceFormat.Label(p.Metric)}: accepted change must be zero or positive.");
+    }
+
     public static List<Issue> Check(PerformanceTestDefinition d, PerformanceTestDataProfile? data, PerformanceTestOptions options)
     {
         var issues = new List<Issue>();
@@ -72,6 +99,7 @@ public static partial class PerformanceTestSafety
             issues.Add(new(PerformanceReadinessState.NeedsTestData, "testdata", "The scenario uses {placeholders} but no approved test data profile is selected."));
 
         issues.AddRange(WorkloadIssues(d, options));
+        issues.AddRange(ResourceIssues(d, options));
         return issues;
     }
 

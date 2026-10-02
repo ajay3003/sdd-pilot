@@ -1,0 +1,12 @@
+/* Resource Stability results: per-component panels, summary tables scrolling inside .sd-scroll, a small inline SVG trend. */
+.prr { display: grid; gap: .6rem; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.prr h3, .prr h4 { margin: .3rem 0 0; font-size: 1rem; }
+.prr-component { display: grid; gap: .4rem; min-width: 0; }
+.prr-component p, .prr li { overflow-wrap: anywhere; }
+.prr-table { min-width: 52rem; }
+.prr-reason { display: block; font-size: .8rem; color: #4b5563; margin-top: .15rem; overflow-wrap: anywhere; }
+.prr-chart { margin: 0; max-width: 40rem; }
+.prr-chart svg { width: 100%; height: 4.5rem; display: block; border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; }
+.prr-line { fill: none; stroke: #1d4ed8; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.prr-warmup { fill: #e2e8f0; }
+.prr-chart figcaption { font-size: .8rem; }

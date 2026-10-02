@@ -37,10 +37,25 @@
             @if (_message is { } m) { <p role="status" data-testid="pte-message">@m</p> }
         }
     }
+    <h4 class="pte-subhead">Resource observation (Resource Stability)</h4>
+    <p class="settings-card-note">Separate from the k6 provider: what BirkNext can measure about application components during a run. Unavailable metrics are reported as unavailable, never as 0; none of this is a memory-leak detector.</p>
+    @if (_resourceProviders is null) { <p role="status">Checking resource providers…</p> }
+    else if (_resourceProviders.Count == 0) { <p data-testid="pte-resource-none">No resource observation status is available.</p> }
+    else
+    {
+        <dl class="settings-layers" data-testid="pte-resources">
+            @foreach (var r in _resourceProviders)
+            {
+                <div data-testid="pte-resource" data-provider="@r.ProviderId" data-availability="@r.Availability"><dt>@r.DisplayName <code>@r.ProviderId</code></dt>
+                    <dd>@r.Availability — @r.Detail@(r.Metrics.Count > 0 ? $" Metrics: {string.Join(", ", r.Metrics.Select(ResourceFormat.Label))}." : "")</dd></div>
+            }
+        </dl>
+    }
 </div>
 
 @code {
     private List<PerformanceProviderStatus>? _providers;
+    private List<ResourceProviderCapability>? _resourceProviders;
     private IPerformanceTestApiService? _api;
     private bool _pulling;
     private string? _message;
@@ -51,6 +66,7 @@
     {
         _api = ServiceProvider.GetService(typeof(IPerformanceTestApiService)) as IPerformanceTestApiService;
         _providers = _api is null ? [] : await _api.ProvidersAsync();
+        _resourceProviders = _api is null ? [] : await _api.ResourceProvidersAsync();
     }
 
     private async Task PullAsync(string providerId)

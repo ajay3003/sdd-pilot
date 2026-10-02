@@ -1,0 +1,146 @@
+@using System.Globalization
+@using BirkNext.PerformanceTests
+
+@* Resource Stability configuration of a performance test definition. Components come only from the administrator's approved list (no free-form
+   container ids). Policies are explicit and project-specific — none is preset, and without one the evidence is descriptive only. *@
+<div class="prc" data-testid="prc">
+    <p class="sd-muted">Resource Stability observes how approved components' memory and CPU behave during a controlled workload, and compares it with a baseline.
+        It is evidence for this scenario and environment — growth does not prove a memory leak, and a stable run does not prove there is none.</p>
+    @if (Workload is { } w)
+    {
+        <p class="sd-muted" data-testid="prc-recommendation">@(w.Purpose == WorkloadPurpose.Soak
+            ? "Soak workload: longer controlled runs provide stronger resource-stability evidence."
+            : $"{w.Purpose} workload: resource trends from short runs are descriptive. Longer controlled (soak) runs provide stronger resource-stability evidence.")</p>
+    }
+    <div class="prc-check">
+        <input type="checkbox" id="prc-enabled" checked="@(C.Enabled)" @onchange="e => Update(c => c with { Enabled = e.Value is true })" data-testid="prc-enabled" />
+        <label for="prc-enabled">Enable resource observation</label>
+    </div>
+    @if (C.Enabled)
+    {
+        <fieldset class="prc-targets" data-testid="prc-targets">
+            <legend>Components to observe</legend>
+            @if (Targets.Count == 0) { <p class="sd-muted" data-testid="prc-no-targets">No approved resource targets for this environment. An administrator configures them (PerformanceTests:Resources:Targets).</p> }
+            @foreach (var t in Targets)
+            {
+                var id = $"prc-target-{t.Target.Id}";
+                <div class="prc-check">
+                    <input type="checkbox" id="@id" checked="@C.TargetComponentIds.Contains(t.Target.Id)" @onchange="e => ToggleTarget(t.Target.Id, e.Value is true)" data-testid="prc-target" data-target="@t.Target.Id" />
+                    <label for="@id">@t.Target.DisplayName <span class="sd-pill sd-pill-@Tone(t.Availability)">@Availability(t.Availability)</span></label>
+                    <p class="sd-muted prc-detail">@t.Detail</p>
+                </div>
+            }
+            <div class="prc-check">
+                <input type="checkbox" id="prc-generator" checked="@C.ObserveLoadGenerator" @onchange="e => Update(c => c with { ObserveLoadGenerator = e.Value is true })" data-testid="prc-generator" />
+                <label for="prc-generator">Also observe the k6 load generator (generator health, never application stability)</label>
+            </div>
+        </fieldset>
+        <div class="pt-form">
+            <label>Sample interval (s) <input type="number" min="5" max="60" value="@C.SampleIntervalSeconds" @onchange="e => Update(c => c with { SampleIntervalSeconds = Int(e.Value) ?? 10 })" data-testid="prc-interval" /></label>
+            <label>Warm-up excluded from the trend (s) <input type="number" min="0" value="@C.WarmupExclusionSeconds" placeholder="@($"{(Workload?.WarmupSeconds ?? 0) + (Workload?.RampUpSeconds ?? 0)} (warm-up + ramp-up)")" @onchange="e => Update(c => c with { WarmupExclusionSeconds = Int(e.Value) })" data-testid="prc-warmup" /></label>
+            <label>Cooldown observed after the load (s) <input type="number" min="0" max="600" value="@C.CooldownSeconds" @onchange="e => Update(c => c with { CooldownSeconds = Int(e.Value) ?? 0 })" data-testid="prc-cooldown" /></label>
+        </div>
+        <div class="prc-check">
+            <input type="checkbox" id="prc-require" checked="@C.RequireResourceEvidence" @onchange="e => Update(c => c with { RequireResourceEvidence = e.Value is true })" data-testid="prc-require" aria-describedby="prc-require-help" />
+            <label for="prc-require">Require resource evidence to run</label>
+            <p id="prc-require-help" class="sd-muted prc-detail">Leave off unless a run without telemetry is useless: unavailable providers then block the run. Otherwise telemetry never gates the load test.</p>
+        </div>
+
+        <h3>Stability policies</h3>
+        <p class="sd-muted">Accepted steady-state growth (early vs late third, after the warm-up), trend, or an absolute ceiling on the steady-state p95. No defaults: without a policy the trend is descriptive, never passed. Byte values are in MiB.</p>
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Stability policies">
+            <table class="prc-table" data-testid="prc-policies">
+                <thead><tr><th scope="col">Component</th><th scope="col">Metric</th><th scope="col">Max growth %</th><th scope="col">Max growth</th><th scope="col">Max trend / min</th><th scope="col">Max p95</th><th scope="col">Min duration (s)</th><th scope="col">Min samples</th><th scope="col">Severity</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+                <tbody>
+                @for (var i = 0; i < C.Policies.Count; i++)
+                {
+                    var index = i; var p = C.Policies[i];
+                    <tr data-testid="prc-policy">
+                        <td><select aria-label="Component of policy @(index + 1)" value="@(p.TargetComponentId ?? "")" @onchange="e => Policy(index, x => x with { TargetComponentId = Str(e) })">
+                            <option value="">All observed components</option>@foreach (var id in C.TargetComponentIds) { <option value="@id">@Name(id)</option> }</select></td>
+                        <td><select aria-label="Metric of policy @(index + 1)" value="@p.Metric" @onchange="e => Policy(index, x => x with { Metric = Enum.Parse<ResourceMetric>(e.Value!.ToString()!) })" data-testid="prc-policy-metric">
+                            @foreach (var m in Enum.GetValues<ResourceMetric>()) { <option value="@m">@ResourceFormat.Label(m)</option> }</select></td>
+                        <td><input type="number" min="0" step="0.1" aria-label="Maximum growth percent of policy @(index + 1)" value="@N(p.AllowedRelativeGrowthPercent)" @onchange="e => Policy(index, x => x with { AllowedRelativeGrowthPercent = Dbl(e.Value) })" data-testid="prc-policy-relative" /></td>
+                        <td><input type="number" min="0" step="0.1" aria-label="Maximum growth of policy @(index + 1)" value="@N(ToUnit(p.AllowedAbsoluteGrowth, p.Metric))" @onchange="e => Policy(index, x => x with { AllowedAbsoluteGrowth = FromUnit(Dbl(e.Value), x.Metric) })" /></td>
+                        <td><input type="number" min="0" step="0.1" aria-label="Maximum trend per minute of policy @(index + 1)" value="@N(ToUnit(p.AllowedSlopePerMinute, p.Metric))" @onchange="e => Policy(index, x => x with { AllowedSlopePerMinute = FromUnit(Dbl(e.Value), x.Metric) })" /></td>
+                        <td><input type="number" min="0" step="0.1" aria-label="Maximum p95 of policy @(index + 1)" value="@N(ToUnit(p.MaxValue, p.Metric))" @onchange="e => Policy(index, x => x with { MaxValue = FromUnit(Dbl(e.Value), x.Metric) })" /></td>
+                        <td><input type="number" min="0" aria-label="Minimum observation seconds of policy @(index + 1)" value="@p.MinimumObservationSeconds" @onchange="e => Policy(index, x => x with { MinimumObservationSeconds = Int(e.Value) })" /></td>
+                        <td><input type="number" min="0" aria-label="Minimum samples of policy @(index + 1)" value="@p.MinimumSampleCount" @onchange="e => Policy(index, x => x with { MinimumSampleCount = Int(e.Value) })" /></td>
+                        <td><select aria-label="Severity of policy @(index + 1)" value="@p.Severity" @onchange="e => Policy(index, x => x with { Severity = Enum.Parse<ThresholdSeverity>(e.Value!.ToString()!) })">
+                            <option value="@ThresholdSeverity.Required">Required</option><option value="@ThresholdSeverity.Advisory">Advisory</option></select></td>
+                        <td><button type="button" class="sd-link" @onclick="() => Update(c => c with { Policies = c.Policies.Where((_, j) => j != index).ToList() })" aria-label="Remove policy @(index + 1)">Remove</button></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <button type="button" class="btn-secondary" @onclick="() => Update(c => c with { Policies = [.. c.Policies, new ResourceStabilityPolicy()] })" data-testid="prc-add-policy">Add stability policy</button>
+
+        <h3>Drift policies</h3>
+        <p class="sd-muted">Accepted change against the baseline run (separate from the absolute policies above). Without one, the comparison is descriptive.</p>
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Resource drift policies">
+            <table class="prc-table" data-testid="prc-drift-policies">
+                <thead><tr><th scope="col">Component</th><th scope="col">Metric</th><th scope="col">Statistic</th><th scope="col">Accepted change %</th><th scope="col">Accepted change</th><th scope="col">Severity</th><th scope="col"><span class="visually-hidden">Remove</span></th></tr></thead>
+                <tbody>
+                @for (var i = 0; i < C.DriftPolicies.Count; i++)
+                {
+                    var index = i; var p = C.DriftPolicies[i];
+                    <tr data-testid="prc-drift-policy">
+                        <td><select aria-label="Component of drift policy @(index + 1)" value="@(p.TargetComponentId ?? "")" @onchange="e => Drift(index, x => x with { TargetComponentId = Str(e) })">
+                            <option value="">All observed components</option>@foreach (var id in C.TargetComponentIds) { <option value="@id">@Name(id)</option> }</select></td>
+                        <td><select aria-label="Metric of drift policy @(index + 1)" value="@p.Metric" @onchange="e => Drift(index, x => x with { Metric = Enum.Parse<ResourceMetric>(e.Value!.ToString()!) })">
+                            @foreach (var m in Enum.GetValues<ResourceMetric>()) { <option value="@m">@ResourceFormat.Label(m)</option> }</select></td>
+                        <td><select aria-label="Statistic of drift policy @(index + 1)" value="@p.Statistic" @onchange="e => Drift(index, x => x with { Statistic = Enum.Parse<ResourceStatistic>(e.Value!.ToString()!) })">
+                            @foreach (var s in Enum.GetValues<ResourceStatistic>()) { <option value="@s">@StatLabel(s)</option> }</select></td>
+                        <td><input type="number" min="0" step="0.1" aria-label="Accepted change percent of drift policy @(index + 1)" value="@N(p.AllowedRelativeChangePercent)" @onchange="e => Drift(index, x => x with { AllowedRelativeChangePercent = Dbl(e.Value) })" data-testid="prc-drift-relative" /></td>
+                        <td><input type="number" min="0" step="0.1" aria-label="Accepted change of drift policy @(index + 1)" value="@N(ToUnit(p.AllowedAbsoluteChange, p.Metric))" @onchange="e => Drift(index, x => x with { AllowedAbsoluteChange = FromUnit(Dbl(e.Value), x.Metric) })" /></td>
+                        <td><select aria-label="Severity of drift policy @(index + 1)" value="@p.Severity" @onchange="e => Drift(index, x => x with { Severity = Enum.Parse<ThresholdSeverity>(e.Value!.ToString()!) })">
+                            <option value="@ThresholdSeverity.Required">Required</option><option value="@ThresholdSeverity.Advisory">Advisory</option></select></td>
+                        <td><button type="button" class="sd-link" @onclick="() => Update(c => c with { DriftPolicies = c.DriftPolicies.Where((_, j) => j != index).ToList() })" aria-label="Remove drift policy @(index + 1)">Remove</button></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <button type="button" class="btn-secondary" @onclick="() => Update(c => c with { DriftPolicies = [.. c.DriftPolicies, new ResourceDriftPolicy()] })" data-testid="prc-add-drift">Add drift policy</button>
+    }
+</div>
+
+@code {
+    [Parameter] public ResourceObservationConfiguration? Config { get; set; }
+    [Parameter] public List<ResourceTargetStatus> Targets { get; set; } = [];
+    [Parameter] public PerformanceWorkload? Workload { get; set; }
+    [Parameter] public EventCallback<ResourceObservationConfiguration?> OnChange { get; set; }
+
+    private ResourceObservationConfiguration C => Config ?? new ResourceObservationConfiguration();
+
+    private Task Update(Func<ResourceObservationConfiguration, ResourceObservationConfiguration> change) => OnChange.InvokeAsync(change(C));
+
+    private Task ToggleTarget(string id, bool on) => Update(c => c with
+    {
+        TargetComponentIds = on ? c.TargetComponentIds.Append(id).Distinct().ToList() : c.TargetComponentIds.Where(x => x != id).ToList(),
+        Policies = on ? c.Policies : c.Policies.Where(p => p.TargetComponentId != id).ToList(),
+        DriftPolicies = on ? c.DriftPolicies : c.DriftPolicies.Where(p => p.TargetComponentId != id).ToList(),
+    });
+
+    private Task Policy(int i, Func<ResourceStabilityPolicy, ResourceStabilityPolicy> change) => Update(c => { var l = c.Policies.ToList(); l[i] = change(l[i]); return c with { Policies = l }; });
+    private Task Drift(int i, Func<ResourceDriftPolicy, ResourceDriftPolicy> change) => Update(c => { var l = c.DriftPolicies.ToList(); l[i] = change(l[i]); return c with { DriftPolicies = l }; });
+
+    private string Name(string id) => Targets.FirstOrDefault(t => t.Target.Id == id)?.Target.DisplayName ?? id;
+
+    private const double MiB = 1024 * 1024;
+    private static double? ToUnit(double? v, ResourceMetric m) => v is { } x && (ResourceFormat.IsBytes(m) || m == ResourceMetric.AllocationRateBytesPerSecond) ? Math.Round(x / MiB, 3) : v;
+    private static double? FromUnit(double? v, ResourceMetric m) => v is { } x && (ResourceFormat.IsBytes(m) || m == ResourceMetric.AllocationRateBytesPerSecond) ? x * MiB : v;
+    private static string? N(double? v) => v?.ToString("0.###", CultureInfo.InvariantCulture);
+    private static string? Str(ChangeEventArgs e) => string.IsNullOrWhiteSpace(e.Value?.ToString()) ? null : e.Value!.ToString();
+    private static int? Int(object? v) => int.TryParse(v?.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var i) ? i : null;
+    private static double? Dbl(object? v) => double.TryParse(v?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : null;
+
+    internal static string StatLabel(ResourceStatistic s) => s switch
+    {
+        ResourceStatistic.LateSteady => "Late steady state", ResourceStatistic.Peak => "Peak", ResourceStatistic.Growth => "Steady-state growth", _ => "Trend per minute",
+    };
+
+    internal static string Availability(string a) => a switch { "Available" => "Available", "Partial" => "Partial — some metrics unavailable", "TargetNotFound" => "Not found", _ => a };
+    internal static string Tone(string a) => a switch { "Available" => "complete", "Partial" => "partial", "Unavailable" or "TargetNotFound" or "ProviderUnavailable" => "attention", _ => "muted" };
+}

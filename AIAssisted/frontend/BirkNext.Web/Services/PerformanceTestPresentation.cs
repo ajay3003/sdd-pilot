@@ -130,6 +130,24 @@ public static class PerformanceTestPresentation
 
     public static string Utc(DateTimeOffset? at) => at is { } t ? t.ToUniversalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) + " UTC" : "—";
 
+    /// <summary>The run's primary memory summary for history columns: container memory, else managed heap, else working set (first target component).</summary>
+    public static ResourceStabilitySummary? ResourceMemory(PerformanceTestRun r) =>
+        r.Resources?.Components.Where(c => c.Role == ResourceComponentRole.Target).SelectMany(c => c.Summaries)
+            .Where(s => s.Metric is ResourceMetric.ContainerMemoryBytes or ResourceMetric.ManagedHeapBytes or ResourceMetric.WorkingSetBytes && s.LateSteadyValue is not null)
+            .OrderBy(s => s.Metric == ResourceMetric.ContainerMemoryBytes ? 0 : s.Metric == ResourceMetric.ManagedHeapBytes ? 1 : 2).FirstOrDefault();
+
+    /// <summary>Worst per-component state among target components (precise states, never "leak"); "Not configured" / evidence state otherwise.</summary>
+    public static string ResourceStatus(PerformanceTestRun r)
+    {
+        if (r.Resources is not { Configured: true } a) return "Not configured";
+        var order = new[] { ResourceAssessmentState.Regression, ResourceAssessmentState.PotentialRegression, ResourceAssessmentState.NotComparable, ResourceAssessmentState.InsufficientEvidence,
+            ResourceAssessmentState.IncreasingWithinTolerance, ResourceAssessmentState.StableWithinPolicy, ResourceAssessmentState.NotAssessed, ResourceAssessmentState.Unavailable };
+        var states = a.Components.Where(c => c.Role == ResourceComponentRole.Target).SelectMany(c => c.Summaries).Select(s => s.AssessmentState).ToList();
+        if (states.Count == 0) return ResourceFormat.Collection(a.EvidenceState);
+        var worst = order.First(states.Contains);
+        return worst == ResourceAssessmentState.Unavailable ? "Unavailable" : ResourceFormat.State(worst);
+    }
+
     public static string Load(PerformanceWorkload w) => w.Mode == WorkloadMode.VirtualUsers ? $"{w.VirtualUsers} virtual users" : $"{w.RequestsPerSecond?.ToString("0.##", CultureInfo.InvariantCulture)} req/s";
 
     /// <summary>HTML export of one run: definition, workload, thresholds, metrics, outcomes, drift, limitations, provenance. No credential exists in a run.</summary>
@@ -166,6 +184,31 @@ public static class PerformanceTestPresentation
             foreach (var x in d.Deltas)
                 sb.Append($"<tr><td>{E(PerformanceTestRules.Label(x.Metric))}</td><td>{E(PerformanceTestRules.Format(x.Reference, x.Metric))}</td><td>{E(PerformanceTestRules.Format(x.Current, x.Metric))}</td><td>{E(Delta(x))}</td><td>{E(x.PolicyState is { } s ? Label(s) : "—")}</td></tr>");
             sb.Append("</table>");
+        }
+        // Resource Stability: providers, components, windows, summaries, policy outcomes, drift and limitations — summaries only, never raw samples.
+        if (r.Resources is { Configured: true } res)
+        {
+            sb.Append($"<h2>Resource Stability</h2><p>Evidence: {E(ResourceFormat.Collection(res.EvidenceState))} · observed {E(Utc(res.ObservationStart))} – {E(Utc(res.ObservationEnd))} every {res.SampleIntervalSeconds} s · warm-up {res.WarmupExcludedSeconds} s excluded{(res.CooldownSeconds > 0 ? $" · cooldown {res.CooldownSeconds} s" : "")} · policy {E(res.PolicyFingerprint)}</p>");
+            foreach (var c in res.Components)
+            {
+                sb.Append($"<h3>{E(c.DisplayName)} ({E(c.Role == ResourceComponentRole.LoadGenerator ? "load generator health" : "application component")}, {E(c.ProviderId)})</h3><p>{E(ResourceFormat.Collection(c.CollectionState))} · {c.RawSampleCount} sample(s){(c.Image is null ? "" : $" · {E(c.Image)}")}{(c.MemoryLimitBytes is { } lim ? $" · memory limit {E(ResourceFormat.Format(lim, ResourceMetric.ContainerMemoryBytes))}" : "")}</p>");
+                if (c.Summaries.Count == 0) continue;
+                sb.Append("<table><tr><th>Metric</th><th>Early steady</th><th>Late steady</th><th>Peak</th><th>Growth</th><th>Trend / min</th><th>Assessment</th></tr>");
+                foreach (var s in c.Summaries)
+                    sb.Append($"<tr><td>{E(ResourceFormat.Label(s.Metric))}</td><td>{E(ResourceFormat.Format(s.EarlySteadyValue, s.Metric))}</td><td>{E(ResourceFormat.Format(s.LateSteadyValue, s.Metric))}</td><td>{E(ResourceFormat.Format(s.PeakValue, s.Metric))}</td><td>{E(s.AbsoluteGrowth is null ? "—" : ResourceFormat.Format(s.AbsoluteGrowth, s.Metric))}</td><td>{E(s.TrendSlopePerMinute is null ? "—" : $"{ResourceFormat.Format(s.TrendSlopePerMinute, s.Metric)} ({s.TrendConfidence})")}</td><td>{E(ResourceFormat.State(s.AssessmentState))} — {E(s.AssessmentReason)}</td></tr>");
+                sb.Append("</table>");
+            }
+            foreach (var f in res.Findings) sb.Append($"<p><strong>{E(f.Code)}</strong> ({E(f.Severity)}): {E(f.Message)} {E(f.Evidence)}</p>");
+            foreach (var l in res.Components.SelectMany(c => c.Summaries.SelectMany(s => s.Limitations).Concat(c.Limitations)).Concat(res.Limitations).Distinct()) sb.Append($"<p>{E(l)}</p>");
+            if (r.ResourceDrift is { } rd)
+            {
+                sb.Append($"<h3>Resource drift</h3><p>{E(rd.State.ToString())}</p>");
+                foreach (var n in rd.CompatibilityNotes) sb.Append($"<p>{E(n)}</p>");
+                sb.Append("<table><tr><th>Component</th><th>Metric</th><th>Statistic</th><th>Baseline</th><th>This run</th><th>Policy</th></tr>");
+                foreach (var x in rd.Deltas)
+                    sb.Append($"<tr><td>{E(x.TargetId)}</td><td>{E(ResourceFormat.Label(x.Metric))}</td><td>{E(x.Statistic.ToString())}</td><td>{E(ResourceFormat.Format(x.Reference, x.Metric))}</td><td>{E(ResourceFormat.Format(x.Current, x.Metric))}</td><td>{E(x.PolicyState is { } s ? Label(s) : "—")}</td></tr>");
+                sb.Append("</table>");
+            }
         }
         sb.Append("<h2>Limitations</h2><ul>");
         foreach (var l in r.Limitations.Prepend(r.StateReason ?? "").Where(l => l.Length > 0)) sb.Append($"<li>{E(l)}</li>");
