@@ -563,7 +563,7 @@ public sealed class PipelineReviewTests
     [Fact]
     public void A_migration_bundle_build_is_not_a_deployment_and_template_parameter_defaults_apply()
     {
-        var qa = ServiceDev.Replace("trigger:\n  branches:\n    include:\n      - main", "trigger: none\npr: none").Replace("- template: templates/deploy.yml", "- template: templates/deploy.yml\n        parameters:\n          environment: orders-qa");
+        var qa = ServiceDev.ReplaceLineEndings("\n").Replace("trigger:\n  branches:\n    include:\n      - main", "trigger: none\npr: none").Replace("- template: templates/deploy.yml", "- template: templates/deploy.yml\n        parameters:\n          environment: orders-qa");
         var r = Review(("pipelines/orders-dev.yml", ServiceDev), ("pipelines/orders-qa.yml", qa), ("pipelines/templates/deploy.yml", DeployTemplate2));
         r.Deployments.Should().HaveCount(2, "building a migration bundle is build work, not a database deployment");
         r.Deployments.Select(d => d.Environment).Should().BeEquivalentTo(["orders-dev", "orders-qa"], "the template default applies when no parameter is passed");
@@ -578,8 +578,8 @@ public sealed class PipelineReviewTests
     [Fact]
     public void Changes_between_snapshots_are_interpreted_as_source_changes()
     {
-        var gated = ShopBuild.Replace("      - DeployDev\n      - InfraQA", "      - IntegrationTests\n      - InfraQA");
-        gated.Should().NotBe(ShopBuild);
+        var gated = ShopBuild.ReplaceLineEndings("\n").Replace("      - DeployDev\n      - InfraQA", "      - IntegrationTests\n      - InfraQA");
+        gated.Should().NotBe(ShopBuild.ReplaceLineEndings("\n"));
         var previous = PipelineReviewBuilder.Build(Snapshot(Shop(("shop/pipelines/shop-build.yml", gated))));
         var current = PipelineReviewBuilder.Build(Snapshot(Shop(("shop/pipelines/worker-build.yml", WorkerBuild.Replace("- src/Shop.Worker", "- src/Shop.Worker/Jobs")))));
         var diff = PipelineReviewDiff.Compare(previous, current);

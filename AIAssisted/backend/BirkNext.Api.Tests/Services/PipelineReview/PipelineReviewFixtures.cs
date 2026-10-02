@@ -253,10 +253,25 @@ internal static class PipelineReviewFixtures
         return files.Select(f => (f.Key, f.Value)).ToArray();
     }
 
+    /// <summary>A zip with fixed entry timestamps and LF line endings, so the archive fingerprint (SHA-256) is the same on every run and checkout.</summary>
+    public static byte[] Zip(params (string Path, string Content)[] files)
+    {
+        using var buffer = new MemoryStream();
+        using (var zip = new System.IO.Compression.ZipArchive(buffer, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+            foreach (var (path, content) in files)
+            {
+                var entry = zip.CreateEntry(path);
+                entry.LastWriteTime = new DateTimeOffset(2026, 10, 2, 10, 0, 0, TimeSpan.Zero);
+                using var writer = new StreamWriter(entry.Open(), new System.Text.UTF8Encoding(false));
+                writer.Write(content.ReplaceLineEndings("\n"));
+            }
+        return buffer.ToArray();
+    }
+
     /// <summary>An immutable snapshot as Source Analysis stores it (architecture + evidence domains), from the given files.</summary>
     public static IqrSourceSnapshot Snapshot(params (string Path, string Content)[] files)
     {
-        var (workspace, error) = IqrSourceArchiveReader.Read("shop.zip", SourceFixtures.Zip(files));
+        var (workspace, error) = IqrSourceArchiveReader.Read("shop.zip", Zip(files));
         error.Should().BeNull();
         var id = Guid.Parse("5a0b0000-0000-0000-0000-000000000001");
         var at = DateTimeOffset.Parse("2026-10-02T10:00:00Z");
