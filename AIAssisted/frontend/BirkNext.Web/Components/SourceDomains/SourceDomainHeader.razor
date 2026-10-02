@@ -1,0 +1,15 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* Header every source-evidence domain page shares: title + analysis status (completeness, never quality), the source boundary note and the
+   provenance of the evidence (snapshot fingerprint, analyzer version, extraction time). *@
+<h2 id="@HeadingId" tabindex="-1">@Title <span class="sd-pill sd-pill-@SourceEvidenceDomainsPresentation.Tone(Result.Status)" data-testid="@($"sd-{Slug}-status")"><span class="visually-hidden">Analysis status: </span>@SourceDomainText.Label(Result.Status)</span></h2>
+<p class="sd-boundary" role="note" data-testid="@($"sd-{Slug}-boundary")">@SourceEvidenceDomainsPresentation.Boundary</p>
+<p class="sd-muted sd-provenance" data-testid="@($"sd-{Slug}-provenance")">Source <code title="@Result.SourceFingerprint">@SourceAnalysisOverview.ShortFingerprint(Result.SourceFingerprint)</code> · analyzer v@(Result.AnalyzerVersion) · extracted @SourceAnalysisOverview.Utc(Result.ExtractedAt)@(Result.Technologies.Count > 0 ? $" · {string.Join(", ", Result.Technologies)}" : "")</p>
+@if (Result.StatusReason is { } reason) { <p class="sd-reason" data-testid="@($"sd-{Slug}-reason")">@reason</p> }
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public string Slug { get; set; } = "";
+    [Parameter, EditorRequired] public SourceDomainResult Result { get; set; } = default!;
+    [Parameter] public string? HeadingId { get; set; }
+}

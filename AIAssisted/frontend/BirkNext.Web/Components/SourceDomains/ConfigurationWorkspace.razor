@@ -1,0 +1,114 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* Source Analysis → Configuration: normalized configuration entries of the selected snapshot (stored analysis, never re-analyzed). Secret values
+   are never shown: sensitive entries show their kind only. Different environments are variants, not conflicts. Configured ≠ deployed. *@
+<section class="sd-workspace" aria-labelledby="sd-config-heading" data-testid="configuration-workspace">
+    <SourceDomainHeader Title="Configuration" Slug="config" Result="C" HeadingId="sd-config-heading" />
+    @if (!SourceEvidenceDomainsPresentation.Assessed(C))
+    {
+        <div class="sd-empty" data-testid="sd-config-not-assessed"><p><strong>@(C.Status == SourceDomainStatus.NotDetected ? "No supported configuration files detected in the selected source." : SourceDomainText.Label(C.Status))</strong></p></div>
+        <SourceDomainLimitations Slug="config" Result="C" Capabilities="Capabilities" />
+    }
+    else
+    {
+        <nav class="sd-tabs" aria-label="Configuration views">
+            @foreach (var tab in Tabs) { <button type="button" aria-pressed="@(_tab == tab ? "true" : "false")" data-testid="@($"sd-config-tab-{tab.ToLowerInvariant()}")" @onclick="() => _tab = tab">@tab</button> }
+        </nav>
+        @if (_tab == "Overview")
+        {
+            <dl class="sd-summary" data-testid="sd-config-overview">
+                <div><dt>Configuration files</dt><dd>@C.Files.Count</dd></div>
+                <div><dt>Entries</dt><dd>@C.Entries.Count</dd></div>
+                <div><dt>Environments</dt><dd>@SourceEvidenceDomainsPresentation.NamedEnvironments(C)</dd></div>
+                <div><dt>Sensitive values / references</dt><dd data-testid="sd-config-sensitive">@C.Entries.Count(e => e.Sensitivity != ConfigurationSensitivity.None)</dd></div>
+                <div><dt>External endpoints</dt><dd>@C.Entries.Count(e => e.ValueKind == ConfigurationValueKind.Url)</dd></div>
+                <div><dt>Messaging config</dt><dd>@C.Entries.Count(e => e.Category == ConfigurationCategory.Messaging)</dd></div>
+                <div><dt>Observability config</dt><dd>@C.Entries.Count(e => e.Category == ConfigurationCategory.Observability)</dd></div>
+                <div><dt>Placeholders</dt><dd>@C.Entries.Count(e => e.ValueKind == ConfigurationValueKind.Placeholder)</dd></div>
+                <div><dt>Potential conflicts</dt><dd data-testid="sd-config-conflict-count">@C.Conflicts.Count</dd></div>
+            </dl>
+            <div class="sd-panels">
+                <section class="sd-panel" aria-labelledby="sd-config-categories-heading" data-testid="sd-config-categories">
+                    <h3 id="sd-config-categories-heading">Entries by category</h3>
+                    <p class="sd-muted">Classified from the key; uncertain keys stay Unknown.</p>
+                    <dl class="sd-mini">@foreach (var g in C.Entries.GroupBy(e => e.Category).OrderByDescending(g => g.Count())) { <div data-category="@g.Key"><dt>@SourceDomainText.Label(g.Key)</dt><dd>@g.Count()</dd></div> }</dl>
+                </section>
+                <section class="sd-panel" aria-labelledby="sd-config-environments-heading" data-testid="sd-config-environments">
+                    <h3 id="sd-config-environments-heading">Environments in source</h3>
+                    <p class="sd-muted">From file-name suffixes, launch profiles and folder names — a naming convention, not a deployed environment.</p>
+                    <ul class="sd-list">@foreach (var e in C.Environments) { <li>@SourceDomainText.Label(e) <span class="sd-context">@e.Kind · @C.Entries.Count(x => x.Environment == e) entr(ies)</span></li> }</ul>
+                </section>
+            </div>
+            @if (C.Conflicts.Count > 0)
+            {
+                <section class="sd-panel" aria-labelledby="sd-config-conflicts-heading" data-testid="sd-config-conflicts">
+                    <h3 id="sd-config-conflicts-heading">Potential conflicts <span class="sd-count">@C.Conflicts.Count</span></h3>
+                    <p class="sd-muted">Same key and environment with different values in sources one application loads together. Needs review — not an error.</p>
+                    <ul class="sd-list">@foreach (var c in C.Conflicts) { <li data-testid="sd-config-conflict"><code>@c.NormalizedKey</code> · @SourceDomainText.Label(c.Environment) · @string.Join(" + ", c.Files)</li> }</ul>
+                </section>
+            }
+            <SourceDomainLimitations Slug="config" Result="C" Capabilities="Capabilities" />
+        }
+        else if (_tab == "Entries")
+        {
+            var rows = SourceEvidenceDomainsPresentation.Filter(C.Entries, _filter).ToList();
+            <section class="sd-panel" aria-labelledby="sd-config-entries-heading" data-testid="sd-config-entries">
+                <h3 id="sd-config-entries-heading">Configuration entries <span class="sd-count">@C.Entries.Count</span></h3>
+                <div class="sd-filterbar" data-testid="sd-config-filters">
+                    <label>Category <select data-testid="sd-config-filter-category" value="@_filter.Category" @onchange="e => _filter = _filter with { Category = (string)e.Value! }"><option value="">All</option>@foreach (var c in C.Entries.Select(e => e.Category).Distinct().Order()) { <option value="@c">@SourceDomainText.Label(c)</option> }</select></label>
+                    <label>Environment <select data-testid="sd-config-filter-environment" value="@_filter.Environment" @onchange="e => _filter = _filter with { Environment = (string)e.Value! }"><option value="">All</option>@foreach (var env in C.Environments) { <option value="@SourceEvidenceDomainsPresentation.EnvironmentKey(env)">@SourceDomainText.Label(env)</option> }</select></label>
+                    <label>Technology <select data-testid="sd-config-filter-technology" value="@_filter.Technology" @onchange="e => _filter = _filter with { Technology = (string)e.Value! }"><option value="">All</option>@foreach (var t in C.Entries.Select(e => e.Technology).Distinct().Order(StringComparer.Ordinal)) { <option value="@t">@t</option> }</select></label>
+                    <label>Source <select data-testid="sd-config-filter-file" value="@_filter.File" @onchange="e => _filter = _filter with { File = (string)e.Value! }"><option value="">All files</option>@foreach (var f in C.Files) { <option value="@f.Path">@f.Path</option> }</select></label>
+                    <label>Sensitivity <select data-testid="sd-config-filter-sensitivity" value="@_filter.Sensitivity" @onchange="e => _filter = _filter with { Sensitivity = (string)e.Value! }"><option value="">All</option><option value="Sensitive">Sensitive / secret references</option><option value="None">Not sensitive</option></select></label>
+                    <label>Key <input type="search" data-testid="sd-config-search" value="@_filter.Search" @oninput="e => _filter = _filter with { Search = (string?)e.Value ?? string.Empty }" /></label>
+                </div>
+                <p class="sd-muted" role="status" data-testid="sd-config-shown">@rows.Count of @C.Entries.Count shown</p>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Configuration entries">
+                    <table data-testid="sd-config-entry-table">
+                        <thead><tr><th scope="col">Key</th><th scope="col">Category</th><th scope="col">Value</th><th scope="col">Environment</th><th scope="col">Source</th></tr></thead>
+                        <tbody>
+                            @foreach (var e in rows.Take(_limit))
+                            {
+                                <tr data-testid="sd-config-entry" data-sensitive="@(e.Sensitivity != ConfigurationSensitivity.None ? "true" : "false")">
+                                    <th scope="row"><code>@e.Key</code>@if (e.Component is { } c) { <span class="sd-context">@c</span> }</th>
+                                    <td>@SourceDomainText.Label(e.Category)</td>
+                                    <td class="@(e.Sensitivity != ConfigurationSensitivity.None ? "sd-redacted" : "")">@SourceEvidenceDomainsPresentation.ValueText(e)</td>
+                                    <td>@SourceDomainText.Label(e.Environment)</td>
+                                    <td class="sd-path">@SourceEvidenceDomainsPresentation.Location(e.File, e.Line)<span class="sd-context">@e.Technology</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (rows.Count > _limit) { <button type="button" class="btn-secondary" data-testid="sd-config-more" @onclick="() => _limit += 300">Show more (@(rows.Count - _limit) remaining)</button> }
+            </section>
+        }
+        else if (_tab == "Files")
+        {
+            <section class="sd-panel" aria-labelledby="sd-config-files-heading" data-testid="sd-config-files">
+                <h3 id="sd-config-files-heading">Configuration sources <span class="sd-count">@C.Files.Count</span></h3>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Configuration sources">
+                    <table>
+                        <thead><tr><th scope="col">File</th><th scope="col">Technology</th><th scope="col">Environment</th><th scope="col">Component</th><th scope="col">Entries</th></tr></thead>
+                        <tbody>@foreach (var f in C.Files) { <tr data-testid="sd-config-file"><th scope="row" class="sd-path">@f.Path</th><td>@f.Technology</td><td>@SourceDomainText.Label(f.Environment)<span class="sd-context">@f.EnvironmentBasis</span></td><td>@(f.Component ?? "—")</td><td>@(f.Parsed ? f.Entries.ToString() : "Not parsed")</td></tr> }</tbody>
+                    </table>
+                </div>
+            </section>
+        }
+        else
+        {
+            <SourceDomainChanges Slug="config" Label="Configuration" Domain="SourceEvidenceDomain.Configuration" Current="Evidence" Previous="Previous" />
+        }
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public SourceEvidenceDomainsSnapshot Evidence { get; set; } = default!;
+    [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
+    private ConfigurationEvidence C => Evidence.Configuration;
+    private IEnumerable<DomainCapability> Capabilities => Evidence.Capabilities.Where(c => c.Domain == SourceEvidenceDomain.Configuration);
+    private static readonly string[] Tabs = ["Overview", "Entries", "Files", "Changes"];
+    private string _tab = "Overview";
+    private SourceEvidenceDomainsPresentation.ConfigFilter _filter = new();
+    private int _limit = 300;
+}

@@ -50,7 +50,19 @@ public sealed class ClassificationSourceScopeService(IReviewSourceEvidenceProvid
     };
 
     /// <summary>Whether a snapshot carries this review's security classification observations.</summary>
-    public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => new(s.SecurityClassificationEvidence is { Unavailable: null }, EvidenceNote(s));
+    public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => new(s.SecurityClassificationEvidence is { Unavailable: null }, EvidenceNote(s), SourceSecurityContext(s));
+
+    /// <summary>Security-relevant Source Analysis evidence beside this review's own observations: identity/security configuration, IaC access
+    /// assignments and contract fields named like a classification. Context only — a declared role or a classification field is not enforcement;
+    /// Security Classification keeps its own semantics.</summary>
+    public static string? SourceSecurityContext(IqrSourceSnapshot s)
+    {
+        if (s.EvidenceDomains is null) return null;
+        var config = SourceAnalysis.SourceEvidenceQueries.SecurityConfiguration(s).Items.Count(e => e.Category is BirkNext.SourceDomains.ConfigurationCategory.Authentication or BirkNext.SourceDomains.ConfigurationCategory.Authorization or BirkNext.SourceDomains.ConfigurationCategory.Security);
+        var access = SourceAnalysis.SourceEvidenceQueries.IdentityInfrastructure(s).Items.Count;
+        var fields = SourceAnalysis.SourceEvidenceQueries.Contracts(s).Items.SelectMany(c => c.Types.SelectMany(t => t.Fields)).Count(f => System.Text.RegularExpressions.Regex.IsMatch(f.Name, "(?i)(classification|sensitivity|confidential|securitylevel|security_level)"));
+        return config + access + fields == 0 ? null : $"Source context: {config} auth/security configuration entr(ies) · {access} IaC access assignment(s) · {fields} classification-named contract field(s)";
+    }
 
     public static List<ReviewSourceSnapshot> Describe(IReadOnlyList<IqrSourceSnapshot> snapshots) => ReviewSourceEvidenceProvider.Describe(snapshots, Evidence);
 

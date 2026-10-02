@@ -7,7 +7,7 @@ public static class IqrSourceReview
 {
     private static int EvidenceCount(IntegrationReviewDomain domain, IReadOnlyList<IqrSourceSnapshot> snapshots) =>
         Rules(domain, snapshots).Count + (domain == IntegrationReviewDomain.Security ? snapshots.Sum(s => s.Dataflows.Count) : 0) + IqrPathReview.EvidenceCount(domain, snapshots)
-        + IqrObservabilityReview.EvidenceCount(domain, snapshots);
+        + IqrObservabilityReview.EvidenceCount(domain, snapshots) + IqrSourceDomainsReview.EvidenceCount(domain, snapshots);
     private static List<ImplementationRule> Rules(IntegrationReviewDomain domain, IEnumerable<IqrSourceSnapshot> snapshots) => snapshots.SelectMany(s => s.Rules)
         .Where(r => domain switch
         {
@@ -27,7 +27,8 @@ public static class IqrSourceReview
             Readiness = d.Readiness == IntegrationDomainReadiness.NotAssessable ? IntegrationDomainReadiness.Partial : d.Readiness,
             Available = [.. d.Available ?? [], "Implementation source evidence available; runtime behavior not established",
                 .. IqrPathReview.EvidenceCount(d.Domain, snapshots) > 0 ? new[] { $"Integration path from source: {snapshots.Sum(s => s.IntegrationPath?.Hops.Count ?? 0)} hop(s), {snapshots.Sum(s => s.IntegrationPath?.Fields.Count ?? 0)} field trace(s)" } : [],
-                .. IqrObservabilityReview.EvidenceCount(d.Domain, snapshots) > 0 && IqrObservabilityReview.Available(snapshots) is { } observability ? new[] { observability } : []],
+                .. IqrObservabilityReview.EvidenceCount(d.Domain, snapshots) > 0 && IqrObservabilityReview.Available(snapshots) is { } observability ? new[] { observability } : [],
+                .. IqrSourceDomainsReview.EvidenceCount(d.Domain, snapshots) > 0 && IqrSourceDomainsReview.Available(snapshots) is { } domains ? new[] { domains } : []],
             Missing = [.. d.Missing ?? [], "Source/test relationship may be partial; developer test execution unavailable"]
         }).ToList()
     };
@@ -53,12 +54,13 @@ public static class IqrSourceReview
                 var count = EvidenceCount(d.Domain, snapshots);
                 var (pathObserved, pathMissing) = IqrPathReview.Domain(d.Domain, snapshots, result);
                 var (observabilityObserved, observabilityMissing) = IqrObservabilityReview.Domain(d.Domain, snapshots);
+                var (domainsObserved, domainsMissing) = IqrSourceDomainsReview.Domain(d.Domain, snapshots);
                 return count == 0 ? d : d with
                 {
                     // Source evidence never makes a domain fully assessed: runtime evidence is still missing.
                     StateLabel = d.StateLabel is "Not assessed" or "Assessed" ? "Partially assessed" : d.StateLabel,
-                    Observed = [.. d.Observed, $"Source inspected: {count} implementation evidence item(s); source-defined behavior only", .. d.Domain == IntegrationReviewDomain.MessageFlow ? routes : [], .. pathObserved, .. observabilityObserved],
-                    Missing = [.. d.Missing, .. pathMissing, .. observabilityMissing, d.Domain switch
+                    Observed = [.. d.Observed, $"Source inspected: {count} implementation evidence item(s); source-defined behavior only", .. d.Domain == IntegrationReviewDomain.MessageFlow ? routes : [], .. pathObserved, .. observabilityObserved, .. domainsObserved],
+                    Missing = [.. d.Missing, .. pathMissing, .. observabilityMissing, .. domainsMissing, d.Domain switch
                     {
                         IntegrationReviewDomain.Contract => "Formal schema and runtime compatibility are independent of the implementation contract",
                         IntegrationReviewDomain.DataQuality => "Mapper structure does not establish business data quality",

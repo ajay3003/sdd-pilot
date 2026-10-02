@@ -1,0 +1,218 @@
+@using BirkNext.SourceDomains
+@using BirkNext.SourceArchitecture
+@using BirkNext.Web.Services
+
+@* Source Analysis → Infrastructure: Infrastructure as Code declarations read from the selected snapshot's stored analysis (never re-analyzed).
+   Summary first; resources, dependencies, identity, networking, messaging, datastores and telemetry are filterable drill-downs.
+   Declared ≠ exists ≠ reachable ≠ permitted ≠ delivering. *@
+<section class="sd-workspace" aria-labelledby="sd-infra-heading" data-testid="infrastructure-workspace">
+    <SourceDomainHeader Title="Infrastructure" Slug="infra" Result="Evidence.Infrastructure" HeadingId="sd-infra-heading" />
+    @if (!SourceEvidenceDomainsPresentation.Assessed(I))
+    {
+        <div class="sd-empty" data-testid="sd-infra-not-assessed">
+            <p><strong>@(I.Status == SourceDomainStatus.NotDetected ? "No supported Infrastructure as Code files detected." : SourceDomainText.Label(I.Status))</strong></p>
+            <p class="sd-muted">This is not a failure: infrastructure may be defined in another repository or outside IaC. Supported: Terraform; Bicep, ARM, Kubernetes and Helm partially.</p>
+        </div>
+        <SourceDomainLimitations Slug="infra" Result="I" Capabilities="Capabilities" />
+    }
+    else
+    {
+        <nav class="sd-tabs" aria-label="Infrastructure views">
+            @foreach (var tab in Tabs) { <button type="button" aria-pressed="@(_tab == tab ? "true" : "false")" data-testid="@($"sd-infra-tab-{Slug(tab)}")" @onclick="() => _tab = tab">@tab</button> }
+        </nav>
+        @switch (_tab)
+        {
+            case "Overview":
+                <dl class="sd-summary" data-testid="sd-infra-overview">
+                    <div><dt>Resources</dt><dd>@I.Resources.Count(r => r.Kind == "resource")</dd></div>
+                    <div><dt>Data sources</dt><dd>@I.Resources.Count(r => r.Kind == "data")</dd></div>
+                    <div><dt>Modules</dt><dd>@I.Modules.Count</dd></div>
+                    <div><dt>Dependencies</dt><dd>@I.Dependencies.Count</dd></div>
+                    <div><dt>Environments</dt><dd>@I.Environments.Count</dd></div>
+                    <div><dt>Identity &amp; RBAC</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, SourceEvidenceDomainsPresentation.IdentityCategories))</dd></div>
+                    <div><dt>Networking</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, SourceEvidenceDomainsPresentation.NetworkCategories))</dd></div>
+                    <div><dt>Messaging</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, InfrastructureCategory.Messaging))</dd></div>
+                    <div><dt>Datastores</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, SourceEvidenceDomainsPresentation.DatastoreCategories))</dd></div>
+                    <div><dt>Observability</dt><dd>@(SourceEvidenceDomainsPresentation.Count(I, InfrastructureCategory.Observability))</dd></div>
+                    <div><dt>Unresolved references</dt><dd data-testid="sd-infra-unresolved">@I.UnresolvedReferences.Count</dd></div>
+                </dl>
+                <section class="sd-panel" aria-labelledby="sd-infra-categories-heading" data-testid="sd-infra-categories">
+                    <h3 id="sd-infra-categories-heading">Declared resources by category</h3>
+                    <p class="sd-muted">Provider-neutral categories; the provider adapter adds the detail. A declaration does not prove the resource exists.</p>
+                    <dl class="sd-mini">
+                        @foreach (var g in I.Resources.Where(r => r.Kind == "resource").GroupBy(r => r.Category).OrderByDescending(g => g.Count()).ThenBy(g => g.Key))
+                        {
+                            <div data-testid="sd-infra-category" data-category="@g.Key"><dt>@SourceDomainText.Label(g.Key) <span class="sd-context">@string.Join(", ", g.Select(r => r.CategoryDetail).Distinct().Take(3))</span></dt><dd>@g.Count()</dd></div>
+                        }
+                    </dl>
+                </section>
+                <SourceDomainLimitations Slug="infra" Result="I" Capabilities="Capabilities" />
+                break;
+            case "Resources":
+                @Resources(I.Resources, "all", "All declared resources and data sources")
+                break;
+            case "Dependencies":
+                <section class="sd-panel" aria-labelledby="sd-infra-deps-heading" data-testid="sd-infra-dependencies">
+                    <h3 id="sd-infra-deps-heading">Static dependencies <span class="sd-count">@I.Dependencies.Count</span></h3>
+                    <p class="sd-muted">From explicit depends_on, attribute references and module wiring. A static dependency is not runtime connectivity.</p>
+                    <div class="sd-scroll" tabindex="0" role="region" aria-label="Infrastructure dependencies">
+                        <table data-testid="sd-infra-dependency-table">
+                            <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Kind</th><th scope="col">Evidence</th><th scope="col">Location</th></tr></thead>
+                            <tbody>
+                                @foreach (var d in I.Dependencies.Take(_dependencyLimit))
+                                {
+                                    <tr data-testid="sd-infra-dependency"><th scope="row">@SourceEvidenceDomainsPresentation.ResourceLabel(I, d.FromId)</th><td>@SourceEvidenceDomainsPresentation.ResourceLabel(I, d.ToId)</td><td>@d.Kind</td>
+                                        <td><span class="sd-pill sd-pill-@SourceEvidenceDomainsPresentation.Tone(d.State)">@SourceDomainText.Label(d.State)</span></td><td class="sd-path">@SourceEvidenceDomainsPresentation.Location(d.File, d.Line)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (I.Dependencies.Count > _dependencyLimit) { <button type="button" class="btn-secondary" data-testid="sd-infra-more-deps" @onclick="() => _dependencyLimit += 200">Show more (@(I.Dependencies.Count - _dependencyLimit) remaining)</button> }
+                    @if (I.UnresolvedReferences.Count > 0)
+                    {
+                        <ReviewDisclosure Text="@($"View unresolved references ({I.UnresolvedReferences.Count})")" CollapseText="Hide unresolved references" TestId="sd-infra-unresolved-detail" Class="disclosure-inline">
+                            <ul class="sd-list">@foreach (var u in I.UnresolvedReferences) { <li>@u</li> }</ul>
+                        </ReviewDisclosure>
+                    }
+                </section>
+                break;
+            case "Identity & RBAC":
+                <section class="sd-panel" aria-labelledby="sd-infra-access-heading" data-testid="sd-infra-access">
+                    <h3 id="sd-infra-access-heading">Access assignments <span class="sd-count">@I.AccessAssignments.Count</span></h3>
+                    <p class="sd-muted">Role assignments and policy bindings as declared. A declared assignment is not an effective permission.</p>
+                    @if (I.AccessAssignments.Count == 0) { <p class="sd-empty">No role assignment or access binding declared in the selected source.</p> }
+                    else
+                    {
+                        <div class="sd-scroll" tabindex="0" role="region" aria-label="Access assignments">
+                            <table data-testid="sd-infra-access-table">
+                                <thead><tr><th scope="col">Declaration</th><th scope="col">Role</th><th scope="col">Scope</th><th scope="col">Principal</th><th scope="col">Runtime</th></tr></thead>
+                                <tbody>@foreach (var a in I.AccessAssignments) { <tr data-testid="sd-infra-access-row"><th scope="row">@SourceEvidenceDomainsPresentation.ResourceLabel(I, a.ResourceId)</th><td>@(a.Role ?? "Not resolved")</td><td>@(a.ScopeReference is { } s ? SourceEvidenceDomainsPresentation.ResourceLabel(I, s) : "Not resolved")</td><td>@(a.PrincipalReference is { } p ? SourceEvidenceDomainsPresentation.ResourceLabel(I, p) : "Not resolved")</td><td class="sd-muted">@a.RuntimeState</td></tr> }</tbody>
+                            </table>
+                        </div>
+                    }
+                </section>
+                @Resources(I.Resources.Where(r => SourceEvidenceDomainsPresentation.IdentityCategories.Contains(r.Category)), "identity", "Identities, access control and secret stores")
+                break;
+            case "Networking":
+                @Resources(I.Resources.Where(r => SourceEvidenceDomainsPresentation.NetworkCategories.Contains(r.Category)), "network", "Networking declarations (reachability not verified)")
+                break;
+            case "Messaging":
+                @Resources(I.Resources.Where(r => r.Category == InfrastructureCategory.Messaging), "messaging", "Messaging declarations (a declared entity is not a consumer processing it)")
+                break;
+            case "Datastores":
+                @Resources(I.Resources.Where(r => SourceEvidenceDomainsPresentation.DatastoreCategories.Contains(r.Category)), "datastores", "Datastore declarations (declared is not connected)")
+                break;
+            case "Observability":
+                @Resources(I.Resources.Where(r => r.Category == InfrastructureCategory.Observability), "observability", "Telemetry sinks, diagnostic settings and alerts (declared is not telemetry delivered)")
+                break;
+            case "Variables":
+                <section class="sd-panel" aria-labelledby="sd-infra-vars-heading" data-testid="sd-infra-variables">
+                    <h3 id="sd-infra-vars-heading">Variables and environments <span class="sd-count">@I.Variables.Count</span></h3>
+                    <p class="sd-muted">Only safe literal values are shown; sensitive variables and secret-shaped values are redacted. Environments come from tfvars/parameter file and folder names.</p>
+                    <div class="sd-scroll" tabindex="0" role="region" aria-label="Infrastructure variables">
+                        <table data-testid="sd-infra-variable-table">
+                            <thead><tr><th scope="col">Variable</th><th scope="col">Type</th><th scope="col">Default</th><th scope="col">Per environment</th><th scope="col">Declared in</th></tr></thead>
+                            <tbody>
+                                @foreach (var v in I.Variables)
+                                {
+                                    <tr data-testid="sd-infra-variable"><th scope="row">@v.Name @if (v.Sensitive) { <span class="sd-pill sd-pill-muted">sensitive</span> }</th><td>@(v.Type ?? "—")</td>
+                                        <td>@(v.DefaultState switch { "literal" => v.SafeDefault, "redacted" => "Redacted", "expression" => "(expression)", _ => "None" })</td>
+                                        <td>@(v.Values.Count == 0 ? "—" : string.Join("; ", v.Values.Select(x => $"{SourceDomainText.Label(x.Environment)}: {(x.State == "literal" ? x.SafeValue : x.State == "redacted" ? "redacted" : "(expression)")}")))</td>
+                                        <td class="sd-path">@SourceEvidenceDomainsPresentation.Location(v.File, v.Line)</td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (I.Outputs.Count > 0) { <p class="sd-muted">Outputs: @string.Join(", ", I.Outputs.Select(o => o.Sensitive ? $"{o.Name} (sensitive)" : o.Name))</p> }
+                </section>
+                break;
+            case "Evidence":
+                <div class="sd-panels">
+                    <section class="sd-panel" aria-labelledby="sd-infra-modules-heading" data-testid="sd-infra-modules">
+                        <h3 id="sd-infra-modules-heading">Modules <span class="sd-count">@I.Modules.Count</span></h3>
+                        @if (I.Modules.Count == 0) { <p class="sd-muted">No modules declared.</p> }
+                        <ul class="sd-list">@foreach (var m in I.Modules) { <li data-testid="sd-infra-module" data-analyzed="@(m.Analyzed ? "true" : "false")"><strong>@m.Name</strong> — @m.Source@(m.Version is { } v ? $" ({v})" : "") · @(m.Analyzed ? "analyzed" : "not analyzed")@(m.Note is { } n ? $" · {n}" : "")</li> }</ul>
+                    </section>
+                    <section class="sd-panel" aria-labelledby="sd-infra-providers-heading" data-testid="sd-infra-providers">
+                        <h3 id="sd-infra-providers-heading">Providers and state backends</h3>
+                        <ul class="sd-list">
+                            @foreach (var p in I.Providers) { <li><strong>@p.Name</strong>@(p.Source is { } s ? $" · {s}" : "")@(p.Version is { } v ? $" · {v}" : "")@(p.HasCredentialSettings ? " · credential settings declared (values not read)" : "")</li> }
+                            @foreach (var b in I.Backends) { <li>Backend <strong>@b.Type</strong> · settings: @string.Join(", ", b.SettingNames) (values not read)</li> }
+                        </ul>
+                    </section>
+                </div>
+                <SourceDomainLimitations Slug="infra" Result="I" Capabilities="Capabilities" />
+                break;
+            case "Changes":
+                <SourceDomainChanges Slug="infra" Label="Infrastructure" Domain="SourceEvidenceDomain.Infrastructure" Current="Evidence" Previous="Previous" />
+                break;
+        }
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public SourceEvidenceDomainsSnapshot Evidence { get; set; } = default!;
+    [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
+
+    private InfrastructureEvidence I => Evidence.Infrastructure;
+    private IEnumerable<DomainCapability> Capabilities => Evidence.Capabilities.Where(c => c.Domain == SourceEvidenceDomain.Infrastructure);
+    private static readonly string[] Tabs = ["Overview", "Resources", "Dependencies", "Identity & RBAC", "Networking", "Messaging", "Datastores", "Observability", "Variables", "Evidence", "Changes"];
+    private static string Slug(string tab) => tab switch { "Identity & RBAC" => "identity", _ => tab.ToLowerInvariant() };
+    private string _tab = "Overview";
+    private int _dependencyLimit = 200;
+    private readonly Dictionary<string, (string Category, string Search)> _filters = [];
+    private readonly HashSet<string> _open = [];
+
+    private RenderFragment Resources(IEnumerable<InfrastructureResource> source, string key, string title) => __builder =>
+    {
+        var all = source.ToList();
+        (string Category, string Search) f = _filters.TryGetValue(key, out var x) ? x : ("", "");
+        var rows = SourceEvidenceDomainsPresentation.FilterResources(all, f.Category, f.Search).ToList();
+        var headingId = $"sd-infra-{key}-heading";
+        <section class="sd-panel" aria-labelledby="@headingId" data-testid="@($"sd-infra-resources-{key}")">
+            <h3 id="@headingId">@title <span class="sd-count">@all.Count</span></h3>
+            @if (all.Count == 0) { <p class="sd-empty" data-testid="sd-infra-resources-empty">No declarations of this kind in the selected source.</p> }
+            else
+            {
+                <div class="sd-filterbar">
+                    @if (key == "all")
+                    {
+                        <label>Category <select data-testid="sd-infra-filter-category" value="@f.Category" @onchange="e => _filters[key] = ((string)e.Value!, f.Search)"><option value="">All</option>@foreach (var c in all.Select(r => r.Category).Distinct().Order()) { <option value="@c">@SourceDomainText.Label(c)</option> }</select></label>
+                    }
+                    <label>Search <input type="search" data-testid="@($"sd-infra-search-{key}")" value="@f.Search" @oninput="e => _filters[key] = (f.Category, (string?)e.Value ?? string.Empty)" /></label>
+                </div>
+                <p class="sd-muted" role="status" data-testid="@($"sd-infra-shown-{key}")">@rows.Count of @all.Count shown</p>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="@title">
+                    <table data-testid="sd-infra-resource-table">
+                        <thead><tr><th scope="col">Resource</th><th scope="col">Type</th><th scope="col">Declared name</th><th scope="col">Location</th><th scope="col">Settings</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in rows.Take(400))
+                            {
+                                var open = _open.Contains(r.Id);
+                                <tr data-testid="sd-infra-resource" data-category="@r.Category">
+                                    <th scope="row">@r.LogicalName<span class="sd-context">@r.CategoryDetail@(r.Kind == "data" ? " · data source" : "")@(r.ModulePath is { } m ? $" · module {m}" : "")@(r.Environment is { } env ? $" · {SourceDomainText.Label(env)}" : "")</span></th>
+                                    <td class="sd-path">@r.ResourceType</td>
+                                    <td>@(r.DeclaredName ?? "Not resolved")</td>
+                                    <td class="sd-path">@SourceEvidenceDomainsPresentation.Location(r.File, r.Line)</td>
+                                    <td>
+                                        @if (r.Settings.Count == 0) { <span class="sd-muted">None recorded</span> }
+                                        else { <button type="button" class="sd-link" aria-expanded="@(open ? "true" : "false")" data-testid="sd-infra-settings-toggle" @onclick="() => Toggle(r.Id)">@(open ? "Hide" : "View") @r.Settings.Count setting(s)<span class="visually-hidden"> of @r.LogicalName</span></button> }
+                                    </td>
+                                </tr>
+                                @if (open)
+                                {
+                                    <tr class="sd-detail-row" data-testid="sd-infra-settings"><td colspan="5">
+                                        <dl class="sd-facts">@foreach (var s in r.Settings) { <div><dt>@s.Key <span class="sd-context">@s.Area</span></dt><dd>@s.Value</dd></div> }</dl>
+                                        <p class="sd-muted">@r.RuntimeState@(r.TagKeys.Count > 0 ? $" · tags: {string.Join(", ", r.TagKeys)}" : "")</p>
+                                    </td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                @if (rows.Count > 400) { <p class="sd-muted">First 400 of @rows.Count shown — narrow with the filters.</p> }
+            }
+        </section>
+    };
+
+    private void Toggle(string id) { if (!_open.Add(id)) _open.Remove(id); }
+}

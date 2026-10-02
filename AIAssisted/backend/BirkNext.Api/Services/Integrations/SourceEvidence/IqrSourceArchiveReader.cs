@@ -20,8 +20,20 @@ public static class IqrSourceArchiveReader
         { "bin", "obj", "node_modules", "packages", ".git", ".vs", "coverage", "TestResults" };
     /// <param name="ConfigurationFiles">JSON/YAML content held in memory for this analysis only. Never stored; only the source-architecture analyzer reads it,
     /// and only allow-listed entity names and endpoint hosts can leave it. Every other analyzer keeps seeing key inventories only.</param>
+    /// <param name="EvidenceFiles">Infrastructure-as-code, schema/contract, properties/env and pipeline-script files (Terraform, Bicep, GraphQL SDL, protobuf,
+    /// Jenkinsfile …) held in memory for the Source Analysis evidence domains only. Never stored; only redacted, typed evidence leaves the analysis.</param>
     public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null,
-        List<SourceFile>? ConfigurationFiles = null);
+        List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null);
+
+    /// <summary>Files the evidence domains read beyond C#/project/JSON/YAML: IaC, schemas/contracts, properties/env files and pipeline scripts.</summary>
+    public static bool IsEvidenceFile(string path)
+    {
+        var file = Path.GetFileName(path);
+        var extension = Path.GetExtension(path).ToLowerInvariant();
+        return extension is ".tf" or ".tfvars" or ".bicep" or ".bicepparam" or ".graphql" or ".graphqls" or ".gql" or ".proto" or ".properties"
+            || file.Equals("Jenkinsfile", StringComparison.OrdinalIgnoreCase) || file.Equals(".env", StringComparison.OrdinalIgnoreCase)
+            || file.StartsWith(".env.", StringComparison.OrdinalIgnoreCase);
+    }
 
     public static (Workspace? Workspace, string? Error) Read(string name, byte[] bytes, CancellationToken ct = default)
     {
@@ -32,6 +44,7 @@ public static class IqrSourceArchiveReader
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var configurations = new List<SourceConfigurationEvidence>();
         var configurationFiles = new List<SourceFile>();
+        var evidenceFiles = new List<SourceFile>();
         try
         {
             using var zip = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
@@ -51,9 +64,10 @@ public static class IqrSourceArchiveReader
                 if (path.EndsWith('/') || path.Split('/').Any(Ignored.Contains)) continue;
                 var extension = Path.GetExtension(path).ToLowerInvariant();
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
-                if (extension is ".js" or ".ts" or ".py" or ".java" or ".go" or ".fs" or ".vb" or ".tf")
+                if (extension is ".js" or ".ts" or ".py" or ".java" or ".go" or ".fs" or ".vb")
                     limitations.Add($"Not analyzed: {extension} source (unsupported language).");
-                if (extension is not (".cs" or ".csproj" or ".sln" or ".slnx" or ".json" or ".yaml" or ".yml" or ".props" or ".sql")
+                var evidence = IsEvidenceFile(path);
+                if (!evidence && extension is not (".cs" or ".csproj" or ".sln" or ".slnx" or ".json" or ".yaml" or ".yml" or ".props" or ".sql")
                     && !Path.GetFileName(path).Equals("Dockerfile", StringComparison.OrdinalIgnoreCase)) continue;
                 if (entry.Length > MaxFileBytes) { limitations.Add("Source file exceeds the 2 MB per-file limit and was not analyzed."); continue; }
                 using var input = entry.Open();
@@ -104,13 +118,14 @@ public static class IqrSourceArchiveReader
                     configurationFiles.Add(new SourceFile(path, content));
                     continue;
                 }
+                if (evidence) { evidenceFiles.Add(new SourceFile(path, content)); continue; }
                 files.Add(new SourceFile(path, content));
             }
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException)
         { return (null, "Source archive is invalid or unreadable."); }
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return (new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count), files, [.. limitations], configurations, configurationFiles), null);
+        return (new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles), null);
     }
 
     public static string SafeLabel(string value)

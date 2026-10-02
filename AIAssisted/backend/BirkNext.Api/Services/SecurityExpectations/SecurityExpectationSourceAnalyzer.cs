@@ -23,7 +23,7 @@ public static class SecurityExpectationSourceAnalyzer
         return Analyze(snapshot, input, facts, workspace.Limitations, ct);
     }
     internal static SecuritySourceEvidence Analyze(IqrSourceSnapshot snapshot, ArchitectureInput input, IReadOnlyList<ArchitectureFact> facts,
-        IReadOnlyList<string> limitations, CancellationToken ct)
+        IReadOnlyList<string> limitations, CancellationToken ct, SourceAnalysis.Evidence.SourceConfigurationModel? configuration = null)
     {
         var candidates = new List<SecurityExpectationCandidate>();
         var diagnostics = new List<string>();
@@ -61,12 +61,13 @@ public static class SecurityExpectationSourceAnalyzer
             bool EndpointKey(ArchitectureFact f, string key) => f["endpointConfigKey"]?.Equals(key, StringComparison.OrdinalIgnoreCase) == true ||
                 (f["kind"] == "downstream" && f["configKey"] is { } section &&
                     (key.Equals(section + ":BaseUrl", StringComparison.OrdinalIgnoreCase) || key.Equals(section + ":BaseAddress", StringComparison.OrdinalIgnoreCase)));
-            foreach (var config in project.Configuration)
-            foreach (var (key, raw) in config.Values)
+            // Normalized Source Analysis configuration when available (appsettings exactly as Architecture parsed them, plus launchSettings, Compose,
+            // .env and Functions settings owned by this project); otherwise the project's appsettings. Raw values are in memory only.
+            foreach (var (configPath, configLine, key, raw) in ConfigurationValues(project, configuration))
             {
                 if (SecurityExpectationValues.SecretShaped(key)) continue;
                 var leaf = Regex.Replace(key, @":\d+$", "").Split(':').Last();
-                var evidence = new ArchitectureEvidence(ArchitectureEvidenceKind.Configuration, config.Path, 0, key, "SecurityExpectations",
+                var evidence = new ArchitectureEvidence(ArchitectureEvidenceKind.Configuration, configPath, configLine, key, "SecurityExpectations",
                     "Explicit configuration key in analyzed source. It does not establish deployed configuration or runtime behavior.");
                 var identityContext = Regex.IsMatch(key, @"(?i)(^|:)(azuread|entra|authentication|auth|msal|oidc|jwt)(:|$)") ||
                     authFacts.Any(f => f["configKey"] is { } section && key.StartsWith(section + ":", StringComparison.OrdinalIgnoreCase));
@@ -154,4 +155,13 @@ public static class SecurityExpectationSourceAnalyzer
             UnsupportedEvidence = limitations.Where(l => l.Contains("unsupported", StringComparison.OrdinalIgnoreCase) || l.Contains("Not analyzed", StringComparison.OrdinalIgnoreCase)).ToList()
         };
     }
+
+    /// <summary>Application-configuration technologies whose keys Security Expectations reads (IaC and pipeline variables are not application settings).</summary>
+    private static readonly HashSet<string> ApplicationConfiguration = new(StringComparer.Ordinal)
+        { "ASP.NET Core appsettings", "Frontend appsettings", "GraphQL client configuration", "launchSettings", "Docker Compose", "Environment file", "Azure Functions settings" };
+
+    private static IEnumerable<(string File, int Line, string Key, string Raw)> ConfigurationValues(ArchProject project, SourceAnalysis.Evidence.SourceConfigurationModel? configuration) =>
+        configuration is null
+            ? project.Configuration.SelectMany(c => c.Values.Select(v => (c.Path, 0, v.Key, v.Value)))
+            : configuration.ForProject(project.Path).Where(v => ApplicationConfiguration.Contains(v.Technology)).Select(v => (v.File, 0, v.Key, v.Raw));
 }

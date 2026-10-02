@@ -44,6 +44,23 @@
                 }
             </ul>
         </section>
+        @if (Layers is { Count: > 0 } layers)
+        {
+            <section class="obs-panel" aria-labelledby="obs-layers-heading" data-testid="obs-layers">
+                <h3 id="obs-layers-heading">Source evidence layers</h3>
+                <p class="obs-muted">Telemetry evidence from application code, configuration, infrastructure as code and pipelines of the same snapshot, kept separate. Runtime telemetry is its own layer and is never assessed here.</p>
+                <ul class="obs-dimension-list">
+                    @foreach (var l in layers)
+                    {
+                        <li class="obs-dimension" data-testid="obs-layer" data-layer="@l.Layer" data-state="@l.State">
+                            <span class="obs-dimension-title">@l.Layer</span>
+                            <span class="obs-pill obs-pill-@(l.State == "Detected" ? "complete" : "muted")">@l.State</span>
+                            <span class="obs-muted obs-dimension-detail">@l.Detail</span>
+                        </li>
+                    }
+                </ul>
+            </section>
+        }
         <section class="obs-panel" aria-labelledby="obs-components-heading" data-testid="obs-components">
             <h3 id="obs-components-heading">Components <span class="obs-count">@Snapshot.Components.Count</span></h3>
             <div class="obs-scroll" tabindex="0" role="region" aria-label="Observability by component">
@@ -229,6 +246,8 @@
     /// <summary>The most recent earlier Observability analysis of another stored snapshot (Changes view). Null shows an empty state.</summary>
     [Parameter] public SourceObservabilitySnapshot? Previous { get; set; }
     [Parameter] public EventCallback ChooseSnapshot { get; set; }
+    /// <summary>Observability evidence layers of the same snapshot (code, configuration, IaC, CI/CD, runtime) from the cross-domain analysis; null on older snapshots.</summary>
+    [Parameter] public IReadOnlyList<BirkNext.SourceDomains.SourceObservabilityLayer>? Layers { get; set; }
 
     private static readonly string[] Tabs = ["Overview", "Correlation & tracing", "Logging quality", "Changes"];
     private static string Slug(string tab) => tab switch { "Correlation & tracing" => "correlation", "Logging quality" => "logging", _ => tab.ToLowerInvariant() };

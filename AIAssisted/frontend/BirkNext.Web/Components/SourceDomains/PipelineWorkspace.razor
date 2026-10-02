@@ -1,0 +1,90 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* Source Analysis → CI/CD: pipeline definitions of the selected snapshot (stored analysis). A step listed here is what a pipeline intends to
+   run — never that it ran or passed; no execution history is read. Secrets are names only. *@
+<section class="sd-workspace" aria-labelledby="sd-cicd-heading" data-testid="cicd-workspace">
+    <SourceDomainHeader Title="CI/CD" Slug="cicd" Result="P" HeadingId="sd-cicd-heading" />
+    @if (!SourceEvidenceDomainsPresentation.Assessed(P))
+    {
+        <div class="sd-empty" data-testid="sd-cicd-not-assessed">
+            <p><strong>@(P.Status == SourceDomainStatus.NotDetected ? "No pipeline definition detected in the selected source." : SourceDomainText.Label(P.Status))</strong></p>
+            <p class="sd-muted">That does not mean the project has no CI/CD: pipelines may live in another repository or in the CI system itself.</p>
+        </div>
+        <SourceDomainLimitations Slug="cicd" Result="P" Capabilities="Capabilities" />
+    }
+    else
+    {
+        var runnable = P.Pipelines.Where(p => !p.IsTemplate).ToList();
+        var steps = P.Pipelines.SelectMany(p => p.Steps).ToList();
+        <dl class="sd-summary" data-testid="sd-cicd-overview">
+            <div><dt>Pipelines</dt><dd>@runnable.Count</dd></div>
+            <div><dt>Templates</dt><dd>@P.Pipelines.Count(p => p.IsTemplate)</dd></div>
+            <div><dt>Triggers</dt><dd>@runnable.Sum(p => p.Triggers.Count(t => t.Type != "none"))</dd></div>
+            <div><dt>Build steps</dt><dd>@steps.Count(s => s.Kind is PipelineStepKind.Build or PipelineStepKind.Restore or PipelineStepKind.ContainerBuild)</dd></div>
+            <div><dt>Test steps</dt><dd data-testid="sd-cicd-tests">@steps.Count(s => SourceEvidenceDomainsPresentation.IsTest(s.Kind))</dd></div>
+            <div><dt>Security / dependency checks</dt><dd data-testid="sd-cicd-checks">@steps.Count(s => SourceEvidenceDomainsPresentation.IsCheck(s.Kind))</dd></div>
+            <div><dt>Deployment stages</dt><dd>@P.Pipelines.Sum(p => p.Stages.Count(s => s.Deployment))</dd></div>
+            <div><dt>IaC steps</dt><dd>@steps.Count(s => s.Kind is PipelineStepKind.InfrastructureDeploy or PipelineStepKind.InfrastructurePlan)</dd></div>
+        </dl>
+        <section class="sd-panel" aria-labelledby="sd-cicd-pipelines-heading" data-testid="sd-cicd-pipelines">
+            <h3 id="sd-cicd-pipelines-heading">Pipelines <span class="sd-count">@P.Pipelines.Count</span></h3>
+            <p class="sd-muted">Step counts include the templates a pipeline includes (resolved inside this snapshot). Defined in source; execution not assessed.</p>
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Pipelines">
+                <table data-testid="sd-cicd-pipeline-table">
+                    <thead><tr><th scope="col">Pipeline</th><th scope="col">Triggers</th><th scope="col">Tests</th><th scope="col">Checks</th><th scope="col">Deploy</th><th scope="col">Environments</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                    <tbody>
+                        @foreach (var p in P.Pipelines.OrderBy(p => p.IsTemplate).ThenBy(p => p.File, StringComparer.Ordinal))
+                        {
+                            var effective = SourceEvidenceDomainsPresentation.EffectiveSteps(P, p);
+                            <tr data-testid="sd-cicd-pipeline" data-template="@(p.IsTemplate ? "true" : "false")">
+                                <th scope="row">@p.Name<span class="sd-context">@SourceDomainText.Label(p.Platform)@(p.IsTemplate ? " · template" : "") · @p.File</span></th>
+                                <td>@(p.IsTemplate ? "Included by other pipelines" : p.Triggers.Count == 0 ? "None declared" : string.Join("; ", p.Triggers.Select(SourceEvidenceDomainsPresentation.TriggerText)))</td>
+                                <td>@effective.Count(s => SourceEvidenceDomainsPresentation.IsTest(s.Kind))</td>
+                                <td>@effective.Count(s => SourceEvidenceDomainsPresentation.IsCheck(s.Kind))</td>
+                                <td>@effective.Count(s => SourceEvidenceDomainsPresentation.IsDeploy(s.Kind))</td>
+                                <td>@(p.Environments.Count == 0 ? "—" : string.Join(", ", p.Environments))</td>
+                                <td><button type="button" class="sd-link" aria-pressed="@(_selected == p.Id ? "true" : "false")" data-testid="sd-cicd-open" @onclick="() => _selected = _selected == p.Id ? null : p.Id">@(_selected == p.Id ? "Hide" : "Details")<span class="visually-hidden"> for @p.Name</span></button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        @if (P.Pipelines.FirstOrDefault(p => p.Id == _selected) is { } selected)
+        {
+            var effective = SourceEvidenceDomainsPresentation.EffectiveSteps(P, selected);
+            <section class="sd-panel" aria-labelledby="sd-cicd-detail-heading" data-testid="sd-cicd-detail">
+                <h3 id="sd-cicd-detail-heading">@selected.Name <span class="sd-pill sd-pill-muted">@SourceDomainText.Label(selected.Platform)</span></h3>
+                <dl class="sd-facts">
+                    <div><dt>File</dt><dd class="sd-path">@selected.File</dd></div>
+                    <div><dt>Triggers</dt><dd>@(selected.Triggers.Count == 0 ? "None declared" : string.Join("; ", selected.Triggers.Select(SourceEvidenceDomainsPresentation.TriggerText)))</dd></div>
+                    <div><dt>Stages</dt><dd>@(selected.Stages.Count == 0 ? "—" : string.Join(" → ", selected.Stages.Select(s => s.Deployment ? $"{s.Name} (deploys to {s.Environment ?? "an environment"})" : s.Name)))</dd></div>
+                    <div><dt>Templates</dt><dd>@(selected.Templates.Count == 0 ? "—" : string.Join(", ", selected.Templates))</dd></div>
+                    <div><dt>Secret references</dt><dd data-testid="sd-cicd-secrets">@(selected.SecretReferences.Count == 0 ? "None found" : string.Join(", ", selected.SecretReferences)) <span class="sd-context">Names only — values are never read.</span></dd></div>
+                    <div><dt>Federated credentials (OIDC)</dt><dd>@(selected.UsesFederatedCredentials ? "Declared" : "Not found")</dd></div>
+                    <div><dt>Approvals in source</dt><dd>@(selected.ApprovalsDeclared ? "Declared" : "Not declared in source (environment checks may be configured in the CI system)")</dd></div>
+                </dl>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"Steps of {selected.Name}")">
+                    <table data-testid="sd-cicd-step-table">
+                        <thead><tr><th scope="col">Step</th><th scope="col">Kind</th><th scope="col">Tool</th><th scope="col">Stage / job</th><th scope="col">Targets</th></tr></thead>
+                        <tbody>@foreach (var s in effective.Where(s => s.Kind != PipelineStepKind.Other || _showOther)) { <tr data-testid="sd-cicd-step" data-kind="@s.Kind"><th scope="row">@s.Name<span class="sd-context">@(s.Id.Split('#')[0] == selected.File ? "" : $"from {s.Id.Split('#')[0]}")</span></th><td>@SourceDomainText.Label(s.Kind)</td><td>@s.Tool</td><td>@string.Join(" / ", new[] { s.Stage, s.Job }.Where(x => x is not null))@(s.Environment is { } env ? $" · {env}" : "")</td><td class="sd-path">@string.Join(", ", s.Targets)</td></tr> }</tbody>
+                    </table>
+                </div>
+                <label class="sd-check"><input type="checkbox" data-testid="sd-cicd-show-other" checked="@_showOther" @onchange="e => _showOther = (bool)e.Value!" /> Show setup and other steps (@effective.Count(s => s.Kind == PipelineStepKind.Other))</label>
+                <p class="sd-muted">@SourceDomainText.StepNotExecuted.</p>
+            </section>
+        }
+        @if (P.DependencyAutomation.Count > 0) { <p class="sd-muted" data-testid="sd-cicd-automation">Dependency-update automation configured: @string.Join(", ", P.DependencyAutomation)</p> }
+        <SourceDomainChanges Slug="cicd" Label="CI/CD" Domain="SourceEvidenceDomain.CiCd" Current="Evidence" Previous="Previous" />
+        <SourceDomainLimitations Slug="cicd" Result="P" Capabilities="Capabilities" />
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public SourceEvidenceDomainsSnapshot Evidence { get; set; } = default!;
+    [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
+    private PipelineEvidence P => Evidence.CiCd;
+    private IEnumerable<DomainCapability> Capabilities => Evidence.Capabilities.Where(c => c.Domain == SourceEvidenceDomain.CiCd);
+    private string? _selected;
+    private bool _showOther;
+}

@@ -1,0 +1,36 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* Source-to-source changes of one domain against the latest earlier analysis of the same repository. A difference is a SOURCE change —
+   never runtime or deployment drift (e.g. "Infrastructure source change", not "Terraform drift"). *@
+<section class="sd-panel" aria-labelledby="@($"sd-{Slug}-changes-heading")" data-testid="@($"sd-{Slug}-changes")">
+    <h3 id="@($"sd-{Slug}-changes-heading")">@Label source changes</h3>
+    <p class="sd-muted">@SourceEvidenceDiff.Label</p>
+    @if (Previous is not { } previous)
+    {
+        <p class="sd-empty" data-testid="@($"sd-{Slug}-changes-empty")">No earlier analysis of this repository with source-evidence domains is stored, so there is nothing to compare with.</p>
+    }
+    else
+    {
+        var changes = SourceEvidenceDiff.Compare(previous.Evidence, Current).Where(c => c.Domain == Domain).ToList();
+        <p class="sd-muted" data-testid="@($"sd-{Slug}-changes-against")">Compared with <strong>@previous.Label</strong> (older) → selected snapshot.</p>
+        @if (changes.Count == 0) { <p class="sd-empty" data-testid="@($"sd-{Slug}-changes-none")">No @Label.ToLowerInvariant() source changes between the two snapshots.</p> }
+        else
+        {
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"{Label} source changes")">
+                <table data-testid="@($"sd-{Slug}-changes-table")">
+                    <thead><tr><th scope="col">Change</th><th scope="col">Area</th><th scope="col">Item</th><th scope="col">Detail</th></tr></thead>
+                    <tbody>@foreach (var c in changes.Take(300)) { <tr data-testid="@($"sd-{Slug}-change")"><td>@c.Kind@(c.ContractChange != ContractChangeClass.None ? $" · {c.ContractChange}" : "")</td><td>@c.Area</td><th scope="row">@c.Name<span class="sd-context">@c.Key</span></th><td>@c.Detail</td></tr> }</tbody>
+                </table>
+            </div>
+            @if (changes.Count > 300) { <p class="sd-muted">First 300 of @changes.Count changes shown.</p> }
+        }
+    }
+</section>
+@code {
+    [Parameter, EditorRequired] public string Slug { get; set; } = "";
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter, EditorRequired] public SourceEvidenceDomain Domain { get; set; }
+    [Parameter, EditorRequired] public SourceEvidenceDomainsSnapshot Current { get; set; } = default!;
+    [Parameter] public (string Label, SourceEvidenceDomainsSnapshot Evidence)? Previous { get; set; }
+}

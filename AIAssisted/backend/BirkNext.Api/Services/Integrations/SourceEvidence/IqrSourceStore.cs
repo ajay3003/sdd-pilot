@@ -53,8 +53,13 @@ public sealed class IqrSourceStore(AppDbContext db)
             out var architectureInput, out var architectureResults) };
         // Observability (correlation/tracing, logging quality, telemetry configuration): analysed once here over the same workspace and Architecture model.
         snapshot = snapshot with { Observability = SourceAnalysis.Observability.ObservabilitySourceAnalyzer.Analyze(snapshot.Id, workspace, architectureInput, snapshot.Architecture, snapshot.AnalyzedAt, ct) };
+        // Reusable source-evidence domains (Infrastructure as Code, Configuration, CI/CD, Contracts, cross-domain links): analysed once here over the
+        // same workspace, Architecture input and models — consumers read them from the snapshot, never by rescanning the archive.
+        snapshot = snapshot with { EvidenceDomains = SourceAnalysis.Evidence.SourceEvidenceAnalyzer.Analyze(snapshot.Id, workspace, architectureInput, snapshot.AnalyzedAt, snapshot.Architecture,
+            snapshot.DatabaseArchitecture, snapshot.Observability, snapshot.IntegrationPath, ct, out var configuration) };
+        // Security Expectations reads identity/endpoint candidates from the normalized Configuration evidence (raw public identifiers in memory only).
         snapshot = snapshot with { SecurityExpectationsEvidence = SecurityExpectations.SecurityExpectationSourceAnalyzer.Analyze(snapshot, architectureInput,
-            architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct) };
+            architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct, configuration) };
         // Source integration discovery signals (capture-technology markers, orchestration-declared channels): identifiers only, read from the same workspace.
         snapshot = snapshot with { IntegrationSignals = SourceDiscovery.SourceIntegrationSignalExtractor.Extract(workspace, snapshot.Architecture) };
         // Repository identity and the dependency evidence Dependency Review consumes (manifests, redacted Renovate configs, automation summaries):

@@ -1,0 +1,32 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+
+@* Analyzer coverage (what the analyzer can read — Partial for heuristic readers, Unsupported reported, never guessed), diagnostics and
+   limitations of one domain. Collapsed by default: summary first, raw evidence on demand. *@
+<div class="sd-panels" data-testid="@($"sd-{Slug}-limitations")">
+    <section class="sd-panel" aria-labelledby="@($"sd-{Slug}-coverage-heading")">
+        <h3 id="@($"sd-{Slug}-coverage-heading")">Analyzer coverage</h3>
+        <ReviewDisclosure Text="View analyzer coverage" CollapseText="Hide analyzer coverage" TestId="@($"sd-{Slug}-coverage")" Class="disclosure-inline">
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Analyzer coverage">
+                <table>
+                    <thead><tr><th scope="col">Technology</th><th scope="col">Support</th><th scope="col">What is read</th></tr></thead>
+                    <tbody>@foreach (var c in Capabilities) { <tr data-testid="@($"sd-{Slug}-capability")"><th scope="row">@c.Technology</th><td><span class="sd-pill sd-pill-@SourceEvidenceDomainsPresentation.Tone(c.Support)">@c.Support</span></td><td>@c.Detail</td></tr> }</tbody>
+                </table>
+            </div>
+        </ReviewDisclosure>
+    </section>
+    <section class="sd-panel" aria-labelledby="@($"sd-{Slug}-limits-heading")">
+        <h3 id="@($"sd-{Slug}-limits-heading")">Limitations <span class="sd-count">@(Result.Limitations.Count + Result.Diagnostics.Count)</span></h3>
+        <ReviewDisclosure Text="View limitations and diagnostics" CollapseText="Hide limitations and diagnostics" TestId="@($"sd-{Slug}-limits")" Class="disclosure-inline">
+            <ul class="sd-list">
+                @foreach (var l in Result.Limitations) { <li>@l</li> }
+                @foreach (var d in Result.Diagnostics) { <li data-testid="@($"sd-{Slug}-diagnostic")"><strong>@d.Kind:</strong> @d.Message @if (d.File is { } f) { <span class="sd-path">@SourceEvidenceDomainsPresentation.Location(f, d.Line)</span> }</li> }
+            </ul>
+        </ReviewDisclosure>
+    </section>
+</div>
+@code {
+    [Parameter, EditorRequired] public string Slug { get; set; } = "";
+    [Parameter, EditorRequired] public SourceDomainResult Result { get; set; } = default!;
+    [Parameter] public IEnumerable<DomainCapability> Capabilities { get; set; } = [];
+}

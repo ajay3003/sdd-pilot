@@ -32,7 +32,12 @@ public sealed class DependencyReviewSourceScopeService(IReviewSourceEvidenceProv
     public static ConsumerSourceEvidence Evidence(IqrSourceSnapshot s) => s.DependencyEvidence is not { } e
         ? new(false, NoEvidence)
         : new(true, e.Dependencies.Count == 0 && e.RenovateFiles.Count == 0 ? "No supported dependency declaration or Renovate configuration was found in this snapshot." : null,
-            $"{e.Dependencies.Count} declared dependencies · {e.RenovateFiles.Count} Renovate configuration file(s)");
+            $"{e.Dependencies.Count} declared dependencies · {e.RenovateFiles.Count} Renovate configuration file(s)" + PipelineChecks(s));
+
+    /// <summary>Dependency/security checks the snapshot's pipelines intend to run, read from Source Analysis CI/CD evidence (defined, not executed).
+    /// Dependency Review keeps its own registry/security/license interpretation; this is context only.</summary>
+    public static string PipelineChecks(IqrSourceSnapshot s) => SourceAnalysis.SourceEvidenceQueries.DependencyChecks(s) is { Available: true, Items.Count: > 0 } checks
+        ? $" · {checks.Items.Count} pipeline dependency/security check(s) defined" : "";
 
     public static List<ReviewSourceSnapshot> Describe(IReadOnlyList<IqrSourceSnapshot> snapshots) => ReviewSourceEvidenceProvider.Describe(snapshots, Evidence);
 

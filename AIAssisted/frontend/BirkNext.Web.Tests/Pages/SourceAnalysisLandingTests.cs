@@ -97,7 +97,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
 
         cut.Find("[data-testid=sa-safety]").TextContent.Should().Be("Source only: no live Azure, database, messaging or HTTP connection is used.");
         cut.Find("#sa-empty-heading").TextContent.Should().Be("No source snapshot selected");
-        cut.FindAll("[data-testid=sa-preview] li strong").Select(s => s.TextContent).Should().Equal("Architecture", "Database structure", "Observability", "Snapshot changes");
+        cut.FindAll("[data-testid=sa-preview] li strong").Select(s => s.TextContent).Should().Equal("Architecture", "Database structure", "Observability", "Source evidence", "Snapshot changes");
         cut.Find("[data-testid=sa-empty-upload]").GetAttribute("aria-label").Should().Be("Upload source ZIP (maximum 50 MB)");
         cut.Find("[data-testid=sa-upload]").GetAttribute("accept").Should().Be(".zip");
         cut.Find("[data-testid=sa-choose-existing]").HasAttribute("disabled").Should().BeTrue("there is no stored snapshot to choose");

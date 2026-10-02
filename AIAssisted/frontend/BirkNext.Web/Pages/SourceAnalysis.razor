@@ -4,6 +4,8 @@
 @using BirkNext.Web.Models
 @using Microsoft.AspNetCore.Components.Forms
 @using BirkNext.Integrations
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Components.SourceDomains
 @inject IIntegrationCatalogApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IJSRuntime JS
@@ -13,7 +15,7 @@
    never re-analyzes. Source only: nothing live is contacted. Hiding the feature (Feature Visibility) hides the menu entry only. *@
 <PageTitle>Source Analysis</PageTitle>
 <div class="sa-page">
-    <PageHeader Title="Source Analysis" Description="Architecture, database design and observability derived from uploaded source snapshots." />
+    <PageHeader Title="Source Analysis" Description="Architecture, database design, observability and reusable source evidence (infrastructure, configuration, CI/CD, contracts) derived from uploaded source snapshots." />
     @if (ReturnTarget is { } back)
     {
         <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
@@ -56,6 +58,7 @@
                     <div><dt>Architecture</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
                     <div><dt>Database</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
                     <div><dt>Observability</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span></dd></div>
+                    <div><dt>Source evidence</dt><dd><span class="sa-pill sa-pill-muted">Analyzing</span> <span class="sa-muted">Infrastructure · Configuration · CI/CD · Contracts</span></dd></div>
                 </dl>
                 <p class="sa-muted">The uploaded archive is being analyzed. @SourceAnalysisOverview.SafetyNote</p>
                 <div class="sa-area-grid">
@@ -80,6 +83,7 @@
                         <li><strong>Architecture</strong> — components, dependencies, messaging channels, data stores and external systems found in source.</li>
                         <li><strong>Database structure</strong> — database candidates, tables/entities, relationships and indexes from EF models, migrations and SQL.</li>
                         <li><strong>Observability</strong> — correlation and tracing boundaries, logging quality and telemetry configuration found in source.</li>
+                        <li><strong>Source evidence</strong> — infrastructure as code, configuration, CI/CD pipelines and contracts, reusable by every review.</li>
                         <li><strong>Snapshot changes</strong> — compare an analysis with another stored snapshot of the source.</li>
                     </ul>
                     <div class="sa-actions">
@@ -95,11 +99,17 @@
         }
         else
         {
-            <nav class="sa-areas" aria-label="Source Analysis areas" data-testid="sa-areas">
-                @foreach (var area in Areas)
+            <nav class="sa-areas sa-area-groups" aria-label="Source Analysis areas" data-testid="sa-areas">
+                @foreach (var (group, areas) in AreaGroups)
                 {
-                    <button type="button" id="@($"sa-area-{area}")" class="sa-area-tab @(_area == area ? "active" : "")" aria-pressed="@(_area == area ? "true" : "false")"
-                            data-testid="@($"area-{area.ToLowerInvariant()}")" @onclick="() => OpenArea(area)">@area</button>
+                    <div class="sa-area-group" role="group" aria-label="@group" data-testid="sa-area-group">
+                        <span class="sa-area-group-label" aria-hidden="true">@group</span>
+                        @foreach (var area in areas)
+                        {
+                            <button type="button" id="@($"sa-area-{AreaSlug(area)}")" class="sa-area-tab @(_area == area ? "active" : "")" aria-pressed="@(_area == area ? "true" : "false")"
+                                    data-testid="@($"area-{AreaSlug(area).ToLowerInvariant()}")" @onclick="() => OpenArea(area)">@area</button>
+                        }
+                    </div>
                 }
             </nav>
             @if (_area == "Overview")
@@ -145,6 +155,72 @@
                         }
                     </div>
                 </section>
+
+                <section class="sa-areas-section" aria-labelledby="sa-evidence-heading" data-testid="sa-overview-evidence">
+                    <h2 id="sa-evidence-heading">Source evidence</h2>
+                    <p class="sa-muted">Reusable evidence other reviews consume from this snapshot. @SourceEvidenceDomainsPresentation.Boundary</p>
+                    <ul class="sd-rows">
+                        @foreach (var row in SourceEvidenceDomainsPresentation.Rows(selected))
+                        {
+                            var rowHeading = $"sa-row-{SourceEvidenceDomainsPresentation.Slug(row.Area)}";
+                            <li class="sd-row" data-testid="sa-evidence-row" data-area="@row.Area" data-status="@row.Status" aria-labelledby="@rowHeading">
+                                <h3 id="@rowHeading">@row.Title <span class="sd-pill sd-pill-@row.Tone" data-testid="sa-evidence-status">@row.Status</span></h3>
+                                <div class="sd-row-body">
+                                    @if (row.Metrics.Count > 0)
+                                    {
+                                        <dl class="sd-row-metrics" data-testid="sa-evidence-metrics">
+                                            @foreach (var metric in row.Metrics) { <div data-testid="sa-evidence-metric" data-metric="@metric.Label"><dt>@metric.Label</dt><dd>@metric.Value</dd></div> }
+                                        </dl>
+                                    }
+                                    <p class="sa-muted" data-testid="sa-evidence-reason">@(row.Reason ?? row.Description)</p>
+                                </div>
+                                <button type="button" class="btn-secondary" data-testid="@($"sa-open-{SourceEvidenceDomainsPresentation.Slug(row.Area)}")" @onclick="() => OpenFromCard(row.Area)">Open @row.Title<span class="visually-hidden"> evidence</span></button>
+                            </li>
+                        }
+                    </ul>
+                    @if (selected.EvidenceDomains is { } evidence)
+                    {
+                        var summary = SourceEvidenceDomainsPresentation.LinkSummary(evidence.CrossDomain);
+                        <section class="sa-card" aria-labelledby="sa-links-heading" data-testid="sa-cross-domain">
+                            <h3 id="sa-links-heading">Cross-source relationships <span class="sd-pill sd-pill-@SourceEvidenceDomainsPresentation.Tone(evidence.CrossDomain.Status)">@SourceDomainText.Label(evidence.CrossDomain.Status)</span></h3>
+                            @if (summary.Count == 0) { <p class="sa-muted" data-testid="sa-cross-domain-empty">@(evidence.CrossDomain.StatusReason ?? "No relationships between the source-evidence domains of this snapshot.")</p> }
+                            else
+                            {
+                                <div class="sd-scroll" tabindex="0" role="region" aria-label="Cross-source relationships">
+                                    <table class="sd-links-table" data-testid="sa-cross-domain-table">
+                                        <thead><tr><th scope="col">Relationship</th><th scope="col">Linked</th><th scope="col">Unresolved</th></tr></thead>
+                                        <tbody>@foreach (var s in summary) { <tr data-testid="sa-cross-domain-row" data-type="@s.Type"><th scope="row">@s.Label</th><td>@s.Linked</td><td>@s.Unresolved</td></tr> }</tbody>
+                                    </table>
+                                </div>
+                                <p class="sa-muted">Unresolved means no matching declaration was found in the selected source — it may be managed elsewhere. It is not a failure.</p>
+                                <ReviewDisclosure Text="@($"View relationships ({evidence.CrossDomain.Links.Count})")" CollapseText="Hide relationships" TestId="sa-cross-domain-links" Class="disclosure-inline">
+                                    <div class="sd-scroll" tabindex="0" role="region" aria-label="Relationship details">
+                                        <table>
+                                            <thead><tr><th scope="col">From</th><th scope="col">To</th><th scope="col">Evidence</th><th scope="col">Basis</th></tr></thead>
+                                            <tbody>@foreach (var l in evidence.CrossDomain.Links.Take(300)) { <tr data-testid="sa-cross-domain-link" data-resolved="@(l.Resolved ? "true" : "false")"><th scope="row">@l.FromLabel<span class="sd-context">@SourceDomainText.Label(l.Type)</span></th><td>@l.ToLabel</td><td><span class="sd-pill sd-pill-@SourceEvidenceDomainsPresentation.Tone(l.State)">@SourceDomainText.Label(l.State)</span></td><td>@l.Basis</td></tr> }</tbody>
+                                        </table>
+                                    </div>
+                                </ReviewDisclosure>
+                                @if (evidence.CrossDomain.EnvironmentMappings.Count > 0)
+                                {
+                                    <p class="sa-muted" data-testid="sa-environment-mappings">Environments across formats: @string.Join(" · ", evidence.CrossDomain.EnvironmentMappings.Select(m => $"{m.Kind} ({SourceDomainText.Label(m.State)})"))</p>
+                                }
+                            }
+                        </section>
+                    }
+                </section>
+            }
+            else if (_area is "Infrastructure" or "Configuration" or "CI/CD" or "Contracts")
+            {
+                @if (selected.EvidenceDomains is { } evidence)
+                {
+                    var previous = SourceEvidenceDomainsPresentation.Previous(_snapshots, selected);
+                    @if (_area == "Infrastructure") { <InfrastructureWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                    else if (_area == "Configuration") { <ConfigurationWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                    else if (_area == "CI/CD") { <PipelineWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                    else { <ContractsWorkspace @key="evidence.Id" Evidence="evidence" Previous="previous" /> }
+                }
+                else { <p class="sa-card" data-testid="evidence-missing">@SourceEvidenceDomainsPresentation.HistoricalNote</p> }
             }
             else if (_area == "Architecture")
             {
@@ -158,7 +234,7 @@
             {
                 @if (selected.Observability is { } observability)
                 {
-                    <ObservabilityWorkspace @key="observability.Id" Snapshot="observability" Previous="@PreviousObservability(selected)" ChooseSnapshot="FocusSelectorAsync" />
+                    <ObservabilityWorkspace @key="observability.Id" Snapshot="observability" Previous="@PreviousObservability(selected)" ChooseSnapshot="FocusSelectorAsync" Layers="@selected.EvidenceDomains?.CrossDomain.ObservabilityLayers" />
                 }
                 else { <p class="sa-card" data-testid="observability-missing">This historical source snapshot predates observability analysis. Upload the same source archive to create a new immutable analysis.</p> }
             }
@@ -181,7 +257,9 @@
     };
     private (string Route, string Label)? ReturnTarget => ReturnTo is { } key && ReturnTargets.TryGetValue(key, out var label) ? (key, label) : null;
 
-    private static readonly string[] Areas = ["Overview", "Architecture", "Database", "Observability"];
+    /// <summary>Core analysis areas, then the reusable source-evidence domains — grouped so the navigation stays readable.</summary>
+    private static readonly (string Group, string[] Areas)[] AreaGroups = [("Core analysis", ["Overview", "Architecture", "Database", "Observability"]), ("Source evidence", ["Infrastructure", "Configuration", "CI/CD", "Contracts"])];
+    private static string AreaSlug(string area) => area.Replace("/", "");
     private string _area = "Overview";
     private string? _focusDatabase;
     private string? _databaseTab;
@@ -195,7 +273,7 @@
     {
         OpenArea(area);
         if (area == "Database") _databaseTab = "Diagram";
-        _focusId = $"sa-area-{area}";
+        _focusId = $"sa-area-{AreaSlug(area)}";
     }
     private void OpenDatabase(string databaseModelId) { _focusDatabase = databaseModelId; _area = "Database"; }
     private void SnapshotChanged() { _focusDatabase = null; _databaseTab = null; }
