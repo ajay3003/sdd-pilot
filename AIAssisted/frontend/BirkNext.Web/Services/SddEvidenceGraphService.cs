@@ -16,9 +16,111 @@ public sealed record SddRequirementGraphRow(
     IReadOnlyList<SddTestExecutionEvidence> Executions,
     bool NeedsClarification);
 
+public sealed record SddLifecycleProjection(LifecycleProjectionMetadata Metadata, IReadOnlyList<SddRequirementGraphRow> Rows);
+
 /// <summary>One projection of the workspace SDD lifecycle used by Implementation Review, Requirements Traceability and Quality Review.</summary>
-public sealed class SddEvidenceGraphService(IReviewContextProvider contexts)
+public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPlanAnalysisService? planAnalysis = null)
 {
+    public SddLifecycleProjection Project(IWorkspaceSessionService workspace, LifecycleProjectionMode mode = LifecycleProjectionMode.ActiveWorkspace, Guid? baselineId = null)
+    {
+        var limitations = new List<string>();
+        IReadOnlyList<Guid> revisionIds = [];
+        IReadOnlyList<string> fingerprints = [];
+        Guid? resolvedBaselineId = null;
+        DateTimeOffset? evidenceCutoff = null;
+        ReviewContext? context;
+        if (mode == LifecycleProjectionMode.ActiveWorkspace)
+        {
+            context = contexts.GetCurrent();
+            var active = workspace.SddLifecycle.Revisions.Where(x => x.IsCurrentSelection).ToList();
+            revisionIds = active.Select(x => x.RevisionId).ToList(); fingerprints = active.Select(x => x.Fingerprint).ToList();
+        }
+        else
+        {
+            var state = workspace.SddLifecycle;
+            SddBaselineManifest? manifest;
+            if (mode == LifecycleProjectionMode.AuthoritativeBaseline)
+            {
+                manifest = state.Baselines.FirstOrDefault(x => x.Status == "Current");
+                if (manifest is null)
+                {
+                    var explicitBaselineRevisions = state.Revisions.Where(x => x.Authority == "Baseline").ToList();
+                    if (explicitBaselineRevisions.Count == 0)
+                    {
+                        limitations.Add("No authoritative baseline selected; active workspace artifacts were used.");
+                        context = contexts.GetCurrent();
+                        return Projection(workspace, context, LifecycleProjectionMode.ActiveWorkspace, null, [], [], limitations);
+                    }
+                    limitations.Add("Baseline uses explicitly-authoritative role revisions; no aggregate manifest has been captured.");
+                    revisionIds = explicitBaselineRevisions.Select(x => x.RevisionId).ToList();
+                    resolvedBaselineId = null;
+                    context = BuildFromRevisions(explicitBaselineRevisions, limitations);
+                    return Projection(workspace, context, mode, resolvedBaselineId, revisionIds, explicitBaselineRevisions.Select(x => x.Fingerprint).ToList(), limitations);
+                }
+            }
+            else
+            {
+                manifest = baselineId is null ? null : state.Baselines.FirstOrDefault(x => x.BaselineId == baselineId);
+                if (manifest is null)
+                {
+                    limitations.Add("Requested historical baseline is unavailable.");
+                    return Projection(workspace, null, mode, baselineId, [], [], limitations);
+                }
+            }
+            var revisions = manifest.ArtifactRevisionIds.Select(id => state.Revisions.FirstOrDefault(x => x.RevisionId == id)).ToList();
+            if (revisions.Any(x => x is null)) limitations.Add("One or more baseline artifact revisions are missing; projection is partial.");
+            var found = revisions.OfType<SddArtifactRevision>().ToList();
+            revisionIds = found.Select(x => x.RevisionId).ToList(); fingerprints = found.Select(x => x.Fingerprint).ToList();
+            resolvedBaselineId = manifest.BaselineId;
+            evidenceCutoff = manifest.CreatedAt;
+            if (state.Questions.Count > 0 || state.Decisions.Count > 0)
+                limitations.Add("Question and decision lifecycle state is not revisioned; the projection uses current persisted state and may not reconstruct historical resolution state.");
+            context = BuildFromRevisions(found, limitations);
+        }
+        return Projection(workspace, context, mode, resolvedBaselineId, revisionIds, fingerprints, limitations, evidenceCutoff);
+    }
+
+    private SddLifecycleProjection Projection(IWorkspaceSessionService workspace, ReviewContext? context, LifecycleProjectionMode mode, Guid? baselineId,
+        IReadOnlyList<Guid> ids, IReadOnlyList<string> fingerprints, IReadOnlyList<string> limitations, DateTimeOffset? evidenceCutoff = null) =>
+        new(new(mode, baselineId, ids, fingerprints, DateTimeOffset.UtcNow, limitations), BuildRows(workspace, context, mode, evidenceCutoff));
+
+    private ReviewContext? BuildFromRevisions(IReadOnlyList<SddArtifactRevision> revisions, List<string> limitations)
+    {
+        try
+        {
+            string Content(string role) => revisions.LastOrDefault(x => x.Role.Equals(role, StringComparison.OrdinalIgnoreCase))?.Content ?? "";
+            var specText = Content(WorkspaceArtifactType.Specification.ToString());
+            var planText = Content(WorkspaceArtifactType.Plan.ToString());
+            var taskText = Content(WorkspaceArtifactType.Tasks.ToString());
+            var specification = string.IsNullOrWhiteSpace(specText) ? new SpecificationSemanticModel() : SpecExplorerService.BuildSemanticModel(SpecExplorerService.Parse(specText), specText);
+            var plan = string.IsNullOrWhiteSpace(planText) || planAnalysis is null ? new PlanSemanticModel() : PlanAnalysisService.BuildSemanticModel(planAnalysis.Parse(planText));
+            var tasks = string.IsNullOrWhiteSpace(taskText) ? new TaskSemanticModel() : TaskExplorerService.BuildSemanticModel(TaskExplorerService.Parse(taskText));
+            if (!string.IsNullOrWhiteSpace(planText) && planAnalysis is null) limitations.Add("Plan revision is bound, but plan parsing is unavailable in this graph service.");
+            return ReviewContextFactory.Create(new(), specification, plan, tasks, new());
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or FormatException)
+        {
+            limitations.Add($"A baseline artifact could not be parsed ({ex.GetType().Name}); projection is partial.");
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<SddRequirementGraphRow> BuildRows(IWorkspaceSessionService workspace, ReviewContext? context, LifecycleProjectionMode mode, DateTimeOffset? evidenceCutoff)
+    {
+        var state = workspace.SddLifecycle;
+        return context?.GetRequirements().Select(r => new SddRequirementGraphRow(r,
+            mode == LifecycleProjectionMode.ActiveWorkspace
+                ? state.Links.Where(x => x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementPlansTo" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
+                : context.GetLinkedPlans(r.Id).ToArray(),
+            mode == LifecycleProjectionMode.ActiveWorkspace
+                ? state.Links.Where(x => x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementDecomposedInto" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray()
+                : context.GetLinkedTasks(r.Id).ToArray(),
+            state.ImplementationEvidence.Where(x => x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || (x.RecordedAt ?? x.ObservedAt) is not { } recorded || recorded <= evidenceCutoff)).ToArray(),
+            state.TestEvidence.Where(x => x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && (evidenceCutoff is null || x.Timestamp is null || x.Timestamp <= evidenceCutoff)).ToArray(),
+            state.TestExecutions.Where(x => (evidenceCutoff is null || x.ExecutedAt is null || x.ExecutedAt <= evidenceCutoff) && (x.RequirementReferences.Contains(r.Id, StringComparer.OrdinalIgnoreCase) ||
+                r.LinkedAcceptanceScenarios.Any(ac => x.AcceptanceCriterionReferences.Contains(ac.Id ?? ac.Title, StringComparer.OrdinalIgnoreCase)))).ToArray(),
+            state.Questions.Any(q => (q.Status is "Open" or "NeedsAnswer") && q.RequirementIds.Contains(r.Id, StringComparer.OrdinalIgnoreCase)))).ToArray() ?? [];
+    }
     public void SynchronizeCurrentArtifacts(IWorkspaceSessionService workspace)
     {
         var context = contexts.GetCurrent();
@@ -40,24 +142,19 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts)
     }
 
     public IReadOnlyList<SddRequirementGraphRow> Build(IWorkspaceSessionService workspace)
-    {
-        var context = contexts.GetCurrent();
-        var requirements = context?.GetRequirements() ?? [];
-        var state = workspace.SddLifecycle;
-        return requirements.Select(r => new SddRequirementGraphRow(
-            r,
-            state.Links.Where(x => x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementPlansTo" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray(),
-            state.Links.Where(x => x.FromId.Equals(r.Id, StringComparison.OrdinalIgnoreCase) && x.Relationship == "RequirementDecomposedInto" && x.Currentness == "Current").Select(x => x.ToId).Distinct().ToArray(),
-            state.ImplementationEvidence.Where(x => x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase)).ToArray(),
-            state.TestEvidence.Where(x => x.RequirementId.Equals(r.Id, StringComparison.OrdinalIgnoreCase)).ToArray(),
-            state.TestExecutions.Where(x => x.RequirementReferences.Contains(r.Id, StringComparer.OrdinalIgnoreCase) ||
-                r.LinkedAcceptanceScenarios.Any(ac => x.AcceptanceCriterionReferences.Contains(ac.Id ?? ac.Title, StringComparer.OrdinalIgnoreCase))).ToArray(),
-            state.Questions.Any(q => (q.Status is "Open" or "NeedsAnswer") && q.RequirementIds.Contains(r.Id, StringComparer.OrdinalIgnoreCase)))).ToArray();
-    }
+        => Project(workspace).Rows;
+
+    public IReadOnlyList<SddRequirementGraphRow> Build(IWorkspaceSessionService workspace, LifecycleProjectionMode mode, Guid? baselineId = null)
+        => Project(workspace, mode, baselineId).Rows;
 
     public IReadOnlyList<SddQualityReviewFinding> QualityFindings(IWorkspaceSessionService workspace)
     {
-        var rows = Build(workspace);
+        return QualityFindings(workspace, LifecycleProjectionMode.ActiveWorkspace);
+    }
+
+    public IReadOnlyList<SddQualityReviewFinding> QualityFindings(IWorkspaceSessionService workspace, LifecycleProjectionMode mode, Guid? baselineId = null)
+    {
+        var rows = Project(workspace, mode, baselineId).Rows;
         var findings = new List<SddQualityReviewFinding>();
         foreach (var row in rows)
         {
@@ -77,12 +174,15 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts)
     }
 
     public string Fingerprint(IWorkspaceSessionService workspace)
+        => Fingerprint(workspace, LifecycleProjectionMode.ActiveWorkspace);
+
+    public string Fingerprint(IWorkspaceSessionService workspace, LifecycleProjectionMode mode, Guid? baselineId = null)
     {
-        var state = workspace.SddLifecycle;
+        var projection = Project(workspace, mode, baselineId);
         var payload = JsonSerializer.Serialize(new
         {
-            Rows = Build(workspace).Select(row => new { Id = row.Requirement.Id, row.Requirement.Text, row.PlanReferences, row.TaskReferences }),
-            state.Revisions, state.Links, state.ImplementationEvidence, state.TestEvidence, state.TestExecutions, state.SourceSnapshots, state.Questions, state.Decisions
+            Projection = new { projection.Metadata.Mode, projection.Metadata.BaselineId, projection.Metadata.ArtifactRevisionIds, projection.Metadata.ArtifactFingerprints, projection.Metadata.Limitations },
+            Rows = projection.Rows
         });
         return Fingerprint(payload);
     }
@@ -145,9 +245,22 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts)
                 RequirementId = reqRef, EvidenceType = "CodeLink", Reference = codeLink.FilePath,
                 SourceSnapshotId = snapshot.Id.ToString(), SourceFingerprint = fingerprint, SourceEvidenceId = codeLink.LinkId,
                 ProviderId = "CodeTraceability", ObservedAt = snapshot.AnalyzedAt, FilePath = codeLink.FilePath,
+                RecordedAt = DateTimeOffset.UtcNow,
                 Confidence = "StronglySupported", Provenance = $"PersistedCodeLink:{codeLink.Origin}", ProviderVersion = snapshot.AnalyzerVersion.ToString(), Currentness = "Current",
-                SourceValidation = "NotAssessed", StableKey = key, CurrentnessReason = "The CodeLink is explicit; target file/symbol could not be checked against a retained source file inventory."
+                SourceValidation = "NotAssessed", TargetValidation = "NotAssessed", StableKey = key,
+                CurrentnessReason = "The CodeLink is explicit; source target resolution has not been assessed."
             });
+            var evidence = state.ImplementationEvidence[^1];
+            if (snapshot.TargetIndex is { } index)
+            {
+                var target = ResolveFileTarget(index, codeLink.FilePath);
+                evidence.TargetValidation = target.State;
+                evidence.SourceValidation = target.State;
+                evidence.CurrentnessReason = target.Reason;
+                target.OldSnapshotId = snapshot.Id.ToString(); target.NewSnapshotId = snapshot.Id.ToString();
+                target.OldFingerprint = fingerprint; target.NewFingerprint = fingerprint;
+                evidence.TargetResolutions.Add(target);
+            }
             SddLifecycleReviewService.AddOrRefreshLink(state, reqRef, codeLink.FilePath, "RequirementImplementedBy", "StronglySupported");
             added++;
         }
@@ -163,6 +276,7 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts)
         foreach (var evidence in state.ImplementationEvidence.Where(x => x.ProviderId == "CodeTraceability" && x.Currentness == "Current" && x.SourceSnapshotId != currentSnapshotId.ToString()))
         {
             if (evidence.SourceFingerprint == currentFingerprint) continue;
+            if (evidence.TargetResolutions.Any(x => x.NewSnapshotId == currentSnapshotId.ToString())) continue;
             evidence.Currentness = "PotentiallyStale";
             evidence.SourceValidation = "PotentiallyStale";
             evidence.CurrentnessReason = "A newer source snapshot is selected; target re-resolution is unavailable from the retained Source Analysis projection.";
@@ -178,15 +292,100 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts)
 
     public static void RecordSourceSnapshot(SddLifecycleState state, IqrSourceSnapshot snapshot, string environmentReference)
     {
-        if (state.SourceSnapshots.Any(x => x.SnapshotId == snapshot.Id.ToString())) return;
+        var existing = state.SourceSnapshots.FirstOrDefault(x => x.SnapshotId == snapshot.Id.ToString());
+        if (existing is not null)
+        {
+            // Newer Source Analysis may have persisted a target index after this workspace first recorded the snapshot.
+            // Enrich only the normalized index/provenance; snapshot identity and prior evidence remain immutable.
+            if (existing.TargetIndex is null && snapshot.TargetIndex is not null)
+            {
+                existing.TargetIndex = snapshot.TargetIndex;
+                existing.AnalyzerVersion = snapshot.AnalyzerVersion.ToString();
+                existing.Limitations = snapshot.Limitations.ToList();
+            }
+            SourceSnapshotChanged(state, snapshot, environmentReference);
+            return;
+        }
         state.SourceSnapshots.Add(new SddSourceSnapshotReference
         {
             SnapshotId = snapshot.Id.ToString(), Fingerprint = snapshot.Archive.Sha256, EnvironmentReference = environmentReference,
             AnalysisStatus = snapshot.Status.ToString(), AnalyzerVersion = snapshot.AnalyzerVersion.ToString(), AnalyzedAt = snapshot.AnalyzedAt,
-            Limitations = snapshot.Limitations.ToList(), Currentness = "Current"
+            Limitations = snapshot.Limitations.ToList(), Currentness = "Current", TargetIndex = snapshot.TargetIndex
         });
+        SourceSnapshotChanged(state, snapshot, environmentReference);
+    }
+
+    public static void SourceSnapshotChanged(SddLifecycleState state, IqrSourceSnapshot snapshot, string environmentReference = "")
+    {
+        foreach (var reference in state.SourceSnapshots.Where(x => x.Currentness == "Current" && x.SnapshotId != snapshot.Id.ToString())) reference.Currentness = "Historical";
+        var currentRef = state.SourceSnapshots.FirstOrDefault(x => x.SnapshotId == snapshot.Id.ToString());
+        if (currentRef is not null) currentRef.Currentness = "Current";
+        foreach (var evidence in state.ImplementationEvidence.Where(x => x.ProviderId == "CodeTraceability" && x.SourceSnapshotId != snapshot.Id.ToString()))
+        {
+            if (evidence.TargetResolutions.Any(r => r.NewSnapshotId == snapshot.Id.ToString())) continue;
+            var old = state.SourceSnapshots.FirstOrDefault(x => x.SnapshotId == evidence.SourceSnapshotId);
+            var resolution = old?.TargetIndex is null || snapshot.TargetIndex is null
+                ? new SddSourceTargetResolution { OldSnapshotId = evidence.SourceSnapshotId ?? "", NewSnapshotId = snapshot.Id.ToString(), OldFingerprint = evidence.SourceFingerprint ?? "", NewFingerprint = snapshot.Archive.Sha256, TargetPath = evidence.FilePath ?? "", State = old is null ? "SnapshotUnavailable" : "NotAssessed", Reason = old is null ? "The source snapshot referenced by this evidence is unavailable." : "One or both snapshots do not contain a target index." }
+                : ResolveFileTarget(old.TargetIndex, evidence.FilePath ?? "", old.SnapshotId, old.Fingerprint, snapshot.TargetIndex, snapshot.Id.ToString(), snapshot.Archive.Sha256);
+            evidence.TargetResolutions.Add(resolution);
+            evidence.TargetValidation = resolution.State;
+            evidence.SourceValidation = resolution.State;
+            switch (resolution.State)
+            {
+                case "ResolvedExact" when resolution.ContentChanged == false:
+                    if (evidence.Currentness == "Current")
+                        evidence.CurrentnessReason = "The exact referenced file path and content fingerprint remain in the newer source snapshot. This does not verify implementation behavior.";
+                    else
+                        evidence.CurrentnessReason = "The source target resolves exactly in the newer snapshot, but prior evidence was already stale for another reason; target resolution does not reconfirm the traceability claim.";
+                    break;
+                case "ResolvedExact":
+                case "ResolvedEquivalent":
+                case "NotFound":
+                case "Ambiguous":
+                    evidence.Currentness = "PotentiallyStale";
+                    evidence.CurrentnessReason = resolution.Reason;
+                    break;
+                default:
+                    evidence.CurrentnessReason = resolution.Reason;
+                    break;
+            }
+        }
         SourceSnapshotChanged(state, snapshot.Id, snapshot.Archive.Sha256);
     }
+
+    public static SddSourceTargetResolution ResolveFileTarget(SourceTargetIndex current, string path) =>
+        ResolveFileTarget(current, path, current.SnapshotId.ToString(), current.SnapshotFingerprint, current, current.SnapshotId.ToString(), current.SnapshotFingerprint);
+
+    public static SddSourceTargetResolution ResolveFileTarget(SourceTargetIndex oldIndex, string path, string oldId, string oldFingerprint,
+        SourceTargetIndex newIndex, string newId, string newFingerprint)
+    {
+        var result = new SddSourceTargetResolution { OldSnapshotId = oldId, NewSnapshotId = newId, OldFingerprint = oldFingerprint,
+            NewFingerprint = newFingerprint, ProviderId = newIndex.ProviderId, TargetPath = path, ResolvedAt = DateTimeOffset.UtcNow };
+        if (!oldIndex.Files.Any(x => NormalizePath(x.RelativePath) == NormalizePath(path)))
+        { result.State = "NotAssessed"; result.Reason = "The target path is not present in the source snapshot bound to this link."; return result; }
+        var exact = newIndex.Files.Where(x => NormalizePath(x.RelativePath) == NormalizePath(path)).ToList();
+        if (exact.Count == 1)
+        {
+            var oldTarget = oldIndex.Files.First(x => NormalizePath(x.RelativePath) == NormalizePath(path)); var target = exact[0];
+            result.State = "ResolvedExact"; result.MatchedPath = target.RelativePath;
+            result.ContentChanged = oldTarget.ContentFingerprint is null || target.ContentFingerprint is null
+                ? null : oldTarget.ContentFingerprint != target.ContentFingerprint;
+            result.Reason = result.ContentChanged == true ? "The file path still resolves, but its content fingerprint changed; review the implementation evidence." : "The exact file path resolves in the newer snapshot; target location only, not implementation correctness.";
+            return result;
+        }
+        if (exact.Count > 1) { result.State = "Ambiguous"; result.Reason = "Multiple normalized paths match the target."; return result; }
+        var oldFile = oldIndex.Files.First(x => NormalizePath(x.RelativePath) == NormalizePath(path));
+        if (oldFile.ContentFingerprint is not null)
+        {
+            var equivalents = newIndex.Files.Where(x => x.ContentFingerprint == oldFile.ContentFingerprint).ToList();
+            if (equivalents.Count == 1) { result.State = "ResolvedEquivalent"; result.MatchedPath = equivalents[0].RelativePath; result.ContentChanged = false; result.Reason = "A unique file with identical content fingerprint resolves at a different path; review the moved target."; return result; }
+            if (equivalents.Count > 1) { result.State = "Ambiguous"; result.Reason = "Multiple files share the prior target fingerprint."; return result; }
+        }
+        if (!newIndex.FileInventoryComplete) { result.State = "Unsupported"; result.Reason = "The new snapshot does not have exhaustive file-path coverage, so absence cannot be established."; return result; }
+        result.State = "NotFound"; result.Reason = "The target path was not found in the exhaustive non-ignored file inventory. This does not establish that the requirement is unimplemented."; return result;
+    }
+
+    private static string NormalizePath(string path) => path.Replace('\\', '/').TrimStart('/');
 
     private static readonly string[] ExecutionStates = ["NotExecuted", "Queued", "Running", "Completed", "Cancelled", "TimedOut", "ExecutionFailed", "Unknown"];
     private static readonly string[] Results = ["Passed", "Failed", "Skipped", "Inconclusive", "NotApplicable", "Unknown"];

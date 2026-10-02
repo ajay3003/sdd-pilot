@@ -135,6 +135,8 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.ReviewRuns ??= [];
             SddLifecycle.RequirementSnapshots ??= [];
             SddLifecycle.RequirementChanges ??= [];
+            SddLifecycle.Baselines ??= [];
+            foreach (var evidence in SddLifecycle.ImplementationEvidence) evidence.TargetResolutions ??= [];
             foreach (var (type, artifact) in GetAllArtifacts())
                 CaptureRevision(type, artifact.Text, artifact.FileName, artifact.SourcePath);
         }
@@ -161,6 +163,19 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
         }
         revision.Authority = authority;
         if (authority == "Superseded") revision.IsCurrentSelection = false;
+    }
+
+    /// <summary>Captures the exact revisions explicitly marked Baseline. New drafts/selections cannot alter this manifest.</summary>
+    public SddBaselineManifest CaptureBaseline(string label)
+    {
+        var ids = SddLifecycle.Revisions.Where(x => x.Authority == "Baseline").Select(x => x.RevisionId).Order().ToList();
+        if (ids.Count == 0) throw new InvalidOperationException("Mark at least one artifact revision as Baseline before capturing a baseline.");
+        var now = DateTimeOffset.UtcNow;
+        foreach (var prior in SddLifecycle.Baselines.Where(x => x.Status == "Current")) { prior.Status = "Historical"; prior.SupersededAt = now; }
+        var manifest = new SddBaselineManifest { Label = string.IsNullOrWhiteSpace(label) ? "Baseline" : label.Trim(), ArtifactRevisionIds = ids, CreatedAt = now };
+        SddLifecycle.Baselines.Add(manifest);
+        ProjectSelectionChanged?.Invoke(this, EventArgs.Empty);
+        return manifest;
     }
 
     private void CaptureRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath)

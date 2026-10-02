@@ -60,7 +60,21 @@ public sealed record IqrSourceSnapshot
     public List<SourceIntegrationSignal> IntegrationSignals { get; init; } = [];
     /// <summary>Technologies and capabilities the archive contains, including ones BirkNext does not analyze (tool limitations, never findings). Null in older snapshots.</summary>
     public BirkNext.Technology.SourceTechnologyCoverage? TechnologyCoverage { get; init; }
+    /// <summary>Normalized source target inventory for deterministic reference validation. Contains paths and fingerprints only, never source content.</summary>
+    public SourceTargetIndex? TargetIndex { get; init; }
 }
+
+public sealed record SourceTargetIndex
+{
+    public Guid SnapshotId { get; init; }
+    public string SnapshotFingerprint { get; init; } = "";
+    public string ProviderId { get; init; } = "SourceAnalysis.FileInventory";
+    public bool FileInventoryComplete { get; init; }
+    public List<SourceFileTarget> Files { get; init; } = [];
+    public List<string> Limitations { get; init; } = [];
+}
+
+public sealed record SourceFileTarget(string RelativePath, string? ContentFingerprint = null);
 
 // ── Multi-stage integration path (analyzer v2) ────────────────────────────────────────────────────────────────────────
 // Discovered from source syntax, never hardcoded: stages are the types a path passes through, hops the source mechanisms between

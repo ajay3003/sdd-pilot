@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Security.Cryptography;
+using System.Text;
 using BirkNext.Api.Data;
 using BirkNext.Api.Models;
 using BirkNext.Integrations;
@@ -77,6 +79,17 @@ public sealed class IqrSourceStore(AppDbContext db)
         snapshot = snapshot with { IntegrationSignals = SourceDiscovery.SourceIntegrationSignalExtractor.Extract(workspace, snapshot.Architecture) };
         // Technology inventory: every technology the archive shows, with the capabilities it implies — unsupported ones are reported, not dropped.
         snapshot = snapshot with { TechnologyCoverage = SourceAnalysis.Technology.TechnologyInventory.Detect(workspace, snapshot.Architecture, snapshot.EvidenceDomains) };
+        // Source Analysis owns this snapshot-scoped path inventory. Paths are exhaustive for non-ignored
+        // archive entries; content fingerprints are included only for files already read by this analysis.
+        var indexedFiles = workspace.AllPaths?.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)
+            .Select(path => new SourceFileTarget(path.Replace('\\', '/'), FingerprintFile(workspace, path))).ToList() ?? [];
+        snapshot = snapshot with { TargetIndex = new SourceTargetIndex
+        {
+            SnapshotId = snapshot.Id, SnapshotFingerprint = snapshot.Archive.Sha256,
+            FileInventoryComplete = workspace.AllPaths is not null,
+            Files = indexedFiles,
+            Limitations = workspace.AllPaths is null ? ["Source archive reader did not retain a complete path inventory."] : []
+        }};
         // Repository identity and the dependency evidence Dependency Review consumes (manifests, redacted Renovate configs, automation summaries):
         // captured once here so Dependency Review never needs the archive again. Source Analysis supplies evidence; it does not review dependencies.
         var repository = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);
@@ -98,5 +111,12 @@ public sealed class IqrSourceStore(AppDbContext db)
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });
         await db.SaveChangesAsync(ct);
         return (snapshot, null);
+    }
+
+    private static string? FingerprintFile(IqrSourceArchiveReader.Workspace workspace, string path)
+    {
+        var file = (workspace.Files ?? []).Concat(workspace.ConfigurationFiles ?? []).Concat(workspace.EvidenceFiles ?? [])
+            .FirstOrDefault(x => string.Equals(x.Path.Replace('\\', '/'), path.Replace('\\', '/'), StringComparison.Ordinal));
+        return file is null ? null : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(file.Content))).ToLowerInvariant();
     }
 }

@@ -21,6 +21,22 @@
         <div><strong>@Artifacts.SddLifecycle.ImplementationEvidence.Count</strong><span>registered implementation evidence</span></div>
         <div><strong>@Artifacts.SddLifecycle.TestEvidence.Count</strong><span>registered test evidence</span></div>
     </section>
+    <section aria-label="Lifecycle projection">
+        <h2>Evidence projection</h2>
+        <label for="implementation-projection">View</label>
+        <select id="implementation-projection" @bind="_projectionMode">
+            <option value="ActiveWorkspace">Active workspace</option>
+            <option value="AuthoritativeBaseline">Authoritative baseline</option>
+            <option value="HistoricalBaseline">Historical baseline</option>
+        </select>
+        @if (_projectionMode == nameof(LifecycleProjectionMode.HistoricalBaseline))
+        {
+            <label for="implementation-baseline">Baseline revision set</label>
+            <select id="implementation-baseline" @bind="_historicalBaselineId"><option value="">Select a baseline</option>@foreach (var item in Artifacts.SddLifecycle.Baselines) { <option value="@item.BaselineId">@item.Label · @item.CreatedAt.ToLocalTime().ToString("g") · @item.Status</option> }</select>
+        }
+        <p role="status">View: @Projection.Metadata.Mode@(Projection.Metadata.BaselineId is { } baselineId ? $" — {Artifacts.SddLifecycle.Baselines.FirstOrDefault(x => x.BaselineId == baselineId)?.Label ?? "baseline"}" : "")</p>
+        @foreach (var limitation in Projection.Metadata.Limitations) { <p class="note">@limitation</p> }
+    </section>
 
     @if (!Artifacts.Has(WorkspaceArtifactType.Specification))
     {
@@ -94,6 +110,10 @@
     <section>
         <h2>Artifact authority and history</h2>
         <p>Revision order records content changes. It does not select authority. Set a baseline explicitly; a newer draft remains non-authoritative.</p>
+        <label for="baseline-label">Baseline label</label><input id="baseline-label" @bind="_baselineLabel" placeholder="Release 1" />
+        <button @onclick="CaptureBaselineAsync" disabled="@(!Artifacts.SddLifecycle.Revisions.Any(x => x.Authority == "Baseline"))">Capture selected baseline revisions</button>
+        @foreach (var baseline in Artifacts.SddLifecycle.Baselines.OrderByDescending(x => x.CreatedAt))
+        { <p>@baseline.Label · @baseline.Status · @baseline.ArtifactRevisionIds.Count artifact revision(s) · @baseline.CreatedAt.ToLocalTime().ToString("g")</p> }
         @foreach (var group in Artifacts.SddLifecycle.Revisions.GroupBy(x => x.Role).OrderBy(x => x.Key))
         {
             <h3>@group.Key</h3>
@@ -132,16 +152,18 @@
         @if (Artifacts.SddLifecycle.ReviewRuns.Count == 0) { <p>No review run recorded.</p> }
         @foreach (var run in Artifacts.SddLifecycle.ReviewRuns.OrderByDescending(x => x.RanAt))
         {
-            var stale = run.SpecificationFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Specification)?.Text)
-                || run.PlanFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Plan)?.Text)
-                || run.TasksFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Tasks)?.Text);
-            <p>@run.RanAt.ToLocalTime().ToString("g") — @(stale ? "Historical / stale" : run.Currentness) — @run.RequirementsWithPlanEvidence/@run.RequirementCount plan-linked; @run.RequirementsWithTaskEvidence/@run.RequirementCount task-linked; source: @run.SourceSnapshotReference</p>
+                var baselineStatus = run.BaselineId is { } id ? Artifacts.SddLifecycle.Baselines.FirstOrDefault(x => x.BaselineId == id)?.Status : null;
+                var stale = run.ProjectionMode == nameof(LifecycleProjectionMode.ActiveWorkspace)
+                    ? run.SpecificationFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Specification)?.Text) || run.PlanFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Plan)?.Text) || run.TasksFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Tasks)?.Text)
+                    : run.BaselineId is not null && baselineStatus is null || run.ProjectionMode == nameof(LifecycleProjectionMode.AuthoritativeBaseline) && run.BaselineId is null && !run.ArtifactRevisionIds.SequenceEqual(Projection.Metadata.ArtifactRevisionIds);
+                var historical = run.Currentness == "Historical" || baselineStatus == "Historical";
+            <p>@run.RanAt.ToLocalTime().ToString("g") — @(historical ? "Historical baseline review" : stale ? "Potentially stale / unavailable projection" : run.Currentness) · @run.ProjectionMode@(run.BaselineId is null ? "" : $" ({run.BaselineId})") — @run.RequirementsWithPlanEvidence/@run.RequirementCount plan-linked; @run.RequirementsWithTaskEvidence/@run.RequirementCount task-linked; source: @run.SourceSnapshotReference</p>
         }
     </section>
 
     <section class="source-import">
         <h2>Source Analysis and CodeLinks</h2>
-        <p>Source Analysis owns source parsing. This view imports snapshot metadata and persisted explicit CodeLinks only. A link does not prove behavior; the current source projection cannot validate a complete file inventory.</p>
+        <p>Source Analysis owns source parsing. A resolved target means the referenced location can still be found; it does not verify behavior or correctness.</p>
         <label for="sdd-source-environment">Source Analysis environment ID</label>
         <input id="sdd-source-environment" @bind="_sourceEnvironment" />
         <button @onclick="LoadSourceSnapshotsAsync" disabled="@string.IsNullOrWhiteSpace(_sourceEnvironment)">Load Source Analysis snapshots</button>
@@ -161,7 +183,8 @@
         @foreach (var evidence in Artifacts.SddLifecycle.ImplementationEvidence.Where(x => x.ProviderId == "CodeTraceability"))
         {
             <details><summary>@evidence.RequirementId · @evidence.FilePath · @evidence.Confidence · @evidence.Currentness</summary>
-                <p>Snapshot @evidence.SourceSnapshotId · @evidence.SourceFingerprint · analyzer/provider version @evidence.ProviderVersion</p><p>@evidence.Provenance · target validation: @evidence.SourceValidation</p><p>@evidence.CurrentnessReason</p>
+                <p>Snapshot @evidence.SourceSnapshotId · @evidence.SourceFingerprint · analyzer/provider version @evidence.ProviderVersion</p><p>@evidence.Provenance · target validation: @evidence.TargetValidation</p><p>@evidence.CurrentnessReason</p>
+                @foreach (var resolution in evidence.TargetResolutions) { <p>Target @resolution.State · @resolution.OldSnapshotId → @resolution.NewSnapshotId · matched @resolution.MatchedPath · content changed: @(resolution.ContentChanged?.ToString() ?? "not assessed") · @resolution.Reason</p> }
             </details>
         }
     </section>
@@ -186,13 +209,19 @@
     private readonly Dictionary<string, string> _resolutions = new();
     private readonly Dictionary<string, string> _resolutionRefs = new();
     private string _sourceEnvironment = "";
+    private string _projectionMode = nameof(LifecycleProjectionMode.AuthoritativeBaseline);
+    private string _historicalBaselineId = "";
+    private string _baselineLabel = "";
     private string? _sourceMessage;
     private Guid? _selectedSourceSnapshotId;
     private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot> _sourceSnapshots = [];
     private string _testResultJson = "";
     private string? _testImportMessage;
     private ReviewContext? Context => ContextProvider.GetCurrent();
-    private List<SddRequirementGraphRow> GraphRows => EvidenceGraph.Build(Artifacts).ToList();
+    private LifecycleProjectionMode ProjectionMode => Enum.TryParse<LifecycleProjectionMode>(_projectionMode, out var parsed) ? parsed : LifecycleProjectionMode.ActiveWorkspace;
+    private Guid? HistoricalBaselineId => Guid.TryParse(_historicalBaselineId, out var parsed) ? parsed : null;
+    private SddLifecycleProjection Projection => EvidenceGraph.Project(Artifacts, ProjectionMode, HistoricalBaselineId);
+    private List<SddRequirementGraphRow> GraphRows => Projection.Rows.ToList();
     private List<SemanticRequirement> Requirements => GraphRows.Select(x => x.Requirement).ToList();
     private List<SemanticClarification> Clarifications => Context?.GetClarifications().ToList() ?? [];
     private bool HasSource => Artifacts.SddLifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus is "Ready" or "Partial");
@@ -205,7 +234,7 @@
     protected override void OnInitialized() => Artifacts.ReviewContextRebuildNeeded += OnContextChanged;
     protected override async Task OnInitializedAsync()
     {
-        EvidenceGraph.SynchronizeCurrentArtifacts(Artifacts);
+        if (ProjectionMode == LifecycleProjectionMode.ActiveWorkspace) EvidenceGraph.SynchronizeCurrentArtifacts(Artifacts);
         await AutoSave.SaveNowAsync();
     }
     private void OnContextChanged(object? sender, EventArgs args) => _ = InvokeAsync(StateHasChanged);
@@ -261,27 +290,44 @@
     private async Task RecordReviewAsync()
     {
         var requirements = Requirements;
-        EvidenceGraph.SynchronizeCurrentArtifacts(Artifacts);
-        SddLifecycleReviewService.ReconcileRequirements(Artifacts.SddLifecycle, requirements,
-            Artifacts.SddLifecycle.Revisions.LastOrDefault(x => x.Role == "Specification" && x.IsCurrentSelection)?.RevisionId);
+        if (ProjectionMode == LifecycleProjectionMode.ActiveWorkspace) EvidenceGraph.SynchronizeCurrentArtifacts(Artifacts);
+        if (ProjectionMode == LifecycleProjectionMode.ActiveWorkspace)
+            SddLifecycleReviewService.ReconcileRequirements(Artifacts.SddLifecycle, requirements,
+                Projection.Metadata.ArtifactRevisionIds.FirstOrDefault(id => Artifacts.SddLifecycle.Revisions.Any(x => x.RevisionId == id && x.Role == "Specification")) is var specificationId && specificationId != Guid.Empty ? specificationId : null);
         var run = new SddReviewRun
         {
-            SpecificationFingerprint = Fingerprint(Artifacts.Get(WorkspaceArtifactType.Specification)?.Text),
-            PlanFingerprint = Fingerprint(Artifacts.Get(WorkspaceArtifactType.Plan)?.Text),
-            TasksFingerprint = Fingerprint(Artifacts.Get(WorkspaceArtifactType.Tasks)?.Text),
+            SpecificationFingerprint = Projection.Metadata.ArtifactRevisionIds.Select(id => Artifacts.SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == id)).FirstOrDefault(x => x?.Role == "Specification")?.Fingerprint ?? "",
+            PlanFingerprint = Projection.Metadata.ArtifactRevisionIds.Select(id => Artifacts.SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == id)).FirstOrDefault(x => x?.Role == "Plan")?.Fingerprint ?? "",
+            TasksFingerprint = Projection.Metadata.ArtifactRevisionIds.Select(id => Artifacts.SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == id)).FirstOrDefault(x => x?.Role == "Tasks")?.Fingerprint ?? "",
             RequirementCount = requirements.Count,
             RequirementsWithPlanEvidence = requirements.Count(x => PlanLinks(x.Id) > 0),
             RequirementsWithTaskEvidence = requirements.Count(x => TaskLinks(x.Id) > 0),
             SourceSnapshotReference = Artifacts.SddLifecycle.SourceSnapshots.FirstOrDefault(x => x.Currentness == "Current")?.SnapshotId ?? "Not available",
             SourceFingerprint = Artifacts.SddLifecycle.SourceSnapshots.FirstOrDefault(x => x.Currentness == "Current")?.Fingerprint ?? "",
-            LifecycleEvidenceFingerprint = Fingerprint(System.Text.Json.JsonSerializer.Serialize(Artifacts.SddLifecycle.Links)),
-            TestEvidenceFingerprint = Fingerprint(System.Text.Json.JsonSerializer.Serialize(Artifacts.SddLifecycle.TestExecutions)),
-            ReviewVersion = 2,
+            LifecycleEvidenceFingerprint = EvidenceGraph.Fingerprint(Artifacts, ProjectionMode, HistoricalBaselineId),
+            TestEvidenceFingerprint = Fingerprint(System.Text.Json.JsonSerializer.Serialize(GraphRows.Select(x => new { x.Requirement.Id, x.Executions }))),
+            ReviewVersion = 3,
+            ProjectionMode = Projection.Metadata.Mode.ToString(), BaselineId = Projection.Metadata.BaselineId,
+            ArtifactRevisionIds = Projection.Metadata.ArtifactRevisionIds.ToList(), ArtifactFingerprints = Projection.Metadata.ArtifactFingerprints.ToList(),
             Currentness = "Current"
         };
         Artifacts.SddLifecycle.ReviewRuns.Add(run);
         foreach (var previous in Artifacts.SddLifecycle.ReviewRuns.Where(x => x.Id != run.Id && x.Currentness == "Current")) previous.Currentness = "Historical";
         await AutoSave.SaveNowAsync();
+    }
+
+    private async Task CaptureBaselineAsync()
+    {
+        try
+        {
+            var baseline = Artifacts is WorkspaceArtifactRepository repository
+                ? repository.CaptureBaseline(_baselineLabel)
+                : throw new InvalidOperationException("Baseline capture is unavailable for this workspace provider.");
+            _projectionMode = nameof(LifecycleProjectionMode.AuthoritativeBaseline);
+            _sourceMessage = $"Captured baseline {baseline.Label} with {baseline.ArtifactRevisionIds.Count} artifact revision(s).";
+            await AutoSave.SaveNowAsync();
+        }
+        catch (InvalidOperationException ex) { _sourceMessage = ex.Message; }
     }
 
     private async Task LoadSourceSnapshotsAsync()
@@ -311,10 +357,10 @@
             var links = await SddEvidenceApi.CodeLinksAsync(Artifacts.ProjectName);
             SddEvidenceGraphService.RecordSourceSnapshot(Artifacts.SddLifecycle, snapshot, _sourceEnvironment);
             var added = SddEvidenceGraphService.BindCodeLinks(Artifacts.SddLifecycle, snapshot, links, Requirements.Select(x => x.Id));
-            SddEvidenceGraphService.SourceSnapshotChanged(Artifacts.SddLifecycle, snapshot.Id, snapshot.Archive.Sha256);
+            SddEvidenceGraphService.SourceSnapshotChanged(Artifacts.SddLifecycle, snapshot, _sourceEnvironment);
             _sourceMessage = snapshot.Status == BirkNext.Integrations.SourceAnalysisStatus.Partial
-                ? $"Bound {added} explicit CodeLink(s) from a partial analysis. Analyzer limitations are retained; file-target validation is not assessed."
-                : $"Bound {added} explicit CodeLink(s). The archive fingerprint is recorded; file-target validation is not assessed.";
+                ? $"Bound {added} explicit CodeLink(s) from a partial analysis. Analyzer limitations are retained; target resolution is separate from implementation correctness."
+                : $"Bound {added} explicit CodeLink(s); deterministic file-target resolution is separate from implementation correctness.";
             await AutoSave.SaveNowAsync();
         }
         catch (Exception ex) { _sourceMessage = $"Could not read CodeLinks: {ex.Message}"; }
