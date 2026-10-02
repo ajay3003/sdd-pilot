@@ -20,7 +20,7 @@
             <div><dt>REST / OpenAPI</dt><dd>@K.Contracts.Count(c => c.Type == SourceContractType.OpenApi)</dd></div>
             <div><dt>GraphQL</dt><dd>@K.Contracts.Count(c => c.Type is SourceContractType.GraphQlSchema or SourceContractType.GraphQlOperations)</dd></div>
             <div><dt>Messages / events</dt><dd>@K.Contracts.Count(c => c.Type is SourceContractType.MessageContract or SourceContractType.AsyncApi)</dd></div>
-            <div><dt>Other schemas</dt><dd>@K.Contracts.Count(c => c.Type is SourceContractType.JsonSchema or SourceContractType.Protobuf)</dd></div>
+            <div><dt>Other schemas</dt><dd>@K.Contracts.Count(c => c.Type is SourceContractType.JsonSchema or SourceContractType.XmlSchema or SourceContractType.Protobuf)</dd></div>
             <div><dt>Generated clients</dt><dd>@K.Contracts.Count(c => c.Type == SourceContractType.GeneratedClient)</dd></div>
         </dl>
         var rows = SourceEvidenceDomainsPresentation.FilterContracts(K.Contracts, _type, _search).ToList();
@@ -56,6 +56,40 @@
                                     {
                                         <ul class="sd-list">@foreach (var t in c.Types.Take(40)) { <li><strong>@t.Name</strong> <span class="sd-context">@t.Kind</span> @string.Join(", ", t.Fields.Take(30).Select(f => f.Required ? $"{f.Name}: {f.Type} (required)" : $"{f.Name}: {f.Type}"))</li> }</ul>
                                         @if (c.Types.Count > 40) { <p class="sd-muted">First 40 of @c.Types.Count types shown.</p> }
+                                    }
+                                    @if (c.XmlSchema is { } xsd)
+                                    {
+                                        <h4>XML Schema structure</h4>
+                                        <p><strong>Target namespace:</strong> <code>@(xsd.TargetNamespace ?? "(none)")</code> · <strong>Version:</strong> @(xsd.ExplicitVersion ?? "Not explicitly declared")</p>
+                                        <p class="sd-muted">@xsd.VersionEvidence Schema structure only; no XML instance or business validation was run.</p>
+                                        @if (xsd.Attributes.Count > 0)
+                                        {
+                                            <p><strong>XML attributes</strong></p>
+                                            <ul class="sd-list">@foreach (var attr in xsd.Attributes.Take(200)) { <li><code>@attr.Path</code> · <code>@attr.QualifiedName</code> · @(attr.Type ?? "Inline/anonymous") · @attr.Use @string.Join(", ", attr.Restrictions.Select(r => $"{r.Facet}: {r.Value}"))</li> }</ul>
+                                        }
+                                        @if (xsd.Types.Count > 0)
+                                        {
+                                            <p><strong>Named XSD types</strong></p>
+                                            <ul class="sd-list">@foreach (var type in xsd.Types) { <li><code>@type.QualifiedName</code> · @type.Kind · base @(type.BaseType ?? "not declared") @string.Join(", ", type.Restrictions.Select(r => $"{r.Facet}: {r.Value}"))</li> }</ul>
+                                        }
+                                        @if (xsd.Elements.Count > 0)
+                                        {
+                                            <div class="sd-table-scroll" tabindex="0" role="region" aria-label="XSD elements and declared constraints">
+                                                <table class="sd-table"><thead><tr><th>Element path</th><th>Qualified name</th><th>Type</th><th>Declared occurrences</th><th>Nullable</th><th>Restrictions</th></tr></thead>
+                                                    <tbody>@foreach (var element in xsd.Elements.Take(300))
+                                                    {
+                                                        <tr><th scope="row"><code>@element.Path</code></th><td><code>@element.QualifiedName</code></td><td>@(element.Type ?? "Inline/anonymous")</td>
+                                                            <td>@element.MinOccurs–@element.MaxOccurs <span class="sd-context">@element.Compositor</span></td><td>@(element.Nillable ? "Yes" : "No")</td>
+                                                            <td>@string.Join(", ", element.Restrictions.Select(r => $"{r.Facet}: {r.Value}"))</td></tr>
+                                                    }</tbody>
+                                                </table>
+                                            </div>
+                                        }
+                                        @if (xsd.Dependencies.Count > 0)
+                                        {
+                                            <p><strong>Schema dependencies:</strong></p>
+                                            <ul class="sd-list">@foreach (var dependency in xsd.Dependencies) { <li>@dependency.Kind · @(dependency.Namespace ?? "namespace not declared") · @(dependency.SchemaLocation ?? "location not declared") — @(dependency.ResolvedInSnapshot ? "file present in selected snapshot" : "unresolved in selected snapshot")</li> }</ul>
+                                        }
                                     }
                                     @foreach (var l in c.Limitations) { <p class="sd-muted">@l</p> }
                                     <p class="sd-muted">@c.RuntimeState</p>

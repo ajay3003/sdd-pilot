@@ -91,6 +91,7 @@ internal static class SourceFileClassifier
         if (ext is ".bicep" or ".bicepparam") return (SourceFileRole.InfrastructureAsCode, "Bicep");
         if (name.Equals("Jenkinsfile", StringComparison.OrdinalIgnoreCase)) return (SourceFileRole.Pipeline, "Jenkins");
         if (ext is ".graphql" or ".graphqls" or ".gql") return (TestPath.IsMatch(path) ? SourceFileRole.Test : SourceFileRole.Contract, "GraphQL");
+        if (ext == ".xsd") return (SourceFileRole.Contract, "XML Schema");
         if (ext is ".proto") return (SourceFileRole.Contract, "Protobuf");
         if (ext is ".properties") return (SourceFileRole.Configuration, "Properties file");
         if (name.Equals(".env", StringComparison.OrdinalIgnoreCase) || name.StartsWith(".env.", StringComparison.OrdinalIgnoreCase)) return (SourceFileRole.Configuration, "Environment file");

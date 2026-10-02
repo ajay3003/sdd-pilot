@@ -252,6 +252,25 @@ public sealed class SourceEvidenceDomainsUiTests : BunitContext
     }
 
     [Fact]
+    public void Contracts_page_exposes_xsd_namespace_cardinality_and_import_resolution()
+    {
+        var evidence = Evidence();
+        var xsd = new SourceContract
+        {
+            Id = "xsd:contracts/report.xsd", Type = SourceContractType.XmlSchema, Name = "report", File = "contracts/report.xsd",
+            XmlSchema = new("urn:school:report:v1", "1.2", "Explicit xs:schema version attribute.",
+                [new("Report/ChildId", "{urn:school:report:v1}ChildId", "{http://www.w3.org/2001/XMLSchema}string", 1, "1", false, null, null, null, [], "sequence")],
+                [], [], [new("import", "urn:common", "common.xsd", false)]),
+        };
+        evidence = evidence with { Contracts = evidence.Contracts with { Contracts = [xsd] } };
+
+        var cut = Render<ContractsWorkspace>(p => p.Add(x => x.Evidence, evidence));
+        cut.Find("[data-testid=sd-contract-toggle]").Click();
+        cut.Find("[data-testid=sd-contract-detail]").TextContent.Should().Contain("urn:school:report:v1").And.Contain("Report/ChildId")
+            .And.Contain("1–1").And.Contain("unresolved in selected snapshot");
+    }
+
+    [Fact]
     public void Changes_are_source_changes_against_the_same_repository_only()
     {
         var current = Evidence();

@@ -30,7 +30,7 @@ public static class IqrSourceArchiveReader
     {
         var file = Path.GetFileName(path);
         var extension = Path.GetExtension(path).ToLowerInvariant();
-        return extension is ".tf" or ".tfvars" or ".bicep" or ".bicepparam" or ".graphql" or ".graphqls" or ".gql" or ".proto" or ".properties"
+        return extension is ".tf" or ".tfvars" or ".bicep" or ".bicepparam" or ".graphql" or ".graphqls" or ".gql" or ".proto" or ".xsd" or ".properties"
             || file.Equals("Jenkinsfile", StringComparison.OrdinalIgnoreCase) || file.Equals(".env", StringComparison.OrdinalIgnoreCase)
             || file.StartsWith(".env.", StringComparison.OrdinalIgnoreCase);
     }
@@ -69,7 +69,7 @@ public static class IqrSourceArchiveReader
                 if (extension is ".js" or ".ts" or ".py" or ".java" or ".go" or ".fs" or ".vb")
                     limitations.Add($"Not analyzed: {extension} source (unsupported language).");
                 var evidence = IsEvidenceFile(path);
-                if (!evidence && extension is not (".cs" or ".csproj" or ".sln" or ".slnx" or ".json" or ".yaml" or ".yml" or ".props" or ".sql")
+                if (!evidence && extension is not (".cs" or ".csproj" or ".sln" or ".slnx" or ".json" or ".yaml" or ".yml" or ".props" or ".sql" or ".xsd")
                     && !Path.GetFileName(path).Equals("Dockerfile", StringComparison.OrdinalIgnoreCase)) continue;
                 if (entry.Length > MaxFileBytes) { limitations.Add("Source file exceeds the 2 MB per-file limit and was not analyzed."); continue; }
                 using var input = entry.Open();

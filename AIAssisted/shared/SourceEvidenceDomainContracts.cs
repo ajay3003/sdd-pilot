@@ -319,7 +319,21 @@ public sealed record PipelineEvidence : SourceDomainResult
 // ── Contracts / schemas ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SourceContractType { OpenApi, GraphQlSchema, GraphQlOperations, AsyncApi, JsonSchema, Protobuf, MessageContract, GeneratedClient }
+public enum SourceContractType { OpenApi, GraphQlSchema, GraphQlOperations, AsyncApi, JsonSchema, XmlSchema, Protobuf, MessageContract, GeneratedClient }
+
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum ContractCompatibilityConcern { PotentiallyBreaking, PotentiallyCompatible, NeedsReview }
+
+public sealed record XmlSchemaRestrictionEvidence(string Facet, string Value);
+public sealed record XmlSchemaElementEvidence(string Path, string QualifiedName, string? Type, decimal MinOccurs, string MaxOccurs,
+    bool Nillable, string? DefaultValue, string? FixedValue, string? Documentation, List<XmlSchemaRestrictionEvidence> Restrictions,
+    string Compositor = "sequence");
+public sealed record XmlSchemaAttributeEvidence(string Path, string QualifiedName, string? Type, string Use, string? DefaultValue,
+    string? FixedValue, List<XmlSchemaRestrictionEvidence> Restrictions);
+public sealed record XmlSchemaTypeEvidence(string QualifiedName, string Kind, string? BaseType, List<XmlSchemaRestrictionEvidence> Restrictions);
+public sealed record XmlSchemaDependencyEvidence(string Kind, string? Namespace, string? SchemaLocation, bool ResolvedInSnapshot);
+public sealed record XmlSchemaEvidence(string? TargetNamespace, string? ExplicitVersion, string VersionEvidence,
+    List<XmlSchemaElementEvidence> Elements, List<XmlSchemaAttributeEvidence> Attributes, List<XmlSchemaTypeEvidence> Types, List<XmlSchemaDependencyEvidence> Dependencies);
 
 public sealed record ContractField(string Name, string Type, bool Required);
 public sealed record ContractTypeShape(string Name, string Kind, List<ContractField> Fields);
@@ -341,6 +355,7 @@ public sealed record SourceContract
     public List<string> ConsumerHints { get; init; } = [];
     public List<ContractOperation> Operations { get; init; } = [];
     public List<ContractTypeShape> Types { get; init; } = [];
+    public XmlSchemaEvidence? XmlSchema { get; init; }
     public ArchitectureEvidenceState EvidenceState { get; init; } = ArchitectureEvidenceState.Confirmed;
     public DomainSupport ParseSupport { get; init; } = DomainSupport.Supported;
     public List<string> Limitations { get; init; } = [];
@@ -425,10 +440,11 @@ public enum SourceEvidenceChangeKind { Added, Removed, Changed }
 
 /// <summary>Contract-specific change classes; only a compatibility rule may call one breaking.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ContractChangeClass { None, OperationAdded, OperationRemoved, FieldAddedOptional, FieldAddedRequired, FieldRemoved, TypeChanged, RequirednessChanged, TypeAdded, TypeRemoved }
+public enum ContractChangeClass { None, OperationAdded, OperationRemoved, FieldAddedOptional, FieldAddedRequired, FieldRemoved, TypeChanged, RequirednessChanged, TypeAdded, TypeRemoved,
+    CardinalityChanged, RestrictionChanged, NamespaceChanged, ImportChanged, VersionChanged }
 
 public sealed record SourceEvidenceChange(SourceEvidenceDomain Domain, SourceEvidenceChangeKind Kind, string Area, string Key, string Name, string Detail,
-    ContractChangeClass ContractChange = ContractChangeClass.None);
+    ContractChangeClass ContractChange = ContractChangeClass.None, ContractCompatibilityConcern? CompatibilityConcern = null);
 
 /// <summary>
 /// Compares the evidence domains of two snapshots by stable keys. A difference is a SOURCE change ("Infrastructure source change") —
@@ -463,6 +479,7 @@ public static class SourceEvidenceDiff
             if (previous.Contracts.Contracts.FirstOrDefault(c => c.Id == contract.Id) is not { } before)
             { changes.Add(new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Added, "Contract", contract.Id, contract.Name, $"{contract.Type} · {contract.Operations.Count} operation(s)")); continue; }
             changes.AddRange(ContractChanges(before, contract));
+            if (before.XmlSchema is { } previousXml && contract.XmlSchema is { } currentXml) changes.AddRange(XmlSchemaChanges(before, previousXml, contract, currentXml));
         }
         foreach (var removed in previous.Contracts.Contracts.Where(p => current.Contracts.Contracts.All(c => c.Id != p.Id)))
             changes.Add(new(SourceEvidenceDomain.Contracts, SourceEvidenceChangeKind.Removed, "Contract", removed.Id, removed.Name, $"{removed.Type} · {removed.Operations.Count} operation(s)"));
@@ -495,6 +512,64 @@ public static class SourceEvidenceDiff
             foreach (var gone in old.Fields.Where(f => type.Fields.All(n => n.Name != f.Name))) Add(SourceEvidenceChangeKind.Removed, "Field", $"{type.Name}.{gone.Name}", $"{type.Name}.{gone.Name}", ContractChangeClass.FieldRemoved);
         }
         foreach (var gone in before.Types.Where(t => after.Types.All(a => a.Name != t.Name))) Add(SourceEvidenceChangeKind.Removed, "Type", gone.Name, gone.Name, ContractChangeClass.TypeRemoved);
+        return changes;
+    }
+
+    private static List<SourceEvidenceChange> XmlSchemaChanges(SourceContract beforeContract, XmlSchemaEvidence before, SourceContract afterContract, XmlSchemaEvidence after)
+    {
+        var changes = new List<SourceEvidenceChange>();
+        void Add(SourceEvidenceChangeKind kind, string area, string key, string detail, ContractChangeClass changeClass, ContractCompatibilityConcern concern) =>
+            changes.Add(new(SourceEvidenceDomain.Contracts, kind, area, $"{afterContract.Id}|{key}", afterContract.Name, detail, changeClass, concern));
+        if (before.TargetNamespace != after.TargetNamespace)
+            Add(SourceEvidenceChangeKind.Changed, "Namespace", "targetNamespace", $"Target namespace: {before.TargetNamespace ?? "(none)"} → {after.TargetNamespace ?? "(none)"}", ContractChangeClass.NamespaceChanged, ContractCompatibilityConcern.PotentiallyBreaking);
+        if (before.ExplicitVersion != after.ExplicitVersion)
+            Add(SourceEvidenceChangeKind.Changed, "Version", "version", $"Explicit schema version: {before.ExplicitVersion ?? "(not declared)"} → {after.ExplicitVersion ?? "(not declared)"}", ContractChangeClass.VersionChanged, ContractCompatibilityConcern.NeedsReview);
+
+        var oldTypes = before.Types.GroupBy(t => t.QualifiedName).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var newTypes = after.Types.GroupBy(t => t.QualifiedName).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        foreach (var type in newTypes.Where(p => !oldTypes.ContainsKey(p.Key)))
+            Add(SourceEvidenceChangeKind.Added, "Named type", type.Key, $"Added named XSD type {type.Key}.", ContractChangeClass.TypeAdded, ContractCompatibilityConcern.PotentiallyCompatible);
+        foreach (var type in oldTypes.Where(p => !newTypes.ContainsKey(p.Key)))
+            Add(SourceEvidenceChangeKind.Removed, "Named type", type.Key, $"Removed named XSD type {type.Key}.", ContractChangeClass.TypeRemoved, ContractCompatibilityConcern.PotentiallyBreaking);
+        foreach (var type in newTypes.Where(p => oldTypes.ContainsKey(p.Key)))
+        {
+            var old = oldTypes[type.Key]; var current = type.Value;
+            if (old.Kind != current.Kind || old.BaseType != current.BaseType)
+                Add(SourceEvidenceChangeKind.Changed, "Named type", type.Key, $"Named XSD type {type.Key} changed kind or base type.", ContractChangeClass.TypeChanged, ContractCompatibilityConcern.NeedsReview);
+            if (old.Restrictions.OrderBy(r => r.Facet).ThenBy(r => r.Value).SequenceEqual(current.Restrictions.OrderBy(r => r.Facet).ThenBy(r => r.Value)) == false)
+                Add(SourceEvidenceChangeKind.Changed, "Type restriction", type.Key, $"Simple-type facets changed for {type.Key}.", ContractChangeClass.RestrictionChanged, ContractCompatibilityConcern.NeedsReview);
+        }
+
+        static bool Required(XmlSchemaElementEvidence element) => element.MinOccurs > 0 && !element.Compositor.Contains("choice", StringComparison.Ordinal);
+        var oldElements = before.Elements.GroupBy(e => e.Path).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var newElements = after.Elements.GroupBy(e => e.Path).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        foreach (var (key, element) in newElements.Where(p => !oldElements.ContainsKey(p.Key)))
+            Add(SourceEvidenceChangeKind.Added, "Element", key, $"Added {(Required(element) ? "declared required" : "optional or choice-bound")} element {element.Path} ({element.QualifiedName}).",
+                Required(element) ? ContractChangeClass.FieldAddedRequired : ContractChangeClass.FieldAddedOptional,
+                Required(element) ? ContractCompatibilityConcern.PotentiallyBreaking : ContractCompatibilityConcern.PotentiallyCompatible);
+        foreach (var (key, element) in oldElements.Where(p => !newElements.ContainsKey(p.Key)))
+            Add(SourceEvidenceChangeKind.Removed, "Element", key, $"Removed element {element.Path} ({element.QualifiedName}).", ContractChangeClass.FieldRemoved, ContractCompatibilityConcern.PotentiallyBreaking);
+        foreach (var (key, current) in newElements.Where(p => oldElements.ContainsKey(p.Key)))
+        {
+            var old = oldElements[key];
+            if (old.QualifiedName != current.QualifiedName && before.TargetNamespace == after.TargetNamespace)
+                Add(SourceEvidenceChangeKind.Changed, "Element namespace", key, $"{current.Path}: {old.QualifiedName} → {current.QualifiedName}.", ContractChangeClass.NamespaceChanged, ContractCompatibilityConcern.NeedsReview);
+            if (old.Type != current.Type) Add(SourceEvidenceChangeKind.Changed, "Element type", key, $"{current.Path}: {old.Type ?? "(anonymous)"} → {current.Type ?? "(anonymous)"}.", ContractChangeClass.TypeChanged, ContractCompatibilityConcern.NeedsReview);
+            if (old.MinOccurs != current.MinOccurs || old.MaxOccurs != current.MaxOccurs)
+            {
+                var tightened = current.MinOccurs > old.MinOccurs || (old.MaxOccurs == "unbounded" && current.MaxOccurs != "unbounded") ||
+                    (decimal.TryParse(old.MaxOccurs, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var oldMax) &&
+                     decimal.TryParse(current.MaxOccurs, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var newMax) && newMax < oldMax);
+                Add(SourceEvidenceChangeKind.Changed, "Cardinality", key, $"{current.Path}: [{old.MinOccurs}..{old.MaxOccurs}] → [{current.MinOccurs}..{current.MaxOccurs}].",
+                    ContractChangeClass.CardinalityChanged, tightened ? ContractCompatibilityConcern.PotentiallyBreaking : ContractCompatibilityConcern.NeedsReview);
+            }
+            if (old.Nillable != current.Nillable || old.Restrictions.OrderBy(r => r.Facet).ThenBy(r => r.Value).SequenceEqual(current.Restrictions.OrderBy(r => r.Facet).ThenBy(r => r.Value)) == false)
+                Add(SourceEvidenceChangeKind.Changed, "Restriction", key, $"Nullability or simple-type facets changed for {current.Path}.", ContractChangeClass.RestrictionChanged, ContractCompatibilityConcern.NeedsReview);
+        }
+        var oldDependencies = before.Dependencies.Select(d => $"{d.Kind}|{d.Namespace}|{d.SchemaLocation}|{d.ResolvedInSnapshot}").ToHashSet(StringComparer.Ordinal);
+        var newDependencies = after.Dependencies.Select(d => $"{d.Kind}|{d.Namespace}|{d.SchemaLocation}|{d.ResolvedInSnapshot}").ToHashSet(StringComparer.Ordinal);
+        if (!oldDependencies.SetEquals(newDependencies))
+            Add(SourceEvidenceChangeKind.Changed, "Schema dependency", "imports/includes", "XSD import/include/redefine dependencies changed or resolution presence changed.", ContractChangeClass.ImportChanged, ContractCompatibilityConcern.NeedsReview);
         return changes;
     }
 }
@@ -589,6 +664,7 @@ public static class SourceDomainText
         SourceContractType.GraphQlOperations => "GraphQL operations",
         SourceContractType.AsyncApi => "AsyncAPI",
         SourceContractType.JsonSchema => "JSON Schema",
+        SourceContractType.XmlSchema => "XML Schema (XSD)",
         SourceContractType.MessageContract => "Message contract",
         SourceContractType.GeneratedClient => "Generated client",
         _ => type.ToString(),

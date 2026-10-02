@@ -1,5 +1,8 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
+using System.Xml.Schema;
 using BirkNext.Api.Services.ApiQuality;
 using BirkNext.Api.Services.ContractAnalysis;
 using BirkNext.SourceArchitecture;
@@ -37,6 +40,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             new(SourceEvidenceDomain.Contracts, "GraphQL SDL and operations", DomainSupport.Supported, "Parsed with the Hot Chocolate GraphQL parser; type extensions merged."),
             new(SourceEvidenceDomain.Contracts, "AsyncAPI", DomainSupport.Partial, "Channels and operations; message payload schemas are not resolved."),
             new(SourceEvidenceDomain.Contracts, "JSON Schema", DomainSupport.Partial, "Top-level properties and required fields; $ref/allOf are not resolved."),
+            new(SourceEvidenceDomain.Contracts, "XML Schema (XSD)", DomainSupport.Partial, "Elements, namespaces, cardinality, inline/simple restrictions and in-snapshot import/include presence; schema compilation and referenced type expansion are not performed."),
             new(SourceEvidenceDomain.Contracts, "Protobuf", DomainSupport.Partial, "Messages, fields and services by pattern."),
             new(SourceEvidenceDomain.Contracts, "Message contracts (C#)", DomainSupport.Partial, "Event classes found by the integration-path analyzer (implementation contracts, not formal schemas)."),
             new(SourceEvidenceDomain.Contracts, "Generated clients", DomainSupport.Partial, "Strawberry Shake, NSwag, OpenAPI Generator and OpenApiReference configuration."),
@@ -44,7 +48,7 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
         var contracts = new List<SourceContract>();
         var diagnostics = new List<SourceDomainDiagnostic>();
         var extractor = new OpenApiExtractor(NullLogger<OpenApiExtractor>.Instance);
-        foreach (var file in context.Files.Where(f => f.Role is SourceFileRole.Contract or SourceFileRole.Test && f.Technology is "OpenAPI" or "AsyncAPI" or "JSON Schema" or "GraphQL" or "Protobuf"))
+        foreach (var file in context.Files.Where(f => f.Role is SourceFileRole.Contract or SourceFileRole.Test && f.Technology is "OpenAPI" or "AsyncAPI" or "JSON Schema" or "XML Schema" or "GraphQL" or "Protobuf"))
         {
             ct.ThrowIfCancellationRequested();
             try
@@ -54,12 +58,13 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
                     "OpenAPI" => OpenApi(file, extractor),
                     "AsyncAPI" => AsyncApi(file),
                     "JSON Schema" => JsonSchema(file),
+                    "XML Schema" => XmlSchema(file, context),
                     "GraphQL" => GraphQl(file, diagnostics),
                     _ => Protobuf(file),
                 };
                 if (contract is not null) contracts.Add(Attribute(context, file, contract));
             }
-            catch (Exception ex) when (ex is JsonException or SyntaxException or FormatException)
+            catch (Exception ex) when (ex is JsonException or SyntaxException or FormatException or XmlException or XmlSchemaException)
             { diagnostics.Add(new("Parse error", $"{file.Technology} document could not be parsed.", SourceEvidenceRedaction.SafePath(file.Path))); }
         }
 
@@ -250,6 +255,164 @@ internal sealed class ContractAnalyzer : ISourceEvidenceDomainAnalyzer
             Types = [new ContractTypeShape(SourceEvidenceRedaction.SafePath(name), root.Str("type") ?? "object",
                 (root["properties"]?.Entries ?? []).Select(p => new ContractField(SourceEvidenceRedaction.SafePath(p.Key), SourceEvidenceRedaction.SafePath(p.Value.Str("type") ?? "object"), required.Contains(p.Key))).ToList())],
         };
+    }
+
+    private static SourceContract? XmlSchema(EvidenceFile file, SourceEvidenceContext context)
+    {
+        var settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, MaxCharactersInDocument = 2_000_000 };
+        using (var schemaReader = XmlReader.Create(new StringReader(file.Content), settings))
+        {
+            System.Xml.Schema.XmlSchema? parsedSchema = null;
+            parsedSchema = System.Xml.Schema.XmlSchema.Read(schemaReader, (_, args) =>
+            {
+                if (args.Severity == XmlSeverityType.Error) throw args.Exception ?? new XmlSchemaException("Invalid XML Schema structure.");
+            });
+            if (parsedSchema is null) throw new XmlSchemaException("The document does not contain a readable XML Schema.");
+        }
+        using var reader = XmlReader.Create(new StringReader(file.Content), settings);
+        var document = XDocument.Load(reader, LoadOptions.SetLineInfo);
+        XNamespace xs = "http://www.w3.org/2001/XMLSchema";
+        var schema = document.Root;
+        if (schema?.Name != xs + "schema")
+            throw new XmlException("The document root is not an XML Schema.");
+
+        var targetNamespace = (string?)schema.Attribute("targetNamespace");
+        var elementFormDefault = (string?)schema.Attribute("elementFormDefault") ?? "unqualified";
+        var elements = new List<XmlSchemaElementEvidence>();
+        var attributes = new List<XmlSchemaAttributeEvidence>();
+        var types = new List<XmlSchemaTypeEvidence>();
+        string QName(XElement node, string raw)
+        {
+            var colon = raw.IndexOf(':');
+            var prefix = colon > 0 ? raw[..colon] : "";
+            var local = colon > 0 ? raw[(colon + 1)..] : raw;
+            var ns = prefix.Length > 0 ? node.GetNamespaceOfPrefix(prefix)?.NamespaceName : node.GetDefaultNamespace().NamespaceName;
+            if (string.IsNullOrEmpty(ns) && colon == 0) ns = targetNamespace;
+            return $"{{{ns ?? ""}}}{local}";
+        }
+        static List<XmlSchemaRestrictionEvidence> Restrictions(XElement? scope, XNamespace schemaNs)
+        {
+            if (scope is null) return [];
+            return scope.Descendants().Where(f => f.Parent?.Name == schemaNs + "restriction" && f.Name.Namespace == schemaNs && f.Attribute("value") is not null)
+                .Select(f => new XmlSchemaRestrictionEvidence(f.Name.LocalName, SafeSchemaValue(f.Name.LocalName, (string)f.Attribute("value")!) ?? "")).Take(100).ToList();
+        }
+        void WalkElements(XElement container, string path, string compositor, int depth)
+        {
+            if (depth > 12 || elements.Count >= 500) return;
+            foreach (var child in container.Elements())
+            {
+                if (child.Name.Namespace != xs) continue;
+                if (child.Name.LocalName is "sequence" or "choice" or "all")
+                {
+                    var nextCompositor = compositor == "sequence" ? child.Name.LocalName : $"{compositor}/{child.Name.LocalName}";
+                    WalkElements(child, path, nextCompositor, depth + 1);
+                    continue;
+                }
+                if (child.Name.LocalName is "complexContent" or "simpleContent" or "extension" or "restriction" or "group")
+                {
+                    WalkElements(child, path, compositor, depth + 1);
+                    continue;
+                }
+                if (child.Name.LocalName != "element") continue;
+                var name = (string?)child.Attribute("name");
+                var reference = (string?)child.Attribute("ref");
+                var local = name ?? reference?.Split(':').LastOrDefault();
+                if (string.IsNullOrWhiteSpace(local)) continue;
+                var global = child.Parent == schema;
+                var isQualified = global || string.Equals((string?)child.Attribute("form") ?? elementFormDefault, "qualified", StringComparison.Ordinal);
+                var ns = reference is not null ? QName(child, reference)[1..QName(child, reference).IndexOf('}')] : isQualified ? targetNamespace ?? "" : "";
+                var qualifiedName = reference is not null ? QName(child, reference) : $"{{{ns}}}{local}";
+                var fieldPath = string.IsNullOrEmpty(path) ? local : $"{path}/{local}";
+                var typeName = (string?)child.Attribute("type");
+                var inlineSimple = child.Element(xs + "simpleType");
+                var inlineComplex = child.Element(xs + "complexType");
+                var restrictions = Restrictions(inlineSimple, xs);
+                if (typeName is not null)
+                {
+                    var typeLocal = typeName.Split(':').Last();
+                    var declaredSimple = schema.Elements(xs + "simpleType").FirstOrDefault(t => (string?)t.Attribute("name") == typeLocal);
+                    restrictions = Restrictions(declaredSimple, xs);
+                }
+                var minOccurs = decimal.TryParse((string?)child.Attribute("minOccurs"), System.Globalization.NumberStyles.Number,
+                    System.Globalization.CultureInfo.InvariantCulture, out var min) ? min : 1m;
+                var docs = child.Element(xs + "annotation")?.Elements(xs + "documentation").Select(x => x.Value.Trim()).FirstOrDefault(x => x.Length > 0);
+                elements.Add(new(fieldPath, qualifiedName, typeName is not null ? QName(child, typeName) : inlineSimple is not null ? "#inline-simple" : inlineComplex is not null ? "#inline-complex" : null,
+                    minOccurs, (string?)child.Attribute("maxOccurs") ?? "1", string.Equals((string?)child.Attribute("nillable"), "true", StringComparison.OrdinalIgnoreCase),
+                    SafeSchemaValue("default", (string?)child.Attribute("default")), SafeSchemaValue("fixed", (string?)child.Attribute("fixed")),
+                    docs is null ? null : SourceEvidenceRedaction.SafePath(docs), restrictions, compositor));
+                if (inlineComplex is not null) WalkElements(inlineComplex, fieldPath, compositor, depth + 1);
+            }
+        }
+
+        WalkElements(schema, "", "sequence", 0);
+        foreach (var attribute in schema.Descendants(xs + "attribute").Take(500))
+        {
+            var name = (string?)attribute.Attribute("name");
+            var reference = (string?)attribute.Attribute("ref");
+            var local = name ?? reference?.Split(':').LastOrDefault();
+            if (string.IsNullOrWhiteSpace(local)) continue;
+            var parentName = attribute.Ancestors().FirstOrDefault(a => (a.Name == xs + "element" || a.Name == xs + "complexType") && a.Attribute("name") is not null)?.Attribute("name")?.Value;
+            var path = string.IsNullOrWhiteSpace(parentName) ? local : $"{parentName}/@{local}";
+            var attributeNamespace = string.Equals((string?)attribute.Attribute("form") ?? (string?)schema.Attribute("attributeFormDefault"), "qualified", StringComparison.Ordinal) ? targetNamespace ?? "" : "";
+            var qualifiedName = reference is not null ? QName(attribute, reference) : $"{{{attributeNamespace}}}{local}";
+            var declaredType = (string?)attribute.Attribute("type");
+            var inline = attribute.Element(xs + "simpleType");
+            attributes.Add(new(path, qualifiedName, declaredType is null ? inline is null ? null : "#inline-simple" : QName(attribute, declaredType),
+                (string?)attribute.Attribute("use") ?? "optional", SafeSchemaValue("default", (string?)attribute.Attribute("default")),
+                SafeSchemaValue("fixed", (string?)attribute.Attribute("fixed")), Restrictions(inline, xs)));
+        }
+        foreach (var type in schema.Elements().Where(x => x.Name == xs + "complexType" || x.Name == xs + "simpleType").Take(MaxTypes))
+        {
+            var name = (string?)type.Attribute("name");
+            if (string.IsNullOrWhiteSpace(name)) continue;
+            var restriction = type.Descendants(xs + "restriction").FirstOrDefault();
+            var extension = type.Descendants(xs + "extension").FirstOrDefault();
+            var baseName = (string?)restriction?.Attribute("base") ?? (string?)extension?.Attribute("base");
+            types.Add(new($"{{{targetNamespace ?? ""}}}{name}", type.Name.LocalName,
+                baseName is null ? null : QName(restriction ?? extension!, baseName), Restrictions(restriction is not null ? new XElement(restriction) : extension is not null ? new XElement(extension) : type, xs)));
+            if (type.Name == xs + "complexType") WalkElements(type, name, "sequence", 0);
+        }
+
+        var dependencies = schema.Elements().Where(x => x.Name == xs + "import" || x.Name == xs + "include" || x.Name == xs + "redefine")
+            .Select(x => new XmlSchemaDependencyEvidence(x.Name.LocalName, (string?)x.Attribute("namespace"), (string?)x.Attribute("schemaLocation"),
+                SchemaLocationExists(file.Path, (string?)x.Attribute("schemaLocation"), context.Files.Select(f => f.Path))))
+            .ToList();
+        var limitations = new List<string>
+        {
+            "XSD evidence is structural only; this does not validate XML instances or business rules.",
+            "Referenced types/groups are not expanded and schemas are not compiled; an import/include is resolved only as a file-presence check within this snapshot.",
+        };
+        if (dependencies.Any(d => !d.ResolvedInSnapshot)) limitations.Add("One or more XSD imports/includes/redefines are unavailable in this source snapshot.");
+        var version = (string?)schema.Attribute("version");
+        return Base(file, SourceContractType.XmlSchema, "xml") with
+        {
+            Id = $"xsd:{SourceEvidenceRedaction.SafePath(file.Path)}", Name = SourceEvidenceRedaction.SafePath(System.IO.Path.GetFileNameWithoutExtension(file.Path)),
+            Version = version is null ? null : SourceEvidenceRedaction.SafePath(version), ParseSupport = DomainSupport.Partial, XmlSchema = new(targetNamespace,
+                version, version is null ? "No explicit xs:schema version attribute; use target namespace and source path as evidence, not a guessed version." : "Explicit xs:schema version attribute.",
+                elements.Take(500).ToList(), attributes, types, dependencies), Limitations = limitations,
+        };
+    }
+
+    private static string? SafeSchemaValue(string facet, string? value)
+    {
+        if (value is null) return null;
+        var redacted = LocalHttpsProxy.SensitiveDataRedactor.RedactText(value);
+        redacted = Regex.Replace(redacted, @"(?<!\d)\d{11}(?!\d)", "[redacted identifier]");
+        return SourceEvidenceRedaction.SafePath(redacted);
+    }
+
+    private static bool SchemaLocationExists(string schemaPath, string? location, IEnumerable<string> availablePaths)
+    {
+        if (string.IsNullOrWhiteSpace(location) || Uri.TryCreate(location, UriKind.Absolute, out _)) return false;
+        var path = schemaPath.Contains('/') ? schemaPath[..schemaPath.LastIndexOf('/')].Split('/').ToList() : [];
+        foreach (var segment in location.Replace('\\', '/').Split('/'))
+        {
+            if (segment is "" or ".") continue;
+            if (segment == "..") { if (path.Count == 0) return false; path.RemoveAt(path.Count - 1); }
+            else path.Add(segment);
+        }
+        var resolved = string.Join('/', path);
+        return availablePaths.Contains(resolved, StringComparer.OrdinalIgnoreCase);
     }
 
     // ── GraphQL ─────────────────────────────────────────────────────────────────────────────────────────────────────────
