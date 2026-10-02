@@ -669,7 +669,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
     }
 
     [Fact]
-    public void RunQualityReview_WithIncompleteProjectTask_AwaitsCompletion()
+    public async Task RunQualityReview_WithIncompleteProjectTask_AwaitsCompletion()
     {
         // Demonstrates that GetAvailableProjectsAsync is awaited (not blocking)
         SeedProjectA();
@@ -677,32 +677,20 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         var cut = Render<QualityReview>();
 
         // Make projects async return incomplete
-        var tcs = _resolver.MakeGetAvailableProjectsIncomplete();
-        var runStarted = false;
+        _resolver.MakeGetAvailableProjectsIncomplete();
+        cut.WaitForAssertion(() => cut.Find("button.btn-primary").HasAttribute("disabled").Should().BeFalse());
+        var callsBeforeRun = _resolver.GetAvailableProjectsCallCount;
+        var runTask = cut.Find("button.btn-primary").TriggerEventAsync("onclick", new MouseEventArgs());
 
-        // Run in background to avoid deadlock if .Result was used
-        var runTask = Task.Run(() =>
-        {
-            try
-            {
-                ClickRun(cut);
-                runStarted = true;
-            }
-            catch { }
-        });
-
-        // Give handler time to execute
-        Task.Delay(100).Wait();
-
-        // If old .Result code was used, handler would hang here
-        // With async/await, the handler should have started
-        runTask.IsCompleted.Should().BeTrue("handler should not block on incomplete Task");
-        runStarted.Should().BeTrue("click should have executed");
+        // Triggering the event reaches the incomplete dependency without blocking the
+        // test thread; the event task remains pending until the dependency completes.
+        _resolver.GetAvailableProjectsCallCount.Should().BeGreaterThan(callsBeforeRun);
+        runTask.IsCompleted.Should().BeFalse("the review handler must await project metadata");
 
         // Complete the task
         _resolver.CompleteGetAvailableProjects();
 
-        // Run should complete
+        await runTask;
         cut.WaitForAssertion(() =>
         {
             _qualityReview.Calls.Count.Should().BeGreaterThan(0);
@@ -1004,6 +992,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
         private string? _selectedProject;
         private TaskCompletionSource<IReadOnlyList<SampleProjectDto>>? _projectsTcs;
 
+        public int GetAvailableProjectsCallCount { get; private set; }
         public int ResolveCallCount { get; private set; }
 
         public void SetProjectDocument(string projectSlug, string projectName, ExplorerDocumentType documentType, string content)
@@ -1045,6 +1034,7 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
 
         public Task<IReadOnlyList<SampleProjectDto>> GetAvailableProjectsAsync(CancellationToken cancellationToken = default)
         {
+            GetAvailableProjectsCallCount++;
             if (_projectsTcs != null)
                 return _projectsTcs.Task;
             return Task.FromResult<IReadOnlyList<SampleProjectDto>>(_projects.Values.ToList());

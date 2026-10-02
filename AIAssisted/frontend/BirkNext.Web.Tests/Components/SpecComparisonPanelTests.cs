@@ -265,16 +265,19 @@ public class SpecComparisonPanelTests : BunitContext
     }
 
     [Fact]
-    public async Task DeltaCard_Markup_DoesNotContainConcatenatedBadgeText()
+    public async Task DeltaCard_StatusAndKindBadgesExposeSeparateMeaningfulState()
     {
         SetupModifiedRequirement();
         var cut = await RenderWithResultAsync();
 
-        // None of the "concatenated" patterns that appear when CSS isolation fails
-        cut.Markup.Should().NotContain("ModifiedREQUIREMENT");
-        cut.Markup.Should().NotContain("AddedREQUIREMENT");
-        cut.Markup.Should().NotContain("RemovedREQUIREMENT");
-        cut.Markup.Should().NotContain("MODIFIEDREQUIREMENT");
+        var card = cut.Find("[data-testid='delta-card']");
+        var status = card.QuerySelector("[data-testid='delta-status-badge']")!;
+        var kind = card.QuerySelector("[data-testid='delta-kind-badge']")!;
+
+        status.ClassList.Should().Contain("delta-badge-modified");
+        status.TextContent.Should().Contain("Modified");
+        kind.TextContent.Should().Be("Requirement");
+        status.Should().NotBeSameAs(kind);
     }
 
     [Fact]
