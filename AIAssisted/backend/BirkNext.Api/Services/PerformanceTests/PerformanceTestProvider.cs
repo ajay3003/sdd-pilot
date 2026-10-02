@@ -18,8 +18,8 @@ public sealed record PerformanceTestOptions
     public long MaxTotalRequests { get; init; } = 200_000;
     public bool AllowStressTest { get; init; } = true;
     public bool AllowSoakTest { get; init; } = true;
-    /// <summary>Path to the k6 executable; null = look up "k6" on PATH.</summary>
-    public string? K6ExecutablePath { get; init; }
+    /// <summary>Container execution of providers (Podman). k6 is never part of the BirkNext images or repository.</summary>
+    public PerformanceContainerOptions Container { get; init; } = new();
     /// <summary>Extra time beyond the workload before the provider process is killed.</summary>
     public int ProviderTimeoutGraceSeconds { get; init; } = 120;
     public int MaxProviderOutputBytes { get; init; } = 64 * 1024;
@@ -41,7 +41,7 @@ public sealed record PerformanceTestOptions
             MaxTotalRequests = Math.Clamp(s.GetValue("MaxTotalRequests", d.MaxTotalRequests), 10, 10_000_000),
             AllowStressTest = s.GetValue("AllowStressTest", d.AllowStressTest),
             AllowSoakTest = s.GetValue("AllowSoakTest", d.AllowSoakTest),
-            K6ExecutablePath = s.GetValue<string?>("K6ExecutablePath"),
+            Container = PerformanceContainerOptions.From(s.GetSection("Container")),
             ProviderTimeoutGraceSeconds = Math.Clamp(s.GetValue("ProviderTimeoutGraceSeconds", d.ProviderTimeoutGraceSeconds), 10, 1800),
             MaxProviderOutputBytes = Math.Clamp(s.GetValue("MaxProviderOutputBytes", d.MaxProviderOutputBytes), 1024, 1024 * 1024),
             BlockedHosts = s.GetSection("BlockedHosts").GetChildren().Select(c => c.Value ?? "").Where(v => v.Length > 0).ToList(),
@@ -58,6 +58,47 @@ public sealed record PerformanceTestOptions
         AllowStressTest, AllowSoakTest);
 }
 
+/// <summary>
+/// <c>PerformanceTests:Container</c>: the pinned k6 image (never ":latest"), whether BirkNext may pull it on an explicit action (default no —
+/// as for the pinned ZAP image, nothing is downloaded at run time), networks, an optional CA bundle and allow-listed proxy settings.
+/// The host environment is never passed through.
+/// </summary>
+public sealed record PerformanceContainerOptions
+{
+    public const string DefaultImage = "docker.io/grafana/k6:1.0.0";
+    public string? CliPath { get; init; }
+    public string Image { get; init; } = DefaultImage;
+    public bool AllowImagePull { get; init; }
+    /// <summary>Network for external targets; null = Podman's default bridge (ordinary outbound access).</summary>
+    public string? Network { get; init; }
+    /// <summary>Target host → network, for targets that are containers on a BirkNext Podman network (reached by container DNS name).</summary>
+    public IReadOnlyDictionary<string, string> TargetNetworks { get; init; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    public int MemoryMegabytes { get; init; } = 1024;
+    public double Cpus { get; init; } = 2;
+    /// <summary>PEM bundle (corporate + public roots) mounted read-only and used via SSL_CERT_FILE. TLS verification is never disabled.</summary>
+    public string? CaBundlePath { get; init; }
+    public string? HttpProxy { get; init; }
+    public string? HttpsProxy { get; init; }
+    public string? NoProxy { get; init; }
+    /// <summary>How long a successful container-network check stays valid for readiness.</summary>
+    public int NetworkCheckValidMinutes { get; init; } = 15;
+
+    public static PerformanceContainerOptions From(IConfigurationSection s)
+    {
+        var d = new PerformanceContainerOptions();
+        return new PerformanceContainerOptions
+        {
+            CliPath = s.GetValue<string?>("CliPath"), Image = s.GetValue<string?>("Image") is { Length: > 0 } image ? image : d.Image,
+            AllowImagePull = s.GetValue("AllowImagePull", false), Network = s.GetValue<string?>("Network"),
+            TargetNetworks = s.GetSection("TargetNetworks").GetChildren().Where(c => !string.IsNullOrWhiteSpace(c.Value))
+                .ToDictionary(c => c.Key, c => c.Value!, StringComparer.OrdinalIgnoreCase),
+            MemoryMegabytes = Math.Clamp(s.GetValue("MemoryMegabytes", d.MemoryMegabytes), 128, 8192), Cpus = Math.Clamp(s.GetValue("Cpus", d.Cpus), 0.25, 16),
+            CaBundlePath = s.GetValue<string?>("CaBundlePath"), HttpProxy = s.GetValue<string?>("HttpProxy"), HttpsProxy = s.GetValue<string?>("HttpsProxy"),
+            NoProxy = s.GetValue<string?>("NoProxy"), NetworkCheckValidMinutes = Math.Clamp(s.GetValue("NetworkCheckValidMinutes", d.NetworkCheckValidMinutes), 1, 1440),
+        };
+    }
+}
+
 /// <summary>Everything a provider needs for one run. Values are validated; nothing here is a credential.</summary>
 public sealed record PerformanceProviderInput(Guid RunId, PerformanceTestDefinition Definition, PerformanceTestDataProfile? TestData, string WorkingDirectory, TimeSpan Timeout);
 
@@ -69,6 +110,10 @@ public sealed record PerformanceProviderResult
     public bool MetricsPartial { get; init; }
     public string MetricsSource { get; init; } = "";
     public string? ProviderVersion { get; init; }
+    public string? RuntimeId { get; init; }
+    public string? RuntimeVersion { get; init; }
+    public string? ContainerImage { get; init; }
+    public string? ImageDigest { get; init; }
     public string? Diagnostics { get; init; }
     public List<string> Limitations { get; init; } = [];
 }
@@ -88,6 +133,12 @@ public interface IPerformanceTestProvider
     IReadOnlyList<string> Validate(PerformanceTestDefinition definition);
     /// <summary>Runs the workload; honours <paramref name="ct"/> as cancellation (the process is terminated) and the input timeout.</summary>
     Task<PerformanceProviderResult> ExecuteAsync(PerformanceProviderInput input, IProgress<string>? progress, CancellationToken ct);
+    /// <summary>One request from the provider's own execution environment (container network, not the BirkNext host) to the target origin.</summary>
+    Task<PerformanceReachability> CheckReachabilityAsync(PerformanceTestDefinition definition, CancellationToken ct = default);
+    /// <summary>Pulls the provider image when policy allows it (explicit action only). Null error = done.</summary>
+    Task<string?> PrepareAsync(CancellationToken ct = default);
+    /// <summary>Removes provider-managed execution resources left behind (e.g. containers of runs that are no longer active). Returns what was removed.</summary>
+    Task<IReadOnlyList<string>> CleanupOrphansAsync(IReadOnlySet<Guid> activeRunIds, CancellationToken ct = default);
 }
 
 // ── Process abstraction (no shell, bounded output, process-tree kill) ─────────────────────────────────────────────────

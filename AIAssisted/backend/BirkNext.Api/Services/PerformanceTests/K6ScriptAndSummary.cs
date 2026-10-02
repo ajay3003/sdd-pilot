@@ -9,104 +9,6 @@ using BirkNext.PerformanceTests;
 namespace BirkNext.Api.Services.PerformanceTests;
 
 /// <summary>
-/// The first performance-test provider: invokes a local/configured k6 executable (not embedded, not forked) with a script BirkNext generates
-/// from a validated definition. k6 concepts (VUs as executors, stages, metric keys, JavaScript) exist only inside this provider. Results are
-/// read from k6's structured end-of-test summary (<c>handleSummary</c> JSON), never from console text.
-/// </summary>
-public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions options, IProcessRunner runner, ILogger<K6PerformanceTestProvider> logger) : IPerformanceTestProvider
-{
-    /// <summary>handleSummary, k6/execution and ramping-arrival-rate are all available from this version.</summary>
-    public static readonly Version MinimumVersion = new(0, 45, 0);
-
-    public string ProviderId => PerformanceProviderIds.K6;
-    public string DisplayName => "k6";
-
-    public PerformanceProviderCapabilities Capabilities { get; } = new()
-    {
-        Http = true, GraphQl = true, Purposes = [.. Enum.GetValues<WorkloadPurpose>()], Modes = [WorkloadMode.VirtualUsers, WorkloadMode.ArrivalRate],
-        Cancellation = true, Metrics = [.. Enum.GetValues<PerformanceMetric>()], RequiresExternalExecutable = true,
-    };
-
-    private string Executable => string.IsNullOrWhiteSpace(options.K6ExecutablePath) ? "k6" : options.K6ExecutablePath!;
-
-    public async Task<PerformanceProviderStatus> StatusAsync(CancellationToken ct = default)
-    {
-        var status = new PerformanceProviderStatus { ProviderId = ProviderId, DisplayName = DisplayName, Capabilities = Capabilities };
-        if (!string.IsNullOrWhiteSpace(options.K6ExecutablePath) && !File.Exists(options.K6ExecutablePath))
-            return status with { Availability = ProviderAvailability.Misconfigured, Detail = "The configured k6 executable path (PerformanceTests:K6ExecutablePath) does not exist." };
-        var outcome = await runner.RunAsync(new ProcessSpec(Executable, ["version"], Path.GetTempPath()), TimeSpan.FromSeconds(15), 4096, ct);
-        if (outcome.StartError is not null || outcome.ExitCode != 0)
-            return status with { Availability = ProviderAvailability.Unavailable, Detail = "k6 is not installed or configured on this BirkNext host. Install k6 or set PerformanceTests:K6ExecutablePath." };
-        var match = VersionPattern().Match(outcome.StandardOutput + outcome.StandardError);
-        if (!match.Success || !Version.TryParse(match.Groups[1].Value, out var version))
-            return status with { Availability = ProviderAvailability.Misconfigured, Detail = "k6 started but did not report a recognisable version." };
-        if (version < MinimumVersion)
-            return status with { Availability = ProviderAvailability.VersionUnsupported, Version = version.ToString(), Detail = $"k6 {version} is older than the supported minimum {MinimumVersion}." };
-        return status with { Availability = ProviderAvailability.Available, Version = version.ToString(), Detail = $"k6 {version} is available." };
-    }
-
-    public IReadOnlyList<string> Validate(PerformanceTestDefinition definition) =>
-        Capabilities.Modes.Contains(definition.Workload.Mode) ? [] : [$"k6 does not support the {definition.Workload.Mode} workload mode."];
-
-    public async Task<PerformanceProviderResult> ExecuteAsync(PerformanceProviderInput input, IProgress<string>? progress, CancellationToken ct)
-    {
-        var status = await StatusAsync(ct);
-        if (status.Availability != ProviderAvailability.Available)
-            return new PerformanceProviderResult { State = PerformanceRunState.ExecutionFailed, Reason = status.Detail, MetricsSource = "k6 (not run)" };
-        Directory.CreateDirectory(input.WorkingDirectory);
-        var scriptPath = Path.Combine(input.WorkingDirectory, "birknext-test.js");
-        var summaryPath = Path.Combine(input.WorkingDirectory, "birknext-summary.json");
-        try
-        {
-            await File.WriteAllTextAsync(scriptPath, K6ScriptGenerator.Generate(input.Definition, input.TestData, summaryPath), new UTF8Encoding(false), ct);
-            progress?.Report("Running");
-            var outcome = await runner.RunAsync(new ProcessSpec(Executable, ["run", "--no-color", "--quiet", "--no-usage-report", scriptPath], input.WorkingDirectory,
-                new Dictionary<string, string> { ["K6_NO_USAGE_REPORT"] = "true" }), input.Timeout, options.MaxProviderOutputBytes, ct);
-            var diagnostics = Redact(outcome.StandardError.Length > 0 ? outcome.StandardError : outcome.StandardOutput, options.MaxProviderOutputBytes);
-            var source = $"k6 {status.Version} end-of-test summary (handleSummary JSON)";
-            if (outcome.Cancelled)
-                return new PerformanceProviderResult { State = PerformanceRunState.Cancelled, Reason = "Cancelled; the k6 process was terminated.", ProviderVersion = status.Version, MetricsSource = source,
-                    Diagnostics = diagnostics, Limitations = ["A cancelled run has no end-of-test summary: no metrics are reported and nothing is assessed."] };
-            if (outcome.TimedOut)
-                return new PerformanceProviderResult { State = PerformanceRunState.TimedOut, Reason = $"The provider exceeded its {input.Timeout.TotalSeconds:0} s timeout; the k6 process was terminated.",
-                    ProviderVersion = status.Version, MetricsSource = source, Diagnostics = diagnostics };
-            if (outcome.StartError is not null)
-                return new PerformanceProviderResult { State = PerformanceRunState.ExecutionFailed, Reason = outcome.StartError, ProviderVersion = status.Version, MetricsSource = source };
-            // 0 = finished; 99 = a k6 threshold crossed (BirkNext only declares always-true thresholds to expose per-step metrics). Others = errors.
-            if (outcome.ExitCode is not (0 or 99))
-                return new PerformanceProviderResult { State = PerformanceRunState.ExecutionFailed, Reason = $"k6 exited with code {outcome.ExitCode}.", ProviderVersion = status.Version,
-                    MetricsSource = source, Diagnostics = diagnostics };
-            if (!File.Exists(summaryPath))
-                return new PerformanceProviderResult { State = PerformanceRunState.ExecutionFailed, Reason = "k6 finished without writing its structured summary.", ProviderVersion = status.Version,
-                    MetricsSource = source, Diagnostics = diagnostics };
-            var (metrics, error) = K6SummaryParser.Parse(await File.ReadAllTextAsync(summaryPath, ct), input.Definition.Scenario.Steps.Select(s => s.Name).ToList());
-            if (metrics is null)
-                return new PerformanceProviderResult { State = PerformanceRunState.ExecutionFailed, Reason = error, ProviderVersion = status.Version, MetricsSource = source, Diagnostics = diagnostics };
-            var limitations = new List<string>();
-            if (metrics.DroppedIterations is > 0)
-                limitations.Add($"The load generator dropped {metrics.DroppedIterations} iteration(s): it lacked capacity to sustain the configured rate. Measured throughput may reflect the generator, not the target.");
-            return new PerformanceProviderResult { State = PerformanceRunState.Completed, Metrics = metrics, ProviderVersion = status.Version, MetricsSource = source, Diagnostics = diagnostics, Limitations = limitations };
-        }
-        finally
-        {
-            // The generated script and summary are temporary artifacts: removed after completion, cancellation, timeout or failure.
-            try { if (Directory.Exists(input.WorkingDirectory)) Directory.Delete(input.WorkingDirectory, recursive: true); }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { logger.LogWarning("Performance test temp directory could not be removed: {Type}", ex.GetType().Name); }
-        }
-    }
-
-    internal static string Redact(string text, int max)
-    {
-        var safe = LocalHttpsProxy.SensitiveDataRedactor.RedactText(text);
-        safe = BearerPattern().Replace(safe, "Bearer [redacted]");
-        return safe.Length > max ? safe[..max] + "[truncated]" : safe;
-    }
-
-    [GeneratedRegex(@"v?(\d+\.\d+\.\d+)")] private static partial Regex VersionPattern();
-    [GeneratedRegex(@"(?i)bearer\s+[A-Za-z0-9\-_.~+/]+=*")] private static partial Regex BearerPattern();
-}
-
-/// <summary>
 /// Deterministic k6 script from a validated definition. Every user-supplied value (origin, paths, headers, bodies, test data, step names) enters
 /// the script only as a JSON literal produced by System.Text.Json (which escapes quotes, backslashes, &lt;, &gt;, &amp;, U+2028/2029), so it cannot
 /// escape a string or inject code. The same definition always yields the same script text.
@@ -171,6 +73,16 @@ public static class K6ScriptGenerator
             """);
         return sb.ToString();
     }
+
+    /// <summary>One GET of the origin (1 VU, 1 iteration, 15 s timeout) recording the HTTP status and k6 error code — the container-network check.</summary>
+    public static string Probe(string origin, string resultPath) =>
+        "// Generated by BirkNext: container-network reachability check (one request). Do not edit.\n"
+        + "import http from 'k6/http';\nimport { Trend } from 'k6/metrics';\n"
+        + "const ORIGIN = " + Lit(origin.TrimEnd('/')) + ";\nconst OUT = " + Lit(resultPath) + ";\n"
+        + "const status = new Trend('birknext_probe_status');\nconst code = new Trend('birknext_probe_error');\n"
+        + "export const options = { vus: 1, iterations: 1, summaryTrendStats: ['max'] };\n"
+        + "export default function () { const r = http.get(ORIGIN + '/', { timeout: '15s' }); status.add(r.status); code.add(r.error_code || 0); }\n"
+        + "export function handleSummary(data) { const o = {}; o[OUT] = JSON.stringify({ birknext: 1, metrics: data.metrics }); return o; }\n";
 
     private static string Lit(string value) => JsonSerializer.Serialize(value, Json);
 
@@ -258,6 +170,17 @@ public static class K6SummaryParser
             Steps = steps,
             DroppedIterations = Long(Values(metrics, "dropped_iterations"), "count"),
         }, null);
+    }
+
+    /// <summary>The probe's HTTP status (0 = no response) and k6 error code, or nulls when the result is unreadable.</summary>
+    public static (int? Status, int? ErrorCode) Probe(string json)
+    {
+        try
+        {
+            if (JsonNode.Parse(json)?["metrics"] is not JsonObject metrics) return (null, null);
+            return ((int?)Double(Values(metrics, "birknext_probe_status"), "max"), (int?)Double(Values(metrics, "birknext_probe_error"), "max"));
+        }
+        catch (JsonException) { return (null, null); }
     }
 
     private static JsonObject? Values(JsonObject metrics, string key) => metrics[key]?["values"] as JsonObject;

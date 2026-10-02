@@ -43,7 +43,18 @@ public static class PerformanceTestPresentation
         PerformanceReadinessState.ProviderUnavailable => "Provider unavailable",
         PerformanceReadinessState.UnsafeEnvironment => "Blocked — unsafe environment",
         PerformanceReadinessState.InvalidScenario => "Invalid scenario",
+        PerformanceReadinessState.RuntimeUnavailable => "Runtime unavailable",
+        PerformanceReadinessState.ImageMissing => "Image missing",
+        PerformanceReadinessState.NetworkUnavailable => "Network unavailable",
         _ => s.ToString(),
+    };
+
+    public static string Label(ProviderAvailability a) => a switch
+    {
+        ProviderAvailability.RuntimeUnavailable => "Runtime unavailable",
+        ProviderAvailability.ImageMissing => "Image missing",
+        ProviderAvailability.VersionUnsupported => "Version unsupported",
+        _ => a.ToString(),
     };
 
     public static string Label(PerformanceRunState s) => s switch
@@ -159,7 +170,7 @@ public static class PerformanceTestPresentation
         sb.Append("<h2>Limitations</h2><ul>");
         foreach (var l in r.Limitations.Prepend(r.StateReason ?? "").Where(l => l.Length > 0)) sb.Append($"<li>{E(l)}</li>");
         sb.Append("</ul>");
-        sb.Append($"<h2>Provenance</h2><p>Provider {E(r.ProviderId)} {E(r.ProviderVersion)} · definition v{r.DefinitionVersion} ({E(r.DefinitionFingerprint)}) · window {E(Utc(r.StartedAt))} – {E(Utc(r.FinishedAt))} · metrics {E(r.MetricsSource)} · observability {E(r.Observability)}</p>");
+        sb.Append($"<h2>Provenance</h2><p>Runtime {E(r.RuntimeId)} {E(r.RuntimeVersion)} · image {E(r.ContainerImage)} {E(r.ImageDigest)} · provider {E(r.ProviderId)} {E(r.ProviderVersion)} · definition v{r.DefinitionVersion} ({E(r.DefinitionFingerprint)}) · window {E(Utc(r.StartedAt))} – {E(Utc(r.FinishedAt))} · metrics {E(r.MetricsSource)} · observability {E(r.Observability)}</p>");
         sb.Append("</body></html>");
         return sb.ToString();
     }

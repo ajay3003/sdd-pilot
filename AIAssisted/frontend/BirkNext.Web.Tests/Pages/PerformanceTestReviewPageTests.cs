@@ -25,6 +25,13 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         public PerformanceApiResult<PerformanceTestRun>? StartResult { get; set; }
         public PerformanceApiResult<PerformanceTestDefinition>? SaveResult { get; set; }
         public List<string> Calls { get; } = [];
+        public PerformanceReachability Reachability { get; set; } = new() { State = "Reachable", Reachable = true, Detail = "The k6 container reached https://paymenthub-qa.example.test (HTTP 200).", CheckedAt = DateTimeOffset.UtcNow };
+        public Task<PerformanceApiResult<PerformanceReachability>> NetworkCheckAsync(string environmentId, string definitionId, CancellationToken ct = default)
+        { Calls.Add("network-check"); return Task.FromResult(PerformanceApiResult<PerformanceReachability>.Ok(Reachability)); }
+        public List<PerformanceProviderStatus> ProviderList { get; set; } = [];
+        public Task<List<PerformanceProviderStatus>> ProvidersAsync(CancellationToken ct = default) => Task.FromResult(ProviderList);
+        public Task<PerformanceApiResult<PerformanceProviderStatus>> PrepareProviderAsync(string providerId, CancellationToken ct = default)
+        { Calls.Add("prepare"); return Task.FromResult(PerformanceApiResult<PerformanceProviderStatus>.Ok(ProviderList[0] with { Availability = ProviderAvailability.Available, ImagePresent = true })); }
 
         public Task<PerformanceTestOverview?> OverviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(Overview);
         public Task<PerformanceApiResult<PerformanceTestDefinition>> SaveDefinitionAsync(string environmentId, PerformanceTestDefinition definition, bool create, CancellationToken ct = default)
@@ -78,6 +85,9 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         ProviderId = PerformanceProviderIds.K6, DisplayName = "k6", Availability = availability, Version = availability == ProviderAvailability.Available ? "0.52.0" : null,
         Detail = availability == ProviderAvailability.Available ? "k6 0.52.0 is available." : "k6 is not installed or configured on this BirkNext host.",
         Capabilities = new PerformanceProviderCapabilities { Http = true, GraphQl = true, Purposes = [.. Enum.GetValues<WorkloadPurpose>()], Modes = [WorkloadMode.VirtualUsers, WorkloadMode.ArrivalRate] },
+        Runtime = new PerformanceRuntimeStatus { RuntimeId = PerformanceProviderIds.PodmanRuntime, DisplayName = "Podman", Version = "5.4.2",
+            Availability = availability == ProviderAvailability.RuntimeUnavailable ? ProviderAvailability.Unavailable : ProviderAvailability.Available, Detail = "Podman 5.4.2 is available." },
+        Image = "docker.io/grafana/k6:1.0.0", ImagePresent = availability != ProviderAvailability.ImageMissing, ImageDigest = "sha256:72f3", AllowImagePull = true,
     };
 
     private static PerformanceTestReadiness ReadyState() => new()
@@ -300,5 +310,66 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.Find("[data-testid=pt-save-state]").TextContent.Should().Be("Not saved yet.");
         cut.Find("[data-testid=pt-save]").Click();
         _api.Calls.Should().Contain("create");
+    }
+
+    // ── Podman runtime / image / container network ───────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Hero_ShowsProviderRuntimeAndImage_SeparatelyAsToolStates()
+    {
+        Register(availability: ProviderAvailability.RuntimeUnavailable);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-runtime]").TextContent.Should().Be("Podman: Unavailable (tool limitation)"));
+        cut.Find("[data-testid=pt-hero-provider]").TextContent.Should().Be("k6: Runtime unavailable (tool limitation)");
+        cut.Find("[data-testid=pt-hero-image]").TextContent.Should().Contain("docker.io/grafana/k6:1.0.0");
+    }
+
+    [Fact]
+    public void Readiness_ChecksTheContainerNetwork_OnExplicitAction()
+    {
+        Register(readiness: new PerformanceTestReadiness
+        {
+            Ready = false, Blockers = ["Not checked yet."],
+            Items = [new("network", "Container network", PerformanceReadinessState.NeedsConfiguration, "Not checked yet: check that the k6 container can reach the target (one request). Host reachability does not prove container reachability.", true)],
+        });
+        var cut = Page();
+        Tab(cut, "readiness");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-network-result]").TextContent.Should().Contain("not the BirkNext host"));
+        _api.Calls.Should().NotContain("network-check", "the check sends a request, so it runs only on explicit action");
+        _api.Readiness = ReadyState();
+        cut.Find("[data-testid=pt-network-check]").Click();
+        _api.Calls.Should().Contain("network-check");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-network-result]").TextContent.Should().Contain("Reachable: The k6 container reached"));
+        cut.Find("[data-testid=pt-readiness-summary]").TextContent.Should().Contain("Ready to run.");
+    }
+
+    [Fact]
+    public void Results_ShowContainerProvenance()
+    {
+        Register();
+        _api.Runs = [Run(PerformanceRunState.Completed) with { RuntimeId = PerformanceProviderIds.PodmanRuntime, RuntimeVersion = "5.4.2", ContainerImage = "docker.io/grafana/k6:1.0.0", ImageDigest = "sha256:72f3",
+            Reachability = new PerformanceReachability { ExecutionOrigin = "http://host.containers.internal:5095", Reachable = true } }];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-provenance-runtime]").TextContent.Should().Contain("container.podman 5.4.2").And.Contain("docker.io/grafana/k6:1.0.0 (sha256:72f3)")
+            .And.Contain("host.containers.internal:5095"));
+        Tab(cut, "history");
+        cut.Find("[data-testid=pt-history-row]").TextContent.Should().Contain("Podman 5.4.2");
+    }
+
+    [Fact]
+    public void SystemSettingsEngines_ShowRuntimeImage_AndOfferAPullOnlyWhenPolicyAllows()
+    {
+        Register(availability: ProviderAvailability.ImageMissing);
+        _api.ProviderList = [Provider(ProviderAvailability.ImageMissing) with { Detail = "The k6 image docker.io/grafana/k6:1.0.0 is not available locally." }];
+        var cut = Render<BirkNext.Web.Components.PerformanceTestEngineStatus>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pte-runtime]").TextContent.Should().Contain("Podman").And.Contain("available, 5.4.2"));
+        cut.Find("[data-testid=pte-image]").TextContent.Should().Contain("missing").And.Contain("allowed on request");
+        cut.Find("[data-testid=pte-pull]").Click();
+        _api.Calls.Should().Contain("prepare");
+        _api.ProviderList = [Provider(ProviderAvailability.ImageMissing) with { AllowImagePull = false }];
+        var noPull = Render<BirkNext.Web.Components.PerformanceTestEngineStatus>();
+        noPull.WaitForAssertion(() => noPull.Find("[data-testid=pte-image]").TextContent.Should().Contain("disabled"));
+        noPull.FindAll("[data-testid=pte-pull]").Should().BeEmpty();
     }
 }

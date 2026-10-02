@@ -1,0 +1,3 @@
+/* Image references and digests are long unbroken tokens: wrap them inside the card instead of widening the page. */
+.pte-root dd, .pte-root code { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
+.pte-root dl > div { min-width: 0; }
