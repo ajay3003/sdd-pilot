@@ -76,3 +76,12 @@
     .sd-facts > div { grid-template-columns: minmax(0, 1fr); gap: .1rem; }
     .sd-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* Shared "Declared in source" suggestion beside a configured field (compact; details on demand). */
+.sd-suggest { margin: .15rem 0 .5rem; padding: .35rem .6rem; border-left: 3px solid #94a3b8; background: #f8fafc; display: grid; gap: .2rem; min-width: 0; font-size: .84rem; }
+.sd-suggest p { margin: 0; }
+.sd-suggest-head { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .6rem; }
+.sd-suggest-list { margin: 0; padding-left: 1.1rem; display: grid; gap: .15rem; }
+.sd-suggest-list li { overflow-wrap: anywhere; }
+.sd-suggest-list .sd-context { display: inline; margin: 0 .4rem 0 .3rem; }
+.sd-suggest-provenance { overflow-wrap: anywhere; }

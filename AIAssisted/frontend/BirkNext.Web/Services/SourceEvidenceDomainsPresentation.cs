@@ -171,4 +171,9 @@ public static class SourceEvidenceDomainsPresentation
                 && (s.Repository is { } ra && current.Repository is { } rb ? ra.Key == rb.Key : s.Archive.FileName == current.Archive.FileName))
             .OrderByDescending(s => s.AnalyzedAt).Select(s => ($"{s.Archive.FileName} · {SourceAnalysisOverview.Utc(s.AnalyzedAt)}", s.EvidenceDomains!))
             .Cast<(string, SourceEvidenceDomainsSnapshot)?>().FirstOrDefault();
+
+    /// <summary>The configured form of a declared storage account: an Azure storage account becomes its Blob endpoint; other providers keep the name.</summary>
+    public static string StorageEndpoint(SourceResourceCandidate c) =>
+        c.ResourceType.StartsWith("azurerm_", StringComparison.Ordinal) || c.ResourceType.StartsWith("Microsoft.", StringComparison.Ordinal)
+            ? $"https://{c.Name}.blob.core.windows.net/" : c.Name;
 }

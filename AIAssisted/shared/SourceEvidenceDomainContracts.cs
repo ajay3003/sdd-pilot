@@ -104,7 +104,13 @@ public sealed record InfrastructureResource
     public ArchitectureEvidenceState EvidenceState { get; init; } = ArchitectureEvidenceState.Confirmed;
     /// <summary>Always "Declared in source; existence not verified": declaration is not deployment.</summary>
     public string RuntimeState { get; init; } = SourceDomainText.DeclaredNotVerified;
+    /// <summary>The declared name per environment when an environment file (tfvars/parameters) changes the variables the name is built from
+    /// (analyzer v2+). Empty when the name does not vary or cannot be resolved per environment.</summary>
+    public List<InfrastructureEnvironmentName> EnvironmentNames { get; init; } = [];
 }
+
+/// <summary>A resource's name in one environment, statically resolved from that environment's variable file. Basis names the file.</summary>
+public sealed record InfrastructureEnvironmentName(SourceEnvironmentLabel Environment, string Name, string Basis);
 
 /// <summary>A static relationship between declarations (depends_on, attribute reference, module wiring) — never runtime connectivity.</summary>
 public sealed record InfrastructureDependency(string FromId, string ToId, string Kind, ArchitectureEvidenceState State, string File, int Line);

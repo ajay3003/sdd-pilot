@@ -152,35 +152,15 @@ internal static class SourceFileClassifier
         return (SourceFileRole.Unknown, "yaml");
     }
 
-    public static SourceEnvironmentLabel Environment(string raw)
-    {
-        var r = raw.Trim();
-        var key = r.ToLowerInvariant();
-        var kind = key switch
-        {
-            "" or "default" or "base" or "common" => SourceEnvironmentKind.Default,
-            "dev" or "development" or "develop" => SourceEnvironmentKind.Development,
-            "local" or "localhost" or "docker" => SourceEnvironmentKind.Local,
-            "test" or "tst" or "testing" or "systest" or "sit" => SourceEnvironmentKind.Test,
-            "qa" or "uat" or "acceptance" => SourceEnvironmentKind.QA,
-            "stage" or "staging" or "stg" or "preprod" or "pre-prod" or "preproduction" => SourceEnvironmentKind.Staging,
-            "prod" or "production" or "prd" or "live" => SourceEnvironmentKind.Production,
-            _ => SourceEnvironmentKind.Custom,
-        };
-        return kind == SourceEnvironmentKind.Default ? SourceEnvironmentLabel.Default : new(kind, r);
-    }
+    /// <summary>The shared environment normalization (<see cref="SourceEnvironments"/>) — one implementation for analyzers and consumers.</summary>
+    public static SourceEnvironmentLabel Environment(string raw) => SourceEnvironments.Normalize(raw);
 
     /// <summary>An environment named by a file-name suffix ("appsettings.QA.json", "orders-prod.yml", "qa.tfvars") — a naming convention, not a deployment.</summary>
     public static SourceEnvironmentLabel? EnvironmentFromName(string fileName)
     {
         var stem = System.IO.Path.GetFileNameWithoutExtension(fileName);
         if (stem.EndsWith(".auto", StringComparison.OrdinalIgnoreCase)) stem = stem[..^5];
-        foreach (var token in Regex.Split(stem, @"[.\-_]").Reverse())
-        {
-            var env = Environment(token);
-            if (env.Kind is not (SourceEnvironmentKind.Default or SourceEnvironmentKind.Custom)) return env;
-        }
-        return null;
+        return SourceEnvironments.FromName(stem);
     }
 }
 

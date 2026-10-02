@@ -1,4 +1,6 @@
 @using BirkNext.Integrations
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Components.SourceDomains
 @* Event Hub runtime-evidence sources of one platform, in five sections. Identifiers only: no key, SAS token, connection string or token is
    accepted (IntegrationRuntimeEvidenceSettings.Validate is shared with the backend). Configured sources are not Azure execution. *@
 <div class="ehr-form" data-testid="ip-runtime-form">
@@ -16,17 +18,20 @@
             <div><dt>FQDN</dt><dd class="ip-mono">@(Platform.NamespaceFqdn ?? "Not configured")</dd></div>
             <div><dt>Location / tier</dt><dd>@(Platform.Region ?? "—") · @(_m.NamespaceSku ?? "tier not recorded")@(_m.NamespaceCapacity is { } pu ? $", {pu} PU" : "")</dd></div>
         </dl>
+        <SourceInfrastructureHint EnvironmentId="@Platform.EnvironmentId" Kind="InfrastructureResourceKind.EventHubNamespace" Field="Event Hubs namespace" Configured="@(Platform.Namespace ?? Platform.NamespaceFqdn)" TargetEnvironment="@Platform.EnvironmentId" TestId="ip-runtime-src-namespace" />
     </fieldset>
 
     <fieldset class="ehr-section" data-testid="ip-runtime-section-b">
         <legend>B · Event Hub and consumer evidence</legend>
         <label class="ip-check"><input type="checkbox" @bind="_m.EventHubMetadata" data-testid="ip-runtime-metadata" /> Read Event Hub metadata (existence, partitions, last enqueued position)</label>
         <label class="ip-field">Expected consumer group <input class="form-control ip-mono" @bind="_m.ExpectedConsumerGroup" placeholder="consumer-group-name" data-testid="ip-runtime-expected-group" aria-describedby="ehr-group-help" /></label>
+        <SourceInfrastructureHint EnvironmentId="@Platform.EnvironmentId" Kind="InfrastructureResourceKind.ConsumerGroup" Field="Expected consumer group" Configured="@_m.ExpectedConsumerGroup" TargetEnvironment="@Platform.EnvironmentId" OnUse="UseConsumerGroup" TestId="ip-runtime-src-group" />
         <label class="ip-field">How it is known
             <select class="form-control" @bind="_m.ExpectedConsumerGroupProvenance" data-testid="ip-runtime-expected-group-provenance">
                 <option value="@IntegrationValueProvenance.ConfiguredAssumption">@IntegrationRuntimeEvidenceSettings.ProvenanceLabel(IntegrationValueProvenance.ConfiguredAssumption)</option>
                 <option value="@IntegrationValueProvenance.ObservedInAzure">@IntegrationRuntimeEvidenceSettings.ProvenanceLabel(IntegrationValueProvenance.ObservedInAzure)</option>
                 <option value="@IntegrationValueProvenance.SourceConfigurationVerified">@IntegrationRuntimeEvidenceSettings.ProvenanceLabel(IntegrationValueProvenance.SourceConfigurationVerified)</option>
+                <option value="@IntegrationValueProvenance.DeclaredInSource">@IntegrationRuntimeEvidenceSettings.ProvenanceLabel(IntegrationValueProvenance.DeclaredInSource)</option>
             </select>
         </label>
         <p class="ehr-muted" id="ehr-group-help">Used for checkpoint lookups of topics without their own consumer group. It stays an expectation: the mapping remains "Needs confirmation" and no checkpoint or lag verdict is given for it. Leave empty to assume nothing.</p>
@@ -36,7 +41,9 @@
     <fieldset class="ehr-section" data-testid="ip-runtime-section-c">
         <legend>C · Checkpoint evidence</legend>
         <label class="ip-field">Checkpoint Blob endpoint <input class="form-control ip-mono" @bind="_m.CheckpointBlobEndpoint" placeholder="https://account.blob.core.windows.net/" data-testid="ip-runtime-blob-endpoint" /></label>
+        <SourceInfrastructureHint EnvironmentId="@Platform.EnvironmentId" Kind="InfrastructureResourceKind.StorageAccount" Field="Checkpoint Blob endpoint" Configured="@_m.CheckpointBlobEndpoint" TargetEnvironment="@Platform.EnvironmentId" OnUse="UseCheckpointAccount" TestId="ip-runtime-src-storage" />
         <label class="ip-field">Checkpoint container <input class="form-control ip-mono" @bind="_m.CheckpointContainerName" placeholder="checkpoints" data-testid="ip-runtime-container" /></label>
+        <SourceInfrastructureHint EnvironmentId="@Platform.EnvironmentId" Kind="InfrastructureResourceKind.BlobContainer" Field="Checkpoint container" Configured="@_m.CheckpointContainerName" TargetEnvironment="@Platform.EnvironmentId" OnUse="UseCheckpointContainer" TestId="ip-runtime-src-container" />
         <p class="ehr-muted" data-testid="ip-runtime-checkpoint-derived">Derived container: <span class="ip-mono">@(Derived() ?? "—")</span>@(_m.CheckpointSourceNote is { Length: > 0 } note ? $" · {IntegrationRuntimeEvidenceSettings.ProvenanceLabel(_m.CheckpointProvenance)} ({note.TrimEnd('.')})" : "")</p>
         <p class="ehr-muted">Read-only listing with Storage Blob Data Reader. Never a SAS URL, account key or connection string; no checkpoint is written, leased or deleted.</p>
     </fieldset>
@@ -44,6 +51,7 @@
     <fieldset class="ehr-section" data-testid="ip-runtime-section-d">
         <legend>D · Monitoring and telemetry</legend>
         <label class="ip-field">Application Insights resource <input class="form-control ip-mono" @bind="_m.ApplicationInsightsResourceName" data-testid="ip-runtime-appinsights" /></label>
+        <SourceInfrastructureHint EnvironmentId="@Platform.EnvironmentId" Kind="InfrastructureResourceKind.TelemetryComponent" Field="Application Insights resource" Configured="@_m.ApplicationInsightsResourceName" TargetEnvironment="@Platform.EnvironmentId" OnUse="UseAppInsights" TestId="ip-runtime-src-appinsights" />
         <label class="ip-field">Application Insights resource group <input class="form-control ip-mono" @bind="_m.ApplicationInsightsResourceGroup" data-testid="ip-runtime-appinsights-rg" /></label>
         <label class="ip-check"><input type="checkbox" @bind="_m.ApplicationInsightsConfigured" data-testid="ip-runtime-appinsights-configured" /> The consumer is configured with Application Insights (only this yes/no is stored — never the connection string)</label>
         <label class="ip-field">Log Analytics workspace id (optional) <input class="form-control ip-mono" @bind="_m.TelemetryWorkspaceId" data-testid="ip-runtime-workspace" aria-describedby="ehr-workspace-help" /></label>
@@ -120,7 +128,7 @@
             EventHubMetadata = r?.EventHubMetadata ?? false, SubscriptionId = r?.SubscriptionId, SubscriptionName = r?.SubscriptionName,
             NamespaceSku = r?.NamespaceSku, NamespaceCapacity = r?.NamespaceCapacity,
             ExpectedConsumerGroup = r?.ExpectedConsumerGroup,
-            ExpectedConsumerGroupProvenance = r?.ExpectedConsumerGroupProvenance is IntegrationValueProvenance.ObservedInAzure or IntegrationValueProvenance.SourceConfigurationVerified
+            ExpectedConsumerGroupProvenance = r?.ExpectedConsumerGroupProvenance is IntegrationValueProvenance.ObservedInAzure or IntegrationValueProvenance.SourceConfigurationVerified or IntegrationValueProvenance.DeclaredInSource
                 ? r.ExpectedConsumerGroupProvenance : IntegrationValueProvenance.ConfiguredAssumption,
             ExpectedConsumerGroupNote = r?.ExpectedConsumerGroupNote,
             CheckpointBlobEndpoint = r?.CheckpointBlobEndpoint ?? legacyEndpoint, CheckpointContainerName = r?.CheckpointContainerName ?? legacyContainer,
@@ -139,6 +147,18 @@
     private static string? Clean(string? v) => string.IsNullOrWhiteSpace(v) ? null : v.Trim();
 
     private string? Derived() => Build().ResolvedCheckpointContainerUrl();
+
+    // "Use detected value": fills the form only (Save persists it) and records that the value was chosen from a source declaration.
+    private static string SourceNote(SourceResourceCandidate c) => $"Declared in source: {SourceEvidenceDomainsPresentation.Location(c.File, c.Line)} ({c.NameBasis}); selected in this form";
+    private void UseConsumerGroup(SourceResourceCandidate c) { _m.ExpectedConsumerGroup = c.Name; _m.ExpectedConsumerGroupProvenance = IntegrationValueProvenance.DeclaredInSource; _m.ExpectedConsumerGroupNote = SourceNote(c); }
+    private void UseCheckpointAccount(SourceResourceCandidate c)
+    {
+        _m.CheckpointBlobEndpoint = SourceEvidenceDomainsPresentation.StorageEndpoint(c);
+        _m.CheckpointProvenance = IntegrationValueProvenance.DeclaredInSource;
+        _m.CheckpointSourceNote = SourceNote(c);
+    }
+    private void UseCheckpointContainer(SourceResourceCandidate c) { _m.CheckpointContainerName = c.Name; _m.CheckpointProvenance = IntegrationValueProvenance.DeclaredInSource; _m.CheckpointSourceNote = SourceNote(c); }
+    private void UseAppInsights(SourceResourceCandidate c) => _m.ApplicationInsightsResourceName = c.Name;
 
     private IntegrationRuntimeEvidenceSettings Build()
     {

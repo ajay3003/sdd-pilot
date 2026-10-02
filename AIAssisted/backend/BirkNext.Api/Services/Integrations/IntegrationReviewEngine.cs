@@ -487,7 +487,7 @@ public sealed class IntegrationReviewEngine(
         var domains = Enum.GetValues<IntegrationReviewDomain>().Select(domain => DomainResult(domain, allChecks, grouped)).ToList();
         // Source/build facts (application messaging) are configuration evidence, never runtime evidence.
         var runtimeAssessed = allChecks.Where(c => c.Provenance is not (IntegrationEvidenceSource.Configuration or IntegrationEvidenceSource.ContractArtifact
-            or IntegrationEvidenceSource.SourceCode or IntegrationEvidenceSource.PackageManifest or IntegrationEvidenceSource.Infrastructure) && IntegrationReviewLabels.IsAssessed(c.Status)).ToList();
+            or IntegrationEvidenceSource.SourceCode or IntegrationEvidenceSource.PackageManifest or IntegrationEvidenceSource.Infrastructure or IntegrationEvidenceSource.SourceInfrastructure) && IntegrationReviewLabels.IsAssessed(c.Status)).ToList();
         var outcome = allChecks.Count == 0 || !allChecks.Any(c => IntegrationReviewLabels.IsAssessed(c.Status)) ? IntegrationReviewOutcome.NothingAssessed
             : grouped.Count > 0 ? IntegrationReviewOutcome.ManualReviewRequired
             : domains.Any(d => d.ChecksAssessed < d.ChecksTotal) ? IntegrationReviewOutcome.CompletedWithLimitations
@@ -701,7 +701,7 @@ public sealed class IntegrationReviewEngine(
 
         yield return r?.ResolvedCheckpointContainerUrl() is { } container
             ? Check("rel-checkpoint-config", IntegrationReviewDomain.Reliability, id, "Checkpoint configuration", IntegrationCheckStatus.Configured, "The consumer's checkpoint store is known.",
-                $"{container} — {(r.CheckpointProvenance == IntegrationValueProvenance.SourceConfigurationVerified ? "Verified" : "Configured")} ({IntegrationRuntimeEvidenceSettings.ProvenanceLabel(r.CheckpointProvenance)}){(string.IsNullOrWhiteSpace(r.CheckpointSourceNote) ? "" : $": {r.CheckpointSourceNote.Trim()}")}",
+                $"{container} — {(r.CheckpointProvenance == IntegrationValueProvenance.SourceConfigurationVerified ? "From source configuration" : "Configured")} ({IntegrationRuntimeEvidenceSettings.ProvenanceLabel(r.CheckpointProvenance)}){(string.IsNullOrWhiteSpace(r.CheckpointSourceNote) ? "" : $": {r.CheckpointSourceNote.Trim()}")}",
                 "Where checkpoints are stored — configuration, not checkpoint runtime evidence (see Consumer checkpoints).", scope: P)
             : Check("rel-checkpoint-config", IntegrationReviewDomain.Reliability, id, "Checkpoint configuration", IntegrationCheckStatus.NotConfigured, "The consumer's checkpoint store is known.",
                 "Not configured", "Without the checkpoint store, checkpoint progression cannot be read.", "Configure the consumer's checkpoint Blob endpoint and container.", scope: P);

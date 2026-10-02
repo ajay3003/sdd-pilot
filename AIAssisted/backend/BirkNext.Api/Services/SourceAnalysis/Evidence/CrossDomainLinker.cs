@@ -24,25 +24,6 @@ internal sealed class CrossDomainLinker : ISourceEvidenceDomainAnalyzer
     public void Failed(SourceEvidenceContext context, string reason) => context.CrossDomain = context.Envelope(new CrossDomainEvidence
     { Status = SourceDomainStatus.FailedAnalysis, StatusReason = reason, Limitations = [SourceDomainText.SourceBoundary] }, SourceEvidenceDomain.CrossDomain, Version);
 
-    // Host suffix → the resource types whose declared name is the host's first label.
-    private static readonly (string Suffix, string[] TypePrefixes)[] HostSuffixes =
-    [
-        (".servicebus.windows.net", ["azurerm_servicebus_namespace", "azurerm_eventhub_namespace", "Microsoft.ServiceBus/namespaces", "Microsoft.EventHub/namespaces"]),
-        (".database.windows.net", ["azurerm_mssql_server", "azurerm_sql_server", "Microsoft.Sql/servers"]),
-        (".postgres.database.azure.com", ["azurerm_postgresql", "Microsoft.DBforPostgreSQL"]),
-        (".mysql.database.azure.com", ["azurerm_mysql", "Microsoft.DBforMySQL"]),
-        (".documents.azure.com", ["azurerm_cosmosdb_account", "Microsoft.DocumentDB"]),
-        (".vault.azure.net", ["azurerm_key_vault", "Microsoft.KeyVault/vaults"]),
-        (".blob.core.windows.net", ["azurerm_storage_account", "Microsoft.Storage/storageAccounts"]),
-        (".queue.core.windows.net", ["azurerm_storage_account", "Microsoft.Storage/storageAccounts"]),
-        (".table.core.windows.net", ["azurerm_storage_account", "Microsoft.Storage/storageAccounts"]),
-        (".redis.cache.windows.net", ["azurerm_redis_cache", "Microsoft.Cache/redis"]),
-        (".azurecr.io", ["azurerm_container_registry", "Microsoft.ContainerRegistry/registries"]),
-        (".azurewebsites.net", ["azurerm_linux_web_app", "azurerm_windows_web_app", "azurerm_app_service", "azurerm_linux_function_app", "azurerm_windows_function_app", "azurerm_function_app", "Microsoft.Web/sites"]),
-        (".azure-api.net", ["azurerm_api_management", "Microsoft.ApiManagement/service"]),
-        (".azconfig.io", ["azurerm_app_configuration", "Microsoft.AppConfiguration/configurationStores"]),
-        (".s3.amazonaws.com", ["aws_s3_bucket"]),
-    ];
 
     public void Analyze(SourceEvidenceContext context, CancellationToken ct)
     {
@@ -53,7 +34,8 @@ internal sealed class CrossDomainLinker : ISourceEvidenceDomainAnalyzer
         if (!hasInfra) limitations.Add("No infrastructure declarations in the selected source, so application and configuration references are not linked to infrastructure (not counted as unresolved).");
         void Add(SourceEvidenceLinkType type, string fromId, string fromLabel, string? toId, string toLabel, ArchitectureEvidenceState state, string basis) =>
             links.Add(new SourceEvidenceLink { Id = $"{type}:{fromId}->{toId ?? "?"}:{links.Count}", Type = type, FromId = fromId, FromLabel = fromLabel, ToId = toId, ToLabel = toLabel, State = state, Basis = basis });
-        static bool Named(InfrastructureResource r, string name) => r.DeclaredName is { } n && n.Equals(name, StringComparison.OrdinalIgnoreCase);
+        // A declaration is named X when its default name or one of its per-environment names is X (exact, case-insensitive).
+        static bool Named(InfrastructureResource r, string name) => r.EnvironmentNames.Select(n => n.Name).Append(r.DeclaredName).Any(n => n is not null && n.Equals(name, StringComparison.OrdinalIgnoreCase));
 
         // Application (Architecture channels) ↔ messaging declarations: exact entity names only.
         foreach (var channel in context.Architecture?.MessagingChannels ?? [])
@@ -100,14 +82,12 @@ internal sealed class CrossDomainLinker : ISourceEvidenceDomainAnalyzer
                 var value = reference[(reference.IndexOf(':') + 1)..];
                 List<InfrastructureResource> matches = [];
                 var cloudHost = false;
-                if (kind == "host")
+                if (kind == "host" && InfrastructureIdentity.HostKind(value) is { } hostKind)
                 {
-                    foreach (var (suffix, types) in HostSuffixes.Where(h => value.EndsWith(h.Suffix, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        cloudHost = true;
-                        var label = value[..^suffix.Length];
-                        matches.AddRange(infra.Where(r => types.Any(t => r.ResourceType.StartsWith(t, StringComparison.OrdinalIgnoreCase)) && Named(r, label)));
-                    }
+                    // The shared host normalization: first label of a known service host = declared resource name of that kind.
+                    cloudHost = true;
+                    var label = InfrastructureIdentity.NormalizeName(value)!;
+                    matches.AddRange(infra.Where(r => InfrastructureIdentity.IsKind(r, hostKind) && Named(r, label)));
                 }
                 else if (kind == "account") matches.AddRange(infra.Where(r => r.Category is InfrastructureCategory.Storage or InfrastructureCategory.Database && Named(r, value)));
                 else if (kind == "entity") matches.AddRange(infra.Where(r => r.Category is InfrastructureCategory.Messaging or InfrastructureCategory.Storage && Named(r, value)));

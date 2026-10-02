@@ -113,7 +113,7 @@ public sealed class EventHubRuntimeEvidenceUiTests : BunitContext
         Row(cut, "groups").TextContent.Should().Contain("m2lb-samhandling-dev (2fcdb9d0-22eb-43b0-b95e-7cbba08c34b0)").And.Contain("rg-m2lb-dev-integration-nwe");
         Row(cut, "metadata").TextContent.Should().Contain("evhns-m2lb-dev-nwe-001.servicebus.windows.net").And.Contain("Read-only management operations").And.Contain("Last enqueued position");
         Row(cut, "checkpoint").TextContent.Should().Contain("https://stm2bbirkdevnwe001.blob.core.windows.net/person-adapter")
-            .And.Contain("Source/runtime configuration verified").And.Contain("EventHub__FQDN, Storage__BlobEndpoint and Storage__ContainerName").And.Contain("no checkpoint is written");
+            .And.Contain("From source configuration (audited, not deployment-verified)").And.Contain("EventHub__FQDN, Storage__BlobEndpoint and Storage__ContainerName").And.Contain("no checkpoint is written");
         Row(cut, "checkpoint").TextContent.Should().NotContain("Observed", "the checkpoint location is configuration, not an observed checkpoint");
         Row(cut, "appinsights").TextContent.Should().Contain("appi-m2lb-dev-nwe-001 · rg-m2lb-dev-shared-nwe").And.Contain("configured on the consumer: yes").And.Contain("never read or stored");
         Row(cut, "metadata").TextContent.Should().Contain("Not available on this BirkNext instance; nothing has been read.");

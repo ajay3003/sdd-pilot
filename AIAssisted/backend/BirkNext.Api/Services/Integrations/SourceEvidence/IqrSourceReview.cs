@@ -46,21 +46,25 @@ public static class IqrSourceReview
                 : "Configured source table not found in resolved routes; partial analysis may miss routes, so drift is not confirmed";
             return $"Integration {s.IntegrationId}: configured source {expected ?? "Unknown"}; source tables {string.Join(", ", tables)}. {comparison}. Runtime application processing and deployment/source correlation not established";
         }).ToList();
+        // Configured catalog vs. Source Analysis Infrastructure declarations — read from the snapshot, never written back to the catalog.
+        var comparisons = IqrInfrastructureComparison.Compare(result.ConfigurationSnapshot, snapshots, result.EnvironmentName);
         return result with
         {
+            SourceInfrastructureComparisons = comparisons,
             SourceSnapshots = snapshots.ToList(),
             Domains = result.Domains.Select(d =>
             {
-                var count = EvidenceCount(d.Domain, snapshots);
+                var count = EvidenceCount(d.Domain, snapshots) + (d.Domain == IntegrationReviewDomain.Configuration ? comparisons.Count : 0);
                 var (pathObserved, pathMissing) = IqrPathReview.Domain(d.Domain, snapshots, result);
                 var (observabilityObserved, observabilityMissing) = IqrObservabilityReview.Domain(d.Domain, snapshots);
                 var (domainsObserved, domainsMissing) = IqrSourceDomainsReview.Domain(d.Domain, snapshots);
+                var (comparisonObserved, comparisonMissing) = IqrInfrastructureComparison.Domain(d.Domain, comparisons);
                 return count == 0 ? d : d with
                 {
                     // Source evidence never makes a domain fully assessed: runtime evidence is still missing.
                     StateLabel = d.StateLabel is "Not assessed" or "Assessed" ? "Partially assessed" : d.StateLabel,
-                    Observed = [.. d.Observed, $"Source inspected: {count} implementation evidence item(s); source-defined behavior only", .. d.Domain == IntegrationReviewDomain.MessageFlow ? routes : [], .. pathObserved, .. observabilityObserved, .. domainsObserved],
-                    Missing = [.. d.Missing, .. pathMissing, .. observabilityMissing, .. domainsMissing, d.Domain switch
+                    Observed = [.. d.Observed, $"Source inspected: {count} implementation evidence item(s); source-defined behavior only", .. d.Domain == IntegrationReviewDomain.MessageFlow ? routes : [], .. pathObserved, .. observabilityObserved, .. domainsObserved, .. comparisonObserved],
+                    Missing = [.. d.Missing, .. pathMissing, .. observabilityMissing, .. domainsMissing, .. comparisonMissing, d.Domain switch
                     {
                         IntegrationReviewDomain.Contract => "Formal schema and runtime compatibility are independent of the implementation contract",
                         IntegrationReviewDomain.DataQuality => "Mapper structure does not establish business data quality",
@@ -81,7 +85,8 @@ public static class IqrSourceReview
                     "No real personal data inspected (field names and contracts only)",
                 } : []],
             Limitations = [.. result.Limitations, .. snapshots.SelectMany(s => s.Limitations).Distinct()],
-            EvidenceSources = result.EvidenceSources.Append(IntegrationEvidenceSource.SourceCode).Distinct().ToList()
+            EvidenceSources = result.EvidenceSources.Append(IntegrationEvidenceSource.SourceCode)
+                .Concat(snapshots.Any(s => s.EvidenceDomains?.Infrastructure.Resources.Count > 0) ? [IntegrationEvidenceSource.SourceInfrastructure] : []).Distinct().ToList()
         };
     }
 }

@@ -64,6 +64,8 @@ public static class IqrSourceArchiveReader
                 if (path.EndsWith('/') || path.Split('/').Any(Ignored.Contains)) continue;
                 var extension = Path.GetExtension(path).ToLowerInvariant();
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
+                if (extension is ".tfstate" || path.EndsWith(".tfstate.backup", StringComparison.OrdinalIgnoreCase))
+                { limitations.Add("Terraform state file present but not read: state can hold secrets and is runtime state, not source."); continue; }
                 if (extension is ".js" or ".ts" or ".py" or ".java" or ".go" or ".fs" or ".vb")
                     limitations.Add($"Not analyzed: {extension} source (unsupported language).");
                 var evidence = IsEvidenceFile(path);

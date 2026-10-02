@@ -1,0 +1,74 @@
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Services
+@inject IIntegrationCatalogApiService Api
+
+@* Shared "Declared in source" hint for one configured field: what the Source Analysis Infrastructure evidence declares (scoped to the target
+   environment when source names it), compared with the value being edited. "Use" only fills the form — nothing is saved until the person
+   saves it. Renders nothing when Source Analysis has no infrastructure evidence (optional enrichment; never blocks the form). *@
+@if (Current is { } c && c.State is not (SourceComparisonState.SourceUnavailable or SourceComparisonState.NoSourceDeclaration))
+{
+    <div class="sd-suggest" data-testid="@TestId" data-state="@c.State" role="group" aria-label="@($"Source evidence for {Field}")">
+        <p class="sd-suggest-head">
+            <span class="sd-pill sd-pill-@Tone(c.State)" data-testid="@($"{TestId}-state")">@SourceInfrastructureComparer.Label(c.State)</span>
+            <span class="sd-muted">Declared in source<span class="visually-hidden"> — @SourceInfrastructureComparer.HelpText</span></span>
+        </p>
+        @if (c.State != SourceComparisonState.Matches)
+        {
+            <ul class="sd-suggest-list">
+                @foreach (var candidate in c.Candidates.Take(5))
+                {
+                    <li data-testid="@($"{TestId}-candidate")">
+                        <code>@candidate.Name</code>
+                        <span class="sd-context">@(candidate.Environment is { } env ? $"{SourceDomainText.Label(env)} · " : "")@candidate.NameBasis · @SourceEvidenceDomainsPresentation.Location(candidate.File, candidate.Line)</span>
+                        @if (OnUse.HasDelegate && candidate.EvidenceState != BirkNext.SourceArchitecture.ArchitectureEvidenceState.Unresolved)
+                        {
+                            <button type="button" class="sd-link" data-testid="@($"{TestId}-use")" @onclick="() => OnUse.InvokeAsync(candidate)">Use detected value<span class="visually-hidden"> @candidate.Name for @Field</span></button>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (c.Candidates.Count > 5) { <p class="sd-muted">@(c.Candidates.Count - 5) more declaration(s) in Source Analysis.</p> }
+        }
+        <p class="sd-muted sd-suggest-provenance" data-testid="@($"{TestId}-provenance")">
+            @(c.State == SourceComparisonState.Matches && c.Match is { } m ? $"{SourceEvidenceDomainsPresentation.Location(m.File, m.Line)} · " : "")@_suggestion?.ArchiveName · @SourceAnalysisOverview.ShortFingerprint(_suggestion?.Fingerprint ?? "") · @_suggestion?.SnapshotBasis
+            · <a href="source-analysis" data-testid="@($"{TestId}-open")">Open Infrastructure evidence</a>
+        </p>
+        @if (c.State is SourceComparisonState.Differs or SourceComparisonState.MultipleSourceCandidates)
+        {
+            <p class="sd-muted" data-testid="@($"{TestId}-note")">@(c.State == SourceComparisonState.Differs ? "The configured value stays as configured; review which one is intended." : "Choose one explicitly — none is picked for you.")</p>
+        }
+    </div>
+}
+@code {
+    [Parameter, EditorRequired] public string EnvironmentId { get; set; } = "";
+    [Parameter, EditorRequired] public InfrastructureResourceKind Kind { get; set; }
+    [Parameter, EditorRequired] public string Field { get; set; } = "";
+    [Parameter] public string? Configured { get; set; }
+    [Parameter] public string? TargetEnvironment { get; set; }
+    [Parameter] public string? Parent { get; set; }
+    /// <summary>Fills the form with a candidate (the caller decides how the value is written and which provenance it records). Never saves.</summary>
+    [Parameter] public EventCallback<SourceResourceCandidate> OnUse { get; set; }
+    [Parameter] public string TestId { get; set; } = "src-suggest";
+
+    private BirkNext.SourceDomains.SourceInfrastructureSuggestion? _suggestion;
+    private string? _loadedKey;
+
+    /// <summary>The fetched comparison re-evaluated against the value currently in the form (shared comparer; no second implementation).</summary>
+    private SourceInfrastructureComparison? Current => _suggestion is null ? null : SourceInfrastructureComparer.Evaluate(_suggestion.Comparison with { ConfiguredValue = Configured });
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var key = $"{EnvironmentId}|{Kind}|{TargetEnvironment}|{Parent}";
+        if (key == _loadedKey || string.IsNullOrWhiteSpace(EnvironmentId)) return;
+        _loadedKey = key;
+        try { _suggestion = await Api.InfrastructureSuggestionAsync(EnvironmentId, Kind, Field, null, TargetEnvironment, Parent); }
+        catch (Exception) { _suggestion = null; }
+    }
+
+    private static string Tone(SourceComparisonState state) => state switch
+    {
+        SourceComparisonState.Matches => "complete",
+        SourceComparisonState.Differs or SourceComparisonState.MultipleSourceCandidates => "partial",
+        _ => "muted",
+    };
+}

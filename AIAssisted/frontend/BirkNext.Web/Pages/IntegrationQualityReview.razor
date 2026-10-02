@@ -449,6 +449,41 @@
                         <p class="iqr-muted" data-testid="iqr-result-contracts">Contracts used: @string.Join("; ", result.ContractSnapshot.Select(c => $"{c.FileName} ({c.Role.ToString().ToLowerInvariant()}, sha256 {c.ShortHash})"))</p>
                     }
                 </section>
+                @if (result.SourceInfrastructureComparisons.Count > 0)
+                {
+                    @* Configured catalog vs. Source Analysis Infrastructure declarations, as recorded with THIS run (its snapshot; never re-read). *@
+                    var first = result.SourceInfrastructureComparisons[0].Comparison;
+                    <section class="iqr-card" aria-labelledby="iqr-result-source-infra-heading" data-testid="iqr-result-source-infra">
+                        <h3 id="iqr-result-source-infra-heading">Configured vs. declared in source</h3>
+                        <p class="iqr-muted">@BirkNext.SourceDomains.SourceInfrastructureComparer.Boundary Source snapshot <code>@SourceAnalysisOverview.ShortFingerprint(first.SourceFingerprint ?? "")</code> · Infrastructure analyzer v@(first.AnalyzerVersion).</p>
+                        <dl class="iqr-dl" data-testid="iqr-source-infra-summary">
+                            @foreach (var g in result.SourceInfrastructureComparisons.GroupBy(c => c.Comparison.State).OrderBy(g => g.Key))
+                            {
+                                <div data-state="@g.Key"><dt>@BirkNext.SourceDomains.SourceInfrastructureComparer.Label(g.Key)</dt><dd>@g.Count()</dd></div>
+                            }
+                        </dl>
+                        <ReviewDisclosure Text="@($"View {result.SourceInfrastructureComparisons.Count} comparison(s)")" CollapseText="Hide comparisons" TestId="iqr-source-infra-detail" Class="disclosure-inline">
+                            <div class="sd-scroll" tabindex="0" role="region" aria-label="Configured vs declared in source">
+                                <table data-testid="iqr-source-infra-table">
+                                    <thead><tr><th scope="col">Field</th><th scope="col">Configured</th><th scope="col">Source</th><th scope="col">Declared in source</th><th scope="col">Runtime</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var row in result.SourceInfrastructureComparisons)
+                                        {
+                                            var c = row.Comparison;
+                                            <tr data-testid="iqr-source-infra-row" data-state="@c.State">
+                                                <th scope="row">@c.Field<span class="sd-context">@row.SubjectName@(row.ItemId is { } item ? $" · {item}" : "")</span></th>
+                                                <td><code>@(c.ConfiguredValue ?? "Not configured")</code></td>
+                                                <td>@BirkNext.SourceDomains.SourceInfrastructureComparer.Label(c.State)<span class="sd-context">@c.EnvironmentBasis</span></td>
+                                                <td>@(c.Match is { } m ? $"{m.Name} · {SourceEvidenceDomainsPresentation.Location(m.File, m.Line)}" : c.Candidates.Count == 0 ? "—" : string.Join(", ", c.Candidates.Take(3).Select(x => x.Name)))</td>
+                                                <td class="iqr-muted">Assessed separately (Observed)</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </ReviewDisclosure>
+                    </section>
+                }
                 @foreach (var eventHub in result.EventHubSnapshot)
                 {
                     @* Transport — Event Hubs: what M2LB expects vs what Azure showed in THIS run (snapshot; never re-read). Observed is not Pass. *@

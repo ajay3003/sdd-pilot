@@ -12,6 +12,8 @@ namespace BirkNext.Web.Services;
 public interface IIntegrationCatalogApiService
 {
     Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
+    /// <summary>Read-only source suggestions for one configured field (Source Analysis Infrastructure evidence). Null when unavailable.</summary>
+    Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion?>(null);
     Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source analysis is unavailable."));
     /// <summary>Source Analysis snapshots for binding one to an integration (read-only metadata; no upload).</summary>
     Task<ReviewSourceOptions> IqrSourceScopeAsync(string environmentId, Guid? primary, CancellationToken ct = default) => Task.FromResult(new ReviewSourceOptions());
@@ -67,6 +69,12 @@ public interface IIntegrationCatalogApiService
 
 public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegrationCatalogApiService
 {
+    public async Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default)
+    {
+        static string Q(string name, string? value) => value is null ? "" : $"&{name}={Uri.EscapeDataString(value)}";
+        try { return await http.GetFromJsonAsync<BirkNext.SourceDomains.SourceInfrastructureSuggestion>($"api/source-analysis/infrastructure-suggestions?{Env(environmentId)}&kind={kind}{Q("field", field)}{Q("targetEnvironment", targetEnvironment)}{Q("parent", parent)}", Json, ct); }
+        catch (HttpRequestException) { return null; }
+    }
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
     public Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => UploadSource($"api/source-analysis/snapshots?{Env(environmentId)}", fileName, content, ct);
     public async Task<ReviewSourceOptions> IqrSourceScopeAsync(string environmentId, Guid? primary, CancellationToken ct = default) =>

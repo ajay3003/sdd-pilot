@@ -30,6 +30,20 @@ public sealed class IqrSourceEvidenceController(IqrSourceStore store, BirkNext.A
         new(true, s.Rules.Count == 0 && s.IntegrationPath is null ? "No integration implementation evidence was found in this snapshot." : null,
             $"{s.Rules.Count} implementation rule(s) · {s.IntegrationPath?.Hops.Count ?? 0} integration path hop(s)");
 
+    /// <summary>
+    /// Source suggestions for ONE configured field: what the Infrastructure evidence declares for a resource kind (scoped to the target environment
+    /// when source names it), compared with the configured value. Read-only — a suggestion is applied only by a person saving the form.
+    /// </summary>
+    [HttpGet("infrastructure-suggestions")]
+    public async Task<ActionResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion>> InfrastructureSuggestions([FromQuery] string environmentId, [FromQuery] BirkNext.SourceDomains.InfrastructureResourceKind kind,
+        [FromQuery] string? field, [FromQuery] string? configured, [FromQuery] string? targetEnvironment, [FromQuery] string? parent, [FromQuery] Guid? snapshotId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        var snapshots = sources.SourceAnalysisEnabled ? await sources.ListAsync(environmentId, ct) : [];
+        return Ok(BirkNext.Api.Services.SourceAnalysis.SourceInfrastructureSuggestions.Suggest(snapshots, snapshotId, kind, field ?? kind.ToString(), configured,
+            targetEnvironment ?? environmentId, parent, sources.SourceAnalysisEnabled));
+    }
+
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<IqrSourceSnapshot>>> List([FromQuery] string environmentId, CancellationToken ct) =>
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.") : Ok(await store.ListAsync(environmentId, ct));

@@ -85,3 +85,25 @@ public static class SourceEvidenceQueries
     public static SourceEvidenceSlice<SourceObservabilityLayer> ObservabilityLayers(IqrSourceSnapshot s) =>
         Slice(s, e => e.CrossDomain, e => e.CrossDomain.ObservabilityLayers, SourceEvidenceDomain.CrossDomain);
 }
+
+/// <summary>Configured-vs-source suggestions for consumers' settings forms. The snapshot is the requested one exactly (never substituted), else
+/// the newest snapshot of the environment that has infrastructure evidence — stated in the result. Nothing here saves anything.</summary>
+public static class SourceInfrastructureSuggestions
+{
+    public static SourceInfrastructureSuggestion Suggest(IReadOnlyList<IqrSourceSnapshot> snapshots, Guid? snapshotId, InfrastructureResourceKind kind, string field, string? configured,
+        string? targetEnvironment, string? parent, bool sourceAnalysisEnabled = true)
+    {
+        if (!sourceAnalysisEnabled)
+            return new() { SourceAnalysisEnabled = false, Comparison = new() { Field = field, ConfiguredValue = configured, Kind = kind, State = SourceComparisonState.SourceUnavailable, Detail = ReviewSourceEvidenceProvider.Disabled } };
+        var snapshot = snapshotId is { } id ? snapshots.FirstOrDefault(s => s.Id == id)
+            : snapshots.Where(s => s.EvidenceDomains?.Infrastructure.Resources.Count > 0).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault();
+        var environment = SourceEnvironments.FromName(targetEnvironment)?.Kind;
+        var comparison = SourceInfrastructureComparer.Compare(field, configured, snapshot?.EvidenceDomains?.Infrastructure, snapshot?.Id, kind, environment, parent);
+        if (snapshot is null && snapshotId is not null) comparison = comparison with { Detail = "The selected source snapshot is unavailable; nothing is substituted." };
+        return new()
+        {
+            Comparison = comparison, SnapshotId = snapshot?.Id, ArchiveName = snapshot?.Archive.FileName, Fingerprint = snapshot?.Archive.Sha256, AnalyzedAt = snapshot?.AnalyzedAt,
+            SnapshotBasis = snapshot is null ? null : snapshotId is null ? "newest snapshot with infrastructure evidence" : "selected snapshot",
+        };
+    }
+}

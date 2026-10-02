@@ -190,6 +190,23 @@ public sealed class IntegrationQualityReviewEventHubRuntimeTests : BunitContext
     }
 
     [Fact]
+    public void ConfiguredVsDeclaredInSource_IsShownFromTheRunsOwnSnapshot_WithoutRuntimeClaims()
+    {
+        var comparison = new BirkNext.SourceDomains.SourceInfrastructureComparison
+        {
+            Field = "Event Hubs namespace", ConfiguredValue = "evhns-x", State = BirkNext.SourceDomains.SourceComparisonState.Differs, SourceFingerprint = "abcdef0123456789", AnalyzerVersion = 2,
+            EnvironmentBasis = "explicit environment variable file",
+            Candidates = [new("infra/azurerm_eventhub_namespace.a", "evhns-y", BirkNext.SourceDomains.InfrastructureResourceKind.EventHubNamespace, "azurerm_eventhub_namespace", null, "tfvars qa.tfvars", "infra/main.tf", 3, BirkNext.SourceArchitecture.ArchitectureEvidenceState.Confirmed)],
+        };
+        _api.Result = M2lbFixture.Result() with { SourceInfrastructureComparisons = [new("eh", "Payments Event Hubs", null, comparison)] };
+        var cut = RunReview();
+        var section = cut.Find("[data-testid=iqr-result-source-infra]");
+        section.TextContent.Should().Contain("abcdef01").And.Contain("analyzer v2").And.Contain("nothing was changed from source");
+        section.QuerySelector("[data-state=Differs] dd")!.TextContent.Should().Be("1");
+        cut.Find("[data-testid=iqr-source-infra-row]").TextContent.Should().Contain("evhns-x").And.Contain("Source differs — needs review").And.Contain("evhns-y").And.Contain("Assessed separately (Observed)");
+    }
+
+    [Fact]
     public void AnOlderRunWithoutTheseListsSaysSo_AndHasNoEventHubSection()
     {
         _api.Result = M2lbFixture.Result();

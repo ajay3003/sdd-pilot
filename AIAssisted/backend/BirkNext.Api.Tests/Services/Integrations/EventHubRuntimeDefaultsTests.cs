@@ -52,7 +52,7 @@ public sealed class EventHubRuntimeDefaultsTests
         r.CheckpointContainerName.Should().Be("person-adapter");
         r.ResolvedCheckpointContainerUrl().Should().Be("https://stm2bbirkdevnwe001.blob.core.windows.net/person-adapter");
         r.CheckpointProvenance.Should().Be(IntegrationValueProvenance.SourceConfigurationVerified);
-        IntegrationRuntimeEvidenceSettings.ProvenanceLabel(r.CheckpointProvenance).Should().Be("Source/runtime configuration verified");
+        IntegrationRuntimeEvidenceSettings.ProvenanceLabel(r.CheckpointProvenance).Should().Be("From source configuration (audited, not deployment-verified)");
         r.CheckpointSourceNote.Should().Contain("EventHub__FQDN").And.Contain("Storage__BlobEndpoint").And.Contain("Storage__ContainerName");
         r.ApplicationInsightsResourceName.Should().Be("appi-m2lb-dev-nwe-001");
         r.ApplicationInsightsResourceGroup.Should().Be("rg-m2lb-dev-shared-nwe");

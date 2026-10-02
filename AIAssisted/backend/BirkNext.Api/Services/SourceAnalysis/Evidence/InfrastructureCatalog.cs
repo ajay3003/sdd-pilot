@@ -174,7 +174,7 @@ internal static class InfrastructureCatalog
         ["partition_count"] = "Messaging", ["message_retention"] = "Messaging", ["max_delivery_count"] = "Messaging", ["dead_lettering_on_message_expiration"] = "Messaging",
         ["requires_session"] = "Messaging", ["enable_partitioning"] = "Messaging", ["partitioning_enabled"] = "Messaging", ["auto_inflate_enabled"] = "Messaging",
         ["max_size_in_megabytes"] = "Messaging", ["default_message_ttl"] = "Messaging", ["lock_duration"] = "Messaging", ["eventhub_name"] = "Messaging", ["topic_id"] = "Messaging",
-        ["namespace_id"] = "Messaging", ["namespace_name"] = "Messaging", ["visibility_timeout_seconds"] = "Messaging", ["message_retention_seconds"] = "Messaging",
+        ["namespace_id"] = "Messaging", ["namespace_name"] = "Messaging", ["eventhub_id"] = "Messaging", ["storage_account_id"] = "Datastore", ["storage_account_name"] = "Datastore", ["server_id"] = "Datastore", ["visibility_timeout_seconds"] = "Messaging", ["message_retention_seconds"] = "Messaging",
         // Datastore / capacity
         ["sku"] = "Capacity", ["sku_name"] = "Capacity", ["capacity"] = "Capacity", ["version"] = "Datastore", ["storage_mb"] = "Datastore", ["backup_retention_days"] = "Datastore",
         ["geo_redundant_backup_enabled"] = "Datastore", ["high_availability.mode"] = "Datastore", ["zone"] = "Datastore", ["account_tier"] = "Capacity",

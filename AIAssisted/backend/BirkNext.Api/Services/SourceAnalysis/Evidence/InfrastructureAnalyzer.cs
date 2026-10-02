@@ -13,7 +13,8 @@ namespace BirkNext.Api.Services.SourceAnalysis.Evidence;
 /// </summary>
 internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
 {
-    public const int Version = 1;
+    /// <summary>v2: per-environment declared names (tfvars). Snapshots analysed by v1 keep their v1 evidence; nothing is reinterpreted.</summary>
+    public const int Version = 2;
     public DomainAnalyzerInfo Info { get; } = SourceEvidenceAnalyzer.Info(SourceEvidenceDomain.Infrastructure, "Infrastructure as Code analyzer", Version, 1,
         ["Terraform", "Terraform variables", "Bicep", "ARM template", "Kubernetes manifest", "Helm chart"], [],
         ["Resources", "Data sources", "Modules", "Static dependencies", "Variables", "Outputs", "Providers", "Backends", "Access assignments", "Environments"]);
@@ -169,6 +170,9 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
                 else if (block.Type is "data" && block.Labels.Count == 2) scope.ResourceIds[$"data.{block.Labels[0]}.{block.Labels[1]}"] = Id(scope.Directory, $"data.{block.Labels[0]}.{block.Labels[1]}");
             }
 
+        // Per-environment resolution: while set, variable values from one tfvars file take precedence over defaults (literals only).
+        Dictionary<string, string>? overrides = null;
+        var names = new List<(TfModuleScope Scope, int Index, string Expression)>();
         string? Resolve(TfModuleScope scope, string expression, int depth = 0)
         {
             if (depth > 3) return null;
@@ -184,7 +188,8 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
             }
             return null;
             string? Lookup(string kind, string name) => kind == "var"
-                ? scope.Defaults.TryGetValue(name, out var d) && !d.Sensitive ? d.Default : null
+                ? overrides is not null && overrides.TryGetValue(name, out var o) ? o
+                : scope.Defaults.TryGetValue(name, out var d) && !d.Sensitive ? d.Default : null
                 : scope.LocalExpressions.TryGetValue(name, out var l) ? Resolve(scope, l, depth + 1) : null;
         }
 
@@ -217,6 +222,9 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
                             b.Diagnostics.Add(new("Unsupported provider", $"Provider '{SourceEvidenceRedaction.Safe(provider)}' has no category adapter; its resources are recorded generically.", safeFile, block.Line));
                         var nameAttribute = block.Attribute("name") ?? block.Attribute("bucket") ?? block.Nested("metadata").FirstOrDefault()?.Attribute("name");
                         var declared = nameAttribute is null ? null : Resolve(scope, nameAttribute.Expression);
+                        // Only names built from variables/locals vary per environment; a literal name is environment-independent.
+                        if (nameAttribute is not null && modulePath is null && block.Type == "resource" && HclReader.References(nameAttribute.Expression).Any(r => r.StartsWith("var.", StringComparison.Ordinal) || r.StartsWith("local.", StringComparison.Ordinal)))
+                            names.Add((scope, b.Resources.Count, nameAttribute.Expression));
                         var safeName = declared is null ? null : SourceEvidenceRedaction.SafeLiteral("name", declared);
                         b.Resources.Add(new InfrastructureResource
                         {
@@ -326,6 +334,7 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
             var env = SourceFileClassifier.EnvironmentFromName(file.Name) ?? FolderEnvironment(file.Path) ?? SourceEnvironmentLabel.Default;
             var basis = SourceFileClassifier.EnvironmentFromName(file.Name) is not null ? "tfvars file name" : FolderEnvironment(file.Path) is not null ? "folder name" : "default tfvars";
             b.Environment(env, file.Path, basis);
+            var values = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var attribute in root.Attributes)
             {
                 // A tfvars file sets the root module beside it; variables of other (module) directories with the same name are not its targets.
@@ -339,7 +348,19 @@ internal sealed class InfrastructureAnalyzer : ISourceEvidenceDomainAnalyzer
                     b.Variables.Add(new InfrastructureVariable { Name = SourceEvidenceRedaction.Safe(attribute.Name), Type = "(not declared in analyzed .tf)", DefaultState = "none", File = SourceEvidenceRedaction.Safe(file.Path), Line = attribute.Line, Values = [value] });
                 else foreach (var v in declared) v.Values.Add(value);
                 b.Pending.Add(new(file.Path, attribute.Line, attribute.Name, literal ?? "", "Terraform variables", env, sensitive));
+                if (literal is not null && !sensitive) values[attribute.Name] = literal;
             }
+            if (env.Kind == SourceEnvironmentKind.Default || values.Count == 0) continue;
+            // Resource names in this environment: the root module beside the tfvars file, else every root module (never child modules).
+            overrides = values;
+            var dirScopes = names.Where(n => n.Scope.Directory == file.Directory).ToList();
+            foreach (var (scope, index, expression) in dirScopes.Count > 0 ? dirScopes : names)
+                if (Resolve(scope, expression) is { } name && SourceEvidenceRedaction.SafeLiteral("name", name) is { } safeName)
+                    b.Resources[index] = b.Resources[index] with
+                    {
+                        EnvironmentNames = [.. b.Resources[index].EnvironmentNames.Where(e => e.Environment != env), new InfrastructureEnvironmentName(env, safeName, $"tfvars {SourceEvidenceRedaction.Safe(file.Path)}")],
+                    };
+            overrides = null;
         }
     }
 

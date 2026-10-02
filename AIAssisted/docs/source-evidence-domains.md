@@ -81,3 +81,30 @@ The analyzer must:
 - add its `DomainCapability` rows, marking pattern-based readers as `Partial`.
 
 Then register the analyzer in `SourceEvidenceAnalyzerRegistry.Default`.
+
+## Terraform ownership and consumers (Declared / Configured / Observed / Verified)
+
+**Who parses Terraform:** only the Source Analysis Infrastructure analyzer (`HclReader` + `InfrastructureAnalyzer`).
+- Nothing else reads `.tf` or `.tfvars`, runs the Terraform CLI, or reads state. `.tfstate` files are skipped with a limitation.
+- A guard test enforces this rule: `InfrastructureConsumerMigrationTests.No_consumer_parses_terraform_outside_source_analysis`.
+
+**The four states:**
+- **Declared:** found in a Source Analysis snapshot.
+  - Each resource carries its default name plus per-environment names resolved from tfvars (analyzer v2).
+- **Configured:** owned by the target environment and review settings, for example the Integrations catalog.
+  - Source evidence never writes configured values.
+  - `SourceInfrastructureComparer` compares a configured value with the declarations. Its states are: Matches, Differs, Multiple source candidates, Not configured with a suggestion, No source declaration, Unresolved, and Source unavailable.
+  - The UI shows suggestions through `SourceInfrastructureHint`. "Use detected value" only fills the form and records the provenance `DeclaredInSource`; the value is stored only when a person saves.
+- **Observed:** runtime adapters, such as Azure metadata, Monitor and Blob. These stay independent of source evidence.
+- **Verified:** checked behaviour. A source or audit value is never labelled Verified. The old "Source/runtime configuration verified" label is now "From source configuration (audited, not deployment-verified)".
+
+**Shared helpers:** identity and environment normalization live in one place, `shared/SourceInfrastructureIdentityContracts.cs`:
+- `InfrastructureIdentity` covers resource kinds, host suffixes, name normalization and the parent resource.
+- `SourceEnvironments` covers environment labels and inference from names.
+
+Consumers must not re-derive "`-qa-` means QA" or "x.servicebus.windows.net means namespace x" themselves.
+
+**IQR:**
+- Each run stores `SourceInfrastructureComparisons`, bound to the run's snapshot, fingerprint and analyzer version.
+- The evidence source is reported as `SourceInfrastructure` ("Infrastructure as Code (Source Analysis, declared)").
+- The seeded DEV values from a developer-side Terraform audit stay **Configured**. Their provenance is "Audited infrastructure configuration", and they never get a fake snapshot id.

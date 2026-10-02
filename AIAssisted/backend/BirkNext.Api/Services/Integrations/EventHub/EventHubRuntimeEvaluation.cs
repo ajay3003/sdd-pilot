@@ -115,7 +115,7 @@ public static class EventHubRuntimeEvaluation
         var (group, assumed) = IntegrationConfigurationRules.EffectiveConsumerGroup(topic, platform);
         var settings = platform?.RuntimeEvidence;
         var configuration = settings?.ResolvedCheckpointContainerUrl() is null ? "Not configured"
-            : settings.CheckpointProvenance == IntegrationValueProvenance.SourceConfigurationVerified ? "Verified" : "Configured";
+            : settings.CheckpointProvenance == IntegrationValueProvenance.SourceConfigurationVerified ? "From source configuration" : "Configured";
         return new EventHubCheckpointSummary
         {
             IntegrationId = topic.Id, Hub = topic.EndpointOrTopic ?? "", ConsumerGroup = group, GroupAssumed = assumed, Configuration = configuration,

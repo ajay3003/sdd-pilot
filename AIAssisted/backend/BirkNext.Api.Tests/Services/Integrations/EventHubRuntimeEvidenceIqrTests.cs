@@ -356,7 +356,7 @@ public sealed class EventHubRuntimeEvidenceIqrTests
         var result = await Run(Evidence(metadata: _ => Hub(), groups: DefaultGroup, checkpoints: Checkpoint), catalog);
         var config = PlatformCheck(result, "rel-checkpoint-config");
         config.Status.Should().Be(IntegrationCheckStatus.Configured);
-        config.Evidence.Should().Contain("https://stm2bbirkdevnwe001.blob.core.windows.net/person-adapter").And.Contain("Verified");
+        config.Evidence.Should().Contain("https://stm2bbirkdevnwe001.blob.core.windows.net/person-adapter").And.Contain("From source configuration");
         var runtime = TopicCheck(result, "Person", "rel-checkpoint");
         runtime.Status.Should().Be(IntegrationCheckStatus.Observed, "checkpoints for an assumed group are observed without a verdict");
         runtime.Provenance.Should().Be(IntegrationEvidenceSource.CheckpointStore);
@@ -368,7 +368,7 @@ public sealed class EventHubRuntimeEvidenceIqrTests
         lag.Status.Should().Be(IntegrationCheckStatus.Observed);
         lag.Evidence.Should().StartWith("120 event(s) behind");
         var summary = result.EventHubSnapshot.Single().Checkpoints.Single(c => c.IntegrationId.EndsWith("dbo.Person"));
-        (summary.Configuration, summary.Runtime).Should().Be(("Verified", IntegrationEvidenceState.Available));
+        (summary.Configuration, summary.Runtime).Should().Be(("From source configuration", IntegrationEvidenceState.Available));
         TopicCheck(result, "Person", "flow-end-to-end").Status.Should().Be(IntegrationCheckStatus.NotAssessed);
         TopicCheck(result, "Person", "flow-end-to-end").Evidence.Should().Contain("Producer Configured → Event Hub Observed → Consumer group $Default Observed match (configured assumption) → Checkpoint Observed → Application handler Not observed");
         TopicCheck(result, "Person", "flow-end-to-end").Explanation.Should().Contain("Transport progression evidence exists, but application processing has not been observed");
@@ -392,7 +392,7 @@ public sealed class EventHubRuntimeEvidenceIqrTests
         Domain(result, IntegrationReviewDomain.Reliability).StateLabel.Should().NotBe("Assessed");
         result.Outcome.Should().NotBe(IntegrationReviewOutcome.NothingAssessed);
         result.Findings.Should().BeEmpty("unauthorized evidence is a limitation, never a finding");
-        result.EventHubSnapshot.Single().Checkpoints.Should().OnlyContain(c => c.Runtime == IntegrationEvidenceState.NotAuthorized && c.Configuration == "Verified");
+        result.EventHubSnapshot.Single().Checkpoints.Should().OnlyContain(c => c.Runtime == IntegrationEvidenceState.NotAuthorized && c.Configuration == "From source configuration");
         result.WhatWasNotAssessed.Should().Contain(n => n.Contains("Consumer checkpoints") && n.Contains("Not authorized"));
     }
 

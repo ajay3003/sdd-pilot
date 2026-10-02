@@ -88,7 +88,7 @@ public enum CdcDeleteExpectation { NotSpecified, DeleteEventOnly, DeleteEventAnd
 
 /// <summary>How a configured runtime-evidence value is known. A configured assumption is never a confirmed mapping.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationValueProvenance { NotSpecified, ConfiguredAssumption, SourceConfigurationVerified, ObservedInAzure, ConfirmedByPerson, ConfiguredOnIntegration }
+public enum IntegrationValueProvenance { NotSpecified, ConfiguredAssumption, SourceConfigurationVerified, ObservedInAzure, ConfirmedByPerson, ConfiguredOnIntegration, DeclaredInSource }
 
 /// <summary>
 /// Where IQR may read read-only runtime evidence for one platform. Non-secret identifiers only — credentials come from the BirkNext
@@ -165,7 +165,9 @@ public sealed record IntegrationRuntimeEvidenceSettings
     public static string ProvenanceLabel(IntegrationValueProvenance provenance) => provenance switch
     {
         IntegrationValueProvenance.ConfiguredAssumption => "Configured assumption",
-        IntegrationValueProvenance.SourceConfigurationVerified => "Source/runtime configuration verified",
+        // Taken from audited source/IaC configuration: declared, not deployment-verified (Declared ≠ Verified).
+        IntegrationValueProvenance.SourceConfigurationVerified => "From source configuration (audited, not deployment-verified)",
+        IntegrationValueProvenance.DeclaredInSource => "Declared in source (Source Analysis) — selected by a person",
         IntegrationValueProvenance.ObservedInAzure => "Observed in Azure",
         IntegrationValueProvenance.ConfirmedByPerson => "Confirmed",
         IntegrationValueProvenance.ConfiguredOnIntegration => "Configured on the integration",
@@ -472,7 +474,7 @@ public enum IntegrationDomainReadiness { Ready, Available, Limited, NotAssessabl
 public enum IntegrationCheckStatus { Pass, Warning, Fail, NotAssessed, Unavailable, NoIndicatorsObserved, Observed, NeedsConfirmation, NotConfigured, NoRecentEvidence, Detected, Configured }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery, CheckpointStore, AzureResourceManager, SourceCode, PackageManifest, Infrastructure, AzureMonitor }
+public enum IntegrationEvidenceSource { Configuration, NetworkProbe, AzureMetadata, ApplicationInsights, HealthEndpoint, LogEvidence, ContractArtifact, EndpointDiscovery, CheckpointStore, AzureResourceManager, SourceCode, PackageManifest, Infrastructure, AzureMonitor, SourceInfrastructure }
 
 /// <summary>Why a runtime evidence source did or did not deliver. Failures are never collapsed into one "unavailable".</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -825,6 +827,9 @@ public sealed record IntegrationReviewResult
     public ClassificationReviewResult? SecurityClassificationSnapshot { get; init; }
     /// <summary>Event Hub runtime evidence exactly as this run read and compared it (namespace, hubs, consumer groups, checkpoints, metrics). Never re-queried.</summary>
     public List<EventHubRuntimeSnapshot> EventHubSnapshot { get; init; } = [];
+    /// <summary>Configured integration values compared with the Infrastructure evidence of the selected source snapshot (declared in source, never
+    /// deployed state). Bound to that snapshot. Empty for runs without Source Analysis infrastructure evidence and for runs recorded before it existed.</summary>
+    public List<BirkNext.SourceDomains.ConfiguredSourceComparison> SourceInfrastructureComparisons { get; init; } = [];
     /// <summary>The checks this run actually executed with evidence (a source that could not be read is listed under <see cref="WhatWasNotAssessed"/>).</summary>
     public List<string> WhatWasTested { get; init; } = [];
     /// <summary>What this run did not assess, and why — explicit, never implied by absence.</summary>
@@ -892,7 +897,8 @@ public static class IntegrationReviewLabels
         IntegrationEvidenceSource.AzureResourceManager => "Azure Resource Manager",
         IntegrationEvidenceSource.SourceCode => "Source code",
         IntegrationEvidenceSource.PackageManifest => "Package reference",
-        IntegrationEvidenceSource.Infrastructure => "Terraform / infrastructure",
+        IntegrationEvidenceSource.Infrastructure => "Audited infrastructure configuration",
+        IntegrationEvidenceSource.SourceInfrastructure => "Infrastructure as Code (Source Analysis, declared)",
         IntegrationEvidenceSource.AzureMonitor => "Azure Monitor",
         _ => "Configuration",
     };
