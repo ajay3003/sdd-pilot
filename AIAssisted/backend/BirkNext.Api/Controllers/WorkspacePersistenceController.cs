@@ -24,7 +24,7 @@ public class WorkspacePersistenceController : ControllerBase
     {
         try
         {
-            var result = await _service.SaveCurrentAsync(request?.Name, request?.Artifacts ?? new());
+            var result = await _service.SaveCurrentAsync(request?.Name, request?.Artifacts ?? new(), request?.SddLifecycleJson);
             var dto = MapWorkspaceToDto(result);
             return Ok(dto);
         }
@@ -45,7 +45,7 @@ public class WorkspacePersistenceController : ControllerBase
 
         try
         {
-            var result = await _service.SaveAsAsync(request.Name, request.Artifacts ?? new());
+            var result = await _service.SaveAsAsync(request.Name, request.Artifacts ?? new(), request.SddLifecycleJson);
             var dto = MapWorkspaceToDto(result);
             return Ok(dto);
         }
@@ -167,7 +167,7 @@ public class WorkspacePersistenceController : ControllerBase
             _logger.LogInformation("  ProjectName={Project}", request?.ProjectName);
             _logger.LogInformation("  RequestArtifacts={Count}", request?.Artifacts?.Count ?? 0);
 
-            var result = await _service.AutoSaveAsync(request?.GeneratedName, request?.ProjectName, request?.Artifacts ?? new());
+            var result = await _service.AutoSaveAsync(request?.GeneratedName, request?.ProjectName, request?.Artifacts ?? new(), request?.SddLifecycleJson);
             _logger.LogInformation("  ResponseArtifacts={Count}", result.Artifacts.Count);
 
             var dto = MapWorkspaceToDto(result);
@@ -238,12 +238,14 @@ public class WorkspacePersistenceController : ControllerBase
     {
         public string? Name { get; set; }
         public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
+        public string? SddLifecycleJson { get; set; }
     }
 
     public class SaveAsRequest
     {
         public string? Name { get; set; }
         public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
+        public string? SddLifecycleJson { get; set; }
     }
 
     public class RenameRequest
@@ -265,6 +267,7 @@ public class WorkspacePersistenceController : ControllerBase
         /// </summary>
         public string? ProjectName { get; set; }
         public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
+        public string? SddLifecycleJson { get; set; }
     }
 
     public class ImportRequest
@@ -289,6 +292,7 @@ public class WorkspacePersistenceController : ControllerBase
             ReviewContextVersion = workspace.ReviewContextVersion,
             ArtifactSetHash = workspace.ArtifactSetHash,
             AutoSaved = workspace.AutoSaved,
+            SddLifecycleJson = workspace.SddLifecycleJson,
             Favorite = workspace.Favorite,
             Artifacts = workspace.Artifacts
                 .Select(a => new SavedWorkspaceArtifactResponseDto

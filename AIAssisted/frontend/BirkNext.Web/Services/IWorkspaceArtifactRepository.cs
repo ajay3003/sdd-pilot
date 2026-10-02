@@ -1,3 +1,5 @@
+using BirkNext.Web.Models;
+
 namespace BirkNext.Web.Services;
 
 public enum WorkspaceArtifactType
@@ -21,4 +23,8 @@ public interface IWorkspaceArtifactRepository
     bool Has(WorkspaceArtifactType type);
     void Clear(WorkspaceArtifactType type);
     IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts();
+    SddLifecycleState SddLifecycle { get; }
+    void ResetSddLifecycle();
+    void RestoreSddLifecycle(string? json);
+    void SetArtifactAuthority(Guid revisionId, string authority);
 }

@@ -1,3 +1,6 @@
+using System.Text.Json;
+using BirkNext.Web.Models;
+
 namespace BirkNext.Web.Services;
 
 /// <summary>
@@ -7,6 +10,7 @@ namespace BirkNext.Web.Services;
 public sealed class WorkspaceSessionService : IWorkspaceSessionService
 {
     private readonly Dictionary<WorkspaceArtifactKind, WorkspaceArtifact> _artifacts = new();
+    public SddLifecycleState SddLifecycle { get; private set; } = new();
 
     public event EventHandler? ReviewContextRebuildNeeded;
 
@@ -43,6 +47,7 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
     {
         ProjectName = null;
         _artifacts.Clear();
+        SddLifecycle = new();
         NotifyArtifactsChanged();
     }
 
@@ -61,6 +66,22 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
 
     public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
         => _artifacts.Select(kvp => ((WorkspaceArtifactType)(int)kvp.Key, kvp.Value));
+
+    public void RestoreSddLifecycle(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return;
+        try { SddLifecycle = JsonSerializer.Deserialize<SddLifecycleState>(json) ?? new(); }
+        catch (JsonException) { SddLifecycle = new(); }
+    }
+
+    public void ResetSddLifecycle() => SddLifecycle = new();
+
+    public void SetArtifactAuthority(Guid revisionId, string authority)
+    {
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == revisionId)
+            ?? throw new InvalidOperationException("Artifact revision was not found.");
+        revision.Authority = authority;
+    }
 
     public void NotifyArtifactsChanged()
     {

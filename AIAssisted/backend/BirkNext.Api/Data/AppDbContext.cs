@@ -470,6 +470,7 @@ public class AppDbContext : DbContext
             entity.Property(w => w.IsCurrent).HasColumnName("is_current").HasDefaultValue(false);
             entity.Property(w => w.Favorite).HasColumnName("favorite").HasDefaultValue(false);
             entity.Property(w => w.TagsJson).HasColumnName("tags_json").HasColumnType("text");
+            entity.Property(w => w.SddLifecycleJson).HasColumnName("sdd_lifecycle_json").HasColumnType("text");
             entity.Property(w => w.IsDeleted).HasColumnName("is_deleted").HasDefaultValue(false);
 
             entity.HasIndex(w => new { w.UserId, w.IsDeleted })

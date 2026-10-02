@@ -1,4 +1,8 @@
 using System.Runtime.CompilerServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
@@ -10,6 +14,7 @@ namespace BirkNext.Web.Services;
 public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 {
     private readonly Dictionary<WorkspaceArtifactType, WorkspaceArtifact> _artifacts = new();
+    public SddLifecycleState SddLifecycle { get; private set; } = new();
 
     public event EventHandler? ReviewContextRebuildNeeded;
     public event EventHandler? ProjectSelectionChanged;
@@ -58,6 +63,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     {
         if (!string.IsNullOrWhiteSpace(text))
         {
+            CaptureRevision(type, text, fileName, sourcePath);
             var hash = RuntimeHelpers.GetHashCode(this);
             System.Diagnostics.Debug.WriteLine($"DIAG: [Repository] Set({type}) hash={hash}");
             _artifacts[type] = new WorkspaceArtifact(text, DateTime.UtcNow, fileName, sourcePath, lastModified);
@@ -69,7 +75,12 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 
     public bool Has(WorkspaceArtifactType type) => _artifacts.ContainsKey(type);
 
-    public void Clear(WorkspaceArtifactType type) => _artifacts.Remove(type);
+    public void Clear(WorkspaceArtifactType type)
+    {
+        _artifacts.Remove(type);
+        foreach (var revision in SddLifecycle.Revisions.Where(x => x.Role == type.ToString() && x.IsCurrentSelection))
+            revision.IsCurrentSelection = false;
+    }
 
     public IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts()
     {
@@ -102,7 +113,72 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     {
         ProjectName = null;
         _artifacts.Clear();
+        SddLifecycle = new();
         NotifyArtifactsChanged();
+    }
+
+    public void RestoreSddLifecycle(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return;
+        try
+        {
+            SddLifecycle = JsonSerializer.Deserialize<SddLifecycleState>(json) ?? new();
+            SddLifecycle.Revisions ??= [];
+            SddLifecycle.Questions ??= [];
+            SddLifecycle.Decisions ??= [];
+            SddLifecycle.Links ??= [];
+            SddLifecycle.ImplementationEvidence ??= [];
+            SddLifecycle.TestEvidence ??= [];
+            SddLifecycle.ReviewRuns ??= [];
+            SddLifecycle.RequirementSnapshots ??= [];
+            SddLifecycle.RequirementChanges ??= [];
+            foreach (var (type, artifact) in GetAllArtifacts())
+                CaptureRevision(type, artifact.Text, artifact.FileName, artifact.SourcePath);
+        }
+        catch (JsonException)
+        {
+            SddLifecycle = new();
+        }
+    }
+
+    public void ResetSddLifecycle() => SddLifecycle = new();
+
+    public void SetArtifactAuthority(Guid revisionId, string authority)
+    {
+        var allowed = new[] { "Draft", "Candidate", "Baseline", "Approved", "Superseded", "RejectedAlternative", "Historical", "Unknown" };
+        if (!allowed.Contains(authority, StringComparer.Ordinal)) throw new ArgumentException("Unsupported authority state.", nameof(authority));
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == revisionId)
+            ?? throw new InvalidOperationException("Artifact revision was not found.");
+        if (authority == "Superseded" && revision.IsCurrentSelection)
+            throw new InvalidOperationException("Select a replacement revision before superseding the current selection.");
+        if (authority == "Baseline")
+        {
+            foreach (var other in SddLifecycle.Revisions.Where(x => x.Role == revision.Role && x.RevisionId != revisionId && x.Authority == "Baseline"))
+                other.Authority = "Historical";
+        }
+        revision.Authority = authority;
+        if (authority == "Superseded") revision.IsCurrentSelection = false;
+    }
+
+    private void CaptureRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath)
+    {
+        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+        var role = type.ToString();
+        var current = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.IsCurrentSelection);
+        if (current?.Fingerprint == fingerprint) return;
+
+        if (current is not null) current.IsCurrentSelection = false;
+        SddLifecycle.Revisions.Add(new SddArtifactRevision
+        {
+            Role = role,
+            FileName = fileName ?? role,
+            SourceReference = sourcePath,
+            Content = text,
+            Fingerprint = fingerprint,
+            Revision = SddLifecycle.Revisions.Where(x => x.Role == role).Select(x => x.Revision).DefaultIfEmpty(0).Max() + 1,
+            IsCurrentSelection = true,
+            CapturedAt = DateTimeOffset.UtcNow
+        });
     }
 
     public void NotifyArtifactsChanged()
