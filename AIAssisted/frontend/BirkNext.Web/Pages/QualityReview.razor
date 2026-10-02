@@ -233,8 +233,15 @@
                 }
             </div>
             <div class="qr-score-context">
-                <div><span class="qr-score-context-label">Selected-pack average:</span> <strong>@_report.OverallScore.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</strong></div>
-                <div class="qr-score-interpretation">Score interpretation: @ScoreLabel(_report.OverallScore)</div>
+                @if (_report.AssessedPacks > 0)
+                {
+                    <div><span class="qr-score-context-label">Selected-pack average:</span> <strong>@_report.OverallScore.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</strong> <span class="qr-score-context-label" data-testid="qr-assessed-packs">(@_report.AssessedPacks of @_report.PackResults.Count packs assessed)</span></div>
+                    <div class="qr-score-interpretation">Score interpretation: @ScoreLabel(_report.OverallScore)</div>
+                }
+                else
+                {
+                    <div data-testid="qr-no-score"><span class="qr-score-context-label">Selected-pack average:</span> <strong>No score</strong> — no selected pack had anything to assess.</div>
+                }
                 <div class="qr-findings-context">
                     @_report.TotalFindings finding@(_report.TotalFindings != 1 ? "s" : "") across
                     @_report.PackResults.Count(r => r.Error is null) completed pack@(_report.PackResults.Count(r => r.Error is null) != 1 ? "s" : "")
@@ -257,7 +264,7 @@
                 <div class="qr-pack-cards">
                     @foreach (var result in _report.PackResults)
                     {
-                        var cardClass   = result.Error is not null ? "is-error" : ScoreVariant(result.Score);
+                        var cardClass   = result.Error is not null ? "is-error" : !result.Assessed ? "is-unassessed" : ScoreVariant(result.Score);
                         var totalF      = result.Critical + result.High + result.Medium + result.Low;
                         var hSev        = result.Critical > 0 ? "Critical"
                                         : result.High > 0     ? "High"
@@ -310,7 +317,7 @@
                                 {
                                     <div class="qr-pack-card-metadata">@totalF finding@(totalF != 1 ? "s" : "")</div>
                                 }
-                                <div class="qr-pack-card-score"><span>Pack score</span> @result.Score.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%</div>
+                                <div class="qr-pack-card-score"><span>Pack score</span> @(result.Assessed ? result.Score.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + "%" : "Not assessed")</div>
                                 <div class="qr-pack-card-affordance">View details →</div>
                             }
                         </button>
@@ -372,7 +379,7 @@
                         <span class="qr-result-meta">
                             @if (result.Error is null)
                             {
-                                <span class="qr-result-score @ScoreVariant(result.Score)">@((int)Math.Round(result.Score))%</span>
+                                <span class="qr-result-score @(result.Assessed ? ScoreVariant(result.Score) : "is-unassessed")" title="@result.NotAssessedReason">@(result.Assessed ? $"{(int)Math.Round(result.Score)}%" : "Not assessed")</span>
                                 @if (result.Critical + result.High + result.Medium + result.Low > 0)
                                 {
                                     <span class="qr-result-findings">@(result.Critical + result.High + result.Medium + result.Low) finding@((result.Critical + result.High + result.Medium + result.Low) != 1 ? "s" : "")</span>

@@ -126,7 +126,8 @@ public sealed partial class BlazorWasmSecurityReviewService : IBlazorWasmSecurit
         var configSummary = BuildConfigSummary(fetched, findings);
         var headerResults = BuildHeaderResults(headers);
         var deduped       = Deduplicate(findings);
-        var score         = CalculateScore(deduped);
+        // The target page could not be fetched: no check ran, so there is no score (not 100, not 0).
+        int? score        = indexContent is null ? null : CalculateScore(deduped);
         var recommendations = GenerateRecommendations(deduped);
 
         return new WasmSecurityReviewReport

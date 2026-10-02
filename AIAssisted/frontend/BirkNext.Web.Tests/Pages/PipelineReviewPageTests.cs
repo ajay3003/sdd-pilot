@@ -62,7 +62,7 @@ public sealed class PipelineReviewPageTests : BunitContext
     {
         var page = Page();
         page.Find("[data-testid=pr-overview] h2").TextContent.Should().StartWith("Needs attention");
-        page.Find("[data-testid=pr-counts]").TextContent.Should().Be("1 High · 8 Medium · 1 Low · 3 Info");
+        page.Find("[data-testid=pr-counts]").TextContent.Should().Be("1 High · 8 Medium · 1 Low · 1 Info · 2 not assessable", "assessment gaps (unresolved template/flow) are counted apart from quality findings");
         page.Find("[data-testid=pr-pipeline-count]").TextContent.Should().Be("4");
         page.FindAll("[data-testid=pr-path] li").Select(li => li.TextContent).Should().Equal("pr-validation", "shop-build", "worker-build", "DEV", "QA", "no detected link", "PROD");
         page.Find("[data-testid=pr-top-findings]").TextContent.Should().Contain("PROD deployment is reachable without any detected test");

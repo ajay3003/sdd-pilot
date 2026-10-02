@@ -143,6 +143,12 @@ public sealed class DependencyReviewService(AppDbContext db, ILogger<DependencyR
         return result;
     }
 
+    /// <summary>Names the ecosystems whose manifests were not read, so a partial review never reads as complete. Tool limitation, not a finding.</summary>
+    private static string UnsupportedNote(List<RepositoryDependencyReview> repos) =>
+        repos.SelectMany(r => r.UnsupportedManifests).Select(u => u.Split(':')[0]).Distinct().ToList() is { Count: > 0 } ecosystems
+            ? $" Not reviewed: {string.Join(", ", ecosystems)} manifests (not read natively — a tool limitation; import an SBOM to cover them)."
+            : "";
+
     public static List<ReviewCategory> Categories(List<RepositoryDependencyReview> repos)
     {
         var configured = repos.Where(r => r.Coverage is RenovateCoverage.Configured or RenovateCoverage.Inherited).ToList();
@@ -156,8 +162,14 @@ public sealed class DependencyReviewService(AppDbContext db, ILogger<DependencyR
             new("Configuration", invalid.Count > 0 ? ReviewCategoryState.Issue : configured.Count == 0 ? ReviewCategoryState.Missing : ReviewCategoryState.Ready,
                 invalid.Count > 0 ? $"Not parseable: {string.Join(", ", invalid.Select(r => r.Repository))}." : configured.Count == 0 ? "No Renovate configuration found."
                     : "Parsed; keys checked against BirkNext's supported subset. Validation against Renovate's full schema is not performed by BirkNext."),
-            new("Coverage", missing.Count == 0 && bearing.Count > 0 ? ReviewCategoryState.Ready : missing.Count < bearing.Count ? ReviewCategoryState.Partial : ReviewCategoryState.Missing,
-                missing.Count == 0 ? $"{configured.Count} of {repos.Count} repositor{(repos.Count == 1 ? "y" : "ies")} configured." : $"Missing for {string.Join(", ", missing.Select(r => r.Repository))}."),
+            // No dependency BirkNext can read is a coverage gap (e.g. a Maven-only repository), never "Missing": nothing was assessed.
+            bearing.Count == 0
+                ? new("Coverage", ReviewCategoryState.NotAssessed, repos.SelectMany(r => r.UnsupportedManifests).ToList() is { Count: > 0 } unsupported
+                    ? $"No dependency BirkNext reads natively was found. Manifests of unsupported ecosystems ({string.Join(", ", unsupported.Select(u => u.Split(':')[0]).Distinct())}) are not read — a tool limitation, not a project finding; import an SBOM in the dependency health review to cover them."
+                    : "No dependency BirkNext reads natively was found in the reviewed source.")
+                : new("Coverage", missing.Count == 0 ? ReviewCategoryState.Ready : missing.Count < bearing.Count ? ReviewCategoryState.Partial : ReviewCategoryState.Missing,
+                    (missing.Count == 0 ? $"{configured.Count} of {repos.Count} repositor{(repos.Count == 1 ? "y" : "ies")} configured." : $"Missing for {string.Join(", ", missing.Select(r => r.Repository))}.")
+                    + UnsupportedNote(repos)),
             new("Policy", needsReview > 0 ? ReviewCategoryState.NeedsReview : configured.Count == 0 ? ReviewCategoryState.NotAssessed
                     : configured.Any(r => r.UnresolvedPresets.Count > 0) ? ReviewCategoryState.Partial : ReviewCategoryState.Ready,
                 (needsReview > 0 ? $"{needsReview} rule/policy observation(s) need review." : configured.Count == 0 ? "No configuration to evaluate." : "No rule observations.")

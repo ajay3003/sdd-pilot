@@ -10,6 +10,8 @@ public sealed record RepositoryInput(string Name, string ArchiveSha256, IReadOnl
 {
     /// <summary>Evidence already extracted by Source Analysis (Files then hold only the redacted Renovate configs). Null: extract from Files.</summary>
     public ExtractedEvidence? Extracted { get; init; }
+    /// <summary>Manifests of ecosystems BirkNext does not read (from the source evidence). Carried to the review as a limitation.</summary>
+    public IReadOnlyList<string> UnsupportedManifests { get; init; } = [];
     /// <summary>Exact hash of a config file: the original file's hash when the content is the redacted copy.</summary>
     public string Hash(string path, string content) => Extracted?.ConfigHashes.GetValueOrDefault(path) ?? RenovateConfig.Hash(content);
 }
@@ -24,7 +26,10 @@ public sealed record ExtractedEvidence(List<DeclaredDependency> Dependencies, Li
 /// </summary>
 public static class DependencyReviewBuilder
 {
-    public static RepositoryDependencyReview Build(RepositoryInput input, RepositoryDependencyReview? previous)
+    public static RepositoryDependencyReview Build(RepositoryInput input, RepositoryDependencyReview? previous) =>
+        BuildCore(input, previous) with { UnsupportedManifests = [.. input.UnsupportedManifests] };
+
+    private static RepositoryDependencyReview BuildCore(RepositoryInput input, RepositoryDependencyReview? previous)
     {
         var repo = input.Name;
         var files = input.Files;

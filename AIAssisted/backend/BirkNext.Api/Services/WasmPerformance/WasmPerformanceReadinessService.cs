@@ -73,9 +73,9 @@ public sealed class WasmPerformanceReadinessService : IWasmPerformanceReadinessS
             .ToList();
 
         var overallScore = CalculateOverallScore(categories);
-        var overallState = DetermineState(overallScore);
+        var overallState = overallScore is { } assessedScore ? DetermineState(assessedScore) : ReadinessState.NotAssessed;
 
-        int CatScore(string name) => categories.First(c => c.CategoryName == name).Score;
+        int? CatScore(string name) => categories.First(c => c.CategoryName == name).Score;
 
         var health = new PerformanceReadinessHealth
         {
@@ -100,7 +100,8 @@ public sealed class WasmPerformanceReadinessService : IWasmPerformanceReadinessS
             TopRisks           = SelectTopRisks(allFindings, 5).ToList(),
             TopRecommendations = SelectTopRecommendations(allRecs, 5).ToList(),
             Health             = health,
-            HasData            = true
+            // Nothing assessed = no readiness data (no score), never a 0 that an aggregate would average in.
+            HasData            = overallScore is not null
         };
     }
 
@@ -112,13 +113,13 @@ public sealed class WasmPerformanceReadinessService : IWasmPerformanceReadinessS
         IReadOnlyList<PerformanceFinding> findings,
         bool wasAssessed)
     {
-        var score = wasAssessed ? CalculateCategoryScore(findings) : 100;
+        int? score = wasAssessed ? CalculateCategoryScore(findings) : null;
         return new PerformanceCategorySummary
         {
             CategoryName  = name,
             Category      = category,
             Score         = score,
-            State         = wasAssessed ? DetermineState(score) : ReadinessState.NotAssessed,
+            State         = score is { } s ? DetermineState(s) : ReadinessState.NotAssessed,
             FindingsCount = findings.Count,
             CriticalCount = findings.Count(f => f.Severity == PerformanceSeverity.Critical),
             HighCount     = findings.Count(f => f.Severity == PerformanceSeverity.High),
@@ -150,12 +151,9 @@ public sealed class WasmPerformanceReadinessService : IWasmPerformanceReadinessS
         _     => ReadinessState.HighRisk
     };
 
-    internal static int CalculateOverallScore(IReadOnlyList<PerformanceCategorySummary> categories)
-    {
-        var assessed = categories.Where(c => c.WasAssessed).ToList();
-        if (assessed.Count == 0) return 0;
-        return (int)Math.Round(assessed.Average(c => c.Score));
-    }
+    /// <summary>Shared rule (ScoreSemantics.AverageAssessed): assessed categories only; null when none was assessed.</summary>
+    internal static int? CalculateOverallScore(IReadOnlyList<PerformanceCategorySummary> categories) =>
+        BirkNext.Applicability.ScoreSemantics.AverageAssessed(categories.Where(c => c.WasAssessed).Select(c => c.Score));
 
     internal static IEnumerable<PerformanceFinding> SelectTopRisks(
         IReadOnlyList<PerformanceFinding> allFindings, int count)

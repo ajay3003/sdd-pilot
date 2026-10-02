@@ -731,4 +731,24 @@ public sealed class IntegrationReviewEngineTests
         system.ExpectedConsumerGroup.Should().Be("$Default");
         readiness.Reasons.Should().Contain(r => r.Contains("Consumer group $Default is a configured assumption for 16 topics"));
     }
+
+    // ── Shared scoring: an unsupported runtime provider is tool coverage, never integration quality ─────────────────────────
+
+    [Fact]
+    public async Task KafkaConfigured_RuntimeProviderUnsupported_IsNeutral_NotAQualityPenalty()
+    {
+        var kafka = new IntegrationDefinition
+        {
+            Id = "pay:kafka:payments", EnvironmentId = DevId, DisplayName = "Payment events", SystemName = "Payments Kafka", Kind = IntegrationKind.Other,
+            Enabled = true, EndpointOrTopic = "payments.events", Producer = "payment-service", Consumer = new IntegrationConsumer { DisplayName = "ledger" },
+        };
+        var result = await Run(Engine(), new IntegrationCatalog { EnvironmentId = DevId, Integrations = [kafka] });
+
+        result.RuntimeSupport.Should().ContainSingle(r => r.TechnologyId == "integration.kafka" && r.Level == BirkNext.Technology.SupportLevel.Unsupported)
+            .Which.Detail.Should().Contain("tool limitation");
+        result.AllChecks.Should().NotContain(c => c.Status == IntegrationCheckStatus.Fail, "BirkNext lacking a Kafka provider is not an integration failure");
+        result.Quality.Failed.Should().Be(0);
+        (result.Quality.QualityPercent is null || result.Quality.QualityPercent == 100).Should().BeTrue("missing runtime support never lowers quality");
+        result.Findings.Should().BeEmpty();
+    }
 }

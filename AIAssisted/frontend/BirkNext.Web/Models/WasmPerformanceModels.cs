@@ -116,7 +116,7 @@ public sealed class PerformanceCategorySummary
     public PerformanceCategory Category { get; init; }
 
     [JsonPropertyName("score")]
-    public int Score { get; init; }
+    public int? Score { get; init; }
 
     [JsonPropertyName("state")]
     public PerformanceReadinessState State { get; init; }
@@ -143,25 +143,25 @@ public sealed class PerformanceCategorySummary
 public sealed class PerformanceReadinessHealth
 {
     [JsonPropertyName("overallScore")]
-    public int OverallScore { get; init; }
+    public int? OverallScore { get; init; }
 
     [JsonPropertyName("startupScore")]
-    public int StartupScore { get; init; }
+    public int? StartupScore { get; init; }
 
     [JsonPropertyName("apiScore")]
-    public int ApiScore { get; init; }
+    public int? ApiScore { get; init; }
 
     [JsonPropertyName("graphQlScore")]
-    public int GraphQlScore { get; init; }
+    public int? GraphQlScore { get; init; }
 
     [JsonPropertyName("cachingScore")]
-    public int CachingScore { get; init; }
+    public int? CachingScore { get; init; }
 
     [JsonPropertyName("compressionScore")]
-    public int CompressionScore { get; init; }
+    public int? CompressionScore { get; init; }
 
     [JsonPropertyName("architectureScore")]
-    public int ArchitectureScore { get; init; }
+    public int? ArchitectureScore { get; init; }
 
     [JsonPropertyName("criticalFindings")]
     public int CriticalFindings { get; init; }
@@ -179,7 +179,7 @@ public sealed class PerformanceReadinessHealth
 public sealed class PerformanceReadinessReport
 {
     [JsonPropertyName("overallScore")]
-    public int OverallScore { get; init; }
+    public int? OverallScore { get; init; }
 
     [JsonPropertyName("overallState")]
     public PerformanceReadinessState OverallState { get; init; }

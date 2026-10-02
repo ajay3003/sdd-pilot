@@ -125,13 +125,15 @@ public sealed class QualityReviewService : IQualityReviewService
             }
         }
 
-        var valid = results.Where(r => r.Error is null).ToList();
+        // Shared semantics: only packs that completed and had something to assess enter the average; a pack without evidence is not a 0.
+        var valid = results.Where(r => r.Error is null && r.Assessed).ToList();
 
         return new QualityReviewReport
         {
             PackResults   = results,
             OverallScore  = valid.Count > 0
                 ? Math.Round(valid.Average(r => r.Score), 1) : 0,
+            AssessedPacks = valid.Count,
             TotalFindings = results.Sum(r => r.Critical + r.High + r.Medium + r.Low),
             CriticalCount = results.Sum(r => r.Critical),
             HighCount     = results.Sum(r => r.High),
@@ -433,6 +435,8 @@ public sealed class QualityReviewService : IQualityReviewService
                 PackName  = Descriptor.PackName,
                 PackGroup = Descriptor.PackGroup,
                 Score     = summary?.Score ?? 0,
+                Assessed  = summary is not null,
+                NotAssessedReason = summary is null ? "No applicable standard was evaluated." : null,
                 High      = high,
                 Medium    = medium,
                 Low       = low,
@@ -483,6 +487,8 @@ public sealed class QualityReviewService : IQualityReviewService
                 PackName  = Descriptor.PackName,
                 PackGroup = Descriptor.PackGroup,
                 Score     = score,
+                Assessed  = doc.EntityCount > 0,
+                NotAssessedReason = doc.EntityCount == 0 ? "No data model entities to assess." : null,
                 Critical  = critical,
                 High      = 0,
                 Medium    = medium,

@@ -88,14 +88,19 @@ public sealed class ApiQualityReviewReport
 {
     [JsonPropertyName("environmentName")]    public string  EnvironmentName    { get; init; } = "";
     [JsonPropertyName("generatedAt")]        public DateTime GeneratedAt       { get; init; }
-    [JsonPropertyName("overallScore")]       public int     OverallScore       { get; init; }
-    [JsonPropertyName("connectivityScore")]  public int     ConnectivityScore  { get; init; }
-    [JsonPropertyName("performanceScore")]   public int     PerformanceScore   { get; init; }
-    [JsonPropertyName("securityScore")]      public int     SecurityScore      { get; init; }
-    [JsonPropertyName("restScore")]          public int     RestScore          { get; init; }
-    [JsonPropertyName("graphQlScore")]       public int     GraphQlScore       { get; init; }
-    [JsonPropertyName("openApiScore")]       public int     OpenApiScore       { get; init; }
-    [JsonPropertyName("readinessScore")]     public int     ReadinessScore     { get; init; }
+    // Scoring model v2 (shared ScoreSemantics): a category that was not assessed is null — never 0 — and the overall score averages assessed
+    // categories only (null when none was). v1 (scoringModelVersion absent) wrote 0 for every unassessed category.
+    [JsonPropertyName("scoringModelVersion")] public int    ScoringModelVersion { get; init; } = 2;
+    [JsonPropertyName("overallScore")]       public int?    OverallScore       { get; init; }
+    [JsonPropertyName("connectivityScore")]  public int?    ConnectivityScore  { get; init; }
+    [JsonPropertyName("performanceScore")]   public int?    PerformanceScore   { get; init; }
+    [JsonPropertyName("securityScore")]      public int?    SecurityScore      { get; init; }
+    [JsonPropertyName("restScore")]          public int?    RestScore          { get; init; }
+    [JsonPropertyName("graphQlScore")]       public int?    GraphQlScore       { get; init; }
+    [JsonPropertyName("openApiScore")]       public int?    OpenApiScore       { get; init; }
+    [JsonPropertyName("readinessScore")]     public int?    ReadinessScore     { get; init; }
+    /// <summary>"Assessed" or "NotAssessed" (nothing was reachable/assessed: no score, and not deployment-ready for lack of evidence, not quality).</summary>
+    [JsonPropertyName("assessmentState")]    public string  AssessmentState    { get; init; } = "Assessed";
     [JsonPropertyName("isDeploymentReady")]  public bool    IsDeploymentReady  { get; init; }
     [JsonPropertyName("findings")]           public List<ApiQualityFinding>       Findings       { get; init; } = [];
     [JsonPropertyName("categoryScores")]     public List<ApiQualityCategoryScore> CategoryScores { get; init; } = [];

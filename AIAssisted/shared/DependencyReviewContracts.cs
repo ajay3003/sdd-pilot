@@ -167,6 +167,9 @@ public sealed record RepositoryDependencyReview
     public List<string> AutomationEvidence { get; init; } = [];
     /// <summary>Redacted, normalized config the simulations used — so later single-package simulations use the same snapshot.</summary>
     public string? NormalizedConfig { get; init; }
+    /// <summary>Manifests of ecosystems BirkNext does not read (Maven, npm, pip …): their dependencies are not in this review — a tool
+    /// limitation reported as such, never a project defect. Import an SBOM to review them.</summary>
+    public List<string> UnsupportedManifests { get; init; } = [];
     public string? DriftSincePrevious { get; init; }
 }
 

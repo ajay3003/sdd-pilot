@@ -144,3 +144,45 @@ Main rules:
 | P2 | Java/Spring architecture provider (`source.architecture.jvm`) | Planned — needs a non-`.csproj` project model |
 | P2 | AWS environment provider | Planned |
 | P3 | Component-scoped capability view (per project component, not per snapshot) | Planned |
+
+## Review-local scoring on the shared semantics (follow-up)
+
+Every review score now goes through `ScoreSemantics`. There is no second scoring abstraction.
+
+- **Shared additions**
+  - `CheckOutcome.Informational` (appended): the check executed and recorded evidence without judging it (Observed, Detected). It counts toward coverage, never toward quality.
+  - `IsExecuted`.
+  - `Credit`: one cross-review policy. Pass 1; Warning, NeedsReview and Partial ½; Fail 0.
+  - `FromExecution`: a provider failure or block becomes Unavailable, never Fail.
+  - `ComputeWeighted`: the denominator is the assessed weight only, plus a separate weighted coverage.
+  - `AverageAssessed`: averages category scores that were assessed; null when none was.
+
+### Per-review mapping
+
+| Review | Before | Now |
+|---|---|---|
+| **API QR v2** (UI path) | No score; check results only | `ApiReviewScoring.Outcome` maps Blocked→Unavailable, NotTested→NotTested, ManualReview→NeedsReview. The report gains `Quality` and `QualityByArea`; each target gains `Quality`. These are additive, computed properties. An area without checks has no entry. |
+| **API QR legacy** (`POST api/api-quality/analyze`) | Every unassessed category int defaulted to **0** | Category ints are nullable (`null` = not assessed). The overall score is `AverageAssessed`. `assessmentState` and `scoringModelVersion: 2` are added. A run with nothing assessed has no score and is not deployment-ready, which is an evidence gap. No frontend caller uses this endpoint. |
+| **Integration QR** | Already neutral (assessed/total counts, `NothingAssessed` outcome) | `IntegrationReviewScoring` covers the check-status mapping (Observed/Detected→Informational, NotConfigured→NotAssessed) and splits the run into three properties (table below). |
+| **Frontend QR** | Category scores already null when unassessed. **Performance scored 100 when only a security scan ran.** | Performance is scored only from performance-engine data. The overall score is `AverageAssessed`. `FrontendQualityScoring.EngineCoverage` maps engine states: Unavailable, timed out or engine error → Unavailable; Disabled or NotApplicable → excluded. |
+| **WASM performance readiness** (dashboard input) | An unassessed category scored **100**. With nothing assessed: overall **0** with `HasData = true`, which the dashboard averaged in. | An unassessed category is null. The overall score is `AverageAssessed`. `HasData` is set only when something was assessed. |
+| **WASM security** (dashboard and FQR input) | An unreachable target scored **100** (no findings) | Score is null when the target page could not be fetched. |
+| **Dependency Review** | A Maven/npm/pip-only repository got Coverage **"Missing"** | Unreadable manifests are recorded at upload (`SourceDependencyEvidence.UnsupportedManifests`, names only). With nothing readable, Coverage is NotAssessed and names the ecosystems and the SBOM path. A partly readable repository names what was not reviewed. |
+| **Pipeline Review** | Tool-limitation findings counted with defects | `PipelineFindingCategory` UnresolvedFlow, TemplateResolutionGap and CrossPipelineDependencyGap set `IsAssessmentGap`. These are counted apart ("N not assessable") and do not drive the "Needs attention" headline. "No test step was found" is still raised only when the job structure is known. |
+| **Quality Review** (aggregate) | Standards pack with no summary scored **0**; Data Model with no entities scored **0**; both averaged in | `QualityReviewPackResult.Assessed` / `NotAssessedReason`; `QualityReviewReport.AssessedPacks`. The overall score averages assessed packs only. The UI shows "Not assessed" or "No score" and "n of m packs assessed". On the dashboard, a session result with 0 assessed packs is not an assessed area. |
+
+Integration QR's run is split into three properties:
+
+| Property | Contains | Never affects |
+|---|---|---|
+| `Quality` | Runtime, contract and source checks | — |
+| `ConfigurationReadiness` | Configuration-provenance checks only | Quality |
+| `RuntimeSupport` | Per system, from the registry. Kafka: Unsupported, labelled a tool limitation | Quality |
+
+### Not changed, and why
+
+- **Release readiness** (`DeliveryReadinessService`) and the **QA readiness / auditor** score from requirements artifacts and consume none of the five reviews. The requirements-free case was already fixed on the dashboard.
+- **Persisted results stay readable.**
+  - The new review properties are get-only and computed. Stored IQR runs and AQR history recompute them on read and are never rewritten.
+  - Legacy AQR JSON now carries `null` instead of `0` for unassessed categories. `scoringModelVersion` tells the two shapes apart; a v1 `0` is ambiguous and is not reinterpreted.
+- **Legacy penalty scores remain** (FQR / WASM / AQR legacy): 100 minus severity points per assessed category. Eligibility now follows the shared rules; the per-category penalty formula itself is review-local.

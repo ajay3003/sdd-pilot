@@ -477,6 +477,9 @@ public sealed record ApiReviewTargetResult
     public List<ApiReviewOperationResult> Operations { get; init; } = [];
     public ApiReviewContractSummary? Contract { get; init; }
     public List<ApiReviewCheck> Checks { get; init; } = [];
+    /// <summary>Quality among this target's assessed checks plus assessment coverage (shared <see cref="BirkNext.Applicability.ScoreSemantics"/>).
+    /// Computed from <see cref="Checks"/>; null quality when nothing was assessed — never 0.</summary>
+    public BirkNext.Applicability.QualityResult Quality => ApiReviewScoring.Quality(Checks);
     public List<ApiReviewGraphQlOperationMatch> GraphQlOperationMatches { get; init; } = [];
     /// <summary>GraphQL targets only: client/server compatibility of the observed operations. Null for REST.</summary>
     public ApiReviewGraphQlCompatibility? GraphQlCompatibility { get; init; }
@@ -515,7 +518,33 @@ public sealed record ApiReviewReport
     public List<string> ManualReviewItems { get; init; } = [];
     public List<string> Limitations { get; init; } = [];
     public string? ErrorMessage { get; init; }
+    /// <summary>Quality among every assessed check of the run, with assessment coverage. Additive and computed (older stored reports recompute it).</summary>
+    public BirkNext.Applicability.QualityResult Quality => ApiReviewScoring.Quality(Targets.SelectMany(t => t.Checks));
+    /// <summary>Quality per review area (REST, GraphQL, Security …) over that area's assessed checks; an area without checks has no entry.</summary>
+    public Dictionary<ApiReviewFindingType, BirkNext.Applicability.QualityResult> QualityByArea =>
+        Targets.SelectMany(t => t.Checks).GroupBy(c => c.Area).OrderBy(g => g.Key).ToDictionary(g => g.Key, g => ApiReviewScoring.Quality(g));
     [JsonIgnore] public int RestServices => Targets.Count(t => t.Target.ApiType == ApiReviewTargetType.Rest);
     [JsonIgnore] public int GraphQlServices => Targets.Count(t => t.Target.ApiType == ApiReviewTargetType.GraphQl);
     [JsonIgnore] public bool AnyCompleted => Targets.Any(t => t.Status is ApiReviewTargetStatus.Completed or ApiReviewTargetStatus.PartiallyCompleted);
+}
+
+/// <summary>
+/// API Quality Review on the shared scoring semantics. Blocked (target unreachable, no authenticated context) and NotTested are coverage gaps,
+/// never failures; ManualReview is NeedsReview (half credit, as in every review); NotApplicable is excluded.
+/// </summary>
+public static class ApiReviewScoring
+{
+    public static BirkNext.Applicability.CheckOutcome Outcome(ApiReviewCheckResult result) => result switch
+    {
+        ApiReviewCheckResult.Pass => BirkNext.Applicability.CheckOutcome.Pass,
+        ApiReviewCheckResult.Fail => BirkNext.Applicability.CheckOutcome.Fail,
+        ApiReviewCheckResult.Warning => BirkNext.Applicability.CheckOutcome.Warning,
+        ApiReviewCheckResult.ManualReview => BirkNext.Applicability.CheckOutcome.NeedsReview,
+        ApiReviewCheckResult.NotApplicable => BirkNext.Applicability.CheckOutcome.NotApplicable,
+        ApiReviewCheckResult.Blocked => BirkNext.Applicability.CheckOutcome.Unavailable,
+        _ => BirkNext.Applicability.CheckOutcome.NotTested,
+    };
+
+    public static BirkNext.Applicability.QualityResult Quality(IEnumerable<ApiReviewCheck> checks) =>
+        BirkNext.Applicability.ScoreSemantics.Compute(checks.Select(c => Outcome(c.Result)));
 }

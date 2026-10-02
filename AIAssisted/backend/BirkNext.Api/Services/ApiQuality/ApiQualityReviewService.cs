@@ -156,8 +156,10 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
         var categoryScores = ComputeCategoryScores(findings,
             restResult, healthResult, swaggerResult, graphQlResult);
 
-        int overallScore = ComputeOverallScore(categoryScores);
+        int? overallScore = ComputeOverallScore(categoryScores);
+        // No assessed category is an evidence gap: no score, and not ready because nothing was verified — not because quality is 0.
         bool isReady     = overallScore >= 70 && !findings.Any(f => f.Severity == ApiQualitySeverity.Critical);
+        if (overallScore is null) limitations.Add("No API category could be assessed (no endpoint answered): there is no quality score for this run.");
 
         // ── Recommendations ───────────────────────────────────────────────────────
 
@@ -172,6 +174,7 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
             Authentication    = authentication,
             GeneratedAt       = DateTime.UtcNow,
             OverallScore      = overallScore,
+            AssessmentState   = overallScore is null ? "NotAssessed" : "Assessed",
             ConnectivityScore = Score(categoryScores, ApiQualityCategory.Connectivity),
             PerformanceScore  = Score(categoryScores, ApiQualityCategory.Performance),
             SecurityScore     = Score(categoryScores, ApiQualityCategory.Security),
@@ -740,7 +743,7 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
 
     // ── Scoring ───────────────────────────────────────────────────────────────────
 
-    private static List<ApiQualityCategoryScore> ComputeCategoryScores(
+    internal static List<ApiQualityCategoryScore> ComputeCategoryScores(
         List<ApiQualityFinding> findings,
         params ApiQualityEndpointResult?[] probeResults)
     {
@@ -777,14 +780,13 @@ public sealed class ApiQualityReviewService : IApiQualityReviewService
         return scores;
     }
 
-    private static int ComputeOverallScore(List<ApiQualityCategoryScore> scores)
-    {
-        if (scores.Count == 0) return 0;
-        return (int)scores.Average(s => s.Score);
-    }
+    /// <summary>Shared rule: average assessed categories only; null (no score) when none was assessed.</summary>
+    internal static int? ComputeOverallScore(List<ApiQualityCategoryScore> scores) =>
+        BirkNext.Applicability.ScoreSemantics.AverageAssessed(scores.Where(s => s.Assessed).Select(s => (int?)s.Score));
 
-    private static int Score(List<ApiQualityCategoryScore> scores, ApiQualityCategory cat) =>
-        scores.FirstOrDefault(s => s.Category == cat)?.Score ?? 0;
+    /// <summary>A category that was not assessed is null — never a default 0.</summary>
+    internal static int? Score(List<ApiQualityCategoryScore> scores, ApiQualityCategory cat) =>
+        scores.FirstOrDefault(s => s.Category == cat && s.Assessed)?.Score;
 
     // ── Recommendations ───────────────────────────────────────────────────────────
 

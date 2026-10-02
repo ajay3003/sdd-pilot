@@ -17,8 +17,13 @@ public sealed class QualityReviewPackResult
     public string PackName  { get; init; } = string.Empty;
     public string PackGroup { get; init; } = string.Empty;
 
-    /// <summary>0–100 coverage/quality score for this pack.</summary>
+    /// <summary>0–100 coverage/quality score for this pack. Meaningful only when <see cref="Assessed"/>.</summary>
     public double Score   { get; init; }
+
+    /// <summary>False when the pack had nothing to assess (no applicable rule evaluated, no data model entities): its Score is not a
+    /// quality result and is excluded from <see cref="QualityReviewReport.OverallScore"/> (shared ScoreSemantics: no evidence is no score).</summary>
+    public bool Assessed { get; init; } = true;
+    public string? NotAssessedReason { get; init; }
 
     // Normalised finding counts for the overall summary.
     public int Critical { get; init; }
@@ -44,7 +49,10 @@ public sealed class QualityReviewPackResult
 public sealed class QualityReviewReport
 {
     public List<QualityReviewPackResult> PackResults   { get; init; } = [];
+    /// <summary>Average over assessed packs only. Meaningful only when <see cref="AssessedPacks"/> &gt; 0.</summary>
     public double         OverallScore   { get; init; }
+    /// <summary>Packs that completed AND had something to assess. 0 = no score for this review.</summary>
+    public int            AssessedPacks  { get; init; }
     public int            TotalFindings  { get; init; }
     public int            CriticalCount  { get; init; }
     public int            HighCount      { get; init; }

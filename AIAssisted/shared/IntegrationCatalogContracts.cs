@@ -846,6 +846,14 @@ public sealed record IntegrationReviewResult
     public List<string> WhatWasTested { get; init; } = [];
     /// <summary>What this run did not assess, and why — explicit, never implied by absence.</summary>
     public List<string> WhatWasNotAssessed { get; init; } = [];
+    /// <summary>Quality among assessed PROJECT-QUALITY checks (runtime, contract and source evidence), with coverage. Configuration completeness
+    /// is <see cref="ConfigurationReadiness"/>, not quality. Computed from the checks (older stored runs recompute it); null when nothing was judged.</summary>
+    public BirkNext.Applicability.QualityResult Quality => IntegrationReviewScoring.Quality(AllChecks);
+    /// <summary>Configuration readiness: the configuration-provenance checks only. A configuration gap is a readiness concern, not a quality failure.</summary>
+    public BirkNext.Applicability.QualityResult ConfigurationReadiness => IntegrationReviewScoring.ConfigurationReadiness(AllChecks);
+    /// <summary>Per reviewed system: how much runtime evidence BirkNext can obtain for its technology (registry). Unsupported = a tool
+    /// limitation (e.g. Kafka): it never lowers <see cref="Quality"/>.</summary>
+    public List<IntegrationRuntimeSupport> RuntimeSupport => IntegrationReviewScoring.RuntimeSupport(Systems);
     [JsonIgnore] public int TopicsReviewed => Systems.Where(s => s.DomainReviewSupported).Sum(s => s.Topics.Count);
     [JsonIgnore] public IEnumerable<IntegrationCheck> AllChecks => Systems.SelectMany(s => s.PlatformChecks.Concat(s.Topics.SelectMany(t => t.Checks)));
 }
@@ -946,4 +954,50 @@ public static class IntegrationReviewLabels
     /// <summary>Assessed means the check produced a statement about the subject, not that evidence was missing.</summary>
     public static bool IsAssessed(IntegrationCheckStatus status) =>
         status is not (IntegrationCheckStatus.NotAssessed or IntegrationCheckStatus.Unavailable or IntegrationCheckStatus.NotConfigured);
+}
+
+/// <summary>Runtime-evidence support of one reviewed system's technology (from the shared technology registry).</summary>
+public sealed record IntegrationRuntimeSupport(string SystemName, string TechnologyId, BirkNext.Technology.SupportLevel Level, string Detail);
+
+/// <summary>
+/// Integration Quality Review on the shared scoring semantics. Check classes:
+/// <list type="bullet">
+/// <item>Project quality — runtime, contract, source and infrastructure evidence judged Pass/Warning/Fail/NeedsConfirmation.</item>
+/// <item>Configuration readiness — checks of the configured record itself (provenance Configuration). Never quality.</item>
+/// <item>Evidence availability — NotAssessed/Unavailable/NotConfigured: coverage gaps, never failures.</item>
+/// <item>Observations — Observed/Detected/Configured/NoIndicatorsObserved/NoRecentEvidence: executed, informational, no judgement (Observed ≠ Pass).</item>
+/// <item>Tool coverage — a technology without a runtime provider (Kafka, RabbitMQ, SOAP …): <see cref="RuntimeSupport"/>, never quality.</item>
+/// </list>
+/// </summary>
+public static class IntegrationReviewScoring
+{
+    public static BirkNext.Applicability.CheckOutcome Outcome(IntegrationCheckStatus status) => status switch
+    {
+        IntegrationCheckStatus.Pass => BirkNext.Applicability.CheckOutcome.Pass,
+        IntegrationCheckStatus.Warning => BirkNext.Applicability.CheckOutcome.Warning,
+        IntegrationCheckStatus.Fail => BirkNext.Applicability.CheckOutcome.Fail,
+        IntegrationCheckStatus.NeedsConfirmation => BirkNext.Applicability.CheckOutcome.NeedsReview,
+        IntegrationCheckStatus.Unavailable => BirkNext.Applicability.CheckOutcome.Unavailable,
+        IntegrationCheckStatus.NotAssessed or IntegrationCheckStatus.NotConfigured => BirkNext.Applicability.CheckOutcome.NotAssessed,
+        _ => BirkNext.Applicability.CheckOutcome.Informational,
+    };
+
+    public static bool IsConfigurationCheck(IntegrationCheck check) => check.Provenance == IntegrationEvidenceSource.Configuration;
+
+    public static BirkNext.Applicability.QualityResult Quality(IEnumerable<IntegrationCheck> checks) =>
+        BirkNext.Applicability.ScoreSemantics.Compute(checks.Where(c => !IsConfigurationCheck(c)).Select(c => Outcome(c.Status)));
+
+    public static BirkNext.Applicability.QualityResult ConfigurationReadiness(IEnumerable<IntegrationCheck> checks) =>
+        BirkNext.Applicability.ScoreSemantics.Compute(checks.Where(IsConfigurationCheck).Select(c => Outcome(c.Status)));
+
+    public static List<IntegrationRuntimeSupport> RuntimeSupport(IEnumerable<IntegrationSystemResult> systems) => systems.Select(s =>
+    {
+        var id = BirkNext.Technology.IntegrationTechnology.Map(s.Kind, s.SystemName);
+        var descriptor = BirkNext.Technology.TechnologySupportRegistry.Find(id);
+        var level = descriptor?.RuntimeObservation ?? BirkNext.Technology.SupportLevel.Unsupported;
+        var detail = BirkNext.Technology.TechnologySupportRegistry.IsSupported(level)
+            ? $"Runtime evidence: {BirkNext.Technology.TechnologySupportRegistry.Label(level)}."
+            : $"BirkNext has no runtime provider for {descriptor?.DisplayName ?? id}; configuration is reviewed, runtime is not assessed (a tool limitation, not an integration defect).";
+        return new IntegrationRuntimeSupport(s.SystemName, id, level, detail);
+    }).ToList();
 }

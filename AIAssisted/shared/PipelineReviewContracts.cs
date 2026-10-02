@@ -191,6 +191,10 @@ public sealed record PipelineReviewFinding
     public string? Environment { get; init; }
     public List<PipelineEvidenceRef> Evidence { get; init; } = [];
     public string SuggestedAction { get; init; } = "";
+    /// <summary>True when the "finding" is an assessment gap — BirkNext could not establish the behaviour (unresolved template, unanalyzed
+    /// platform ordering, external pipeline resource) — not a detected pipeline defect. Gaps lower analysis coverage, never pipeline quality,
+    /// and are counted apart (<see cref="PipelineReviewScoring"/>). Computed from the category, so stored results classify the same way.</summary>
+    public bool IsAssessmentGap => PipelineReviewScoring.IsAssessmentGap(Category);
 }
 
 public sealed record UnresolvedTemplate(string Pipeline, string Template, string Level, string? Stage, string? Job, string Reason, PipelineEvidenceRef Evidence);
@@ -329,4 +333,18 @@ public static class PipelineReviewText
         PipelineEdgeKind.Validates => "validates",
         _ => "includes template",
     };
+}
+
+/// <summary>
+/// Pipeline Review on the shared semantics: a parser/provider limitation is coverage (assessment gap), a detected missing gate is a quality
+/// finding. "No test step was found" is only raised when the job structure is known (Azure Pipelines, no unresolved template on the path);
+/// otherwise the builder reports <see cref="PipelineFindingCategory.UnresolvedFlow"/> ("cannot be assessed").
+/// </summary>
+public static class PipelineReviewScoring
+{
+    public static bool IsAssessmentGap(PipelineFindingCategory category) =>
+        category is PipelineFindingCategory.UnresolvedFlow or PipelineFindingCategory.TemplateResolutionGap or PipelineFindingCategory.CrossPipelineDependencyGap;
+
+    public static IEnumerable<PipelineReviewFinding> QualityFindings(IEnumerable<PipelineReviewFinding> findings) => findings.Where(f => !f.IsAssessmentGap);
+    public static IEnumerable<PipelineReviewFinding> AssessmentGaps(IEnumerable<PipelineReviewFinding> findings) => findings.Where(f => f.IsAssessmentGap);
 }

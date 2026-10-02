@@ -47,7 +47,7 @@ public static class SourceDependencyEvidenceExtractor
     public static (SourceDependencyEvidence? Evidence, string? Error) Extract(string repository, byte[] bytes, string fileName = "archive.zip")
     {
         var (files, error) = DependencyReviewService.ReadArchive(fileName, bytes);
-        return error is not null ? (null, error) : (FromFiles(repository, files), null);
+        return error is not null ? (null, error) : (FromFiles(repository, files) with { UnsupportedManifests = DependencyInventory.UnsupportedManifests(bytes) }, null);
     }
 
     public static SourceDependencyEvidence FromFiles(string repository, IReadOnlyList<RepositoryFile> files)
@@ -77,6 +77,7 @@ public static class SourceDependencyEvidenceExtractor
             Extracted = new ExtractedEvidence(evidence.Dependencies.Select(d => d with { Repository = repository }).ToList(),
                 evidence.Managers.Select(m => new DependencyInventory.ManagerFiles(m.Manager, m.Files)).ToList(), evidence.Automation,
                 evidence.RenovateFiles.ToDictionary(f => f.Path, f => f.Sha256, StringComparer.OrdinalIgnoreCase)),
+            UnsupportedManifests = evidence.UnsupportedManifests,
         };
 
     private static readonly Regex PackageIdRx = new(@"<PackageId>\s*([^<]+?)\s*</PackageId>", RegexOptions.IgnoreCase);

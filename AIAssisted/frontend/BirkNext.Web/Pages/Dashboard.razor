@@ -185,7 +185,7 @@
                     Label="Delivery"
                     Sublabel="@KpiStatusLabel(_deliveryScore, _deliveryHasData)"
                     Variant="@(_deliveryHasData ? (_deliveryScore >= 80 ? "success" : _deliveryScore >= 50 ? "warning" : "danger") : null)" />
-        @if (_perfReport?.ReadinessReport is { HasData: true } perfKpi)
+        @if (_perfReport?.ReadinessReport is { HasData: true, OverallScore: not null } perfKpi)
         {
             <MetricCard Value="@perfKpi.OverallScore.ToString()"
                         Label="Performance"
@@ -245,11 +245,11 @@
                             Label="@KpiStatusLabel(_deliveryScore, _deliveryHasData)" />
             </div>
 
-            @if (_perfReport?.ReadinessReport is { HasData: true } perfHealth)
+            @if (_perfReport?.ReadinessReport is { HasData: true, OverallScore: not null } perfHealth)
             {
                 <div class="db-health-card">
                     <span class="db-health-label">Performance</span>
-                    <span class="db-health-value @ScoreClass(perfHealth.OverallScore)">@perfHealth.OverallScore</span>
+                    <span class="db-health-value @ScoreClass(perfHealth.OverallScore!.Value)">@perfHealth.OverallScore</span>
                     <StatusChip Status="@(perfHealth.OverallState == PerformanceReadinessState.Ready ? "healthy" : perfHealth.OverallState == PerformanceReadinessState.MostlyReady ? "warning" : "critical")"
                                 Label="@ReadinessStateLabel(perfHealth.OverallState)" />
                 </div>
@@ -1032,7 +1032,8 @@
 
     /// <summary>A QA result only counts as assessed when there was a specification to assess. A report built without one (insufficient
     /// data) scores 0 by construction — that is missing evidence, not low quality, so it never enters the quality average.</summary>
-    private bool _qaAssessed => DashboardQualityAggregate.QaAssessed(_qaHasData, QualitySession.HasResult, Workspace.Has(WorkspaceArtifactKind.Specification),
+    private bool _qaAssessed => DashboardQualityAggregate.QaAssessed(_qaHasData, QualitySession.HasResult,
+        Workspace.Has(WorkspaceArtifactKind.Specification) && (QualitySession.Report is not { AssessedPacks: 0 }),
         Snapshot.AuditReport?.HasSpecification, Snapshot.ReadinessReport?.HasSpecification);
 
     /// <summary>The six dashboard quality areas: (assessed?, score). Not-assessed areas lower coverage, never quality.</summary>
@@ -1042,8 +1043,8 @@
         (Snapshot.ComplianceReport is not null, _complianceScore),
         (_qaAssessed, _qaScore),
         (Snapshot.DeliveryReport is not null, _deliveryScore),
-        (_securityReport is not null, _securityReport?.Health.Score ?? 0),
-        (_perfReport?.ReadinessReport is { HasData: true }, _perfReport?.ReadinessReport?.OverallScore ?? 0),
+        (_securityReport?.Health.Score is not null, _securityReport?.Health.Score ?? 0),
+        (_perfReport?.ReadinessReport is { HasData: true, OverallScore: not null }, _perfReport?.ReadinessReport?.OverallScore ?? 0),
     ];
 
     /// <summary>Quality among assessed areas only (the denominator is the assessed count). There is no global score over unassessed areas.</summary>

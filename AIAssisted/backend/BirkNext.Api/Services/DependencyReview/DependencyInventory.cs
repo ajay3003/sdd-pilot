@@ -26,6 +26,33 @@ public static class DependencyInventory
             || name.Equals("dotnet-tools.json", StringComparison.OrdinalIgnoreCase) || IsDockerfile(path) || IsCompose(path) || IsAzurePipeline(path);
     }
 
+    /// <summary>The ecosystem of a manifest BirkNext does NOT read natively (null for NuGet/Docker, which it reads, and for non-manifests).</summary>
+    public static string? UnsupportedEcosystem(string path) => System.IO.Path.GetFileName(path).ToLowerInvariant() switch
+    {
+        "pom.xml" or "build.gradle" or "build.gradle.kts" => "Maven / Gradle",
+        "package.json" or "package-lock.json" or "yarn.lock" or "pnpm-lock.yaml" => "npm",
+        "requirements.txt" or "pyproject.toml" or "pipfile" or "poetry.lock" or "setup.py" => "pip / Poetry",
+        "go.mod" => "Go modules",
+        "cargo.toml" => "Cargo",
+        "gemfile" => "Bundler",
+        "composer.json" => "Composer",
+        _ => null,
+    };
+
+    /// <summary>Unsupported-ecosystem manifests in an archive, by entry name only (content is never read). Bounded to 50.</summary>
+    public static List<string> UnsupportedManifests(byte[] archive)
+    {
+        try
+        {
+            using var zip = new System.IO.Compression.ZipArchive(new MemoryStream(archive), System.IO.Compression.ZipArchiveMode.Read);
+            return zip.Entries.Select(e => e.FullName.Replace('\\', '/').TrimStart('/'))
+                .Where(p => !p.Split('/').SkipLast(1).Any(s => s.ToLowerInvariant() is "node_modules" or "bin" or "obj" or ".git" or "vendor"))
+                .Select(p => (Path: p, Ecosystem: UnsupportedEcosystem(p))).Where(x => x.Ecosystem is not null)
+                .OrderBy(x => x.Path, StringComparer.Ordinal).Take(50).Select(x => $"{x.Ecosystem}: {x.Path}").ToList();
+        }
+        catch (InvalidDataException) { return []; }
+    }
+
     public static bool IsDockerfile(string path)
     {
         var name = System.IO.Path.GetFileName(path);

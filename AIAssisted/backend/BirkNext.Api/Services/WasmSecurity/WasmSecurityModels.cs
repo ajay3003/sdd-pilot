@@ -84,7 +84,8 @@ public sealed class SecurityHeaderResult
 
 public sealed class WasmSecurityHealth
 {
-    public int Score { get; init; }
+    /// <summary>Null when the target could not be fetched (nothing assessed) — never a default 100. Shared ScoreSemantics.</summary>
+    public int? Score { get; init; }
     public int Critical { get; init; }
     public int High { get; init; }
     public int Medium { get; init; }

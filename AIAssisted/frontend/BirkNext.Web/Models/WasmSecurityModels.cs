@@ -78,7 +78,7 @@ public sealed class SecurityHeaderResult
 
 public sealed class WasmSecurityHealth
 {
-    [JsonPropertyName("score")]               public int Score              { get; init; }
+    [JsonPropertyName("score")]               public int? Score             { get; init; }
     [JsonPropertyName("critical")]            public int Critical           { get; init; }
     [JsonPropertyName("high")]                public int High               { get; init; }
     [JsonPropertyName("medium")]              public int Medium             { get; init; }

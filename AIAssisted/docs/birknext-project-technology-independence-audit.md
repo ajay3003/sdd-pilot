@@ -377,3 +377,24 @@ BirkNext can now onboard a partially understood stack honestly:
 - reviews state their applicability instead of failing;
 - quality aggregates exclude what was not assessed;
 - no project-specific state is applied without an explicit action.
+
+### Follow-up: review-local scoring migrated (2026-10-02)
+
+Every review score now applies the shared eligibility semantics; details are in the architecture document. False values removed:
+
+| Score | False value removed |
+|---|---|
+| Legacy AQR unassessed categories | 0 |
+| WASM performance unassessed category | 100 |
+| WASM performance with nothing assessed | 0, which entered the dashboard |
+| WASM security, unreachable target | 100 |
+| FQR Performance from a security scan alone | 100 |
+| Dependency Review Coverage for a Maven-only repository | "Missing" |
+| Pipeline Review | tool-limitation findings counted as defects |
+| Quality Review empty Standards and Data Model packs | 0, averaged into the overall score |
+
+Each of these is covered by a test. The Kafka-only Integration Quality Review run produces no failure or penalty.
+
+Remaining pre-existing accessibility issues, not part of this work:
+- the left-menu section heading contrast;
+- the button inside the Integrations summary `<dl>`.

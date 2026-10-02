@@ -28,12 +28,19 @@ public static class PipelineReviewPresentation
 
     public static string Headline(PipelineReviewResult r)
     {
-        var actionable = r.Findings.Where(f => f.Severity != PipelineFindingSeverity.Info).ToList();
+        var actionable = PipelineReviewScoring.QualityFindings(r.Findings).Where(f => f.Severity != PipelineFindingSeverity.Info).ToList();
         return actionable.Count == 0 ? "No delivery gap detected from source" : "Needs attention";
     }
 
-    public static string Counts(PipelineReviewResult r) =>
-        string.Join(" · ", SeverityOrder.Select(s => (s, n: r.Findings.Count(f => f.Severity == s))).Where(x => x.n > 0).Select(x => $"{x.n} {x.s}")) is { Length: > 0 } text ? text : "No findings";
+    /// <summary>Quality findings by severity, then assessment gaps apart: what BirkNext could not establish is not a pipeline defect.</summary>
+    public static string Counts(PipelineReviewResult r)
+    {
+        var quality = PipelineReviewScoring.QualityFindings(r.Findings).ToList();
+        var gaps = PipelineReviewScoring.AssessmentGaps(r.Findings).Count();
+        var text = string.Join(" · ", SeverityOrder.Select(s => (s, n: quality.Count(f => f.Severity == s))).Where(x => x.n > 0).Select(x => $"{x.n} {x.s}"));
+        if (text.Length == 0) text = "No findings";
+        return gaps == 0 ? text : $"{text} · {gaps} not assessable";
+    }
 
     /// <summary>Symbol + word for a matrix cell (never colour alone).</summary>
     public static (string Symbol, string Text) Cell(GateState? state) => state switch

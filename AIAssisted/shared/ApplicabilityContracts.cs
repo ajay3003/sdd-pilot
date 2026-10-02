@@ -48,9 +48,11 @@ public enum ApplicabilityStatus
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ReviewExecutionState { NotStarted, Blocked, Completed, PartiallyCompleted, FailedToExecute }
 
-/// <summary>The outcome of one check. Only Pass/Fail/Warning/NeedsReview are assessed outcomes; the rest are neutral coverage states.</summary>
+/// <summary>The outcome of one check. Only Pass/Fail/Warning/NeedsReview/Partial are assessed (judged) outcomes; the rest are neutral coverage
+/// states. <see cref="Informational"/> (appended; persisted values keep their names) = the check executed and recorded evidence ("Observed",
+/// "Detected") without a quality judgement: it counts as executed for coverage, never in the quality denominator.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum CheckOutcome { Pass, Fail, Warning, NeedsReview, Partial, NotTested, NotAssessed, Unavailable, Unsupported, NotApplicable }
+public enum CheckOutcome { Pass, Fail, Warning, NeedsReview, Partial, NotTested, NotAssessed, Unavailable, Unsupported, NotApplicable, Informational }
 
 public sealed record ReviewApplicability
 {
@@ -77,8 +79,10 @@ public sealed record ReviewCoverage
     public double? AssessmentCoveragePercent => ApplicableChecks == 0 ? null : Math.Round(100.0 * ExecutedChecks / ApplicableChecks, 1);
 }
 
-/// <summary>A quality result over assessed checks only, with its denominator stated.</summary>
-public sealed record QualityResult(double? QualityPercent, int Denominator, int Passed, int Failed, int Warnings, ReviewCoverage Coverage, string Basis);
+/// <summary>A quality result over assessed checks only, with its denominator stated. <paramref name="WeightedCoveragePercent"/> is set by the
+/// weighted variant: executed weight / applicable weight.</summary>
+public sealed record QualityResult(double? QualityPercent, int Denominator, int Passed, int Failed, int Warnings, ReviewCoverage Coverage, string Basis,
+    double? WeightedCoveragePercent = null);
 
 /// <summary>The standard envelope a review result can expose: applicability, execution, coverage, quality (optional), limitations.</summary>
 public sealed record ReviewExecutionResult
@@ -101,6 +105,25 @@ public static class ScoreSemantics
 
     public static bool IsFailure(CheckOutcome o) => o == CheckOutcome.Fail;
 
+    /// <summary>The check ran (judged or informational). Executed ≠ assessed: only assessed outcomes enter quality.</summary>
+    public static bool IsExecuted(CheckOutcome o) => IsAssessed(o) || o == CheckOutcome.Informational;
+
+    /// <summary>Credit of an assessed outcome: Pass 1, Warning / NeedsReview / Partial ½, Fail 0. The one cross-review policy.</summary>
+    public static double Credit(CheckOutcome o) => o switch
+    {
+        CheckOutcome.Pass => 1,
+        CheckOutcome.Warning or CheckOutcome.NeedsReview or CheckOutcome.Partial => 0.5,
+        _ => 0,
+    };
+
+    /// <summary>An execution failure (an engine/provider threw, timed out, was blocked) is a coverage gap: Unavailable, never Fail.</summary>
+    public static CheckOutcome FromExecution(ReviewExecutionState state) => state switch
+    {
+        ReviewExecutionState.FailedToExecute or ReviewExecutionState.Blocked => CheckOutcome.Unavailable,
+        ReviewExecutionState.NotStarted => CheckOutcome.NotTested,
+        _ => CheckOutcome.NotAssessed,
+    };
+
     /// <summary>
     /// Quality over assessed checks only. Unsupported and NotApplicable checks are not applicable to the score; NotTested, NotAssessed and
     /// Unavailable are applicable but not executed — they lower assessment coverage, never quality. Warning and NeedsReview count half;
@@ -116,9 +139,37 @@ public static class ScoreSemantics
         var passed = assessed.Count(o => o == CheckOutcome.Pass);
         var failed = assessed.Count(o => o == CheckOutcome.Fail);
         var warnings = assessed.Count(o => o is CheckOutcome.Warning or CheckOutcome.NeedsReview or CheckOutcome.Partial);
-        var points = passed + warnings * 0.5;
+        var points = assessed.Sum(Credit);
         return new QualityResult(Math.Round(100.0 * points / assessed.Count, 1), assessed.Count, passed, failed, warnings, coverage,
             $"Quality among {assessed.Count} assessed check(s); {coverage.UnsupportedChecks} unsupported and {coverage.NotApplicableChecks} not applicable excluded; {coverage.NotAssessedChecks} not assessed (coverage, not quality).");
+    }
+
+    /// <summary>
+    /// Weighted quality: the denominator is the weight of ASSESSED checks only. Example: A (weight 3) Pass + B (weight 2) Unsupported → 100 %
+    /// quality, weighted coverage 100 % (B is not applicable). With B NotTested instead: 100 % quality, 60 % weighted coverage — never 60 % quality.
+    /// </summary>
+    public static QualityResult ComputeWeighted(IEnumerable<(CheckOutcome Outcome, double Weight)> checks)
+    {
+        var list = checks.Where(c => c.Weight > 0).ToList();
+        var plain = Compute(list.Select(c => c.Outcome));
+        var applicableWeight = list.Where(c => c.Outcome is not (CheckOutcome.Unsupported or CheckOutcome.NotApplicable)).Sum(c => c.Weight);
+        var assessed = list.Where(c => IsAssessed(c.Outcome)).ToList();
+        var assessedWeight = assessed.Sum(c => c.Weight);
+        return plain with
+        {
+            QualityPercent = assessedWeight == 0 ? null : Math.Round(100.0 * assessed.Sum(c => Credit(c.Outcome) * c.Weight) / assessedWeight, 1),
+            WeightedCoveragePercent = applicableWeight == 0 ? null : Math.Round(100.0 * list.Where(c => IsExecuted(c.Outcome)).Sum(c => c.Weight) / applicableWeight, 1),
+        };
+    }
+
+    /// <summary>
+    /// The one rule for reviews that keep 0–100 category scores: average only the categories that were assessed (non-null). Null when none
+    /// was — "no score", never 0. A category that was not assessed must be null, never a default 0 or 100.
+    /// </summary>
+    public static int? AverageAssessed(IEnumerable<int?> categoryScores)
+    {
+        var assessed = categoryScores.Where(s => s.HasValue).Select(s => s!.Value).ToList();
+        return assessed.Count == 0 ? null : (int)Math.Round(assessed.Average(), MidpointRounding.AwayFromZero);
     }
 
     public static ReviewCoverage Coverage(IReadOnlyCollection<CheckOutcome> outcomes)
@@ -128,7 +179,7 @@ public static class ScoreSemantics
         var notAssessed = outcomes.Count(o => o is CheckOutcome.NotTested or CheckOutcome.NotAssessed or CheckOutcome.Unavailable);
         return new ReviewCoverage
         {
-            TotalChecks = outcomes.Count, ApplicableChecks = outcomes.Count - unsupported - notApplicable, ExecutedChecks = outcomes.Count(IsAssessed),
+            TotalChecks = outcomes.Count, ApplicableChecks = outcomes.Count - unsupported - notApplicable, ExecutedChecks = outcomes.Count(IsExecuted),
             UnsupportedChecks = unsupported, NotApplicableChecks = notApplicable, NotAssessedChecks = notAssessed,
         };
     }
@@ -152,6 +203,7 @@ public static class ScoreSemantics
         CheckOutcome.NotTested => "Not tested",
         CheckOutcome.NotAssessed => "Not assessed",
         CheckOutcome.NotApplicable => "Not applicable",
+        CheckOutcome.Informational => "Observed (no judgement)",
         _ => o.ToString(),
     };
 

@@ -29,6 +29,9 @@ public sealed record SourceDependencyEvidence
     public List<string> Automation { get; init; } = [];
     public List<SourcePublishedPackage> PublishedPackages { get; init; } = [];
     public List<SourceExternalProjectReference> ExternalProjectReferences { get; init; } = [];
+    /// <summary>Manifests of ecosystems BirkNext does not read natively ("Maven: pom.xml"). A tool limitation, never a missing dependency
+    /// policy; an SBOM import covers them. Empty in snapshots captured before this was recorded.</summary>
+    public List<string> UnsupportedManifests { get; init; } = [];
 }
 
 // ── Dependency Review source scope ────────────────────────────────────────────────────────────────────────────────────────────

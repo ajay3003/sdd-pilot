@@ -76,9 +76,11 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
 
         // ── Compute per-category scores ───────────────────────────────────────
         // Only compute scores for assessed categories.
-        int? perfScore   = securityReport is not null || performanceReport is not null
+        // Performance is assessed only when the performance engine produced data. A security scan alone is no performance evidence:
+        // without this guard the category scored 100 (no performance findings) although nothing about performance was measured.
+        int? perfScore   = performanceReport is not null
                               ? ComputeScore(findings, FrontendQualityCategory.Performance,
-                                  performanceReport?.ReadinessReport?.OverallScore)
+                                  performanceReport.ReadinessReport?.OverallScore)
                               : null;
         int? secScore    = securityReport is not null
                               ? securityReport.Health.Score
@@ -95,15 +97,9 @@ public sealed class FrontendQualityReviewService : IFrontendQualityReviewService
                                   performanceReport.ReadinessReport.OverallScore)
                               : null;
 
-        // Only average assessed (non-null) scores.
-        var assessedScores = new[] { perfScore, secScore, stdScore, wasmScore, rdyScore }
-            .Where(s => s.HasValue)
-            .Select(s => s.Value)
-            .ToList();
-
-        int? overallScore = assessedScores.Count > 0
-            ? (int?)Math.Round(assessedScores.Average())
-            : null;
+        // Shared rule: average assessed (non-null) categories only; no score when none was assessed. WASM is NotApplicable (null) for a
+        // non-WASM target, accessibility is not assessed here (axe engine), so neither lowers the score.
+        int? overallScore = BirkNext.Applicability.ScoreSemantics.AverageAssessed([perfScore, secScore, stdScore, wasmScore, rdyScore]);
 
         var categoryScores = new List<FrontendQualityCategoryScore>
         {

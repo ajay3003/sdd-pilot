@@ -128,13 +128,14 @@ public class WasmPerformanceReadinessServiceTests
     // ── CalculateOverallScore ─────────────────────────────────────────────────
 
     [Fact]
-    public void CalculateOverallScore_NoAssessedCategories_ReturnsZero()
+    public void CalculateOverallScore_NoAssessedCategories_HasNoScore()
     {
         var cats = new List<PerformanceCategorySummary>
         {
-            new() { CategoryName = "A", WasAssessed = false, Score = 100, State = ReadinessState.NotAssessed }
+            new() { CategoryName = "A", WasAssessed = false, Score = null, State = ReadinessState.NotAssessed }
         };
-        WasmPerformanceReadinessService.CalculateOverallScore(cats).Should().Be(0);
+        // Shared ScoreSemantics: nothing assessed is no score — never a 0 an aggregate would average in.
+        WasmPerformanceReadinessService.CalculateOverallScore(cats).Should().BeNull();
     }
 
     [Fact]

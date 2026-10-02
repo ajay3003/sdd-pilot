@@ -972,11 +972,47 @@ public sealed class QualityReviewSampleProjectTests : BunitContext
             _resolver.SetProjectDocument("project-b", "Project B", ExplorerDocumentType.DataModel, "PROJECT B data-model.md");
     }
 
+    // ── Shared scoring: a pack with nothing to assess is "Not assessed", never 0 %, and is excluded from the average ─────────
+
+    [Fact]
+    public void UnassessedPack_ShowsNotAssessed_AndIsExcludedFromTheAverage()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        var assessed = new QualityReviewPackResult { PackId = "a", PackName = "Assessed Pack", Score = 80 };
+        var empty = new QualityReviewPackResult { PackId = "dm", PackName = "Data Model Pack", Score = 0, Assessed = false, NotAssessedReason = "No data model entities to assess." };
+        _qualityReview.SetReport(new QualityReviewReport { PackResults = [assessed, empty], OverallScore = 80, AssessedPacks = 1, RunAt = DateTimeOffset.UtcNow });
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find(".qr-review-summary").TextContent.Should().Contain("80%");
+            cut.Find("[data-testid=qr-assessed-packs]").TextContent.Should().Contain("1 of 2 packs assessed");
+            cut.Markup.Should().Contain("Not assessed");
+        });
+    }
+
+    [Fact]
+    public void NoAssessedPack_HasNoScore_NotZeroPercent()
+    {
+        SeedProjectA();
+        _resolver.SetSelectedProject("project-a");
+        _qualityReview.SetReport(new QualityReviewReport
+        {
+            PackResults = [new QualityReviewPackResult { PackId = "dm", PackName = "Data Model Pack", Score = 0, Assessed = false }], OverallScore = 0, AssessedPacks = 0, RunAt = DateTimeOffset.UtcNow,
+        });
+        var cut = Render<QualityReview>();
+        ClickRun(cut);
+        cut.WaitForAssertion(() => cut.Find("[data-testid=qr-no-score]").TextContent.Should().Contain("No score"));
+        cut.Find(".qr-review-summary").TextContent.Should().NotContain("0%");
+    }
+
     private static QualityReviewReport MakeReport(params QualityReviewPackResult[] results) =>
         new()
         {
             PackResults = [.. results],
             OverallScore = results.Length == 0 ? 0 : Math.Round(results.Average(r => r.Score), 1),
+            AssessedPacks = results.Count(r => r.Error is null && r.Assessed),
             TotalFindings = results.Sum(r => r.Critical + r.High + r.Medium + r.Low),
             CriticalCount = results.Sum(r => r.Critical),
             HighCount = results.Sum(r => r.High),
