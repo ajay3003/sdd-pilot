@@ -283,4 +283,19 @@ public sealed class CodeTraceabilityService
             UnlinkedFiles = files.Count(id => !filesWithLinks.Contains(id)),
         };
     }
+
+    public async Task<IReadOnlyList<CodeLinkEvidenceDto>> GetProjectLinksAsync(string projectId, CancellationToken ct = default)
+    {
+        var links = await _db.CodeLinks.Where(x => x.ProjectId == projectId).OrderBy(x => x.CreatedAt).ToListAsync(ct);
+        var fileIds = links.Select(x => x.CodeFileId).Distinct().ToArray();
+        var scenarioIds = links.Select(x => x.ScenarioId).Distinct().ToArray();
+        var files = await _db.CodeFiles.Where(x => fileIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        var scenarios = await _db.Scenarios.Where(x => scenarioIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        return links.Where(x => files.ContainsKey(x.CodeFileId) && scenarios.ContainsKey(x.ScenarioId))
+            .Select(x => new CodeLinkEvidenceDto(x.Id.ToString(), scenarios[x.ScenarioId].Title, files[x.CodeFileId].FilePath,
+                x.ScenarioKind, "PersistedCodeLink", x.CreatedAt))
+            .ToArray();
+    }
 }
+
+public sealed record CodeLinkEvidenceDto(string LinkId, string RequirementReference, string FilePath, string ScenarioKind, string Origin, DateTime CreatedAt);

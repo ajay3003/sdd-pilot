@@ -62,6 +62,8 @@ public static class SddLifecycleReviewService
             else
             {
                 var criteriaChanged = prior.AcceptanceCriteriaFingerprint != acFingerprint;
+                var criterionIds = requirement.LinkedAcceptanceScenarios.Select(x => x.Id ?? x.Title).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var previousCriterionIds = prior.AcceptanceCriterionIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
                 lifecycle.RequirementChanges.Add(new SddRequirementChange
                 {
                     RequirementId = requirement.Id,
@@ -76,14 +78,22 @@ public static class SddLifecycleReviewService
                     link.Currentness = "PotentiallyStale";
                     link.Reason = criteriaChanged ? "Requirement or acceptance criteria revision changed; reconfirm this link." : "Requirement revision changed; reconfirm this link.";
                 }
-                foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) evidence.Currentness = "PotentiallyStale";
-                foreach (var evidence in lifecycle.TestEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) evidence.Currentness = "PotentiallyStale";
+                foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current"))
+                { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Requirement revision changed; source evidence requires review."; }
+                foreach (var evidence in lifecycle.TestEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current"))
+                { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Requirement revision changed; test design requires review."; }
+                foreach (var evidence in lifecycle.TestExecutions.Where(x => x.RequirementReferences.Contains(requirement.Id, StringComparer.OrdinalIgnoreCase) && x.Currentness == "Current"))
+                { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Requirement revision changed after this execution was recorded; the historical result is retained."; }
+                foreach (var evidence in lifecycle.TestExecutions.Where(x => x.Currentness == "Current" &&
+                    x.AcceptanceCriterionReferences.Any(id => criterionIds.Contains(id) || previousCriterionIds.Contains(id))))
+                { evidence.Currentness = "PotentiallyStale"; evidence.CurrentnessReason = "Acceptance criterion changed after this execution was recorded; the historical result is retained."; }
             }
             lifecycle.RequirementSnapshots.Add(new SddRequirementSnapshot
             {
                 RequirementId = requirement.Id,
                 Fingerprint = combined,
                 AcceptanceCriteriaFingerprint = acFingerprint,
+                AcceptanceCriterionIds = requirement.LinkedAcceptanceScenarios.Select(x => x.Id ?? x.Title).ToList(),
                 ArtifactRevisionId = artifactRevisionId,
                 IsCurrent = true
             });
@@ -97,8 +107,11 @@ public static class SddLifecycleReviewService
                 link.Currentness = "Historical";
                 link.Reason = "Requirement was removed from the current specification revision.";
             }
-            foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) evidence.Currentness = "Historical";
-            foreach (var evidence in lifecycle.TestEvidence.Where(x => x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) evidence.Currentness = "Historical";
+            foreach (var evidence in lifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision."; }
+            foreach (var evidence in lifecycle.TestEvidence.Where(x => x.RequirementId.Equals(removed.RequirementId, StringComparison.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision."; }
+            foreach (var evidence in lifecycle.TestExecutions.Where(x => x.RequirementReferences.Contains(removed.RequirementId, StringComparer.OrdinalIgnoreCase) && x.Currentness == "Current")) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Requirement is absent from the current specification revision; execution result retained as history."; }
+            foreach (var evidence in lifecycle.TestExecutions.Where(x => x.Currentness == "Current" &&
+                x.AcceptanceCriterionReferences.Any(id => removed.AcceptanceCriterionIds.Contains(id, StringComparer.OrdinalIgnoreCase)))) { evidence.Currentness = "Historical"; evidence.CurrentnessReason = "Acceptance criterion was removed with its requirement; execution result retained as history."; }
         }
     }
 
@@ -107,10 +120,12 @@ public static class SddLifecycleReviewService
         var existing = lifecycle.Links.FirstOrDefault(x => x.FromId == from && x.ToId == to && x.Relationship == relationship);
         if (existing is not null)
         {
+            // Rebuilding a view is not evidence revalidation. Preserve targeted stale/history decisions
+            // until an explicit reconfirmation action validates the link against changed inputs.
+            if (existing.Currentness != "Current") return;
+            if (existing.Confidence == confidence && existing.Provenance == "SharedReviewContext") return;
             existing.Confidence = confidence;
             existing.Provenance = "SharedReviewContext";
-            existing.LastValidatedAt = DateTimeOffset.UtcNow;
-            existing.Reason = null;
             return;
         }
         lifecycle.Links.Add(new SddTraceabilityLink

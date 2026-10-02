@@ -16,9 +16,12 @@ public sealed class ImplementationReviewLifecycleTests : BunitContext
         context.Setup(x => x.GetCurrent()).Returns(new ReviewContext());
         var repository = new WorkspaceArtifactRepository();
         var autosave = new Mock<IWorkspaceAutoSaveService>();
+        var sddApi = new Mock<ISddEvidenceApiService>();
         Services.AddSingleton(context.Object);
         Services.AddSingleton<IWorkspaceSessionService>(repository);
         Services.AddSingleton<IWorkspaceAutoSaveService>(autosave.Object);
+        Services.AddSingleton(sddApi.Object);
+        Services.AddScoped<SddEvidenceGraphService>();
     }
 
     [Fact]
@@ -28,7 +31,8 @@ public sealed class ImplementationReviewLifecycleTests : BunitContext
 
         cut.Markup.Should().Contain("Not available");
         cut.Markup.Should().Contain("implementation is not assessed");
-        cut.FindAll("textarea").Should().BeEmpty();
+        cut.Find("#test-result-import").Should().NotBeNull();
+        cut.Markup.Should().Contain("Designed scenarios remain separate");
         cut.Markup.Should().NotContain("Reviewing...");
     }
 }

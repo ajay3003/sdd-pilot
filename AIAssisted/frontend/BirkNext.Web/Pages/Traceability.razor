@@ -1,169 +1,52 @@
 @page "/traceability"
 @using BirkNext.Web.Components
-@using BirkNext.Web.Models.Analysis
 @using BirkNext.Web.Services
-
-@inject IAnalysisPageModelService AnalysisPageModelService
+@using BirkNext.Web.Models
 @inject IWorkspaceSessionService Workspace
+@inject IWorkspaceAutoSaveService AutoSave
+@inject SddEvidenceGraphService Graph
 
 <PageTitle>Requirements Traceability</PageTitle>
-
-<div class="traceability-page">
-    <PageHeader Title="Requirements Traceability"
-                Description="Track which requirements are covered by tests, tasks, and plan items. Identify orphaned tests and coverage gaps." />
-
-    <!-- ── Readiness Panel ────────────────────────────────────────── -->
-    @if (PageModel is not null)
+<main class="requirements-traceability">
+    <PageHeader Title="Requirements Traceability" Description="One shared evidence graph for current requirements, acceptance criteria, plan, tasks, implementation references and test executions." />
+    <SddTraceabilityMatrix />
+    @if (OrphanTasks.Count > 0)
     {
-        <AnalysisReadinessPanel Model="PageModel" />
+        <section><h2>Unlinked tasks</h2><p>These task references are not linked from a current requirement.</p><ul>@foreach (var task in OrphanTasks) { <li>@task</li> }</ul></section>
     }
-    else if (IsLoading)
+    @if (OrphanImplementation.Count > 0)
     {
-        <div class="loading-state" role="status">Loading page configuration...</div>
+        <section><h2>Unlinked implementation evidence</h2><p>These explicit source references do not match a current requirement ID.</p><ul>@foreach (var item in OrphanImplementation) { <li>@item.RequirementId · @item.Reference · @item.Currentness</li> }</ul></section>
     }
-    else if (LoadError is not null)
+    @if (OrphanExecutions.Count > 0)
     {
-        <div class="notification notification-error" role="alert">@LoadError</div>
+        <section><h2>Unlinked test execution evidence</h2><p>Imported tests without a current requirement or acceptance-criterion link.</p><ul>@foreach (var item in OrphanExecutions) { <li>@item.TestId · @item.ExecutionState / @item.Result · @item.Currentness</li> }</ul></section>
     }
-
-    <!-- ── Analysis Content (only if ready) ────────────────────────── -->
-    @if (PageModel?.Summary.CanRun == true)
-    {
-        <div class="traceability-content">
-                    <!-- Results Section -->
-            @if (PageModel.Results.Count > 0)
-            {
-                <section class="results-section">
-                    <h2 class="section-title">Analysis Results</h2>
-                    <div class="results-grid">
-                        @foreach (var result in PageModel.Results)
-                        {
-                            <div class="result-card">
-                                <div class="result-header">
-                                    <h3>@result.Name</h3>
-                                    <span class="severity @GetSeverityClass(result.Severity.ToString())">@result.Severity</span>
-                                </div>
-                                @if (!string.IsNullOrEmpty(result.Summary))
-                                {
-                                    <p class="summary">@result.Summary</p>
-                                }
-                                @if (!string.IsNullOrEmpty(result.Details))
-                                {
-                                    <div class="details">@result.Details</div>
-                                }
-                                @if (!string.IsNullOrEmpty(result.Recommendation))
-                                {
-                                    <div class="recommendation">
-                                        <strong>Recommendation:</strong> @result.Recommendation
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                </section>
-            }
-
-            <!-- Summary Section -->
-            @if (PageModel.Summary is not null)
-            {
-                <section class="summary-section">
-                    <h2 class="section-title">Summary</h2>
-                    <div class="summary-card">
-                        <div class="summary-stat">
-                            <span class="stat-label">Total Findings</span>
-                            <span class="stat-value">@PageModel.Results.Count</span>
-                        </div>
-                        @if (PageModel.Summary.ReadinessMessage is not null)
-                        {
-                            <div class="summary-text">@PageModel.Summary.ReadinessMessage</div>
-                        }
-                    </div>
-                </section>
-            }
-        </div>
-    }
-    else if (PageModel?.ReadinessStatus == AnalysisStatus.Blocked)
-    {
-        <div class="blocked-state">
-            <div class="blocked-icon">🔒</div>
-            <h2>Load Artifacts First</h2>
-            <p>Load specification and plan artifacts to analyze requirements traceability.</p>
-        </div>
-    }
-</div>
+    <section><h2>Evidence limitations</h2><ul>
+        <li>A CodeLink records an explicit relationship; it does not establish that the code behaves correctly.</li>
+        <li>Source Analysis snapshots do not retain a complete file inventory, so CodeLink target validation is shown as not assessed.</li>
+        <li>Discovered or designed tests are not execution results. Only imported execution records show execution state and result.</li>
+        <li>Missing evidence is a traceability gap, not an automatic failure.</li>
+    </ul></section>
+</main>
 
 @code {
-    private AnalysisPageModel? PageModel;
-    private bool IsLoading = true;
-    private string? LoadError;
+    private IReadOnlyList<SddRequirementGraphRow> Rows => Graph.Build(Workspace);
+    private HashSet<string> RequirementIds => Rows.Select(x => x.Requirement.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<string> OrphanTasks => Workspace.SddLifecycle.Links
+        .Where(x => x.Relationship == "RequirementDecomposedInto" && x.Currentness == "Current" && !RequirementIds.Contains(x.FromId))
+        .Select(x => x.ToId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    private IReadOnlyList<SddImplementationEvidence> OrphanImplementation => Workspace.SddLifecycle.ImplementationEvidence
+        .Where(x => !RequirementIds.Contains(x.RequirementId)).ToArray();
+    private IReadOnlyList<SddTestExecutionEvidence> OrphanExecutions => Workspace.SddLifecycle.TestExecutions
+        .Where(x => x.Currentness == "Current" && x.RequirementReferences.All(id => !RequirementIds.Contains(id)) &&
+            !Rows.SelectMany(r => r.Requirement.LinkedAcceptanceScenarios).Any(ac => x.AcceptanceCriterionReferences.Contains(ac.Id ?? ac.Title, StringComparer.OrdinalIgnoreCase)))
+        .ToArray();
 
     protected override async Task OnInitializedAsync()
     {
-        // Subscribe to workspace changes
-        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
-
-        // Load initial model
-        await RefreshPageModel();
+        Graph.SynchronizeCurrentArtifacts(Workspace);
+        await AutoSave.SaveNowAsync();
     }
-
-    private async Task RefreshPageModel()
-    {
-        try
-        {
-            IsLoading = true;
-            LoadError = null;
-            PageModel = await AnalysisPageModelService.GetRequirementsTraceabilityModelAsync();
-
-            if (PageModel is null)
-            {
-                LoadError = "Failed to load page configuration";
-            }
-        }
-        catch (Exception ex)
-        {
-            LoadError = $"Error loading configuration: {ex.Message}";
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
-
-    private string GetSeverityClass(string? severity) => severity?.ToLower() switch
-    {
-        "critical" => "critical",
-        "warning" => "warning",
-        "info" => "info",
-        _ => "default"
-    };
 }
-
-<style>
-.traceability-page { padding: 0 20px; }
-.loading-state { text-align: center; color: #6b7280; padding: 40px 20px; }
-.traceability-content { margin-top: 32px; }
-.section-title { font-size: 18px; font-weight: 600; color: #111827; margin-bottom: 16px; border-bottom: 2px solid #e5e7eb; padding-bottom: 12px; }
-.results-section { margin-bottom: 40px; }
-.results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-.result-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: white; transition: all 0.2s ease; }
-.result-card:hover { border-color: #d1d5db; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07); }
-.result-header { display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px; }
-.result-header h3 { margin: 0; font-size: 16px; font-weight: 600; color: #111827; }
-.severity { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; white-space: nowrap; }
-.severity.critical { background: #fee2e2; color: #991b1b; }
-.severity.warning { background: #fef3c7; color: #92400e; }
-.severity.info { background: #dbeafe; color: #1e40af; }
-.summary { margin: 8px 0; font-size: 14px; color: #374151; }
-.details { margin: 8px 0; padding: 8px; background: #f9fafb; border-radius: 4px; font-size: 13px; color: #6b7280; }
-.recommendation { margin-top: 8px; padding: 8px; background: #fef3c7; border-left: 3px solid #f59e0b; border-radius: 4px; font-size: 13px; }
-.summary-section { margin-bottom: 40px; }
-.summary-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; background: white; }
-.summary-stat { display: flex; justify-content: space-between; margin-bottom: 12px; }
-.stat-label { font-size: 13px; color: #6b7280; font-weight: 500; }
-.stat-value { font-size: 20px; font-weight: 700; color: #3b82f6; }
-.summary-text { color: #374151; line-height: 1.6; }
-.blocked-state { text-align: center; padding: 80px 20px; background: #fef2f2; border-radius: 8px; margin: 32px 0; }
-.blocked-icon { font-size: 64px; margin-bottom: 16px; }
-.blocked-state h2 { font-size: 24px; color: #991b1b; margin-bottom: 8px; }
-.blocked-state p { color: #7f1d1d; }
-</style>
+<style>.requirements-traceability{max-width:1600px;margin:auto;padding:0 20px}.requirements-traceability section{margin:20px 0;padding:16px;border:1px solid #d8dee8;border-radius:8px;background:#fff}.requirements-traceability li{margin:.45rem 0}</style>

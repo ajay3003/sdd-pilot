@@ -9,6 +9,7 @@
 @inject IReportExportService ExportService
 @inject ISampleProjectDocumentResolver DocumentResolver
 @inject IJSRuntime JS
+@inject IServiceProvider Services
 
 <PageTitle>Quality Review</PageTitle>
 
@@ -23,6 +24,29 @@
 
     <PageHeader Title="Quality Review"
                 Description="Run quality, compliance, and readiness reviews against the selected Sample Project. Choose review packs and generate a comprehensive report." />
+
+    @if (SddRows.Count > 0)
+    {
+        <section class="qr-sdd-evidence" aria-labelledby="sdd-evidence-title">
+            <h2 id="sdd-evidence-title">Shared SDD evidence</h2>
+            <p>These deterministic evidence observations come from the same lifecycle graph as Requirements Traceability. They are informational unless project policy assigns release significance.</p>
+            @if (SddFindings.Count == 0) { <p role="status">No lifecycle evidence gaps were identified.</p> }
+            else
+            {
+                <ul>
+                    @foreach (var finding in SddFindings)
+                    {
+                        <li><strong>@finding.Code</strong> · @finding.RequirementId · @finding.Severity — @finding.Message <a href="/implementation-review">Review evidence</a></li>
+                    }
+                </ul>
+            }
+            @foreach (var run in SddWorkspace!.SddLifecycle.QualityReviewRuns.OrderByDescending(x => x.RanAt))
+            {
+                var stale = run.LifecycleGraphFingerprint != SddGraph!.Fingerprint(SddWorkspace);
+                <p>SDD evidence review @run.RanAt.ToLocalTime().ToString("g") · @(stale ? "Historical / stale" : run.Currentness) · @run.Findings.Count observation(s)</p>
+            }
+        </section>
+    }
 
     <!-- ── No project selected state ────────────────────────────────────── -->
     @if (string.IsNullOrWhiteSpace(_selectedProject))
@@ -455,6 +479,10 @@
     private int                  _topIssueTotalCount;
     private bool _running;
     private bool _inputExpanded = true;
+    private IWorkspaceSessionService? SddWorkspace => Services.GetService<IWorkspaceSessionService>();
+    private SddEvidenceGraphService? SddGraph => Services.GetService<SddEvidenceGraphService>();
+    private IReadOnlyList<SddRequirementGraphRow> SddRows => SddWorkspace is { } workspace && SddGraph is { } graph ? graph.Build(workspace) : [];
+    private IReadOnlyList<SddQualityReviewFinding> SddFindings => SddWorkspace is { } workspace && SddGraph is { } graph ? graph.QualityFindings(workspace) : [];
 
     private static readonly Dictionary<string, int> _groupOrder = new()
     {
@@ -523,6 +551,16 @@
 
             if (QualitySession.HasResult && IsSessionForCurrentProject())
                 RestoreReport(QualitySession.Report!);
+
+            // Keep Quality Review on the same persisted lifecycle projection even when it is the
+            // first SDD view opened in this workspace. Synchronization is idempotent and does not
+            // revalidate stale links merely because a page was visited.
+            if (SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph)
+            {
+                sddGraph.SynchronizeCurrentArtifacts(sddWorkspace);
+                if (Services.GetService<IWorkspaceAutoSaveService>() is { } autoSave)
+                    await autoSave.SaveNowAsync();
+            }
         }
         catch (Exception ex)
         {
@@ -785,6 +823,19 @@
                 selectedPackIds);
 
             QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
+
+            if (SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph && sddGraph.Build(sddWorkspace).Count > 0)
+            {
+                var graphFingerprint = sddGraph.Fingerprint(sddWorkspace);
+                foreach (var oldRun in sddWorkspace.SddLifecycle.QualityReviewRuns.Where(x => x.Currentness == "Current")) oldRun.Currentness = "Historical";
+                sddWorkspace.SddLifecycle.QualityReviewRuns.Add(new SddQualityReviewRun
+                {
+                    LifecycleGraphFingerprint = graphFingerprint,
+                    Findings = sddGraph.QualityFindings(sddWorkspace).ToList(),
+                    Currentness = "Current"
+                });
+                if (Services.GetService<IWorkspaceAutoSaveService>() is { } autoSave) await autoSave.SaveNowAsync();
+            }
 
             // Capture diagnostic snapshot from the exact run
             _diagnosticSnapshot = await BuildDiagnosticExportAsync(_report, selectedPackIds);

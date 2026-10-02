@@ -6,6 +6,8 @@
 @inject IReviewContextProvider ContextProvider
 @inject IWorkspaceSessionService Artifacts
 @inject IWorkspaceAutoSaveService AutoSave
+@inject ISddEvidenceApiService SddEvidenceApi
+@inject SddEvidenceGraphService EvidenceGraph
 
 <PageTitle>Implementation Evidence Review</PageTitle>
 <main class="sdd-review">
@@ -24,7 +26,11 @@
     {
         <p class="notice">Specification evidence is not available. Source and other reviews remain independent of SDD.</p>
     }
-    @if (!HasSource)
+    @if (HasFailedSource)
+    {
+        <p class="notice">Source Analysis is unsupported for this evidence: the selected analysis failed. Implementation is not assessed.</p>
+    }
+    else if (!HasSource)
     {
         <p class="notice">Source Analysis linkage: Not available to this review. Documented requirements remain documented; implementation is not assessed.</p>
     }
@@ -42,14 +48,16 @@
                 <tbody>
                 @foreach (var requirement in Requirements)
                 {
-                    var implementation = Artifacts.SddLifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase)).ToList();
-                    var tests = Artifacts.SddLifecycle.TestEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase)).ToList();
+                    var graphRow = GraphRows.FirstOrDefault(x => x.Requirement.Id.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase));
+                    var implementation = graphRow?.Implementation.ToList() ?? [];
+                    var tests = graphRow?.DesignedTests.ToList() ?? [];
+                    var executions = graphRow?.Executions ?? [];
                     <tr>
                         <th scope="row"><strong>@requirement.Id</strong><span>@requirement.Text</span></th>
                         <td>@PlanLinks(requirement.Id)</td>
                         <td>@TaskLinks(requirement.Id)</td>
                         <td>@(implementation.Count == 0 ? "No implementation evidence" : string.Join(", ", implementation.Select(x => $"{x.EvidenceType} ({x.Confidence}; {x.Currentness})")))</td>
-                        <td>@(tests.Count == 0 ? "No test evidence" : string.Join(", ", tests.Select(x => $"{x.State} ({x.Currentness})")))</td>
+                        <td>@(tests.Count == 0 ? "No test design" : string.Join(", ", tests.Select(x => $"{x.State} ({x.Currentness})")))<br />@(executions.Count == 0 ? "Not executed" : string.Join(", ", executions.Select(x => $"{x.ExecutionState}/{x.Result} ({x.Currentness})")))</td>
                         <td>@Assessment(implementation)</td>
                     </tr>
                 }
@@ -130,29 +138,81 @@
             <p>@run.RanAt.ToLocalTime().ToString("g") — @(stale ? "Historical / stale" : run.Currentness) — @run.RequirementsWithPlanEvidence/@run.RequirementCount plan-linked; @run.RequirementsWithTaskEvidence/@run.RequirementCount task-linked; source: @run.SourceSnapshotReference</p>
         }
     </section>
+
+    <section class="source-import">
+        <h2>Source Analysis and CodeLinks</h2>
+        <p>Source Analysis owns source parsing. This view imports snapshot metadata and persisted explicit CodeLinks only. A link does not prove behavior; the current source projection cannot validate a complete file inventory.</p>
+        <label for="sdd-source-environment">Source Analysis environment ID</label>
+        <input id="sdd-source-environment" @bind="_sourceEnvironment" />
+        <button @onclick="LoadSourceSnapshotsAsync" disabled="@string.IsNullOrWhiteSpace(_sourceEnvironment)">Load Source Analysis snapshots</button>
+        @if (!string.IsNullOrWhiteSpace(_sourceMessage)) { <p role="status">@_sourceMessage</p> }
+        @foreach (var source in Artifacts.SddLifecycle.SourceSnapshots.OrderByDescending(x => x.AnalyzedAt))
+        { <p>Source Analysis @source.AnalysisStatus · analyzer @source.AnalyzerVersion · @source.SnapshotId · @source.Fingerprint · @source.Currentness @if (source.Limitations.Count > 0) { <span> — limitations: @string.Join("; ", source.Limitations)</span> }</p> }
+        @if (_sourceSnapshots.Count > 0)
+        {
+            <label for="sdd-source-snapshot">Snapshot</label>
+            <select id="sdd-source-snapshot" @bind="_selectedSourceSnapshotId">
+                <option value="">Select a snapshot</option>
+                @foreach (var snapshot in _sourceSnapshots)
+                { <option value="@snapshot.Id">@snapshot.Archive.FileName · @snapshot.AnalyzedAt.ToLocalTime().ToString("g") · @snapshot.Status · @Short(snapshot.Archive.Sha256)</option> }
+            </select>
+            <button @onclick="BindSourceEvidenceAsync" disabled="@(!_selectedSourceSnapshotId.HasValue || string.IsNullOrWhiteSpace(Artifacts.ProjectName))">Bind explicit CodeLinks</button>
+        }
+        @foreach (var evidence in Artifacts.SddLifecycle.ImplementationEvidence.Where(x => x.ProviderId == "CodeTraceability"))
+        {
+            <details><summary>@evidence.RequirementId · @evidence.FilePath · @evidence.Confidence · @evidence.Currentness</summary>
+                <p>Snapshot @evidence.SourceSnapshotId · @evidence.SourceFingerprint · analyzer/provider version @evidence.ProviderVersion</p><p>@evidence.Provenance · target validation: @evidence.SourceValidation</p><p>@evidence.CurrentnessReason</p>
+            </details>
+        }
+    </section>
+
+    <section class="test-import">
+        <h2>Executed test evidence</h2>
+        <p>Import structured provider results. Designed scenarios remain separate. Execution state and test result are independent.</p>
+        <label for="test-result-import">Test result JSON (array)</label>
+        <textarea id="test-result-import" rows="8" @bind="_testResultJson" placeholder='[{"testId":"TEST-1","requirementReferences":["REQ-1"],"acceptanceCriterionReferences":["AC-1"],"executionState":"Completed","result":"Passed","providerId":"JUnitImport","resultSource":"test-results.xml"}]'></textarea>
+        <button @onclick="ImportTestResultsAsync">Import test results</button>
+        @if (!string.IsNullOrWhiteSpace(_testImportMessage)) { <p role="status">@_testImportMessage</p> }
+        @foreach (var execution in Artifacts.SddLifecycle.TestExecutions.OrderByDescending(x => x.ExecutedAt))
+        { <p>@execution.TestId · @execution.ExecutionState / @execution.Result · @execution.ProviderId · @execution.Currentness · @execution.ExecutedAt</p> }
+    </section>
 </main>
 
 @code {
     private static readonly string[] AuthorityValues = ["Unknown", "Draft", "Candidate", "Baseline", "Approved", "Superseded", "RejectedAlternative", "Historical"];
     private readonly Dictionary<string, string> _resolutions = new();
     private readonly Dictionary<string, string> _resolutionRefs = new();
+    private string _sourceEnvironment = "";
+    private string? _sourceMessage;
+    private Guid? _selectedSourceSnapshotId;
+    private IReadOnlyList<BirkNext.Integrations.IqrSourceSnapshot> _sourceSnapshots = [];
+    private string _testResultJson = "";
+    private string? _testImportMessage;
     private ReviewContext? Context => ContextProvider.GetCurrent();
-    private List<SemanticRequirement> Requirements => Context?.GetRequirements().ToList() ?? [];
+    private List<SddRequirementGraphRow> GraphRows => EvidenceGraph.Build(Artifacts).ToList();
+    private List<SemanticRequirement> Requirements => GraphRows.Select(x => x.Requirement).ToList();
     private List<SemanticClarification> Clarifications => Context?.GetClarifications().ToList() ?? [];
-    private bool HasSource => Artifacts.SddLifecycle.ImplementationEvidence.Any(x =>
-        !string.IsNullOrWhiteSpace(x.SourceSnapshotId) && !string.IsNullOrWhiteSpace(x.SourceFingerprint));
+    private bool HasSource => Artifacts.SddLifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus is "Ready" or "Partial");
+    private bool HasFailedSource => Artifacts.SddLifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus == "Failed");
     private int PlanLinkedCount => Requirements.Count(x => PlanLinks(x.Id) > 0);
     private int TaskLinkedCount => Requirements.Count(x => TaskLinks(x.Id) > 0);
-    private int PlanLinks(string id) => Context?.GetLinkedPlans(id).Count ?? 0;
-    private int TaskLinks(string id) => Context?.GetLinkedTasks(id).Count ?? 0;
+    private int PlanLinks(string id) => GraphRows.FirstOrDefault(x => x.Requirement.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.PlanReferences.Count ?? 0;
+    private int TaskLinks(string id) => GraphRows.FirstOrDefault(x => x.Requirement.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.TaskReferences.Count ?? 0;
 
     protected override void OnInitialized() => Artifacts.ReviewContextRebuildNeeded += OnContextChanged;
+    protected override async Task OnInitializedAsync()
+    {
+        EvidenceGraph.SynchronizeCurrentArtifacts(Artifacts);
+        await AutoSave.SaveNowAsync();
+    }
     private void OnContextChanged(object? sender, EventArgs args) => _ = InvokeAsync(StateHasChanged);
 
     private string Assessment(List<SddImplementationEvidence> evidence)
     {
         if (!Artifacts.Has(WorkspaceArtifactType.Specification)) return "Requirements not available";
-        if (!HasSource && evidence.Count == 0) return "Not assessed — no source snapshot";
+        if (HasFailedSource && evidence.Count == 0) return "SourceUnsupported — Source Analysis failed; implementation not assessed";
+        if (!HasSource && evidence.Count == 0) return "NoSourceAvailable — implementation not assessed";
+        if (Artifacts.SddLifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus == "Partial") && evidence.Count == 0) return "Partial source analysis — requirement implementation not assessed";
         if (evidence.Count == 0) return "No implementation evidence registered";
         return evidence.Any(x => x.Confidence is "Confirmed" or "StronglySupported") ? "Implementation evidence found" : "Inferred evidence only";
     }
@@ -198,20 +258,7 @@
     private async Task RecordReviewAsync()
     {
         var requirements = Requirements;
-        foreach (var requirement in requirements)
-        {
-            foreach (var planId in Context?.GetLinkedPlans(requirement.Id) ?? [])
-                SddLifecycleReviewService.AddOrRefreshLink(Artifacts.SddLifecycle, requirement.Id, planId, "RequirementPlansTo", "StronglySupported");
-            foreach (var taskId in Context?.GetLinkedTasks(requirement.Id) ?? [])
-                SddLifecycleReviewService.AddOrRefreshLink(Artifacts.SddLifecycle, requirement.Id, taskId, "RequirementDecomposedInto", "StronglySupported");
-            foreach (var scenario in requirement.LinkedAcceptanceScenarios)
-            {
-                var criterionId = scenario.Id ?? scenario.Title;
-                SddLifecycleReviewService.AddOrRefreshLink(Artifacts.SddLifecycle, requirement.Id, criterionId, "TestDesignedFor", "StronglySupported");
-                if (!Artifacts.SddLifecycle.TestEvidence.Any(x => x.RequirementId == requirement.Id && x.AcceptanceCriterionId == criterionId))
-                    Artifacts.SddLifecycle.TestEvidence.Add(new SddTestEvidence { RequirementId = requirement.Id, AcceptanceCriterionId = criterionId, TestReference = criterionId, State = "Designed", Provenance = "SpecificationAcceptanceScenario" });
-            }
-        }
+        EvidenceGraph.SynchronizeCurrentArtifacts(Artifacts);
         SddLifecycleReviewService.ReconcileRequirements(Artifacts.SddLifecycle, requirements,
             Artifacts.SddLifecycle.Revisions.LastOrDefault(x => x.Role == "Specification" && x.IsCurrentSelection)?.RevisionId);
         var run = new SddReviewRun
@@ -222,7 +269,11 @@
             RequirementCount = requirements.Count,
             RequirementsWithPlanEvidence = requirements.Count(x => PlanLinks(x.Id) > 0),
             RequirementsWithTaskEvidence = requirements.Count(x => TaskLinks(x.Id) > 0),
-            SourceSnapshotReference = "Not available — no shared Source Analysis link",
+            SourceSnapshotReference = Artifacts.SddLifecycle.SourceSnapshots.FirstOrDefault(x => x.Currentness == "Current")?.SnapshotId ?? "Not available",
+            SourceFingerprint = Artifacts.SddLifecycle.SourceSnapshots.FirstOrDefault(x => x.Currentness == "Current")?.Fingerprint ?? "",
+            LifecycleEvidenceFingerprint = Fingerprint(System.Text.Json.JsonSerializer.Serialize(Artifacts.SddLifecycle.Links)),
+            TestEvidenceFingerprint = Fingerprint(System.Text.Json.JsonSerializer.Serialize(Artifacts.SddLifecycle.TestExecutions)),
+            ReviewVersion = 2,
             Currentness = "Current"
         };
         Artifacts.SddLifecycle.ReviewRuns.Add(run);
@@ -230,11 +281,62 @@
         await AutoSave.SaveNowAsync();
     }
 
+    private async Task LoadSourceSnapshotsAsync()
+    {
+        try
+        {
+            _sourceSnapshots = await SddEvidenceApi.SourceSnapshotsAsync(_sourceEnvironment);
+            _sourceMessage = _sourceSnapshots.Count == 0 ? "No Source Analysis snapshots are available for this environment." : $"Loaded {_sourceSnapshots.Count} metadata snapshot(s); no source was uploaded or reparsed.";
+        }
+        catch (Exception ex) { _sourceMessage = $"Source Analysis is unavailable: {ex.Message}"; }
+    }
+
+    private async Task BindSourceEvidenceAsync()
+    {
+        var snapshot = _sourceSnapshots.FirstOrDefault(x => x.Id == _selectedSourceSnapshotId);
+        if (snapshot is null) { _sourceMessage = "Select a valid snapshot."; return; }
+        if (snapshot.Status == BirkNext.Integrations.SourceAnalysisStatus.Failed)
+        {
+            SddEvidenceGraphService.RecordSourceSnapshot(Artifacts.SddLifecycle, snapshot, _sourceEnvironment);
+            _sourceMessage = "This source analysis failed; its metadata is retained, but no implementation evidence was added.";
+            await AutoSave.SaveNowAsync();
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(Artifacts.ProjectName)) { _sourceMessage = "A workspace project identifier is required to read persisted CodeLinks."; return; }
+        try
+        {
+            var links = await SddEvidenceApi.CodeLinksAsync(Artifacts.ProjectName);
+            SddEvidenceGraphService.RecordSourceSnapshot(Artifacts.SddLifecycle, snapshot, _sourceEnvironment);
+            var added = SddEvidenceGraphService.BindCodeLinks(Artifacts.SddLifecycle, snapshot, links, Requirements.Select(x => x.Id));
+            SddEvidenceGraphService.SourceSnapshotChanged(Artifacts.SddLifecycle, snapshot.Id, snapshot.Archive.Sha256);
+            _sourceMessage = snapshot.Status == BirkNext.Integrations.SourceAnalysisStatus.Partial
+                ? $"Bound {added} explicit CodeLink(s) from a partial analysis. Analyzer limitations are retained; file-target validation is not assessed."
+                : $"Bound {added} explicit CodeLink(s). The archive fingerprint is recorded; file-target validation is not assessed.";
+            await AutoSave.SaveNowAsync();
+        }
+        catch (Exception ex) { _sourceMessage = $"Could not read CodeLinks: {ex.Message}"; }
+    }
+
+    private async Task ImportTestResultsAsync()
+    {
+        try
+        {
+            var records = System.Text.Json.JsonSerializer.Deserialize<List<SddTestExecutionImportRecord>>(_testResultJson,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+            var added = SddEvidenceGraphService.ImportExecutions(Artifacts.SddLifecycle, records);
+            _testImportMessage = $"Imported {added} new execution record(s); duplicate provider IDs/report fingerprints were ignored.";
+            await AutoSave.SaveNowAsync();
+        }
+        catch (Exception ex) { _testImportMessage = $"Test result import rejected: {ex.Message}"; }
+    }
+
+    private static string Short(string value) => string.IsNullOrWhiteSpace(value) ? "fingerprint unavailable" : value[..Math.Min(12, value.Length)];
+
     private static string Fingerprint(string? value) => string.IsNullOrEmpty(value)
         ? ""
         : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }
 
 <style>
-.sdd-review{padding:0 20px;max-width:1440px;margin:auto}.sdd-review section{margin:28px 0}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}.summary div,.question,.notice{padding:14px;border:1px solid #d8dee8;border-radius:8px;background:#fff}.summary strong,.summary span{display:block}.summary strong{font-size:1.4rem}.summary span,.note{color:#586174}.notice{background:#fff8e7}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:820px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e1e5eb;vertical-align:top}tbody th span{display:block;font-weight:400;max-width:480px}.question{margin:12px 0}.question label,.question input{display:block}.question input{width:min(100%,600px);margin:4px 0 10px;padding:8px}.secondary{font-size:.85rem}
+.sdd-review{padding:0 20px;max-width:1440px;margin:auto}.sdd-review section{margin:28px 0}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}.summary div,.question,.notice{padding:14px;border:1px solid #d8dee8;border-radius:8px;background:#fff}.summary strong,.summary span{display:block}.summary strong{font-size:1.4rem}.summary span,.note{color:#586174}.notice{background:#fff8e7}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:820px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e1e5eb;vertical-align:top}tbody th span{display:block;font-weight:400;max-width:480px}.question{margin:12px 0}.question label,.question input,.source-import label,.source-import input,.source-import select,.test-import label,.test-import textarea{display:block}.question input,.source-import input,.source-import select,.test-import textarea{width:min(100%,720px);margin:4px 0 10px;padding:8px}.source-import button,.test-import button{margin:8px 8px 8px 0}.secondary{font-size:.85rem}
 </style>
