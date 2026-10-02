@@ -237,10 +237,31 @@ public sealed partial class K6PerformanceTestProvider(PerformanceTestOptions opt
         if ((await runtime.StatusAsync(ct)).Availability != ProviderAvailability.Available) return [];
         var active = activeRunIds.Select(id => ContainerName(id)).ToHashSet(StringComparer.Ordinal);
         var removed = new List<string>();
+        // Another BirkNext instance may share this Podman: a k6 container younger than the longest possible run can be its live run, so only
+        // containers older than that (or no longer inspectable) are stale. k6 containers end with their workload and use --rm, so real orphans are rare.
+        var maxAge = TimeSpan.FromSeconds(Math.Max(options.MaxDurationSeconds, options.MaxSoakDurationSeconds) + options.ProviderTimeoutGraceSeconds + 60);
         foreach (var name in await runtime.ListManagedAsync(Component, ct))
-            if (name.StartsWith("birknext-k6-", StringComparison.Ordinal) && !active.Contains(name) && await runtime.RemoveAsync(name, ct)) removed.Add(name);
+        {
+            if (!name.StartsWith("birknext-k6-", StringComparison.Ordinal) || active.Contains(name)) continue;
+            var info = await runtime.InspectAsync(name, ct);
+            if (info is not null && ParseStartedAt(info.StartedAt) is { } started && DateTimeOffset.UtcNow - started < maxAge)
+            {
+                logger.LogInformation("Kept BirkNext k6 container {Name}: started {Age} ago, which can still be a live run (possibly of another BirkNext instance).", name, DateTimeOffset.UtcNow - started);
+                continue;
+            }
+            if (await runtime.RemoveAsync(name, ct)) removed.Add(name);
+        }
         if (removed.Count > 0) logger.LogInformation("Removed {Count} stale BirkNext performance-test container(s).", removed.Count);
         return removed;
+    }
+
+    /// <summary>Podman's StartedAt ("2026-10-02 10:00:00.123456789 +0000 UTC" or RFC 3339). Null when unparseable (treated as stale).</summary>
+    public static DateTimeOffset? ParseStartedAt(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        // Podman prints local time with a zone abbreviation ("+0200 CEST"); the abbreviation is redundant with the numeric offset and not parseable.
+        var text = System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(value.Trim(), @"\s+[A-Z]{2,5}$", ""), @"(\.\d{7})\d+", "$1");
+        return DateTimeOffset.TryParse(text, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var t) && t.Year > 2000 ? t : null;
     }
 
     private void Cleanup(string directory)

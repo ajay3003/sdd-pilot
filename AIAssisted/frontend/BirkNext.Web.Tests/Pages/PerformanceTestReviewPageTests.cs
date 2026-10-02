@@ -28,6 +28,19 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         public PerformanceReachability Reachability { get; set; } = new() { State = "Reachable", Reachable = true, Detail = "The k6 container reached https://paymenthub-qa.example.test (HTTP 200).", CheckedAt = DateTimeOffset.UtcNow };
         public Task<PerformanceApiResult<PerformanceReachability>> NetworkCheckAsync(string environmentId, string definitionId, CancellationToken ct = default)
         { Calls.Add("network-check"); return Task.FromResult(PerformanceApiResult<PerformanceReachability>.Ok(Reachability)); }
+        public List<ResourceTargetStatus> ResourceTargets { get; set; } =
+        [
+            new(new ResourceObservationTarget { Id = "birknext-api", DisplayName = "BirkNext API (this process)", ProviderId = ResourceProviderIds.DotNetRuntime }, true, "Available", "BirkNext API process (this process).", null),
+            new(new ResourceObservationTarget { Id = "pay-api", DisplayName = "Payments API", ProviderId = ResourceProviderIds.Podman }, true, "Partial", "Container found. CPU only — container memory accounting is not available.", null),
+        ];
+        public Task<List<ResourceTargetStatus>> ResourceTargetsAsync(string environmentId, string environmentType, CancellationToken ct = default) => Task.FromResult(ResourceTargets);
+        public List<ResourceProviderCapability> ResourceProviderList { get; set; } =
+        [
+            new(ResourceProviderIds.Podman, "Podman container resources", "Partial", "Podman 5.4.2: CPU only — container memory accounting is not available.", [ResourceMetric.CpuPercent]),
+            new(ResourceProviderIds.DotNetRuntime, ".NET runtime (BirkNext process)", "Available", "In-process runtime counters of the BirkNext API itself.", [ResourceMetric.ManagedHeapBytes]),
+            new(ResourceProviderIds.Browser, "Browser memory", "Unsupported", "Not a resource provider: the JavaScript heap does not represent Blazor/.NET WASM managed memory.", []),
+        ];
+        public Task<List<ResourceProviderCapability>> ResourceProvidersAsync(CancellationToken ct = default) => Task.FromResult(ResourceProviderList);
         public List<PerformanceProviderStatus> ProviderList { get; set; } = [];
         public Task<List<PerformanceProviderStatus>> ProvidersAsync(CancellationToken ct = default) => Task.FromResult(ProviderList);
         public Task<PerformanceApiResult<PerformanceProviderStatus>> PrepareProviderAsync(string providerId, CancellationToken ct = default)
@@ -118,6 +131,165 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     }
 
     private static void Tab(IRenderedComponent<PerformanceTestReview> cut, string tab) => cut.Find($"[data-testid=pt-tab-{tab}]").Click();
+
+    // ── Resource Stability ───────────────────────────────────────────────────────────────────────────────────────────
+
+    private const double MiB = 1024 * 1024;
+
+    private static ResourceStabilityAssessment Resources(ResourceAssessmentState memoryState = ResourceAssessmentState.Regression) => new()
+    {
+        Configured = true, EvidenceState = ResourceCollectionState.PartialEvidence, SampleIntervalSeconds = 10, WarmupExcludedSeconds = 60, ObservationStart = DateTimeOffset.UtcNow.AddMinutes(-10),
+        ObservationEnd = DateTimeOffset.UtcNow, WorkloadStart = DateTimeOffset.UtcNow.AddMinutes(-10),
+        Components =
+        [
+            new ResourceComponentObservation
+            {
+                TargetId = "pay-api", DisplayName = "Payments API", Role = ResourceComponentRole.Target, ProviderId = ResourceProviderIds.Podman, CollectionState = ResourceCollectionState.Collected,
+                RawSampleCount = 60, MemoryLimitBytes = 1024 * MiB,
+                Samples = Enumerable.Range(0, 60).Select(i => new ResourceSample { At = DateTimeOffset.UtcNow.AddMinutes(-10).AddSeconds(i * 10), InstanceId = "a", Memory = new MemoryResourceSample { ContainerMemoryBytes = (400 + i * 5) * MiB } }).ToList(),
+                Summaries =
+                [
+                    new ResourceStabilitySummary { TargetId = "pay-api", Metric = ResourceMetric.ContainerMemoryBytes, EarlySteadyValue = 460 * MiB, LateSteadyValue = 650 * MiB, PeakValue = 695 * MiB,
+                        AbsoluteGrowth = 190 * MiB, RelativeGrowthPercent = 41.3, TrendSlopePerMinute = 30 * MiB, TrendConfidence = "High", AssessmentState = memoryState,
+                        AssessmentReason = "A required resource policy was violated on sufficient evidence. This is a policy violation, not a proven leak or a known root cause.",
+                        Limitations = ["Only container-level memory was available. Managed .NET heap metrics were not available, so BirkNext cannot determine whether observed growth came from the managed heap."] },
+                    new ResourceStabilitySummary { TargetId = "pay-api", Metric = ResourceMetric.ManagedHeapBytes, AssessmentState = ResourceAssessmentState.Unavailable, AssessmentReason = "Managed heap was not reported by resource.podman; it is unavailable, not zero." },
+                ],
+            },
+            new ResourceComponentObservation { TargetId = "load-generator", DisplayName = "k6 load generator", Role = ResourceComponentRole.LoadGenerator, ProviderId = ResourceProviderIds.Podman,
+                CollectionState = ResourceCollectionState.PartialEvidence, CollectionDetail = "Container memory accounting is not available (no memory cgroup controller delegated to this Podman); memory is unavailable, not 0." },
+        ],
+        Findings = [new ResourceFinding("ResourceGrowthExceededPolicy", "Regression", "pay-api", ResourceMetric.ContainerMemoryBytes,
+            "Payments API: Container memory exceeded steady-state growth ≤ 20 % (observed 41.3 %).", "Early steady 460 MiB, late steady 650 MiB")],
+        Limitations = ["Resource Stability is evidence for this scenario, environment and duration. Growth is not proof of a memory leak, stability is not proof of its absence, and no root cause is inferred."],
+    };
+
+    [Fact]
+    public void ResourcesTab_OffersOnlyApprovedTargets_AndMakesTheDraftDirty()
+    {
+        Register();
+        var cut = Page();
+        cut.Find("[data-testid=pt-overview-resources]").TextContent.Should().Be("Disabled");
+        Tab(cut, "resources");
+        cut.Find("[data-testid=prc-recommendation]").TextContent.Should().Contain("Longer controlled (soak) runs provide stronger resource-stability evidence");
+        cut.Find("#prc-enabled").Change(true);
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=prc-target]").Select(e => e.GetAttribute("data-target")).Should().Equal("birknext-api", "pay-api"));
+        cut.Find("label[for=prc-target-pay-api]").TextContent.Should().Contain("Partial — some metrics unavailable");
+        cut.Find("[data-testid=prc-target][data-target=pay-api]").Change(true);
+        cut.Find("[data-testid=prc-add-policy]").Click();
+        cut.FindAll("[data-testid=prc-policy]").Should().HaveCount(1);
+        cut.Find("[data-testid=prc-policy-relative]").Change("20");
+        cut.Find("[data-testid=pt-save-state]").TextContent.Should().Contain("Unsaved changes");
+        cut.Find("[data-testid=pt-tab-overview]").Click();
+        cut.Find("[data-testid=pt-overview-resources]").TextContent.Should().StartWith("Enabled · every 10 s · 1 stability / 0 drift policy");
+        cut.Find("[data-testid=pt-overview-resource-targets]").TextContent.Should().Contain("Payments API (resource.podman)");
+    }
+
+    [Fact]
+    public void SoakWorkload_RecommendsLongerControlledRuns_WithoutLeakClaims()
+    {
+        Register(definitions: [Definition with { Workload = Definition.Workload with { Purpose = WorkloadPurpose.Soak } }]);
+        var cut = Page();
+        Tab(cut, "workload");
+        var note = cut.Find("[data-testid=pt-soak-note]").TextContent;
+        note.Should().Contain("Longer controlled runs provide stronger resource-stability evidence");
+        note.Should().NotContain("detect leaks");
+    }
+
+    [Fact]
+    public void Results_ShowResourceStabilityPerComponent_WithUnavailableNeverZero_AndNoLeakVerdict()
+    {
+        Register();
+        var run = Run(PerformanceRunState.Completed, PerformanceQualityVerdict.Fail) with { Resources = Resources() };
+        _api.Runs = [run];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=prr]").GetAttribute("data-evidence").Should().Be("PartialEvidence"));
+        var api = cut.Find("[data-testid=prr-component][data-target=pay-api]");
+        api.GetAttribute("data-role").Should().Be("Target");
+        api.QuerySelector("[data-testid=prr-row][data-metric=ContainerMemoryBytes]")!.TextContent.Should().Contain("460 MiB").And.Contain("650 MiB").And.Contain("Resource regression (policy violated)");
+        api.QuerySelector("[data-testid=prr-row][data-metric=ManagedHeapBytes]")!.TextContent.Should().Contain("Unavailable").And.NotContain("0 B");
+        api.TextContent.Should().Contain("Only container-level memory was available. Managed .NET heap metrics were not available, so BirkNext cannot determine whether observed growth came from the managed heap.");
+        api.QuerySelector("[data-testid=prr-chart] svg")!.GetAttribute("role").Should().Be("img");
+        cut.Find("[data-testid=prr-component][data-target=load-generator]").TextContent.Should().Contain("Load generator health").And.Contain("memory is unavailable, not 0");
+        cut.Find("[data-testid=prr-finding]").GetAttribute("data-code").Should().Be("ResourceGrowthExceededPolicy");
+        cut.Find("[data-testid=prr]").TextContent.Should().NotContain("Memory leak detected").And.NotContain("Leak detected");
+        cut.Find("[data-testid=prr-limitations]").TextContent.Should().Contain("Growth is not proof of a memory leak");
+    }
+
+    [Fact]
+    public void Results_WithoutResourceObservation_SayNotConfigured()
+    {
+        Register();
+        _api.Runs = [Run(PerformanceRunState.Completed)];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=prr-not-configured]").TextContent.Should().Be("Resource observation: Not configured."));
+    }
+
+    [Fact]
+    public void Results_ShowResourceDrift_SeparateFromAbsolutePolicies()
+    {
+        Register();
+        var drift = new ResourceDriftAssessment
+        {
+            BaselineRunId = Guid.NewGuid(), Compatible = true, State = PerformanceDriftState.Regression,
+            Deltas = [new ResourceMetricDelta { TargetId = "pay-api", Metric = ResourceMetric.ContainerMemoryBytes, Statistic = ResourceStatistic.LateSteady, Reference = 400 * MiB, Current = 700 * MiB,
+                AbsoluteDelta = 300 * MiB, RelativePercent = 75, Direction = MetricChangeDirection.Worse, PolicyState = PerformanceDriftState.Regression, PolicyText = "Accepted change +25 %" }],
+            Findings = [new ResourceFinding("SteadyStateMemoryRegression", "Regression", "pay-api", ResourceMetric.ContainerMemoryBytes,
+                "Payments API: late steady-state container memory changed 75 % from the baseline and exceeded the accepted drift (+25 %).", "Baseline 400 MiB, current 700 MiB.")],
+        };
+        _api.Runs = [Run(PerformanceRunState.Completed) with { Resources = Resources(ResourceAssessmentState.StableWithinPolicy), ResourceDrift = drift }];
+        var cut = Page();
+        Tab(cut, "results");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=prr-drift]").GetAttribute("data-state").Should().Be("Regression"));
+        cut.Find("[data-testid=prr-drift-row]").TextContent.Should().Contain("400 MiB").And.Contain("700 MiB").And.Contain("+75 %");
+        cut.Find("[data-testid=prr-row][data-metric=ContainerMemoryBytes]").TextContent.Should().Contain("Stable within policy", "absolute policy and drift are both visible");
+    }
+
+    [Fact]
+    public void History_ShowsResourceColumns_WithPreciseStates()
+    {
+        Register();
+        _api.Runs = [Run(PerformanceRunState.Completed) with { Resources = Resources() }, Run(PerformanceRunState.Completed)];
+        var cut = Page();
+        Tab(cut, "history");
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=pt-history-resources]").Select(e => e.TextContent).Should().Equal("Resource regression (policy violated)", "Not configured"));
+        cut.Find("[data-testid=pt-history-row]").TextContent.Should().Contain("650 MiB").And.Contain("695 MiB");
+    }
+
+    [Fact]
+    public void Run_ShowsLiveResourceValues_WhileRunning()
+    {
+        Register();
+        var running = Run(PerformanceRunState.Running) with { Resources = Resources() with { InProgress = true } };
+        _api.Runs = [running];
+        var cut = Page();
+        Tab(cut, "run");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=prr-live-component][data-target=pay-api]").TextContent.Should().Contain("memory 695 MiB"));
+        cut.Find("[data-testid=prr-live-component][data-target=load-generator]").TextContent.Should().Contain("Partial evidence");
+    }
+
+    [Fact]
+    public void SystemSettings_ListResourceProviders_SeparateFromK6()
+    {
+        Register();
+        _api.ProviderList = [Provider(ProviderAvailability.Available)];
+        var cut = Render<BirkNext.Web.Components.PerformanceTestEngineStatus>();
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=pte-resource]").Should().HaveCount(3));
+        cut.Find("[data-testid=pte-resource][data-provider='resource.podman']").GetAttribute("data-availability").Should().Be("Partial");
+        cut.Find("[data-testid=pte-resource][data-provider='resource.browser']").TextContent.Should().Contain("does not represent Blazor/.NET WASM managed memory");
+        cut.Find("[data-testid=pte-availability]").TextContent.Should().StartWith("Ready", "the k6 provider status is unchanged by resource providers");
+    }
+
+    [Fact]
+    public void Export_IncludesResourceSummary_WithoutRawSamples()
+    {
+        var run = Run(PerformanceRunState.Completed) with { Resources = Resources() };
+        var html = PerformanceTestPresentation.Export(run);
+        html.Should().Contain("<h2>Resource Stability</h2>").And.Contain("Payments API").And.Contain("ResourceGrowthExceededPolicy").And.Contain("Only container-level memory was available");
+        html.Should().NotContain("695.0").And.NotContain("\"InstanceId\"");
+    }
 
     [Fact]
     public void WithoutATargetEnvironment_SaysWhatIsMissing()

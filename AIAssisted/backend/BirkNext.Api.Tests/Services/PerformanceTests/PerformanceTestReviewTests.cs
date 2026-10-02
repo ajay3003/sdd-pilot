@@ -187,6 +187,20 @@ public sealed class PerformanceTestReviewTests
         public string RuntimeId => PerformanceProviderIds.PodmanRuntime;
         public string DisplayName => "Podman";
         public string HostGatewayAlias => "host.containers.internal";
+        /// <summary>cgroup controllers (default: all delegated).</summary>
+        public HashSet<string> Controllers { get; set; } = ["cpu", "memory", "pids"];
+        /// <summary>Containers that "exist" for inspect/stats (resource tests).</summary>
+        public Dictionary<string, ContainerInstanceInfo> Containers { get; } = new(StringComparer.Ordinal);
+        public Func<string, ContainerStatsSnapshot>? OnStats { get; set; }
+        public List<string> StatsCalls { get; } = [];
+
+        public Task<IReadOnlySet<string>> ControllersAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlySet<string>>(Controllers);
+        public Task<ContainerInstanceInfo?> InspectAsync(string name, CancellationToken ct = default) => Task.FromResult(Containers.GetValueOrDefault(name));
+        public Task<ContainerStatsSnapshot> StatsAsync(string name, CancellationToken ct = default)
+        {
+            lock (StatsCalls) StatsCalls.Add(name);
+            return Task.FromResult(OnStats?.Invoke(name) ?? new ContainerStatsSnapshot(null, null, null, null, "The container is not running or not found."));
+        }
 
         public Task<PerformanceRuntimeStatus> StatusAsync(CancellationToken ct = default) => Task.FromResult(new PerformanceRuntimeStatus
         {
@@ -435,6 +449,25 @@ public sealed class PerformanceTestReviewTests
         runtime.Managed.Should().Contain(K6PerformanceTestProvider.ContainerName(active)).And.Contain("someone-elses-container");
     }
 
+    /// <summary>Two BirkNext instances may share one Podman: a young k6 container may be the other instance's live run and must not be killed.</summary>
+    [Fact]
+    public async Task OrphanCleanup_KeepsYoungContainersOfOtherInstances_AndRemovesOnlyStaleOnes()
+    {
+        var runtime = new FakeRuntime();
+        var young = K6PerformanceTestProvider.ContainerName(Guid.NewGuid());
+        var stale = K6PerformanceTestProvider.ContainerName(Guid.NewGuid());
+        runtime.Managed.AddRange([young, stale]);
+        runtime.Containers[young] = new ContainerInstanceInfo("a1b2c3d4e5f6", DateTimeOffset.UtcNow.AddMinutes(-2).ToString("yyyy-MM-dd HH:mm:ss.fffffff00 +0000", System.Globalization.CultureInfo.InvariantCulture) + " UTC", 0, true, null, null, null);
+        runtime.Containers[stale] = new ContainerInstanceInfo("b1b2c3d4e5f6", DateTimeOffset.UtcNow.AddHours(-6).ToString("yyyy-MM-dd HH:mm:ss +0000", System.Globalization.CultureInfo.InvariantCulture) + " UTC", 0, true, null, null, null);
+        var removed = await Provider(runtime).CleanupOrphansAsync(new HashSet<Guid>());
+        removed.Should().Equal(stale);
+        runtime.Managed.Should().Contain(young);
+        K6PerformanceTestProvider.ParseStartedAt("2026-10-02 10:00:00.123456789 +0000 UTC").Should().Be(new DateTimeOffset(2026, 10, 2, 10, 0, 0, 123, TimeSpan.Zero).AddTicks(4567));
+        K6PerformanceTestProvider.ParseStartedAt("2026-10-02 18:21:37.73539807 +0200 CEST").Should().Be(new DateTimeOffset(2026, 10, 2, 16, 21, 37, TimeSpan.Zero).AddTicks(7353980), "real Podman output uses local time with a zone abbreviation");
+        K6PerformanceTestProvider.ParseStartedAt("2026-10-02T10:00:00Z").Should().Be(new DateTimeOffset(2026, 10, 2, 10, 0, 0, TimeSpan.Zero));
+        K6PerformanceTestProvider.ParseStartedAt("0001-01-01 00:00:00 +0000 UTC").Should().BeNull();
+    }
+
     // ── Execution (in-memory store + fake runtime) ──────────────────────────────────────────────────────────────────
 
     private sealed class Harness : IAsyncDisposable
@@ -670,6 +703,9 @@ public sealed class PerformanceTestReviewTests
         public Task<ContainerImageStatus> PullAsync(string image, CancellationToken ct = default) => inner.PullAsync(image, ct);
         public Task<bool> RemoveAsync(string name, CancellationToken ct = default) => inner.RemoveAsync(name, ct);
         public Task<IReadOnlyList<string>> ListManagedAsync(string component, CancellationToken ct = default) => inner.ListManagedAsync(component, ct);
+        public Task<IReadOnlySet<string>> ControllersAsync(CancellationToken ct = default) => inner.ControllersAsync(ct);
+        public Task<ContainerInstanceInfo?> InspectAsync(string name, CancellationToken ct = default) => inner.InspectAsync(name, ct);
+        public Task<ContainerStatsSnapshot> StatsAsync(string name, CancellationToken ct = default) => inner.StatsAsync(name, ct);
         public async Task<ContainerRunOutcome> RunAsync(ContainerRunSpec spec, CancellationToken ct)
         {
             if (spec.Command[0] == "version" || spec.Command[^1].EndsWith("probe.js", StringComparison.Ordinal)) return await inner.RunAsync(spec, ct);

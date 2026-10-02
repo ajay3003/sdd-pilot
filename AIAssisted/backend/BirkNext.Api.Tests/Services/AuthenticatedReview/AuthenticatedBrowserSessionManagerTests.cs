@@ -158,6 +158,27 @@ public sealed class AuthenticatedBrowserSessionManagerTests
         host.LaunchCount.Should().Be(2);
     }
 
+    /// <summary>Resource lifecycle regression (not a memory-leak verdict): repeated start/cancel cycles dispose every owned browser exactly once and
+    /// retain no session bindings, so the same review can start again each time.</summary>
+    [Fact]
+    public async Task RepeatedStartCancelCycles_DisposeEveryOwnedBrowser_AndRetainNoSessions()
+    {
+        var host = new FakeHost(); await using var manager = CreateManager(host);
+        var sessions = new List<string>();
+        for (var i = 0; i < 25; i++)
+        {
+            var started = await manager.StartAsync(Request("review-cycle"));
+            sessions.Add(started.SessionId);
+            (await manager.CancelAsync(started.SessionId, "review-cycle", "profile-1")).Should().BeTrue();
+        }
+        host.LaunchCount.Should().Be(25);
+        host.Resources.Should().HaveCount(25).And.OnlyContain(r => r.DisposeCount == 1);
+        sessions.Should().OnlyHaveUniqueItems();
+        foreach (var id in sessions) (await manager.GetStatusAsync(id, "review-cycle", "profile-1")).Should().BeNull("cancelled sessions are not retained");
+        await manager.StopAsync(default);
+        host.Resources.Should().OnlyContain(r => r.DisposeCount == 1, "shutdown does not dispose already-released resources again");
+    }
+
     [Fact]
     public async Task Shutdown_DisposesAllOwnedSessions()
     {

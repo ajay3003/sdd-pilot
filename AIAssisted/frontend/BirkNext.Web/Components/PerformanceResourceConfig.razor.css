@@ -1,0 +1,14 @@
+/* Resource Stability configuration. Grids collapse to one column on narrow screens; wide policy tables scroll inside .sd-scroll. */
+.prc { display: grid; gap: .6rem; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+.prc h3 { margin: .4rem 0 0; font-size: 1rem; }
+.prc-check { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .15rem .5rem; align-items: start; font-size: .9rem; }
+.prc-check input { margin-top: .25rem; }
+.prc-detail { grid-column: 2; margin: 0; overflow-wrap: anywhere; }
+.prc-targets { display: grid; gap: .5rem; border: 1px solid #cbd5e1; border-radius: 8px; padding: .6rem .8rem; min-width: 0; margin: 0; }
+.prc-targets legend { font-weight: 600; font-size: .95rem; padding: 0 .3rem; }
+.pt-form { display: grid; gap: .6rem .9rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr)); }
+.pt-form label { display: grid; gap: .2rem; font-size: .88rem; min-width: 0; }
+.pt-form input { max-width: 100%; min-width: 0; }
+.prc-table { min-width: 60rem; }
+.prc-table input { width: 6.5rem; }
+.prc-table select { max-width: 13rem; }

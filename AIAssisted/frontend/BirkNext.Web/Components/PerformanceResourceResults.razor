@@ -1,0 +1,191 @@
+@using System.Globalization
+@using BirkNext.PerformanceTests
+
+@* Resource Stability evidence of one run (results, live values while running) and resource drift (results/compare). Per component, never summed;
+   unavailable metrics stay "Unavailable" (never 0); assessments are policy-relative and never a memory-leak verdict. *@
+@if (Mode == "drift")
+{
+    @DriftView()
+}
+else if (Assessment is not { Configured: true } a)
+{
+    <p class="sd-muted" data-testid="prr-not-configured">Resource observation: Not configured.</p>
+}
+else if (Mode == "live")
+{
+    <div class="sd-panel" data-testid="prr-live">
+        <h3>Resources (live, every @a.SampleIntervalSeconds s)</h3>
+        <dl class="sd-mini">
+            @foreach (var c in a.Components)
+            {
+                var last = c.Samples.LastOrDefault();
+                <div data-testid="prr-live-component" data-target="@c.TargetId"><dt>@c.DisplayName@(c.Role == ResourceComponentRole.LoadGenerator ? " (generator)" : "")</dt>
+                    <dd>@(last is null ? ResourceFormat.Collection(c.CollectionState) : Live(last))</dd></div>
+            }
+        </dl>
+    </div>
+}
+else
+{
+    <section class="prr" aria-labelledby="prr-title" data-testid="prr" data-evidence="@a.EvidenceState">
+        <h3 id="prr-title">Resource Stability</h3>
+        <p class="sd-muted">Evidence: <span class="sd-pill sd-pill-@EvidenceTone(a.EvidenceState)" data-testid="prr-evidence">@ResourceFormat.Collection(a.EvidenceState)</span>
+            · observed @Utc(a.ObservationStart)–@Utc(a.ObservationEnd) every @a.SampleIntervalSeconds s · warm-up @a.WarmupExcludedSeconds s excluded@(a.CooldownSeconds > 0 ? $" · cooldown {a.CooldownSeconds} s" : "")@(a.InProgress ? " · in progress" : "")</p>
+        @foreach (var c in a.Components.OrderBy(c => c.Role))
+        {
+            <div class="sd-panel prr-component" data-testid="prr-component" data-target="@c.TargetId" data-role="@c.Role">
+                <h4>@c.DisplayName <span class="sd-pill sd-pill-muted">@(c.Role == ResourceComponentRole.LoadGenerator ? "Load generator health" : "Application component")</span></h4>
+                <p class="sd-muted">@c.ProviderId · @ResourceFormat.Collection(c.CollectionState) · @c.RawSampleCount sample(s)@(c.Downsampled ? $" (stored {c.Samples.Count}, downsampled)" : "")@(c.FailedSampleCount > 0 ? $" · {c.FailedSampleCount} failed" : "")@(c.Image is null ? "" : $" · {c.Image}")@(c.MemoryLimitBytes is { } lim ? $" · memory limit {ResourceFormat.Format(lim, ResourceMetric.ContainerMemoryBytes)}" : "")</p>
+                @if (c.CollectionDetail is { } detail) { <p class="sd-reason">@detail</p> }
+                @foreach (var d in c.Discontinuities) { <p class="sd-reason" data-testid="prr-discontinuity">Discontinuity at @Utc(d.At): @d.Reason. Samples before and after are not compared as one process.</p> }
+                @if (Primary(c) is { } chart) { @Chart(c, chart, a) }
+                @if (c.Summaries.Count > 0)
+                {
+                    <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"{c.DisplayName} resource summary")">
+                        <table class="prr-table" data-testid="prr-summary">
+                            <thead><tr><th scope="col">Metric</th><th scope="col">Early steady</th><th scope="col">Late steady</th><th scope="col">Peak</th><th scope="col">Growth</th><th scope="col">Trend / min</th>@if (a.CooldownSeconds > 0) { <th scope="col">Cooldown</th> }<th scope="col">Assessment</th></tr></thead>
+                            <tbody>
+                            @foreach (var s in c.Summaries)
+                            {
+                                <tr data-testid="prr-row" data-metric="@s.Metric" data-state="@s.AssessmentState">
+                                    <th scope="row">@ResourceFormat.Label(s.Metric)</th>
+                                    <td>@ResourceFormat.Format(s.EarlySteadyValue, s.Metric)</td><td>@ResourceFormat.Format(s.LateSteadyValue, s.Metric)</td><td>@ResourceFormat.Format(s.PeakValue, s.Metric)</td>
+                                    <td>@(s.AbsoluteGrowth is null ? "—" : $"{ResourceFormat.Format(s.AbsoluteGrowth, s.Metric)}{(s.RelativeGrowthPercent is { } rel ? $" ({rel.ToString("+0.#;-0.#;0", CultureInfo.InvariantCulture)} %)" : "")}")</td>
+                                    <td>@(s.TrendSlopePerMinute is null ? "—" : $"{ResourceFormat.Format(s.TrendSlopePerMinute, s.Metric)} ({s.TrendConfidence})")</td>
+                                    @if (a.CooldownSeconds > 0) { <td>@ResourceFormat.Format(s.CooldownValue, s.Metric)</td> }
+                                    <td><span class="sd-pill sd-pill-@StateTone(s.AssessmentState)">@ResourceFormat.State(s.AssessmentState)</span><span class="prr-reason">@s.AssessmentReason</span>
+                                        @foreach (var p in s.PolicyResults) { <span class="prr-reason" data-testid="prr-policy" data-outcome="@p.Outcome">@p.Rule: @p.Explanation</span> }</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+                @foreach (var l in c.Summaries.SelectMany(s => s.Limitations).Concat(c.Limitations).Distinct()) { <p class="sd-muted" data-testid="prr-limitation">@l</p> }
+            </div>
+        }
+        @if (a.Findings.Count > 0)
+        {
+            <h4>Resource findings</h4>
+            <ul class="sd-list" data-testid="prr-findings">
+                @foreach (var f in a.Findings) { <li data-testid="prr-finding" data-code="@f.Code"><strong>@f.Code</strong> (@f.Severity) — @f.Message <span class="sd-muted">@f.Evidence</span></li> }
+            </ul>
+        }
+        <ul class="sd-list" data-testid="prr-limitations">@foreach (var l in a.Limitations) { <li>@l</li> }</ul>
+        @if (Drift is not null) { @DriftView() }
+    </section>
+}
+
+@code {
+    [Parameter] public ResourceStabilityAssessment? Assessment { get; set; }
+    [Parameter] public ResourceDriftAssessment? Drift { get; set; }
+    /// <summary>"results" (default), "live" or "drift".</summary>
+    [Parameter] public string Mode { get; set; } = "results";
+
+    private RenderFragment DriftView() => __builder =>
+    {
+        if (Drift is not { } d) { <p class="sd-muted" data-testid="prr-drift-none">Resource drift: not available (no baseline with resource evidence for this run).</p> return; }
+        <div class="sd-panel" data-testid="prr-drift" data-state="@d.State">
+            <h4>Resource drift vs baseline run @d.BaselineRunId.ToString("N")[..8] <span class="sd-pill sd-pill-@DriftTone(d.State)">@DriftLabel(d.State)</span></h4>
+            @foreach (var n in d.CompatibilityNotes) { <p class="sd-reason">@n</p> }
+            @{ var shown = d.Deltas.Where(x => x.PolicyState is not null || x.Statistic == ResourceStatistic.LateSteady).ToList(); }
+            @if (shown.Count > 0)
+            {
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Resource changes against the baseline">
+                    <table class="prr-table" data-testid="prr-drift-table">
+                        <thead><tr><th scope="col">Component</th><th scope="col">Metric</th><th scope="col">Statistic</th><th scope="col">Baseline</th><th scope="col">This run</th><th scope="col">Change</th><th scope="col">Drift policy</th></tr></thead>
+                        <tbody>
+                        @foreach (var x in shown)
+                        {
+                            <tr data-testid="prr-drift-row" data-metric="@x.Metric"><th scope="row">@x.TargetId</th><td>@ResourceFormat.Label(x.Metric)</td><td>@PerformanceResourceConfig.StatLabel(x.Statistic)</td>
+                                <td>@ResourceFormat.Format(x.Reference, x.Metric)</td><td>@ResourceFormat.Format(x.Current, x.Metric)</td>
+                                <td>@(x.AbsoluteDelta is null ? "—" : $"{ResourceFormat.Format(x.AbsoluteDelta, x.Metric)}{(x.RelativePercent is { } r ? $" ({r.ToString("+0.#;-0.#;0", CultureInfo.InvariantCulture)} %)" : "")}")</td>
+                                <td>@(x.PolicyState is { } s ? $"{DriftLabel(s)} ({x.PolicyText})" : "—")</td></tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            @if (d.Deltas.Count > shown.Count) { <p class="sd-muted">Late steady-state values are shown; peak, growth and trend changes are listed where a drift policy applies (all are in the export).</p> }
+            @foreach (var f in d.Findings) { <p class="sd-reason" data-testid="prr-drift-finding">@f.Message @f.Evidence</p> }
+            <p class="sd-muted">Resource drift is change against the baseline; stability policies are absolute expectations. Both are shown; neither identifies a root cause.</p>
+        </div>
+    };
+
+    private static ResourceMetric? Primary(ResourceComponentObservation c) =>
+        new[] { ResourceMetric.ContainerMemoryBytes, ResourceMetric.ManagedHeapBytes, ResourceMetric.WorkingSetBytes, ResourceMetric.CpuPercent }
+            .Cast<ResourceMetric?>().FirstOrDefault(m => c.Summaries.Any(s => s.Metric == m && s.AssessmentState != ResourceAssessmentState.Unavailable));
+
+    /// <summary>A small memory-vs-time line (inline SVG, no chart framework); the warm-up interval is shaded and labelled.</summary>
+    private RenderFragment Chart(ResourceComponentObservation c, ResourceMetric metric, ResourceStabilityAssessment a) => __builder =>
+    {
+        var points = c.Samples.Select((s, i) => (s.At, V: Value(s, metric))).Where(p => p.V is not null).ToList();
+        if (points.Count < 2) return;
+        var t0 = points[0].At; var t1 = points[^1].At;
+        var span = Math.Max(1, (t1 - t0).TotalSeconds);
+        var min = points.Min(p => p.V!.Value); var max = points.Max(p => p.V!.Value);
+        var range = max - min <= 0 ? 1 : max - min;
+        string X(DateTimeOffset t) => ((t - t0).TotalSeconds / span * 300).ToString("0.#", CultureInfo.InvariantCulture);
+        string Y(double v) => (56 - (v - min) / range * 52).ToString("0.#", CultureInfo.InvariantCulture);
+        var line = string.Join(" ", points.Select(p => $"{X(p.At)},{Y(p.V!.Value)}"));
+        var warmEnd = a.WorkloadStart is { } ws ? ws.AddSeconds(a.WarmupExcludedSeconds) : t0;
+        var warmWidth = Math.Clamp((warmEnd - t0).TotalSeconds / span * 300, 0, 300);
+        var summary = c.Summaries.First(s => s.Metric == metric);
+        <figure class="prr-chart" data-testid="prr-chart">
+            <svg viewBox="0 0 300 60" preserveAspectRatio="none" role="img" aria-label="@($"{ResourceFormat.Label(metric)} over time for {c.DisplayName}: from {ResourceFormat.Format(points[0].V, metric)} to {ResourceFormat.Format(points[^1].V, metric)}, peak {ResourceFormat.Format(max, metric)}; the first {a.WarmupExcludedSeconds} s are warm-up and excluded from the trend.")">
+                @if (warmWidth > 0) { <rect x="0" y="0" width="@warmWidth.ToString("0.#", CultureInfo.InvariantCulture)" height="60" class="prr-warmup" /> }
+                <polyline points="@line" class="prr-line" />
+            </svg>
+            <figcaption class="sd-muted">@ResourceFormat.Label(metric) vs time · shaded: warm-up (excluded) · min @ResourceFormat.Format(min, metric), max @ResourceFormat.Format(max, metric) · @ResourceFormat.State(summary.AssessmentState)</figcaption>
+        </figure>
+    };
+
+    private static double? Value(ResourceSample s, ResourceMetric m) => m switch
+    {
+        ResourceMetric.ContainerMemoryBytes => s.Memory?.ContainerMemoryBytes,
+        ResourceMetric.ManagedHeapBytes => s.Memory?.ManagedHeapBytes,
+        ResourceMetric.WorkingSetBytes => s.Memory?.WorkingSetBytes,
+        _ => s.Cpu?.CpuPercent,
+    };
+
+    private static string Live(ResourceSample s)
+    {
+        var parts = new List<string>();
+        if (s.Memory?.ContainerMemoryBytes is { } cm) parts.Add($"memory {ResourceFormat.Format(cm, ResourceMetric.ContainerMemoryBytes)}");
+        else if (s.ProviderId == ResourceProviderIds.Podman) parts.Add("memory unavailable");
+        if (s.Memory?.ManagedHeapBytes is { } mh) parts.Add($"managed heap {ResourceFormat.Format(mh, ResourceMetric.ManagedHeapBytes)}");
+        if (s.Memory?.WorkingSetBytes is { } ws) parts.Add($"working set {ResourceFormat.Format(ws, ResourceMetric.WorkingSetBytes)}");
+        if (s.Cpu?.CpuPercent is { } cpu) parts.Add($"CPU {ResourceFormat.Format(cpu, ResourceMetric.CpuPercent)}");
+        return parts.Count == 0 ? "No values" : string.Join(" · ", parts);
+    }
+
+    private static string Utc(DateTimeOffset? t) => t is { } v ? v.ToUniversalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) + " UTC" : "—";
+
+    internal static string StateTone(ResourceAssessmentState s) => s switch
+    {
+        ResourceAssessmentState.StableWithinPolicy => "complete",
+        ResourceAssessmentState.IncreasingWithinTolerance or ResourceAssessmentState.PotentialRegression or ResourceAssessmentState.InsufficientEvidence => "partial",
+        ResourceAssessmentState.Regression => "attention",
+        _ => "muted",
+    };
+
+    internal static string EvidenceTone(ResourceCollectionState s) => s switch
+    {
+        ResourceCollectionState.Collected => "complete", ResourceCollectionState.PartialEvidence => "partial", ResourceCollectionState.NotConfigured => "muted", _ => "attention",
+    };
+
+    private static string DriftTone(PerformanceDriftState s) => s switch
+    {
+        PerformanceDriftState.Regression => "attention", PerformanceDriftState.DegradedWithinTolerance => "partial", PerformanceDriftState.Stable or PerformanceDriftState.Improved => "complete", _ => "muted",
+    };
+
+    private static string DriftLabel(PerformanceDriftState s) => s switch
+    {
+        PerformanceDriftState.Regression => "Resource regression (drift policy violated)",
+        PerformanceDriftState.DegradedWithinTolerance => "Higher, within tolerance",
+        PerformanceDriftState.Stable => "Stable",
+        PerformanceDriftState.Improved => "Lower",
+        PerformanceDriftState.NotComparable => "Not comparable",
+        _ => "Comparison only — no drift policy",
+    };
+}

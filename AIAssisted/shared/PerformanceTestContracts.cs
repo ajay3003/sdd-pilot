@@ -186,6 +186,8 @@ public sealed record PerformanceTestDefinition
     /// <summary>Null = unauthenticated. Authentication reuses the Target Environment; no credential is ever stored here.</summary>
     public string? AuthenticationReference { get; init; }
     public PerformanceTestSafetyPolicy SafetyPolicy { get; init; } = new();
+    /// <summary>Optional Resource Stability observation (approved components, sampling, warm-up, policies). Null = not configured.</summary>
+    public ResourceObservationConfiguration? ResourceObservation { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset UpdatedAt { get; init; }
     /// <summary>Incremented on every saved change; runs keep the version and a full snapshot.</summary>
@@ -409,6 +411,10 @@ public sealed record PerformanceTestRun
     public Guid? SourceSnapshotId { get; init; }
     /// <summary>Bounded, redacted provider diagnostics (provider-specific, never the source of UI logic).</summary>
     public string? ProviderDiagnostics { get; init; }
+    /// <summary>Resource Stability evidence of this run (null = not configured). Immutable once the run finishes.</summary>
+    public ResourceStabilityAssessment? Resources { get; init; }
+    /// <summary>Resource drift against the baseline active when the run was created (separate from absolute resource policies).</summary>
+    public ResourceDriftAssessment? ResourceDrift { get; init; }
 
     [JsonIgnore] public bool IsActive => State is PerformanceRunState.Queued or PerformanceRunState.Preparing or PerformanceRunState.Running or PerformanceRunState.Cancelling;
 }
@@ -444,6 +450,7 @@ public sealed record PerformanceRunComparison
     public List<string> CompatibilityNotes { get; init; } = [];
     public List<PerformanceMetricDelta> Deltas { get; init; } = [];
     public PerformanceDriftAssessment? Drift { get; init; }
+    public ResourceDriftAssessment? ResourceDrift { get; init; }
 }
 
 public sealed record PerformanceRunRequest
@@ -552,12 +559,16 @@ public static class PerformanceTestRules
         }).ToList();
 
     /// <summary>Shared ScoreSemantics over the threshold outcomes (no second scoring model) and the run verdict.</summary>
-    public static (QualityResult Quality, PerformanceQualityVerdict Verdict) Quality(IReadOnlyCollection<PerformanceThresholdResult> results)
+    public static (QualityResult Quality, PerformanceQualityVerdict Verdict) Quality(IReadOnlyCollection<PerformanceThresholdResult> results) => Quality(results, []);
+
+    /// <summary>Thresholds plus other evaluable checks of the same run (e.g. Resource Stability policies) in the one shared ScoreSemantics.</summary>
+    public static (QualityResult Quality, PerformanceQualityVerdict Verdict) Quality(IReadOnlyCollection<PerformanceThresholdResult> results, IReadOnlyCollection<CheckOutcome> additional)
     {
-        var quality = ScoreSemantics.Compute(results.Select(r => r.Outcome));
+        var outcomes = results.Select(r => r.Outcome).Concat(additional).ToList();
+        var quality = ScoreSemantics.Compute(outcomes);
         var verdict = quality.QualityPercent is null ? PerformanceQualityVerdict.NotAssessed
-            : results.Any(r => r.Outcome == CheckOutcome.Fail) ? PerformanceQualityVerdict.Fail
-            : results.Any(r => r.Outcome == CheckOutcome.Warning) ? PerformanceQualityVerdict.Warning
+            : outcomes.Contains(CheckOutcome.Fail) ? PerformanceQualityVerdict.Fail
+            : outcomes.Contains(CheckOutcome.Warning) ? PerformanceQualityVerdict.Warning
             : PerformanceQualityVerdict.Pass;
         return (quality, verdict);
     }

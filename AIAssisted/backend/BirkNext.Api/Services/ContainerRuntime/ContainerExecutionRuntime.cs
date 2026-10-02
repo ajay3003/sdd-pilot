@@ -39,6 +39,16 @@ public sealed record ContainerRunOutcome(int? ExitCode, string StandardOutput, s
 
 public sealed record ContainerImageStatus(string Image, bool Present, string? Digest, string Detail);
 
+/// <summary>One `stats` reading. Values the runtime cannot measure (e.g. memory without a delegated cgroup controller) are null, never 0.</summary>
+public sealed record ContainerStatsSnapshot(double? CpuPercent, double? MemoryBytes, double? MemoryLimitBytes, int? Pids, string? Error);
+
+/// <summary>Identity of a running container (fixed fields only — never its environment, mounts or command line).</summary>
+public sealed record ContainerInstanceInfo(string Id, string? StartedAt, int RestartCount, bool Running, string? Image, long? MemoryLimitBytes, long? NanoCpus)
+{
+    /// <summary>Changes when the container is replaced or restarted: a discontinuity in its resource series.</summary>
+    public string InstanceKey => $"{(Id.Length > 12 ? Id[..12] : Id)}@{StartedAt}#{RestartCount}";
+}
+
 /// <summary>
 /// A container execution runtime (Podman first; Docker or a Kubernetes Job could implement the same contract). Performance providers depend on
 /// this, never on a CLI. A missing runtime or image is a tool limitation, never an application-quality result.
@@ -59,6 +69,12 @@ public interface IContainerExecutionRuntime
     Task<bool> RemoveAsync(string name, CancellationToken ct = default);
     /// <summary>Names of BirkNext-managed containers of one component (label birknext.managed=true + birknext.component), never other containers.</summary>
     Task<IReadOnlyList<string>> ListManagedAsync(string component, CancellationToken ct = default);
+    /// <summary>cgroup controllers available to containers (empty when none are delegated, e.g. rootless without delegation).</summary>
+    Task<IReadOnlySet<string>> ControllersAsync(CancellationToken ct = default);
+    /// <summary>A single resource reading of one named container (approved targets and BirkNext's own containers only — callers validate the name).</summary>
+    Task<ContainerStatsSnapshot> StatsAsync(string name, CancellationToken ct = default);
+    /// <summary>Identity of one named container, or null when it does not exist.</summary>
+    Task<ContainerInstanceInfo?> InspectAsync(string name, CancellationToken ct = default);
 }
 
 /// <summary>Validation shared by runtimes: values that become CLI arguments must be plain, so nothing can turn into an extra flag.</summary>
@@ -212,6 +228,57 @@ public sealed partial class PodmanContainerExecutionRuntime(IProcessRunner runne
         var list = await runner.RunAsync(new ProcessSpec(Cli, ["ps", "--all", "--filter", "label=birknext.managed=true", "--filter", $"label=birknext.component={component}",
             "--format", "{{.Names}}"], Path.GetTempPath()), Short, 64 * 1024, ct);
         return list.ExitCode != 0 ? [] : list.StandardOutput.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Where(ContainerArgumentRules.IsName).ToList();
+    }
+
+    public async Task<ContainerStatsSnapshot> StatsAsync(string name, CancellationToken ct = default)
+    {
+        if (!ContainerArgumentRules.IsName(name)) return new(null, null, null, null, "Invalid container name.");
+        var controllers = await ControllersAsync(ct);
+        var stats = await runner.RunAsync(new ProcessSpec(Cli, ["stats", "--no-stream", "--format", "{{json .}}", name], Path.GetTempPath()), Short, 64 * 1024, ct);
+        if (stats.ExitCode != 0) return new(null, null, null, null, stats.StartError is not null ? "Podman could not be started." : "The container is not running or not found.");
+        return ParseStats(stats.StandardOutput, controllers);
+    }
+
+    /// <summary>Parses `podman stats --format {{json .}}`. Memory and PIDs are only meaningful with their cgroup controller: without it Podman reports 0,
+    /// which is "not measured", not "0 bytes" — those values become null.</summary>
+    public static ContainerStatsSnapshot ParseStats(string output, IReadOnlySet<string> controllers)
+    {
+        try
+        {
+            var line = output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(l => l.StartsWith('{') || l.StartsWith('['));
+            if (line is null) return new(null, null, null, null, "Podman returned no statistics.");
+            using var doc = System.Text.Json.JsonDocument.Parse(line);
+            var root = doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Array ? doc.RootElement.EnumerateArray().FirstOrDefault() : doc.RootElement;
+            double? Num(string prop) => root.TryGetProperty(prop, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number && v.TryGetDouble(out var d) && double.IsFinite(d) ? d : null;
+            var memoryAccounted = controllers.Count == 0 ? false : controllers.Contains("memory");
+            var mem = Num("MemUsage");
+            var limit = Num("MemLimit");
+            var pids = Num("PIDs");
+            var cpu = Num("CPU");
+            return new(cpu is { } c && c >= 0 ? Math.Round(c, 2) : null,
+                memoryAccounted && mem is > 0 ? mem : null,
+                memoryAccounted && limit is > 0 ? limit : null,
+                controllers.Contains("pids") && pids is > 0 ? (int)pids : null,
+                memoryAccounted ? null : "Container memory accounting is not available (no memory cgroup controller delegated to this Podman); memory is unavailable, not 0.");
+        }
+        catch (System.Text.Json.JsonException) { return new(null, null, null, null, "Podman statistics could not be parsed."); }
+    }
+
+    public async Task<ContainerInstanceInfo?> InspectAsync(string name, CancellationToken ct = default)
+    {
+        if (!ContainerArgumentRules.IsName(name)) return null;
+        var inspect = await runner.RunAsync(new ProcessSpec(Cli, ["container", "inspect", "--format",
+            "{{.Id}}|{{.State.StartedAt}}|{{.RestartCount}}|{{.State.Running}}|{{.ImageName}}|{{.HostConfig.Memory}}|{{.HostConfig.NanoCpus}}", name], Path.GetTempPath()), Short, 8 * 1024, ct);
+        return inspect.ExitCode != 0 ? null : ParseInspect(inspect.StandardOutput);
+    }
+
+    public static ContainerInstanceInfo? ParseInspect(string output)
+    {
+        var parts = output.Trim().Split('|');
+        if (parts.Length < 7 || parts[0].Length == 0 || !parts[0].All(char.IsAsciiHexDigit)) return null;
+        long? Long(string v) => long.TryParse(v, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var l) && l > 0 ? l : null;
+        return new(parts[0], parts[1].Length == 0 ? null : parts[1], int.TryParse(parts[2], out var r) ? r : 0, parts[3].Equals("true", StringComparison.OrdinalIgnoreCase),
+            parts[4].Length == 0 ? null : parts[4], Long(parts[5]), Long(parts[6]));
     }
 
     [GeneratedRegex(@"\d+\.\d+\.\d+")] private static partial Regex VersionPattern();

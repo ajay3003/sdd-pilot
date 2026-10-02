@@ -71,6 +71,7 @@
             case Tab.Scenario: @Scenario() break;
             case Tab.Workload: @Workload() break;
             case Tab.Thresholds: @Thresholds() break;
+            case Tab.Resources: @ResourcesView() break;
             case Tab.Readiness: @ReadinessView() break;
             case Tab.Run: @RunView() break;
             case Tab.Results: @Results() break;
@@ -81,7 +82,15 @@
 </div>
 
 @code {
-    private enum Tab { Overview, Scenario, Workload, Thresholds, Readiness, Run, Results, Compare, History }
+    private enum Tab { Overview, Scenario, Workload, Thresholds, Resources, Readiness, Run, Results, Compare, History }
+    private List<ResourceTargetStatus> _resourceTargets = [];
+
+    private RenderFragment ResourcesView() => @<section class="pt-section" aria-labelledby="pt-resources-h" data-testid="pt-resources">
+        <h2 id="pt-resources-h">Resource Stability</h2>
+        <BirkNext.Web.Components.PerformanceResourceConfig Config="_draft.ResourceObservation" Targets="_resourceTargets" Workload="_draft.Workload"
+            OnChange="c => Changed(_draft with { ResourceObservation = c })" />
+        @SaveBar()
+    </section>;
     private enum HistoryFilter { All, Baselines, Regressions, ThresholdFailures, Cancelled, ExecutionFailures }
 
     private bool _loaded;
@@ -140,6 +149,10 @@
         ? p.Availability == ProviderAvailability.Available ? $"{p.DisplayName} {p.Version}" : $"{p.DisplayName}: {P.Label(p.Availability)} (tool limitation)"
         : "Unknown";
 
+    private string ResourceOverview => _draft.ResourceObservation is { Enabled: true } ro
+        ? $"Enabled · every {ro.SampleIntervalSeconds} s · {ro.Policies.Count} stability / {ro.DriftPolicies.Count} drift polic{(ro.Policies.Count + ro.DriftPolicies.Count == 1 ? "y" : "ies")}"
+        : "Disabled";
+
     private string ReadinessText => _isNew ? "Not saved yet" : _dirty ? "Unsaved changes" : _readiness is null ? "—" : _readiness.Ready ? "Ready" : $"Blocked — {_readiness.Blockers.Count} item(s)";
 
     protected override async Task OnInitializedAsync()
@@ -162,6 +175,7 @@
 
     private async Task RefreshDefinitionStateAsync()
     {
+        _resourceTargets = _profile is null ? [] : await Api.ResourceTargetsAsync(_profile.Id, _draft.EnvironmentType);
         if (_isNew) { _readiness = null; _runs = []; _baselines = []; _selectedRun = null; return; }
         _readiness = await Api.ReadinessAsync(_profile!.Id, _draft.Id);
         _runs = await Api.RunsAsync(_profile.Id, _draft.Id);
@@ -343,6 +357,11 @@
             <div><dt>Workload</dt><dd class="pt-small">@_draft.Workload.Purpose · @P.Load(_draft.Workload) · @P.Duration(_draft.Workload.TotalSeconds)</dd></div>
             <div><dt>Thresholds</dt><dd data-testid="pt-overview-thresholds">@_draft.Thresholds.Count</dd></div>
             <div><dt>Latest run</dt><dd class="pt-small" data-testid="pt-overview-latest">@(_runs.FirstOrDefault() is { } l ? $"{P.Label(l.State)} · {P.Label(l.Verdict)}" : "No run yet")</dd></div>
+            <div><dt>Resource observation</dt><dd class="pt-small" data-testid="pt-overview-resources">@ResourceOverview</dd></div>
+            @if (_draft.ResourceObservation is { Enabled: true } ro)
+            {
+                <div><dt>Resource targets</dt><dd class="pt-small" data-testid="pt-overview-resource-targets">@(ro.TargetComponentIds.Count == 0 ? "None selected" : string.Join(", ", ro.TargetComponentIds.Select(id => _resourceTargets.FirstOrDefault(t => t.Target.Id == id) is { } t ? $"{t.Target.DisplayName} ({t.Target.ProviderId})" : id)))@(ro.ObserveLoadGenerator ? " · k6 generator health" : "")</dd></div>
+            }
         </dl>
         <div class="sd-panel" data-testid="pt-baseline-card">
             <h3>Active baseline</h3>
@@ -447,6 +466,10 @@
             <label>Steady state (s) <input type="number" min="10" value="@_draft.Workload.SteadyStateSeconds" @onchange="e => UpdateWorkload(w => w with { SteadyStateSeconds = Int(e.Value) ?? 0 })" data-testid="pt-steady" /></label>
             <label>Ramp-down (s) <input type="number" min="0" value="@_draft.Workload.RampDownSeconds" @onchange="e => UpdateWorkload(w => w with { RampDownSeconds = Int(e.Value) ?? 0 })" data-testid="pt-rampdown" /></label>
         </div>
+        @if (_draft.Workload.Purpose == WorkloadPurpose.Soak)
+        {
+            <p class="sd-muted" data-testid="pt-soak-note">Longer controlled runs provide stronger resource-stability evidence (Resources tab). They still do not prove that resources leak or never leak.</p>
+        }
         <h3>Timeline</h3>
         <ol class="pt-timeline" data-testid="pt-timeline">@foreach (var line in PerformanceTestRules.Timeline(_draft.Workload)) { <li>@line</li> }</ol>
         <h3>Safety</h3>
@@ -549,7 +572,8 @@
             <div class="sd-panel" data-testid="pt-progress">
                 <p role="status" aria-live="polite" data-testid="pt-progress-state"><span class="sd-pill sd-pill-@P.Tone(active.State)">@P.Label(active.State)</span>
                     @(active.StartedAt is { } s ? $" · elapsed {P.Duration((int)(DateTimeOffset.UtcNow - s).TotalSeconds)}" : "")</p>
-                <p class="sd-muted">Live metrics are not reported by the provider during the run; results appear when it finishes.</p>
+                <p class="sd-muted">Live load metrics are not reported by the provider during the run; results appear when it finishes.</p>
+                @if (active.Resources is { Configured: true } live) { <BirkNext.Web.Components.PerformanceResourceResults Assessment="live" Mode="live" /> }
                 <button type="button" class="btn-secondary" @onclick="CancelAsync" disabled="@(active.State == PerformanceRunState.Cancelling)" data-testid="pt-cancel">Cancel test</button>
             </div>
         }
@@ -607,6 +631,7 @@
             <h3>Baseline comparison</h3>
             @if (r.Drift is { } d) { @DriftView(d, "pt-result-drift") }
             else { <p class="sd-muted" data-testid="pt-result-nobaseline">@(r.BaselineIdAtRun is null ? "Not configured — no active baseline when this run started." : "Not assessed — this run has no complete metrics.")</p> }
+            <BirkNext.Web.Components.PerformanceResourceResults Assessment="r.Resources" Drift="r.ResourceDrift" />
             @if (r.Limitations.Count > 0) { <h3>Limitations</h3><ul class="sd-list">@foreach (var l in r.Limitations) { <li>@l</li> }</ul> }
             <details class="pt-details"><summary>Provenance</summary>
                 <p class="sd-muted" data-testid="pt-provenance-runtime">Runtime @(r.RuntimeId ?? "—") @r.RuntimeVersion · image @(r.ContainerImage ?? "—")@(r.ImageDigest is null ? "" : $" ({r.ImageDigest})")@(r.Reachability is { } rr ? $" · target reached as {rr.ExecutionOrigin}{(rr.Network is null ? "" : $" on {rr.Network}")}" : "")</p>
@@ -656,6 +681,7 @@
                 <p data-testid="pt-compare-kind">@(c.AdHoc ? "Ad-hoc comparison (not the run's original result)." : "The run's original baseline comparison.") @(c.Compatible ? "Compatible runs." : "")</p>
                 @foreach (var n in c.CompatibilityNotes) { <p class="sd-reason" data-testid="pt-compare-note">@n</p> }
                 @if (c.Drift is { } d) { @DriftView(d, "pt-compare-drift") } else { @DeltaTable(c.Deltas) }
+                @if (c.ResourceDrift is not null) { <BirkNext.Web.Components.PerformanceResourceResults Drift="c.ResourceDrift" Mode="drift" /> }
             }
         }
     </section>;
@@ -668,7 +694,7 @@
         {
             <div class="sd-scroll" tabindex="0" role="region" aria-label="Run history">
                 <table class="pt-history-table" data-testid="pt-history-table">
-                    <thead><tr><th scope="col">Run</th><th scope="col">Date</th><th scope="col">Environment</th><th scope="col">Workload</th><th scope="col">Provider / runtime</th><th scope="col">Execution</th><th scope="col">Quality</th><th scope="col">P95</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Baseline</th><th scope="col">Actions</th></tr></thead>
+                    <thead><tr><th scope="col">Run</th><th scope="col">Date</th><th scope="col">Environment</th><th scope="col">Workload</th><th scope="col">Provider / runtime</th><th scope="col">Execution</th><th scope="col">Quality</th><th scope="col">P95</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Memory steady</th><th scope="col">Memory peak</th><th scope="col">Resource status</th><th scope="col">Baseline</th><th scope="col">Actions</th></tr></thead>
                     <tbody>
                         @foreach (var r in FilteredRuns)
                         {
@@ -679,6 +705,9 @@
                                 <td>@P.Label(r.State)</td><td>@P.Label(r.Verdict)</td>
                                 <td>@PerformanceTestRules.Format(r.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</td><td>@PerformanceTestRules.Format(r.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</td>
                                 <td>@PerformanceTestRules.Format(r.Metrics?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</td>
+                                <td>@(P.ResourceMemory(r)?.LateSteadyValue is { } ms ? ResourceFormat.Format(ms, P.ResourceMemory(r)!.Metric) : r.Resources is null ? "—" : "Unavailable")</td>
+                                <td>@(P.ResourceMemory(r)?.PeakValue is { } mp ? ResourceFormat.Format(mp, P.ResourceMemory(r)!.Metric) : r.Resources is null ? "—" : "Unavailable")</td>
+                                <td data-testid="pt-history-resources">@P.ResourceStatus(r)</td>
                                 <td>@(baseline is null ? "—" : $"v{baseline.Version} ({baseline.Status})")</td>
                                 <td>
                                     <button type="button" class="sd-link" @onclick="() => { _selectedRun = r; _tab = Tab.Results; }">View</button>
