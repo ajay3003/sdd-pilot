@@ -36,14 +36,15 @@ public enum ThresholdSeverity { Required, Advisory }
 public enum TestDataSelection { RoundRobin, Sequential, Random, UniquePerVirtualUser }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum PerformanceReadinessState { Ready, Optional, NeedsConfiguration, NeedsAuthentication, NeedsTestData, ProviderUnavailable, UnsafeEnvironment, InvalidScenario, Blocked }
+public enum PerformanceReadinessState { Ready, Optional, NeedsConfiguration, NeedsAuthentication, NeedsTestData, ProviderUnavailable, UnsafeEnvironment, InvalidScenario, Blocked,
+    RuntimeUnavailable, ImageMissing, NetworkUnavailable }
 
 /// <summary>Execution only. A threshold miss is a quality result of a Completed run, never ExecutionFailed.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PerformanceRunState { Queued, Preparing, Running, Cancelling, Cancelled, Completed, ExecutionFailed, TimedOut, Blocked }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum ProviderAvailability { Available, Unavailable, VersionUnsupported, Misconfigured }
+public enum ProviderAvailability { Available, Unavailable, VersionUnsupported, Misconfigured, RuntimeUnavailable, ImageMissing }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum PerformanceQualityVerdict { Pass, Warning, Fail, NotAssessed }
@@ -180,6 +181,8 @@ public sealed record PerformanceTestDefinition
     public List<PerformanceThreshold> Thresholds { get; init; } = [];
     public List<PerformanceDriftPolicy> DriftPolicies { get; init; } = [];
     public string ProviderId { get; init; } = PerformanceProviderIds.K6;
+    /// <summary>Execution runtime the provider runs on (stable id, e.g. <c>container.podman</c>).</summary>
+    public string RuntimeId { get; init; } = PerformanceProviderIds.PodmanRuntime;
     /// <summary>Null = unauthenticated. Authentication reuses the Target Environment; no credential is ever stored here.</summary>
     public string? AuthenticationReference { get; init; }
     public PerformanceTestSafetyPolicy SafetyPolicy { get; init; } = new();
@@ -199,6 +202,26 @@ public sealed record PerformanceTestDefinition
 public static class PerformanceProviderIds
 {
     public const string K6 = "performance.k6";
+    /// <summary>Ephemeral containers through the Podman CLI.</summary>
+    public const string PodmanRuntime = "container.podman";
+}
+
+/// <summary>
+/// Whether the load generator's execution environment (the k6 container, not the BirkNext host) can reach the target. Reachability is not
+/// load-test readiness, and host reachability does not prove container reachability (VPN, corporate DNS, private routes).
+/// </summary>
+public sealed record PerformanceReachability
+{
+    public string TargetOrigin { get; init; } = "";
+    /// <summary>The origin as the container addresses it (e.g. loopback rewritten to the container host gateway).</summary>
+    public string ExecutionOrigin { get; init; } = "";
+    public string? Network { get; init; }
+    /// <summary>Reachable / DnsFailure / ConnectionFailed / TlsFailure / Timeout / RuntimeUnavailable / ImageMissing / Unknown.</summary>
+    public string State { get; init; } = "Unknown";
+    public bool Reachable { get; init; }
+    public int? HttpStatus { get; init; }
+    public string Detail { get; init; } = "";
+    public DateTimeOffset CheckedAt { get; init; }
 }
 
 public sealed record PerformanceProviderCapabilities
@@ -212,6 +235,16 @@ public sealed record PerformanceProviderCapabilities
     public bool RequiresExternalExecutable { get; init; }
 }
 
+/// <summary>The execution runtime behind a provider (e.g. Podman): availability and version. A missing runtime is a tool limitation.</summary>
+public sealed record PerformanceRuntimeStatus
+{
+    public string RuntimeId { get; init; } = "";
+    public string DisplayName { get; init; } = "";
+    public ProviderAvailability Availability { get; init; } = ProviderAvailability.Unavailable;
+    public string? Version { get; init; }
+    public string Detail { get; init; } = "";
+}
+
 public sealed record PerformanceProviderStatus
 {
     public string ProviderId { get; init; } = "";
@@ -220,6 +253,13 @@ public sealed record PerformanceProviderStatus
     public string? Version { get; init; }
     public string Detail { get; init; } = "";
     public PerformanceProviderCapabilities Capabilities { get; init; } = new();
+    /// <summary>Execution runtime (e.g. Podman) the provider needs; null for providers without one.</summary>
+    public PerformanceRuntimeStatus? Runtime { get; init; }
+    /// <summary>The pinned provider image (e.g. docker.io/grafana/k6:1.0.0), whether it is present locally, its digest and the pull policy.</summary>
+    public string? Image { get; init; }
+    public bool ImagePresent { get; init; }
+    public string? ImageDigest { get; init; }
+    public bool AllowImagePull { get; init; }
 }
 
 public sealed record PerformanceReadinessItem(string Key, string Label, PerformanceReadinessState State, string Detail, bool Blocking);
@@ -337,6 +377,12 @@ public sealed record PerformanceTestRun
     public PerformanceTestDefinition DefinitionSnapshot { get; init; } = new();
     public string ProviderId { get; init; } = "";
     public string? ProviderVersion { get; init; }
+    public string? RuntimeId { get; init; }
+    public string? RuntimeVersion { get; init; }
+    public string? ContainerImage { get; init; }
+    public string? ImageDigest { get; init; }
+    /// <summary>The container-network reachability established immediately before the run (never re-checked later).</summary>
+    public PerformanceReachability? Reachability { get; init; }
     public string TargetOrigin { get; init; } = "";
     public string EnvironmentType { get; init; } = "";
     public DateTimeOffset CreatedAt { get; init; }

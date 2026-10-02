@@ -17,6 +17,12 @@ public interface IPerformanceTestApiService
     Task<PerformanceTestOverview?> OverviewAsync(string environmentId, CancellationToken ct = default);
     /// <summary>Installation-level provider availability and capabilities (System Settings → Performance Test Engines).</summary>
     Task<List<PerformanceProviderStatus>> ProvidersAsync(CancellationToken ct = default) => Task.FromResult<List<PerformanceProviderStatus>>([]);
+    /// <summary>Explicit container-network check (one request from the k6 container). Null when the backend did not answer.</summary>
+    Task<PerformanceApiResult<PerformanceReachability>> NetworkCheckAsync(string environmentId, string definitionId, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<PerformanceReachability>.Fail("Unavailable."));
+    /// <summary>Pulls the provider image when the backend policy allows it.</summary>
+    Task<PerformanceApiResult<PerformanceProviderStatus>> PrepareProviderAsync(string providerId, CancellationToken ct = default) =>
+        Task.FromResult(PerformanceApiResult<PerformanceProviderStatus>.Fail("Unavailable."));
     Task<PerformanceApiResult<PerformanceTestDefinition>> SaveDefinitionAsync(string environmentId, PerformanceTestDefinition definition, bool create, CancellationToken ct = default);
     Task<PerformanceApiResult<PerformanceTestDataProfile>> SaveDataProfileAsync(string environmentId, PerformanceTestDataProfile profile, CancellationToken ct = default);
     Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, CancellationToken ct = default);
@@ -63,6 +69,22 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
     }
 
     public async Task<List<PerformanceProviderStatus>> ProvidersAsync(CancellationToken ct = default) => await Get<List<PerformanceProviderStatus>>($"{Base}/providers", ct) ?? [];
+
+    public Task<PerformanceApiResult<PerformanceReachability>> NetworkCheckAsync(string environmentId, string definitionId, CancellationToken ct = default) =>
+        Post<PerformanceReachability>($"{Base}/definitions/{Uri.EscapeDataString(definitionId)}/network-check?{Env(environmentId)}", ct);
+
+    public Task<PerformanceApiResult<PerformanceProviderStatus>> PrepareProviderAsync(string providerId, CancellationToken ct = default) =>
+        Post<PerformanceProviderStatus>($"{Base}/providers/{Uri.EscapeDataString(providerId)}/prepare", ct);
+
+    private async Task<PerformanceApiResult<T>> Post<T>(string url, CancellationToken ct)
+    {
+        try
+        {
+            using var response = await http.PostAsync(url, null, ct);
+            return response.IsSuccessStatusCode ? PerformanceApiResult<T>.Ok((await response.Content.ReadFromJsonAsync<T>(Json, ct))!) : PerformanceApiResult<T>.Fail(await Message(response, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException) { return PerformanceApiResult<T>.Fail("The BirkNext backend did not answer."); }
+    }
 
     public Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, CancellationToken ct = default) =>
         Get<PerformanceTestReadiness>($"{Base}/definitions/{Uri.EscapeDataString(definitionId)}/readiness?{Env(environmentId)}", ct);

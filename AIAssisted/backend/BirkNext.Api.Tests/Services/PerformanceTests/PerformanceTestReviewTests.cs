@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BirkNext.Api.Data;
+using BirkNext.Api.Services.ContainerRuntime;
 using BirkNext.Api.Services.Integrations.SourceEvidence;
 using BirkNext.Api.Services.PerformanceTests;
 using BirkNext.Applicability;
@@ -164,34 +165,70 @@ public sealed class PerformanceTestReviewTests
         Issues(Definition(d => d with { AuthenticationReference = "target-environment" })).Should().ContainSingle(i => i.State == PerformanceReadinessState.NeedsAuthentication)
             .Which.Message.Should().Contain("never simulated");
 
-    // ── Provider (fake process runner) ──────────────────────────────────────────────────────────────────────────────
+    // ── Provider over a fake container runtime ──────────────────────────────────────────────────────────────────────
 
-    internal sealed class FakeRunner : IProcessRunner
+    /// <summary>A container runtime that runs nothing: it answers k6 "version", the network probe and test runs by writing the result files into the
+    /// run's mounted output directory, records every spec and every removal.</summary>
+    internal sealed class FakeRuntime : IContainerExecutionRuntime
     {
-        public string Version { get; set; } = "k6 v0.52.0 (go1.22.5, windows/amd64)";
-        public bool Installed { get; set; } = true;
-        public Func<ProcessSpec, ProcessOutcome>? OnRun { get; set; }
+        public ProviderAvailability RuntimeAvailability { get; set; } = ProviderAvailability.Available;
+        public bool ImagePresent { get; set; } = true;
+        public string K6Version { get; set; } = "k6 v1.0.0 (go1.24.1, linux/amd64)";
+        public int ProbeStatus { get; set; } = 200;
+        public int ProbeErrorCode { get; set; }
+        public Func<ContainerRunSpec, ContainerRunOutcome?>? OnRun { get; set; }
         public string? SummaryJson { get; set; } = Summary();
-        public List<ProcessSpec> Calls { get; } = [];
+        public List<ContainerRunSpec> Runs { get; } = [];
+        public List<string> Removed { get; } = [];
+        public List<string> Managed { get; } = [];
         public string? LastScript { get; private set; }
         public string? LastWorkingDirectory { get; private set; }
 
-        public async Task<ProcessOutcome> RunAsync(ProcessSpec spec, TimeSpan timeout, int maxOutputBytes, CancellationToken ct)
+        public string RuntimeId => PerformanceProviderIds.PodmanRuntime;
+        public string DisplayName => "Podman";
+        public string HostGatewayAlias => "host.containers.internal";
+
+        public Task<PerformanceRuntimeStatus> StatusAsync(CancellationToken ct = default) => Task.FromResult(new PerformanceRuntimeStatus
         {
-            Calls.Add(spec);
-            if (!Installed) return new ProcessOutcome(null, "", "", false, false, "The executable could not be started (Win32Exception).");
-            if (spec.Arguments[0] == "version") return new ProcessOutcome(0, Version, "", false, false, null);
-            LastWorkingDirectory = spec.WorkingDirectory;
-            LastScript = await File.ReadAllTextAsync(spec.Arguments[^1], ct);
-            if (OnRun is not null)
+            RuntimeId = RuntimeId, DisplayName = DisplayName, Availability = RuntimeAvailability, Version = "5.4.2",
+            Detail = RuntimeAvailability == ProviderAvailability.Available ? "Podman 5.4.2 is available." : "Podman is not installed on this BirkNext host (the podman CLI could not be started).",
+        });
+
+        public Task<ContainerImageStatus> ImageAsync(string image, CancellationToken ct = default) =>
+            Task.FromResult(new ContainerImageStatus(image, ImagePresent, ImagePresent ? "sha256:" + new string('a', 64) : null, ImagePresent ? "present" : "missing"));
+
+        public Task<ContainerImageStatus> PullAsync(string image, CancellationToken ct = default) { ImagePresent = true; return ImageAsync(image, ct); }
+
+        public async Task<ContainerRunOutcome> RunAsync(ContainerRunSpec spec, CancellationToken ct)
+        {
+            Runs.Add(spec);
+            try
             {
-                if (OnRun(spec) is { } custom) return custom;
+                if (spec.Command[0] == "version") return new ContainerRunOutcome(0, K6Version, "", false, false, null, true);
+                var input = spec.Mounts.Single(m => m.ContainerPath == "/birknext/in").HostPath;
+                var output = spec.Mounts.Single(m => m.ContainerPath == "/birknext/out").HostPath;
+                LastWorkingDirectory = Path.GetDirectoryName(input);
+                var script = Path.Combine(input, Path.GetFileName(spec.Command[^1]));
+                LastScript = await File.ReadAllTextAsync(script, ct);
+                if (script.EndsWith("probe.js", StringComparison.Ordinal))
+                {
+                    await File.WriteAllTextAsync(Path.Combine(output, "probe.json"), JsonSerializer.Serialize(new { metrics = new Dictionary<string, object>
+                    {
+                        ["birknext_probe_status"] = new { values = new { max = ProbeStatus } }, ["birknext_probe_error"] = new { values = new { max = ProbeErrorCode } },
+                    } }), ct);
+                    return new ContainerRunOutcome(0, "", "", false, false, null, true);
+                }
+                if (OnRun?.Invoke(spec) is { } custom) return custom;
+                try { await Task.Delay(TimeSpan.FromMilliseconds(20), ct); }
+                catch (OperationCanceledException) { return new ContainerRunOutcome(null, "", "", false, true, null, true); }
+                if (SummaryJson is not null) await File.WriteAllTextAsync(Path.Combine(output, "summary.json"), SummaryJson, ct);
+                return new ContainerRunOutcome(0, "", "", false, false, null, true);
             }
-            try { await Task.Delay(TimeSpan.FromMilliseconds(20), ct); }
-            catch (OperationCanceledException) { return new ProcessOutcome(null, "", "", false, true, null); }
-            if (SummaryJson is not null) await File.WriteAllTextAsync(Path.Combine(spec.WorkingDirectory, "birknext-summary.json"), SummaryJson, ct);
-            return new ProcessOutcome(0, "", "", false, false, null);
+            finally { Removed.Add(spec.Name); }
         }
+
+        public Task<bool> RemoveAsync(string name, CancellationToken ct = default) { Removed.Add(name); Managed.Remove(name); return Task.FromResult(true); }
+        public Task<IReadOnlyList<string>> ListManagedAsync(string component, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<string>>([.. Managed]);
     }
 
     internal static string Summary(double p95 = 420, double errorRate = 0.002, double rps = 25.5, long count = 1500) => JsonSerializer.Serialize(new
@@ -209,17 +246,27 @@ public sealed class PerformanceTestReviewTests
         },
     });
 
-    private static K6PerformanceTestProvider Provider(FakeRunner runner, PerformanceTestOptions? o = null) => new(o ?? Options, runner, NullLogger<K6PerformanceTestProvider>.Instance);
+    private static K6PerformanceTestProvider Provider(FakeRuntime runtime, PerformanceTestOptions? o = null) => new(o ?? Options, runtime, NullLogger<K6PerformanceTestProvider>.Instance);
 
     [Fact]
-    public async Task ProviderDetection_ReportsAvailability_NeverAFailure()
+    public async Task ProviderDetection_SeparatesRuntimeImageAndVersion_NeverAFailure()
     {
-        (await Provider(new FakeRunner()).StatusAsync()).Should().Match<PerformanceProviderStatus>(s => s.Availability == ProviderAvailability.Available && s.Version == "0.52.0");
-        (await Provider(new FakeRunner { Installed = false }).StatusAsync()).Availability.Should().Be(ProviderAvailability.Unavailable);
-        (await Provider(new FakeRunner { Installed = false }).StatusAsync()).Detail.Should().Contain("not installed or configured");
-        (await Provider(new FakeRunner { Version = "k6 v0.40.0" }).StatusAsync()).Availability.Should().Be(ProviderAvailability.VersionUnsupported);
-        (await Provider(new FakeRunner(), Options with { K6ExecutablePath = @"C:\missing\k6.exe" }).StatusAsync()).Availability.Should().Be(ProviderAvailability.Misconfigured);
-        Provider(new FakeRunner()).ProviderId.Should().Be("performance.k6");
+        var available = await Provider(new FakeRuntime()).StatusAsync();
+        available.Should().Match<PerformanceProviderStatus>(s => s.Availability == ProviderAvailability.Available && s.Version == "1.0.0" && s.ImagePresent && s.Runtime!.Version == "5.4.2");
+        available.Image.Should().Be(PerformanceContainerOptions.DefaultImage);
+        var noPodman = await Provider(new FakeRuntime { RuntimeAvailability = ProviderAvailability.Unavailable }).StatusAsync();
+        noPodman.Availability.Should().Be(ProviderAvailability.RuntimeUnavailable);
+        noPodman.Detail.Should().Contain("Podman is not installed");
+        var noImage = await Provider(new FakeRuntime { ImagePresent = false }).StatusAsync();
+        noImage.Availability.Should().Be(ProviderAvailability.ImageMissing);
+        noImage.Detail.Should().Contain("podman pull docker.io/grafana/k6:1.0.0", "no pull without policy: the person is told how");
+        (await Provider(new FakeRuntime { K6Version = "k6 v0.40.0" }).StatusAsync()).Availability.Should().Be(ProviderAvailability.VersionUnsupported);
+        (await Provider(new FakeRuntime(), Options with { Container = Options.Container with { Image = "docker.io/grafana/k6:latest" } }).StatusAsync())
+            .Availability.Should().Be(ProviderAvailability.Misconfigured, "a floating image is never authoritative");
+        (await Provider(new FakeRuntime { ImagePresent = false }).PrepareAsync()).Should().Contain("disabled", "pulls need AllowImagePull");
+        var pullAllowed = new FakeRuntime { ImagePresent = false };
+        (await Provider(pullAllowed, Options with { Container = Options.Container with { AllowImagePull = true } }).PrepareAsync()).Should().BeNull();
+        pullAllowed.ImagePresent.Should().BeTrue();
     }
 
     [Fact]
@@ -237,8 +284,8 @@ public sealed class PerformanceTestReviewTests
                 }],
             },
         });
-        var a = K6ScriptGenerator.Generate(hostile, Data(), @"C:\tmp\summary.json");
-        var b = K6ScriptGenerator.Generate(hostile, Data(), @"C:\tmp\summary.json");
+        var a = K6ScriptGenerator.Generate(hostile, Data(), "/birknext/out/summary.json");
+        var b = K6ScriptGenerator.Generate(hostile, Data(), "/birknext/out/summary.json");
         a.Should().Be(b, "the same definition always yields the same script");
         a.Should().NotContain("\";require('child_process')", "a quote in a value is escaped inside its JSON literal");
         a.Should().Contain("\\u0022;require(\\u0027child_process\\u0027);//");
@@ -267,22 +314,144 @@ public sealed class PerformanceTestReviewTests
         K6SummaryParser.Parse("{\"metrics\":{}}", []).Error.Should().Contain("no HTTP request metrics", "missing output is never zero metrics");
     }
 
-    // ── Execution (in-memory store + fake runner) ───────────────────────────────────────────────────────────────────
+    // ── Podman runtime: argument generation, hardening, injection, cleanup ──────────────────────────────────────────
+
+    private sealed class RecordingProcessRunner : IProcessRunner
+    {
+        public List<ProcessSpec> Calls { get; } = [];
+        public Func<ProcessSpec, ProcessOutcome>? Respond { get; set; }
+        public Task<ProcessOutcome> RunAsync(ProcessSpec spec, TimeSpan timeout, int maxOutputBytes, CancellationToken ct)
+        {
+            Calls.Add(spec);
+            return Task.FromResult(Respond?.Invoke(spec) ?? new ProcessOutcome(spec.Arguments[0] == "container" ? 1 : 0, "5.4.2", "", false, false, null));
+        }
+    }
+
+    private static PodmanContainerExecutionRuntime Podman(RecordingProcessRunner runner) => new(runner, Options, NullLogger<PodmanContainerExecutionRuntime>.Instance);
+
+    [Fact]
+    public async Task ProviderRun_ProducesAHardenedEphemeralPodmanCommand_WithoutUserValues()
+    {
+        var runtime = new FakeRuntime();
+        var provider = Provider(runtime, Options with { Container = Options.Container with { HttpsProxy = "http://proxy.example.test:3128" } });
+        var hostile = Definition(d => d with { Scenario = d.Scenario with { Steps = [d.Scenario.Steps[0] with { Headers = [new("X-Trace", "x --privileged -v /:/host")], RelativePath = "/api/$(rm -rf)" }] } });
+        var dir = Path.Combine(Path.GetTempPath(), "birknext-performance-test", Guid.NewGuid().ToString("N"));
+        var runId = Guid.NewGuid();
+        var result = await provider.ExecuteAsync(new PerformanceProviderInput(runId, hostile, Data(), dir, TimeSpan.FromMinutes(2)), null, CancellationToken.None);
+        result.State.Should().Be(PerformanceRunState.Completed);
+        var spec = runtime.Runs.Single(s => s.Command[0] == "run");
+        spec.Name.Should().Be($"birknext-k6-run-{runId:N}");
+        spec.Labels.Should().Contain(new KeyValuePair<string, string>("birknext.managed", "true")).And.Contain(new KeyValuePair<string, string>("birknext.component", "performance-test"))
+            .And.Contain(new KeyValuePair<string, string>("birknext.run-id", runId.ToString("N")));
+        spec.Mounts.Should().HaveCount(2).And.OnlyContain(m => m.HostPath.StartsWith(dir, StringComparison.Ordinal), "only the run's own directories are mounted");
+        spec.Mounts.Single(m => m.ContainerPath == "/birknext/in").ReadOnly.Should().BeTrue();
+        spec.Environment.Keys.Should().BeEquivalentTo(["K6_NO_USAGE_REPORT", "HTTPS_PROXY"], "the host environment is never passed through");
+
+        var args = PodmanContainerExecutionRuntime.RunArguments(spec);
+        args.Should().Contain(["--rm", "--pull=never", "--read-only", "--cap-drop=ALL", "--security-opt=no-new-privileges"]);
+        args.Should().NotContain(a => a.Contains("privileged") && a != "--security-opt=no-new-privileges").And.NotContain("--network=host").And.NotContain(a => a.Contains("podman.sock") || a.Contains("docker.sock"));
+        args.Should().NotContain(a => a.Contains("rm -rf") || a.Contains("X-Trace") || a.Contains("/:/host"), "user values live only in the generated script file, never in arguments");
+        args.Last().Should().Be("/birknext/in/test.js");
+        runtime.LastScript.Should().Contain("rm -rf").And.Contain("--privileged", "…where they are inert JSON string content");
+        Directory.Exists(dir).Should().BeFalse("temp script and result are removed");
+        runtime.Removed.Should().Contain(spec.Name);
+        result.ContainerImage.Should().Be(PerformanceContainerOptions.DefaultImage);
+        result.ImageDigest.Should().StartWith("sha256:");
+        result.RuntimeId.Should().Be("container.podman");
+    }
+
+    [Fact]
+    public void RunArguments_RejectAnythingThatCouldBecomeAFlag()
+    {
+        var ok = new ContainerRunSpec { Name = "birknext-k6-run-1", Image = PerformanceContainerOptions.DefaultImage, Command = ["version"] };
+        PodmanContainerExecutionRuntime.RunArguments(ok).Should().StartWith(["run", "--name", "birknext-k6-run-1"]);
+        PodmanContainerExecutionRuntime.RunArguments(ok, new HashSet<string>()).Should().NotContain(x => x.StartsWith("--memory") || x.StartsWith("--cpus") || x.StartsWith("--pids-limit"),
+            "a limit whose cgroup controller is not delegated is left out (and reported), not a failed run");
+        PodmanContainerExecutionRuntime.RunArguments(ok, new HashSet<string> { "memory", "cpu", "pids" }).Should().Contain(["--pids-limit=512", "--memory=1024m", "--cpus=2"]);
+        foreach (var bad in new[]
+        {
+            ok with { Name = "--privileged" }, ok with { Image = "--privileged" }, ok with { Image = "docker.io/grafana/k6:latest" }, ok with { Network = "host --privileged" },
+            ok with { Labels = new Dictionary<string, string> { ["birknext.x"] = "a b" } }, ok with { Environment = new Dictionary<string, string> { ["PATH"] = "x\n--privileged" } },
+            ok with { Mounts = [new ContainerMount(@"C:\x,y=z", "/birknext/in", true)] }, ok with { Mounts = [new ContainerMount(@"C:\x", "/../etc", true)] },
+        })
+            ((Action)(() => PodmanContainerExecutionRuntime.RunArguments(bad))).Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task PodmanRuntime_DetectsCliAndMachine_AndAlwaysRemovesTheContainer()
+    {
+        var missing = new RecordingProcessRunner { Respond = _ => new ProcessOutcome(null, "", "", false, false, "The executable could not be started (Win32Exception).") };
+        (await Podman(missing).StatusAsync()).Availability.Should().Be(ProviderAvailability.Unavailable);
+        var noMachine = new RecordingProcessRunner { Respond = s => s.Arguments[0] == "info" ? new ProcessOutcome(125, "", "cannot connect", false, false, null) : new ProcessOutcome(0, "5.4.2", "", false, false, null) };
+        (await Podman(noMachine).StatusAsync()).Should().Match<PerformanceRuntimeStatus>(s => s.Availability == ProviderAvailability.RuntimeUnavailable && s.Detail.Contains("podman machine start"));
+        var ok = new RecordingProcessRunner();
+        (await Podman(ok).StatusAsync()).Should().Match<PerformanceRuntimeStatus>(s => s.Availability == ProviderAvailability.Available && s.Version == "5.4.2");
+
+        var cancelled = new RecordingProcessRunner { Respond = s => s.Arguments[0] == "run" ? new ProcessOutcome(null, "", "", false, true, null) : new ProcessOutcome(s.Arguments[0] == "container" ? 1 : 0, "", "", false, false, null) };
+        var outcome = await Podman(cancelled).RunAsync(new ContainerRunSpec { Name = "birknext-k6-run-abc", Image = PerformanceContainerOptions.DefaultImage, Command = ["run", "/birknext/in/test.js"] }, CancellationToken.None);
+        outcome.Cancelled.Should().BeTrue();
+        cancelled.Calls.Should().Contain(c => c.Arguments.SequenceEqual(new[] { "rm", "--force", "--ignore", "--time", "5", "birknext-k6-run-abc" }), "killing the client never stops the container: it is force-removed");
+        cancelled.Calls.Should().Contain(c => c.Arguments.SequenceEqual(new[] { "container", "exists", "birknext-k6-run-abc" }));
+        var listing = new RecordingProcessRunner();
+        await Podman(listing).ListManagedAsync("performance-test");
+        listing.Calls.Single().Arguments.Should().Contain(["label=birknext.managed=true", "label=birknext.component=performance-test"], "only BirkNext-managed containers are ever listed");
+    }
+
+    [Fact]
+    public void Networking_LocalhostIsNeverTheContainerItself()
+    {
+        var provider = Provider(new FakeRuntime(), Options with { Container = Options.Container with { TargetNetworks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["orders-api"] = "birknext-studio-local_default" } } });
+        provider.ResolveTarget("http://localhost:5095").Should().Match<ContainerTarget>(t => t.ExecutionOrigin == "http://host.containers.internal:5095" && t.HostGateway && t.Network == null);
+        provider.ResolveTarget("http://127.0.0.1:5000").ExecutionOrigin.Should().Be("http://host.containers.internal:5000");
+        provider.ResolveTarget("http://orders-api:8080").Should().Match<ContainerTarget>(t => t.ExecutionOrigin == "http://orders-api:8080" && t.Network == "birknext-studio-local_default" && !t.HostGateway);
+        provider.ResolveTarget("https://paymenthub-qa.example.test").Should().Match<ContainerTarget>(t => t.ExecutionOrigin == "https://paymenthub-qa.example.test" && t.Network == null && !t.HostGateway);
+    }
+
+    [Theory]
+    [InlineData(200, 0, "Reachable", true)]
+    [InlineData(404, 0, "Reachable", true)]
+    [InlineData(0, 1101, "DnsFailure", false)]
+    [InlineData(0, 1212, "ConnectionFailed", false)]
+    [InlineData(0, 1310, "TlsFailure", false)]
+    [InlineData(0, 1050, "Timeout", false)]
+    public async Task ContainerNetworkCheck_ClassifiesFromTheContainer(int status, int code, string state, bool reachable)
+    {
+        var runtime = new FakeRuntime { ProbeStatus = status, ProbeErrorCode = code };
+        var r = await Provider(runtime).CheckReachabilityAsync(Definition());
+        r.State.Should().Be(state);
+        r.Reachable.Should().Be(reachable);
+        runtime.Runs.Single(s => s.Command[^1].EndsWith("probe.js", StringComparison.Ordinal)).Name.Should().StartWith("birknext-k6-probe-");
+        if (state == "TlsFailure") r.Detail.Should().Contain("CaBundlePath").And.Contain("never disabled");
+    }
+
+    [Fact]
+    public async Task OrphanCleanup_RemovesOnlyInactiveBirkNextK6Containers()
+    {
+        var active = Guid.NewGuid();
+        var runtime = new FakeRuntime();
+        runtime.Managed.AddRange([K6PerformanceTestProvider.ContainerName(active), K6PerformanceTestProvider.ContainerName(Guid.NewGuid()), "someone-elses-container"]);
+        var removed = await Provider(runtime).CleanupOrphansAsync(new HashSet<Guid> { active });
+        removed.Should().ContainSingle().Which.Should().StartWith("birknext-k6-run-");
+        runtime.Managed.Should().Contain(K6PerformanceTestProvider.ContainerName(active)).And.Contain("someone-elses-container");
+    }
+
+    // ── Execution (in-memory store + fake runtime) ──────────────────────────────────────────────────────────────────
 
     private sealed class Harness : IAsyncDisposable
     {
-        public FakeRunner Runner { get; } = new();
+        public FakeRuntime Runner { get; }
         public ServiceProvider Services { get; }
         public PerformanceTestExecutionService Execution => Services.GetRequiredService<PerformanceTestExecutionService>();
 
-        public Harness(PerformanceTestOptions? options = null)
+        public Harness(PerformanceTestOptions? options = null, FakeRuntime? runtime = null, IContainerExecutionRuntime? custom = null)
         {
+            Runner = runtime ?? new FakeRuntime();
             var name = Guid.NewGuid().ToString();
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(name));
             services.AddSingleton(options ?? Options);
-            services.AddSingleton<IProcessRunner>(Runner);
+            services.AddSingleton(custom ?? Runner);
             services.AddSingleton<IPerformanceTestProvider, K6PerformanceTestProvider>();
             services.AddSingleton<PerformanceTestProviderRegistry>();
             services.AddSingleton<PerformanceTestReadinessService>();
@@ -293,6 +462,7 @@ public sealed class PerformanceTestReviewTests
         }
 
         public PerformanceTestStore Store() => Services.CreateScope().ServiceProvider.GetRequiredService<PerformanceTestStore>();
+        public PerformanceTestProviderRegistry Registry => Services.GetRequiredService<PerformanceTestProviderRegistry>();
 
         public async Task<PerformanceTestDefinition> SeedAsync(PerformanceTestDefinition? d = null)
         {
@@ -303,6 +473,8 @@ public sealed class PerformanceTestReviewTests
 
         public async Task<PerformanceTestRun> RunToEndAsync(string definitionId)
         {
+            var definition = (await Store().DefinitionAsync("pay-qa", definitionId))!;
+            await Registry.CheckReachabilityAsync(definition);
             var started = await Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = definitionId });
             started.Run.Should().NotBeNull(string.Join(" ", started.Blockers) + started.Conflict);
             await Execution.LastExecution!;
@@ -313,19 +485,59 @@ public sealed class PerformanceTestReviewTests
     }
 
     [Fact]
-    public async Task ProviderMissing_BlocksReadiness_AsAToolLimitation()
+    public async Task PodmanMissing_BlocksReadiness_AsAToolLimitation()
     {
         await using var h = new Harness();
-        h.Runner.Installed = false;
+        h.Runner.RuntimeAvailability = ProviderAvailability.Unavailable;
         var d = await h.SeedAsync();
         var readiness = await h.Services.GetRequiredService<PerformanceTestReadinessService>().EvaluateAsync(d, Data(), false);
         readiness.Ready.Should().BeFalse();
-        readiness.Items.Single(i => i.Key == "provider").State.Should().Be(PerformanceReadinessState.ProviderUnavailable);
-        readiness.Blockers.Should().ContainSingle(b => b.Contains("k6 is not installed or configured on this BirkNext host"));
-        readiness.Items.Should().NotContain(i => i.Detail.Contains("Fail", StringComparison.Ordinal));
+        readiness.Items.Single(i => i.Key == "runtime").State.Should().Be(PerformanceReadinessState.RuntimeUnavailable);
+        readiness.Blockers.Should().ContainSingle(b => b.Contains("Podman is not installed"));
+        readiness.Items.Single(i => i.Key == "network").State.Should().Be(PerformanceReadinessState.Optional, "network is checked once the runtime exists");
         var started = await h.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d.Id });
         started.Run.Should().BeNull("nothing runs and nothing is scored");
         (await h.Store().RunsAsync("pay-qa")).Should().BeEmpty();
+        h.Runner.Runs.Should().BeEmpty("no container is launched");
+    }
+
+    [Fact]
+    public async Task ImageMissing_IsItsOwnReadinessState()
+    {
+        await using var h = new Harness();
+        h.Runner.ImagePresent = false;
+        var d = await h.SeedAsync();
+        var readiness = await h.Services.GetRequiredService<PerformanceTestReadinessService>().EvaluateAsync(d, Data(), false);
+        readiness.Items.Single(i => i.Key == "image").State.Should().Be(PerformanceReadinessState.ImageMissing);
+        readiness.Items.Should().NotContain(i => i.Key == "provider", "the image is the blocker, reported once");
+    }
+
+    [Fact]
+    public async Task ContainerNetwork_MustBeCheckedFromTheContainer_AndAnUnreachableTargetBlocks()
+    {
+        await using var h = new Harness();
+        var d = await h.SeedAsync();
+        var readiness = h.Services.GetRequiredService<PerformanceTestReadinessService>();
+        (await readiness.EvaluateAsync(d, Data(), false)).Items.Single(i => i.Key == "network").Should().Match<PerformanceReadinessItem>(i => i.State == PerformanceReadinessState.NeedsConfiguration && i.Blocking
+            && i.Detail.Contains("Host reachability does not prove container reachability"));
+        h.Runner.ProbeStatus = 0; h.Runner.ProbeErrorCode = 1101;
+        await h.Registry.CheckReachabilityAsync(d);
+        var blocked = await readiness.EvaluateAsync(d, Data(), false);
+        blocked.Items.Single(i => i.Key == "network").State.Should().Be(PerformanceReadinessState.NetworkUnavailable);
+        blocked.Ready.Should().BeFalse();
+        h.Runner.ProbeStatus = 200; h.Runner.ProbeErrorCode = 0;
+        await h.Registry.CheckReachabilityAsync(d);
+        (await readiness.EvaluateAsync(d, Data(), false)).Ready.Should().BeTrue();
+
+        // Ready at start, unreachable at launch: the run is Blocked (precondition), never ExecutionFailed or a quality result.
+        h.Runner.ProbeStatus = 0; h.Runner.ProbeErrorCode = 1212;
+        var started = await h.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d.Id });
+        await h.Execution.LastExecution!;
+        var run = (await h.Store().RunAsync(started.Run!.RunId))!;
+        run.State.Should().Be(PerformanceRunState.Blocked);
+        run.Verdict.Should().Be(PerformanceQualityVerdict.NotAssessed);
+        run.Reachability!.State.Should().Be("ConnectionFailed");
+        h.Runner.Runs.Should().NotContain(s => s.Command.Last() == "/birknext/in/test.js", "no load container is started");
     }
 
     [Fact]
@@ -333,16 +545,19 @@ public sealed class PerformanceTestReviewTests
     {
         await using var h = new Harness();
         var d = await h.SeedAsync(Definition(x => x with { Thresholds = [] }));
+        await h.Registry.CheckReachabilityAsync(d);
         var readiness = await h.Services.GetRequiredService<PerformanceTestReadinessService>().EvaluateAsync(d, Data(), false);
         readiness.Ready.Should().BeTrue(string.Join(" | ", readiness.Blockers));
+        readiness.Items.Select(i => i.Key).Should().ContainInOrder("target", "environment", "runtime", "image", "provider", "network", "tls");
         readiness.Items.Single(i => i.Key == "thresholds").Should().Match<PerformanceReadinessItem>(i => i.State == PerformanceReadinessState.Optional && i.Detail.Contains("measured, not assessed"));
         readiness.Items.Single(i => i.Key == "baseline").State.Should().Be(PerformanceReadinessState.Optional);
         readiness.Items.Single(i => i.Key == "observability").State.Should().Be(PerformanceReadinessState.Optional);
+        readiness.Items.Single(i => i.Key == "tls").Detail.Should().Contain("verification is always on");
         readiness.Timeline.Should().HaveCount(4);
     }
 
     [Fact]
-    public async Task CompletedRun_AllThresholdsPass_AndTempArtifactsAreRemoved()
+    public async Task CompletedRun_AllThresholdsPass_WithContainerProvenance_AndCleanup()
     {
         await using var h = new Harness();
         var d = await h.SeedAsync();
@@ -353,14 +568,17 @@ public sealed class PerformanceTestReviewTests
         run.Quality.Coverage.AssessmentCoveragePercent.Should().Be(100);
         run.ThresholdResults.Should().OnlyContain(t => t.Outcome == CheckOutcome.Pass);
         run.Metrics!.Latency.P95Ms.Should().Be(420);
-        run.ProviderVersion.Should().Be("0.52.0");
+        run.ProviderVersion.Should().Be("1.0.0");
+        run.RuntimeId.Should().Be("container.podman");
+        run.RuntimeVersion.Should().Be("5.4.2");
+        run.ContainerImage.Should().Be(PerformanceContainerOptions.DefaultImage);
+        run.ImageDigest.Should().StartWith("sha256:");
+        run.Reachability!.Reachable.Should().BeTrue();
         run.DefinitionVersion.Should().Be(1);
         run.Host!.LogicalProcessors.Should().BeGreaterThan(0);
-        run.StartedAt.Should().NotBeNull(); run.FinishedAt.Should().NotBeNull();
         Directory.Exists(h.Runner.LastWorkingDirectory).Should().BeFalse("the generated script and summary are deleted");
         h.Runner.LastScript.Should().Contain("PAY-0001", "approved synthetic test data is embedded").And.NotContain("Bearer");
-        h.Runner.Calls.Single(c => c.Arguments[0] == "run").Arguments.Should().BeEquivalentTo(["run", "--no-color", "--quiet", "--no-usage-report", Path.Combine(h.Runner.LastWorkingDirectory!, "birknext-test.js")],
-            o => o.WithStrictOrdering());
+        h.Runner.Removed.Should().Contain(K6PerformanceTestProvider.ContainerName(run.RunId), "the container is removed after completion");
     }
 
     [Fact]
@@ -398,16 +616,18 @@ public sealed class PerformanceTestReviewTests
     }
 
     [Fact]
-    public async Task ProviderCrash_IsExecutionFailed_WithNothingAssessed()
+    public async Task ContainerCrash_IsExecutionFailed_WithNothingAssessed_AndRemoved()
     {
         await using var h = new Harness();
-        h.Runner.OnRun = _ => new ProcessOutcome(107, "", "script exception at line 3 Authorization: Bearer abc.def", false, false, null);
+        h.Runner.OnRun = _ => new ContainerRunOutcome(107, "", "script exception at line 3 Authorization: Bearer abc.def", false, false, null, true);
         var run = await h.RunToEndAsync((await h.SeedAsync()).Id);
         run.State.Should().Be(PerformanceRunState.ExecutionFailed);
+        run.StateReason.Should().Contain("exited with code 107");
         run.Verdict.Should().Be(PerformanceQualityVerdict.NotAssessed);
         run.ThresholdResults.Should().OnlyContain(t => t.Outcome == CheckOutcome.NotAssessed);
         run.Quality!.QualityPercent.Should().BeNull();
         run.ProviderDiagnostics.Should().NotContain("abc.def", "provider output is redacted");
+        h.Runner.Removed.Should().Contain(K6PerformanceTestProvider.ContainerName(run.RunId));
     }
 
     [Fact]
@@ -425,85 +645,68 @@ public sealed class PerformanceTestReviewTests
     }
 
     [Fact]
-    public async Task Timeout_IsTimedOut_NotAssessed()
+    public async Task Timeout_IsTimedOut_NotAssessed_AndRemoved()
     {
         await using var h = new Harness();
-        h.Runner.OnRun = _ => new ProcessOutcome(null, "", "", true, false, null);
+        h.Runner.OnRun = _ => new ContainerRunOutcome(null, "", "", true, false, null, true);
         var run = await h.RunToEndAsync((await h.SeedAsync()).Id);
         run.State.Should().Be(PerformanceRunState.TimedOut);
         run.Verdict.Should().Be(PerformanceQualityVerdict.NotAssessed);
         Directory.Exists(h.Runner.LastWorkingDirectory).Should().BeFalse();
+        h.Runner.Removed.Should().Contain(K6PerformanceTestProvider.ContainerName(run.RunId));
     }
 
-    [Fact]
-    public async Task Cancel_TerminatesTheRun_AsCancelled_NotAQualityResult()
-    {
-        // A provider that runs until cancelled; cancel as soon as it started.
-        var slow = new SlowRunner(new FakeRunner());
-        await using var h2 = new HarnessWith(slow);
-        var d2 = await h2.SeedAsync();
-        var started = await h2.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d2.Id });
-        await slow.Started.Task;
-        var cancelling = await h2.Execution.CancelAsync(started.Run!.RunId);
-        cancelling!.State.Should().Be(PerformanceRunState.Cancelling);
-        await h2.Execution.LastExecution!;
-        var run = (await h2.Store().RunAsync(started.Run.RunId))!;
-        run.State.Should().Be(PerformanceRunState.Cancelled);
-        run.Verdict.Should().Be(PerformanceQualityVerdict.NotAssessed);
-        run.Metrics.Should().BeNull();
-        slow.WasCancelled.Should().BeTrue("the provider process was terminated");
-    }
-
-    private sealed class SlowRunner(FakeRunner versions) : IProcessRunner
+    /// <summary>A runtime whose test container runs until cancelled.</summary>
+    private sealed class SlowRuntime(FakeRuntime inner) : IContainerExecutionRuntime
     {
         public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool WasCancelled { get; private set; }
-        public async Task<ProcessOutcome> RunAsync(ProcessSpec spec, TimeSpan timeout, int maxOutputBytes, CancellationToken ct)
+        public List<string> Removed => inner.Removed;
+        public string RuntimeId => inner.RuntimeId;
+        public string DisplayName => inner.DisplayName;
+        public string HostGatewayAlias => inner.HostGatewayAlias;
+        public Task<PerformanceRuntimeStatus> StatusAsync(CancellationToken ct = default) => inner.StatusAsync(ct);
+        public Task<ContainerImageStatus> ImageAsync(string image, CancellationToken ct = default) => inner.ImageAsync(image, ct);
+        public Task<ContainerImageStatus> PullAsync(string image, CancellationToken ct = default) => inner.PullAsync(image, ct);
+        public Task<bool> RemoveAsync(string name, CancellationToken ct = default) => inner.RemoveAsync(name, ct);
+        public Task<IReadOnlyList<string>> ListManagedAsync(string component, CancellationToken ct = default) => inner.ListManagedAsync(component, ct);
+        public async Task<ContainerRunOutcome> RunAsync(ContainerRunSpec spec, CancellationToken ct)
         {
-            if (spec.Arguments[0] == "version") return await versions.RunAsync(spec, timeout, maxOutputBytes, ct);
+            if (spec.Command[0] == "version" || spec.Command[^1].EndsWith("probe.js", StringComparison.Ordinal)) return await inner.RunAsync(spec, ct);
             Started.TrySetResult();
-            try { await Task.Delay(TimeSpan.FromSeconds(30), ct); }
-            catch (OperationCanceledException) { WasCancelled = true; return new ProcessOutcome(null, "", "", false, true, null); }
-            return new ProcessOutcome(0, "", "", false, false, null);
+            try { await Task.Delay(TimeSpan.FromSeconds(30), ct); return new ContainerRunOutcome(0, "", "", false, false, null, true); }
+            catch (OperationCanceledException) { WasCancelled = true; return new ContainerRunOutcome(null, "", "", false, true, null, true); }
+            finally { inner.Removed.Add(spec.Name); }
         }
     }
 
-    private sealed class HarnessWith : IAsyncDisposable
+    [Fact]
+    public async Task Cancel_StopsAndRemovesTheContainer_AsCancelled_NotAQualityResult()
     {
-        private readonly ServiceProvider _services;
-        public PerformanceTestExecutionService Execution => _services.GetRequiredService<PerformanceTestExecutionService>();
-        public HarnessWith(IProcessRunner runner)
-        {
-            var name = Guid.NewGuid().ToString();
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(name));
-            services.AddSingleton(Options);
-            services.AddSingleton(runner);
-            services.AddSingleton<IPerformanceTestProvider, K6PerformanceTestProvider>();
-            services.AddSingleton<PerformanceTestProviderRegistry>();
-            services.AddSingleton<PerformanceTestReadinessService>();
-            services.AddSingleton<PerformanceTestExecutionService>();
-            services.AddScoped<PerformanceTestStore>();
-            services.AddScoped<IqrSourceStore>();
-            _services = services.BuildServiceProvider();
-        }
-        public PerformanceTestStore Store() => _services.CreateScope().ServiceProvider.GetRequiredService<PerformanceTestStore>();
-        public async Task<PerformanceTestDefinition> SeedAsync()
-        {
-            var store = Store();
-            await store.SaveDataProfileAsync("pay-qa", Data(), DateTimeOffset.UtcNow);
-            return await store.SaveDefinitionAsync("pay-qa", Definition(), DateTimeOffset.UtcNow);
-        }
-        public ValueTask DisposeAsync() => _services.DisposeAsync();
+        var slow = new SlowRuntime(new FakeRuntime());
+        await using var h = new Harness(custom: slow);
+        var d = await h.SeedAsync();
+        await h.Registry.CheckReachabilityAsync(d);
+        var started = await h.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d.Id });
+        await slow.Started.Task;
+        var cancelling = await h.Execution.CancelAsync(started.Run!.RunId);
+        cancelling!.State.Should().Be(PerformanceRunState.Cancelling);
+        await h.Execution.LastExecution!;
+        var run = (await h.Store().RunAsync(started.Run.RunId))!;
+        run.State.Should().Be(PerformanceRunState.Cancelled);
+        run.Verdict.Should().Be(PerformanceQualityVerdict.NotAssessed);
+        run.Metrics.Should().BeNull();
+        slow.WasCancelled.Should().BeTrue();
+        slow.Removed.Should().Contain(K6PerformanceTestProvider.ContainerName(run.RunId), "the container is removed after cancellation");
     }
 
     [Fact]
     public async Task OneActiveRunPerEnvironment()
     {
-        var slow = new SlowRunner(new FakeRunner());
-        await using var h = new HarnessWith(slow);
+        var slow = new SlowRuntime(new FakeRuntime());
+        await using var h = new Harness(custom: slow);
         var d = await h.SeedAsync();
+        await h.Registry.CheckReachabilityAsync(d);
         var first = await h.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d.Id });
         await slow.Started.Task;
         var second = await h.Execution.StartAsync("pay-qa", new PerformanceRunRequest { DefinitionId = d.Id });
@@ -578,7 +781,7 @@ public sealed class PerformanceTestReviewTests
     {
         await using var h = new Harness();
         var d = await h.SeedAsync();
-        h.Runner.OnRun = _ => new ProcessOutcome(107, "", "", false, false, null);
+        h.Runner.OnRun = _ => new ContainerRunOutcome(107, "", "", false, false, null, true);
         var failed = await h.RunToEndAsync(d.Id);
         (await h.Store().PromoteAsync("pay-qa", new PerformanceBaselinePromotion { RunId = failed.RunId }, DateTimeOffset.UtcNow)).Error.Should().Contain("ExecutionFailed run cannot become a baseline");
         h.Runner.OnRun = null;
@@ -653,12 +856,12 @@ public sealed class PerformanceTestReviewTests
         var withPath = await controller.Create("pay-qa", Definition(d => d with { TargetOrigin = "https://paymenthub-qa.example.test/some/page?x=1" }), CancellationToken.None);
         ((withPath.Result as Microsoft.AspNetCore.Mvc.OkObjectResult)!.Value as PerformanceTestDefinition)!.TargetOrigin.Should().Be("https://paymenthub-qa.example.test", "only the origin is kept");
 
-        h.Runner.Installed = false;
+        h.Runner.RuntimeAvailability = ProviderAvailability.Unavailable;
         await h.Store().SaveDataProfileAsync("pay-qa", Data(), DateTimeOffset.UtcNow);
         var saved = ((await controller.Create("pay-qa", Definition(), CancellationToken.None)).Result as Microsoft.AspNetCore.Mvc.OkObjectResult)!.Value as PerformanceTestDefinition;
         var run = await controller.Run("pay-qa", new PerformanceRunRequest { DefinitionId = saved!.Id }, CancellationToken.None);
         var blocked = (run as Microsoft.AspNetCore.Mvc.UnprocessableEntityObjectResult)!.Value!;
-        JsonSerializer.Serialize(blocked).Should().Contain("k6 is not installed or configured on this BirkNext host");
+        JsonSerializer.Serialize(blocked).Should().Contain("Podman is not installed");
     }
 
     // ── Applicability ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -672,41 +875,74 @@ public sealed class PerformanceTestReviewTests
             "a data pipeline without HTTP API or frontend has nothing to load-test");
     }
 
-    // ── Live k6 (gated) ─────────────────────────────────────────────────────────────────────────────────────────────
+    // ── Live Podman + k6 (gated) ────────────────────────────────────────────────────────────────────────────────────
 
-    [K6LiveFact]
-    public async Task LiveK6_TinyLocalRun()
+    /// <summary>
+    /// A real ephemeral k6 container (2 VUs, ~10 s) against a throw-away busybox httpd container on a dedicated Podman network, reached by its
+    /// container DNS name — no external load. Skipped with the reason when Podman or the pinned images are not available.
+    /// </summary>
+    [PodmanK6LiveFact]
+    public async Task LivePodmanK6_TinyContainerTarget()
     {
-        using var listener = new System.Net.HttpListener();
-        var port = Random.Shared.Next(20000, 40000);
-        listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        listener.Start();
-        _ = Task.Run(async () => { while (listener.IsListening) { try { var c = await listener.GetContextAsync(); c.Response.StatusCode = 200; c.Response.Close(); } catch { break; } } });
-        var provider = new K6PerformanceTestProvider(Options, new SystemProcessRunner(), NullLogger<K6PerformanceTestProvider>.Instance);
-        var d = Definition(x => x with
+        var id = Guid.NewGuid().ToString("N")[..12];
+        var network = $"birknext-pt-live-{id}";
+        var target = $"birknext-pt-target-{id}";
+        var runner = new SystemProcessRunner();
+        async Task<ProcessOutcome> Podman(params string[] args) => await runner.RunAsync(new ProcessSpec("podman", args, Path.GetTempPath()), TimeSpan.FromMinutes(2), 64 * 1024, CancellationToken.None);
+        try
         {
-            TargetOrigin = $"http://127.0.0.1:{port}", EnvironmentType = "Local",
-            Scenario = x.Scenario with { TestDataProfileId = null, Steps = [new HttpPerformanceStep { Name = "ping", RelativePath = "/ping", ExpectedStatusCodes = [200], ThinkTimeMs = 100 }] },
-            Workload = new PerformanceWorkload { VirtualUsers = 2, WarmupSeconds = 0, RampUpSeconds = 1, SteadyStateSeconds = 10, RampDownSeconds = 0 },
-        });
-        var dir = Path.Combine(Path.GetTempPath(), "birknext-performance-live", Guid.NewGuid().ToString("N"));
-        var result = await provider.ExecuteAsync(new PerformanceProviderInput(Guid.NewGuid(), d, null, dir, TimeSpan.FromMinutes(2)), null, CancellationToken.None);
-        result.State.Should().Be(PerformanceRunState.Completed, result.Reason + result.Diagnostics);
-        result.Metrics!.RequestCount.Should().BeGreaterThan(0);
-        result.Metrics.Latency.P95Ms.Should().NotBeNull();
-        Directory.Exists(dir).Should().BeFalse();
-        listener.Stop();
+            (await Podman("network", "create", network)).ExitCode.Should().Be(0);
+            (await Podman("run", "--detach", "--rm", "--name", target, "--network", network, "--label", "birknext.managed=true", "--label", "birknext.component=performance-test-live-target",
+                "docker.io/library/busybox:latest", "httpd", "-f", "-p", "8080", "-h", "/etc")).ExitCode.Should().Be(0);
+            var options = Options with { Container = Options.Container with { TargetNetworks = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { [target] = network } } };
+            var runtime = new PodmanContainerExecutionRuntime(runner, options, NullLogger<PodmanContainerExecutionRuntime>.Instance);
+            var provider = new K6PerformanceTestProvider(options, runtime, NullLogger<K6PerformanceTestProvider>.Instance);
+            var d = Definition(x => x with
+            {
+                TargetOrigin = $"http://{target}:8080", EnvironmentType = "Test",
+                Scenario = x.Scenario with { TestDataProfileId = null, Steps = [new HttpPerformanceStep { Name = "hostname", RelativePath = "/hostname", ExpectedStatusCodes = [200], ThinkTimeMs = 100 }] },
+                Workload = new PerformanceWorkload { VirtualUsers = 2, WarmupSeconds = 0, RampUpSeconds = 1, SteadyStateSeconds = 10, RampDownSeconds = 0 },
+            });
+            var reach = await provider.CheckReachabilityAsync(d);
+            reach.Reachable.Should().BeTrue(reach.Detail);
+            var runId = Guid.NewGuid();
+            var dir = Path.Combine(Path.GetTempPath(), "birknext-performance-live", runId.ToString("N"));
+            var result = await provider.ExecuteAsync(new PerformanceProviderInput(runId, d, null, dir, TimeSpan.FromMinutes(3)), null, CancellationToken.None);
+            result.State.Should().Be(PerformanceRunState.Completed, result.Reason + result.Diagnostics);
+            result.Metrics!.RequestCount.Should().BeGreaterThan(0);
+            result.Metrics.ErrorRatePercent.Should().Be(0);
+            result.Metrics.Latency.P95Ms.Should().NotBeNull();
+            result.ImageDigest.Should().StartWith("sha256:");
+            Directory.Exists(dir).Should().BeFalse();
+            (await Podman("container", "exists", K6PerformanceTestProvider.ContainerName(runId))).ExitCode.Should().NotBe(0, "the k6 container is removed after the run");
+        }
+        finally
+        {
+            await Podman("rm", "--force", "--ignore", target);
+            await Podman("network", "rm", "--force", network);
+        }
     }
 }
 
-/// <summary>Runs only when a k6 executable is on PATH; otherwise reported as skipped with the reason (never a silent pass).</summary>
-public sealed class K6LiveFactAttribute : FactAttribute
+/// <summary>Runs only when Podman is reachable and the pinned k6 and busybox images are present locally; otherwise skipped with the reason.</summary>
+public sealed class PodmanK6LiveFactAttribute : FactAttribute
 {
-    public K6LiveFactAttribute()
+    public PodmanK6LiveFactAttribute()
     {
-        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        var found = path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .Any(dir => File.Exists(Path.Combine(dir, "k6.exe")) || File.Exists(Path.Combine(dir, "k6")));
-        if (!found) Skip = "Live k6 test: k6 is not on PATH on this machine. Install k6 to run a tiny local load test (2 virtual users, ~10 s, loopback only).";
+        static bool Ok(params string[] args)
+        {
+            try
+            {
+                var info = new System.Diagnostics.ProcessStartInfo("podman") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
+                foreach (var a in args) info.ArgumentList.Add(a);
+                using var p = System.Diagnostics.Process.Start(info)!;
+                return p.WaitForExit(20_000) && p.ExitCode == 0;
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { return false; }
+        }
+        if (!Ok("info", "--format", "{{.Version.Version}}"))
+            Skip = "Live Podman/k6 test: Podman is not installed or its machine is not running.";
+        else if (!Ok("image", "exists", PerformanceContainerOptions.DefaultImage) || !Ok("image", "exists", "docker.io/library/busybox:latest"))
+            Skip = $"Live Podman/k6 test: pull the pinned images first (podman pull {PerformanceContainerOptions.DefaultImage}; podman pull docker.io/library/busybox:latest).";
     }
 }

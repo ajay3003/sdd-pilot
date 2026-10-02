@@ -79,6 +79,31 @@ public sealed class PerformanceTestsController(PerformanceTestStore store, Perfo
         return Ok(await readiness.EvaluateAsync(definition, await store.DataProfileAsync(environmentId, definition.Scenario.TestDataProfileId, ct), baseline is not null, ct));
     }
 
+    /// <summary>Explicit container-network check: one GET of the target origin from a k6 container (same network, proxy and CA as a run).</summary>
+    [HttpPost("definitions/{id}/network-check")]
+    public async Task<ActionResult<PerformanceReachability>> NetworkCheck([FromQuery] string environmentId, string id, CancellationToken ct)
+    {
+        var definition = await store.DefinitionAsync(environmentId, id, ct);
+        if (definition is null) return NotFound();
+        if (PerformanceTestSafety.EnvironmentBlock(definition.EnvironmentType) is { } env) return UnprocessableEntity(new { message = env });
+        if (PerformanceTestSafety.Origin(definition.TargetOrigin, definition.EnvironmentType, options).Error is { } error) return UnprocessableEntity(new { message = error });
+        return Ok(await providers.CheckReachabilityAsync(definition, ct));
+    }
+
+    /// <summary>Pulls the provider image — only when PerformanceTests:Container:AllowImagePull is true (explicit action; never at run time).</summary>
+    [HttpPost("providers/{providerId}/prepare")]
+    public async Task<IActionResult> Prepare(string providerId, CancellationToken ct)
+    {
+        if (providers.Find(providerId) is not { } provider) return NotFound();
+        var error = await provider.PrepareAsync(ct);
+        providers.InvalidateStatus(providerId);
+        return error is null ? Ok(await providers.StatusAsync(providerId, ct)) : UnprocessableEntity(new { message = error });
+    }
+
+    /// <summary>Removes stale BirkNext-managed performance-test containers (label-filtered; never other containers).</summary>
+    [HttpPost("maintenance/cleanup")]
+    public async Task<ActionResult<object>> Cleanup(CancellationToken ct) => Ok(new { removed = await execution.CleanupOrphansAsync(true, ct) });
+
     [HttpPost("runs")]
     public async Task<IActionResult> Run([FromQuery] string environmentId, [FromBody] PerformanceRunRequest request, CancellationToken ct)
     {

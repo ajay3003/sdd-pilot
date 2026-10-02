@@ -39,6 +39,8 @@
             <div><dt>Target</dt><dd class="pt-small" data-testid="pt-hero-target">@(string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? "Not configured" : _draft.TargetOrigin)</dd></div>
             <div><dt>Environment</dt><dd class="pt-small" data-testid="pt-hero-environment">@_draft.EnvironmentName (@_draft.EnvironmentType)</dd></div>
             <div><dt>Provider</dt><dd class="pt-small" data-testid="pt-hero-provider">@ProviderText</dd></div>
+            <div><dt>Execution runtime</dt><dd class="pt-small" data-testid="pt-hero-runtime">@RuntimeText</dd></div>
+            <div><dt>k6 image</dt><dd class="pt-small" data-testid="pt-hero-image">@ImageText</dd></div>
             <div><dt>Supported targets</dt><dd class="pt-small">REST, GraphQL (query), HTTP</dd></div>
             <div><dt>Readiness</dt><dd class="pt-small" data-testid="pt-hero-readiness">@ReadinessText</dd></div>
         </dl>
@@ -115,8 +117,27 @@
     private PerformanceTestRun? ActiveRun => _runs.FirstOrDefault(r => r.IsActive);
     private PerformanceBaseline? ActiveBaseline => _baselines.FirstOrDefault(b => b.Status == PerformanceBaselineStatus.Active && b.ComparisonFingerprint == _draft.ComparisonFingerprint);
 
+    private string RuntimeText => _overview?.Provider?.Runtime is { } rt
+        ? rt.Availability == ProviderAvailability.Available ? $"{rt.DisplayName} {rt.Version}" : $"{rt.DisplayName}: {P.Label(rt.Availability)} (tool limitation)"
+        : "—";
+
+    private string ImageText => _overview?.Provider is { Image: { } image } p ? $"{image} — {(p.ImagePresent ? "present" : "missing")}" : "—";
+
+    private PerformanceReachability? _reachability;
+    private bool _checkingNetwork;
+
+    private async Task CheckNetworkAsync()
+    {
+        _checkingNetwork = true;
+        var result = await Api.NetworkCheckAsync(_profile!.Id, _draft.Id);
+        _checkingNetwork = false;
+        if (result.Value is null) { _message = result.Error; return; }
+        _reachability = result.Value;
+        _readiness = await Api.ReadinessAsync(_profile.Id, _draft.Id);
+    }
+
     private string ProviderText => _overview?.Provider is { } p
-        ? p.Availability == ProviderAvailability.Available ? $"{p.DisplayName} {p.Version}" : $"{p.DisplayName}: {p.Availability} (tool limitation)"
+        ? p.Availability == ProviderAvailability.Available ? $"{p.DisplayName} {p.Version}" : $"{p.DisplayName}: {P.Label(p.Availability)} (tool limitation)"
         : "Unknown";
 
     private string ReadinessText => _isNew ? "Not saved yet" : _dirty ? "Unsaved changes" : _readiness is null ? "—" : _readiness.Ready ? "Ready" : $"Blocked — {_readiness.Blockers.Count} item(s)";
@@ -421,10 +442,10 @@
                 <label>Start rate (req/s) <input type="number" min="0" step="0.1" value="@_draft.Workload.StartRequestsPerSecond?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateWorkload(w => w with { StartRequestsPerSecond = Dbl(e.Value) })" /></label>
                 <label>Target rate (req/s) <input type="number" min="0.1" step="0.1" value="@_draft.Workload.RequestsPerSecond?.ToString(CultureInfo.InvariantCulture)" @onchange="e => UpdateWorkload(w => w with { RequestsPerSecond = Dbl(e.Value) })" data-testid="pt-rate" /></label>
             }
-            <label>Warm-up (s) <input type="number" min="0" value="@_draft.Workload.WarmupSeconds" @onchange="e => UpdateWorkload(w => w with { WarmupSeconds = Int(e.Value) ?? 0 })" /></label>
-            <label>Ramp-up (s) <input type="number" min="0" value="@_draft.Workload.RampUpSeconds" @onchange="e => UpdateWorkload(w => w with { RampUpSeconds = Int(e.Value) ?? 0 })" /></label>
+            <label>Warm-up (s) <input type="number" min="0" value="@_draft.Workload.WarmupSeconds" @onchange="e => UpdateWorkload(w => w with { WarmupSeconds = Int(e.Value) ?? 0 })" data-testid="pt-warmup" /></label>
+            <label>Ramp-up (s) <input type="number" min="0" value="@_draft.Workload.RampUpSeconds" @onchange="e => UpdateWorkload(w => w with { RampUpSeconds = Int(e.Value) ?? 0 })" data-testid="pt-rampup" /></label>
             <label>Steady state (s) <input type="number" min="10" value="@_draft.Workload.SteadyStateSeconds" @onchange="e => UpdateWorkload(w => w with { SteadyStateSeconds = Int(e.Value) ?? 0 })" data-testid="pt-steady" /></label>
-            <label>Ramp-down (s) <input type="number" min="0" value="@_draft.Workload.RampDownSeconds" @onchange="e => UpdateWorkload(w => w with { RampDownSeconds = Int(e.Value) ?? 0 })" /></label>
+            <label>Ramp-down (s) <input type="number" min="0" value="@_draft.Workload.RampDownSeconds" @onchange="e => UpdateWorkload(w => w with { RampDownSeconds = Int(e.Value) ?? 0 })" data-testid="pt-rampdown" /></label>
         </div>
         <h3>Timeline</h3>
         <ol class="pt-timeline" data-testid="pt-timeline">@foreach (var line in PerformanceTestRules.Timeline(_draft.Workload)) { <li>@line</li> }</ol>
@@ -497,6 +518,13 @@
         else
         {
             <p data-testid="pt-readiness-summary"><strong>@(_readiness.Ready ? "Ready to run." : "Cannot run yet:")</strong> @(_readiness.Ready ? $"Estimated {P.Duration(_readiness.EstimatedDurationSeconds)}, at most ~{_readiness.EstimatedMaxRequests:N0} requests." : "")</p>
+            @if (_reachability is not null || _readiness.Items.Any(i => i.Key == "network" && i.State != PerformanceReadinessState.Optional))
+            {
+                <div class="pt-savebar">
+                    <button type="button" class="btn-secondary" @onclick="CheckNetworkAsync" disabled="@_checkingNetwork" data-testid="pt-network-check">@(_checkingNetwork ? "Checking…" : "Check container network")</button>
+                    <span class="sd-muted" role="status" aria-live="polite" data-testid="pt-network-result">@(_reachability is { } nr ? $"{nr.State}: {nr.Detail}" : "Sends one request from the k6 container (not the BirkNext host).")</span>
+                </div>
+            }
             <ul class="sd-list" data-testid="pt-readiness-items">
                 @foreach (var item in _readiness.Items)
                 {
@@ -581,6 +609,7 @@
             else { <p class="sd-muted" data-testid="pt-result-nobaseline">@(r.BaselineIdAtRun is null ? "Not configured — no active baseline when this run started." : "Not assessed — this run has no complete metrics.")</p> }
             @if (r.Limitations.Count > 0) { <h3>Limitations</h3><ul class="sd-list">@foreach (var l in r.Limitations) { <li>@l</li> }</ul> }
             <details class="pt-details"><summary>Provenance</summary>
+                <p class="sd-muted" data-testid="pt-provenance-runtime">Runtime @(r.RuntimeId ?? "—") @r.RuntimeVersion · image @(r.ContainerImage ?? "—")@(r.ImageDigest is null ? "" : $" ({r.ImageDigest})")@(r.Reachability is { } rr ? $" · target reached as {rr.ExecutionOrigin}{(rr.Network is null ? "" : $" on {rr.Network}")}" : "")</p>
                 <p class="sd-muted">Provider @r.ProviderId @r.ProviderVersion · @r.MetricsSource · definition v@(r.DefinitionVersion) (@r.DefinitionFingerprint) · window @P.Utc(r.StartedAt) – @P.Utc(r.FinishedAt) · observability: @r.Observability@(r.Host is { } h ? $" · generator {h.OperatingSystem}, {h.LogicalProcessors} logical CPUs" : "")</p>
             </details>
         }
@@ -639,14 +668,14 @@
         {
             <div class="sd-scroll" tabindex="0" role="region" aria-label="Run history">
                 <table class="pt-history-table" data-testid="pt-history-table">
-                    <thead><tr><th scope="col">Run</th><th scope="col">Date</th><th scope="col">Environment</th><th scope="col">Workload</th><th scope="col">Execution</th><th scope="col">Quality</th><th scope="col">P95</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Baseline</th><th scope="col">Actions</th></tr></thead>
+                    <thead><tr><th scope="col">Run</th><th scope="col">Date</th><th scope="col">Environment</th><th scope="col">Workload</th><th scope="col">Provider / runtime</th><th scope="col">Execution</th><th scope="col">Quality</th><th scope="col">P95</th><th scope="col">RPS</th><th scope="col">Error rate</th><th scope="col">Baseline</th><th scope="col">Actions</th></tr></thead>
                     <tbody>
                         @foreach (var r in FilteredRuns)
                         {
                             var baseline = _baselines.FirstOrDefault(b => b.RunId == r.RunId);
                             <tr data-testid="pt-history-row" data-state="@r.State">
                                 <th scope="row">@P.Short(r.RunId)<span class="sd-context">v@(r.DefinitionVersion)</span></th>
-                                <td>@P.Utc(r.CreatedAt)</td><td>@r.DefinitionSnapshot.EnvironmentName</td><td>@r.DefinitionSnapshot.Workload.Purpose · @P.Load(r.DefinitionSnapshot.Workload)</td>
+                                <td>@P.Utc(r.CreatedAt)</td><td>@r.DefinitionSnapshot.EnvironmentName</td><td>@r.DefinitionSnapshot.Workload.Purpose · @P.Load(r.DefinitionSnapshot.Workload)</td><td>k6 @r.ProviderVersion · @(r.RuntimeId == PerformanceProviderIds.PodmanRuntime ? "Podman" : r.RuntimeId ?? "—") @r.RuntimeVersion</td>
                                 <td>@P.Label(r.State)</td><td>@P.Label(r.Verdict)</td>
                                 <td>@PerformanceTestRules.Format(r.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</td><td>@PerformanceTestRules.Format(r.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</td>
                                 <td>@PerformanceTestRules.Format(r.Metrics?.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</td>

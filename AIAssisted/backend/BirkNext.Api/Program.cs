@@ -408,6 +408,7 @@ builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.Iqr
 // Performance Test Review: generic definitions/runs/baselines; k6 is the first provider (external executable, generated script, no user scripts).
 builder.Services.AddSingleton(sp => BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IProcessRunner, BirkNext.Api.Services.PerformanceTests.SystemProcessRunner>();
+builder.Services.AddSingleton<BirkNext.Api.Services.ContainerRuntime.IContainerExecutionRuntime, BirkNext.Api.Services.ContainerRuntime.PodmanContainerExecutionRuntime>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IPerformanceTestProvider, BirkNext.Api.Services.PerformanceTests.K6PerformanceTestProvider>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestProviderRegistry>();
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.PerformanceTestReadinessService>();
