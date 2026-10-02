@@ -176,7 +176,7 @@ internal static class InfrastructureCatalog
         ["max_size_in_megabytes"] = "Messaging", ["default_message_ttl"] = "Messaging", ["lock_duration"] = "Messaging", ["eventhub_name"] = "Messaging", ["topic_id"] = "Messaging",
         ["namespace_id"] = "Messaging", ["namespace_name"] = "Messaging", ["eventhub_id"] = "Messaging", ["storage_account_id"] = "Datastore", ["storage_account_name"] = "Datastore", ["server_id"] = "Datastore", ["visibility_timeout_seconds"] = "Messaging", ["message_retention_seconds"] = "Messaging",
         // Datastore / capacity
-        ["sku"] = "Capacity", ["sku_name"] = "Capacity", ["capacity"] = "Capacity", ["version"] = "Datastore", ["storage_mb"] = "Datastore", ["backup_retention_days"] = "Datastore",
+        ["location"] = "Configuration", ["sku"] = "Capacity", ["sku_name"] = "Capacity", ["capacity"] = "Capacity", ["version"] = "Datastore", ["storage_mb"] = "Datastore", ["backup_retention_days"] = "Datastore",
         ["geo_redundant_backup_enabled"] = "Datastore", ["high_availability.mode"] = "Datastore", ["zone"] = "Datastore", ["account_tier"] = "Capacity",
         ["account_replication_type"] = "Datastore", ["container_access_type"] = "Security", ["engine"] = "Datastore", ["engine_version"] = "Datastore", ["max_size_gb"] = "Capacity",
         ["backup_retention_period"] = "Datastore", ["multi_az"] = "Datastore",

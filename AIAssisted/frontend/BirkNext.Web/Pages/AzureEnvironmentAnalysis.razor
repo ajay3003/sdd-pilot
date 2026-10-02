@@ -1,0 +1,589 @@
+@page "/azure-environment"
+@implements IAsyncDisposable
+@using BirkNext.AzureEnvironment
+@using BirkNext.Integrations
+@using BirkNext.SourceDomains
+@using BirkNext.Web.Models
+@using P = BirkNext.Web.Services.AzureEnvironmentPresentation
+@inject IAzureEnvironmentApiService Api
+@inject IIntegrationCatalogApiService Sources
+@inject IFrontendAnalysisContextFactory ContextFactory
+
+<PageTitle>Azure Environment Analysis</PageTitle>
+
+<div class="sd-workspace az-page" data-testid="az-page">
+    <h1 class="az-title">Azure Environment Analysis</h1>
+    <p class="sd-boundary" data-testid="az-boundary">@AzureEnvironmentText.Boundary</p>
+
+    @* ── Connection ─────────────────────────────────────────────────────────────────────────────────────── *@
+    <section class="sd-panel" aria-labelledby="az-connection-h" data-testid="az-connection">
+        @{ var (connectionLabel, connectionTone) = P.Connection(_status); }
+        <h2 id="az-connection-h">Azure connection <span class="@P.Css(connectionTone)" data-testid="az-connection-state">@connectionLabel</span></h2>
+        <p class="sd-reason" data-testid="az-next-step">@P.NextStep(_status, _summaries.Count > 0)</p>
+        @if (!string.IsNullOrWhiteSpace(_status.Message))
+        {
+            <p class="sd-muted" role="status" data-testid="az-connection-message">@_status.Message</p>
+        }
+        @if (_status.State == AzureConnectionState.NotConfigured)
+        {
+            <ul class="sd-list" data-testid="az-requirements">
+                @foreach (var r in _status.Requirements) { <li>@r</li> }
+            </ul>
+        }
+        else
+        {
+            <dl class="sd-facts">
+                <div><dt>Account</dt><dd data-testid="az-account">@(_status.Account ?? "—")</dd></div>
+                <div><dt>Sign-in method</dt><dd>@P.Method(_status.Method)</dd></div>
+                <div><dt>Tenant</dt><dd><code>@(_status.TenantId ?? "—")</code></dd></div>
+                <div><dt>Browser profile</dt><dd>@_status.ProfileLabel</dd></div>
+                @if (_status.ExpiresOn is { } expires) { <div><dt>Token valid until</dt><dd>@P.Utc(expires) (kept in memory only)</dd></div> }
+            </dl>
+            @if (_status.DeviceCode is { } prompt)
+            {
+                <div class="az-device-code" data-testid="az-device-code">
+                    <p>Open <a href="@prompt.VerificationUrl" target="_blank" rel="noopener noreferrer">@prompt.VerificationUrl</a> and enter the code <strong><code>@prompt.UserCode</code></strong>.</p>
+                    <p class="sd-muted">The code expires @P.Utc(prompt.ExpiresOn).</p>
+                </div>
+            }
+            <div class="az-actions">
+                @if (!P.CanRead(_status) && !P.Pending(_status))
+                {
+                    @if (_status.DedicatedEdgeAvailable)
+                    {
+                        <button class="btn-primary" @onclick="SignInEdge" disabled="@_busy" data-testid="az-sign-in-edge">Sign in with dedicated Edge profile</button>
+                    }
+                    @if (_status.DeviceCodeAllowed)
+                    {
+                        <button class="btn-secondary" @onclick="SignInDeviceCode" disabled="@_busy" data-testid="az-sign-in-device">Sign in with a device code</button>
+                    }
+                }
+                @if (_status.State is AzureConnectionState.SignedIn or AzureConnectionState.Expired)
+                {
+                    <button class="btn-secondary" @onclick="Refresh" disabled="@_busy" data-testid="az-refresh">Refresh access</button>
+                }
+                @if (_status.State is not (AzureConnectionState.SignedOut or AzureConnectionState.NotConfigured))
+                {
+                    <button class="btn-secondary" @onclick="SignOut" disabled="@_busy" data-testid="az-sign-out">Sign out</button>
+                }
+            </div>
+            <details class="az-details" data-testid="az-pim-guidance">
+                <summary>Privileged Identity Management (PIM) and permissions</summary>
+                <p>@AzureEnvironmentText.PimGuidance</p>
+                <p>What you can see is decided by Azure from your active roles. BirkNext never infers permissions from group names and never changes anything, even if you are Owner.</p>
+            </details>
+        }
+    </section>
+
+    @* ── Scope ─────────────────────────────────────────────────────────────────────────────────────────── *@
+    @if (_profile is null)
+    {
+        <p class="sd-empty" data-testid="az-no-target">Select a Target Environment: Azure snapshots belong to one Target Environment, like Source Analysis snapshots.</p>
+    }
+    else
+    {
+        @if (P.CanRead(_status))
+        {
+            <section class="sd-panel" aria-labelledby="az-scope-h" data-testid="az-scope">
+                <h2 id="az-scope-h">Scope</h2>
+                @if (_subscriptionsError is not null) { <p class="sd-reason" role="alert" data-testid="az-subscriptions-error">@_subscriptionsError</p> }
+                @if (_subscriptions.Count == 0 && _subscriptionsError is null)
+                {
+                    <p class="sd-muted" data-testid="az-no-subscriptions">@(_subscriptionsLoaded ? "No subscriptions are visible to the signed-in account. If you expect access, activate the role in PIM and refresh access." : "Loading subscriptions…")</p>
+                }
+                else
+                {
+                    <fieldset class="az-subscriptions">
+                        <legend>Subscriptions</legend>
+                        @foreach (var s in _subscriptions)
+                        {
+                            <label class="sd-check"><input type="checkbox" checked="@_selected.Contains(s.Id)" @onchange="e => Toggle(s.Id, e)" data-testid="@($"az-sub-{s.Id}")" />
+                                @s.DisplayName <span class="sd-context">@s.Id · @s.State</span></label>
+                        }
+                    </fieldset>
+                }
+                <div class="sd-filterbar">
+                    <label>Resource groups (optional, comma-separated)
+                        <input type="text" @bind="_groups" placeholder="rg-app-dev, rg-shared-dev" data-testid="az-groups" />
+                    </label>
+                    <label>This scope represents
+                        <select @bind="_environmentLabel" data-testid="az-environment">
+                            <option value="">Not stated</option>
+                            @foreach (var e in Environments) { <option value="@e">@e</option> }
+                        </select>
+                    </label>
+                    <button class="btn-primary" @onclick="Analyze" disabled="@(_busy || _selected.Count == 0)" data-testid="az-analyze">@(_analyzing ? "Analyzing…" : "Analyze (read-only)")</button>
+                </div>
+                @if (_analyzeError is not null) { <p class="sd-reason" role="alert" data-testid="az-analyze-error">@_analyzeError</p> }
+            </section>
+        }
+
+        @if (_summaries.Count > 0)
+        {
+            <div class="sd-filterbar" data-testid="az-history">
+                <label>Snapshot
+                    <select value="@_snapshot?.Id" @onchange="SelectSnapshot" data-testid="az-snapshot-select">
+                        @foreach (var s in _summaries)
+                        {
+                            <option value="@s.Id">@P.Utc(s.CapturedAt) · @string.Join(", ", s.SubscriptionNames) · @s.Resources resources · @s.Status</option>
+                        }
+                    </select>
+                </label>
+            </div>
+        }
+        else if (_loaded)
+        {
+            <p class="sd-empty" data-testid="az-no-snapshots">No Azure snapshot exists for this Target Environment yet.@(P.CanRead(_status) ? " Choose subscriptions and analyze." : " Sign in to analyze one.")</p>
+        }
+
+        @if (_snapshot is { } snap)
+        {
+            @RenderSnapshot(snap)
+        }
+    }
+</div>
+
+@code {
+    private static readonly string[] Environments = ["dev", "test", "qa", "staging", "prod"];
+    private static readonly (string Key, string Label)[] Tabs =
+        [("overview", "Overview"), ("resources", "Resources"), ("topology", "Topology"), ("access", "Access"), ("observations", "Observations"), ("declared", "Declared vs observed"), ("suggestions", "Target Environment suggestions")];
+
+    private FrontendAnalysisProfile? _profile;
+    private AzureConnectionStatus _status = new() { State = AzureConnectionState.SignedOut };
+    private List<AzureSubscription> _subscriptions = [];
+    private bool _subscriptionsLoaded;
+    private string? _subscriptionsError;
+    private readonly HashSet<string> _selected = new(StringComparer.OrdinalIgnoreCase);
+    private string _groups = "";
+    private string _environmentLabel = "";
+    private bool _busy, _analyzing, _loaded;
+    private string? _analyzeError;
+    private IReadOnlyList<AzureEnvironmentSnapshotSummary> _summaries = [];
+    private AzureEnvironmentSnapshot? _snapshot;
+    private string _tab = "overview";
+    private string _filter = "";
+    private string? _expanded;
+    private IReadOnlyList<IqrSourceSnapshot> _sourceSnapshots = [];
+    private Guid? _sourceSnapshotId;
+    private string _compareEnvironment = "";
+    private DeclaredObservedComparison? _comparison;
+    private string? _comparisonError;
+    private bool _comparing;
+    private IReadOnlyList<AzureTargetSuggestion>? _suggestions;
+    private readonly CancellationTokenSource _cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var context = await ContextFactory.GetActiveContextAsync();
+        _profile = context.ActiveProfile;
+        _status = await Api.StatusAsync(_cts.Token);
+        if (_profile is not null)
+        {
+            _summaries = await Api.SnapshotsAsync(_profile.Id, _cts.Token);
+            if (_summaries.Count > 0) _snapshot = await Api.SnapshotAsync(_profile.Id, _summaries[0].Id, _cts.Token);
+        }
+        if (P.CanRead(_status)) await LoadSubscriptions();
+        _loaded = true;
+        if (P.Pending(_status)) _ = PollAsync();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        var result = await Api.SubscriptionsAsync(_cts.Token);
+        _subscriptions = result.Subscriptions;
+        _subscriptionsError = result.Error ?? (result.Capability is { State: not AzureCapabilityState.Available } c ? c.Detail : null);
+        _subscriptionsLoaded = true;
+        if (_selected.Count == 0 && _snapshot is not null) foreach (var id in _snapshot.Scope.SubscriptionIds) if (_subscriptions.Any(s => s.Id == id)) _selected.Add(id);
+    }
+
+    private async Task Act(Func<Task<AzureConnectionStatus>> action)
+    {
+        _busy = true;
+        try { _status = await action(); }
+        finally { _busy = false; }
+        if (P.Pending(_status)) _ = PollAsync();
+        else if (P.CanRead(_status)) await LoadSubscriptions();
+        else { _subscriptions = []; _subscriptionsLoaded = false; }
+    }
+
+    private Task SignInEdge() => Act(() => Api.SignInInteractiveAsync(_cts.Token));
+    private Task SignInDeviceCode() => Act(() => Api.SignInDeviceCodeAsync(_cts.Token));
+    private Task Refresh() => Act(() => Api.RefreshAsync(_cts.Token));
+    private Task SignOut() => Act(() => Api.SignOutAsync(_cts.Token));
+
+    /// <summary>Only while a sign-in is pending: re-read the status every two seconds until it settles (at most five minutes).</summary>
+    private async Task PollAsync()
+    {
+        for (var i = 0; i < 150 && !_cts.IsCancellationRequested; i++)
+        {
+            try { await Task.Delay(2000, _cts.Token); } catch (OperationCanceledException) { return; }
+            _status = await Api.StatusAsync(_cts.Token);
+            if (!P.Pending(_status))
+            {
+                if (P.CanRead(_status)) await LoadSubscriptions();
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void Toggle(string id, ChangeEventArgs e)
+    {
+        if (e.Value is true) _selected.Add(id); else _selected.Remove(id);
+    }
+
+    private async Task Analyze()
+    {
+        if (_profile is null) return;
+        _busy = _analyzing = true;
+        _analyzeError = null;
+        try
+        {
+            var request = new AzureAnalysisRequest
+            {
+                EnvironmentId = _profile.Id, SubscriptionIds = [.. _selected],
+                ResourceGroups = [.. _groups.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)],
+                EnvironmentLabel = string.IsNullOrWhiteSpace(_environmentLabel) ? null : _environmentLabel,
+            };
+            var (snapshot, error) = await Api.AnalyzeAsync(request, _cts.Token);
+            _analyzeError = error;
+            if (snapshot is not null)
+            {
+                _snapshot = snapshot;
+                _summaries = await Api.SnapshotsAsync(_profile.Id, _cts.Token);
+                ResetDerived();
+            }
+            _status = await Api.StatusAsync(_cts.Token);
+        }
+        finally { _busy = _analyzing = false; }
+    }
+
+    private async Task SelectSnapshot(ChangeEventArgs e)
+    {
+        if (_profile is null || !Guid.TryParse(e.Value?.ToString(), out var id)) return;
+        _snapshot = await Api.SnapshotAsync(_profile.Id, id, _cts.Token);
+        ResetDerived();
+    }
+
+    private void ResetDerived() { _comparison = null; _comparisonError = null; _suggestions = null; _expanded = null; }
+
+    private async Task ShowTab(string tab)
+    {
+        _tab = tab;
+        if (_profile is null || _snapshot is null) return;
+        if (tab == "declared" && _sourceSnapshots.Count == 0)
+        {
+            _sourceSnapshots = (await Sources.ListSourceSnapshotsAsync(_profile.Id, _cts.Token)).Where(s => s.EvidenceDomains is not null).ToList();
+            _sourceSnapshotId = _sourceSnapshots.Where(s => s.EvidenceDomains!.Infrastructure.Resources.Count > 0).OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
+            _compareEnvironment = _snapshot.Scope.Environment?.Raw ?? "";
+        }
+        if (tab == "suggestions" && _suggestions is null) _suggestions = await Api.TargetSuggestionsAsync(_profile.Id, _snapshot.Id, _cts.Token);
+    }
+
+    private async Task Compare()
+    {
+        if (_profile is null || _snapshot is null) return;
+        _comparing = true;
+        try { (_comparison, _comparisonError) = await Api.ComparisonAsync(_profile.Id, _snapshot.Id, _sourceSnapshotId, _compareEnvironment, _cts.Token); }
+        finally { _comparing = false; }
+    }
+
+    private void OnSourceSnapshot(ChangeEventArgs e) => _sourceSnapshotId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+
+    private void Toggle(string key) => _expanded = _expanded == key ? null : key;
+
+    private static string Portal(AzureEnvironmentSnapshot s, string id) => AzureEnvironmentText.PortalUrl(id, s.TenantId);
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        await Task.CompletedTask;
+    }
+
+    private RenderFragment RenderSnapshot(AzureEnvironmentSnapshot s) => __builder =>
+    {
+        var (statusLabel, statusTone) = P.Status(s.Status);
+        <section class="sd-panel" aria-labelledby="az-result-h" data-testid="az-result">
+            <h2 id="az-result-h">Observed environment <span class="@P.Css(statusTone)" data-testid="az-status">@statusLabel</span></h2>
+            <p class="sd-muted sd-provenance" data-testid="az-provenance">Captured @P.Utc(s.CapturedAt) · @string.Join(", ", s.Subscriptions.Select(x => x.DisplayName))@(s.Scope.ResourceGroups.Count > 0 ? $" · resource groups {string.Join(", ", s.Scope.ResourceGroups)}" : "")@(s.Scope.Environment is { } env ? $" · represents {env.Raw}" : "") · collector v@(s.CollectorVersion)</p>
+            <dl class="sd-summary" data-testid="az-summary">
+                <div><dt>Resources</dt><dd>@s.Resources.Count(r => r.Category != InfrastructureCategory.ResourceContainer)</dd></div>
+                <div><dt>Resource groups</dt><dd>@s.Resources.Count(r => r.Category == InfrastructureCategory.ResourceContainer)</dd></div>
+                <div><dt>Relationships</dt><dd>@s.Relationships.Count</dd></div>
+                <div><dt>For review</dt><dd>@s.Observations.Count(o => o.ForReview)</dd></div>
+                <div><dt>Areas not fully readable</dt><dd>@s.Capabilities.Count(c => c.State is AzureCapabilityState.NotAuthorized or AzureCapabilityState.Partial or AzureCapabilityState.Throttled or AzureCapabilityState.Failed)</dd></div>
+            </dl>
+            <div class="sd-tabs" role="group" aria-label="Snapshot views">
+                @foreach (var (key, label) in Tabs)
+                {
+                    <button class="btn-secondary" aria-pressed="@(_tab == key ? "true" : "false")" @onclick="() => ShowTab(key)" data-testid="@($"az-tab-{key}")">@label</button>
+                }
+            </div>
+            @switch (_tab)
+            {
+                case "resources": @RenderResources(s) break;
+                case "topology": @RenderTopology(s) break;
+                case "access": @RenderAccess(s) break;
+                case "observations": @RenderObservations(s) break;
+                case "declared": @RenderDeclared(s) break;
+                case "suggestions": @RenderSuggestions() break;
+                default: @RenderOverview(s) break;
+            }
+        </section>
+    };
+
+    private RenderFragment RenderOverview(AzureEnvironmentSnapshot s) => __builder =>
+    {
+        <div data-testid="az-overview">
+            <h3>What could be read</h3>
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Capability matrix">
+                <table data-testid="az-capabilities">
+                    <caption class="visually-hidden">Capability matrix</caption>
+                    <thead><tr><th scope="col">Area</th><th scope="col">State</th><th scope="col">Detail</th><th scope="col">Operation</th></tr></thead>
+                    <tbody>
+                        @foreach (var c in s.Capabilities)
+                        {
+                            <tr data-testid="az-capability-row">
+                                <th scope="row">@AzureEnvironmentText.Label(c.Area)@if (c.SubscriptionId is { } sub) { <span class="sd-context">@(s.Subscriptions.FirstOrDefault(x => x.Id == sub)?.DisplayName ?? sub)</span> }</th>
+                                <td><span class="@P.Css(P.ToneOf(c.State))">@AzureEnvironmentText.Label(c.State)</span></td>
+                                <td>@c.Detail</td>
+                                <td><code class="sd-path">@c.Operation</code></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (s.Limitations.Count > 0)
+            {
+                <h3>Limitations</h3>
+                <ul class="sd-list" data-testid="az-limitations">@foreach (var l in s.Limitations) { <li>@l</li> }</ul>
+            }
+            <details class="az-details">
+                <summary>Reads performed (@s.Queries.Count)</summary>
+                <ul class="sd-list" data-testid="az-queries">@foreach (var q in s.Queries) { <li><code class="sd-path">@q.Operation</code> — @q.Outcome (HTTP @q.Status, @q.Items item(s), @q.Pages page(s))</li> }</ul>
+            </details>
+        </div>
+    };
+
+    private RenderFragment RenderResources(AzureEnvironmentSnapshot s) => __builder =>
+    {
+        <div data-testid="az-resources">
+            <div class="sd-filterbar"><label>Filter <input type="search" @bind="_filter" @bind:event="oninput" placeholder="Name, type or resource group" data-testid="az-filter" /></label></div>
+            @foreach (var (category, items) in P.ByCategory(s.Resources, _filter))
+            {
+                <h3>@P.Category(category) <span class="sd-count">@items.Count</span></h3>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"{P.Category(category)} resources")">
+                    <table data-testid="@($"az-resources-{category}")">
+                        <caption class="visually-hidden">@P.Category(category)</caption>
+                        <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Resource group</th><th scope="col">Location / SKU</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                        <tbody>
+                            @foreach (var r in items)
+                            {
+                                var key = $"r:{r.Id}";
+                                <tr data-testid="az-resource-row">
+                                    <th scope="row">@r.Name@if (r.ParentId is { } parent) { <span class="sd-context">in @P.NameOf(s, parent)</span> }</th>
+                                    <td>@r.CategoryDetail</td>
+                                    <td>@(r.ResourceGroup ?? "—")</td>
+                                    <td>@(r.Location ?? "—")@if (r.Sku is { } sku) { <span class="sd-context">@sku</span> }</td>
+                                    <td><button class="sd-link" aria-expanded="@(_expanded == key ? "true" : "false")" @onclick="() => Toggle(key)">Details<span class="visually-hidden"> for @r.Name</span></button></td>
+                                </tr>
+                                @if (_expanded == key)
+                                {
+                                    <tr class="sd-detail-row" data-testid="az-resource-detail"><td colspan="5">
+                                        <dl class="sd-facts">
+                                            @foreach (var p in r.Properties.Where(p => p.Area != "Reference")) { <div><dt>@p.Key <span class="sd-context">@p.Area</span></dt><dd>@p.Value</dd></div> }
+                                            @if (r.IdentityType is { } identity) { <div><dt>Managed identity</dt><dd>@identity</dd></div> }
+                                            @if (r.Tags.Count > 0) { <div><dt>Tags</dt><dd>@string.Join(", ", r.Tags.Select(t => $"{t.Key}={t.Value}"))</dd></div> }
+                                            <div><dt>Source</dt><dd>@r.Source · @r.ObservedState</dd></div>
+                                        </dl>
+                                        <p><a href="@Portal(s, r.Id)" target="_blank" rel="noopener noreferrer" data-testid="az-portal-link">Open in the Azure portal</a> <span class="sd-context"><code>@r.Id</code></span></p>
+                                    </td></tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    };
+
+    private RenderFragment RenderTopology(AzureEnvironmentSnapshot s) => __builder =>
+    {
+        <div data-testid="az-topology">
+            <p class="sd-muted">Confirmed: an Azure resource id on one resource names the other. Inferred: a naming convention only — not a confirmed connection.</p>
+            @foreach (var group in s.Relationships.Where(r => r.Kind != ObservedRelationshipKind.Contains).GroupBy(r => r.Kind).OrderBy(g => g.Key))
+            {
+                <h3>@AzureEnvironmentText.Label(group.Key) <span class="sd-count">@group.Count()</span></h3>
+                <ul class="sd-list" data-testid="@($"az-rel-{group.Key}")">
+                    @foreach (var r in group)
+                    {
+                        <li>@P.Sentence(s, r) <span class="@P.Css(r.Confidence == ObservedRelationshipConfidence.Confirmed ? P.Tone.Complete : P.Tone.Partial)">@r.Confidence</span> <span class="sd-context">@r.Evidence</span></li>
+                    }
+                </ul>
+            }
+            <p class="sd-muted">@s.Relationships.Count(r => r.Kind == ObservedRelationshipKind.Contains) resource-group containment link(s) are shown in the Resources view.</p>
+        </div>
+    };
+
+    private RenderFragment RenderAccess(AzureEnvironmentSnapshot s) => __builder =>
+    {
+        <div data-testid="az-access">
+            <h3>Your effective permissions</h3>
+            @foreach (var p in s.Access.Permissions)
+            {
+                <p data-testid="az-permissions">@(s.Subscriptions.FirstOrDefault(x => x.Id == p.SubscriptionId)?.DisplayName ?? p.SubscriptionId): @p.Note</p>
+            }
+            <h3>Your roles (Privileged Identity Management)</h3>
+            @if (s.Access.SignedInRoles.Count == 0)
+            {
+                <p class="sd-muted">No PIM role schedules were read for you (see the Overview for why).</p>
+            }
+            else
+            {
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Your active and eligible roles">
+                    <table data-testid="az-roles">
+                        <caption class="visually-hidden">Your active and eligible roles</caption>
+                        <thead><tr><th scope="col">Role</th><th scope="col">Status</th><th scope="col">Scope</th><th scope="col">Membership</th></tr></thead>
+                        <tbody>
+                            @foreach (var r in s.Access.SignedInRoles.OrderBy(r => r.Status))
+                            {
+                                <tr><th scope="row">@r.RoleName</th>
+                                    <td><span class="@P.Css(r.Status == PimRoleStatus.Active ? P.Tone.Complete : P.Tone.Muted)">@(r.Status == PimRoleStatus.Active ? "Active" : "Eligible — not active")</span></td>
+                                    <td><code class="sd-path">@r.Scope</code></td>
+                                    <td>@r.MemberType@(r.EndsOn is { } end ? $" · until {P.Utc(end)}" : "")</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="sd-muted">@AzureEnvironmentText.PimGuidance</p>
+            }
+            <h3>Role assignments <span class="sd-count">@s.Access.Assignments.Count</span></h3>
+            @if (s.Access.Assignments.Count > 0)
+            {
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Role assignments">
+                    <table data-testid="az-assignments">
+                        <caption class="visually-hidden">Role assignments</caption>
+                        <thead><tr><th scope="col">Role</th><th scope="col">Principal</th><th scope="col">Scope</th></tr></thead>
+                        <tbody>
+                            @foreach (var a in s.Access.Assignments.OrderBy(a => a.ScopeLevel).ThenBy(a => a.RoleName).Take(300))
+                            {
+                                <tr><th scope="row">@a.RoleName</th>
+                                    <td>@(a.PrincipalResourceId is { } owner ? $"Managed identity of {P.NameOf(s, owner)}" : a.PrincipalType) <span class="sd-context"><code>@a.PrincipalId</code></span></td>
+                                    <td>@a.ScopeLevel <span class="sd-context"><code>@a.Scope</code></span></td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="sd-muted">Assigned is not the same as used: role assignments show what a principal may do, not what it does.</p>
+            }
+        </div>
+    };
+
+    private RenderFragment RenderObservations(AzureEnvironmentSnapshot s) => __builder =>
+    {
+        <div data-testid="az-observations">
+            <p class="sd-muted">Neutral statements about what was observed. "For review" marks what reviewers usually look at; none of these is a policy result.</p>
+            @foreach (var group in s.Observations.GroupBy(o => o.Area).OrderBy(g => g.Key))
+            {
+                <h3>@P.Area(group.Key) <span class="sd-count">@group.Count()</span></h3>
+                <ul class="sd-list" data-testid="@($"az-obs-{group.Key}")">
+                    @foreach (var o in group.OrderByDescending(o => o.ForReview).ThenBy(o => o.ResourceName))
+                    {
+                        <li>@if (o.ForReview) { <span class="sd-pill sd-pill-partial">For review</span> } <strong>@o.ResourceName</strong>: @o.Statement</li>
+                    }
+                </ul>
+            }
+        </div>
+    };
+
+    private RenderFragment RenderDeclared(AzureEnvironmentSnapshot s) => __builder =>
+    {
+        <div data-testid="az-declared">
+            <p class="sd-muted">@AzureEnvironmentText.ComparisonBoundary</p>
+            @if (_sourceSnapshots.Count == 0)
+            {
+                <p class="sd-empty" data-testid="az-declared-no-source">No Source Analysis snapshot is available for this Target Environment. <a href="source-analysis">Open Source Analysis</a> to analyze the repository that declares the infrastructure.</p>
+            }
+            else
+            {
+                <div class="sd-filterbar">
+                    <label>Source snapshot
+                        <select value="@_sourceSnapshotId" @onchange="OnSourceSnapshot" data-testid="az-declared-source">
+                            @foreach (var src in _sourceSnapshots.OrderByDescending(x => x.AnalyzedAt))
+                            {
+                                <option value="@src.Id">@src.Archive.FileName · @P.Utc(src.AnalyzedAt) · @src.EvidenceDomains!.Infrastructure.Resources.Count declared</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Environment
+                        <select @bind="_compareEnvironment" data-testid="az-declared-environment">
+                            <option value="">As stated for the Azure scope</option>
+                            @foreach (var e in Environments) { <option value="@e">@e</option> }
+                        </select>
+                    </label>
+                    <button class="btn-primary" @onclick="Compare" disabled="@_comparing" data-testid="az-compare">@(_comparing ? "Comparing…" : "Compare")</button>
+                </div>
+            }
+            @if (_comparisonError is not null) { <p class="sd-reason" role="alert" data-testid="az-compare-error">@_comparisonError</p> }
+            @if (_comparison is { } c)
+            {
+                <p class="sd-muted sd-provenance" data-testid="az-compare-provenance">Source <code>@c.SourceFingerprint[..Math.Min(8, c.SourceFingerprint.Length)]</code> · Infrastructure analyzer v@(c.InfrastructureAnalyzerVersion) · Azure snapshot @P.Utc(c.AzureCapturedAt) · environment @(c.Environment?.Raw ?? "not stated") (@c.EnvironmentBasis)</p>
+                <dl class="sd-mini" data-testid="az-compare-counts">
+                    @foreach (var state in P.StateOrder) { <div><dt>@AzureEnvironmentText.Label(state)</dt><dd>@c.Counts.GetValueOrDefault(state)</dd></div> }
+                </dl>
+                @foreach (var state in P.StateOrder.Where(st => c.Items.Any(i => i.State == st)))
+                {
+                    var (label, tone) = P.State(state);
+                    <details class="az-details" open="@(state is DeclaredObservedState.ConfigurationDiffers or DeclaredObservedState.AmbiguousMatch)" data-testid="@($"az-compare-{state}")">
+                        <summary><span class="@P.Css(tone)">@label</span> <span class="sd-count">@c.Items.Count(i => i.State == state)</span></summary>
+                        <div class="sd-scroll" tabindex="0" role="region" aria-label="@($"{label} items")">
+                            <table>
+                                <caption class="visually-hidden">@label</caption>
+                                <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Declared</th><th scope="col">Why</th></tr></thead>
+                                <tbody>
+                                    @foreach (var i in c.Items.Where(i => i.State == state))
+                                    {
+                                        <tr><th scope="row">@i.Name@if (i.NameBasis is { } basis) { <span class="sd-context">@basis</span> }</th>
+                                            <td>@i.Kind</td>
+                                            <td>@(i.DeclaredFile is { } f ? $"{f}:{i.DeclaredLine}" : "—")@if (i.DeclaredType is { } t) { <span class="sd-context">@t</span> }</td>
+                                            <td>@i.Reason
+                                                @if (i.Differences.Count > 0)
+                                                {
+                                                    <ul class="sd-list">@foreach (var d in i.Differences) { <li><code>@d.Setting</code>: declared <strong>@d.Declared</strong>, observed <strong>@d.Observed</strong></li> }</ul>
+                                                }
+                                            </td></tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </details>
+                }
+                @if (c.Limitations.Count > 0) { <ul class="sd-list" data-testid="az-compare-limitations">@foreach (var l in c.Limitations) { <li>@l</li> }</ul> }
+            }
+        </div>
+    };
+
+    private RenderFragment RenderSuggestions() => __builder =>
+    {
+        <div data-testid="az-suggestions">
+            <p class="sd-muted">Values observed in Azure that you may copy into the Target Environment. BirkNext does not save them; the Target Environment keeps what you configured.</p>
+            @if (_suggestions is null) { <p class="sd-muted">Loading…</p> }
+            else if (_suggestions.Count == 0) { <p class="sd-empty">No application URLs, messaging hosts or telemetry components were observed.</p> }
+            else
+            {
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Target Environment suggestions">
+                    <table data-testid="az-suggestions-table">
+                        <caption class="visually-hidden">Target Environment suggestions</caption>
+                        <thead><tr><th scope="col">Field</th><th scope="col">Value</th><th scope="col">Observed resource</th></tr></thead>
+                        <tbody>
+                            @foreach (var sg in _suggestions) { <tr><th scope="row">@sg.Field</th><td><code>@sg.Value</code></td><td>@sg.ResourceName</td></tr> }
+                        </tbody>
+                    </table>
+                </div>
+                <p class="sd-muted">@_suggestions[0].Basis</p>
+            }
+        </div>
+    };
+}

@@ -3,6 +3,7 @@ using System;
 using BirkNext.Api.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BirkNext.Api.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20261002082249_AddAzureEnvironmentSnapshots")]
+    partial class AddAzureEnvironmentSnapshots
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -533,27 +536,6 @@ namespace BirkNext.Api.Data.Migrations
                     b.HasKey("EnvironmentId");
 
                     b.ToTable("integration_environment_states", (string)null);
-                });
-
-            modelBuilder.Entity("BirkNext.Api.Models.IntegrationMessageFlowRecord", b =>
-                {
-                    b.Property<string>("EnvironmentId")
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("environment_id");
-
-                    b.Property<string>("DocumentJson")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("document_json");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("EnvironmentId");
-
-                    b.ToTable("integration_message_flows", (string)null);
                 });
 
             modelBuilder.Entity("BirkNext.Api.Models.IntegrationPlatformRecord", b =>

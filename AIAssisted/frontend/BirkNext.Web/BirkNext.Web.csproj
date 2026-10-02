@@ -48,6 +48,7 @@
     <Compile Include="../../shared/SourceEvidenceDomainContracts.cs" Link="Models/SourceEvidenceDomainContracts.cs" />
     <Compile Include="../../shared/SourceInfrastructureIdentityContracts.cs" Link="Models/SourceInfrastructureIdentityContracts.cs" />
     <Compile Include="../../shared/SourceChangeImpactContracts.cs" Link="Models/SourceChangeImpactContracts.cs" />
+    <Compile Include="../../shared/AzureEnvironmentContracts.cs" Link="Models/AzureEnvironmentContracts.cs" />
     <Compile Include="../../shared/DependencyHealthContracts.cs" Link="Models/DependencyHealthContracts.cs" />
     <Compile Include="../../shared/ScimProvisioningContracts.cs" Link="Models/ScimProvisioningContracts.cs" />
     <Compile Include="../../shared/SecurityClassificationContracts.cs" Link="Models/SecurityClassificationContracts.cs" />

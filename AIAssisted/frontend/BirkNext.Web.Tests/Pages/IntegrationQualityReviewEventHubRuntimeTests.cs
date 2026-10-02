@@ -207,6 +207,29 @@ public sealed class IntegrationQualityReviewEventHubRuntimeTests : BunitContext
     }
 
     [Fact]
+    public void ConfiguredVsObservedInAzure_IsShownFromTheRunsOwnSnapshot_AsObservedNotVerified()
+    {
+        var observed = new BirkNext.AzureEnvironment.ObservedResourceLookup
+        {
+            State = BirkNext.AzureEnvironment.ObservedLookupState.Observed, Kind = BirkNext.SourceDomains.InfrastructureResourceKind.EventHubNamespace, Name = "evhns-x",
+            CapturedAt = DateTimeOffset.Parse("2026-10-02T09:00:00Z"), Detail = "Observed in Azure (Event Hubs namespace, rg-x).",
+            Resource = new() { Id = "/subscriptions/s/resourceGroups/rg-x/providers/Microsoft.EventHub/namespaces/evhns-x", Name = "evhns-x", CategoryDetail = "Event Hubs namespace", ResourceGroup = "rg-x" },
+        };
+        var missing = observed with { State = BirkNext.AzureEnvironment.ObservedLookupState.NotObserved, Resource = null, Name = "appi-x", Detail = "Not observed in the analyzed Azure scope." };
+        _api.Result = M2lbFixture.Result() with
+        {
+            ObservedAzureComparisons = [new("eh", "Payments Event Hubs", null, "Event Hubs namespace", "evhns-x", observed), new("eh", "Payments Event Hubs", null, "Application Insights", "appi-x", missing)],
+        };
+        var cut = RunReview();
+        var section = cut.Find("[data-testid=iqr-result-observed-azure]");
+        section.TextContent.Should().Contain("runtime behaviour not verified").And.Contain("2026-10-02 09:00 UTC");
+        section.QuerySelector("[data-state=Observed] dd")!.TextContent.Should().Be("1");
+        section.QuerySelector("[data-state=NotObserved] dd")!.TextContent.Should().Be("1");
+        cut.FindAll("[data-testid=iqr-observed-azure-row]")[0].TextContent.Should().Contain("evhns-x").And.Contain("Observed").And.Contain("rg-x");
+        cut.FindAll("[data-testid=iqr-observed-azure-row]")[1].TextContent.Should().Contain("Not observed in the analyzed scope");
+    }
+
+    [Fact]
     public void AnOlderRunWithoutTheseListsSaysSo_AndHasNoEventHubSection()
     {
         _api.Result = M2lbFixture.Result();

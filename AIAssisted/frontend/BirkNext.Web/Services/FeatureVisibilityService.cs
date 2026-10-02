@@ -48,6 +48,7 @@ public class FeatureVisibilityService
     public bool ImplementationTraceability  => _flags.ImplementationTraceability;
     // Hides the menu entry only; source snapshots, architecture and database analyses are untouched.
     public bool SourceAnalysis              => _flags.SourceAnalysis;
+    public bool AzureEnvironmentAnalysis    => _flags.AzureEnvironmentAnalysis;
     public bool FrontendQualityReview      => _flags.FrontendQualityReview;
     public bool ApiQualityReview           => _flags.ApiQualityReview;
     public bool IntegrationQualityReview   => _flags.IntegrationQualityReview;
@@ -71,7 +72,7 @@ public class FeatureVisibilityService
     public bool ShowSectionLibrary        => QaArtifactLibrary || SampleProjects;
     public bool ShowSectionTraceability   => LegacyTraceabilityNavigationEnabled
                                              && (TraceabilityCoverage || TraceabilitySuggestions || CodeTraceability);
-    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability || SourceAnalysis;
+    public bool ShowSectionAnalysis       => ImpactAnalysis || SpecDrift || ImplementationReview || ImplementationTraceability || ArtifactTraceability || SourceAnalysis || AzureEnvironmentAnalysis;
     public bool ShowSectionQuality        => QualityReview || FrontendQualityReview || ApiQualityReview || IntegrationQualityReview || CriticalE2ERegression;
     public bool ShowSectionAiReview       => AiChangeReview;
     public bool ShowSectionAdmin          => AdminSystemSettings;

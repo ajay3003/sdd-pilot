@@ -411,6 +411,18 @@ builder.Services.AddScoped<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvi
 builder.Services.AddScoped<BirkNext.Api.Services.SecurityExpectations.ISecurityExpectationDiscoveryService>(sp => new BirkNext.Api.Services.SecurityExpectations.SecurityExpectationDiscoveryService(
     sp.GetRequiredService<BirkNext.Api.Data.AppDbContext>(), sp.GetRequiredService<BirkNext.Api.Services.SourceAnalysis.IReviewSourceEvidenceProvider>()));
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceDiscovery.SourceIntegrationService>();
+// Azure Environment Analysis: the person's own interactive sign-in (dedicated Edge profile / device code; MFA and PIM are theirs), token in
+// memory only, read-only Azure Resource Manager GETs + predefined Resource Graph queries. Off unless AzureEnvironment:Enabled and a ClientId.
+builder.Services.Configure<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions>(builder.Configuration.GetSection(BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentOptions.SectionName));
+builder.Services.AddSingleton<BirkNext.Api.Services.AzureEnvironment.IAzureTokenBroker, BirkNext.Api.Services.AzureEnvironment.MsalAzureTokenBroker>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AzureEnvironment.IAzureSignInBrowser, BirkNext.Api.Services.AzureEnvironment.DedicatedEdgeSignInBrowser>();
+builder.Services.AddSingleton<BirkNext.Api.Services.AzureEnvironment.IAzureSignInService, BirkNext.Api.Services.AzureEnvironment.AzureSignInService>();
+builder.Services.AddHttpClient<BirkNext.Api.Services.AzureEnvironment.IAzureManagementClient, BirkNext.Api.Services.AzureEnvironment.HttpAzureManagementClient>(client => client.Timeout = TimeSpan.FromSeconds(30))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironmentCollector, BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentCollector>();
+builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentSnapshotStore>();
+builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironmentEvidenceProvider>(sp => BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentEvidenceProvider.FromConfiguration(
+    sp.GetRequiredService<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentSnapshotStore>(), sp.GetRequiredService<IConfiguration>()));
 // Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();

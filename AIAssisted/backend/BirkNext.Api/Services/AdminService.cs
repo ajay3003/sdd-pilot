@@ -42,7 +42,8 @@ public class AdminService
         ("BlazorWasmPerformanceReview","WASM Performance Review"),
         ("ImplementationReview",       "Implementation Review"),
         ("ImplementationTraceability", "Implementation Traceability"),
-        ("SourceAnalysis",             "Source Analysis")
+        ("SourceAnalysis",             "Source Analysis"),
+        ("AzureEnvironmentAnalysis",   "Azure Environment Analysis")
     ];
 
     private static readonly IReadOnlyList<(string Key, string Label)> AdvancedFeatures =
@@ -248,6 +249,7 @@ public class AdminService
             ImplementationTraceability  = s.GetValue("ImplementationTraceability",  true),
             // Missing key (older configuration) resolves to enabled, like every Core feature.
             SourceAnalysis              = s.GetValue("SourceAnalysis",              true),
+            AzureEnvironmentAnalysis    = s.GetValue("AzureEnvironmentAnalysis",    true),
             ConstitutionExplorer        = s.GetValue("ConstitutionExplorer",        true),
             DataModelExplorer           = s.GetValue("DataModelExplorer",           true),
             PlanExplorer                = s.GetValue("PlanExplorer",                true),
