@@ -166,6 +166,36 @@ public sealed record SourceObservabilitySnapshot
     public List<string> UnsupportedEvidence { get; init; } = [];
 }
 
+/// <summary>A source-to-source difference in observability evidence; it does not imply runtime telemetry behavior changed.</summary>
+public sealed record SourceObservabilityChange(string Kind, string Area, string Subject, string Detail, string? EntityId = null);
+
+/// <summary>Canonical comparison of the stored observability snapshots, shared by Source Analysis and downstream evidence consumers.</summary>
+public static class SourceObservabilityComparison
+{
+    public static List<SourceObservabilityChange> Compare(SourceObservabilitySnapshot previous, SourceObservabilitySnapshot current)
+    {
+        static string ComponentName(SourceObservabilitySnapshot snapshot, string? id) => id is null ? "Snapshot-wide"
+            : snapshot.Components.FirstOrDefault(c => c.ComponentId == id)?.Name ?? (id.IndexOf(':') is var i and >= 0 ? id[(i + 1)..] : id);
+        var changes = new List<SourceObservabilityChange>();
+        var before = previous.Findings.Where(f => f.Kind != ObservabilityFindingKind.Limitation).ToDictionary(f => f.Id, StringComparer.Ordinal);
+        var after = current.Findings.Where(f => f.Kind != ObservabilityFindingKind.Limitation).ToDictionary(f => f.Id, StringComparer.Ordinal);
+        foreach (var f in after.Values.Where(f => !before.ContainsKey(f.Id))) changes.Add(new("Added", ObservabilitySnapshot.Label(f.Category), ComponentName(current, f.Component), f.Title, f.Component));
+        foreach (var f in before.Values.Where(f => !after.ContainsKey(f.Id))) changes.Add(new("No longer found", ObservabilitySnapshot.Label(f.Category), ComponentName(previous, f.Component), f.Title, f.Component));
+        foreach (var f in after.Values.Where(f => before.TryGetValue(f.Id, out var p) && p.Occurrences != f.Occurrences))
+            changes.Add(new("Changed", ObservabilitySnapshot.Label(f.Category), ComponentName(current, f.Component), $"{f.Title}: {before[f.Id].Occurrences} → {f.Occurrences} occurrence(s)", f.Component));
+        var oldBoundaries = previous.Boundaries.ToDictionary(b => b.Id, StringComparer.Ordinal);
+        foreach (var b in current.Boundaries)
+        {
+            if (!oldBoundaries.TryGetValue(b.Id, out var old)) changes.Add(new("Added", "Correlation boundary", ComponentName(current, b.Component), $"{ObservabilitySnapshot.Label(b.Type)} {b.Transport} · {ObservabilitySnapshot.Label(b.Propagation)}", b.Component));
+            else if (old.Propagation != b.Propagation)
+                changes.Add(new("Changed", "Correlation boundary", ComponentName(current, b.Component), $"{ObservabilitySnapshot.Label(b.Type)} {b.Transport}: {ObservabilitySnapshot.Label(old.Propagation)} → {ObservabilitySnapshot.Label(b.Propagation)}", b.Component));
+        }
+        foreach (var b in previous.Boundaries.Where(b => current.Boundaries.All(x => x.Id != b.Id)))
+            changes.Add(new("No longer found", "Correlation boundary", ComponentName(previous, b.Component), $"{ObservabilitySnapshot.Label(b.Type)} {b.Transport}", b.Component));
+        return changes.OrderBy(c => c.Kind, StringComparer.Ordinal).ThenBy(c => c.Area, StringComparer.Ordinal).ThenBy(c => c.Subject, StringComparer.Ordinal).ToList();
+    }
+}
+
 public static class ObservabilitySnapshot
 {
     public const string SourceLimitation = "Source-derived only: this shows what the selected source implements and configures. It does not prove that context propagates, that logs are complete, or that telemetry is delivered at runtime.";

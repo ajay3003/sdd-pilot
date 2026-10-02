@@ -1,0 +1,180 @@
+@using BirkNext.SourceImpact
+@using BirkNext.Web.Services
+@inject SourceChangeImpactApiService Api
+@inject IFrontendAnalysisContextFactory ContextFactory
+@inject IWorkspaceSessionService Workspace
+
+<section class="sci-panel" aria-labelledby="sci-heading">
+    <h2 id="sci-heading">Source change impact</h2>
+    <p class="sci-note">Technical impact is derived from source changes and source relationships. Runtime or deployed impact is not verified here.</p>
+    @if (_loading)
+    {
+        <p role="status">Loading Source Analysis snapshots…</p>
+    }
+    else if (_error is not null)
+    {
+        <p class="notification notification-error" role="alert">@_error</p>
+    }
+    else if (!_enabled)
+    {
+        <div class="sci-empty"><p>Source Analysis is unavailable for this Target Environment.</p><a href="/source-analysis">Open Source Analysis</a></div>
+    }
+    else if (_snapshots.Count == 0)
+    {
+        <div class="sci-empty"><p>Source snapshots required. Analyze source in Source Analysis before running change impact.</p><a href="/source-analysis">Open Source Analysis</a></div>
+    }
+    else
+    {
+        @if (_repositories.Count > 1)
+        {
+            <label class="sci-field">Repository
+                <select class="form-control" @bind="_repository" @bind:after="OnRepositoryChanged">
+                    @foreach (var repo in _repositories) { <option value="@repo">@repo</option> }
+                </select>
+            </label>
+        }
+        @if (CurrentSnapshots.Count < 2)
+        {
+            <div class="sci-empty"><p>At least two snapshots are needed for source-change impact in this repository.</p><a href="/source-analysis">Open Source Analysis</a></div>
+        }
+        else
+        {
+            <div class="sci-selectors">
+                <label class="sci-field">Baseline snapshot
+                    <select class="form-control" @bind="_baseline" @bind:after="SelectionChanged">
+                        @foreach (var s in CurrentSnapshots) { <option value="@s.Id">@SnapshotLabel(s)</option> }
+                    </select>
+                </label>
+                <label class="sci-field">Target snapshot
+                    <select class="form-control" @bind="_target" @bind:after="SelectionChanged">
+                        @foreach (var s in CurrentSnapshots) { <option value="@s.Id">@SnapshotLabel(s)</option> }
+                    </select>
+                </label>
+            </div>
+            <p class="sci-provenance">Each selection shows archive, full fingerprint, analysis time and status.</p>
+            @if (_baseline == _target) { <p class="notification notification-warning" role="status">Select two different snapshots.</p> }
+            <button type="button" class="btn-primary" disabled="@(_busy || _baseline == _target)" @onclick="AnalyzeAsync">
+                @(_busy ? "Analyzing…" : "Analyze impact")
+            </button>
+            @if (string.IsNullOrWhiteSpace(Workspace.CurrentProject)) { <p class="sci-muted">Select a project to enrich technical impact with requirement and test traceability.</p> }
+            @if (_error is not null) { <p class="notification notification-error" role="alert">@_error</p> }
+        }
+    }
+
+    @if (_report is { } report)
+    {
+        <section class="sci-results" aria-labelledby="sci-results-heading" aria-live="polite">
+            <h3 id="sci-results-heading">Impact results</h3>
+            <dl class="sci-provenance-grid">
+                <div><dt>Baseline</dt><dd>@report.BaselineRepository · @report.BaselineArchiveName</dd><dd><code>@report.BaselineFingerprint</code></dd><dd>@report.BaselineAnalyzedAt.ToLocalTime().ToString("g")</dd></div>
+                <div><dt>Target</dt><dd>@report.TargetRepository · @report.TargetArchiveName</dd><dd><code>@report.TargetFingerprint</code></dd><dd>@report.TargetAnalyzedAt.ToLocalTime().ToString("g")</dd></div>
+            </dl>
+            <div class="sci-summary" aria-label="Impact summary">
+                <div><strong>@report.Changes.Count</strong><span>Source changes</span></div>
+                <div><strong>@report.TechnicalImpacts.Count(x => x.Level == TechnicalImpactLevel.Direct)</strong><span>Direct</span></div>
+                <div><strong>@report.TechnicalImpacts.Count(x => x.Level == TechnicalImpactLevel.Indirect)</strong><span>Indirect</span></div>
+                <div><strong>@report.TechnicalImpacts.Count(x => x.Level == TechnicalImpactLevel.Potential)</strong><span>Potential</span></div>
+                <div><strong>@report.TechnicalImpacts.Count(x => x.Level == TechnicalImpactLevel.NeedsReview)</strong><span>Needs review</span></div>
+                <div><strong>@report.CoverageGaps.Count</strong><span>Impact coverage gaps</span></div>
+            </div>
+            <p class="sci-muted">Source-change risk: @report.RiskStatus</p>
+
+            <h4>Source changes (@report.Changes.Count)</h4>
+            @if (report.Changes.Count == 0) { <p>No structured changes found in supported comparisons. This does not prove no impact.</p> }
+            else
+            {
+                <div class="sci-table-scroll" tabindex="0" role="region" aria-label="Detected source changes">
+                    <table class="sci-table"><thead><tr><th>Domain</th><th>Change</th><th>Entity</th><th>Detail</th></tr></thead>
+                        <tbody>@foreach (var c in report.Changes) { <tr><td>@c.Domain</td><td>@c.Kind</td><td>@c.Name@(c.ContractChangeClass is { } contractClass ? $" · {contractClass}" : "")</td><td>@c.Detail</td></tr> }</tbody>
+                    </table>
+                </div>
+            }
+
+            <h4>Technical impact (@report.TechnicalImpacts.Count)</h4>
+            @if (report.TechnicalImpacts.Count == 0) { <p>No technical impact relationship was established. Review the changes and evidence limitations.</p> }
+            else
+            {
+                <div class="sci-table-scroll" tabindex="0" role="region" aria-label="Technical impact entities">
+                    <table class="sci-table"><thead><tr><th>Entity</th><th>Domain</th><th>Impact</th><th>Evidence</th><th>Reason and path</th></tr></thead>
+                        <tbody>@foreach (var item in report.TechnicalImpacts) { <tr>
+                            <th scope="row">@item.DisplayName</th><td>@item.Domain</td><td>@item.Level</td><td>@item.EvidenceState</td>
+                            <td><p>@item.Reason</p><details><summary>Evidence path (@item.Path.Count steps)</summary><ol>@foreach (var step in item.Path) { <li><strong>@step.Label</strong> — @step.Relationship <span>(@step.EvidenceState)</span><small>@step.Basis</small></li> }</ol>@if (item.SourceFiles.Count > 0) { <p>Source locations: @string.Join(", ", item.SourceFiles)</p> }</details></td>
+                        </tr> }</tbody>
+                    </table>
+                </div>
+            }
+
+            <h4>Traceability</h4>
+            <p>@report.Requirements.Count impacted requirement(s) · @report.Tasks.Count task(s) linked</p>
+            @if (report.Requirements.Count > 0) { <ul>@foreach (var req in report.Requirements) { <li><strong>@req.Title</strong> — @req.Reason</li> }</ul> }
+            @if (report.Tasks.Count == 0) { <p class="sci-muted">No task links are available in the current Code Traceability model.</p> }
+            @if (report.CoverageGaps.Count > 0)
+            {
+                <div class="sci-gap" role="status"><strong>Traceability incomplete / impact coverage gap</strong><ul>@foreach (var gap in report.CoverageGaps) { <li>@gap</li> }</ul></div>
+            }
+            <h4>Recommended tests (@report.RecommendedTests.Count)</h4>
+            @if (report.RecommendedTests.Count == 0) { <p>No linked tests found. No tests have been inferred.</p> }
+            else { <ul>@foreach (var test in report.RecommendedTests) { <li><strong>@test.Title</strong> <span>(@test.TestKind)</span> — @test.Reason</li> }</ul> }
+            @if (report.Limitations.Count > 0) { <details><summary>Evidence limitations (@report.Limitations.Count)</summary><ul>@foreach (var limitation in report.Limitations) { <li>@limitation</li> }</ul></details> }
+        </section>
+    }
+</section>
+
+@code {
+    private bool _loading = true;
+    private bool _busy;
+    private bool _enabled;
+    private string? _error;
+    private string? _environmentId;
+    private string _repository = "";
+    private Guid _baseline;
+    private Guid _target;
+    private List<ImpactSnapshotOption> _snapshots = [];
+    private SourceChangeImpactReport? _report;
+    private IReadOnlyList<string> _repositories => _snapshots.Select(s => s.Repository).Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToList();
+    private IReadOnlyList<ImpactSnapshotOption> CurrentSnapshots => _snapshots.Where(s => string.Equals(s.Repository, _repository, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(s => s.AnalyzedAt).ThenBy(s => s.Id).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var context = await ContextFactory.GetActiveContextAsync();
+            _environmentId = context.ActiveProfile?.Id;
+            if (string.IsNullOrWhiteSpace(_environmentId)) { _error = context.ActiveTargetError ?? "Select a Target Environment first."; return; }
+            var result = await Api.SnapshotsAsync(_environmentId);
+            _enabled = result.SourceAnalysisEnabled;
+            _snapshots = result.Snapshots;
+            _repository = _repositories.FirstOrDefault() ?? "";
+            OnRepositoryChanged();
+        }
+        catch (Exception ex) { _error = $"Could not load Source Analysis snapshots: {ex.Message}"; }
+        finally { _loading = false; }
+    }
+
+    private void OnRepositoryChanged()
+    {
+        var ordered = CurrentSnapshots;
+        _baseline = ordered.FirstOrDefault()?.Id ?? Guid.Empty;
+        _target = ordered.LastOrDefault()?.Id ?? Guid.Empty;
+        _report = null;
+    }
+
+    private void SelectionChanged() => _report = null;
+
+    private async Task AnalyzeAsync()
+    {
+        if (_environmentId is null || _baseline == _target) return;
+        _busy = true; _error = null; _report = null;
+        try
+        {
+            var (report, error) = await Api.AnalyzeAsync(new(_environmentId, Workspace.CurrentProject, _baseline, _target));
+            _report = report;
+            _error = error is null ? null : $"Impact analysis could not run: {error}";
+        }
+        catch (Exception ex) { _error = $"Impact analysis could not run: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private static string SnapshotLabel(ImpactSnapshotOption s) => $"{s.Repository} · {s.ArchiveName} · {s.Fingerprint} · {s.AnalyzedAt.ToLocalTime():g} · {s.Status}";
+}

@@ -111,6 +111,8 @@ builder.Services.AddScoped<TaskAlignmentSessionService>();
 
 builder.Services.AddHttpClient<ImplementationTraceabilityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddHttpClient<SourceChangeImpactApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 
 builder.Services.AddHttpClient<WasmSecurityApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

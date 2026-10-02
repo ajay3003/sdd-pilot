@@ -1,6 +1,7 @@
 @page "/impact-analysis"
 @using BirkNext.Web.GraphQL
 @using BirkNext.Web.Services
+@using BirkNext.Web.Components
 @inject IBirkNextClient Client
 @inject IWorkspaceSessionService Workspace
 
@@ -9,9 +10,18 @@
 <div class="impact-page">
 
     <PageHeader Title="Impact Analysis"
-                Description="Understand what needs testing before you accept a change. Select a requirement to see its risk level and regression recommendation." />
+                Description="Assess requirement coverage or trace source changes through technical relationships to linked requirements and tests." />
 
-    @if (_isLoading)
+    <div class="ia-mode-selector" role="group" aria-label="Impact analysis mode">
+        <button type="button" class="@( _mode == "requirement" ? "is-active" : "")" aria-pressed="@(_mode == "requirement")" @onclick='() => _mode = "requirement"'>Requirement impact</button>
+        <button type="button" class="@( _mode == "source" ? "is-active" : "")" aria-pressed="@(_mode == "source")" @onclick='() => _mode = "source"'>Source change impact</button>
+    </div>
+
+    @if (_mode == "source")
+    {
+        <SourceChangeImpactPanel />
+    }
+    else if (_isLoading)
     {
         <p class="loading-state">Loading impact data...</p>
     }
@@ -205,6 +215,7 @@
 
 @code {
     private bool _isLoading = true;
+    private string _mode = "requirement";
     private string? _loadError;
     private SummaryViewModel _summary = new();
     private IReadOnlyList<RequirementRiskViewModel> _requirements = [];

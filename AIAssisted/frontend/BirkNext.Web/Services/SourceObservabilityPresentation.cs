@@ -71,23 +71,5 @@ public static class SourceObservabilityPresentation
 
     /// <summary>Source comparison between two Observability analyses: findings that appear/disappear and boundaries whose propagation state changed.</summary>
     public static List<ObservabilityChange> Compare(SourceObservabilitySnapshot previous, SourceObservabilitySnapshot current)
-    {
-        var changes = new List<ObservabilityChange>();
-        var before = previous.Findings.Where(f => f.Kind != ObservabilityFindingKind.Limitation).ToDictionary(f => f.Id, StringComparer.Ordinal);
-        var after = current.Findings.Where(f => f.Kind != ObservabilityFindingKind.Limitation).ToDictionary(f => f.Id, StringComparer.Ordinal);
-        foreach (var f in after.Values.Where(f => !before.ContainsKey(f.Id))) changes.Add(new("Added", ObservabilitySnapshot.Label(f.Category), ComponentName(current, f.Component), f.Title));
-        foreach (var f in before.Values.Where(f => !after.ContainsKey(f.Id))) changes.Add(new("No longer found", ObservabilitySnapshot.Label(f.Category), ComponentName(previous, f.Component), f.Title));
-        foreach (var f in after.Values.Where(f => before.TryGetValue(f.Id, out var p) && p.Occurrences != f.Occurrences))
-            changes.Add(new("Changed", ObservabilitySnapshot.Label(f.Category), ComponentName(current, f.Component), $"{f.Title}: {before[f.Id].Occurrences} → {f.Occurrences} occurrence(s)"));
-        var oldBoundaries = previous.Boundaries.ToDictionary(b => b.Id, StringComparer.Ordinal);
-        foreach (var b in current.Boundaries)
-        {
-            if (!oldBoundaries.TryGetValue(b.Id, out var old)) changes.Add(new("Added", "Correlation boundary", ComponentName(current, b.Component), $"{ObservabilitySnapshot.Label(b.Type)} {b.Transport} · {ObservabilitySnapshot.Label(b.Propagation)}"));
-            else if (old.Propagation != b.Propagation)
-                changes.Add(new("Changed", "Correlation boundary", ComponentName(current, b.Component), $"{ObservabilitySnapshot.Label(b.Type)} {b.Transport}: {ObservabilitySnapshot.Label(old.Propagation)} → {ObservabilitySnapshot.Label(b.Propagation)}"));
-        }
-        foreach (var b in previous.Boundaries.Where(b => current.Boundaries.All(x => x.Id != b.Id)))
-            changes.Add(new("No longer found", "Correlation boundary", ComponentName(previous, b.Component), $"{ObservabilitySnapshot.Label(b.Type)} {b.Transport}"));
-        return changes.OrderBy(c => c.Kind, StringComparer.Ordinal).ThenBy(c => c.Area, StringComparer.Ordinal).ThenBy(c => c.Subject, StringComparer.Ordinal).ToList();
-    }
+        => SourceObservabilityComparison.Compare(previous, current).Select(c => new ObservabilityChange(c.Kind, c.Area, c.Subject, c.Detail)).ToList();
 }
