@@ -27,6 +27,9 @@ public sealed record IqrSourceSnapshot
     public List<SourceConfigurationEvidence> Configurations { get; init; } = [];
     public List<ImplementationRule> Rules { get; init; } = [];
     public List<DeveloperTestEvidence> Tests { get; init; } = [];
+    /// <summary>Source test definitions (projects, [Fact]/[Theory], traits, explicit requirement references) for test-execution correlation. Discovery
+    /// only — never an execution result. Null in snapshots analyzed before test discovery existed.</summary>
+    public BirkNext.TestEvidence.SourceTestInventory? TestInventory { get; init; }
     public List<SourceCoverage> Coverage { get; init; } = [];
     public List<SourceDataflow> Dataflows { get; init; } = [];
     public List<string> Limitations { get; init; } = [];

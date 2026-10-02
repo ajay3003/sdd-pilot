@@ -1,0 +1,96 @@
+@using BirkNext.TestEvidence
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IWorkspaceSessionService Workspace
+
+@* One test: source definition (if discovered), explicit references with their confidence, and every execution across runs (history, not only
+   the latest). The current result is explained, never just the newest timestamp. *@
+<section id="te-detail" class="te-detail" aria-labelledby="te-detail-title" data-testid="te-detail">
+    @{
+        var definition = Definitions.FirstOrDefault();
+        var executions = Workspace.SddLifecycle.TestExecutions.Where(e => SddTestEvidenceService.TestKey(e) == TestKey)
+            .OrderByDescending(e => e.ExecutedAt).ThenBy(e => e.DataRowLabel, StringComparer.Ordinal).ToList();
+        var current = SddTestEvidenceService.CurrentResult(Workspace.SddLifecycle, TestKey);
+    }
+    <h3 id="te-detail-title">@(definition?.Definition.FullyQualifiedName ?? executions.FirstOrDefault()?.FullyQualifiedTestName ?? executions.FirstOrDefault()?.TestName ?? TestKey)</h3>
+    <dl class="te-facts">
+        @if (definition is { } d)
+        {
+            <div><dt>Project</dt><dd>@d.Definition.Project@(d.RepositoryName is null ? "" : $" · {d.RepositoryName}")</dd></div>
+            <div><dt>Framework</dt><dd>@d.Definition.Framework @d.Definition.DefinitionKind@(d.Definition.DefinitionKind == TestDefinitionKind.Theory ? $" ({d.Definition.InlineDataRows} inline row(s){(d.Definition.HasDynamicData ? " + dynamic data" : "")})" : "")</dd></div>
+            <div><dt>Kind</dt><dd data-testid="te-detail-kind">@Kind(d.Definition.Kind) — @d.Definition.KindConfidence (@d.Definition.KindBasis)</dd></div>
+            <div><dt>Source</dt><dd>@d.Definition.FilePath:@d.Definition.Line · snapshot @SddTestEvidencePanel.ShortId(d.SourceSnapshotId) · @d.Currentness@(d.CurrentnessReason is null ? "" : $" — {d.CurrentnessReason}")</dd></div>
+            @if (d.Definition.Traits.Count > 0) { <div><dt>Traits</dt><dd>@string.Join(", ", d.Definition.Traits.Select(t => $"{t.Name}={t.Value}"))</dd></div> }
+        }
+        else
+        {
+            <div><dt>Source test</dt><dd data-testid="te-detail-unresolved">Not matched to a source test (@(executions.FirstOrDefault()?.CorrelationBasis ?? "no source test inventory")). The results are kept.</dd></div>
+        }
+        <div><dt>Current result</dt><dd data-testid="te-detail-current">@current.Result — @current.Reason</dd></div>
+    </dl>
+
+    @if (definition is { } def)
+    {
+        <h4>Requirement and acceptance-criterion references</h4>
+        @if (def.Definition.References.Count == 0)
+        {
+            <p class="sd-muted">No explicit references in this test. Its results are execution evidence without a requirement link.</p>
+        }
+        else
+        {
+            <ul class="te-refs" data-testid="te-detail-refs">
+                @foreach (var r in def.Definition.References.Take(30))
+                {
+                    var linked = r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported;
+                    <li><strong>@r.Id</strong> (@(r.Kind == TestReferenceKind.AcceptanceCriterion ? "acceptance criterion" : "requirement")) — @r.Confidence, @r.Basis, line @r.Line · @(linked ? "links when the ID is in the current specification" : "candidate only; needs an explicit reference")</li>
+                }
+            </ul>
+        }
+    }
+
+    <h4>Execution history</h4>
+    @if (executions.Count == 0)
+    {
+        <p class="sd-muted">No imported run contains this test. That does not mean it was not executed.</p>
+    }
+    else
+    {
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Execution history">
+            <table class="te-table" data-testid="te-history">
+                <thead><tr><th scope="col">Run / date</th><th scope="col">Case</th><th scope="col">Build / source</th><th scope="col">Environment</th><th scope="col">Result</th><th scope="col">Duration</th><th scope="col">Currentness</th></tr></thead>
+                <tbody>
+                @foreach (var e in executions)
+                {
+                    <tr data-testid="te-history-row">
+                        <th scope="row">@e.ResultSource<span class="sd-muted"> · @SddTestEvidencePanel.When(e.ExecutedAt)</span></th>
+                        <td>@(e.DataRowLabel ?? "—")</td>
+                        <td>@(e.BuildReference ?? "Build unknown") · @(e.SourceSnapshotId is null ? "source unknown" : $"snapshot {SddTestEvidencePanel.ShortId(e.SourceSnapshotId)}")</td>
+                        <td>@(e.EnvironmentReference ?? "Unknown")</td>
+                        <td>@SddTestEvidencePanel.ResultPill(e)@(e.ProviderOutcome is { Length: > 0 } o && o != e.Result ? $" (TRX: {o})" : "")</td>
+                        <td>@SddTestEvidencePanel.Duration(e.DurationMs)</td>
+                        <td>@e.Currentness@(e.SourceCurrentness == "NotAssessed" ? " · source not assessed" : "")@(e.CurrentnessReason is null || e.Currentness == "Current" ? "" : $" — {e.CurrentnessReason}")</td>
+                    </tr>
+                    @if (e.ErrorMessage is not null)
+                    {
+                        <tr class="te-error-row"><td colspan="7"><details><summary>Failure message</summary><pre class="te-pre">@e.ErrorMessage@(e.StackTrace is null ? "" : "\n" + e.StackTrace)</pre></details></td></tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+        <p class="sd-muted">Provenance: provider <code>@executions[0].ProviderId</code> · correlation @executions[0].CorrelationState (@executions[0].CorrelationBasis).</p>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string TestKey { get; set; } = "";
+
+    private IEnumerable<SddTestDefinitionEvidence> Definitions => (Workspace.SddLifecycle.TestDefinitions ?? [])
+        .Where(d => d.Definition.TestDefinitionId == TestKey)
+        .OrderBy(d => d.Currentness == "Current" ? 0 : d.Currentness == "PotentiallyStale" ? 1 : 2).ThenByDescending(d => d.RecordedAt);
+
+    private static string Kind(TestKind kind) => kind switch
+    {
+        TestKind.FrontendComponent => "Frontend component (not browser E2E)", TestKind.Unknown => "Unknown", _ => kind.ToString(),
+    };
+}

@@ -157,3 +157,53 @@ Implementation Review, Requirements Traceability, and Quality Review display/use
 Source Analysis now persists a snapshot-scoped normalized file target index: non-ignored archive paths are exhaustive, while content fingerprints are included only for files already read by Source Analysis. CodeLink file targets can be deterministically checked against this index. Exact path presence, content change, unique identical-content relocation, absence, unsupported coverage, and insufficient historical index are represented separately. This resolves target location only; it does not verify implementation behavior. Symbol-level resolution is not currently supported.
 
 Compatibility: old workspaces restore with empty baseline manifests and default target-resolution collections. Old source snapshots without target indexes remain NotAssessed. Existing per-role Baseline authority remains usable until a manifest is explicitly captured.
+
+## Test execution evidence follow-up — TRX and .NET/xUnit discovery
+
+### Audit of existing test support
+
+| Capability found | Classification | Decision |
+|---|---|---|
+| `SddTestExecutionEvidence`, generic JSON import, requirement/AC links, stale-on-change rules | EXISTING_REUSABLE | Extended in place with run, artifact, correlation and duration fields; still one lifecycle store |
+| Specification identifier grammar (`SpecExplorerService`) | EXISTING_REUSABLE | Moved to `shared/RequirementReferenceParser.cs`; Specification and test-source extraction now share it |
+| Source Analysis `DeveloperTestEvidence` / `IqrSourceAnalyzer.TestInventory` | PARTIAL | IQR-oriented (coverage heuristics). It has no namespace/FQN, Fact vs Theory, trait pairs or references. Left to IQR; the new discovery provider owns test identity |
+| `SourceProject.IsTest` detection | PARTIAL / DUPLICATE | Same signal (IsTestProject / test SDK / framework package). The new provider adds framework packages, `Directory.Build.props` inheritance and kind classification |
+| CI/CD evidence domain (pipeline steps) | PARTIAL | TRX generation and publication are recorded as configuration evidence on the test inventory |
+| TRX, JUnit, pipeline test-result retrieval, code coverage import | MISSING | TRX implemented; the others are documented as future |
+| Source target index (`TargetIndex`) | EXISTING (file paths only) | Not a test identity; test re-resolution uses the stable test identity and the method fingerprint |
+
+### Implemented
+
+- **Source discovery.** `test.discovery.dotnet.xunit` runs at Source Analysis upload and stores `snapshot.TestInventory`.
+- **Execution import.** `test.execution.trx` is a hardened, framework-independent TRX import with exact outcome normalization.
+- **Correlation.** Deterministic correlation, with Ambiguous and Unresolved results kept.
+- **Persistence.** The workspace lifecycle records artifacts, runs, immutable executions and source definitions.
+- **Current result.** An explainable current result for each test.
+- **Change handling.** Per-repository snapshot re-resolution.
+- **Shared consumers.** Implementation Review and Requirements Traceability show Designed / Source test / Executed / Result separately. Quality Review adds deterministic test findings with exact evidence links. Only a failure bound to the current source is `Failed`; unknown source, stale evidence and coverage gaps are not failures.
+- **Technology registry.** A Testing area and a Result import dimension.
+
+### Pilot
+
+The pilot used the same generic providers for both repositories.
+
+**M2LB:**
+- 23 xUnit v3 test projects with the TrxReport extension.
+- 967 tests discovered: every line-start `[Fact]`/`[Theory]` in the archive.
+- bUnit frontend tests classified as component tests, not E2E.
+- No requirement traits.
+- 21 StronglySupported references (structured `// FR-023: …` style comments) and 459 Inferred candidates.
+- TRX generation plus 10 TRX publications in `.pipeline/runtests.yml`.
+- No Playwright.
+
+**M2LB.Common:**
+- 1 project, 113 tests.
+- `test-results.trx` generated and published.
+- No requirement identifiers.
+
+### Remaining
+
+- **Result formats and retrieval:** JUnit/Playwright providers, NUnit/MSTest source discovery and Azure DevOps result retrieval are not implemented.
+- **Discovery gaps:** custom `FactAttribute` subclasses, inherited tests and dynamic theory rows are not resolved.
+- **Raw TRX** is intentionally not retained.
+- **Real M2LB execution** could not be run here (net10 SDK not installed). Pilot TRX used real M2LB test identities in the Microsoft.Testing.Platform TRX shape.

@@ -169,6 +169,7 @@ public sealed class SddEvidenceGraphService(IReviewContextProvider contexts, IPl
             foreach (var stale in row.Executions.Where(x => x.Currentness == "PotentiallyStale"))
                 findings.Add(new("StaleTestEvidence", "NeedsReview", row.Requirement.Id, stale.CurrentnessReason ?? "Test execution evidence may be stale.", stale.Id.ToString()));
         }
+        findings.AddRange(SddTestEvidenceService.QualityFindings(workspace.SddLifecycle, rows));
         return findings;
     }
 

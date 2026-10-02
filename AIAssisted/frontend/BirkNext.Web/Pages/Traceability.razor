@@ -10,6 +10,7 @@
 <main class="requirements-traceability">
     <PageHeader Title="Requirements Traceability" Description="One shared evidence graph for current requirements, acceptance criteria, plan, tasks, implementation references and test executions." />
     <SddTraceabilityMatrix />
+    <SddRequirementTestEvidence Title="Test evidence dimensions" />
     @if (OrphanTasks.Count > 0)
     {
         <section><h2>Unlinked tasks</h2><p>These task references are not linked from a current requirement.</p><ul>@foreach (var task in OrphanTasks) { <li>@task</li> }</ul></section>
@@ -20,12 +21,18 @@
     }
     @if (OrphanExecutions.Count > 0)
     {
-        <section><h2>Unlinked test execution evidence</h2><p>Imported tests without a current requirement or acceptance-criterion link.</p><ul>@foreach (var item in OrphanExecutions) { <li>@item.TestId · @item.ExecutionState / @item.Result · @item.Currentness</li> }</ul></section>
+        <section><h2>Unlinked test execution evidence</h2><p>Imported tests whose explicit references do not match a current requirement or acceptance criterion.</p><ul>@foreach (var item in OrphanExecutions) { <li>@item.TestId · @item.ExecutionState / @item.Result · @item.Currentness@(item.RequirementReferences.Count + item.AcceptanceCriterionReferences.Count > 0 ? $" · references {string.Join(", ", item.RequirementReferences.Concat(item.AcceptanceCriterionReferences))}" : "")</li> }</ul></section>
+    }
+    @if (UnreferencedProviderExecutions > 0)
+    {
+        <section data-testid="trace-unreferenced-executions"><h2>Test results without requirement references</h2><p>@UnreferencedProviderExecutions imported result(s) come from tests that declare no explicit requirement or acceptance-criterion reference. They remain execution evidence; see <a href="/implementation-review#test-evidence">Test execution evidence</a>.</p></section>
     }
     <section><h2>Evidence limitations</h2><ul>
         <li>A CodeLink records an explicit relationship; it does not establish that the code behaves correctly.</li>
         <li>Source Analysis snapshots do not retain a complete file inventory, so CodeLink target validation is shown as not assessed.</li>
         <li>Discovered or designed tests are not execution results. Only imported execution records show execution state and result.</li>
+        <li>A source test links to a requirement only through an explicit reference (trait or structured comment); informal mentions are candidates to confirm.</li>
+        <li>Imported results whose source version is unknown are historical evidence, not verification of the current source.</li>
         <li>Missing evidence is a traceability gap, not an automatic failure.</li>
     </ul></section>
 </main>
@@ -38,7 +45,11 @@
         .Select(x => x.ToId).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     private IReadOnlyList<SddImplementationEvidence> OrphanImplementation => Workspace.SddLifecycle.ImplementationEvidence
         .Where(x => !RequirementIds.Contains(x.RequirementId)).ToArray();
+    // Provider imports (TRX) record every result row; rows without any explicit reference are counted, not listed as orphans one by one.
+    private int UnreferencedProviderExecutions => Workspace.SddLifecycle.TestExecutions
+        .Count(x => x.RunId is not null && x.Currentness == "Current" && x.RequirementReferences.Count + x.AcceptanceCriterionReferences.Count == 0);
     private IReadOnlyList<SddTestExecutionEvidence> OrphanExecutions => Workspace.SddLifecycle.TestExecutions
+        .Where(x => !(x.RunId is not null && x.RequirementReferences.Count + x.AcceptanceCriterionReferences.Count == 0))
         .Where(x => x.Currentness == "Current" && x.RequirementReferences.All(id => !RequirementIds.Contains(id)) &&
             !Rows.SelectMany(r => r.Requirement.LinkedAcceptanceScenarios).Any(ac => x.AcceptanceCriterionReferences.Contains(ac.Id ?? ac.Title, StringComparer.OrdinalIgnoreCase)))
         .ToArray();

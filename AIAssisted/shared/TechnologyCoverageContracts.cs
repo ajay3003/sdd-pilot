@@ -15,15 +15,15 @@ public enum SupportLevel { Full, Partial, Planned, Unsupported, NotApplicable }
 /// <summary>What BirkNext can do with a technology. Configuration = can be described in the catalog; SourceAnalysis = semantics read from
 /// source; Contract = formal contract parsed; RuntimeObservation = read-only runtime evidence; ActiveTest = BirkNext sends/probes; TestPlan = test design.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum SupportDimension { Configuration, SourceAnalysis, Contract, RuntimeObservation, ActiveTest, TestPlan }
+public enum SupportDimension { Configuration, SourceAnalysis, Contract, RuntimeObservation, ActiveTest, TestPlan, ResultImport }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]
-public enum TechnologyArea { Language, Framework, Integration, Database, Dependency, Pipeline, Cloud, Contract }
+public enum TechnologyArea { Language, Framework, Integration, Database, Dependency, Pipeline, Cloud, Contract, Testing }
 
 /// <summary>Support of one technology across every dimension, with the providers that deliver it and what they do not do.</summary>
 public sealed record TechnologySupportDescriptor(string TechnologyId, string DisplayName, TechnologyArea Area,
     SupportLevel Configuration, SupportLevel SourceAnalysis, SupportLevel Contract, SupportLevel RuntimeObservation, SupportLevel ActiveTest, SupportLevel TestPlan,
-    List<string> ProviderIds, string Limitations, List<Capability>? Provides = null)
+    List<string> ProviderIds, string Limitations, List<Capability>? Provides = null, SupportLevel ResultImport = SupportLevel.NotApplicable)
 {
     public SupportLevel Level(SupportDimension dimension) => dimension switch
     {
@@ -32,6 +32,7 @@ public sealed record TechnologySupportDescriptor(string TechnologyId, string Dis
         SupportDimension.Contract => Contract,
         SupportDimension.RuntimeObservation => RuntimeObservation,
         SupportDimension.ActiveTest => ActiveTest,
+        SupportDimension.ResultImport => ResultImport,
         _ => TestPlan,
     };
 
@@ -96,6 +97,10 @@ public static class TechnologySupportRegistry
         new("runtime.browser", "Browser runtime (Frontend Quality Review)", TechnologyArea.Framework, F, ["framework.browser-frontend"],
             "Any browser-rendered frontend, independent of its framework: accessibility, performance, security headers."),
         new("cloud.azure", "Azure environment (read-only ARM)", TechnologyArea.Cloud, P, ["cloud.azure"], "Read-only Azure Resource Manager inventory of configured subscriptions."),
+        new("test.discovery.dotnet.xunit", "xUnit source test discovery (.NET)", TechnologyArea.Testing, P, ["test.xunit"],
+            "Test projects from project metadata; [Fact]/[Theory], traits and explicit requirement references from C# syntax. Discovery only, never a result."),
+        new("test.execution.trx", "TRX test result import", TechnologyArea.Testing, F, ["test.trx"],
+            "Manual import of .trx files (VSTest logger or Microsoft.Testing.Platform). Framework-independent parsing; source correlation only where a discovery provider exists."),
     ];
 
     public static IReadOnlyList<TechnologySupportDescriptor> Technologies { get; } =
@@ -187,6 +192,16 @@ public static class TechnologySupportRegistry
         new("contract.wsdl", "WSDL", TechnologyArea.Contract, N, N, U, N, N, N, [], "No WSDL analyzer."),
         new("contract.protobuf", "Protobuf", TechnologyArea.Contract, N, N, P, N, N, N, ["contract.protobuf"], "Pattern-based."),
         new("contract.avro", "Avro", TechnologyArea.Contract, N, N, U, N, N, N, [], "Not parsed."),
+
+        // Testing: source test discovery (SourceAnalysis) and execution-result import (ResultImport) are separate dimensions.
+        new("test.xunit", "xUnit", TechnologyArea.Testing, N, P, N, N, N, N, ["test.discovery.dotnet.xunit"],
+            "Syntax-only: custom FactAttribute subclasses, inherited tests and MemberData rows are not resolved. Results come from TRX import.", null, U),
+        new("test.nunit", "NUnit", TechnologyArea.Testing, N, U, N, N, N, N, [], "Detected only: no source test discovery. Results import from TRX without source correlation.", null, U),
+        new("test.mstest", "MSTest", TechnologyArea.Testing, N, U, N, N, N, N, [], "Detected only: no source test discovery. Results import from TRX without source correlation.", null, U),
+        new("test.trx", "TRX test results", TechnologyArea.Testing, N, N, N, N, N, N, ["test.execution.trx"],
+            "Manual .trx import. No automatic Azure DevOps retrieval; raw TRX and code coverage are not imported.", null, F),
+        new("test.junit", "JUnit XML results", TechnologyArea.Testing, N, N, N, N, N, N, [], "No JUnit provider.", null, U),
+        new("test.playwright", "Playwright", TechnologyArea.Testing, N, U, N, N, N, N, [], "Detected only: no Playwright source discovery or result provider.", null, U),
     ];
 
     private static readonly Dictionary<string, TechnologySupportDescriptor> ById = Technologies.ToDictionary(t => t.TechnologyId, StringComparer.Ordinal);
@@ -214,6 +229,7 @@ public static class TechnologySupportRegistry
         SupportDimension.RuntimeObservation => "Runtime observation",
         SupportDimension.ActiveTest => "Active test",
         SupportDimension.TestPlan => "Test plan",
+        SupportDimension.ResultImport => "Result import",
         _ => dimension.ToString(),
     };
 }

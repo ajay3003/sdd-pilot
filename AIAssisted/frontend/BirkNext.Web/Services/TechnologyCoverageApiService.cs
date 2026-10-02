@@ -121,6 +121,7 @@ public static class TechnologyCoveragePresentation
         TechnologyArea.Dependency => "Package ecosystems",
         TechnologyArea.Pipeline => "Pipelines",
         TechnologyArea.Cloud => "Cloud and platforms",
+        TechnologyArea.Testing => "Test frameworks and results",
         _ => "Contracts",
     };
 }

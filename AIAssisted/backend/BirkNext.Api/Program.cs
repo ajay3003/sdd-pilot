@@ -405,6 +405,10 @@ builder.Services.AddHttpClient<BirkNext.Api.Services.Integrations.IntegrationRev
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationReviewService, BirkNext.Api.Services.Integrations.IntegrationReviewService>();
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore>();
+// Test evidence: execution-result providers (TRX first) and stateless preview/correlation against Source Analysis test discovery.
+builder.Services.AddSingleton(sp => BirkNext.Api.Services.TestEvidence.TestEvidenceOptions.From(sp.GetRequiredService<IConfiguration>()));
+builder.Services.AddSingleton<BirkNext.Api.Services.TestEvidence.ITestExecutionEvidenceProvider, BirkNext.Api.Services.TestEvidence.TrxTestExecutionEvidenceProvider>();
+builder.Services.AddScoped<BirkNext.Api.Services.TestEvidence.TestExecutionImportService>();
 // Performance Test Review: generic definitions/runs/baselines; k6 is the first provider (external executable, generated script, no user scripts).
 builder.Services.AddSingleton(sp => BirkNext.Api.Services.PerformanceTests.PerformanceTestOptions.From(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddSingleton<BirkNext.Api.Services.PerformanceTests.IProcessRunner, BirkNext.Api.Services.PerformanceTests.SystemProcessRunner>();
