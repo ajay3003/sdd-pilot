@@ -58,7 +58,23 @@ public static class InfrastructureIdentity
         ("Microsoft.ManagedIdentity", InfrastructureResourceKind.ManagedIdentity), ("Microsoft.Authorization/roleAssignments", InfrastructureResourceKind.RoleAssignment),
         ("Microsoft.KeyVault/vaults", InfrastructureResourceKind.SecretStore), ("Microsoft.Network/privateEndpoints", InfrastructureResourceKind.PrivateEndpoint),
         ("Microsoft.App/containerApps", InfrastructureResourceKind.ComputeApp), ("Microsoft.Web/sites", InfrastructureResourceKind.ComputeApp),
+        ("Microsoft.DBforPostgreSQL/flexibleServers/databases", InfrastructureResourceKind.Database), ("Microsoft.DBforPostgreSQL/flexibleServers", InfrastructureResourceKind.DatabaseServer),
+        ("Microsoft.Sql/servers/databases", InfrastructureResourceKind.Database), ("Microsoft.Sql/servers", InfrastructureResourceKind.DatabaseServer),
+        ("Microsoft.DocumentDB/databaseAccounts", InfrastructureResourceKind.DatabaseServer), ("Microsoft.Cache/redis", InfrastructureResourceKind.Cache),
+        ("Microsoft.ContainerRegistry/registries", InfrastructureResourceKind.ContainerRegistry), ("Microsoft.ApiManagement/service", InfrastructureResourceKind.ApiGateway),
+        ("Microsoft.Network/virtualNetworks", InfrastructureResourceKind.Network), ("Microsoft.Insights/metricAlerts", InfrastructureResourceKind.Alert),
+        ("Microsoft.Insights/scheduledQueryRules", InfrastructureResourceKind.Alert),
     ];
+
+    /// <summary>The kind of a provider resource type (Terraform type, ARM/Bicep type) from the one table <see cref="Kind(InfrastructureResource)"/> uses,
+    /// so a declared resource and an observed cloud resource normalize onto the same kind.</summary>
+    public static InfrastructureResourceKind KindOfType(string resourceType) =>
+        Types.Where(t => resourceType.StartsWith(t.Prefix, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.Prefix.Length).Select(t => t.Kind).FirstOrDefault();
+
+    /// <summary>Whether one kind satisfies another; the generic messaging namespace (from a host) matches either namespace kind, both ways.</summary>
+    public static bool Compatible(InfrastructureResourceKind actual, InfrastructureResourceKind wanted) => actual == wanted
+        || (wanted == InfrastructureResourceKind.MessagingNamespace && actual is InfrastructureResourceKind.EventHubNamespace or InfrastructureResourceKind.ServiceBusNamespace)
+        || (actual == InfrastructureResourceKind.MessagingNamespace && wanted is InfrastructureResourceKind.EventHubNamespace or InfrastructureResourceKind.ServiceBusNamespace);
 
     /// <summary>Host suffix → the kind whose declared name is the host's first label (the one host normalization every consumer uses).</summary>
     public static readonly (string Suffix, InfrastructureResourceKind Kind)[] HostSuffixes =
@@ -73,8 +89,7 @@ public static class InfrastructureIdentity
     ];
 
     public static InfrastructureResourceKind Kind(InfrastructureResource r) =>
-        r.Format == InfrastructureFormat.Kubernetes ? InfrastructureResourceKind.Unknown
-        : Types.Where(t => r.ResourceType.StartsWith(t.Prefix, StringComparison.OrdinalIgnoreCase)).OrderByDescending(t => t.Prefix.Length).Select(t => t.Kind).FirstOrDefault();
+        r.Format == InfrastructureFormat.Kubernetes ? InfrastructureResourceKind.Unknown : KindOfType(r.ResourceType);
 
     /// <summary>Whether a resource is of a kind; the generic messaging namespace (from a host) matches Event Hubs and Service Bus namespaces.</summary>
     public static bool IsKind(InfrastructureResource r, InfrastructureResourceKind kind) => Kind(r) is var k && (k == kind

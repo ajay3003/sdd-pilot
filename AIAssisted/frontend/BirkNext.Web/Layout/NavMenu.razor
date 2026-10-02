@@ -179,6 +179,14 @@
                     </NavLink>
                 </div>
             }
+            @if (FeatureViz.AzureEnvironmentAnalysis)
+            {
+                <div class="nav-item px-3">
+                    <NavLink class="nav-link" href="azure-environment" Match="NavLinkMatch.All">
+                        <span class="nav-icon nav-icon-source-analysis" aria-hidden="true"></span> Azure Environment
+                    </NavLink>
+                </div>
+            }
         }
 
         @if (FeatureViz.ShowSectionQuality)

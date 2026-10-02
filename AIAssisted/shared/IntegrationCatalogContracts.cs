@@ -830,6 +830,9 @@ public sealed record IntegrationReviewResult
     /// <summary>Configured integration values compared with the Infrastructure evidence of the selected source snapshot (declared in source, never
     /// deployed state). Bound to that snapshot. Empty for runs without Source Analysis infrastructure evidence and for runs recorded before it existed.</summary>
     public List<BirkNext.SourceDomains.ConfiguredSourceComparison> SourceInfrastructureComparisons { get; init; } = [];
+    /// <summary>Configured integration values looked up in the newest Azure Environment Analysis snapshot of the Target Environment (observed in the
+    /// control plane, never verified behaviour). Bound to that snapshot. Empty when no snapshot exists or Azure Environment Analysis is hidden.</summary>
+    public List<BirkNext.AzureEnvironment.ConfiguredObservedComparison> ObservedAzureComparisons { get; init; } = [];
     /// <summary>The checks this run actually executed with evidence (a source that could not be read is listed under <see cref="WhatWasNotAssessed"/>).</summary>
     public List<string> WhatWasTested { get; init; } = [];
     /// <summary>What this run did not assess, and why — explicit, never implied by absence.</summary>

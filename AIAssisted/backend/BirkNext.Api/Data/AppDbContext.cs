@@ -35,9 +35,21 @@ public class AppDbContext : DbContext
     public DbSet<ScimEvidenceRecord> ScimEvidence => Set<ScimEvidenceRecord>();
     public DbSet<SecurityClassificationEvidenceRecord> SecurityClassificationEvidence => Set<SecurityClassificationEvidenceRecord>();
     public DbSet<SecurityExpectationDiscoveryRecord> SecurityExpectationDiscoveries => Set<SecurityExpectationDiscoveryRecord>();
+    public DbSet<AzureEnvironmentSnapshotRecord> AzureEnvironmentSnapshots => Set<AzureEnvironmentSnapshotRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<AzureEnvironmentSnapshotRecord>(entity => {
+            entity.ToTable("azure_environment_snapshots");
+            entity.HasKey(r => r.Id);
+            entity.Property(r => r.Id).HasColumnName("id");
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.CapturedAt).HasColumnName("captured_at");
+            entity.Property(r => r.Status).HasColumnName("status").HasMaxLength(40).IsRequired();
+            entity.Property(r => r.SummaryJson).HasColumnName("summary_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.SnapshotJson).HasColumnName("snapshot_json").HasColumnType("text").IsRequired();
+            entity.HasIndex(r => new { r.EnvironmentId, r.CapturedAt });
+        });
         modelBuilder.Entity<SecurityExpectationDiscoveryRecord>(entity => {
             entity.ToTable("security_expectation_discoveries");
             entity.HasKey(r => r.Id);

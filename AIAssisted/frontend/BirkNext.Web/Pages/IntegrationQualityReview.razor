@@ -484,6 +484,39 @@
                         </ReviewDisclosure>
                     </section>
                 }
+                @if (result.ObservedAzureComparisons.Count > 0)
+                {
+                    @* Configured catalog vs. the Azure Environment Analysis snapshot this run read (observed in the control plane; never re-queried). *@
+                    var observedAt = result.ObservedAzureComparisons[0].Lookup.CapturedAt;
+                    <section class="iqr-card" aria-labelledby="iqr-result-observed-azure-heading" data-testid="iqr-result-observed-azure">
+                        <h3 id="iqr-result-observed-azure-heading">Configured vs. observed in Azure</h3>
+                        <p class="iqr-muted">@BirkNext.AzureEnvironment.AzureEnvironmentText.ObservedNotVerified. Azure snapshot @(observedAt is { } at ? AzureEnvironmentPresentation.Utc(at) : "—"); <a href="azure-environment">re-analyze in Azure Environment Analysis</a> for current state.</p>
+                        <dl class="iqr-dl" data-testid="iqr-observed-azure-summary">
+                            @foreach (var g in result.ObservedAzureComparisons.GroupBy(c => c.Lookup.State).OrderBy(g => g.Key))
+                            {
+                                <div data-state="@g.Key"><dt>@ObservedLabel(g.Key)</dt><dd>@g.Count()</dd></div>
+                            }
+                        </dl>
+                        <ReviewDisclosure Text="@($"View {result.ObservedAzureComparisons.Count} lookup(s)")" CollapseText="Hide lookups" TestId="iqr-observed-azure-detail" Class="disclosure-inline">
+                            <div class="sd-scroll" tabindex="0" role="region" aria-label="Configured vs observed in Azure">
+                                <table data-testid="iqr-observed-azure-table">
+                                    <thead><tr><th scope="col">Field</th><th scope="col">Configured</th><th scope="col">Observed in Azure</th><th scope="col">Detail</th></tr></thead>
+                                    <tbody>
+                                        @foreach (var row in result.ObservedAzureComparisons)
+                                        {
+                                            <tr data-testid="iqr-observed-azure-row" data-state="@row.Lookup.State">
+                                                <th scope="row">@row.Field<span class="sd-context">@row.SubjectName@(row.ItemId is { } item ? $" · {item}" : "")</span></th>
+                                                <td><code>@(row.ConfiguredValue ?? "Not configured")</code></td>
+                                                <td>@ObservedLabel(row.Lookup.State)@if (row.Lookup.Resource is { } r) { <span class="sd-context">@r.CategoryDetail · @r.ResourceGroup</span> }</td>
+                                                <td class="iqr-muted">@row.Lookup.Detail</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </ReviewDisclosure>
+                    </section>
+                }
                 @foreach (var eventHub in result.EventHubSnapshot)
                 {
                     @* Transport — Event Hubs: what M2LB expects vs what Azure showed in THIS run (snapshot; never re-read). Observed is not Pass. *@
@@ -670,6 +703,16 @@
 </div>
 
 @code {
+    private static string ObservedLabel(BirkNext.AzureEnvironment.ObservedLookupState state) => state switch
+    {
+        BirkNext.AzureEnvironment.ObservedLookupState.Observed => "Observed",
+        BirkNext.AzureEnvironment.ObservedLookupState.NotObserved => "Not observed in the analyzed scope",
+        BirkNext.AzureEnvironment.ObservedLookupState.MultipleObserved => "Observed more than once",
+        BirkNext.AzureEnvironment.ObservedLookupState.NoSnapshot => "No Azure snapshot",
+        BirkNext.AzureEnvironment.ObservedLookupState.Disabled => "Azure Environment Analysis hidden",
+        _ => "Unable to verify",
+    };
+
     private readonly List<IqrSourceSelection> _sourceSelections = [];
     private bool _sourceBusy;
     // Master-detail on "What can be reviewed": at most one domain detail open; none by default.

@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.83.1" />
     <PackageReference Include="Azure.Messaging.EventHubs" Version="5.12.2" />
     <PackageReference Include="Azure.Monitor.Query" Version="1.7.1" />
     <!-- Syntax-only parsing of uploaded application source (Wolverine evidence); same version the EF Core design tools already resolve. -->
@@ -71,6 +72,7 @@
     <Compile Include="../../shared/SourceObservabilityContracts.cs" Link="Models/SourceObservabilityContracts.cs" />
     <Compile Include="../../shared/SourceEvidenceDomainContracts.cs" Link="Models/SourceEvidenceDomainContracts.cs" />
     <Compile Include="../../shared/SourceInfrastructureIdentityContracts.cs" Link="Models/SourceInfrastructureIdentityContracts.cs" />
+    <Compile Include="../../shared/AzureEnvironmentContracts.cs" Link="Models/AzureEnvironmentContracts.cs" />
     <Compile Include="../../shared/DependencyHealthContracts.cs" Link="Models/DependencyHealthContracts.cs" />
     <Compile Include="../../shared/ScimProvisioningContracts.cs" Link="Models/ScimProvisioningContracts.cs" />
     <Compile Include="../../shared/SecurityClassificationContracts.cs" Link="Models/SecurityClassificationContracts.cs" />

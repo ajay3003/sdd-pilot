@@ -1,0 +1,15 @@
+/* Azure Environment Analysis. Builds on the shared source-evidence look (sd-*); only the connection card and scope controls are specific.
+   Status is never colour-only: every pill carries its text. */
+.az-page { max-width: 80rem; }
+.az-title { margin: 0; font-size: 1.4rem; }
+.az-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.az-device-code { border: 2px solid #1d4ed8; border-radius: .5rem; padding: .55rem .75rem; background: #eff6ff; }
+.az-device-code p { margin: .1rem 0; overflow-wrap: anywhere; }
+.az-device-code code { font-size: 1.1rem; letter-spacing: .08em; }
+.az-details { border: 1px solid #e5e7eb; border-radius: .4rem; padding: .35rem .6rem; min-width: 0; }
+.az-details > summary { cursor: pointer; font-size: .9rem; display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.az-details > summary:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+.az-details p { margin: .35rem 0; font-size: .88rem; }
+.az-subscriptions { border: 1px solid #a8b2bf; border-radius: .5rem; padding: .4rem .7rem; margin: 0; display: grid; gap: .25rem; min-width: 0; }
+.az-subscriptions legend { font-size: .86rem; font-weight: 600; padding: 0 .3rem; }
+.az-subscriptions .sd-check { flex-wrap: wrap; overflow-wrap: anywhere; }

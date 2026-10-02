@@ -18,7 +18,7 @@ public interface IIntegrationReviewService
 
 public sealed class IntegrationReviewService(IIntegrationCatalogService catalog, IntegrationReviewEngine engine, IIntegrationContractStore contracts, AppDbContext db, ILogger<IntegrationReviewService> logger,
     IApplicationMessagingStore? messaging = null, BirkNext.Api.Services.Integrations.Scim.IScimEvidenceService? scim = null,
-    SourceAnalysis.IReviewSourceEvidenceProvider? source = null) : IIntegrationReviewService
+    SourceAnalysis.IReviewSourceEvidenceProvider? source = null, AzureEnvironment.IAzureEnvironmentEvidenceProvider? azure = null) : IIntegrationReviewService
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -55,6 +55,9 @@ public sealed class IntegrationReviewService(IIntegrationCatalogService catalog,
         var result = await engine.RunAsync(configured, request, new IntegrationContractSet(await contracts.LoadAsync(request.EnvironmentId, ct)), previousContracts,
             messaging is null ? null : await messaging.GetAsync(request.EnvironmentId, ct), ct);
         result = SourceEvidence.IqrSourceReview.Augment(result, selected);
+        // Observed (Azure Environment Analysis): the newest stored snapshot of this Target Environment, read — never re-queried — and kept with the run.
+        if (azure is { Enabled: true } && await azure.ResolveAsync(request.EnvironmentId, null, ct) is { } observed)
+            result = SourceEvidence.IqrObservedAzureReview.Augment(result, observed);
         // The run stores its own configuration snapshot: editing Integrations later never re-renders this result.
         db.IntegrationReviewRuns.Add(new IntegrationReviewRunRecord
         {

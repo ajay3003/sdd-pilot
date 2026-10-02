@@ -15,7 +15,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         cut.FindAll("nav .nav-section, nav .nav-item").Select(e => (e.ClassList.Contains("nav-section") ? "§" : "") + e.TextContent.Trim()).ToList();
 
     [Fact]
-    public void SourceAnalysisIsTheLastAnalysisItem_AndAppearsOnce()
+    public void SourceAnalysisThenAzureEnvironmentCloseTheAnalysisGroup_AndAppearOnce()
     {
         // The backend's default configuration: Impact Analysis and Spec Drift are disabled.
         Services.GetRequiredService<FeatureVisibilityService>().ApplyLocalFlags(new FeatureVisibilityDto { ImpactAnalysis = false, SpecDrift = false });
@@ -27,7 +27,8 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         entries[0].Should().Be("§Getting Started", "Source Analysis is no longer a special item above the groups");
         var analysis = entries.ToList().IndexOf("§Analysis");
         var quality = entries.ToList().IndexOf("§Quality");
-        entries.Skip(analysis + 1).Take(quality - analysis - 1).Should().Equal("Requirements Traceability", "Implementation Review", "Implementation Traceability", "Source Analysis");
+        entries.Skip(analysis + 1).Take(quality - analysis - 1).Should().Equal("Requirements Traceability", "Implementation Review", "Implementation Traceability", "Source Analysis", "Azure Environment");
+        cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
         cut.Find("a[href='source-analysis'] .nav-icon-source-analysis").GetAttribute("aria-hidden").Should().Be("true");
     }
 
@@ -44,6 +45,20 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         flags.ApplyLocalFlags(new FeatureVisibilityDto { SourceAnalysis = true });
         cut.Render();
         cut.FindAll("a[href='source-analysis']").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AzureEnvironmentIsHiddenByItsOwnFlag_WithoutAffectingSourceAnalysis()
+    {
+        var flags = Services.GetRequiredService<FeatureVisibilityService>();
+        flags.ApplyLocalFlags(new FeatureVisibilityDto { AzureEnvironmentAnalysis = false });
+        var cut = Render<NavMenu>();
+        cut.FindAll("a[href='azure-environment']").Should().BeEmpty();
+        cut.FindAll("a[href='source-analysis']").Should().ContainSingle();
+
+        flags.ApplyLocalFlags(new FeatureVisibilityDto { AzureEnvironmentAnalysis = true });
+        cut.Render();
+        cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
     }
 
     [Fact]

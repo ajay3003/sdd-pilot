@@ -188,6 +188,9 @@ builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
 // Integration catalog (Target Environment → Integrations, persisted by the backend) and Integration Quality Review over it.
 builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalogApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
+// Azure Environment Analysis: sign-in status, read-only analysis into snapshots, declared-vs-observed comparison (the backend only reads Azure).
+builder.Services.AddHttpClient<IAzureEnvironmentApiService, AzureEnvironmentApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 // IQR → Active tests → CDC: built-in scenarios only; every gate is the backend's.
