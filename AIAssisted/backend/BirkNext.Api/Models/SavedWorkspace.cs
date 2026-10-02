@@ -22,6 +22,8 @@ public class SavedWorkspace
     public bool IsCurrent { get; set; } = false;
     public bool Favorite { get; set; } = false;
     public string? TagsJson { get; set; }
+    /// <summary>Versioned SDD lifecycle metadata (authority, history, questions and evidence links).</summary>
+    public string? SddLifecycleJson { get; set; }
     public bool IsDeleted { get; set; } = false;
 
     // Navigation

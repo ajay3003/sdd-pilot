@@ -81,6 +81,17 @@ public class WorkspacePersistenceServiceTests : IDisposable
         Assert.Equal("Load Test", loaded.Name);
     }
 
+    [Fact]
+    public async Task AutoSaveAsync_PersistsSddLifecycleMetadata()
+    {
+        const string lifecycle = "{\"SchemaVersion\":1,\"Questions\":[]}";
+
+        var saved = await _service.AutoSaveAsync("SDD lifecycle", "project-alpha", new(), lifecycle);
+        var loaded = await _service.LoadAsync(saved.Id);
+
+        Assert.Equal(lifecycle, loaded!.SddLifecycleJson);
+    }
+
     // Test 4: List returns all non-deleted workspaces for user
     [Fact]
     public async Task ListAsync_ReturnsAllWorkspaces()

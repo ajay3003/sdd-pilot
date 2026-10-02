@@ -37,6 +37,7 @@ public class SavedWorkspaceDto
     public string ReviewContextVersion { get; set; } = "1.0";
     public string? ArtifactSetHash { get; set; }
     public bool AutoSaved { get; set; }
+    public string? SddLifecycleJson { get; set; }
     public bool Favorite { get; set; }
     public List<SavedWorkspaceArtifactResponseDto> Artifacts { get; set; } = new();
 }
@@ -64,8 +65,8 @@ public enum WorkspaceStatus
 public interface IWorkspacePersistenceService
 {
     // Workspace operations
-    Task<SavedWorkspace> SaveCurrentAsync(string? name = null, List<WorkspaceArtifactDto>? artifacts = null);
-    Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null);
+    Task<SavedWorkspace> SaveCurrentAsync(string? name = null, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null);
+    Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null);
     Task<SavedWorkspace?> LoadAsync(Guid workspaceId);
     Task<List<SavedWorkspace>> ListAsync(string userId);
     Task<SavedWorkspace> RenameAsync(Guid workspaceId, string newName);
@@ -73,7 +74,7 @@ public interface IWorkspacePersistenceService
     Task DeleteAsync(Guid workspaceId);
 
     // Auto-save
-    Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, string? projectName = null, List<WorkspaceArtifactDto>? artifacts = null);
+    Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, string? projectName = null, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null);
 
     // Current workspace tracking
     Task SetCurrentWorkspaceAsync(Guid workspaceId);

@@ -1,437 +1,240 @@
 @page "/implementation-review"
-@using BirkNext.Web.Components
-@using BirkNext.Web.Models.Analysis
+@using System.Security.Cryptography
+@using System.Text
+@using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@inject IReviewContextProvider ContextProvider
+@inject IWorkspaceSessionService Artifacts
+@inject IWorkspaceAutoSaveService AutoSave
 
-@inject IAnalysisPageModelService AnalysisPageModelService
-@inject IWorkspaceSessionService Workspace
+<PageTitle>Implementation Evidence Review</PageTitle>
+<main class="sdd-review">
+    <PageHeader Title="Implementation Evidence Review"
+                Description="Trace current documented requirements to plan, tasks, source evidence and tests. This review uses shared workspace evidence; it does not inspect pasted code or claim runtime verification." />
 
-<PageTitle>Implementation Review</PageTitle>
+    <section class="summary" aria-label="Review summary">
+        <div><strong>@Requirements.Count</strong><span>documented requirements</span></div>
+        <div><strong>@PlanLinkedCount</strong><span>with plan links</span></div>
+        <div><strong>@TaskLinkedCount</strong><span>with task links</span></div>
+        <div><strong>@Artifacts.SddLifecycle.ImplementationEvidence.Count</strong><span>registered implementation evidence</span></div>
+        <div><strong>@Artifacts.SddLifecycle.TestEvidence.Count</strong><span>registered test evidence</span></div>
+    </section>
 
-<div class="ir-page">
-    <PageHeader Title="Implementation Review"
-                Description="Review implementation code against requirements and design. Verify that code changes align with specification and architecture." />
-
-    <!-- ── Readiness Panel ────────────────────────────────────────── -->
-    @if (PageModel is not null)
+    @if (!Artifacts.Has(WorkspaceArtifactType.Specification))
     {
-        <AnalysisReadinessPanel Model="PageModel" />
+        <p class="notice">Specification evidence is not available. Source and other reviews remain independent of SDD.</p>
     }
-    else if (IsLoading)
+    @if (!HasSource)
     {
-        <div class="loading-state" role="status">Loading page configuration...</div>
-    }
-    else if (LoadError is not null)
-    {
-        <div class="notification notification-error" role="alert">@LoadError</div>
+        <p class="notice">Source Analysis linkage: Not available to this review. Documented requirements remain documented; implementation is not assessed.</p>
     }
 
-    <!-- ── Analysis Content (only if ready) ────────────────────────── -->
-    @if (PageModel?.Summary.CanRun == true)
-    {
-        <div class="ir-content">
-            <!-- Input Section -->
-            <section class="input-section">
-                <h2 class="section-title">Code Review Input</h2>
-                <div class="input-card">
-                    <label for="code-input" class="input-label">Implementation / Code to Review</label>
-                    <textarea id="code-input"
-                              class="code-editor"
-                              placeholder="Paste implementation code, file changes, or pull request description here..."
-                              rows="12"
-                              @bind="_codeInput"></textarea>
-                    <div class="input-meta">
-                        <span class="char-count">@_codeInput.Length characters</span>
-                        <button class="btn-primary" @onclick="PerformReviewAsync">
-                            @if (_isReviewing)
-                            {
-                                <span>Reviewing...</span>
-                            }
-                            else
-                            {
-                                <span>Review Implementation</span>
-                            }
-                        </button>
-                    </div>
-                </div>
-            </section>
+    <section>
+        <h2>Requirements and evidence</h2>
+        @if (Requirements.Count == 0)
+        {
+            <p>No current requirements were extracted from the selected specification.</p>
+        }
+        else
+        {
+            <div class="table-wrap"><table>
+                <thead><tr><th>Requirement</th><th>Plan</th><th>Tasks</th><th>Implementation evidence</th><th>Test evidence</th><th>Assessment</th></tr></thead>
+                <tbody>
+                @foreach (var requirement in Requirements)
+                {
+                    var implementation = Artifacts.SddLifecycle.ImplementationEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase)).ToList();
+                    var tests = Artifacts.SddLifecycle.TestEvidence.Where(x => x.RequirementId.Equals(requirement.Id, StringComparison.OrdinalIgnoreCase)).ToList();
+                    <tr>
+                        <th scope="row"><strong>@requirement.Id</strong><span>@requirement.Text</span></th>
+                        <td>@PlanLinks(requirement.Id)</td>
+                        <td>@TaskLinks(requirement.Id)</td>
+                        <td>@(implementation.Count == 0 ? "No implementation evidence" : string.Join(", ", implementation.Select(x => $"{x.EvidenceType} ({x.Confidence}; {x.Currentness})")))</td>
+                        <td>@(tests.Count == 0 ? "No test evidence" : string.Join(", ", tests.Select(x => $"{x.State} ({x.Currentness})")))</td>
+                        <td>@Assessment(implementation)</td>
+                    </tr>
+                }
+                </tbody>
+            </table></div>
+        }
+        <p class="note">Plan/task links are derived from current parsed documents. A task marked complete, a test that exists, or a source file name is not implementation or pass evidence.</p>
+    </section>
 
-            <!-- Results Section -->
-            @if (PageModel.Results.Count > 0)
+    <section>
+        <h2>Clarifications</h2>
+        @if (Clarifications.Count == 0) { <p>No clarification questions were extracted.</p> }
+        @foreach (var item in Clarifications)
+        {
+            var key = QuestionKey(item);
+            var state = Artifacts.SddLifecycle.Questions.FirstOrDefault(x => x.Id == key);
+            <article class="question">
+                <h3>@(item.Id ?? key): @item.Question</h3>
+                @if (!string.IsNullOrWhiteSpace(item.Answer)) { <p>Documented answer: @item.Answer</p> }
+                <p>Status: <strong>@(state?.Status ?? "Open — explicit resolution not recorded")</strong></p>
+                @if (state?.Status != "Resolved")
+                {
+                    <label for="resolution-@key">Resolution</label>
+                    <input id="resolution-@key" @bind="_resolutions[key]" />
+                    <label for="resolution-ref-@key">Authoritative decision/reference</label>
+                    <input id="resolution-ref-@key" @bind="_resolutionRefs[key]" />
+                    <button @onclick="() => ResolveQuestionAsync(item)">Record explicit resolution</button>
+                }
+                else { <p>Resolution: @state.Resolution <span>(@state.ResolutionReference)</span></p> }
+            </article>
+        }
+    </section>
+
+    <section>
+        <h2>Artifact authority and history</h2>
+        <p>Revision order records content changes. It does not select authority. Set a baseline explicitly; a newer draft remains non-authoritative.</p>
+        @foreach (var group in Artifacts.SddLifecycle.Revisions.GroupBy(x => x.Role).OrderBy(x => x.Key))
+        {
+            <h3>@group.Key</h3>
+            <div class="table-wrap"><table><thead><tr><th>Revision</th><th>Authority</th><th>Selection</th><th>Fingerprint</th><th>Captured</th><th>Action</th></tr></thead><tbody>
+            @foreach (var revision in group.OrderByDescending(x => x.Revision))
             {
-                <section class="results-section">
-                    <h2 class="section-title">Analysis Results</h2>
-                    <div class="results-grid">
-                        @foreach (var result in PageModel.Results)
-                        {
-                            <div class="result-card">
-                                <div class="result-header">
-                                    <h3>@result.Name</h3>
-                                    <span class="severity @GetSeverityClass(result.Severity.ToString())">@result.Severity</span>
-                                </div>
-                                @if (!string.IsNullOrEmpty(result.Summary))
-                                {
-                                    <p class="summary">@result.Summary</p>
-                                }
-                                @if (!string.IsNullOrEmpty(result.Details))
-                                {
-                                    <div class="details">@result.Details</div>
-                                }
-                                @if (!string.IsNullOrEmpty(result.Recommendation))
-                                {
-                                    <div class="recommendation">
-                                        <strong>Recommendation:</strong> @result.Recommendation
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                </section>
+                <tr><td>@revision.Revision</td><td>
+                    <select aria-label="Authority for @group.Key revision @revision.Revision" value="@revision.Authority" @onchange="e => SetAuthorityAsync(revision.RevisionId, e.Value?.ToString())">
+                        @foreach (var value in AuthorityValues) { <option value="@value" disabled="@(revision.IsCurrentSelection && value == "Superseded")">@value</option> }
+                    </select>
+                </td><td>@(revision.IsCurrentSelection ? "Current selection" : "Historical")</td><td><code>@revision.Fingerprint[..Math.Min(12, revision.Fingerprint.Length)]</code></td><td>@revision.CapturedAt.ToLocalTime().ToString("g")</td><td>
+                    @if (!revision.IsCurrentSelection && group.Any(x => x.IsCurrentSelection))
+                    { <button class="secondary" @onclick="() => SupersedeAsync(revision, group.First(x => x.IsCurrentSelection))">Mark superseded by current selection</button> }
+                </td></tr>
             }
+            </tbody></table></div>
+        }
+    </section>
 
-            <!-- Summary Section -->
-            @if (PageModel.Summary is not null)
-            {
-                <section class="summary-section">
-                    <h2 class="section-title">Summary</h2>
-                    <div class="summary-card">
-                        <div class="summary-stat">
-                            <span class="stat-label">Total Findings</span>
-                            <span class="stat-value">@PageModel.Results.Count</span>
-                        </div>
-                        @if (!string.IsNullOrEmpty(PageModel.Summary.ReadinessMessage))
-                        {
-                            <div class="summary-text">@PageModel.Summary.ReadinessMessage</div>
-                        }
-                    </div>
-                </section>
-            }
-        </div>
-    }
-    else if (PageModel?.ReadinessStatus == AnalysisStatus.Blocked)
-    {
-        <div class="blocked-state">
-            <div class="blocked-icon">🔒</div>
-            <h2>Setup Required</h2>
-            <p>Load specification artifact to provide context for implementation review.</p>
-        </div>
-    }
-</div>
+    <section>
+        <h2>Change and traceability history</h2>
+        @if (Artifacts.SddLifecycle.RequirementChanges.Count == 0) { <p>No requirement changes recorded yet. Record a review to compare the current requirement revision with its previous observed revision.</p> }
+        @foreach (var change in Artifacts.SddLifecycle.RequirementChanges.OrderByDescending(x => x.DetectedAt))
+        { <p><strong>@change.RequirementId — @change.Change</strong> @change.ChangeDetail <span>(@change.DetectedAt.ToLocalTime().ToString("g"))</span></p> }
+        @foreach (var link in Artifacts.SddLifecycle.Links.OrderBy(x => x.Currentness).ThenBy(x => x.FromId))
+        {
+            <p><strong>@link.Currentness:</strong> @link.FromId → @link.ToId (@link.Relationship, @link.Confidence, @link.Provenance) @link.Reason
+                @if (link.Currentness == "PotentiallyStale") { <button class="secondary" @onclick="() => ReconfirmLinkAsync(link.Id)">Reconfirm from current evidence</button> }
+            </p>
+        }
+    </section>
+
+    <section>
+        <h2>Review history</h2>
+        <button @onclick="RecordReviewAsync">Record deterministic review</button>
+        @if (Artifacts.SddLifecycle.ReviewRuns.Count == 0) { <p>No review run recorded.</p> }
+        @foreach (var run in Artifacts.SddLifecycle.ReviewRuns.OrderByDescending(x => x.RanAt))
+        {
+            var stale = run.SpecificationFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Specification)?.Text)
+                || run.PlanFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Plan)?.Text)
+                || run.TasksFingerprint != Fingerprint(Artifacts.Get(WorkspaceArtifactType.Tasks)?.Text);
+            <p>@run.RanAt.ToLocalTime().ToString("g") — @(stale ? "Historical / stale" : run.Currentness) — @run.RequirementsWithPlanEvidence/@run.RequirementCount plan-linked; @run.RequirementsWithTaskEvidence/@run.RequirementCount task-linked; source: @run.SourceSnapshotReference</p>
+        }
+    </section>
+</main>
 
 @code {
-    private AnalysisPageModel? PageModel;
-    private bool IsLoading = true;
-    private string? LoadError;
-    private string _codeInput = string.Empty;
-    private bool _isReviewing = false;
+    private static readonly string[] AuthorityValues = ["Unknown", "Draft", "Candidate", "Baseline", "Approved", "Superseded", "RejectedAlternative", "Historical"];
+    private readonly Dictionary<string, string> _resolutions = new();
+    private readonly Dictionary<string, string> _resolutionRefs = new();
+    private ReviewContext? Context => ContextProvider.GetCurrent();
+    private List<SemanticRequirement> Requirements => Context?.GetRequirements().ToList() ?? [];
+    private List<SemanticClarification> Clarifications => Context?.GetClarifications().ToList() ?? [];
+    private bool HasSource => Artifacts.SddLifecycle.ImplementationEvidence.Any(x =>
+        !string.IsNullOrWhiteSpace(x.SourceSnapshotId) && !string.IsNullOrWhiteSpace(x.SourceFingerprint));
+    private int PlanLinkedCount => Requirements.Count(x => PlanLinks(x.Id) > 0);
+    private int TaskLinkedCount => Requirements.Count(x => TaskLinks(x.Id) > 0);
+    private int PlanLinks(string id) => Context?.GetLinkedPlans(id).Count ?? 0;
+    private int TaskLinks(string id) => Context?.GetLinkedTasks(id).Count ?? 0;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized() => Artifacts.ReviewContextRebuildNeeded += OnContextChanged;
+    private void OnContextChanged(object? sender, EventArgs args) => _ = InvokeAsync(StateHasChanged);
+
+    private string Assessment(List<SddImplementationEvidence> evidence)
     {
-        // Subscribe to workspace changes
-        Workspace.ReviewContextRebuildNeeded += (s, e) => _ = RefreshPageModel();
-
-        // Load initial model
-        await RefreshPageModel();
+        if (!Artifacts.Has(WorkspaceArtifactType.Specification)) return "Requirements not available";
+        if (!HasSource && evidence.Count == 0) return "Not assessed — no source snapshot";
+        if (evidence.Count == 0) return "No implementation evidence registered";
+        return evidence.Any(x => x.Confidence is "Confirmed" or "StronglySupported") ? "Implementation evidence found" : "Inferred evidence only";
     }
 
-    private async Task RefreshPageModel()
-    {
-        try
-        {
-            IsLoading = true;
-            LoadError = null;
-            PageModel = await AnalysisPageModelService.GetImplementationReviewModelAsync();
+    private string QuestionKey(SemanticClarification item) => string.IsNullOrWhiteSpace(item.Id)
+        ? "Q-" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(item.Question)))[..12]
+        : item.Id!;
 
-            if (PageModel is null)
+    private async Task ResolveQuestionAsync(SemanticClarification item)
+    {
+        var id = QuestionKey(item);
+        if (string.IsNullOrWhiteSpace(_resolutions.GetValueOrDefault(id)) || string.IsNullOrWhiteSpace(_resolutionRefs.GetValueOrDefault(id))) return;
+        SddLifecycleReviewService.ResolveQuestion(Artifacts.SddLifecycle, id, item.Question, _resolutions[id], _resolutionRefs[id], item.AffectedElements);
+        await AutoSave.SaveNowAsync();
+    }
+
+    private async Task SetAuthorityAsync(Guid id, string? authority)
+    {
+        if (string.IsNullOrWhiteSpace(authority)) return;
+        Artifacts.SetArtifactAuthority(id, authority);
+        await AutoSave.SaveNowAsync();
+    }
+
+    private async Task SupersedeAsync(SddArtifactRevision oldRevision, SddArtifactRevision current)
+    {
+        oldRevision.Authority = "Superseded";
+        oldRevision.IsCurrentSelection = false;
+        oldRevision.SupersededByRevisionId = current.RevisionId;
+        current.SupersedesRevisionId = oldRevision.RevisionId;
+        await AutoSave.SaveNowAsync();
+    }
+
+    private async Task ReconfirmLinkAsync(Guid linkId)
+    {
+        var link = Artifacts.SddLifecycle.Links.FirstOrDefault(x => x.Id == linkId);
+        if (link is null) return;
+        link.Currentness = "Current";
+        link.LastValidatedAt = DateTimeOffset.UtcNow;
+        link.Reason = "Explicitly reconfirmed from current evidence.";
+        await AutoSave.SaveNowAsync();
+    }
+
+    private async Task RecordReviewAsync()
+    {
+        var requirements = Requirements;
+        foreach (var requirement in requirements)
+        {
+            foreach (var planId in Context?.GetLinkedPlans(requirement.Id) ?? [])
+                SddLifecycleReviewService.AddOrRefreshLink(Artifacts.SddLifecycle, requirement.Id, planId, "RequirementPlansTo", "StronglySupported");
+            foreach (var taskId in Context?.GetLinkedTasks(requirement.Id) ?? [])
+                SddLifecycleReviewService.AddOrRefreshLink(Artifacts.SddLifecycle, requirement.Id, taskId, "RequirementDecomposedInto", "StronglySupported");
+            foreach (var scenario in requirement.LinkedAcceptanceScenarios)
             {
-                LoadError = "Failed to load page configuration";
+                var criterionId = scenario.Id ?? scenario.Title;
+                SddLifecycleReviewService.AddOrRefreshLink(Artifacts.SddLifecycle, requirement.Id, criterionId, "TestDesignedFor", "StronglySupported");
+                if (!Artifacts.SddLifecycle.TestEvidence.Any(x => x.RequirementId == requirement.Id && x.AcceptanceCriterionId == criterionId))
+                    Artifacts.SddLifecycle.TestEvidence.Add(new SddTestEvidence { RequirementId = requirement.Id, AcceptanceCriterionId = criterionId, TestReference = criterionId, State = "Designed", Provenance = "SpecificationAcceptanceScenario" });
             }
         }
-        catch (Exception ex)
+        SddLifecycleReviewService.ReconcileRequirements(Artifacts.SddLifecycle, requirements,
+            Artifacts.SddLifecycle.Revisions.LastOrDefault(x => x.Role == "Specification" && x.IsCurrentSelection)?.RevisionId);
+        var run = new SddReviewRun
         {
-            LoadError = $"Error loading configuration: {ex.Message}";
-        }
-        finally
-        {
-            IsLoading = false;
-        }
+            SpecificationFingerprint = Fingerprint(Artifacts.Get(WorkspaceArtifactType.Specification)?.Text),
+            PlanFingerprint = Fingerprint(Artifacts.Get(WorkspaceArtifactType.Plan)?.Text),
+            TasksFingerprint = Fingerprint(Artifacts.Get(WorkspaceArtifactType.Tasks)?.Text),
+            RequirementCount = requirements.Count,
+            RequirementsWithPlanEvidence = requirements.Count(x => PlanLinks(x.Id) > 0),
+            RequirementsWithTaskEvidence = requirements.Count(x => TaskLinks(x.Id) > 0),
+            SourceSnapshotReference = "Not available — no shared Source Analysis link",
+            Currentness = "Current"
+        };
+        Artifacts.SddLifecycle.ReviewRuns.Add(run);
+        foreach (var previous in Artifacts.SddLifecycle.ReviewRuns.Where(x => x.Id != run.Id && x.Currentness == "Current")) previous.Currentness = "Historical";
+        await AutoSave.SaveNowAsync();
     }
 
-    private async Task PerformReviewAsync()
-    {
-        if (string.IsNullOrWhiteSpace(_codeInput))
-        {
-            LoadError = "Please provide code to review";
-            return;
-        }
-
-        try
-        {
-            _isReviewing = true;
-            // TODO: Implement actual review logic
-            // For now, this is a placeholder that will be filled in later
-            await Task.Delay(500);
-        }
-        catch (Exception ex)
-        {
-            LoadError = $"Error performing review: {ex.Message}";
-        }
-        finally
-        {
-            _isReviewing = false;
-        }
-    }
-
-    private string GetSeverityClass(string? severity) => severity?.ToLower() switch
-    {
-        "critical" => "critical",
-        "warning" => "warning",
-        "info" => "info",
-        _ => "default"
-    };
+    private static string Fingerprint(string? value) => string.IsNullOrEmpty(value)
+        ? ""
+        : Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
 }
 
 <style>
-.ir-page {
-    padding: 0 20px;
-}
-
-.loading-state {
-    text-align: center;
-    color: #6b7280;
-    padding: 40px 20px;
-}
-
-.ir-content {
-    margin-top: 32px;
-}
-
-.input-section {
-    margin-bottom: 40px;
-}
-
-.section-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: #111827;
-    margin-bottom: 16px;
-    border-bottom: 2px solid #e5e7eb;
-    padding-bottom: 12px;
-}
-
-.input-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 20px;
-    background: white;
-}
-
-.input-label {
-    display: block;
-    margin-bottom: 12px;
-    font-weight: 500;
-    color: #374151;
-    font-size: 14px;
-}
-
-.code-editor {
-    width: 100%;
-    padding: 12px;
-    border: 1px solid #d1d5db;
-    border-radius: 6px;
-    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-    font-size: 13px;
-    resize: vertical;
-    margin-bottom: 12px;
-}
-
-.code-editor:focus {
-    outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.input-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: 12px;
-    border-top: 1px solid #f3f4f6;
-}
-
-.char-count {
-    font-size: 12px;
-    color: #9ca3af;
-}
-
-.results-section {
-    margin-bottom: 40px;
-}
-
-.results-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 16px;
-    margin-bottom: 24px;
-}
-
-.result-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 16px;
-    background: white;
-    transition: all 0.2s ease;
-}
-
-.result-card:hover {
-    border-color: #d1d5db;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
-}
-
-.result-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: start;
-    margin-bottom: 12px;
-    gap: 12px;
-}
-
-.result-header h3 {
-    margin: 0;
-    font-size: 16px;
-    font-weight: 600;
-    color: #111827;
-}
-
-.severity {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.severity.critical {
-    background: #fee2e2;
-    color: #991b1b;
-}
-
-.severity.warning {
-    background: #fef3c7;
-    color: #92400e;
-}
-
-.severity.info {
-    background: #dbeafe;
-    color: #1e40af;
-}
-
-.summary {
-    margin: 8px 0;
-    font-size: 14px;
-    color: #374151;
-}
-
-.details {
-    margin: 8px 0;
-    padding: 8px;
-    background: #f9fafb;
-    border-radius: 4px;
-    font-size: 13px;
-    color: #6b7280;
-}
-
-.recommendation {
-    margin-top: 8px;
-    padding: 8px;
-    background: #fef3c7;
-    border-left: 3px solid #f59e0b;
-    border-radius: 4px;
-    font-size: 13px;
-}
-
-.summary-section {
-    margin-bottom: 32px;
-}
-
-.summary-card {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 20px;
-    background: white;
-}
-
-.summary-stat {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid #f3f4f6;
-}
-
-.stat-label {
-    font-weight: 500;
-    color: #6b7280;
-    font-size: 14px;
-}
-
-.stat-value {
-    font-weight: 600;
-    color: #111827;
-    font-size: 18px;
-}
-
-.summary-text {
-    color: #6b7280;
-    font-size: 14px;
-    line-height: 1.5;
-}
-
-.blocked-state {
-    text-align: center;
-    padding: 60px 20px;
-    border: 1px solid #fef2f2;
-    border-radius: 8px;
-    background: #fef2f2;
-    margin-top: 32px;
-}
-
-.blocked-icon {
-    font-size: 48px;
-    margin-bottom: 16px;
-}
-
-.blocked-state h2 {
-    margin: 0 0 8px 0;
-    font-size: 20px;
-    font-weight: 600;
-    color: #991b1b;
-}
-
-.blocked-state p {
-    margin: 0;
-    color: #7f1d1d;
-    font-size: 14px;
-}
-
-.btn-primary {
-    padding: 10px 20px;
-    background: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.btn-primary:hover:not(:disabled) {
-    background: #2563eb;
-}
-
-.btn-primary:disabled {
-    background: #d1d5db;
-    cursor: not-allowed;
-}
+.sdd-review{padding:0 20px;max-width:1440px;margin:auto}.sdd-review section{margin:28px 0}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px}.summary div,.question,.notice{padding:14px;border:1px solid #d8dee8;border-radius:8px;background:#fff}.summary strong,.summary span{display:block}.summary strong{font-size:1.4rem}.summary span,.note{color:#586174}.notice{background:#fff8e7}.table-wrap{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:820px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e1e5eb;vertical-align:top}tbody th span{display:block;font-weight:400;max-width:480px}.question{margin:12px 0}.question label,.question input{display:block}.question input{width:min(100%,600px);margin:4px 0 10px;padding:8px}.secondary{font-size:.85rem}
 </style>

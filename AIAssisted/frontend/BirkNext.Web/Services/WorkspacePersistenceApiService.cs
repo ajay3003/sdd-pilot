@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 
 namespace BirkNext.Web.Services;
 
@@ -46,6 +47,7 @@ public class SavedWorkspaceDto
     public string ReviewContextVersion { get; set; } = "1.0";
     public string? ArtifactSetHash { get; set; }
     public bool AutoSaved { get; set; }
+    public string? SddLifecycleJson { get; set; }
     public bool Favorite { get; set; }
     public List<SavedWorkspaceArtifactDto> Artifacts { get; set; } = new();
 }
@@ -95,7 +97,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             var artifacts = GetArtifactsFromRepository();
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-current",
-                new { name, artifacts });
+                new { name, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle) });
 
             if (!response.IsSuccessStatusCode)
             {
@@ -119,7 +121,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             var artifacts = GetArtifactsFromRepository();
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-as",
-                new { name, artifacts });
+                new { name, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle) });
 
             if (!response.IsSuccessStatusCode)
             {
@@ -252,7 +254,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 
             // The project identity is always sent: the slug when a Sample Project is selected, an empty string when the
             // user explicitly cleared the selection (the backend treats null as "not provided" and "" as "cleared").
-            var request = new { generatedName, projectName = _artifactRepository.CurrentProject ?? string.Empty, artifacts };
+            var request = new { generatedName, projectName = _artifactRepository.CurrentProject ?? string.Empty, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle) };
             _logger.LogInformation("DIAG: [AutoSaveAsync] Request object created with {ArtifactCount} artifacts", artifacts.Count);
 
             var response = await _httpClient.PostAsJsonAsync(

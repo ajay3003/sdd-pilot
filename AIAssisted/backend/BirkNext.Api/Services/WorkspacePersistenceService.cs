@@ -20,14 +20,14 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _logger = logger;
     }
 
-    public async Task<SavedWorkspace> SaveCurrentAsync(string? name = null, List<WorkspaceArtifactDto>? artifacts = null)
+    public async Task<SavedWorkspace> SaveCurrentAsync(string? name = null, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null)
     {
         if (!_currentWorkspaceId.HasValue)
             _currentWorkspaceId = await ResolvePersistedCurrentWorkspaceIdAsync();
 
         if (!_currentWorkspaceId.HasValue)
         {
-            return await SaveAsAsync(name ?? $"Workspace_{DateTime.UtcNow:yyyyMMdd_HHmmss}", artifacts ?? new());
+            return await SaveAsAsync(name ?? $"Workspace_{DateTime.UtcNow:yyyyMMdd_HHmmss}", artifacts ?? new(), sddLifecycleJson);
         }
 
         var workspace = await _db.SavedWorkspaces
@@ -73,6 +73,9 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             }
         }
 
+        if (sddLifecycleJson is not null)
+            workspace.SddLifecycleJson = sddLifecycleJson;
+
         workspace.UpdatedAt = DateTimeOffset.UtcNow;
         workspace.AutoSaved = false;
         workspace.ArtifactSetHash = await ComputeArtifactSetHashAsync(_currentWorkspaceId.Value);
@@ -85,7 +88,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         return workspace;
     }
 
-    public async Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null)
+    public async Task<SavedWorkspace> SaveAsAsync(string name, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null)
     {
         _logger.LogInformation($"DIAG: [SaveAs] ENTERED with name={name}, artifactCount={artifacts?.Count ?? 0}");
 
@@ -108,6 +111,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             Id = Guid.NewGuid(),
             UserId = _currentUserId ?? "default-user",
             Name = name,
+            SddLifecycleJson = sddLifecycleJson,
             ProjectName = "", // TODO: Get from current project context
             Description = "",
             CreatedAt = DateTimeOffset.UtcNow,
@@ -261,6 +265,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             Version = original.Version,
             ParserVersion = original.ParserVersion,
             ReviewContextVersion = original.ReviewContextVersion,
+            SddLifecycleJson = original.SddLifecycleJson,
             AutoSaved = false
         };
 
@@ -323,7 +328,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         _logger.LogInformation("Soft-deleted workspace {WorkspaceId}", workspaceId);
     }
 
-    public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, string? projectName = null, List<WorkspaceArtifactDto>? artifacts = null)
+    public async Task<SavedWorkspace> AutoSaveAsync(string? generatedName = null, string? projectName = null, List<WorkspaceArtifactDto>? artifacts = null, string? sddLifecycleJson = null)
     {
         _logger.LogInformation($"DIAG: [AutoSaveAsync] ENTERED");
         _logger.LogInformation($"DIAG: [AutoSaveAsync]   generatedName={generatedName}");
@@ -349,6 +354,7 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
             _logger.LogInformation("TRACE: No current workspace ID, calling SaveAsAsync");
             var name = generatedName ?? $"Auto_{DateTime.UtcNow:yyyyMMdd_HHmmss}";
             var workspace = await SaveAsAsync(name, artifacts ?? new());
+            workspace.SddLifecycleJson = sddLifecycleJson;
             // null = identity not provided by the caller; "" = the user explicitly cleared the selection.
             if (projectName is not null)
             {
@@ -378,6 +384,8 @@ public class WorkspacePersistenceService : IWorkspacePersistenceService
         {
             current.ProjectName = projectName.Trim();
         }
+        if (sddLifecycleJson is not null)
+            current.SddLifecycleJson = sddLifecycleJson;
 
         // Update artifacts if provided
         if (artifacts != null && artifacts.Any())

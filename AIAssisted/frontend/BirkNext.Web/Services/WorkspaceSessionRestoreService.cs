@@ -124,6 +124,7 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 
         try
         {
+            _artifactRepository.ResetSddLifecycle();
             // Clear existing artifacts
             _artifactRepository.Clear(WorkspaceArtifactType.Constitution);
             _artifactRepository.Clear(WorkspaceArtifactType.Specification);
@@ -186,6 +187,7 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
             // canonical slug persisted identity-only; it is restored exactly as saved, even when the catalog no longer
             // contains it, so the UI can show an explicit "unavailable" state instead of silently picking another project.
             _artifactRepository.ProjectName = string.IsNullOrWhiteSpace(workspace.ProjectName) ? null : workspace.ProjectName;
+            _artifactRepository.RestoreSddLifecycle(workspace.SddLifecycleJson);
             if (hasProjectIdentity)
                 _logger.LogInformation("Sample Project selection restored: {ProjectSlug}", workspace.ProjectName);
 
@@ -223,6 +225,7 @@ public class WorkspaceSessionRestoreService : IWorkspaceSessionRestoreService
 
     public async Task ClearWorkspaceAsync()
     {
+        _artifactRepository.ResetSddLifecycle();
         _artifactRepository.Clear(WorkspaceArtifactType.Constitution);
         _artifactRepository.Clear(WorkspaceArtifactType.Specification);
         _artifactRepository.Clear(WorkspaceArtifactType.Plan);
