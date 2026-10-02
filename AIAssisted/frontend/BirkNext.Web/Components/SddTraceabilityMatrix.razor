@@ -6,6 +6,11 @@
 <section class="sdd-matrix" aria-labelledby="sdd-matrix-title">
     <h2 id="sdd-matrix-title">Shared SDD evidence graph</h2>
     <p>Plan, task, source evidence and test execution are separate evidence dimensions. Gaps are not failures by default.</p>
+    <label for="traceability-projection">View</label>
+    <select id="traceability-projection" @bind="_mode"><option value="ActiveWorkspace">Active workspace</option><option value="AuthoritativeBaseline">Authoritative baseline</option><option value="HistoricalBaseline">Historical baseline</option></select>
+    @if (_mode == "HistoricalBaseline") { <label for="traceability-baseline">Baseline</label><select id="traceability-baseline" @bind="_baselineId"><option value="">Select baseline</option>@foreach (var baseline in Workspace.SddLifecycle.Baselines) { <option value="@baseline.BaselineId">@baseline.Label · @baseline.Status</option> }</select> }
+    <p role="status">Projection: @Projection.Metadata.Mode@(Projection.Metadata.BaselineId is { } id ? $" · {Workspace.SddLifecycle.Baselines.FirstOrDefault(x => x.BaselineId == id)?.Label ?? "baseline"}" : "")</p>
+    @foreach (var limitation in Projection.Metadata.Limitations) { <p>@limitation</p> }
     @if (Rows.Count == 0)
     {
         <p role="status">Requirements are not available in this workspace. Source and other reviews remain available independently.</p>
@@ -27,7 +32,7 @@
                     <td>
                         @if (currentImpl.Count == 0) { <span>No current evidence</span> }
                         @foreach (var item in row.Implementation)
-                        { <details><summary>@item.EvidenceType · @item.Confidence · @item.Currentness</summary><p>@item.Reference</p><p>Snapshot @item.SourceSnapshotId · @item.SourceFingerprint</p><p>@item.Provenance · @item.SourceValidation</p><p>@item.CurrentnessReason</p></details> }
+                        { <details><summary>@item.EvidenceType · @item.Confidence · @item.Currentness</summary><p>@item.Reference</p><p>Snapshot @item.SourceSnapshotId · @item.SourceFingerprint</p><p>@item.Provenance · target validation: @item.TargetValidation</p><p>@item.CurrentnessReason</p>@foreach (var resolution in item.TargetResolutions) { <p>@resolution.State · @resolution.OldSnapshotId → @resolution.NewSnapshotId · content changed: @(resolution.ContentChanged?.ToString() ?? "not assessed") · @resolution.Reason</p> }</details> }
                     </td>
                     <td>@(row.DesignedTests.Count == 0 ? "None" : string.Join(", ", row.DesignedTests.Select(x => x.TestReference)))</td>
                     <td>
@@ -44,7 +49,11 @@
 </section>
 
 @code {
-    private IReadOnlyList<SddRequirementGraphRow> Rows => Graph.Build(Workspace);
+    private string _mode = nameof(LifecycleProjectionMode.AuthoritativeBaseline);
+    private string _baselineId = "";
+    private SddLifecycleProjection Projection => Graph.Project(Workspace, Enum.TryParse<LifecycleProjectionMode>(_mode, out var mode) ? mode : LifecycleProjectionMode.ActiveWorkspace,
+        Guid.TryParse(_baselineId, out var baseline) ? baseline : null);
+    private IReadOnlyList<SddRequirementGraphRow> Rows => Projection.Rows;
 }
 
 <style>

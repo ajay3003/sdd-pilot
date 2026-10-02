@@ -16,6 +16,38 @@ public sealed class SddLifecycleState
     public List<SddReviewRun> ReviewRuns { get; set; } = [];
     public List<SddRequirementSnapshot> RequirementSnapshots { get; set; } = [];
     public List<SddRequirementChange> RequirementChanges { get; set; } = [];
+    public List<SddBaselineManifest> Baselines { get; set; } = [];
+}
+
+/// <summary>Immutable manifest of explicit artifact revision references; content remains owned by Revisions.</summary>
+public sealed class SddBaselineManifest
+{
+    public Guid BaselineId { get; set; } = Guid.NewGuid();
+    public string Label { get; set; } = "Baseline";
+    public List<Guid> ArtifactRevisionIds { get; set; } = [];
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public string Status { get; set; } = "Current";
+    public DateTimeOffset? SupersededAt { get; set; }
+}
+
+public enum LifecycleProjectionMode { ActiveWorkspace, AuthoritativeBaseline, HistoricalBaseline }
+public sealed record LifecycleProjectionMetadata(LifecycleProjectionMode Mode, Guid? BaselineId,
+    IReadOnlyList<Guid> ArtifactRevisionIds, IReadOnlyList<string> ArtifactFingerprints, DateTimeOffset GeneratedAt,
+    IReadOnlyList<string> Limitations);
+
+public sealed class SddSourceTargetResolution
+{
+    public string OldSnapshotId { get; set; } = "";
+    public string NewSnapshotId { get; set; } = "";
+    public string OldFingerprint { get; set; } = "";
+    public string NewFingerprint { get; set; } = "";
+    public string ProviderId { get; set; } = "";
+    public string State { get; set; } = "NotAssessed";
+    public string TargetPath { get; set; } = "";
+    public string? MatchedPath { get; set; }
+    public bool? ContentChanged { get; set; }
+    public DateTimeOffset ResolvedAt { get; set; } = DateTimeOffset.UtcNow;
+    public string Reason { get; set; } = "";
 }
 
 public sealed class SddSourceSnapshotReference
@@ -28,6 +60,7 @@ public sealed class SddSourceSnapshotReference
     public DateTimeOffset AnalyzedAt { get; set; }
     public List<string> Limitations { get; set; } = [];
     public string Currentness { get; set; } = "Historical";
+    public BirkNext.Integrations.SourceTargetIndex? TargetIndex { get; set; }
 }
 
 public sealed class SddQualityReviewRun
@@ -37,6 +70,10 @@ public sealed class SddQualityReviewRun
     public string LifecycleGraphFingerprint { get; set; } = "";
     public string Currentness { get; set; } = "Current";
     public List<SddQualityReviewFinding> Findings { get; set; } = [];
+    public string ProjectionMode { get; set; } = "ActiveWorkspace";
+    public Guid? BaselineId { get; set; }
+    public List<Guid> ArtifactRevisionIds { get; set; } = [];
+    public List<string> ArtifactFingerprints { get; set; } = [];
 }
 
 public sealed record SddQualityReviewFinding(string Code, string Severity, string RequirementId, string Message, string EvidenceReference);
@@ -129,6 +166,7 @@ public sealed class SddImplementationEvidence
     public string? ProviderId { get; set; }
     public string? ProviderVersion { get; set; }
     public DateTimeOffset? ObservedAt { get; set; }
+    public DateTimeOffset? RecordedAt { get; set; }
     public string? FilePath { get; set; }
     public string SourceValidation { get; set; } = "NotAssessed";
     public string? StableKey { get; set; }
@@ -136,6 +174,8 @@ public sealed class SddImplementationEvidence
     public string Confidence { get; set; } = "Unresolved";
     public string Provenance { get; set; } = "Manual";
     public string Currentness { get; set; } = "Current";
+    public List<SddSourceTargetResolution> TargetResolutions { get; set; } = [];
+    public string TargetValidation { get; set; } = "NotAssessed";
 }
 
 /// <summary>Immutable execution observation imported from a test provider or report.</summary>
@@ -214,4 +254,8 @@ public sealed class SddReviewRun
     public int RequirementCount { get; set; }
     public int RequirementsWithPlanEvidence { get; set; }
     public int RequirementsWithTaskEvidence { get; set; }
+    public string ProjectionMode { get; set; } = "ActiveWorkspace";
+    public Guid? BaselineId { get; set; }
+    public List<Guid> ArtifactRevisionIds { get; set; } = [];
+    public List<string> ArtifactFingerprints { get; set; } = [];
 }

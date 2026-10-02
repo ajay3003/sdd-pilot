@@ -42,8 +42,9 @@
             }
             @foreach (var run in SddWorkspace!.SddLifecycle.QualityReviewRuns.OrderByDescending(x => x.RanAt))
             {
-                var stale = run.LifecycleGraphFingerprint != SddGraph!.Fingerprint(SddWorkspace);
-                <p>SDD evidence review @run.RanAt.ToLocalTime().ToString("g") · @(stale ? "Historical / stale" : run.Currentness) · @run.Findings.Count observation(s)</p>
+                var runMode = Enum.TryParse<LifecycleProjectionMode>(run.ProjectionMode, out var parsedMode) ? parsedMode : LifecycleProjectionMode.ActiveWorkspace;
+                var stale = run.LifecycleGraphFingerprint != SddGraph!.Fingerprint(SddWorkspace, runMode, run.BaselineId);
+                <p>SDD evidence review @run.RanAt.ToLocalTime().ToString("g") · @(stale ? "Historical / stale" : run.Currentness) · @run.ProjectionMode@(run.BaselineId is null ? "" : $" ({run.BaselineId})") · @run.Findings.Count observation(s)</p>
             }
         </section>
     }
@@ -489,7 +490,8 @@
     private IWorkspaceSessionService? SddWorkspace => Services.GetService<IWorkspaceSessionService>();
     private SddEvidenceGraphService? SddGraph => Services.GetService<SddEvidenceGraphService>();
     private IReadOnlyList<SddRequirementGraphRow> SddRows => SddWorkspace is { } workspace && SddGraph is { } graph ? graph.Build(workspace) : [];
-    private IReadOnlyList<SddQualityReviewFinding> SddFindings => SddWorkspace is { } workspace && SddGraph is { } graph ? graph.QualityFindings(workspace) : [];
+    private LifecycleProjectionMode SddProjectionMode => SddWorkspace?.SddLifecycle.Baselines.Any(x => x.Status == "Current") == true ? LifecycleProjectionMode.AuthoritativeBaseline : LifecycleProjectionMode.ActiveWorkspace;
+    private IReadOnlyList<SddQualityReviewFinding> SddFindings => SddWorkspace is { } workspace && SddGraph is { } graph ? graph.QualityFindings(workspace, SddProjectionMode) : [];
 
     private static readonly Dictionary<string, int> _groupOrder = new()
     {
@@ -831,14 +833,17 @@
 
             QualitySession.SaveResult(_report, selectedPackIds, _selectedProject ?? string.Empty, artifactSnapshot);
 
-            if (SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph && sddGraph.Build(sddWorkspace).Count > 0)
+            if (SddWorkspace is { } sddWorkspace && SddGraph is { } sddGraph && sddGraph.Project(sddWorkspace, SddProjectionMode).Rows.Count > 0)
             {
-                var graphFingerprint = sddGraph.Fingerprint(sddWorkspace);
+                var projection = sddGraph.Project(sddWorkspace, SddProjectionMode);
+                var graphFingerprint = sddGraph.Fingerprint(sddWorkspace, SddProjectionMode);
                 foreach (var oldRun in sddWorkspace.SddLifecycle.QualityReviewRuns.Where(x => x.Currentness == "Current")) oldRun.Currentness = "Historical";
                 sddWorkspace.SddLifecycle.QualityReviewRuns.Add(new SddQualityReviewRun
                 {
                     LifecycleGraphFingerprint = graphFingerprint,
-                    Findings = sddGraph.QualityFindings(sddWorkspace).ToList(),
+                    Findings = sddGraph.QualityFindings(sddWorkspace, SddProjectionMode).ToList(),
+                    ProjectionMode = projection.Metadata.Mode.ToString(), BaselineId = projection.Metadata.BaselineId,
+                    ArtifactRevisionIds = projection.Metadata.ArtifactRevisionIds.ToList(), ArtifactFingerprints = projection.Metadata.ArtifactFingerprints.ToList(),
                     Currentness = "Current"
                 });
                 if (Services.GetService<IWorkspaceAutoSaveService>() is { } autoSave) await autoSave.SaveNowAsync();

@@ -229,6 +229,12 @@ public sealed class IqrSourceEvidenceTests
         var store = new IqrSourceStore(db);
         var bytes = Zip(("src/Adapter.csproj", Project), ("src/Mapper.cs", Mapper), ("src/appsettings.json", "{\"Password\":\"SECRET_SENTINEL_123\"}"));
         var (a, _) = await store.AnalyzeAsync("dev", "person", "source.zip", bytes);
+        a!.TargetIndex.Should().NotBeNull();
+        a.TargetIndex!.SnapshotId.Should().Be(a.Id);
+        a.TargetIndex.SnapshotFingerprint.Should().Be(a.Archive.Sha256);
+        a.TargetIndex.FileInventoryComplete.Should().BeTrue();
+        a.TargetIndex.Files.Should().Contain(f => f.RelativePath == "src/Mapper.cs" && !string.IsNullOrWhiteSpace(f.ContentFingerprint));
+        a.TargetIndex.Files.Should().Contain(f => f.RelativePath == "src/Adapter.csproj");
         var run = IqrSourceReview.Augment(new IntegrationReviewResult(), [a!]);
         db.IntegrationReviewRuns.Add(new IntegrationReviewRunRecord { Id = Guid.NewGuid(), EnvironmentId = "dev", ResultJson = JsonSerializer.Serialize(run) });
         await db.SaveChangesAsync();

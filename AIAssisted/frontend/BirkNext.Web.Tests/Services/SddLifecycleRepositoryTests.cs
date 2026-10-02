@@ -60,6 +60,118 @@ public sealed class SddLifecycleRepositoryTests
     }
 
     [Fact]
+    public void CapturedBaselineProjectsExactRevisionIndependentlyFromActiveSelection()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        repository.Set(WorkspaceArtifactType.Specification, "## Requirements\n**REQ-1**: baseline wording", "requirements.md");
+        var baselineRevision = repository.SddLifecycle.Revisions.Single();
+        repository.SetArtifactAuthority(baselineRevision.RevisionId, "Baseline");
+        var manifest = repository.CaptureBaseline("v1");
+        repository.Set(WorkspaceArtifactType.Specification, "## Requirements\n**REQ-1**: draft wording", "requirements.md");
+
+        var active = new ReviewContext();
+        active.Specification.Requirements.Add(new SemanticRequirement { Id = "REQ-DRAFT", Text = "draft" });
+        var contexts = new Mock<IReviewContextProvider>();
+        contexts.Setup(x => x.GetCurrent()).Returns(active);
+        var graph = new SddEvidenceGraphService(contexts.Object);
+
+        var projected = graph.Project(repository, LifecycleProjectionMode.AuthoritativeBaseline);
+        var historical = graph.Project(repository, LifecycleProjectionMode.HistoricalBaseline, manifest.BaselineId);
+        Assert.DoesNotContain(projected.Rows, x => x.Requirement.Id == "REQ-DRAFT");
+        Assert.Single(projected.Rows);
+        Assert.Equal(manifest.BaselineId, projected.Metadata.BaselineId);
+        Assert.Contains(baselineRevision.RevisionId, projected.Metadata.ArtifactRevisionIds);
+        Assert.Equal(projected.Rows.Select(x => x.Requirement.Id), historical.Rows.Select(x => x.Requirement.Id));
+        Assert.Contains(graph.Project(repository, LifecycleProjectionMode.ActiveWorkspace).Rows, x => x.Requirement.Id == "REQ-DRAFT");
+    }
+
+    [Fact]
+    public void FileTargetResolutionDistinguishesUnchangedChangedMissingAndUnsupported()
+    {
+        var old = new BirkNext.Integrations.SourceTargetIndex
+        {
+            SnapshotId = Guid.NewGuid(), SnapshotFingerprint = "A", FileInventoryComplete = true,
+            Files = [new("src/Person.cs", "content-a"), new("src/Move.cs", "move-hash")]
+        };
+        var unchanged = old with { SnapshotId = Guid.NewGuid(), SnapshotFingerprint = "B" };
+        var exact = SddEvidenceGraphService.ResolveFileTarget(old, "src/Person.cs", old.SnapshotId.ToString(), "A", unchanged, unchanged.SnapshotId.ToString(), "B");
+        Assert.Equal("ResolvedExact", exact.State);
+        Assert.False(exact.ContentChanged);
+        var unknownContent = old with { Files = [new("src/Person.cs")] };
+        var unknown = SddEvidenceGraphService.ResolveFileTarget(unknownContent, "src/Person.cs", old.SnapshotId.ToString(), "A", unknownContent with { SnapshotId = Guid.NewGuid(), SnapshotFingerprint = "U" }, Guid.NewGuid().ToString(), "U");
+        Assert.Null(unknown.ContentChanged);
+
+        var changed = unchanged with { Files = [new("src/Person.cs", "content-b")] };
+        var changedResult = SddEvidenceGraphService.ResolveFileTarget(old, "src/Person.cs", old.SnapshotId.ToString(), "A", changed, changed.SnapshotId.ToString(), "C");
+        Assert.Equal("ResolvedExact", changedResult.State);
+        Assert.True(changedResult.ContentChanged);
+
+        var moved = unchanged with { Files = [new("lib/Move.cs", "move-hash")] };
+        Assert.Equal("ResolvedEquivalent", SddEvidenceGraphService.ResolveFileTarget(old, "src/Move.cs", old.SnapshotId.ToString(), "A", moved, moved.SnapshotId.ToString(), "D").State);
+        var removed = unchanged with { Files = [], FileInventoryComplete = true };
+        Assert.Equal("NotFound", SddEvidenceGraphService.ResolveFileTarget(old, "src/Person.cs", old.SnapshotId.ToString(), "A", removed, removed.SnapshotId.ToString(), "E").State);
+        var unsupported = removed with { FileInventoryComplete = false };
+        Assert.Equal("Unsupported", SddEvidenceGraphService.ResolveFileTarget(old, "src/Person.cs", old.SnapshotId.ToString(), "A", unsupported, unsupported.SnapshotId.ToString(), "F").State);
+    }
+
+    [Fact]
+    public void OldSnapshotWithoutTargetIndexRemainsNotAssessedAndBaselineHistorySurvivesSwitch()
+    {
+        var repository = new WorkspaceArtifactRepository();
+        repository.Set(WorkspaceArtifactType.Specification, "**REQ-1**: first");
+        repository.SetArtifactAuthority(repository.SddLifecycle.Revisions[0].RevisionId, "Baseline");
+        var first = repository.CaptureBaseline("v1");
+        repository.Set(WorkspaceArtifactType.Specification, "**REQ-1**: second");
+        repository.SetArtifactAuthority(repository.SddLifecycle.Revisions[^1].RevisionId, "Baseline");
+        repository.CaptureBaseline("v2");
+
+        var old = new BirkNext.Integrations.SourceTargetIndex { SnapshotId = Guid.NewGuid(), SnapshotFingerprint = "old" };
+        var next = new BirkNext.Integrations.SourceTargetIndex { SnapshotId = Guid.NewGuid(), SnapshotFingerprint = "next", FileInventoryComplete = true };
+        var result = SddEvidenceGraphService.ResolveFileTarget(old, "a.cs", old.SnapshotId.ToString(), "old", next, next.SnapshotId.ToString(), "next");
+        Assert.Equal("NotAssessed", result.State);
+        Assert.Contains(repository.SddLifecycle.Baselines, x => x.BaselineId == first.BaselineId && x.Status == "Historical");
+        Assert.Equal("v1", repository.SddLifecycle.Baselines.Single(x => x.BaselineId == first.BaselineId).Label);
+    }
+
+    [Fact]
+    public void NewSourceSnapshotReresolvesCodeLinkAndRetainsOldSnapshotEvidence()
+    {
+        var state = new SddLifecycleState();
+        var path = "src/Feature.cs";
+        var oldId = Guid.NewGuid();
+        var old = new BirkNext.Integrations.IqrSourceSnapshot { Id = oldId, Archive = new("a.zip", "A", 2), AnalyzedAt = DateTimeOffset.UtcNow,
+            TargetIndex = new() { SnapshotId = oldId, SnapshotFingerprint = "A", FileInventoryComplete = true, Files = [new(path, "same")] } };
+        SddEvidenceGraphService.RecordSourceSnapshot(state, old, "test");
+        SddEvidenceGraphService.BindCodeLinks(state, old, [new("link-1", "REQ-1", path, "Requirement", "Manual", DateTimeOffset.UtcNow)], ["REQ-1"]);
+
+        var newId = Guid.NewGuid();
+        var next = new BirkNext.Integrations.IqrSourceSnapshot { Id = newId, Archive = new("b.zip", "B", 2), AnalyzedAt = DateTimeOffset.UtcNow,
+            TargetIndex = new() { SnapshotId = newId, SnapshotFingerprint = "B", FileInventoryComplete = true, Files = [new(path, "same")] } };
+        SddEvidenceGraphService.RecordSourceSnapshot(state, next, "test");
+
+        var evidence = Assert.Single(state.ImplementationEvidence);
+        Assert.Equal("ResolvedExact", evidence.TargetValidation);
+        Assert.Equal("Current", evidence.Currentness);
+        Assert.Equal("A", evidence.TargetResolutions.Single(x => x.NewSnapshotId == newId.ToString()).OldFingerprint);
+        Assert.Contains(state.SourceSnapshots, x => x.SnapshotId == oldId.ToString() && x.Currentness == "Historical");
+    }
+
+    [Fact]
+    public void ExistingSnapshotCanBeEnrichedWithNewTargetIndexWithoutReplacingIdentity()
+    {
+        var lifecycle = new SddLifecycleState();
+        var id = Guid.NewGuid();
+        var snapshot = new BirkNext.Integrations.IqrSourceSnapshot { Id = id, Archive = new("source.zip", "fp", 1), AnalyzedAt = DateTimeOffset.UtcNow,
+            TargetIndex = new() { SnapshotId = id, SnapshotFingerprint = "fp", FileInventoryComplete = true, Files = [new("src/A.cs", "hash")] } };
+        SddEvidenceGraphService.RecordSourceSnapshot(lifecycle, snapshot with { TargetIndex = null }, "test");
+        SddEvidenceGraphService.RecordSourceSnapshot(lifecycle, snapshot, "test");
+        var source = Assert.Single(lifecycle.SourceSnapshots);
+        Assert.Equal(id.ToString(), source.SnapshotId);
+        Assert.NotNull(source.TargetIndex);
+        Assert.Equal("hash", Assert.Single(source.TargetIndex!.Files).ContentFingerprint);
+    }
+
+    [Fact]
     public void QuestionRequiresExplicitResolutionAndReference()
     {
         var lifecycle = new SddLifecycleState();
