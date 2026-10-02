@@ -458,18 +458,25 @@ public sealed class ApplicationMessagingEvidenceTests
     {
         await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var store = new ApplicationMessagingStore(db, NullLogger<ApplicationMessagingStore>.Instance);
-        (await store.AnalyzeAsync("dev", [("adapter.zip", Zip(Adapter)), ("common.zip", Zip(Common))])).Error.Should().BeNull();
+        var adapter = await Upload(db, "adapter.zip", Zip(Adapter));
+        var common = await Upload(db, "common.zip", Zip(Common));
+        (await store.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = adapter, RelatedSnapshotIds = [common] })).Error.Should().BeNull();
         var consumer = Catalog().Integrations.First(i => i.Consumer.DisplayName?.Contains("Hendelse", StringComparison.Ordinal) == true).Consumer.DisplayName;
         await store.BindAsync("dev", "M2LB.Hendelse.BiRK.Adapter", consumer);
         var result = await Engine().RunAsync(Catalog(), Request, IntegrationContractSet.Empty, [], await store.GetAsync("dev"), CancellationToken.None);
         var stored = JsonSerializer.Serialize(result);
 
         await store.BindAsync("dev", "M2LB.Hendelse.BiRK.Adapter", null);
-        (await store.AnalyzeAsync("dev", [("adapter.zip", Zip(Adapter))])).Error.Should().BeNull();
+        (await store.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = adapter })).Error.Should().BeNull();
         var reloaded = JsonSerializer.Deserialize<IntegrationReviewResult>(stored)!;
-        reloaded.ApplicationMessagingSnapshot!.Applications.Single(a => a.ApplicationId == "M2LB.Hendelse.BiRK.Adapter").Detection.Should().Be(MessagingDetection.Confirmed);
+        // Snapshots are never merged: the adapter's own snapshot shows Wolverine as Likely (its enabling package lives in the related snapshot,
+        // which is analyzed on its own and reported as a limitation) — the removed raw-archive path merged both repositories into Confirmed.
+        reloaded.ApplicationMessagingSnapshot!.Applications.Single(a => a.ApplicationId == "M2LB.Hendelse.BiRK.Adapter").Detection.Should().Be(MessagingDetection.Likely);
         reloaded.ApplicationMessagingSnapshot.Applications.Single(a => a.ApplicationId == "M2LB.Hendelse.BiRK.Adapter").BoundConsumer.Should().Be(consumer);
-        (await store.GetAsync("dev"))!.Applications.Single(a => a.ApplicationId == "M2LB.Hendelse.BiRK.Adapter").Detection.Should().Be(MessagingDetection.Likely, "the current evidence changed; the run did not");
+        reloaded.ApplicationMessagingSnapshot.SourceScope!.Related.Should().ContainSingle(r => r.SnapshotId == common, "the run keeps the exact scope it was made with");
+        var current = await store.GetAsync("dev");
+        current!.Applications.Single(a => a.ApplicationId == "M2LB.Hendelse.BiRK.Adapter").BoundConsumer.Should().BeNull("the current evidence changed; the run did not");
+        current.SourceScope!.Related.Should().BeEmpty();
     }
 
     [Fact]
@@ -477,11 +484,22 @@ public sealed class ApplicationMessagingEvidenceTests
     {
         await using var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
         var store = new ApplicationMessagingStore(db, NullLogger<ApplicationMessagingStore>.Instance);
-        await store.AnalyzeAsync("dev", [("adapter.zip", Zip(Adapter))]);
+        var adapter = await Upload(db, "adapter.zip", Zip(Adapter));
+        var common = await Upload(db, "common.zip", Zip(Common));
+        await store.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = adapter });
         await store.BindAsync("dev", "M2LB.Hendelse.BiRK.Adapter", "Hendelse BiRK Adapter");
-        await store.AnalyzeAsync("dev", [("adapter.zip", Zip(Adapter)), ("common.zip", Zip(Common))]);
+        await store.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = adapter, RelatedSnapshotIds = [common] });
         (await store.GetAsync("dev"))!.Applications.Single(a => a.ApplicationId == "M2LB.Hendelse.BiRK.Adapter").BoundConsumer.Should().Be("Hendelse BiRK Adapter");
-        (await store.AnalyzeAsync("dev", [("notes.zip", "not a zip"u8.ToArray())])).Error.Should().Contain("not a valid zip");
+        // An invalid archive is rejected where source is ingested — Source Analysis — so it never reaches application messaging.
+        (await new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db).AnalyzeAsync("dev", "source-analysis", "notes.zip", "not a zip"u8.ToArray())).Error.Should().Contain("invalid or unreadable");
+    }
+
+    /// <summary>The one ingestion path: upload to Source Analysis; messaging reads the resulting snapshot through its source scope.</summary>
+    private static async Task<Guid> Upload(AppDbContext db, string name, byte[] bytes)
+    {
+        var (snapshot, error) = await new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db).AnalyzeAsync("dev", "source-analysis", name, bytes);
+        error.Should().BeNull();
+        return snapshot!.Id;
     }
 
     [Fact]

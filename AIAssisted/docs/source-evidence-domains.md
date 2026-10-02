@@ -108,3 +108,24 @@ Consumers must not re-derive "`-qa-` means QA" or "x.servicebus.windows.net mean
 - Each run stores `SourceInfrastructureComparisons`, bound to the run's snapshot, fingerprint and analyzer version.
 - The evidence source is reported as `SourceInfrastructure` ("Infrastructure as Code (Source Analysis, declared)").
 - The seeded DEV values from a developer-side Terraform audit stay **Configured**. Their provenance is "Audited infrastructure configuration", and they never get a fake snapshot id.
+
+## Source-consumer audit (2026-10-02)
+
+The only source ingestion is `POST api/source-analysis/snapshots`, which runs `IqrSourceStore.AnalyzeAsync`. That method validates the archive once with `IqrSourceArchiveReader`, then runs every analyzer in a single pass and inserts one immutable `IqrSourceSnapshot`.
+
+Guard tests (`SourceIngestionOwnershipTests`, plus the Terraform guard) fail the build if any of these appear:
+- a second multipart source upload;
+- a new archive reader;
+- a review interface that takes raw archives.
+
+| Feature | Source dependency | Status |
+|---|---|---|
+| Source Analysis (Architecture, Database, Observability, Infrastructure, Configuration, CI/CD, Contracts) | canonical | COMPLIANT |
+| Dependency Review | snapshot scope (primary + related). The SBOM/lock and Renovate-override inputs are not source repositories. `RunAsync(archives)` is a documented test harness. | COMPLIANT |
+| Security Classification | snapshot scope. Its specialized Roslyn analyzer gets the validated upload bytes at ingestion. | COMPLIANT / JUSTIFIED SPECIALIZED |
+| Security Expectations | `SecurityExpectationsEvidence` plus normalized Configuration. The legacy fallback reads the same snapshot's stored Architecture. | COMPLIANT |
+| IQR | shared domains via `IqrSourceDomainsReview`; configured-vs-source comparison; runs embed their exact snapshots. Its Wolverine/SCIM/path analyzers are specialized. | COMPLIANT / JUSTIFIED SPECIALIZED |
+| Application messaging and SCIM (IQR) | snapshot scope only | MIGRATED: the dormant raw-archive `AnalyzeAsync(archives)` overloads were removed |
+| Target Environment, Authentication, Endpoint/Browser Discovery | runtime/configured. URL-type classification is not a source environment. Event Hub settings hints use the shared suggestions. | RUNTIME-ONLY / CONFIGURED-STATE |
+| API QR, FQR, Critical E2E | no source calls and no prerequisite; trusted SDL/contract artifacts are separate inputs | RUNTIME-ONLY |
+| Dashboard, exports | read stored results | COMPLIANT |

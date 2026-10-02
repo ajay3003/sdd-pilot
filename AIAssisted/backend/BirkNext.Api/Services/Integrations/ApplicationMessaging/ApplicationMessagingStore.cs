@@ -10,7 +10,6 @@ namespace BirkNext.Api.Services.Integrations.ApplicationMessaging;
 public interface IApplicationMessagingStore
 {
     Task<ApplicationMessagingEvidenceSet?> GetAsync(string environmentId, CancellationToken ct = default);
-    Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default);
     /// <summary>Source Analysis snapshots for application messaging and, for a chosen scope, its candidates and problems. Read-only.</summary>
     Task<ReviewSourceOptions> SourceScopeAsync(string environmentId, ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     /// <summary>Builds the environment's evidence set from exactly these Source Analysis snapshots (no upload, no substitution).</summary>
@@ -89,35 +88,6 @@ public sealed class ApplicationMessagingStore(AppDbContext db, ILogger<Applicati
     {
         var record = await db.ApplicationMessagingEvidence.AsNoTracking().FirstOrDefaultAsync(r => r.EnvironmentId == environmentId, ct);
         return record is null ? null : JsonSerializer.Deserialize<ApplicationMessagingEvidenceSet>(record.EvidenceJson, Json);
-    }
-
-    public async Task<(ApplicationMessagingEvidenceSet? Set, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(environmentId)) return (null, "An analysis must belong to a Target Environment.");
-        if (archives.Count == 0) return (null, "Upload at least one source archive (.zip).");
-        var metadata = new List<SourceArchive>();
-        var files = new List<SourceFile>();
-        foreach (var (name, bytes) in archives)
-        {
-            var (archive, read, error) = SourceArchiveReader.Read(name, bytes);
-            if (error is not null) return (null, error);
-            metadata.Add(archive!);
-            files.AddRange(read);
-        }
-        var set = WolverineSourceAnalyzer.Analyze(environmentId, metadata, files, DateTimeOffset.UtcNow);
-        var previous = await GetAsync(environmentId, ct);
-        set = set with
-        {
-            Applications = set.Applications.Select(a => a with { BoundConsumer = previous?.Applications.FirstOrDefault(p => p.ApplicationId == a.ApplicationId)?.BoundConsumer }).ToList(),
-        };
-        await SaveAsync(set, ct);
-        foreach (var app in set.Applications)
-            logger.LogInformation(
-                "Application messaging analysis for {EnvironmentId}: {Application} Wolverine {Detection}, {Handlers} handler(s), {Routes} route(s), retry policy {Retry}, outbox {Outbox}.",
-                environmentId, app.ApplicationId, app.Detection, app.Handlers.Count, app.Routes.Count, app.RetryPolicy, app.Outbox);
-        logger.LogInformation("Application messaging analysis for {EnvironmentId}: {Archives} archive(s) ({Hashes}), {Files} file(s), {Applications} application(s).",
-            environmentId, metadata.Count, string.Join(",", metadata.Select(m => m.Sha256[..12])), files.Count, set.Applications.Count);
-        return (set, null);
     }
 
     public async Task<ApplicationMessagingEvidenceSet?> BindAsync(string environmentId, string applicationId, string? consumer, CancellationToken ct = default)

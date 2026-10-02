@@ -15,7 +15,6 @@ public interface IScimEvidenceService
     Task<BirkNext.SourceEvidence.ReviewSourceOptions> SourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest? scope, CancellationToken ct = default);
     /// <summary>Records the SCIM source evidence of exactly this Source Analysis snapshot (no upload, no substitution).</summary>
     Task<(ScimSourceEvidence? Evidence, string? Error)> UseSourceScopeAsync(string environmentId, BirkNext.SourceEvidence.ReviewSourceScopeRequest scope, CancellationToken ct = default);
-    Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default);
     /// <summary>"Run safe SCIM checks": stored source evidence + safe GET checks + Service Bus correlation. Stored as an immutable snapshot.</summary>
     Task<(ScimEvidenceCheck? Check, string? Error)> RunSafeChecksAsync(string environmentId, string platformId, string? environmentType, string? targetUrl, CancellationToken ct = default);
     /// <summary>The SCIM part of an Integration Quality Review run (not stored separately: the review result is its snapshot).</summary>
@@ -95,31 +94,6 @@ public sealed class ScimEvidenceService(AppDbContext db, IIntegrationCatalogServ
             Source = await SourceAsync(environmentId, ct), Latest = parsed.FirstOrDefault(),
             History = parsed.Select(c => new ScimCheckSummary(c.RunId, c.CompletedAt, c.PlatformId, c.OverallState, c.Findings.Count)).ToList(),
         };
-    }
-
-    public async Task<(ScimSourceEvidence? Evidence, string? Error)> AnalyzeAsync(string environmentId, IReadOnlyList<(string FileName, byte[] Bytes)> archives, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(environmentId)) return (null, "An analysis must belong to a Target Environment.");
-        if (archives.Count == 0) return (null, "Upload at least one source archive (.zip).");
-        var metadata = new List<SourceArchive>();
-        var code = new List<ApplicationMessaging.SourceFile>();
-        var documents = new List<ApplicationMessaging.SourceFile>();
-        var settings = new List<ScimSettingsFile>();
-        foreach (var (name, bytes) in archives)
-        {
-            var (archive, files, error) = ScimSourceReader.Read(name, bytes);
-            if (error is not null) return (null, error);
-            metadata.Add(archive!);
-            code.AddRange(files.Code);
-            documents.AddRange(files.Documents);
-            settings.AddRange(files.Settings);
-        }
-        var evidence = ScimSourceAnalyzer.Analyze(environmentId, metadata, new ScimSourceSet(code, documents, settings), DateTimeOffset.UtcNow);
-        db.ScimEvidence.Add(new ScimEvidenceRecord { Id = Guid.NewGuid(), EnvironmentId = environmentId, Kind = SourceKind, CreatedAt = evidence.AnalyzedAt, Json = JsonSerializer.Serialize(evidence, Json) });
-        await db.SaveChangesAsync(ct);
-        logger.LogInformation("SCIM source analysis for {EnvironmentId}: detected {Detected}, {Operations} operation(s), {Facts} fact(s) ({NeedsReview} need review), {Requirements} requirement(s), archives {Hashes}.",
-            environmentId, evidence.Detected, evidence.Operations.Count, evidence.Facts.Count, evidence.NeedsReview.Count(), evidence.Requirements.Count, string.Join(",", metadata.Select(m => m.Sha256[..12])));
-        return (evidence, null);
     }
 
     public async Task<(ScimEvidenceCheck? Check, string? Error)> RunSafeChecksAsync(string environmentId, string platformId, string? environmentType, string? targetUrl, CancellationToken ct = default)

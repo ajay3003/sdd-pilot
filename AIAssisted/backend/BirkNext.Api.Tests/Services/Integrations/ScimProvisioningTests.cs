@@ -754,9 +754,13 @@ public sealed class ScimProvisioningTests
         var probe = new FixedProbe(new ScimRuntimeEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "No base URL." });
         var service = new ScimEvidenceService(db, catalog, probe, NullLogger<ScimEvidenceService>.Instance);
 
-        var (first, error) = await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Adapter()))]);
+        // Source enters through Source Analysis only; SCIM records the evidence of the exact snapshot it is pointed at.
+        var sources = new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db);
+        var (s1, _) = await sources.AnalyzeAsync("dev", "source-analysis", "M2LB.zip", Zip(Adapter()));
+        var (s2, _) = await sources.AnalyzeAsync("dev", "source-analysis", "M2LB.zip", Zip(Adapter(new Variant { HealthChecks = true })));
+        var (first, error) = await service.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = s1!.Id });
         error.Should().BeNull();
-        await service.AnalyzeAsync("dev", [("M2LB.zip", Zip(Adapter(new Variant { HealthChecks = true })))]);
+        await service.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = s2!.Id });
         var (check, checkError) = await service.RunSafeChecksAsync("dev", M2lbDevIntegrationSeed.ScimPlatformId, "Development", null);
 
         checkError.Should().BeNull();
@@ -847,11 +851,12 @@ public sealed class ScimProvisioningTests
         error.Should().BeNull();
 
         var (evidence, useError) = await service.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = snapshot!.Id });
-        var (direct, _) = await service.AnalyzeAsync("other", [("M2LB.zip", Zip(Adapter()))]);
+        var (archive, files, _) = BirkNext.Api.Services.Integrations.Scim.ScimSourceReader.Read("M2LB.zip", Zip(Adapter()));
+        var direct = BirkNext.Api.Services.Integrations.Scim.ScimSourceAnalyzer.Analyze("other", [archive!], files, DateTimeOffset.UtcNow);
 
         useError.Should().BeNull();
         evidence!.Detected.Should().BeTrue();
-        evidence.Facts.Select(f => (f.Id, f.State)).Should().Equal(direct!.Facts.Select(f => (f.Id, f.State)), "the same analyzer read the same archive");
+        evidence.Facts.Select(f => (f.Id, f.State)).Should().Equal(direct.Facts.Select(f => (f.Id, f.State)), "the same analyzer read the same archive");
         evidence.SourceScope!.Primary.SnapshotId.Should().Be(snapshot.Id);
         (await service.OverviewAsync("dev")).Source!.SourceScope!.Primary.Fingerprint.Should().Be(snapshot.Archive.Sha256);
         (await service.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = snapshot.Id, RelatedSnapshotIds = [Guid.NewGuid()] })).Error.Should().Contain("one source snapshot");
