@@ -253,6 +253,8 @@ public enum PipelineStepKind
 {
     Restore, Build, UnitTest, IntegrationTest, FrontendTest, E2ETest, AccessibilityTest, Test, Coverage, StaticAnalysis, DependencyScan, SecurityScan, Sbom,
     ContainerBuild, ContainerPush, Publish, InfrastructureDeploy, InfrastructurePlan, ApplicationDeploy, DatabaseMigration, SecretRetrieval, Template, Other,
+    // Analyzer v2: finer validation kinds and delivery mechanics (appended; earlier values keep their meaning).
+    SmokeTest, ApiTest, ContractTest, PerformanceTest, HealthCheck, ArtifactDownload, Rollback, ManualApproval,
 }
 
 /// <summary>A trigger as written. Path filters show which source changes start the pipeline — not that it ran.</summary>
@@ -266,9 +268,72 @@ public sealed record PipelineTrigger
     public List<string> PathsExclude { get; init; } = [];
     public string? Schedule { get; init; }
     public int Line { get; init; }
+    /// <summary>Analyzer v2: for Type "none", which trigger key is switched off ("push" for trigger: none, "pull-request" for pr: none).</summary>
+    public string? Disables { get; init; }
 }
 
-public sealed record PipelineStage(string Name, string? DisplayName, List<string> DependsOn, bool Deployment, string? Environment, int Line);
+public sealed record PipelineStage(string Name, string? DisplayName, List<string> DependsOn, bool Deployment, string? Environment, int Line)
+{
+    /// <summary>False when the stage has no dependsOn key: Azure Pipelines then runs it after the previous stage. "dependsOn: []" is declared and empty (parallel).</summary>
+    public bool DependsOnDeclared { get; init; }
+    /// <summary>The condition as written (safe expression text), null for the default succeeded().</summary>
+    public string? Condition { get; init; }
+    /// <summary>Position among the stages of this file (0-based), the order Azure uses for implicit dependencies.</summary>
+    public int Order { get; init; }
+}
+
+/// <summary>A job as written: its stage, explicit dependencies (jobs in a stage run in parallel unless dependsOn says otherwise), condition and
+/// continueOnError. Deployment jobs name an environment. Analyzer v2.</summary>
+public sealed record PipelineJob
+{
+    public string Name { get; init; } = "";
+    public string? DisplayName { get; init; }
+    public string? Stage { get; init; }
+    public List<string> DependsOn { get; init; } = [];
+    public bool DependsOnDeclared { get; init; }
+    public string? Condition { get; init; }
+    public bool Deployment { get; init; }
+    public string? Environment { get; init; }
+    public string? Strategy { get; init; }
+    public bool ContinueOnError { get; init; }
+    public int Order { get; init; }
+    public int Line { get; init; }
+}
+
+/// <summary>An artifact a step consumes: Source "current" (this run), a pipeline-resource alias, or "pipeline:{name}" (a specific pipeline). Analyzer v2.</summary>
+public sealed record PipelineArtifactUse(string Artifact, string Source);
+
+/// <summary>A pipeline or repository resource as declared. A pipeline resource with a trigger starts this pipeline when that pipeline completes. Analyzer v2.</summary>
+public sealed record PipelineResource
+{
+    /// <summary>"pipeline" or "repository".</summary>
+    public string Kind { get; init; } = "";
+    public string Alias { get; init; } = "";
+    /// <summary>The CI system's pipeline name (pipeline resources) or repository name (repository resources) as written.</summary>
+    public string Source { get; init; } = "";
+    public string? Project { get; init; }
+    public string? RepositoryType { get; init; }
+    public string? Ref { get; init; }
+    public bool TriggerDeclared { get; init; }
+    public List<string> TriggerBranches { get; init; } = [];
+    public int Line { get; init; }
+}
+
+/// <summary>Where a template is used: level (stages/jobs/steps/extends/variables), the including stage/job, whether it resolved to a file in the
+/// snapshot, the repository alias for "file@alias", and literal parameter values (safe scalars only). Analyzer v2.</summary>
+public sealed record PipelineTemplateUse
+{
+    public string Template { get; init; } = "";
+    public string? ResolvedPath { get; init; }
+    public string? RepositoryAlias { get; init; }
+    public string Level { get; init; } = "";
+    public string? Stage { get; init; }
+    public string? Job { get; init; }
+    public Dictionary<string, string> Parameters { get; init; } = [];
+    public int Line { get; init; }
+    public int Order { get; init; }
+    public bool Resolved => ResolvedPath is not null;
+}
 
 public sealed record PipelineStep
 {
@@ -285,6 +350,14 @@ public sealed record PipelineStep
     public List<string> Targets { get; init; } = [];
     public int Line { get; init; }
     public string ExecutionState { get; init; } = SourceDomainText.StepNotExecuted;
+    /// <summary>Analyzer v2: the step's condition (safe expression text), continueOnError, deployment-strategy phase, artifacts it publishes and consumes.</summary>
+    public string? Condition { get; init; }
+    public bool ContinueOnError { get; init; }
+    public string? StrategyPhase { get; init; }
+    public List<string> ArtifactsPublished { get; init; } = [];
+    public List<PipelineArtifactUse> ArtifactsConsumed { get; init; } = [];
+    /// <summary>Position among the steps of its job (0-based): steps of a job run in order.</summary>
+    public int Order { get; init; }
 }
 
 public sealed record PipelineDefinition
@@ -307,6 +380,14 @@ public sealed record PipelineDefinition
     public List<string> VariableNames { get; init; } = [];
     public bool UsesFederatedCredentials { get; init; }
     public bool ApprovalsDeclared { get; init; }
+    /// <summary>Analyzer v2: jobs with dependencies/conditions, pipeline and repository resources, and every template use.</summary>
+    public List<PipelineJob> JobDetails { get; init; } = [];
+    public List<PipelineResource> Resources { get; init; } = [];
+    public List<PipelineTemplateUse> TemplateUses { get; init; } = [];
+    /// <summary>Template parameter names this file declares (template files).</summary>
+    public List<string> Parameters { get; init; } = [];
+    /// <summary>Literal (safe) default values of declared template parameters.</summary>
+    public Dictionary<string, string> ParameterDefaults { get; init; } = [];
 }
 
 public sealed record PipelineEvidence : SourceDomainResult

@@ -1,0 +1,318 @@
+{
+  "path": "src/Shop.Common/Money.cs",
+  "pipelines": [
+    {
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "triggers": "Yes",
+      "basis": "path filter includes \u0060src/Shop.Common/Money.cs\u0060",
+      "deployments": [
+        {
+          "environment": "shop-dev",
+          "before": [
+            {
+              "category": "Build",
+              "state": "Gates",
+              "label": "dotnet build",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "Build",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/shop-build.yml",
+                "line": 24,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "Build",
+                "step": "script",
+                "condition": null,
+                "templateOrigin": null,
+                "note": null
+              }
+            },
+            {
+              "category": "DependencyScan",
+              "state": "SoftGate",
+              "label": "Weekly dependency scan",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "DependencyScan",
+              "condition": "eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)",
+              "evidence": {
+                "file": "shop/pipelines/shop-build.yml",
+                "line": 34,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "DependencyScan",
+                "step": "Weekly dependency scan",
+                "condition": null,
+                "templateOrigin": null,
+                "note": null
+              }
+            },
+            {
+              "category": "Unit",
+              "state": "Gates",
+              "label": "Run tests",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "Build",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/templates/dotnet-tests.yml",
+                "line": 5,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "Build",
+                "step": "Run tests",
+                "condition": null,
+                "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+                "note": null
+              }
+            }
+          ]
+        },
+        {
+          "environment": "QA",
+          "before": [
+            {
+              "category": "Build",
+              "state": "Gates",
+              "label": "dotnet build",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "Build",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/shop-build.yml",
+                "line": 24,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "Build",
+                "step": "script",
+                "condition": null,
+                "templateOrigin": null,
+                "note": null
+              }
+            },
+            {
+              "category": "DependencyScan",
+              "state": "SoftGate",
+              "label": "Weekly dependency scan",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "DependencyScan",
+              "condition": "eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)",
+              "evidence": {
+                "file": "shop/pipelines/shop-build.yml",
+                "line": 34,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "DependencyScan",
+                "step": "Weekly dependency scan",
+                "condition": null,
+                "templateOrigin": null,
+                "note": null
+              }
+            },
+            {
+              "category": "InfrastructurePlan",
+              "state": "Gates",
+              "label": "terraform init/plan",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "InfraQA",
+              "job": "Terraform",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/templates/terraform.yml",
+                "line": 5,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "InfraQA",
+                "job": "Terraform",
+                "step": "script",
+                "condition": null,
+                "templateOrigin": "shop/pipelines/templates/terraform.yml",
+                "note": null
+              }
+            },
+            {
+              "category": "InfrastructurePlan",
+              "state": "Gates",
+              "label": "terraform init/plan",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "InfraQA",
+              "job": "Terraform",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/templates/terraform.yml",
+                "line": 6,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "InfraQA",
+                "job": "Terraform",
+                "step": "script",
+                "condition": null,
+                "templateOrigin": "shop/pipelines/templates/terraform.yml",
+                "note": null
+              }
+            },
+            {
+              "category": "Unit",
+              "state": "Gates",
+              "label": "Run tests",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "Build",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/templates/dotnet-tests.yml",
+                "line": 5,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "Build",
+                "step": "Run tests",
+                "condition": null,
+                "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+                "note": null
+              }
+            }
+          ]
+        },
+        {
+          "environment": "shop-qa",
+          "before": [
+            {
+              "category": "Build",
+              "state": "Gates",
+              "label": "dotnet build",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "Build",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/shop-build.yml",
+                "line": 24,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "Build",
+                "step": "script",
+                "condition": null,
+                "templateOrigin": null,
+                "note": null
+              }
+            },
+            {
+              "category": "DependencyScan",
+              "state": "SoftGate",
+              "label": "Weekly dependency scan",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "DependencyScan",
+              "condition": "eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)",
+              "evidence": {
+                "file": "shop/pipelines/shop-build.yml",
+                "line": 34,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "DependencyScan",
+                "step": "Weekly dependency scan",
+                "condition": null,
+                "templateOrigin": null,
+                "note": null
+              }
+            },
+            {
+              "category": "InfrastructurePlan",
+              "state": "Gates",
+              "label": "terraform init/plan",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "InfraQA",
+              "job": "Terraform",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/templates/terraform.yml",
+                "line": 5,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "InfraQA",
+                "job": "Terraform",
+                "step": "script",
+                "condition": null,
+                "templateOrigin": "shop/pipelines/templates/terraform.yml",
+                "note": null
+              }
+            },
+            {
+              "category": "InfrastructurePlan",
+              "state": "Gates",
+              "label": "terraform init/plan",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "InfraQA",
+              "job": "Terraform",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/templates/terraform.yml",
+                "line": 6,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "InfraQA",
+                "job": "Terraform",
+                "step": "script",
+                "condition": null,
+                "templateOrigin": "shop/pipelines/templates/terraform.yml",
+                "note": null
+              }
+            },
+            {
+              "category": "Unit",
+              "state": "Gates",
+              "label": "Run tests",
+              "pipeline": "shop/pipelines/shop-build.yml",
+              "stage": "Build",
+              "job": "Build",
+              "condition": null,
+              "evidence": {
+                "file": "shop/pipelines/templates/dotnet-tests.yml",
+                "line": 5,
+                "pipeline": "shop/pipelines/shop-build.yml",
+                "stage": "Build",
+                "job": "Build",
+                "step": "Run tests",
+                "condition": null,
+                "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+                "note": null
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pipeline": "shop/pipelines/pr-validation.yml",
+      "pipelineName": "pr-validation",
+      "triggers": "No",
+      "basis": "path filter on pull requests does not include it (includes src/Shop.Api, tests)",
+      "deployments": []
+    },
+    {
+      "pipeline": "shop/pipelines/shop-release.yml",
+      "pipelineName": "shop-release",
+      "triggers": "No",
+      "basis": "no automatic change trigger (manual start)",
+      "deployments": [
+        {
+          "environment": "shop-prod",
+          "before": []
+        }
+      ]
+    },
+    {
+      "pipeline": "shop/pipelines/worker-build.yml",
+      "pipelineName": "worker-build",
+      "triggers": "No",
+      "basis": "path filter on pushes does not include it (includes src/Shop.Worker)",
+      "deployments": []
+    }
+  ],
+  "notes": [
+    "Branch filters are not evaluated here: a change must also be on a branch the trigger includes.",
+    "Pull-request triggers in YAML do not apply to Azure Repos, where branch policies start PR validation."
+  ]
+}

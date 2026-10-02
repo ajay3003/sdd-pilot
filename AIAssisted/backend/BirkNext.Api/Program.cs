@@ -423,6 +423,11 @@ builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironm
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentSnapshotStore>();
 builder.Services.AddScoped<BirkNext.Api.Services.AzureEnvironment.IAzureEnvironmentEvidenceProvider>(sp => BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentEvidenceProvider.FromConfiguration(
     sp.GetRequiredService<BirkNext.Api.Services.AzureEnvironment.AzureEnvironmentSnapshotStore>(), sp.GetRequiredService<IConfiguration>()));
+// Pipeline Review: delivery-flow interpretation over Source Analysis CI/CD evidence (no YAML parsing here); optional read-only Azure DevOps metadata.
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient<BirkNext.Api.Services.PipelineReview.IPipelineMetadataSource, BirkNext.Api.Services.PipelineReview.AzureDevOpsPipelineMetadataSource>(client => client.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false, UseCookies = false });
+builder.Services.AddScoped<BirkNext.Api.Services.PipelineReview.IPipelineReviewService, BirkNext.Api.Services.PipelineReview.PipelineReviewService>();
 // Active CDC tests (Phase 1): the one Event Hub SEND path, off unless ActiveCdcTests:Enabled; DEV/QA + enrolled destinations only, instance identity only.
 builder.Services.AddSingleton(sp => new BirkNext.Api.Services.ActiveCdcTests.ActiveCdcPolicy(BirkNext.Api.Services.ActiveCdcTests.ActiveCdcOptions.From(sp.GetRequiredService<IConfiguration>())));
 builder.Services.AddSingleton<BirkNext.Api.Services.ActiveCdcTests.IEventHubTestProducerFactory, BirkNext.Api.Services.ActiveCdcTests.AzureEventHubTestProducerFactory>();

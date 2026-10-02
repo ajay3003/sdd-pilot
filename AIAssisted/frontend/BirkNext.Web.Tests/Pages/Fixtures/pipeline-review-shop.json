@@ -1,0 +1,2565 @@
+{
+  "sourceSnapshotId": "5a0b0000-0000-0000-0000-000000000001",
+  "sourceFingerprint": "eeadb3bd39e7e6e426ef53efabf8858acc97d0863d080f4ee64656542e25c573",
+  "archiveName": "shop.zip",
+  "sourceAnalyzedAt": "2026-10-02T10:00:00+00:00",
+  "ciCdAnalyzerVersion": 2,
+  "rulesVersion": 1,
+  "state": "Reviewed",
+  "stateReason": "",
+  "pipelines": [
+    {
+      "id": "shop/pipelines/pr-validation.yml",
+      "name": "pr-validation",
+      "file": "shop/pipelines/pr-validation.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": false,
+      "role": "Pull-request validation",
+      "triggers": [
+        {
+          "kind": "none",
+          "text": "No push trigger (\u0060trigger: none\u0060)",
+          "branches": [],
+          "pathsInclude": [],
+          "pathsExclude": [],
+          "schedule": null
+        },
+        {
+          "kind": "pull-request",
+          "text": "Pull requests to \u0060main\u0060 (only changes under \u0060src/Shop.Api\u0060, \u0060tests\u0060)",
+          "branches": [
+            "main"
+          ],
+          "pathsInclude": [
+            "src/Shop.Api",
+            "tests"
+          ],
+          "pathsExclude": [],
+          "schedule": null
+        }
+      ],
+      "manualOnly": false,
+      "stages": 1,
+      "jobs": 1,
+      "environments": [],
+      "artifacts": [],
+      "definitionName": null
+    },
+    {
+      "id": "shop/pipelines/shop-build.yml",
+      "name": "shop-build",
+      "file": "shop/pipelines/shop-build.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": false,
+      "role": "Continuous integration",
+      "triggers": [
+        {
+          "kind": "push",
+          "text": "Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060)",
+          "branches": [
+            "main"
+          ],
+          "pathsInclude": [
+            "src",
+            "infra"
+          ],
+          "pathsExclude": [],
+          "schedule": null
+        }
+      ],
+      "manualOnly": false,
+      "stages": 6,
+      "jobs": 7,
+      "environments": [
+        "shop-dev",
+        "shop-qa"
+      ],
+      "artifacts": [
+        "app"
+      ],
+      "definitionName": null
+    },
+    {
+      "id": "shop/pipelines/shop-release.yml",
+      "name": "shop-release",
+      "file": "shop/pipelines/shop-release.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": false,
+      "role": "Manual",
+      "triggers": [
+        {
+          "kind": "none",
+          "text": "No push trigger (\u0060trigger: none\u0060)",
+          "branches": [],
+          "pathsInclude": [],
+          "pathsExclude": [],
+          "schedule": null
+        }
+      ],
+      "manualOnly": true,
+      "stages": 2,
+      "jobs": 2,
+      "environments": [
+        "shop-prod"
+      ],
+      "artifacts": [
+        "app"
+      ],
+      "definitionName": null
+    },
+    {
+      "id": "shop/pipelines/worker-build.yml",
+      "name": "worker-build",
+      "file": "shop/pipelines/worker-build.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": false,
+      "role": "Continuous integration",
+      "triggers": [
+        {
+          "kind": "push",
+          "text": "Pushes to \u0060main\u0060 (only changes under \u0060src/Shop.Worker\u0060)",
+          "branches": [
+            "main"
+          ],
+          "pathsInclude": [
+            "src/Shop.Worker"
+          ],
+          "pathsExclude": [],
+          "schedule": null
+        }
+      ],
+      "manualOnly": false,
+      "stages": 0,
+      "jobs": 1,
+      "environments": [],
+      "artifacts": [],
+      "definitionName": null
+    },
+    {
+      "id": "shop/pipelines/templates/deploy-webapp.yml",
+      "name": "deploy-webapp",
+      "file": "shop/pipelines/templates/deploy-webapp.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": true,
+      "role": "Template",
+      "triggers": [],
+      "manualOnly": false,
+      "stages": 0,
+      "jobs": 0,
+      "environments": [],
+      "artifacts": [],
+      "definitionName": null
+    },
+    {
+      "id": "shop/pipelines/templates/dotnet-tests.yml",
+      "name": "dotnet-tests",
+      "file": "shop/pipelines/templates/dotnet-tests.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": true,
+      "role": "Template",
+      "triggers": [],
+      "manualOnly": false,
+      "stages": 0,
+      "jobs": 0,
+      "environments": [],
+      "artifacts": [],
+      "definitionName": null
+    },
+    {
+      "id": "shop/pipelines/templates/terraform.yml",
+      "name": "terraform",
+      "file": "shop/pipelines/templates/terraform.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": true,
+      "role": "Template",
+      "triggers": [],
+      "manualOnly": false,
+      "stages": 0,
+      "jobs": 0,
+      "environments": [],
+      "artifacts": [],
+      "definitionName": null
+    },
+    {
+      "id": "shop/pipelines/templates/unused.yml",
+      "name": "unused",
+      "file": "shop/pipelines/templates/unused.yml",
+      "platform": "AzurePipelines",
+      "isTemplate": true,
+      "role": "Template",
+      "triggers": [],
+      "manualOnly": false,
+      "stages": 0,
+      "jobs": 0,
+      "environments": [],
+      "artifacts": [],
+      "definitionName": null
+    }
+  ],
+  "nodes": [
+    {
+      "id": "p:shop/pipelines/pr-validation.yml",
+      "kind": "Pipeline",
+      "label": "pr-validation",
+      "pipelineId": "shop/pipelines/pr-validation.yml",
+      "evidence": {
+        "file": "shop/pipelines/pr-validation.yml",
+        "line": 0,
+        "pipeline": "shop/pipelines/pr-validation.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/pr-validation.yml|Validate",
+      "kind": "Stage",
+      "label": "Validate",
+      "pipelineId": "shop/pipelines/pr-validation.yml",
+      "evidence": {
+        "file": "shop/pipelines/pr-validation.yml",
+        "line": 13,
+        "pipeline": "shop/pipelines/pr-validation.yml",
+        "stage": "Validate",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "p:shop/pipelines/shop-build.yml",
+      "kind": "Pipeline",
+      "label": "shop-build",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 0,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-build.yml|Build",
+      "kind": "Stage",
+      "label": "Build",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 20,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "Build",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-build.yml|DeployDev",
+      "kind": "Stage",
+      "label": "Deploy DEV",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 37,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "DeployDev",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-build.yml|IntegrationTests",
+      "kind": "Stage",
+      "label": "IntegrationTests",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 44,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "IntegrationTests",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-build.yml|InfraQA",
+      "kind": "Stage",
+      "label": "Infrastructure QA",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 51,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "InfraQA",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-build.yml|DeployQA",
+      "kind": "Stage",
+      "label": "Deploy QA",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 60,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "DeployQA",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-build.yml|Compliance",
+      "kind": "Stage",
+      "label": "Compliance",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 69,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "Compliance",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "a:shop/pipelines/shop-build.yml|app",
+      "kind": "Artifact",
+      "label": "app",
+      "pipelineId": "shop/pipelines/shop-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 29,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "Build",
+        "job": "Build",
+        "step": "publish artifact",
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "p:shop/pipelines/shop-release.yml",
+      "kind": "Pipeline",
+      "label": "shop-release",
+      "pipelineId": "shop/pipelines/shop-release.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-release.yml",
+        "line": 0,
+        "pipeline": "shop/pipelines/shop-release.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-release.yml|BuildProd",
+      "kind": "Stage",
+      "label": "BuildProd",
+      "pipelineId": "shop/pipelines/shop-release.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-release.yml",
+        "line": 9,
+        "pipeline": "shop/pipelines/shop-release.yml",
+        "stage": "BuildProd",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "s:shop/pipelines/shop-release.yml|Production",
+      "kind": "Stage",
+      "label": "Production",
+      "pipelineId": "shop/pipelines/shop-release.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-release.yml",
+        "line": 16,
+        "pipeline": "shop/pipelines/shop-release.yml",
+        "stage": "Production",
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "a:shop/pipelines/shop-release.yml|app",
+      "kind": "Artifact",
+      "label": "app",
+      "pipelineId": "shop/pipelines/shop-release.yml",
+      "evidence": {
+        "file": "shop/pipelines/shop-release.yml",
+        "line": 14,
+        "pipeline": "shop/pipelines/shop-release.yml",
+        "stage": "BuildProd",
+        "job": "Build",
+        "step": "publish artifact",
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "p:shop/pipelines/worker-build.yml",
+      "kind": "Pipeline",
+      "label": "worker-build",
+      "pipelineId": "shop/pipelines/worker-build.yml",
+      "evidence": {
+        "file": "shop/pipelines/worker-build.yml",
+        "line": 0,
+        "pipeline": "shop/pipelines/worker-build.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "e:shop-dev",
+      "kind": "Environment",
+      "label": "shop-dev",
+      "pipelineId": null,
+      "evidence": null
+    },
+    {
+      "id": "e:QA",
+      "kind": "Environment",
+      "label": "QA",
+      "pipelineId": null,
+      "evidence": null
+    },
+    {
+      "id": "e:shop-qa",
+      "kind": "Environment",
+      "label": "shop-qa",
+      "pipelineId": null,
+      "evidence": null
+    },
+    {
+      "id": "e:shop-prod",
+      "kind": "Environment",
+      "label": "shop-prod",
+      "pipelineId": null,
+      "evidence": null
+    }
+  ],
+  "edges": [
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|Build",
+      "toId": "s:shop/pipelines/shop-build.yml|DeployDev",
+      "kind": "DependsOn",
+      "state": "Confirmed",
+      "basis": "dependsOn"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|DeployDev",
+      "toId": "s:shop/pipelines/shop-build.yml|IntegrationTests",
+      "kind": "DependsOn",
+      "state": "Confirmed",
+      "basis": "dependsOn"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|Build",
+      "toId": "s:shop/pipelines/shop-build.yml|InfraQA",
+      "kind": "DependsOn",
+      "state": "Confirmed",
+      "basis": "dependsOn"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|DeployDev",
+      "toId": "s:shop/pipelines/shop-build.yml|DeployQA",
+      "kind": "DependsOn",
+      "state": "Confirmed",
+      "basis": "dependsOn"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|InfraQA",
+      "toId": "s:shop/pipelines/shop-build.yml|DeployQA",
+      "kind": "DependsOn",
+      "state": "Confirmed",
+      "basis": "dependsOn"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|Build",
+      "toId": "s:shop/pipelines/shop-build.yml|Compliance",
+      "kind": "DependsOn",
+      "state": "Confirmed",
+      "basis": "dependsOn"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|Build",
+      "toId": "a:shop/pipelines/shop-build.yml|app",
+      "kind": "Publishes",
+      "state": "Confirmed",
+      "basis": "publish artifact"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-release.yml|BuildProd",
+      "toId": "s:shop/pipelines/shop-release.yml|Production",
+      "kind": "DependsOn",
+      "state": "StronglySupported",
+      "basis": "previous stage (no dependsOn key)"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-release.yml|BuildProd",
+      "toId": "a:shop/pipelines/shop-release.yml|app",
+      "kind": "Publishes",
+      "state": "Confirmed",
+      "basis": "publish artifact"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|DeployDev",
+      "toId": "e:shop-dev",
+      "kind": "DeploysTo",
+      "state": "Confirmed",
+      "basis": "environment key; environment type from its name"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|InfraQA",
+      "toId": "e:QA",
+      "kind": "DeploysTo",
+      "state": "Confirmed",
+      "basis": "named by \u0060Infrastructure QA\u0060 (no environment key)"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-build.yml|DeployQA",
+      "toId": "e:shop-qa",
+      "kind": "DeploysTo",
+      "state": "Confirmed",
+      "basis": "environment key; environment type from its name"
+    },
+    {
+      "fromId": "s:shop/pipelines/shop-release.yml|Production",
+      "toId": "e:shop-prod",
+      "kind": "DeploysTo",
+      "state": "Confirmed",
+      "basis": "environment key; environment type from its name"
+    },
+    {
+      "fromId": "p:shop/pipelines/shop-build.yml",
+      "toId": "p:shop/pipelines/shop-release.yml",
+      "kind": "LikelyFollows",
+      "state": "StronglySupported",
+      "basis": "pipeline resource \u0060shopBuild\u0060 without a trigger: a run of it can be chosen when this pipeline starts; pipeline resource source \u0027shop-build\u0027 matches file \u0060shop/pipelines/shop-build.yml\u0060 by name (Azure DevOps names not read)"
+    }
+  ],
+  "story": [
+    {
+      "number": 1,
+      "section": "Trigger",
+      "text": "Pull requests to \u0060main\u0060 (only changes under \u0060src/Shop.Api\u0060, \u0060tests\u0060) run pr-validation (\u0060shop/pipelines/pr-validation.yml\u0060).",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/pr-validation.yml",
+          "line": 1,
+          "pipeline": "shop/pipelines/pr-validation.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 2,
+      "section": "Validation",
+      "text": "Stage \u0060Validate\u0060 builds (\u0060dotnet build\u0060) and runs unit tests (\u0060dotnet test\u0060, from \u0060shop/pipelines/templates/dotnet-tests.yml\u0060).",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/pr-validation.yml",
+          "line": 13,
+          "pipeline": "shop/pipelines/pr-validation.yml",
+          "stage": "Validate",
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 3,
+      "section": "Trigger",
+      "text": "Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060) start shop-build (\u0060shop/pipelines/shop-build.yml\u0060).",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 2,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 4,
+      "section": "Validation",
+      "text": "Stage \u0060Build\u0060 builds (\u0060dotnet build\u0060), scans dependencies (\u0060dependency scan\u0060) only when \u0060eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)\u0060 (continueOnError), runs unit tests (\u0060dotnet test\u0060, from \u0060shop/pipelines/templates/dotnet-tests.yml\u0060) and packages the application (\u0060dotnet publish/pack\u0060); it publishes artifact \u0060app\u0060.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 20,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 5,
+      "section": "Validation",
+      "text": "Stage \u0060IntegrationTests\u0060 (after \u0060DeployDev\u0060) runs integration tests (\u0060dotnet test\u0060) (continueOnError).",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 44,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "IntegrationTests",
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 6,
+      "section": "Build",
+      "text": "Stage \u0060Compliance\u0060 (after \u0060Build\u0060) runs steps from template \u0060compliance/checks.yml@platform\u0060, which is not analyzed.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 69,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Compliance",
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 7,
+      "section": "Deployment",
+      "text": "Stage \u0060Deploy DEV\u0060 deploys application to DEV (\u0060shop-dev\u0060) after \u0060Build\u0060. Gated by: Unit tests.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployDev",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "detail": "after stage \u0060Build\u0060, in pipeline \u0060shop-build\u0060 (Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060))"
+    },
+    {
+      "number": 8,
+      "section": "Artifact",
+      "text": "It deploys artifact \u0060app\u0060 from the current run of \u0060shop-build\u0060 (stage \u0060Build\u0060).",
+      "state": "StronglySupported",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployDev",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": "deployment job downloads this run\u0027s artifacts by default; published in stage \u0060Build\u0060"
+        }
+      ],
+      "detail": "deployment job downloads this run\u0027s artifacts by default; published in stage \u0060Build\u0060"
+    },
+    {
+      "number": 9,
+      "section": "PostDeployment",
+      "text": "After deploying to DEV: Integration tests.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployDev",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 10,
+      "section": "Deployment",
+      "text": "Stage \u0060Infrastructure QA\u0060 deploys infrastructure to \u0060QA\u0060 after \u0060Build\u0060. Gated by: Unit tests.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 55,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "InfraQA",
+          "job": "Terraform",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": "after stage \u0060Build\u0060, in pipeline \u0060shop-build\u0060 (Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060))"
+    },
+    {
+      "number": 11,
+      "section": "Deployment",
+      "text": "Stage \u0060Deploy QA\u0060 deploys application to QA (\u0060shop-qa\u0060) after \u0060DeployDev\u0060, \u0060InfraQA\u0060. Gated by: Unit tests. Integration tests run in this pipeline but are not on its path. Infrastructure for QA (\u0060InfraQA\u0060) is deployed before it.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "detail": "after stage \u0060DeployDev\u0060, \u0060InfraQA\u0060, in pipeline \u0060shop-build\u0060 (Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060))"
+    },
+    {
+      "number": 12,
+      "section": "Artifact",
+      "text": "It deploys artifact \u0060app\u0060 from the current run of \u0060shop-build\u0060 (stage \u0060Build\u0060).",
+      "state": "StronglySupported",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": "deployment job downloads this run\u0027s artifacts by default; published in stage \u0060Build\u0060"
+        }
+      ],
+      "detail": "deployment job downloads this run\u0027s artifacts by default; published in stage \u0060Build\u0060"
+    },
+    {
+      "number": 13,
+      "section": "PostDeployment",
+      "text": "No post-deployment validation was detected after the QA deployment.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 14,
+      "section": "Trigger",
+      "text": "Pushes to \u0060main\u0060 (only changes under \u0060src/Shop.Worker\u0060) start worker-build (\u0060shop/pipelines/worker-build.yml\u0060).",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/worker-build.yml",
+          "line": 2,
+          "pipeline": "shop/pipelines/worker-build.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 15,
+      "section": "Build",
+      "text": "It builds (\u0060dotnet build\u0060) and runs unit tests (\u0060dotnet test\u0060).",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/worker-build.yml",
+          "line": 2,
+          "pipeline": "shop/pipelines/worker-build.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 16,
+      "section": "Trigger",
+      "text": "shop-release has no automatic trigger; it appears to require manual start.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 1,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 17,
+      "section": "Build",
+      "text": "Stage \u0060BuildProd\u0060 packages the application (\u0060dotnet publish/pack\u0060); it publishes artifact \u0060app\u0060.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 9,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "BuildProd",
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 18,
+      "section": "Production",
+      "text": "Stage \u0060Production\u0060 deploys application to PROD (\u0060shop-prod\u0060) after \u0060BuildProd\u0060. No test was detected on its dependency path.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": "after stage \u0060BuildProd\u0060 (previous stage, implicit order), in pipeline \u0060shop-release\u0060 (No push trigger (\u0060trigger: none\u0060))"
+    },
+    {
+      "number": 19,
+      "section": "Artifact",
+      "text": "It deploys artifact \u0060app\u0060 from the current run of \u0060shop-release\u0060 (stage \u0060BuildProd\u0060).",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": "downloaded from this run; published in stage \u0060BuildProd\u0060"
+        }
+      ],
+      "detail": "downloaded from this run; published in stage \u0060BuildProd\u0060"
+    },
+    {
+      "number": 20,
+      "section": "PostDeployment",
+      "text": "No post-deployment validation was detected after the PROD deployment.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 21,
+      "section": "Promotion",
+      "text": "Production is handled by a separate pipeline, shop-release.",
+      "state": "Confirmed",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 22,
+      "section": "Promotion",
+      "text": "shop-release declares shop-build as a pipeline resource, but without a trigger and without downloading its artifacts: which run it follows is chosen when it is started.",
+      "state": "Inferred",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        },
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 55,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "InfraQA",
+          "job": "Terraform",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "detail": null
+    },
+    {
+      "number": 23,
+      "section": "Promotion",
+      "text": "Production and QA appear to use different builds: The artifact tested in QA may not be the same artifact deployed to Production.",
+      "state": "StronglySupported",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        },
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "detail": null
+    }
+  ],
+  "deliveryPath": [
+    "pr-validation",
+    "shop-build",
+    "worker-build",
+    "DEV",
+    "QA",
+    "\u22EF",
+    "PROD"
+  ],
+  "deployments": [
+    {
+      "id": "shop/pipelines/shop-build.yml#DeployDev|Deploy",
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "stage": "DeployDev",
+      "job": "Deploy",
+      "environment": "shop-dev",
+      "environmentKind": "Development",
+      "environmentBasis": "environment key; environment type from its name",
+      "environmentState": "StronglySupported",
+      "deploysWhat": [
+        "Application"
+      ],
+      "howReached": "after stage \u0060Build\u0060, in pipeline \u0060shop-build\u0060 (Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060))",
+      "condition": null,
+      "before": [
+        {
+          "category": "Build",
+          "state": "Gates",
+          "label": "dotnet build",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "Build",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/shop-build.yml",
+            "line": 24,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "Build",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": null,
+            "note": null
+          }
+        },
+        {
+          "category": "DependencyScan",
+          "state": "SoftGate",
+          "label": "Weekly dependency scan",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "DependencyScan",
+          "condition": "eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)",
+          "evidence": {
+            "file": "shop/pipelines/shop-build.yml",
+            "line": 34,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "DependencyScan",
+            "step": "Weekly dependency scan",
+            "condition": null,
+            "templateOrigin": null,
+            "note": null
+          }
+        },
+        {
+          "category": "Unit",
+          "state": "Gates",
+          "label": "Run tests",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "Build",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/templates/dotnet-tests.yml",
+            "line": 5,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "Build",
+            "step": "Run tests",
+            "condition": null,
+            "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+            "note": null
+          }
+        }
+      ],
+      "after": [
+        {
+          "category": "Integration",
+          "state": "After",
+          "label": "dotnet test",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "IntegrationTests",
+          "job": "Integration",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/shop-build.yml",
+            "line": 49,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "IntegrationTests",
+            "job": "Integration",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": null,
+            "note": null
+          }
+        }
+      ],
+      "artifacts": [
+        {
+          "artifact": "app",
+          "source": "current run of \u0060shop-build\u0060",
+          "producerPipeline": "shop/pipelines/shop-build.yml",
+          "producerStage": "Build",
+          "state": "StronglySupported",
+          "basis": "deployment job downloads this run\u0027s artifacts by default; published in stage \u0060Build\u0060"
+        }
+      ],
+      "approval": "Deployment job targets environment \u0060shop-dev\u0060. Approval checks are not assessable from YAML alone (Azure DevOps environment approvals and checks live outside the repository).",
+      "rollback": "No rollback mechanism detected in pipeline source (this does not mean rollback is impossible).",
+      "unresolved": [],
+      "evidence": {
+        "file": "shop/pipelines/templates/deploy-webapp.yml",
+        "line": 5,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "DeployDev",
+        "job": "Deploy",
+        "step": null,
+        "condition": null,
+        "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+        "note": null
+      }
+    },
+    {
+      "id": "shop/pipelines/shop-build.yml#InfraQA|Terraform",
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "stage": "InfraQA",
+      "job": "Terraform",
+      "environment": "QA",
+      "environmentKind": "QA",
+      "environmentBasis": "named by \u0060Infrastructure QA\u0060 (no environment key)",
+      "environmentState": "Inferred",
+      "deploysWhat": [
+        "Infrastructure"
+      ],
+      "howReached": "after stage \u0060Build\u0060, in pipeline \u0060shop-build\u0060 (Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060))",
+      "condition": null,
+      "before": [
+        {
+          "category": "Build",
+          "state": "Gates",
+          "label": "dotnet build",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "Build",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/shop-build.yml",
+            "line": 24,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "Build",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": null,
+            "note": null
+          }
+        },
+        {
+          "category": "DependencyScan",
+          "state": "SoftGate",
+          "label": "Weekly dependency scan",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "DependencyScan",
+          "condition": "eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)",
+          "evidence": {
+            "file": "shop/pipelines/shop-build.yml",
+            "line": 34,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "DependencyScan",
+            "step": "Weekly dependency scan",
+            "condition": null,
+            "templateOrigin": null,
+            "note": null
+          }
+        },
+        {
+          "category": "InfrastructurePlan",
+          "state": "Gates",
+          "label": "terraform init/plan",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "InfraQA",
+          "job": "Terraform",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/templates/terraform.yml",
+            "line": 5,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "InfraQA",
+            "job": "Terraform",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": "shop/pipelines/templates/terraform.yml",
+            "note": null
+          }
+        },
+        {
+          "category": "InfrastructurePlan",
+          "state": "Gates",
+          "label": "terraform init/plan",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "InfraQA",
+          "job": "Terraform",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/templates/terraform.yml",
+            "line": 6,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "InfraQA",
+            "job": "Terraform",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": "shop/pipelines/templates/terraform.yml",
+            "note": null
+          }
+        },
+        {
+          "category": "Unit",
+          "state": "Gates",
+          "label": "Run tests",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "Build",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/templates/dotnet-tests.yml",
+            "line": 5,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "Build",
+            "step": "Run tests",
+            "condition": null,
+            "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+            "note": null
+          }
+        }
+      ],
+      "after": [],
+      "artifacts": [
+        {
+          "artifact": "(infrastructure code)",
+          "source": "repository checkout",
+          "producerPipeline": "shop/pipelines/shop-build.yml",
+          "producerStage": "InfraQA",
+          "state": "Confirmed",
+          "basis": "infrastructure is applied from this run\u0027s repository checkout"
+        }
+      ],
+      "approval": "No Azure DevOps environment is targeted, so environment approvals cannot apply; service-connection checks are not visible in YAML.",
+      "rollback": "No rollback mechanism detected in pipeline source (this does not mean rollback is impossible).",
+      "unresolved": [],
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 55,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "InfraQA",
+        "job": "Terraform",
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "id": "shop/pipelines/shop-build.yml#DeployQA|Deploy",
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "stage": "DeployQA",
+      "job": "Deploy",
+      "environment": "shop-qa",
+      "environmentKind": "QA",
+      "environmentBasis": "environment key; environment type from its name",
+      "environmentState": "StronglySupported",
+      "deploysWhat": [
+        "Application"
+      ],
+      "howReached": "after stage \u0060DeployDev\u0060, \u0060InfraQA\u0060, in pipeline \u0060shop-build\u0060 (Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060))",
+      "condition": null,
+      "before": [
+        {
+          "category": "Build",
+          "state": "Gates",
+          "label": "dotnet build",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "Build",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/shop-build.yml",
+            "line": 24,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "Build",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": null,
+            "note": null
+          }
+        },
+        {
+          "category": "DependencyScan",
+          "state": "SoftGate",
+          "label": "Weekly dependency scan",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "DependencyScan",
+          "condition": "eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)",
+          "evidence": {
+            "file": "shop/pipelines/shop-build.yml",
+            "line": 34,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "DependencyScan",
+            "step": "Weekly dependency scan",
+            "condition": null,
+            "templateOrigin": null,
+            "note": null
+          }
+        },
+        {
+          "category": "InfrastructurePlan",
+          "state": "Gates",
+          "label": "terraform init/plan",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "InfraQA",
+          "job": "Terraform",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/templates/terraform.yml",
+            "line": 5,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "InfraQA",
+            "job": "Terraform",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": "shop/pipelines/templates/terraform.yml",
+            "note": null
+          }
+        },
+        {
+          "category": "InfrastructurePlan",
+          "state": "Gates",
+          "label": "terraform init/plan",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "InfraQA",
+          "job": "Terraform",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/templates/terraform.yml",
+            "line": 6,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "InfraQA",
+            "job": "Terraform",
+            "step": "script",
+            "condition": null,
+            "templateOrigin": "shop/pipelines/templates/terraform.yml",
+            "note": null
+          }
+        },
+        {
+          "category": "Unit",
+          "state": "Gates",
+          "label": "Run tests",
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "Build",
+          "condition": null,
+          "evidence": {
+            "file": "shop/pipelines/templates/dotnet-tests.yml",
+            "line": 5,
+            "pipeline": "shop/pipelines/shop-build.yml",
+            "stage": "Build",
+            "job": "Build",
+            "step": "Run tests",
+            "condition": null,
+            "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+            "note": null
+          }
+        }
+      ],
+      "after": [],
+      "artifacts": [
+        {
+          "artifact": "app",
+          "source": "current run of \u0060shop-build\u0060",
+          "producerPipeline": "shop/pipelines/shop-build.yml",
+          "producerStage": "Build",
+          "state": "StronglySupported",
+          "basis": "deployment job downloads this run\u0027s artifacts by default; published in stage \u0060Build\u0060"
+        }
+      ],
+      "approval": "Deployment job targets environment \u0060shop-qa\u0060. Approval checks are not assessable from YAML alone (Azure DevOps environment approvals and checks live outside the repository).",
+      "rollback": "No rollback mechanism detected in pipeline source (this does not mean rollback is impossible).",
+      "unresolved": [],
+      "evidence": {
+        "file": "shop/pipelines/templates/deploy-webapp.yml",
+        "line": 5,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "DeployQA",
+        "job": "Deploy",
+        "step": null,
+        "condition": null,
+        "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+        "note": null
+      }
+    },
+    {
+      "id": "shop/pipelines/shop-release.yml#Production|DeployProd",
+      "pipeline": "shop/pipelines/shop-release.yml",
+      "pipelineName": "shop-release",
+      "stage": "Production",
+      "job": "DeployProd",
+      "environment": "shop-prod",
+      "environmentKind": "Production",
+      "environmentBasis": "environment key; environment type from its name",
+      "environmentState": "StronglySupported",
+      "deploysWhat": [
+        "Application"
+      ],
+      "howReached": "after stage \u0060BuildProd\u0060 (previous stage, implicit order), in pipeline \u0060shop-release\u0060 (No push trigger (\u0060trigger: none\u0060))",
+      "condition": null,
+      "before": [],
+      "after": [],
+      "artifacts": [
+        {
+          "artifact": "app",
+          "source": "current run of \u0060shop-release\u0060",
+          "producerPipeline": "shop/pipelines/shop-release.yml",
+          "producerStage": "BuildProd",
+          "state": "Confirmed",
+          "basis": "downloaded from this run; published in stage \u0060BuildProd\u0060"
+        }
+      ],
+      "approval": "Deployment job targets environment \u0060shop-prod\u0060. Approval checks are not assessable from YAML alone (Azure DevOps environment approvals and checks live outside the repository).",
+      "rollback": "No rollback mechanism detected in pipeline source (this does not mean rollback is impossible).",
+      "unresolved": [],
+      "evidence": {
+        "file": "shop/pipelines/shop-release.yml",
+        "line": 18,
+        "pipeline": "shop/pipelines/shop-release.yml",
+        "stage": "Production",
+        "job": "DeployProd",
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    }
+  ],
+  "tests": [
+    {
+      "pipeline": "shop/pipelines/pr-validation.yml",
+      "pipelineName": "pr-validation",
+      "category": "Unit",
+      "name": "Run tests",
+      "tool": "dotnet test",
+      "targets": [
+        "tests/Shop.Api.UnitTests/Shop.Api.UnitTests.csproj"
+      ],
+      "stage": "Validate",
+      "job": "BuildAndTest",
+      "whenItRuns": "No push trigger (\u0060trigger: none\u0060); Pull requests to \u0060main\u0060 (only changes under \u0060src/Shop.Api\u0060, \u0060tests\u0060)",
+      "condition": null,
+      "continueOnError": false,
+      "gates": [
+        "shop/pipelines/shop-build.yml#DeployDev|Deploy",
+        "shop/pipelines/shop-build.yml#InfraQA|Terraform",
+        "shop/pipelines/shop-build.yml#DeployQA|Deploy"
+      ],
+      "runsAfter": [],
+      "evidence": {
+        "file": "shop/pipelines/templates/dotnet-tests.yml",
+        "line": 5,
+        "pipeline": "shop/pipelines/pr-validation.yml",
+        "stage": "Validate",
+        "job": "BuildAndTest",
+        "step": "Run tests",
+        "condition": null,
+        "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+        "note": null
+      }
+    },
+    {
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "category": "DependencyScan",
+      "name": "Weekly dependency scan",
+      "tool": "dependency scan",
+      "targets": [],
+      "stage": "Build",
+      "job": "DependencyScan",
+      "whenItRuns": "Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060) \u2014 only when \u0060eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)\u0060",
+      "condition": "eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)",
+      "continueOnError": true,
+      "gates": [
+        "shop/pipelines/shop-build.yml#DeployDev|Deploy",
+        "shop/pipelines/shop-build.yml#InfraQA|Terraform",
+        "shop/pipelines/shop-build.yml#DeployQA|Deploy"
+      ],
+      "runsAfter": [],
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 34,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "Build",
+        "job": "DependencyScan",
+        "step": "Weekly dependency scan",
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "category": "Integration",
+      "name": "dotnet test",
+      "tool": "dotnet test",
+      "targets": [
+        "tests/Shop.IntegrationTests/Shop.IntegrationTests.csproj"
+      ],
+      "stage": "IntegrationTests",
+      "job": "Integration",
+      "whenItRuns": "Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060)",
+      "condition": null,
+      "continueOnError": true,
+      "gates": [],
+      "runsAfter": [
+        "shop/pipelines/shop-build.yml#DeployDev|Deploy"
+      ],
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 49,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "IntegrationTests",
+        "job": "Integration",
+        "step": "script",
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "category": "InfrastructurePlan",
+      "name": "terraform init/plan",
+      "tool": "terraform init/plan",
+      "targets": [
+        "infra"
+      ],
+      "stage": "InfraQA",
+      "job": "Terraform",
+      "whenItRuns": "Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060)",
+      "condition": null,
+      "continueOnError": false,
+      "gates": [
+        "shop/pipelines/shop-build.yml#InfraQA|Terraform",
+        "shop/pipelines/shop-build.yml#DeployQA|Deploy"
+      ],
+      "runsAfter": [],
+      "evidence": {
+        "file": "shop/pipelines/templates/terraform.yml",
+        "line": 5,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "InfraQA",
+        "job": "Terraform",
+        "step": "script",
+        "condition": null,
+        "templateOrigin": "shop/pipelines/templates/terraform.yml",
+        "note": null
+      }
+    },
+    {
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "category": "InfrastructurePlan",
+      "name": "terraform init/plan",
+      "tool": "terraform init/plan",
+      "targets": [
+        "infra"
+      ],
+      "stage": "InfraQA",
+      "job": "Terraform",
+      "whenItRuns": "Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060)",
+      "condition": null,
+      "continueOnError": false,
+      "gates": [
+        "shop/pipelines/shop-build.yml#InfraQA|Terraform",
+        "shop/pipelines/shop-build.yml#DeployQA|Deploy"
+      ],
+      "runsAfter": [],
+      "evidence": {
+        "file": "shop/pipelines/templates/terraform.yml",
+        "line": 6,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "InfraQA",
+        "job": "Terraform",
+        "step": "script",
+        "condition": null,
+        "templateOrigin": "shop/pipelines/templates/terraform.yml",
+        "note": null
+      }
+    },
+    {
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "pipelineName": "shop-build",
+      "category": "Unit",
+      "name": "Run tests",
+      "tool": "dotnet test",
+      "targets": [
+        "tests/Shop.Api.UnitTests/Shop.Api.UnitTests.csproj"
+      ],
+      "stage": "Build",
+      "job": "Build",
+      "whenItRuns": "Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060)",
+      "condition": null,
+      "continueOnError": false,
+      "gates": [
+        "shop/pipelines/shop-build.yml#DeployDev|Deploy",
+        "shop/pipelines/shop-build.yml#InfraQA|Terraform",
+        "shop/pipelines/shop-build.yml#DeployQA|Deploy"
+      ],
+      "runsAfter": [],
+      "evidence": {
+        "file": "shop/pipelines/templates/dotnet-tests.yml",
+        "line": 5,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "Build",
+        "job": "Build",
+        "step": "Run tests",
+        "condition": null,
+        "templateOrigin": "shop/pipelines/templates/dotnet-tests.yml",
+        "note": null
+      }
+    },
+    {
+      "pipeline": "shop/pipelines/worker-build.yml",
+      "pipelineName": "worker-build",
+      "category": "Unit",
+      "name": "dotnet test",
+      "tool": "dotnet test",
+      "targets": [
+        "tests/Shop.Worker.UnitTests/Shop.Worker.UnitTests.csproj"
+      ],
+      "stage": null,
+      "job": "(job)",
+      "whenItRuns": "Pushes to \u0060main\u0060 (only changes under \u0060src/Shop.Worker\u0060)",
+      "condition": null,
+      "continueOnError": false,
+      "gates": [],
+      "runsAfter": [],
+      "evidence": {
+        "file": "shop/pipelines/worker-build.yml",
+        "line": 12,
+        "pipeline": "shop/pipelines/worker-build.yml",
+        "stage": null,
+        "job": "(job)",
+        "step": "script",
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    }
+  ],
+  "testMatrix": {
+    "columns": [
+      "PR",
+      "DEV",
+      "QA",
+      "PROD"
+    ],
+    "rows": [
+      {
+        "category": "Unit",
+        "cells": {
+          "PR": "Gates",
+          "DEV": "Gates",
+          "QA": "Gates",
+          "PROD": null
+        },
+        "note": null
+      },
+      {
+        "category": "Integration",
+        "cells": {
+          "PR": null,
+          "DEV": "After",
+          "QA": null,
+          "PROD": null
+        },
+        "note": null
+      },
+      {
+        "category": "DependencyScan",
+        "cells": {
+          "PR": null,
+          "DEV": "SoftGate",
+          "QA": "SoftGate",
+          "PROD": null
+        },
+        "note": null
+      },
+      {
+        "category": "InfrastructurePlan",
+        "cells": {
+          "PR": null,
+          "DEV": null,
+          "QA": "Gates",
+          "PROD": null
+        },
+        "note": null
+      }
+    ],
+    "notes": [
+      "A cell shows how a validation relates to deployments to that environment: Gates (before, a failure stops it), Gates via promoted artifact, Conditional, May not block, Runs after, or Not assessable.",
+      "PR: runs for pull requests. Whether a failure blocks merging depends on branch policies, which are not in YAML."
+    ]
+  },
+  "environments": [
+    {
+      "environment": "DEV",
+      "kind": "Development",
+      "deployments": [
+        "shop/pipelines/shop-build.yml#DeployDev|Deploy"
+      ],
+      "pipelines": [
+        "shop/pipelines/shop-build.yml"
+      ]
+    },
+    {
+      "environment": "QA",
+      "kind": "QA",
+      "deployments": [
+        "shop/pipelines/shop-build.yml#InfraQA|Terraform",
+        "shop/pipelines/shop-build.yml#DeployQA|Deploy"
+      ],
+      "pipelines": [
+        "shop/pipelines/shop-build.yml"
+      ]
+    },
+    {
+      "environment": "PROD",
+      "kind": "Production",
+      "deployments": [
+        "shop/pipelines/shop-release.yml#Production|DeployProd"
+      ],
+      "pipelines": [
+        "shop/pipelines/shop-release.yml"
+      ]
+    }
+  ],
+  "progression": [
+    {
+      "from": "DEV",
+      "to": "QA",
+      "state": "Confirmed",
+      "basis": "\u0060DeployQA\u0060 depends on \u0060DeployDev\u0060 in \u0060shop-build\u0060"
+    }
+  ],
+  "dependencies": [
+    {
+      "fromPipeline": "shop/pipelines/pr-validation.yml",
+      "toPipeline": "shop/pipelines/templates/dotnet-tests.yml",
+      "kind": "IncludesTemplate",
+      "state": "Confirmed",
+      "basis": "uses template \u0060shop/pipelines/templates/dotnet-tests.yml\u0060 (steps)",
+      "evidence": {
+        "file": "shop/pipelines/pr-validation.yml",
+        "line": 18,
+        "pipeline": "shop/pipelines/pr-validation.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "fromPipeline": "Platform/pipeline-templates",
+      "toPipeline": "shop/pipelines/shop-build.yml",
+      "kind": "IncludesTemplate",
+      "state": "Confirmed",
+      "basis": "repository resource \u0060platform\u0060 (\u0060Platform/pipeline-templates\u0060) \u2014 templates or code from another repository",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 13,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": "resources.repositorys: platform"
+      }
+    },
+    {
+      "fromPipeline": "shop/pipelines/shop-build.yml",
+      "toPipeline": "shop/pipelines/templates/dotnet-tests.yml",
+      "kind": "IncludesTemplate",
+      "state": "Confirmed",
+      "basis": "uses template \u0060shop/pipelines/templates/dotnet-tests.yml\u0060 (steps)",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 25,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "fromPipeline": "shop/pipelines/shop-build.yml",
+      "toPipeline": "shop/pipelines/templates/deploy-webapp.yml",
+      "kind": "IncludesTemplate",
+      "state": "Confirmed",
+      "basis": "uses template \u0060shop/pipelines/templates/deploy-webapp.yml\u0060 (jobs)",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 41,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "fromPipeline": "shop/pipelines/shop-build.yml",
+      "toPipeline": "shop/pipelines/templates/terraform.yml",
+      "kind": "IncludesTemplate",
+      "state": "Confirmed",
+      "basis": "uses template \u0060shop/pipelines/templates/terraform.yml\u0060 (steps)",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 57,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "fromPipeline": "shop/pipelines/shop-build.yml",
+      "toPipeline": "compliance/checks.yml@platform",
+      "kind": "IncludesTemplate",
+      "state": "Unresolved",
+      "basis": "uses template \u0060compliance/checks.yml@platform\u0060 (steps) \u2014 not analyzed",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 74,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    },
+    {
+      "fromPipeline": "shop/pipelines/shop-build.yml",
+      "toPipeline": "shop/pipelines/shop-release.yml",
+      "kind": "LikelyFollows",
+      "state": "StronglySupported",
+      "basis": "pipeline resource \u0060shopBuild\u0060 without a trigger: a run of it can be chosen when this pipeline starts; pipeline resource source \u0027shop-build\u0027 matches file \u0060shop/pipelines/shop-build.yml\u0060 by name (Azure DevOps names not read)",
+      "evidence": {
+        "file": "shop/pipelines/shop-release.yml",
+        "line": 6,
+        "pipeline": "shop/pipelines/shop-release.yml",
+        "stage": null,
+        "job": null,
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": "resources.pipelines: shopBuild"
+      }
+    }
+  ],
+  "pathCoverage": [
+    {
+      "area": "Api",
+      "path": "src/Shop.Api",
+      "areaKind": "Component",
+      "pipelines": [
+        {
+          "pipeline": "shop/pipelines/pr-validation.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pull requests includes it (src/Shop.Api, tests)",
+          "validations": [
+            "Test"
+          ]
+        },
+        {
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src, infra)",
+          "validations": [
+            "Integration",
+            "Test"
+          ]
+        }
+      ],
+      "state": "Confirmed",
+      "basis": "Path filters evaluated against the folder; branch filters are not part of this check."
+    },
+    {
+      "area": "Worker",
+      "path": "src/Shop.Worker",
+      "areaKind": "Component",
+      "pipelines": [
+        {
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src, infra)",
+          "validations": [
+            "Integration",
+            "Test"
+          ]
+        },
+        {
+          "pipeline": "shop/pipelines/worker-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src/Shop.Worker)",
+          "validations": [
+            "Unit"
+          ]
+        }
+      ],
+      "state": "Confirmed",
+      "basis": "Path filters evaluated against the folder; branch filters are not part of this check."
+    },
+    {
+      "area": "Shop.Common",
+      "path": "src/Shop.Common",
+      "areaKind": "Shared library",
+      "pipelines": [
+        {
+          "pipeline": "shop/pipelines/pr-validation.yml",
+          "triggers": "No",
+          "basis": "path filter on pull requests does not include it (includes src/Shop.Api, tests)",
+          "validations": [
+            "Test"
+          ]
+        },
+        {
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src, infra)",
+          "validations": [
+            "Integration",
+            "Test"
+          ]
+        },
+        {
+          "pipeline": "shop/pipelines/worker-build.yml",
+          "triggers": "No",
+          "basis": "path filter on pushes does not include it (includes src/Shop.Worker)",
+          "validations": [
+            "Unit"
+          ]
+        }
+      ],
+      "state": "Confirmed",
+      "basis": "Path filters evaluated against the folder; branch filters are not part of this check."
+    },
+    {
+      "area": "Contracts in src/Shop.Api",
+      "path": "src/Shop.Api",
+      "areaKind": "Contract",
+      "pipelines": [
+        {
+          "pipeline": "shop/pipelines/pr-validation.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pull requests includes it (src/Shop.Api, tests)",
+          "validations": [
+            "Test"
+          ]
+        },
+        {
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src, infra)",
+          "validations": [
+            "Integration",
+            "Test"
+          ]
+        }
+      ],
+      "state": "Confirmed",
+      "basis": "Path filters evaluated against the folder; branch filters are not part of this check."
+    },
+    {
+      "area": "Contracts in src/Shop.Worker",
+      "path": "src/Shop.Worker",
+      "areaKind": "Contract",
+      "pipelines": [
+        {
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src, infra)",
+          "validations": [
+            "Integration",
+            "Test"
+          ]
+        },
+        {
+          "pipeline": "shop/pipelines/worker-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src/Shop.Worker)",
+          "validations": [
+            "Unit"
+          ]
+        }
+      ],
+      "state": "Confirmed",
+      "basis": "Path filters evaluated against the folder; branch filters are not part of this check."
+    },
+    {
+      "area": "Infrastructure in infra",
+      "path": "infra",
+      "areaKind": "Infrastructure",
+      "pipelines": [
+        {
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "triggers": "Yes",
+          "basis": "path filter on pushes includes it (src, infra)",
+          "validations": [
+            "Integration",
+            "Test"
+          ]
+        }
+      ],
+      "state": "Confirmed",
+      "basis": "Path filters evaluated against the folder; branch filters are not part of this check."
+    }
+  ],
+  "findings": [
+    {
+      "id": "TestGatingGap-1d2ca66645",
+      "category": "TestGatingGap",
+      "severity": "High",
+      "evidenceState": "Confirmed",
+      "title": "PROD deployment is reachable without any detected test",
+      "whyItMatters": "Nothing on the path to this deployment runs tests, so a change can be deployed without automated validation.",
+      "explanation": "No test step was found before \u0060Production\u0060 in \u0060shop-release\u0060. It runs after stage \u0060BuildProd\u0060 (previous stage, implicit order), in pipeline \u0060shop-release\u0060 (No push trigger (\u0060trigger: none\u0060)).",
+      "pipelines": [
+        "shop/pipelines/shop-release.yml"
+      ],
+      "environment": "PROD",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "suggestedAction": "Confirm which validation should run before this deployment."
+    },
+    {
+      "id": "TriggerCoverageGap-7cc29101f2",
+      "category": "TriggerCoverageGap",
+      "severity": "Medium",
+      "evidenceState": "StronglySupported",
+      "title": "Changes to shared library Shop.Common do not start \u0060pr-validation\u0060",
+      "whyItMatters": "Api uses Shop.Common, but the path filters of the pipeline that validates Api exclude the library: a library change can reach Api without that validation.",
+      "explanation": "Shop.Common (\u0060src/Shop.Common\u0060) is referenced by Api (\u0060src/Shop.Api\u0060). \u0060pr-validation\u0060: path filter on pull requests does not include it (includes src/Shop.Api, tests).",
+      "pipelines": [
+        "shop/pipelines/pr-validation.yml"
+      ],
+      "environment": null,
+      "evidence": [
+        {
+          "file": "shop/pipelines/pr-validation.yml",
+          "line": 3,
+          "pipeline": "shop/pipelines/pr-validation.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": "trigger paths"
+        }
+      ],
+      "suggestedAction": "Review the path filters of \u0060pr-validation\u0060 (add \u0060src/Shop.Common\u0060)."
+    },
+    {
+      "id": "TriggerCoverageGap-c9d0340325",
+      "category": "TriggerCoverageGap",
+      "severity": "Medium",
+      "evidenceState": "StronglySupported",
+      "title": "Changes to shared library Shop.Common do not start \u0060worker-build\u0060",
+      "whyItMatters": "Worker uses Shop.Common, but the path filters of the pipeline that validates Worker exclude the library: a library change can reach Worker without that validation.",
+      "explanation": "Shop.Common (\u0060src/Shop.Common\u0060) is referenced by Worker (\u0060src/Shop.Worker\u0060). \u0060worker-build\u0060: path filter on pushes does not include it (includes src/Shop.Worker).",
+      "pipelines": [
+        "shop/pipelines/worker-build.yml"
+      ],
+      "environment": null,
+      "evidence": [
+        {
+          "file": "shop/pipelines/worker-build.yml",
+          "line": 2,
+          "pipeline": "shop/pipelines/worker-build.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": "trigger paths"
+        }
+      ],
+      "suggestedAction": "Review the path filters of \u0060worker-build\u0060 (add \u0060src/Shop.Common\u0060)."
+    },
+    {
+      "id": "TestGatingGap-823130eaae",
+      "category": "TestGatingGap",
+      "severity": "Medium",
+      "evidenceState": "Confirmed",
+      "title": "Integration tests do not gate the QA deployment",
+      "whyItMatters": "Integration tests run in this pipeline, but the QA deployment does not depend on them: it can proceed while they fail or before they run.",
+      "explanation": "\u0060dotnet test\u0060 in \u0060IntegrationTests\u0060; \u0060DeployQA\u0060 runs after stage \u0060DeployDev\u0060, \u0060InfraQA\u0060, in pipeline \u0060shop-build\u0060 (Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060)).",
+      "pipelines": [
+        "shop/pipelines/shop-build.yml"
+      ],
+      "environment": "QA",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        },
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 49,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "IntegrationTests",
+          "job": "Integration",
+          "step": "script",
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "suggestedAction": "Confirm whether the QA deployment should depend on the integration tests."
+    },
+    {
+      "id": "PostDeployValidationGap-db1145bf0c",
+      "category": "PostDeployValidationGap",
+      "severity": "Medium",
+      "evidenceState": "Confirmed",
+      "title": "No post-deployment validation detected after the PROD deployment in \u0060shop-release\u0060",
+      "whyItMatters": "Without a smoke test, health check or test after deploying, a broken deployment is only noticed by people or monitoring.",
+      "explanation": "No test or health check runs after \u0060Production\u0060 in \u0060shop-release\u0060 (later steps of the job, its strategy\u0027s post phases, or stages that depend on it).",
+      "pipelines": [
+        "shop/pipelines/shop-release.yml"
+      ],
+      "environment": "PROD",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "suggestedAction": "Add or confirm a post-deployment check (smoke test, health check) for this environment."
+    },
+    {
+      "id": "PostDeployValidationGap-88b414b546",
+      "category": "PostDeployValidationGap",
+      "severity": "Medium",
+      "evidenceState": "Confirmed",
+      "title": "No post-deployment validation detected after the QA deployment in \u0060shop-build\u0060",
+      "whyItMatters": "Without a smoke test, health check or test after deploying, a broken deployment is only noticed by people or monitoring.",
+      "explanation": "No test or health check runs after \u0060DeployQA\u0060 in \u0060shop-build\u0060 (later steps of the job, its strategy\u0027s post phases, or stages that depend on it).",
+      "pipelines": [
+        "shop/pipelines/shop-build.yml"
+      ],
+      "environment": "QA",
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "suggestedAction": "Add or confirm a post-deployment check (smoke test, health check) for this environment."
+    },
+    {
+      "id": "EnvironmentProgressionGap-17a07aa0c5",
+      "category": "EnvironmentProgressionGap",
+      "severity": "Medium",
+      "evidenceState": "Unresolved",
+      "title": "No detectable link from QA to Production",
+      "whyItMatters": "Production is deployed by a different pipeline with no pipeline trigger or artifact relationship to the QA deployment; promotion order is decided outside the definitions.",
+      "explanation": "QA: \u0060shop-build\u0060; Production: \u0060shop-release\u0060, which runs after stage \u0060BuildProd\u0060 (previous stage, implicit order), in pipeline \u0060shop-release\u0060 (No push trigger (\u0060trigger: none\u0060)). \u0060shop-release\u0060 declares \u0060shop-build\u0060 as pipeline resource \u0060shopBuild\u0060 without a trigger, and does not download its artifacts.",
+      "pipelines": [
+        "shop/pipelines/shop-release.yml",
+        "shop/pipelines/shop-build.yml"
+      ],
+      "environment": "PROD",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        },
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "suggestedAction": "Confirm how a change is promoted from QA to Production (pipeline trigger, artifact resource, manual procedure)."
+    },
+    {
+      "id": "ArtifactLineageGap-11f8ef803d",
+      "category": "ArtifactLineageGap",
+      "severity": "Medium",
+      "evidenceState": "StronglySupported",
+      "title": "Production and QA appear to use different builds",
+      "whyItMatters": "The artifact tested in QA may not be the same artifact deployed to Production.",
+      "explanation": "QA deploys output of \u0060shop-build\u0060 stage \u0060Build\u0060; Production deploys output of \u0060shop-release\u0060 stage \u0060BuildProd\u0060.",
+      "pipelines": [
+        "shop/pipelines/shop-release.yml",
+        "shop/pipelines/shop-build.yml"
+      ],
+      "environment": "PROD",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        },
+        {
+          "file": "shop/pipelines/templates/deploy-webapp.yml",
+          "line": 5,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "DeployQA",
+          "job": "Deploy",
+          "step": null,
+          "condition": null,
+          "templateOrigin": "shop/pipelines/templates/deploy-webapp.yml",
+          "note": null
+        }
+      ],
+      "suggestedAction": "Confirm Production should promote the QA-tested artifact rather than rebuild."
+    },
+    {
+      "id": "ContractValidationGap-4b62b4e736",
+      "category": "ContractValidationGap",
+      "severity": "Medium",
+      "evidenceState": "StronglySupported",
+      "title": "A change to contract Shop API may not start validation of consumer Worker",
+      "whyItMatters": "The consumer\u0027s pipeline does not start when the contract it uses changes, so an incompatible contract change may not be built or tested against the consumer.",
+      "explanation": "\u0060shop/src/Shop.Api/openapi.json\u0060 is consumed by Worker (OpenApiReference in project file \u2014 a generated client consumes this contract; references \u0060../Shop.Api/openapi.json\u0060). \u0060worker-build\u0060: path filter on pushes does not include it (includes src/Shop.Worker).",
+      "pipelines": [
+        "shop/pipelines/worker-build.yml"
+      ],
+      "environment": null,
+      "evidence": [
+        {
+          "file": "shop/src/Shop.Worker/Shop.Worker.csproj",
+          "line": 1,
+          "pipeline": "",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": "OpenApiReference in project file \u2014 a generated client consumes this contract"
+        },
+        {
+          "file": "shop/pipelines/worker-build.yml",
+          "line": 2,
+          "pipeline": "shop/pipelines/worker-build.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": "trigger paths"
+        }
+      ],
+      "suggestedAction": "Review whether \u0060worker-build\u0060 should start on changes to \u0060src/Shop.Api/openapi.json\u0060."
+    },
+    {
+      "id": "SecurityValidationGap-3a58615a53",
+      "category": "SecurityValidationGap",
+      "severity": "Low",
+      "evidenceState": "Confirmed",
+      "title": "Security scans do not appear to gate normal delivery",
+      "whyItMatters": "The scans run, but not on the dependency path of any deployment (scheduled, conditional, soft or in a separate pipeline).",
+      "explanation": "\u0060Weekly dependency scan\u0060 in \u0060shop-build\u0060: Pushes to \u0060main\u0060 (only changes under \u0060src\u0060, \u0060infra\u0060) \u2014 only when \u0060eq(variables[\u0027Build.Reason\u0027], \u0027Schedule\u0027)\u0060 (continueOnError).",
+      "pipelines": [
+        "shop/pipelines/shop-build.yml"
+      ],
+      "environment": null,
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 34,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Build",
+          "job": "DependencyScan",
+          "step": "Weekly dependency scan",
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "suggestedAction": "Confirm whether a scan result should be able to stop a deployment."
+    },
+    {
+      "id": "TemplateResolutionGap-a7c0dcdbe5",
+      "category": "TemplateResolutionGap",
+      "severity": "Info",
+      "evidenceState": "Unresolved",
+      "title": "Template \u0060compliance/checks.yml@platform\u0060 is not analyzed",
+      "whyItMatters": "What the template runs (tests, deployments) is not visible; findings that depend on it are reported as not assessable instead.",
+      "explanation": "External template from repository resource \u0027platform\u0027 \u2014 not analyzed (add a Source Analysis snapshot of that repository).",
+      "pipelines": [
+        "shop/pipelines/shop-build.yml"
+      ],
+      "environment": null,
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-build.yml",
+          "line": 74,
+          "pipeline": "shop/pipelines/shop-build.yml",
+          "stage": "Compliance",
+          "job": "Checks",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "suggestedAction": "Analyze the template\u0027s repository in Source Analysis, or confirm what it contains."
+    },
+    {
+      "id": "TemplateResolutionGap-1f1a9071a0",
+      "category": "TemplateResolutionGap",
+      "severity": "Info",
+      "evidenceState": "Inferred",
+      "title": "Unreferenced pipeline template \u0060shop/pipelines/templates/unused.yml\u0060",
+      "whyItMatters": "No pipeline in this snapshot includes it. It may be used by pipelines in other repositories.",
+      "explanation": "No template use in this snapshot resolves to this file.",
+      "pipelines": [
+        "shop/pipelines/templates/unused.yml"
+      ],
+      "environment": null,
+      "evidence": [
+        {
+          "file": "shop/pipelines/templates/unused.yml",
+          "line": 0,
+          "pipeline": "shop/pipelines/templates/unused.yml",
+          "stage": null,
+          "job": null,
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "suggestedAction": "Confirm whether the template is still used."
+    },
+    {
+      "id": "RollbackGap-6d2909e9b4",
+      "category": "RollbackGap",
+      "severity": "Info",
+      "evidenceState": "Confirmed",
+      "title": "No rollback mechanism detected for the PROD deployment",
+      "whyItMatters": "A defined rollback (slot swap, on-failure steps, rollout undo) makes recovery from a bad release faster. It may exist outside the pipeline.",
+      "explanation": "No rollback mechanism detected in pipeline source (this does not mean rollback is impossible).",
+      "pipelines": [
+        "shop/pipelines/shop-release.yml"
+      ],
+      "environment": "PROD",
+      "evidence": [
+        {
+          "file": "shop/pipelines/shop-release.yml",
+          "line": 18,
+          "pipeline": "shop/pipelines/shop-release.yml",
+          "stage": "Production",
+          "job": "DeployProd",
+          "step": null,
+          "condition": null,
+          "templateOrigin": null,
+          "note": null
+        }
+      ],
+      "suggestedAction": "Confirm how a failed production release is rolled back."
+    }
+  ],
+  "unresolvedTemplates": [
+    {
+      "pipeline": "shop/pipelines/shop-build.yml",
+      "template": "compliance/checks.yml@platform",
+      "level": "steps",
+      "stage": "Compliance",
+      "job": "Checks",
+      "reason": "External template from repository resource \u0027platform\u0027 \u2014 not analyzed (add a Source Analysis snapshot of that repository).",
+      "evidence": {
+        "file": "shop/pipelines/shop-build.yml",
+        "line": 74,
+        "pipeline": "shop/pipelines/shop-build.yml",
+        "stage": "Compliance",
+        "job": "Checks",
+        "step": null,
+        "condition": null,
+        "templateOrigin": null,
+        "note": null
+      }
+    }
+  ],
+  "limitations": [
+    "Read from pipeline definitions in the selected Source Analysis snapshot. A step in a definition means the pipeline intends to run it \u2014 not that it ran, passed or deployed. Approvals and checks configured in Azure DevOps are not visible in YAML.",
+    "Conditions, template expressions and variables are classified as written, never evaluated; a condition depending on runtime variables is treated as possibly false.",
+    "Pull-request triggers in YAML apply to GitHub and Bitbucket repositories; Azure Repos starts PR validation from branch policies, which are not in YAML.",
+    "Approval checks are not assessable from YAML alone (Azure DevOps environment approvals and checks live outside the repository).",
+    "1 template use(s) are not analyzed (external repository or not in the snapshot); behaviour behind them is reported as not assessable.",
+    "Service connections are listed by name only; their permissions and health are not visible in source.",
+    "Source-derived evidence only. Deployed/runtime state is not verified here.",
+    "A step in a pipeline definition means the pipeline intends to run it \u2014 not that it ran or passed. Execution history is not read."
+  ],
+  "metadata": {
+    "state": "NotConfigured",
+    "detail": "Azure DevOps metadata was not requested.",
+    "definitions": [],
+    "environments": []
+  },
+  "boundary": "Read from pipeline definitions in the selected Source Analysis snapshot. A step in a definition means the pipeline intends to run it \u2014 not that it ran, passed or deployed. Approvals and checks configured in Azure DevOps are not visible in YAML."
+}

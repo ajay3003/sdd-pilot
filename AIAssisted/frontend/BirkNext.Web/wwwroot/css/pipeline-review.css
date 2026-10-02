@@ -1,0 +1,27 @@
+/* Pipeline Review. Builds on the shared source-evidence look (sd-*): text-first story, findings as cards, symbol + word in the matrix
+   (never colour alone). Scroll regions are focusable and keep wide tables inside the page at 390px. */
+.pr-page { max-width: 82rem; }
+.pr-title { margin: 0; font-size: 1.4rem; }
+.pr-path { list-style: none; margin: .2rem 0; padding: 0; display: flex; flex-wrap: wrap; gap: .3rem .2rem; align-items: center; }
+.pr-path li { border: 1px solid #a8b2bf; border-radius: .4rem; padding: .15rem .55rem; font-weight: 600; font-size: .88rem; overflow-wrap: anywhere; }
+.pr-path li + li::before { content: "→"; margin: 0 .35rem 0 -.1rem; color: #4b5563; font-weight: 400; }
+.pr-path li.pr-path-gap { border-style: dashed; font-weight: 400; color: #4b5563; font-style: italic; }
+.pr-story { margin: .3rem 0; padding-left: 1.6rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: .55rem; }
+.pr-story li { overflow-wrap: anywhere; line-height: 1.45; min-width: 0; }
+.pr-story code, .pr-finding code, .pr-deployment code { overflow-wrap: anywhere; word-break: break-word; }
+.pr-finding, .pr-deployment { border: 1px solid #d1d5db; border-left: 4px solid #94a3b8; border-radius: .4rem; padding: .5rem .75rem; display: grid; gap: .3rem; min-width: 0; }
+.pr-finding[data-severity="High"] { border-left-color: #b91c1c; }
+.pr-finding[data-severity="Medium"] { border-left-color: #b45309; }
+.pr-finding h4, .pr-deployment h4 { margin: 0; font-size: .98rem; overflow-wrap: anywhere; }
+.pr-finding p { margin: 0; font-size: .9rem; overflow-wrap: anywhere; }
+.pr-pills { display: flex; flex-wrap: wrap; gap: .3rem; }
+.pr-evidence table { min-width: 34rem; }
+.pr-details { border: 1px solid #e5e7eb; border-radius: .4rem; padding: .35rem .6rem; }
+.pr-details > summary { cursor: pointer; font-size: .9rem; }
+.pr-details > summary:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+.pr-map-group { min-width: 0; }
+.pr-map-group h3 { margin: .3rem 0 0; font-size: .98rem; overflow-wrap: anywhere; }
+.pr-map { margin: .2rem 0; padding-left: 1.4rem; font-size: .9rem; display: grid; gap: .15rem; }
+.pr-deployment dd .sd-pill { margin: 0 .25rem .2rem 0; white-space: normal; }
+.pr-cell-text { font-size: .78rem; color: #374151; }
+.sd-scroll:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
