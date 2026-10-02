@@ -126,7 +126,7 @@ public sealed class EventHubRuntimeEvidenceIqrTests
 
     /// <summary>The seeded DEV catalog with its verified runtime defaults ($Default assumption, checkpoint store, Application Insights, Azure Monitor logs).</summary>
     private static Task<IntegrationCatalog> Catalog(AppDbContext? db = null) =>
-        new IntegrationCatalogService(db ?? Db(), NullLogger<IntegrationCatalogService>.Instance).GetAsync(DevId, "Development", DevUrl);
+        new IntegrationCatalogService(db ?? Db(), NullLogger<IntegrationCatalogService>.Instance).GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
 
     private static IntegrationReviewRunRequest Request => new() { EnvironmentId = DevId, EnvironmentName = "M2LB DEV" };
 
@@ -517,7 +517,7 @@ public sealed class EventHubRuntimeEvidenceIqrTests
     {
         await using var db = Db();
         var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
-        var catalog = await catalogService.GetAsync(DevId, "Development", DevUrl);
+        var catalog = await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
         var fakes = Evidence(metadata: _ => Hub(), groups: DefaultGroup, checkpoints: Checkpoint, namespaces: _ => Observed(catalog), metrics: MetricValues);
         var service = new IntegrationReviewService(catalogService, fakes.Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance);
         var run = await service.RunAsync(Request, "Development", DevUrl);
@@ -558,7 +558,7 @@ public sealed class EventHubRuntimeEvidenceIqrTests
         var source = new ArmEventHubNamespaceSource(new StaticCredential(), new HttpClient(handler), logger);
         await using var db = Db();
         var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
-        var catalog = await catalogService.GetAsync(DevId, "Development", DevUrl);
+        var catalog = await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
         var platform = catalog.Platforms.Single(p => p.Id == M2lbDevIntegrationSeed.PlatformId);
 
         var forbidden = await source.ReadAsync(platform, CancellationToken.None);

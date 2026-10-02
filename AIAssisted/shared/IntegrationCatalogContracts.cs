@@ -376,11 +376,20 @@ public sealed record IntegrationCatalog
     public string EnvironmentId { get; init; } = "";
     public List<IntegrationPlatform> Platforms { get; init; } = [];
     public List<IntegrationDefinition> Integrations { get; init; } = [];
-    /// <summary>Set when this read attached the M2LB DEV seed or imported browser-stored integrations.</summary>
+    /// <summary>Set when this read upgraded an explicitly applied template or imported browser-stored integrations.</summary>
     public List<string> Notices { get; init; } = [];
+    /// <summary>The project template explicitly applied to this environment (e.g. the M2LB DEV template), or null. Never applied automatically.</summary>
+    public string? AppliedTemplateId { get; init; }
+    /// <summary>Templates a person may apply. A suggestion is only a hint (e.g. a known host); applying is always an explicit action.</summary>
+    public List<IntegrationTemplateOffer> Templates { get; init; } = [];
+    /// <summary>Domain extensions enabled by the applied template (e.g. m2lb.child-security-classification). Empty for generic projects.</summary>
+    public List<string> DomainExtensions { get; init; } = [];
     /// <summary>Whether this BirkNext instance may call Azure for runtime evidence (<c>IntegrationReview:Azure:Enabled</c>). Separate from which sources are configured.</summary>
     public bool AzureRuntimeEnabled { get; init; }
 }
+
+/// <summary>A project integration template a person can apply explicitly. Suggested = a hint from the target (never applied automatically).</summary>
+public sealed record IntegrationTemplateOffer(string Id, string Name, string Description, bool Suggested, string? SuggestionReason = null);
 
 /// <summary>Configuration completeness of one integration, with the fields behind it. Pure; shared by pane, API and review.</summary>
 public static class IntegrationConfigurationRules

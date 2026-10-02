@@ -26,7 +26,7 @@ public sealed class EventHubRuntimeDefaultsTests
         new IntegrationAzureCredential(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["IntegrationReview:Azure:Enabled"] = enabled.ToString() }).Build());
 
     private static async Task<IntegrationPlatform> SeededPlatform(AppDbContext? db = null) =>
-        (await Service(db ?? Db()).GetAsync(DevId, "Development", DevUrl)).Platforms.Single(p => p.Id == M2lbDevIntegrationSeed.PlatformId);
+        (await Service(db ?? Db()).GetWithM2lbTemplateAsync(DevId, "Development", DevUrl)).Platforms.Single(p => p.Id == M2lbDevIntegrationSeed.PlatformId);
 
     [Fact]
     public async Task TheSeedCarriesTheVerifiedDefaults()
@@ -71,7 +71,7 @@ public sealed class EventHubRuntimeDefaultsTests
     [Fact]
     public async Task IntegrationsKeepNoOwnConsumerGroup_TheAssumptionLivesOnThePlatformOnly()
     {
-        var catalog = await Service(Db()).GetAsync(DevId, "Development", DevUrl);
+        var catalog = await Service(Db()).GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
         catalog.Integrations.Should().OnlyContain(i => i.ConsumerGroup == null);
         catalog.Integrations.Single(i => i.Id.EndsWith("dbo.Person")).Consumer.ContainerApp.Should().Be("ca-m2lb-person-adp-dev-nwe-001");
     }
@@ -151,7 +151,7 @@ public sealed class EventHubRuntimeDefaultsTests
         db.IntegrationPlatforms.Remove(await db.IntegrationPlatforms.SingleAsync(p => p.Id == M2lbDevIntegrationSeed.PlatformId));
         (await db.IntegrationEnvironmentStates.SingleAsync()).SeedVersion = 3;
         await db.SaveChangesAsync();
-        var catalog = await Service(db).GetAsync(DevId, "Development", DevUrl);
+        var catalog = await Service(db).GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
         catalog.Platforms.Should().NotContain(p => p.Id == M2lbDevIntegrationSeed.PlatformId);
     }
 
@@ -244,6 +244,7 @@ public sealed class EventHubRuntimeDefaultsTests
     {
         await using var db = Db();
         var controller = new BirkNext.Api.Controllers.IntegrationsController(Service(db));
+        await Service(db).ApplyTemplateAsync(DevId, M2lbDevIntegrationSeed.Name);
         var off = (IntegrationCatalog)((Microsoft.AspNetCore.Mvc.OkObjectResult)(await controller.Get(DevId, "Development", DevUrl, Azure(false), CancellationToken.None)).Result!).Value!;
         off.AzureRuntimeEnabled.Should().BeFalse();
         off.Platforms.Single(p => p.Id == M2lbDevIntegrationSeed.PlatformId).RuntimeEvidence!.ExpectedConsumerGroup.Should().Be("$Default", "configured sources exist whether or not Azure runs");

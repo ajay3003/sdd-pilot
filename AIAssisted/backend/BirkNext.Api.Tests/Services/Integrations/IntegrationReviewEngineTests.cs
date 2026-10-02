@@ -84,7 +84,7 @@ public sealed class IntegrationReviewEngineTests
     /// test states the sources it needs; <paramref name="seededRuntime"/> keeps the verified defaults ($Default as a configured assumption).</summary>
     private static async Task<IntegrationCatalog> DevCatalog(AppDbContext? db = null, bool seededRuntime = false)
     {
-        var catalog = await new IntegrationCatalogService(db ?? Db(), NullLogger<IntegrationCatalogService>.Instance).GetAsync(DevId, "Development", DevUrl);
+        var catalog = await new IntegrationCatalogService(db ?? Db(), NullLogger<IntegrationCatalogService>.Instance).GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
         return seededRuntime ? catalog : catalog with { Platforms = catalog.Platforms.Select(p => p.Kind == IntegrationKind.EventHub ? p with { RuntimeEvidence = null } : p).ToList() };
     }
 
@@ -519,7 +519,7 @@ public sealed class IntegrationReviewEngineTests
         var db = Db();
         var catalogService = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
         var service = new IntegrationReviewService(catalogService, Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance);
-        await catalogService.GetAsync(DevId, "Development", DevUrl);
+        await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
         var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV" }, "Development", DevUrl);
         var person = (await catalogService.GetAsync(DevId, null, null)).Integrations.Single(i => i.Id.EndsWith("dbo.Person"));
         await catalogService.UpdateAsync(DevId, person.Id, person with { ConsumerGroup = "person-adapter" });
@@ -549,7 +549,7 @@ public sealed class IntegrationReviewEngineTests
         var scim = new BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService(db, catalogService, probe, NullLogger<BirkNext.Api.Services.Integrations.Scim.ScimEvidenceService>.Instance);
         var engine = new IntegrationReviewEngine(new Probe(true), new Metadata(null), new Groups(null), new Checkpoints(null), new Telemetry(null), new HttpClient(), NullLogger<IntegrationReviewEngine>.Instance, scim: scim);
         var service = new IntegrationReviewService(catalogService, engine, new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance, scim: scim);
-        await catalogService.GetAsync(DevId, "Development", DevUrl);
+        await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
 
         var readiness = await service.ReadinessAsync(DevId, "Development", DevUrl);
         var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV" }, "Development", DevUrl);
@@ -596,7 +596,7 @@ public sealed class IntegrationReviewEngineTests
         var liveCallsBefore = probe.Calls;
         var engine = new IntegrationReviewEngine(new Probe(true), new Metadata(null), new Groups(null), new Checkpoints(null), new Telemetry(null), new HttpClient(), NullLogger<IntegrationReviewEngine>.Instance, classification: classification);
         var service = new IntegrationReviewService(catalogService, engine, new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance);
-        await catalogService.GetAsync(DevId, "Development", DevUrl);
+        await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
 
         var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV" }, "Development", DevUrl);
 
@@ -623,7 +623,7 @@ public sealed class IntegrationReviewEngineTests
         var (legacy, _) = await store.AnalyzeAsync(DevId, "person-adapter", "M2LB.zip", stream.ToArray());
         var service = new IntegrationReviewService(catalogService, Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance,
             source: new BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider(store));
-        var integration = (await catalogService.GetAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
+        var integration = (await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
 
         var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "M2LB DEV", SourceSelections = [new(integration, snapshot!.Id)] }, "Development", DevUrl);
         var refuse = () => service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, SourceSelections = [new(integration, legacy!.Id)] }, "Development", DevUrl);
@@ -648,7 +648,7 @@ public sealed class IntegrationReviewEngineTests
         snapshot!.Observability.Should().NotBeNull();
         var service = new IntegrationReviewService(catalogService, Engine(), new IntegrationContractStore(db, catalogService, NullLogger<IntegrationContractStore>.Instance), db, NullLogger<IntegrationReviewService>.Instance,
             source: new BirkNext.Api.Services.SourceAnalysis.ReviewSourceEvidenceProvider(store));
-        var integration = (await catalogService.GetAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
+        var integration = (await catalogService.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl)).Integrations.First(i => i.Enabled).Id;
 
         var run = await service.RunAsync(new IntegrationReviewRunRequest { EnvironmentId = DevId, EnvironmentName = "Dev", SourceSelections = [new(integration, snapshot.Id)] }, "Development", DevUrl);
 

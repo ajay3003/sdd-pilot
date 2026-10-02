@@ -14,6 +14,8 @@ namespace BirkNext.Api.Services.SourceArchitecture;
 public static class SourceArchitectureAnalyzer
 {
     public const int Version = 1;
+    /// <summary>Stable provider id: this analyzer reads .NET project files and C# syntax only. Other languages are inventoried by Technology & Analysis Coverage, never analyzed here.</summary>
+    public const string ProviderId = "source.architecture.dotnet";
 
     internal static readonly IReadOnlyList<IArchitectureExtractor> Extractors =
     [
@@ -74,6 +76,8 @@ public static class SourceArchitectureAnalyzer
             foreach (var r in results) _diagnostics.AddRange(r.Diagnostics.Select(d => new ArchitectureDiagnostic(r.Extractor, d)));
             var limitations = new List<string> { ArchitectureSnapshot.SourceLimitation, "Deployment, runtime traffic and live connections are not assessed.", "No dependency detected does not mean no dependency exists." };
             limitations.AddRange(input.Limitations.Where(l => !l.StartsWith("Configuration values excluded", StringComparison.Ordinal)).Distinct().Take(20));
+            if (input.Projects.Count == 0)
+                limitations.Insert(0, $"No .NET project files found. The {ProviderId} provider analyzes C#/.NET architecture only; other languages are listed under Technology & Analysis Coverage as not analyzed (a tool limitation, not a project finding).");
             var status = input.Projects.Count == 0 ? ArchitectureStatus.Unsupported
                 : _deps.Values.Any(d => d.EvidenceState == ArchitectureEvidenceState.Conflict) ? ArchitectureStatus.NeedsReview
                 : input.Limitations.Any(l => l.StartsWith("Not analyzed", StringComparison.Ordinal) || l.Contains("could not be parsed", StringComparison.Ordinal) || l.Contains("exceeds", StringComparison.Ordinal)) ? ArchitectureStatus.Partial

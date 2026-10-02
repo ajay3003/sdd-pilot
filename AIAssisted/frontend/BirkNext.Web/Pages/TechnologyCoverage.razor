@@ -1,0 +1,149 @@
+@page "/technology-coverage"
+@using BirkNext.Applicability
+@using BirkNext.Technology
+@using BirkNext.Web.Models
+@using P = BirkNext.Web.Services.TechnologyCoveragePresentation
+@inject ProjectApplicabilityState State
+@implements IDisposable
+
+<PageTitle>Technology &amp; Analysis Coverage</PageTitle>
+
+@* What BirkNext can and cannot assess for the active project. Tool coverage is not project quality: an unsupported technology is a
+   limitation of BirkNext, shown neutrally, and is never counted as a failure or as 0 in any score. *@
+<div class="sd-workspace tc-page" data-testid="tc-page">
+    <h1 class="tc-title">Technology &amp; Analysis Coverage</h1>
+    <p class="sd-muted" data-testid="tc-intro">Which technologies this project uses, how much of each BirkNext can analyze, and which reviews apply. A technology BirkNext does not support is a tool limitation — it is shown here, never scored as a project problem.</p>
+
+    @if (!State.Loaded)
+    {
+        <p class="sd-muted" role="status">Loading…</p>
+    }
+    else if (State.Profile is null)
+    {
+        <p class="sd-empty" data-testid="tc-no-target">Select a Target Environment to see the technology coverage of its project.</p>
+    }
+    else
+    {
+        var coverage = State.Coverage;
+        var source = coverage?.Source;
+        @foreach (var notice in coverage?.Notices ?? [])
+        {
+            <p class="sd-reason" role="status" data-testid="tc-notice">@notice</p>
+        }
+        @if (coverage is null)
+        {
+            <p class="sd-reason" role="alert" data-testid="tc-unavailable">The BirkNext backend did not answer; applicability below uses the target and workspace only.</p>
+        }
+
+        <dl class="sd-summary" data-testid="tc-summary">
+            <div><dt>Source snapshot</dt><dd class="tc-small" data-testid="tc-snapshot">@(coverage?.SourceArchive ?? "None")</dd></div>
+            <div><dt>Files in archive</dt><dd data-testid="tc-total">@(source?.TotalFiles.ToString() ?? "—")</dd></div>
+            <div><dt>Files analyzed</dt><dd data-testid="tc-analyzed">@(source?.AnalyzedFiles.ToString() ?? "—")</dd></div>
+            <div><dt>Source files not analyzed</dt><dd data-testid="tc-unsupported-files">@(source?.UnsupportedSourceFiles.ToString() ?? "—")</dd></div>
+            <div><dt>Technologies detected</dt><dd data-testid="tc-technologies">@(source?.Technologies.Count.ToString() ?? "—")</dd></div>
+            <div><dt>Domain extensions</dt><dd class="tc-small" data-testid="tc-extensions">@(coverage?.DomainExtensions is { Count: > 0 } ext ? string.Join(", ", ext) : "None (generic project)")</dd></div>
+        </dl>
+
+        <section class="tc-section" aria-labelledby="tc-reviews-h">
+            <h2 id="tc-reviews-h">Reviews for this project</h2>
+            <p class="sd-muted">Only applicable reviews contribute to quality. Not applicable, unsupported and not-enough-evidence reviews are coverage gaps, not low quality.</p>
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Review applicability">
+                <table data-testid="tc-reviews">
+                    <thead><tr><th scope="col">Review</th><th scope="col">Applicability</th><th scope="col">Why</th><th scope="col">Next step</th></tr></thead>
+                    <tbody>
+                        @foreach (var review in ReviewCatalog.All)
+                        {
+                            var a = State.For(review.ReviewId);
+                            <tr data-testid="tc-review-@review.ReviewId" data-status="@a?.Status">
+                                <th scope="row"><a href="@review.Route">@review.DisplayName</a><span class="sd-context">@review.Purpose</span></th>
+                                <td>@if (a is not null) { <span class="sd-pill sd-pill-@P.Tone(a.Status)">@ScoreSemantics.Label(a.Status)</span> }</td>
+                                <td>@a?.Reason</td>
+                                <td>@(a?.Action ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="tc-section" aria-labelledby="tc-detected-h">
+            <h2 id="tc-detected-h">Detected technologies</h2>
+            @if (source is null || source.Technologies.Count == 0)
+            {
+                <p class="sd-empty" data-testid="tc-no-technologies">@(source is null ? "Analyze the project's source in Source Analysis to see its technologies." : "No technology BirkNext recognises was found in the analyzed archive.")</p>
+            }
+            else
+            {
+                <p class="sd-muted">Detection is not analysis: the columns say what BirkNext can do with each technology today. Evidence lists file names only.</p>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="Detected technologies">
+                    <table class="tc-matrix" data-testid="tc-detected">
+                        <thead>
+                            <tr><th scope="col">Technology</th><th scope="col">Detected</th>
+                                @foreach (var d in Enum.GetValues<SupportDimension>()) { <th scope="col">@TechnologySupportRegistry.Label(d)</th> }
+                                <th scope="col">Limitations</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var group in source.Technologies.GroupBy(t => t.Area))
+                            {
+                                <tr class="tc-group"><th scope="rowgroup" colspan="9">@P.Area(group.Key)</th></tr>
+                                @foreach (var t in group)
+                                {
+                                    var descriptor = TechnologySupportRegistry.Find(t.TechnologyId);
+                                    <tr data-testid="tc-tech-@t.TechnologyId" data-overall="@descriptor?.Overall">
+                                        <th scope="row">@t.DisplayName<span class="sd-context">@t.TechnologyId</span></th>
+                                        <td class="tc-detected-cell">@P.Confidence(t.Confidence)<span class="sd-context">@t.Files file(s): @string.Join(", ", t.Evidence.Take(3))</span></td>
+                                        @foreach (var d in Enum.GetValues<SupportDimension>())
+                                        {
+                                            var level = descriptor?.Level(d) ?? SupportLevel.Unsupported;
+                                            <td>@if (level != SupportLevel.NotApplicable) { <span class="sd-pill sd-pill-@P.Tone(level)">@TechnologySupportRegistry.Label(level)</span> } else { <span class="tc-na" aria-label="Not applicable">—</span> }</td>
+                                        }
+                                        <td class="tc-limit">@descriptor?.Limitations</td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <details class="tc-section" data-testid="tc-registry">
+            <summary>Full support matrix (all technologies BirkNext knows)</summary>
+            @foreach (var area in Enum.GetValues<TechnologyArea>())
+            {
+                <h3>@P.Area(area)</h3>
+                <div class="sd-scroll" tabindex="0" role="region" aria-label="@P.Area(area) support">
+                    <table class="tc-matrix">
+                        <thead><tr><th scope="col">Technology</th>@foreach (var d in Enum.GetValues<SupportDimension>()) { <th scope="col">@TechnologySupportRegistry.Label(d)</th> }<th scope="col">Providers</th></tr></thead>
+                        <tbody>
+                            @foreach (var t in TechnologySupportRegistry.Matrix(area))
+                            {
+                                <tr>
+                                    <th scope="row">@t.DisplayName</th>
+                                    @foreach (var d in Enum.GetValues<SupportDimension>())
+                                    {
+                                        var level = t.Level(d);
+                                        <td>@(level == SupportLevel.NotApplicable ? "—" : TechnologySupportRegistry.Label(level))</td>
+                                    }
+                                    <td class="tc-limit">@(t.ProviderIds.Count == 0 ? "None" : string.Join(", ", t.ProviderIds))</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </details>
+    }
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        State.Changed += OnChanged;
+        await State.RefreshAsync();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => State.Changed -= OnChanged;
+}

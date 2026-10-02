@@ -62,6 +62,8 @@ public sealed class IqrSourceStore(AppDbContext db)
             architectureResults.SelectMany(r => r.Facts).ToList(), workspace.Limitations, ct, configuration) };
         // Source integration discovery signals (capture-technology markers, orchestration-declared channels): identifiers only, read from the same workspace.
         snapshot = snapshot with { IntegrationSignals = SourceDiscovery.SourceIntegrationSignalExtractor.Extract(workspace, snapshot.Architecture) };
+        // Technology inventory: every technology the archive shows, with the capabilities it implies — unsupported ones are reported, not dropped.
+        snapshot = snapshot with { TechnologyCoverage = SourceAnalysis.Technology.TechnologyInventory.Detect(workspace, snapshot.Architecture, snapshot.EvidenceDomains) };
         // Repository identity and the dependency evidence Dependency Review consumes (manifests, redacted Renovate configs, automation summaries):
         // captured once here so Dependency Review never needs the archive again. Source Analysis supplies evidence; it does not review dependencies.
         var repository = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);

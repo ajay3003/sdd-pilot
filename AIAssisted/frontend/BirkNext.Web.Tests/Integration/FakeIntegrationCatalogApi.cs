@@ -107,6 +107,17 @@ public sealed class FakeIntegrationCatalogApi : IIntegrationCatalogApiService
         return LoadFailure is null ? Task.FromResult(Catalog with { EnvironmentId = profile.Id }) : Task.FromException<IntegrationCatalog>(LoadFailure);
     }
 
+    /// <summary>The catalog after an explicit template apply (null = the fake keeps the current catalog and only records the call).</summary>
+    public IntegrationCatalog? AfterTemplate { get; set; }
+
+    public Task<IntegrationCatalog> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default)
+    {
+        Calls.Add("apply-template:" + templateId);
+        Mutating();
+        if (AfterTemplate is not null) Catalog = AfterTemplate;
+        return Task.FromResult(Catalog with { EnvironmentId = environmentId, Notices = ["Applied the M2LB DEV template: 19 records added. Existing records were left unchanged."] });
+    }
+
     public Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default)
     {
         Calls.Add("create");

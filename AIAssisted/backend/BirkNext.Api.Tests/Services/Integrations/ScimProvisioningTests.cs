@@ -750,7 +750,7 @@ public sealed class ScimProvisioningTests
     {
         await using var db = Db();
         var catalog = Catalog(db);
-        await catalog.GetAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
+        await catalog.GetWithM2lbTemplateAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
         var probe = new FixedProbe(new ScimRuntimeEvidence { State = IntegrationEvidenceState.NotConfigured, Reason = "No base URL." });
         var service = new ScimEvidenceService(db, catalog, probe, NullLogger<ScimEvidenceService>.Instance);
 
@@ -778,7 +778,7 @@ public sealed class ScimProvisioningTests
     {
         await using var db = Db();
 
-        var catalog = await Catalog(db).GetAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
+        var catalog = await Catalog(db).GetWithM2lbTemplateAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
 
         var scim = catalog.Platforms.Single(p => p.Id == M2lbDevIntegrationSeed.ScimPlatformId);
         scim.Kind.Should().Be(IntegrationKind.IdentityProvisioning);
@@ -796,7 +796,7 @@ public sealed class ScimProvisioningTests
         db.IntegrationEnvironmentStates.Add(new BirkNext.Api.Models.IntegrationEnvironmentStateRecord { EnvironmentId = "dev", SeedName = M2lbDevIntegrationSeed.Name, SeedVersion = 2, UpdatedAt = DateTimeOffset.UtcNow });
         await db.SaveChangesAsync();
 
-        var catalog = await Catalog(db).GetAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
+        var catalog = await Catalog(db).GetWithM2lbTemplateAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
 
         catalog.Platforms.Select(p => p.Id).Should().Contain(M2lbDevIntegrationSeed.ScimPlatformId).And.NotContain(M2lbDevIntegrationSeed.ServiceBusPlatformId);
     }

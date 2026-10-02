@@ -194,6 +194,10 @@ builder.Services.AddHttpClient<IIntegrationCatalogApiService, IntegrationCatalog
 builder.Services.AddHttpClient<IAzureEnvironmentApiService, AzureEnvironmentApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 // Pipeline Review: delivery-flow interpretation of Source Analysis CI/CD evidence (GET only).
+// Technology & Analysis Coverage: source technology inventory + configured integrations (GET only); applicability is evaluated in the browser.
+builder.Services.AddHttpClient<ITechnologyCoverageApiService, TechnologyCoverageApiService>(client =>
+    client.BaseAddress = new Uri("http://localhost:5000/"));
+builder.Services.AddScoped<ProjectApplicabilityState>();
 builder.Services.AddHttpClient<IPipelineReviewApiService, PipelineReviewApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<ISecurityExpectationApi, SecurityExpectationApi>(client =>

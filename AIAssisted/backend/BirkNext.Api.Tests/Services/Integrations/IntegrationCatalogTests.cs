@@ -24,7 +24,7 @@ public sealed class IntegrationCatalogTests
 
     private static IntegrationCatalogService Service(AppDbContext db) => new(db, NullLogger<IntegrationCatalogService>.Instance);
 
-    private static Task<IntegrationCatalog> DevCatalog(IntegrationCatalogService service) => service.GetAsync(DevId, "Development", DevUrl);
+    private static Task<IntegrationCatalog> DevCatalog(IntegrationCatalogService service) => service.GetWithM2lbTemplateAsync(DevId, "Development", DevUrl);
 
     [Fact]
     public async Task DevPlatform_HasTheKnownValues()
@@ -168,5 +168,57 @@ public sealed class IntegrationCatalogTests
         IntegrationConfigurationRules.Evaluate((await service.GetAsync("env", null, null)).Integrations.Single(), null).State.Should().Be(IntegrationConfigurationState.Disabled);
         (await service.DeleteAsync("env", created.Id)).Should().BeTrue();
         (await service.GetAsync("env", null, null)).Integrations.Should().BeEmpty();
+    }
+
+    // ── Project independence: the M2LB template is explicit, never inferred from a hostname ──────────────────────────────
+
+    [Fact]
+    public async Task M2lbHost_NeverInjectsRecords_OnlySuggestsTheTemplate()
+    {
+        var name = Guid.NewGuid().ToString();
+        var catalog = await Service(Db(name)).GetAsync(DevId, "Development", DevUrl);
+        catalog.Platforms.Should().BeEmpty("a hostname that resembles M2LB must never mutate generic project state");
+        catalog.Integrations.Should().BeEmpty();
+        catalog.AppliedTemplateId.Should().BeNull();
+        catalog.DomainExtensions.Should().BeEmpty();
+        catalog.Templates.Should().ContainSingle(t => t.Id == M2lbDevIntegrationSeed.Name && t.Suggested && t.SuggestionReason!.Contains(M2lbDevIntegrationSeed.FrontendHost));
+        (await Db(name).IntegrationEnvironmentStates.CountAsync()).Should().Be(0, "a read writes no template state");
+    }
+
+    [Fact]
+    public async Task GenericEnvironment_OffersTheTemplateWithoutSuggestingIt()
+    {
+        var catalog = await Service(Db()).GetAsync("generic", "Development", "https://paymenthub.example.test/");
+        catalog.Integrations.Should().BeEmpty();
+        catalog.Templates.Should().ContainSingle().Which.Suggested.Should().BeFalse();
+        catalog.DomainExtensions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ApplyTemplate_IsTheOnlyWriter_AndEnablesTheDomainExtension()
+    {
+        var service = Service(Db());
+        var applied = await service.ApplyTemplateAsync(DevId, M2lbDevIntegrationSeed.Name);
+        applied!.Integrations.Should().HaveCount(16);
+        applied.AppliedTemplateId.Should().Be(M2lbDevIntegrationSeed.Name);
+        applied.DomainExtensions.Should().Equal(BirkNext.Technology.DomainExtensionIds.M2lbChildSecurityClassification);
+        applied.Templates.Should().BeEmpty("an applied template is not offered again");
+        applied.Notices.Should().ContainSingle(n => n.StartsWith("Applied the M2LB DEV template"));
+        (await service.ApplyTemplateAsync(DevId, M2lbDevIntegrationSeed.Name))!.Notices.Should().ContainSingle(n => n.Contains("already applied"));
+        (await service.ApplyTemplateAsync(DevId, "unknown-template")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task PersistedM2lbWorkspace_StillLoads_AndReceivesAddMissingUpgrades()
+    {
+        // A workspace seeded by an earlier version (hostname auto-seed, v3): its state record carries the seed name. It keeps loading and is
+        // upgraded add-missing, whatever URL (or none) the read passes, because the template was already part of it.
+        var name = Guid.NewGuid().ToString();
+        await Service(Db(name)).ApplyTemplateAsync(DevId, M2lbDevIntegrationSeed.Name);
+        await using (var db = Db(name)) { (await db.IntegrationEnvironmentStates.SingleAsync()).SeedVersion = 3; await db.SaveChangesAsync(); }
+        var loaded = await Service(Db(name)).GetAsync(DevId, "Development", "https://renamed-host.example.test/");
+        loaded.Integrations.Should().HaveCount(16);
+        loaded.DomainExtensions.Should().Contain(BirkNext.Technology.DomainExtensionIds.M2lbChildSecurityClassification);
+        (await Db(name).IntegrationEnvironmentStates.SingleAsync()).SeedVersion.Should().Be(M2lbDevIntegrationSeed.Version);
     }
 }

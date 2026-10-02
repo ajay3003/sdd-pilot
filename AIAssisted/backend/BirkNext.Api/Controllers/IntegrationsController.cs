@@ -8,7 +8,8 @@ namespace BirkNext.Api.Controllers;
 /// <summary>
 /// Target Environment → Integrations: the configured, expected integrations of one environment. Configuration only — no
 /// secret is accepted or returned (authentication is a mechanism name). <c>environmentType</c> and
-/// <c>targetUrl</c> identify whether the known M2LB DEV seed applies to the environment being read.
+/// <c>targetUrl</c> only decide whether the M2LB DEV template is SUGGESTED; it is applied solely through
+/// <c>POST templates/{templateId}/apply</c> (an explicit action), so a generic project never receives M2LB records.
 /// </summary>
 [ApiController]
 [Route("api/integrations")]
@@ -47,6 +48,14 @@ public sealed class IntegrationsController(IIntegrationCatalogService catalog) :
         // Configured sources and Azure execution are separate facts: the page shows both (IntegrationReview:Azure:Enabled).
         string.IsNullOrWhiteSpace(environmentId) ? BadRequest("environmentId is required.")
             : Ok(await catalog.GetAsync(environmentId, environmentType, targetUrl, ct) with { AzureRuntimeEnabled = azure.Credential is not null });
+
+    /// <summary>Explicitly applies a project integration template (add-missing only). The only path that writes template records.</summary>
+    [HttpPost("templates/{templateId}/apply")]
+    public async Task<ActionResult<IntegrationCatalog>> ApplyTemplate([FromQuery] string environmentId, string templateId, [FromServices] IIntegrationAzureCredential azure, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId)) return BadRequest("environmentId is required.");
+        return await catalog.ApplyTemplateAsync(environmentId, templateId, ct) is { } applied ? Ok(applied with { AzureRuntimeEnabled = azure.Credential is not null }) : NotFound();
+    }
 
     [HttpPost]
     public async Task<ActionResult<IntegrationDefinition>> Create([FromQuery] string environmentId, [FromBody] IntegrationDefinition definition, CancellationToken ct)

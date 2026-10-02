@@ -28,6 +28,28 @@
             <p class="ip-muted" data-testid="ip-intro">Configured integrations used by Integration Quality Review. Observed REST and GraphQL traffic is shown in Endpoint Discovery and is never added here automatically.</p>
             <button type="button" class="btn-secondary" data-testid="ip-add" @onclick="BeginAdd" disabled="@(_editing is not null)">+ Add integration</button>
         </div>
+        @if (_catalog.AppliedTemplateId is { } appliedTemplate)
+        {
+            <p class="ip-muted" data-testid="ip-template-applied">Project template applied: @(appliedTemplate == M2lbTemplateId ? "M2LB DEV integration template" : appliedTemplate). Its records are ordinary integrations you can edit or delete.</p>
+        }
+        @foreach (var offer in _catalog.Templates.Where(t => t.Suggested))
+        {
+            <div class="ip-notice" role="note" data-testid="ip-template-suggestion">
+                <strong>@offer.Name is available.</strong> @offer.SuggestionReason It is not applied automatically. @offer.Description
+                <button type="button" class="btn-secondary" data-testid="ip-template-apply" @onclick="() => ApplyTemplateAsync(offer)" disabled="@(_editing is not null)">Apply @offer.Name</button>
+            </div>
+        }
+        @if (_catalog.Templates.Where(t => !t.Suggested).ToList() is { Count: > 0 } offers)
+        {
+            <details class="ip-templates" data-testid="ip-templates">
+                <summary>Project templates</summary>
+                @foreach (var offer in offers)
+                {
+                    <p class="ip-muted">@offer.Description
+                        <button type="button" class="btn-secondary" data-testid="ip-template-apply" @onclick="() => ApplyTemplateAsync(offer)" disabled="@(_editing is not null)">Apply @offer.Name</button></p>
+                }
+            </details>
+        }
         <p class="ip-save-note" data-testid="ip-save-note">Integration changes are saved immediately and are not affected by the Target Environment Save/Cancel actions.</p>
         <p class="ip-save-status ip-save-status-@_saveState.ToString().ToLowerInvariant()" role="status" aria-live="polite" data-testid="ip-save-status" data-state="@_saveState">@_saveMessage</p>
 
@@ -440,6 +462,7 @@
     private enum SaveState { Idle, Saving, Saved, Failed }
 
     private IntegrationCatalog? _catalog;
+    private const string M2lbTemplateId = "m2lb-dev-eventhub";
     private IReadOnlyList<IntegrationContractArtifact> _contracts = [];
     private ApplicationMessagingEvidenceSet? _messaging;
     private readonly Dictionary<(string, IntegrationContractRole), string> _contractErrors = [];
@@ -656,6 +679,14 @@
         await LoadAsync(importLegacy: true);
         ApplyFocus();
     }
+
+    /// <summary>Applying a template is an explicit, saved action; nothing is applied because the target host resembles a known project.</summary>
+    private Task ApplyTemplateAsync(IntegrationTemplateOffer offer) =>
+        TrackAsync($"{offer.Name} applied; existing records were left unchanged.", async () =>
+        {
+            var applied = await Api.ApplyTemplateAsync(Profile.Id, offer.Id);
+            _notices.AddRange(applied.Notices.Except(_notices).ToList());
+        });
 
     private async Task LoadAsync(bool importLegacy)
     {

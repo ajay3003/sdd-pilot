@@ -27,7 +27,7 @@ public sealed class NavMenuSourceAnalysisTests : BunitContext
         entries[0].Should().Be("§Getting Started", "Source Analysis is no longer a special item above the groups");
         var analysis = entries.ToList().IndexOf("§Analysis");
         var quality = entries.ToList().IndexOf("§Quality");
-        entries.Skip(analysis + 1).Take(quality - analysis - 1).Should().Equal("Requirements Traceability", "Implementation Review", "Implementation Traceability", "Source Analysis", "Azure Environment");
+        entries.Skip(analysis + 1).Take(quality - analysis - 1).Should().Equal("Requirements Traceability", "Implementation Review", "Implementation Traceability", "Source Analysis", "Technology Coverage", "Azure Environment");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle();
         cut.Find("a[href='source-analysis'] .nav-icon-source-analysis").GetAttribute("aria-hidden").Should().Be("true");
     }

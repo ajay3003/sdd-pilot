@@ -1,0 +1,15 @@
+.tc-page { display: grid; gap: 1rem; grid-template-columns: minmax(0, 1fr); }
+.tc-title { margin: 0; font-size: 1.5rem; }
+.tc-section { display: grid; gap: .4rem; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+/* <details> does not lay its content out as a grid in every browser: bound it explicitly so the wide matrices scroll inside. */
+details.tc-section { display: block; max-width: 100%; overflow: hidden; }
+details.tc-section .sd-scroll { max-width: 100%; }
+.tc-section h2 { margin: 0; font-size: 1.1rem; }
+.tc-section h3 { margin: .6rem 0 .2rem; font-size: .95rem; }
+.tc-section > summary { cursor: pointer; font-weight: 600; }
+.tc-small { font-size: .9rem !important; overflow-wrap: anywhere; }
+.tc-group th { background: #eef2f7; font-size: .8rem; text-transform: uppercase; letter-spacing: .02em; }
+.tc-limit { font-size: .8rem; color: #374151; min-width: 14rem; }
+.tc-na { color: #4b5563; }
+.tc-detected-cell { min-width: 14rem; }
+.tc-matrix { min-width: 72rem !important; }

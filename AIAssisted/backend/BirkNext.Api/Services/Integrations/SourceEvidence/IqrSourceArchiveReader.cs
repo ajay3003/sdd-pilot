@@ -20,10 +20,12 @@ public static class IqrSourceArchiveReader
         { "bin", "obj", "node_modules", "packages", ".git", ".vs", "coverage", "TestResults" };
     /// <param name="ConfigurationFiles">JSON/YAML content held in memory for this analysis only. Never stored; only the source-architecture analyzer reads it,
     /// and only allow-listed entity names and endpoint hosts can leave it. Every other analyzer keeps seeing key inventories only.</param>
+    /// <param name="AllPaths">Every non-ignored file path in the archive (names only, never content), including files no analyzer reads (pom.xml, .java,
+    /// requirements.txt). Technology inventory uses it so unsupported technologies are reported, not silently dropped. In memory only.</param>
     /// <param name="EvidenceFiles">Infrastructure-as-code, schema/contract, properties/env and pipeline-script files (Terraform, Bicep, GraphQL SDL, protobuf,
     /// Jenkinsfile …) held in memory for the Source Analysis evidence domains only. Never stored; only redacted, typed evidence leaves the analysis.</param>
     public sealed record Workspace(SourceArchive Archive, List<SourceFile> Files, List<string> Limitations, List<SourceConfigurationEvidence>? Configurations = null,
-        List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null);
+        List<SourceFile>? ConfigurationFiles = null, List<SourceFile>? EvidenceFiles = null, List<string>? AllPaths = null);
 
     /// <summary>Files the evidence domains read beyond C#/project/JSON/YAML: IaC, schemas/contracts, properties/env files and pipeline scripts.</summary>
     public static bool IsEvidenceFile(string path)
@@ -45,6 +47,7 @@ public static class IqrSourceArchiveReader
         var configurations = new List<SourceConfigurationEvidence>();
         var configurationFiles = new List<SourceFile>();
         var evidenceFiles = new List<SourceFile>();
+        var allPaths = new List<string>();
         try
         {
             using var zip = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
@@ -62,6 +65,7 @@ public static class IqrSourceArchiveReader
                 if (entry.Length > MaxExpandedBytes - total) return (null, "Source archive exceeds the 100 MB expanded size limit.");
                 total += entry.Length;
                 if (path.EndsWith('/') || path.Split('/').Any(Ignored.Contains)) continue;
+                allPaths.Add(path);
                 var extension = Path.GetExtension(path).ToLowerInvariant();
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
                 if (extension is ".tfstate" || path.EndsWith(".tfstate.backup", StringComparison.OrdinalIgnoreCase))
@@ -127,7 +131,7 @@ public static class IqrSourceArchiveReader
         catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException)
         { return (null, "Source archive is invalid or unreadable."); }
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return (new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles), null);
+        return (new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths), null);
     }
 
     public static string SafeLabel(string value)

@@ -32,6 +32,7 @@
         {
             <StatusChip Status="@(_overallScore >= 80 ? "healthy" : _overallScore >= 50 ? "warning" : "critical")"
                         Label="@_overallScoreLabel" />
+            <span class="db-assessment-coverage" data-testid="db-assessment-coverage" title="Quality is averaged over assessed areas only. Areas without evidence are coverage gaps, not low quality.">@_assessmentCoverageLabel</span>
         }
         @if (_hasAnySnapshot)
         {
@@ -1029,29 +1030,32 @@
 
     // ── Overall health ────────────────────────────────────────────────────────
 
-    private double _overallScore
-    {
-        get
-        {
-            var scores = new List<double>();
-            if (Snapshot.TraceabilityReport is not null) scores.Add(_traceabilityScore);
-            if (Snapshot.ComplianceReport is not null)   scores.Add(_complianceScore);
-            if (_qaHasData)                              scores.Add(_qaScore);
-            if (Snapshot.DeliveryReport is not null)     scores.Add(_deliveryScore);
-            if (_securityReport is not null)             scores.Add(_securityReport.Health.Score);
-            if (_perfReport?.ReadinessReport is { HasData: true } perf) scores.Add(perf.OverallScore);
-            return scores.Count > 0 ? scores.Average() : 0;
-        }
-    }
+    /// <summary>A QA result only counts as assessed when there was a specification to assess. A report built without one (insufficient
+    /// data) scores 0 by construction — that is missing evidence, not low quality, so it never enters the quality average.</summary>
+    private bool _qaAssessed => DashboardQualityAggregate.QaAssessed(_qaHasData, QualitySession.HasResult, Workspace.Has(WorkspaceArtifactKind.Specification),
+        Snapshot.AuditReport?.HasSpecification, Snapshot.ReadinessReport?.HasSpecification);
 
-    private bool _hasAnyScore =>
-        Snapshot.TraceabilityReport is not null || Snapshot.ComplianceReport is not null ||
-        Snapshot.AuditReport is not null        || Snapshot.DeliveryReport is not null  ||
-        QualitySession.HasResult                ||
-        Snapshot.ReadinessReport is not null    || _securityReport is not null ||
-        _perfReport?.ReadinessReport is { HasData: true };
+    /// <summary>The six dashboard quality areas: (assessed?, score). Not-assessed areas lower coverage, never quality.</summary>
+    private IReadOnlyList<(bool Assessed, double Score)> _qualityAreas =>
+    [
+        (Snapshot.TraceabilityReport is not null, _traceabilityScore),
+        (Snapshot.ComplianceReport is not null, _complianceScore),
+        (_qaAssessed, _qaScore),
+        (Snapshot.DeliveryReport is not null, _deliveryScore),
+        (_securityReport is not null, _securityReport?.Health.Score ?? 0),
+        (_perfReport?.ReadinessReport is { HasData: true }, _perfReport?.ReadinessReport?.OverallScore ?? 0),
+    ];
 
-    private string _overallScoreLabel => _overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk";
+    /// <summary>Quality among assessed areas only (the denominator is the assessed count). There is no global score over unassessed areas.</summary>
+    private DashboardQualityAggregate.Result _quality => DashboardQualityAggregate.Compute(_qualityAreas);
+
+    private double _overallScore => _quality.Quality ?? 0;
+
+    private bool _hasAnyScore => _quality.Quality is not null;
+
+    private string _assessmentCoverageLabel => _quality.CoverageLabel;
+
+    private string _overallScoreLabel => "Quality among assessed: " + (_overallScore >= 80 ? "Healthy" : _overallScore >= 50 ? "Needs Attention" : "At Risk");
 
     // ── Project phase & governance KPI ────────────────────────────────────────
 

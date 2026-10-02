@@ -121,3 +121,16 @@
         overflow-y: auto;
     }
 }
+
+/* Applicability labels a review without hiding it (Partial, N/A, Unsupported, Setup, No evidence). Neutral, never a failure colour. */
+.nav-applicability, .nav-ext {
+    margin-left: .4rem;
+    padding: 0 .35rem;
+    border: 1px solid rgba(255, 255, 255, .55);
+    border-radius: 999px;
+    font-size: .68rem;
+    line-height: 1.3;
+    color: #fff;
+    white-space: nowrap;
+}
+.nav-ext { border-style: dashed; }

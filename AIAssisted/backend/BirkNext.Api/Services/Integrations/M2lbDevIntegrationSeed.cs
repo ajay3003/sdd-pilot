@@ -27,6 +27,8 @@ public static partial class M2lbDevIntegrationSeed
     public const string PersonAdapterApp = "ca-m2lb-person-adp-dev-nwe-001";
     public const string Name = "m2lb-dev-eventhub";
     public const string FrontendHost = "m2lbdev.bufetat.no";
+    public const string TemplateName = "M2LB DEV integration template";
+    public const string TemplateDescription = "Project-specific: the M2LB DEV Event Hub, Service Bus and SCIM platforms and the BIRK CDC integrations, and the M2LB child security classification extension. Apply only to an M2LB DEV environment.";
     public const string PlatformId = "dev:eventhub:m2lb";
     public const string SystemName = "BIRK CDC / Debezium";
     public const string Namespace = "evhns-m2lb-dev-nwe-001";
@@ -53,7 +55,7 @@ public static partial class M2lbDevIntegrationSeed
         ["Romning"] = "Hendelse BiRK Adapter",
     };
 
-    /// <summary>The seed applies to the Development environment whose frontend host is m2lbdev.bufetat.no — nothing else.</summary>
+    /// <summary>Whether to SUGGEST the template: the Development environment whose frontend host is m2lbdev.bufetat.no. Never a reason to apply it.</summary>
     public static bool AppliesTo(string? environmentType, string? targetUrl) =>
         string.Equals(environmentType, "Development", StringComparison.OrdinalIgnoreCase)
         && Uri.TryCreate(targetUrl, UriKind.Absolute, out var uri)

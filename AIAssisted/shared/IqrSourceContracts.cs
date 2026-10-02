@@ -55,6 +55,8 @@ public sealed record IqrSourceSnapshot
     public ScimSourceEvidence? ScimEvidence { get; init; }
     /// <summary>Source-only signals for source integration discovery (capture-technology markers, orchestration-declared channels). Empty in older snapshots.</summary>
     public List<SourceIntegrationSignal> IntegrationSignals { get; init; } = [];
+    /// <summary>Technologies and capabilities the archive contains, including ones BirkNext does not analyze (tool limitations, never findings). Null in older snapshots.</summary>
+    public BirkNext.Technology.SourceTechnologyCoverage? TechnologyCoverage { get; init; }
 }
 
 // ── Multi-stage integration path (analyzer v2) ────────────────────────────────────────────────────────────────────────

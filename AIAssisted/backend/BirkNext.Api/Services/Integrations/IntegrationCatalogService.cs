@@ -14,8 +14,12 @@ namespace BirkNext.Api.Services.Integrations;
 /// </summary>
 public interface IIntegrationCatalogService
 {
-    /// <summary>Reads the catalog of one environment, attaching the M2LB DEV seed first when it applies (add-missing only).</summary>
+    /// <summary>Reads the catalog of one environment. Never applies a project template: an environment only receives template records after
+    /// <see cref="ApplyTemplateAsync"/>. An environment that already has a template applied receives that template's add-missing upgrades.
+    /// Environment type and target URL only produce a template SUGGESTION.</summary>
     Task<IntegrationCatalog> GetAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default);
+    /// <summary>Explicitly applies a project integration template (add-missing only; edited records are never overwritten). Null for an unknown template.</summary>
+    Task<IntegrationCatalog?> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default);
     Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default);
     Task<IntegrationDefinition?> UpdateAsync(string environmentId, string id, IntegrationDefinition definition, CancellationToken ct = default);
     Task<IntegrationDefinition?> SetEnabledAsync(string environmentId, string id, bool enabled, CancellationToken ct = default);
@@ -34,12 +38,26 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
     {
         if (string.IsNullOrWhiteSpace(environmentId)) return new IntegrationCatalog();
         var notices = new List<string>();
-        if (M2lbDevIntegrationSeed.AppliesTo(environmentType, targetUrl))
+        // Only an environment where a person applied the M2LB template (or an existing workspace that already carries it) is upgraded.
+        // A host that merely resembles M2LB never mutates the catalog: it only yields a suggestion below. Read-only checks (no environment
+        // type) never upgrade either.
+        var state = environmentType is null ? null : await db.IntegrationEnvironmentStates.AsNoTracking().FirstOrDefaultAsync(s => s.EnvironmentId == environmentId, ct);
+        if (state is { SeedName: M2lbDevIntegrationSeed.Name, SeedVersion: < M2lbDevIntegrationSeed.Version })
         {
             var added = await AttachSeedAsync(environmentId, ct);
-            if (added > 0) notices.Add($"Added {added} M2LB DEV Event Hub record{(added == 1 ? "" : "s")} from the known platform configuration.");
+            if (added > 0) notices.Add($"Updated the applied M2LB DEV template: {added} missing record{(added == 1 ? "" : "s")} added.");
         }
-        return await ReadAsync(environmentId, notices, ct);
+        return await ReadAsync(environmentId, notices, ct, M2lbDevIntegrationSeed.AppliesTo(environmentType, targetUrl));
+    }
+
+    public async Task<IntegrationCatalog?> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(environmentId) || !string.Equals(templateId, M2lbDevIntegrationSeed.Name, StringComparison.Ordinal)) return null;
+        var added = await AttachSeedAsync(environmentId, ct);
+        logger.LogInformation("Integration template {Template} applied explicitly to {EnvironmentId}.", templateId, environmentId);
+        return await ReadAsync(environmentId, [added > 0
+            ? $"Applied the M2LB DEV template: {added} record{(added == 1 ? "" : "s")} added. Existing records were left unchanged."
+            : "The M2LB DEV template is already applied; nothing was changed."], ct, false);
     }
 
     /// <summary>Adds seed records whose stable id is missing. Existing records — edited or not — are left exactly as they are.</summary>
@@ -91,8 +109,11 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
         return added;
     }
 
-    private async Task<IntegrationCatalog> ReadAsync(string environmentId, List<string> notices, CancellationToken ct)
+    private async Task<IntegrationCatalog> ReadAsync(string environmentId, List<string> notices, CancellationToken ct, bool suggestM2lb = false)
     {
+        var state = await db.IntegrationEnvironmentStates.AsNoTracking().FirstOrDefaultAsync(s => s.EnvironmentId == environmentId, ct);
+        var applied = state?.SeedName is { Length: > 0 } name ? name : null;
+        var m2lbApplied = applied == M2lbDevIntegrationSeed.Name;
         var platforms = await db.IntegrationPlatforms.AsNoTracking().Where(p => p.EnvironmentId == environmentId).OrderBy(p => p.Name).ToListAsync(ct);
         var definitions = await db.IntegrationDefinitions.AsNoTracking().Where(d => d.EnvironmentId == environmentId).ToListAsync(ct);
         return new IntegrationCatalog
@@ -104,6 +125,10 @@ public sealed class IntegrationCatalogService(AppDbContext db, ILogger<Integrati
                 .OrderBy(d => d.Origin == IntegrationRecordOrigin.Seed ? Array.IndexOf(M2lbDevIntegrationSeed.Tables, d.SourceResource?.Split(".dbo.").LastOrDefault()) : int.MaxValue)
                 .ThenBy(d => d.DisplayName, StringComparer.OrdinalIgnoreCase).ToList(),
             Notices = notices,
+            AppliedTemplateId = applied,
+            Templates = m2lbApplied ? [] : [new IntegrationTemplateOffer(M2lbDevIntegrationSeed.Name, M2lbDevIntegrationSeed.TemplateName, M2lbDevIntegrationSeed.TemplateDescription,
+                suggestM2lb, suggestM2lb ? $"The target is the M2LB DEV frontend ({M2lbDevIntegrationSeed.FrontendHost})." : null)],
+            DomainExtensions = m2lbApplied ? [BirkNext.Technology.DomainExtensionIds.M2lbChildSecurityClassification] : [],
         };
     }
 

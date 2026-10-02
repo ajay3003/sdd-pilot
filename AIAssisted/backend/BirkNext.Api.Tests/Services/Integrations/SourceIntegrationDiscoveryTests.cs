@@ -370,6 +370,7 @@ public sealed class SourceIntegrationDiscoveryTests
     private sealed class Catalog_(IntegrationCatalog catalog) : IIntegrationCatalogService
     {
         public Task<IntegrationCatalog> GetAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default) => Task.FromResult(catalog);
+        public Task<IntegrationCatalog?> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default) => throw new NotSupportedException("discovery never writes");
         public Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default) => throw new NotSupportedException("discovery never writes");
         public Task<IntegrationDefinition?> UpdateAsync(string environmentId, string id, IntegrationDefinition definition, CancellationToken ct = default) => throw new NotSupportedException("discovery never writes");
         public Task<IntegrationDefinition?> SetEnabledAsync(string environmentId, string id, bool enabled, CancellationToken ct = default) => throw new NotSupportedException();

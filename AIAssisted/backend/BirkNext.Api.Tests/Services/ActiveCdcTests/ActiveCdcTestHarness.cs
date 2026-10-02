@@ -114,6 +114,7 @@ internal sealed class ActiveCdcTestHarness : IAsyncDisposable
         };
         public Task<IntegrationCatalog> GetAsync(string environmentId, string? environmentType, string? targetUrl, CancellationToken ct = default) =>
             Task.FromResult(new IntegrationCatalog { EnvironmentId = environmentId, Platforms = [Platform], Integrations = [Integration] });
+        public Task<IntegrationCatalog?> ApplyTemplateAsync(string environmentId, string templateId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IntegrationDefinition> CreateAsync(string environmentId, IntegrationDefinition definition, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IntegrationDefinition?> UpdateAsync(string environmentId, string id, IntegrationDefinition definition, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IntegrationDefinition?> SetEnabledAsync(string environmentId, string id, bool enabled, CancellationToken ct = default) => throw new NotSupportedException();

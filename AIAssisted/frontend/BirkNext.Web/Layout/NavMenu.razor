@@ -1,5 +1,7 @@
 @using BirkNext.Web.Services
 @inject FeatureVisibilityService FeatureViz
+@inject IServiceProvider ServiceProvider
+@implements IDisposable
 
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
@@ -179,11 +181,16 @@
                     </NavLink>
                 </div>
             }
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="technology-coverage" Match="NavLinkMatch.All">
+                    <span class="nav-icon nav-icon-source-analysis" aria-hidden="true"></span> Technology Coverage
+                </NavLink>
+            </div>
             @if (FeatureViz.AzureEnvironmentAnalysis)
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="azure-environment" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-source-analysis" aria-hidden="true"></span> Azure Environment
+                        <span class="nav-icon nav-icon-source-analysis" aria-hidden="true"></span> Azure Environment @Badge("azure-environment")
                     </NavLink>
                 </div>
             }
@@ -196,7 +203,7 @@
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span> Quality Review
+                        <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span> Quality Review @Badge("quality-review")
                     </NavLink>
                 </div>
             }
@@ -204,7 +211,7 @@
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="frontend-quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Frontend Quality Review
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Frontend Quality Review @Badge("frontend-quality-review")
                     </NavLink>
                 </div>
             }
@@ -212,7 +219,7 @@
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="api-quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> API Quality Review
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> API Quality Review @Badge("api-quality-review")
                     </NavLink>
                 </div>
             }
@@ -220,30 +227,30 @@
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="integration-quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Integration Quality Review
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Integration Quality Review @Badge("integration-quality-review")
                     </NavLink>
                 </div>
             }
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="security-classification-review" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Security Classification
+                    <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Security Classification <span class="nav-ext" title="Domain-specific extension: M2LB child security classification">M2LB extension</span>@Badge("security-classification-review")
                 </NavLink>
             </div>
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="dependency-review" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Dependency Review
+                    <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Dependency Review @Badge("dependency-review")
                 </NavLink>
             </div>
             <div class="nav-item px-3">
                 <NavLink class="nav-link" href="pipeline-review" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Pipeline Review
+                    <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Pipeline Review @Badge("pipeline-review")
                 </NavLink>
             </div>
             @if (FeatureViz.CriticalE2ERegression)
             {
                 <div class="nav-item px-3">
                     <NavLink class="nav-link" href="critical-e2e-regression" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Critical E2E Regression
+                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Critical E2E Regression @Badge("critical-e2e-regression")
                     </NavLink>
                 </div>
             }
@@ -280,6 +287,27 @@
 
 @code {
     private bool collapseNavMenu = false;
+    private ProjectApplicabilityState? _applicability;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Optional: applicability labels reviews (never hides them). Absent in hosts that do not register it.
+        _applicability = ServiceProvider.GetService(typeof(ProjectApplicabilityState)) as ProjectApplicabilityState;
+        if (_applicability is null) return;
+        _applicability.Changed += OnApplicabilityChanged;
+        try { await _applicability.EnsureLoadedAsync(); } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { }
+    }
+
+    private void OnApplicabilityChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() { if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged; }
+
+    private RenderFragment? Badge(string reviewId)
+    {
+        var a = _applicability?.For(reviewId);
+        if (TechnologyCoveragePresentation.NavBadge(a) is not { } text) return null;
+        return @<span class="nav-applicability" data-testid="nav-applicability-@reviewId" title="@(BirkNext.Applicability.ScoreSemantics.Label(a!.Status)): @a.Reason">@text</span>;
+    }
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;
 

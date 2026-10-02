@@ -160,7 +160,7 @@ public sealed class IntegrationEvidenceAndContractTests
     {
         await using var db = Db();
         var catalog = new IntegrationCatalogService(db, NullLogger<IntegrationCatalogService>.Instance);
-        await catalog.GetAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
+        await catalog.GetWithM2lbTemplateAsync("dev", "Development", "https://m2lbdev.bufetat.no/");
         var store = new IntegrationContractStore(db, catalog, NullLogger<IntegrationContractStore>.Instance);
         const string person = "dev:eventhub:birk-cdc:dbo.Person";
         const string schema = """{ "type":"object", "properties": { "op": { "type":"string" } } }""";

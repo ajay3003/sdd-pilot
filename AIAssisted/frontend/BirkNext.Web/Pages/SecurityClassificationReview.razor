@@ -22,6 +22,7 @@
                 Description="Does the security classification survive the change-capture (CDC) pipeline into the consuming service, and is a Kode 6 / Kode 7 child protected from unauthorized access? The detected pipeline is shown from the selected source.">
         @if (_result is not null) { <button type="button" class="btn-secondary" data-testid="sc-export" @onclick="ExportAsync">Export HTML</button> }
     </PageHeader>
+    <p class="sc-muted" role="note" data-testid="sc-domain-extension">Domain-specific extension: M2LB child security classification (BiRK → M2LB, Kode 6 / Kode 7). It is not a generic security review and does not apply to other projects; see Technology Coverage for the reviews that apply to yours.</p>
 
     @if (_profile is null)
     {
