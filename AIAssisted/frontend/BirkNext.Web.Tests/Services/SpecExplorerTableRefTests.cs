@@ -11,6 +11,30 @@ namespace BirkNext.Web.Tests.Services;
 public sealed class SpecExplorerTableRefTests
 {
     [Fact]
+    public void Parse_CustomRequirementIds_PreservesIdsAndExtractsReferences()
+    {
+        const string spec = """
+            # Requirements
+            - JIRA-123: Process a submitted request
+            - US-A1: User can review the result
+
+            | Item | Requirement |
+            |------|-------------|
+            | Submission | JIRA-123 |
+            | Review | US-A1 |
+            """;
+
+        var tree = SpecExplorerService.Parse(spec);
+        var nodes = GetAllNodes(tree.Roots).ToList();
+        var rows = nodes.Where(n => n.NodeType == SpecNodeType.TableRow).ToList();
+
+        nodes.Select(n => n.SpecItemId).Should().Contain("JIRA-123");
+        nodes.Select(n => n.SpecItemId).Should().Contain("US-A1");
+        rows[0].LinkedSpecItemIds.Should().Contain("JIRA-123");
+        rows[1].LinkedSpecItemIds.Should().Contain("US-A1");
+    }
+
+    [Fact]
     public void ParseTable_ExtractsSpecRefsFromAllCells()
     {
         const string spec = @"
