@@ -10,14 +10,15 @@ public static class SpecExplorerService
     // ── Regexes ───────────────────────────────────────────────────────────────
 
     // Spec item anchored to line start — prevents mid-sentence reference matches.
-    // Matches: "**FR-001**:", "FR-001:", "- FR-001:", "- **SC-002**:"
+    // Keep the built-in compact forms (FR1, US2) while also accepting project IDs
+    // such as ABC-123, US-A1, and JIRA-42 without requiring a global prefix list.
     private static readonly Regex SpecItemStartRe = new(
-        @"^(?:[-*]\s+|>\s+)?\*{0,2}(FR|NFR|SC|US|UC|AC|TS|REQ)-?\s*(\d{1,4})\b",
+        @"^(?:[-*]\s+|>\s+)?\*{0,2}(?<id>(?:(?:FR|NFR|SC|US|UC|AC|TS|REQ)-?\d{1,4}|[A-Z][A-Z0-9]*-[A-Z0-9]*\d[A-Z0-9]*))\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     // Spec references anywhere in text — used only for extracting linked IDs.
     private static readonly Regex SpecRefRe = new(
-        @"\b(FR|NFR|SC|US|UC|AC|TS|REQ|TC)-?\s*(\d{1,4})\b",
+        @"\b(?<id>(?:(?:FR|NFR|SC|US|UC|AC|TS|REQ|TC)-?\d{1,4}|[A-Z][A-Z0-9]*-[A-Z0-9]*\d[A-Z0-9]*))\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ConstitutionRuleRefRe = new(
@@ -687,17 +688,8 @@ public static class SpecExplorerService
                 if (sm.Success)
                 {
                     CommitPending();
-                    var prefix = sm.Groups[1].Value.ToUpperInvariant();
-                    var numStr = sm.Groups[2].Value;
-                    var itemId = $"{prefix}-{numStr.PadLeft(3, '0')}";
-                    var nodeType = prefix switch
-                    {
-                        "FR" or "NFR" or "REQ" => SpecNodeType.Requirement,
-                        "US" or "UC"           => SpecNodeType.UserStory,
-                        "SC"                   => SpecNodeType.SuccessCriterion,
-                        "AC" or "TS"           => SpecNodeType.AcceptanceTest,
-                        _                      => SpecNodeType.Requirement,
-                    };
+                    var itemId = NormalizeSpecItemId(sm.Groups["id"].Value);
+                    var nodeType = GetSpecNodeType(itemId);
                     var rawTitle = StripMarkdown(line.Trim().TrimStart('-', '*', '>', ' '));
                     if (rawTitle.Length > 200) rawTitle = rawTitle[..200];
                     pendingItem = new SpecNode
@@ -935,9 +927,7 @@ public static class SpecExplorerService
         var result = new List<string>();
         foreach (Match m in SpecRefRe.Matches(text))
         {
-            var prefix = m.Groups[1].Value.ToUpperInvariant();
-            var num = m.Groups[2].Value.PadLeft(3, '0');
-            var key = $"{prefix}-{num}";
+            var key = NormalizeSpecItemId(m.Groups["id"].Value);
             if (seen.Add(key)) result.Add(key);
         }
         return result;
@@ -1401,10 +1391,34 @@ public static class SpecExplorerService
         var match = SpecItemStartRe.Match(text);
         if (!match.Success) return null;
 
-        var prefix = match.Groups[1].Value.ToUpperInvariant();
-        if (prefix is not ("FR" or "NFR" or "REQ")) return null;
+        var id = NormalizeSpecItemId(match.Groups["id"].Value);
+        return GetSpecNodeType(id) == SpecNodeType.Requirement ? id : null;
+    }
 
-        return $"{prefix}-{match.Groups[2].Value.PadLeft(3, '0')}";
+    private static string NormalizeSpecItemId(string value)
+    {
+        var id = value.Trim().ToUpperInvariant();
+        var compact = Regex.Match(id, @"^(FR|NFR|SC|US|UC|AC|TS|REQ|TC)(\d{1,4})$");
+        if (compact.Success)
+            return $"{compact.Groups[1].Value}-{compact.Groups[2].Value.PadLeft(3, '0')}";
+
+        var knownNumeric = Regex.Match(id, @"^(FR|NFR|SC|US|UC|AC|TS|REQ|TC)-(\d{1,4})$");
+        if (knownNumeric.Success)
+            return $"{knownNumeric.Groups[1].Value}-{knownNumeric.Groups[2].Value.PadLeft(3, '0')}";
+
+        return id;
+    }
+
+    private static SpecNodeType GetSpecNodeType(string id)
+    {
+        var prefix = id.Split('-', 2)[0];
+        return prefix switch
+        {
+            "US" or "UC" => SpecNodeType.UserStory,
+            "SC" => SpecNodeType.SuccessCriterion,
+            "AC" or "TS" or "TC" => SpecNodeType.AcceptanceTest,
+            _ => SpecNodeType.Requirement,
+        };
     }
 
     private static List<string> ExtractConstitutionRuleReferences(string text) =>
