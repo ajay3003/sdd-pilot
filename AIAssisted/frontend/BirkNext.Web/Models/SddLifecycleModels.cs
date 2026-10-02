@@ -10,16 +10,43 @@ public sealed class SddLifecycleState
     public List<SddTraceabilityLink> Links { get; set; } = [];
     public List<SddImplementationEvidence> ImplementationEvidence { get; set; } = [];
     public List<SddTestEvidence> TestEvidence { get; set; } = [];
+    public List<SddTestExecutionEvidence> TestExecutions { get; set; } = [];
+    public List<SddSourceSnapshotReference> SourceSnapshots { get; set; } = [];
+    public List<SddQualityReviewRun> QualityReviewRuns { get; set; } = [];
     public List<SddReviewRun> ReviewRuns { get; set; } = [];
     public List<SddRequirementSnapshot> RequirementSnapshots { get; set; } = [];
     public List<SddRequirementChange> RequirementChanges { get; set; } = [];
 }
+
+public sealed class SddSourceSnapshotReference
+{
+    public string SnapshotId { get; set; } = "";
+    public string Fingerprint { get; set; } = "";
+    public string EnvironmentReference { get; set; } = "";
+    public string AnalysisStatus { get; set; } = "Unknown";
+    public string AnalyzerVersion { get; set; } = "";
+    public DateTimeOffset AnalyzedAt { get; set; }
+    public List<string> Limitations { get; set; } = [];
+    public string Currentness { get; set; } = "Historical";
+}
+
+public sealed class SddQualityReviewRun
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public DateTimeOffset RanAt { get; set; } = DateTimeOffset.UtcNow;
+    public string LifecycleGraphFingerprint { get; set; } = "";
+    public string Currentness { get; set; } = "Current";
+    public List<SddQualityReviewFinding> Findings { get; set; } = [];
+}
+
+public sealed record SddQualityReviewFinding(string Code, string Severity, string RequirementId, string Message, string EvidenceReference);
 
 public sealed class SddRequirementSnapshot
 {
     public string RequirementId { get; set; } = "";
     public string Fingerprint { get; set; } = "";
     public string AcceptanceCriteriaFingerprint { get; set; } = "";
+    public List<string> AcceptanceCriterionIds { get; set; } = [];
     public Guid? ArtifactRevisionId { get; set; }
     public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
     public bool IsCurrent { get; set; }
@@ -98,9 +125,63 @@ public sealed class SddImplementationEvidence
     public string Reference { get; set; } = "";
     public string? SourceSnapshotId { get; set; }
     public string? SourceFingerprint { get; set; }
+    public string? SourceEvidenceId { get; set; }
+    public string? ProviderId { get; set; }
+    public string? ProviderVersion { get; set; }
+    public DateTimeOffset? ObservedAt { get; set; }
+    public string? FilePath { get; set; }
+    public string SourceValidation { get; set; } = "NotAssessed";
+    public string? StableKey { get; set; }
+    public string? CurrentnessReason { get; set; }
     public string Confidence { get; set; } = "Unresolved";
     public string Provenance { get; set; } = "Manual";
     public string Currentness { get; set; } = "Current";
+}
+
+/// <summary>Immutable execution observation imported from a test provider or report.</summary>
+public sealed class SddTestExecutionEvidence
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string TestId { get; set; } = "";
+    public string TestName { get; set; } = "";
+    public List<string> RequirementReferences { get; set; } = [];
+    public List<string> AcceptanceCriterionReferences { get; set; } = [];
+    public string EvidenceKind { get; set; } = "Executed";
+    public string ExecutionState { get; set; } = "Unknown";
+    public string Result { get; set; } = "Unknown";
+    public string ProviderId { get; set; } = "ManualImport";
+    public string ResultSource { get; set; } = "";
+    public string? ProviderResultId { get; set; }
+    public string? EnvironmentReference { get; set; }
+    public string? BuildReference { get; set; }
+    public string? SourceSnapshotId { get; set; }
+    public string? SourceFingerprint { get; set; }
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? FinishedAt { get; set; }
+    public DateTimeOffset? ExecutedAt { get; set; }
+    public string Currentness { get; set; } = "Current";
+    public string? CurrentnessReason { get; set; }
+    public string Fingerprint { get; set; } = "";
+}
+
+public sealed class SddTestExecutionImportRecord
+{
+    public string TestId { get; set; } = "";
+    public string TestName { get; set; } = "";
+    public List<string> RequirementReferences { get; set; } = [];
+    public List<string> AcceptanceCriterionReferences { get; set; } = [];
+    public string ExecutionState { get; set; } = "Completed";
+    public string Result { get; set; } = "Unknown";
+    public string? ProviderId { get; set; }
+    public string? ResultSource { get; set; }
+    public string? ProviderResultId { get; set; }
+    public string? EnvironmentReference { get; set; }
+    public string? BuildReference { get; set; }
+    public string? SourceSnapshotId { get; set; }
+    public string? SourceFingerprint { get; set; }
+    public DateTimeOffset? StartedAt { get; set; }
+    public DateTimeOffset? FinishedAt { get; set; }
+    public DateTimeOffset? ExecutedAt { get; set; }
 }
 
 public sealed class SddTestEvidence
@@ -114,6 +195,7 @@ public sealed class SddTestEvidence
     public DateTimeOffset? Timestamp { get; set; }
     public string Provenance { get; set; } = "Manual";
     public string Currentness { get; set; } = "Current";
+    public string? CurrentnessReason { get; set; }
 }
 
 public sealed class SddReviewRun
@@ -124,6 +206,10 @@ public sealed class SddReviewRun
     public string PlanFingerprint { get; set; } = "";
     public string TasksFingerprint { get; set; } = "";
     public string SourceSnapshotReference { get; set; } = "Not available";
+    public string SourceFingerprint { get; set; } = "";
+    public string LifecycleEvidenceFingerprint { get; set; } = "";
+    public string TestEvidenceFingerprint { get; set; } = "";
+    public int ReviewVersion { get; set; } = 1;
     public string Currentness { get; set; } = "Current";
     public int RequirementCount { get; set; }
     public int RequirementsWithPlanEvidence { get; set; }

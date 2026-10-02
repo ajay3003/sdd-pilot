@@ -1,0 +1,52 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Models
+@inject IWorkspaceSessionService Workspace
+@inject SddEvidenceGraphService Graph
+
+<section class="sdd-matrix" aria-labelledby="sdd-matrix-title">
+    <h2 id="sdd-matrix-title">Shared SDD evidence graph</h2>
+    <p>Plan, task, source evidence and test execution are separate evidence dimensions. Gaps are not failures by default.</p>
+    @if (Rows.Count == 0)
+    {
+        <p role="status">Requirements are not available in this workspace. Source and other reviews remain available independently.</p>
+    }
+    else
+    {
+        <div class="table-wrap"><table>
+            <thead><tr><th>Requirement</th><th>Acceptance criteria</th><th>Plan</th><th>Task</th><th>Implementation evidence</th><th>Test design</th><th>Execution / result</th><th>Currentness</th></tr></thead>
+            <tbody>
+            @foreach (var row in Rows)
+            {
+                var currentImpl = row.Implementation.Where(x => x.Currentness == "Current").ToList();
+                var currentTests = row.Executions.Where(x => x.Currentness == "Current").ToList();
+                <tr>
+                    <th scope="row"><strong>@row.Requirement.Id</strong><span>@row.Requirement.Text</span></th>
+                    <td>@row.Requirement.LinkedAcceptanceScenarios.Count documented; @row.DesignedTests.Count designed</td>
+                    <td>@(row.PlanReferences.Count == 0 ? "No link" : string.Join(", ", row.PlanReferences))</td>
+                    <td>@(row.TaskReferences.Count == 0 ? "No link" : string.Join(", ", row.TaskReferences))</td>
+                    <td>
+                        @if (currentImpl.Count == 0) { <span>No current evidence</span> }
+                        @foreach (var item in row.Implementation)
+                        { <details><summary>@item.EvidenceType · @item.Confidence · @item.Currentness</summary><p>@item.Reference</p><p>Snapshot @item.SourceSnapshotId · @item.SourceFingerprint</p><p>@item.Provenance · @item.SourceValidation</p><p>@item.CurrentnessReason</p></details> }
+                    </td>
+                    <td>@(row.DesignedTests.Count == 0 ? "None" : string.Join(", ", row.DesignedTests.Select(x => x.TestReference)))</td>
+                    <td>
+                        @if (currentTests.Count == 0) { <span>Not executed / no evidence</span> }
+                        @foreach (var result in row.Executions)
+                        { <details><summary>@result.TestId · @result.ExecutionState / @result.Result · @result.Currentness</summary><p>@result.ProviderId · @result.ResultSource · @result.ExecutedAt</p><p>Build @result.BuildReference · source @result.SourceSnapshotId</p><p>@result.CurrentnessReason</p></details> }
+                    </td>
+                    <td>@(row.NeedsClarification ? "Needs clarification" : row.Implementation.Any(x => x.Currentness == "PotentiallyStale") || row.Executions.Any(x => x.Currentness == "PotentiallyStale") ? "Potentially stale" : row.Implementation.Any(x => x.Currentness == "Historical") || row.Executions.Any(x => x.Currentness == "Historical") ? "Historical evidence retained" : "Evidence state shown per item")</td>
+                </tr>
+            }
+            </tbody>
+        </table></div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<SddRequirementGraphRow> Rows => Graph.Build(Workspace);
+}
+
+<style>
+ .sdd-matrix{margin:20px 0;padding:16px;border:1px solid #d8dee8;border-radius:10px;background:white}.sdd-matrix .table-wrap{overflow:auto;max-width:100%}.sdd-matrix table{border-collapse:collapse;width:100%;min-width:1100px}.sdd-matrix th,.sdd-matrix td{text-align:left;vertical-align:top;padding:9px;border-bottom:1px solid #e1e5eb}.sdd-matrix tbody th span{display:block;font-weight:400;max-width:380px}.sdd-matrix details{margin:4px 0}.sdd-matrix summary{cursor:pointer}
+</style>

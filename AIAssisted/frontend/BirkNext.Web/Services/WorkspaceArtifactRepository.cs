@@ -129,6 +129,9 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.Links ??= [];
             SddLifecycle.ImplementationEvidence ??= [];
             SddLifecycle.TestEvidence ??= [];
+            SddLifecycle.TestExecutions ??= [];
+            SddLifecycle.SourceSnapshots ??= [];
+            SddLifecycle.QualityReviewRuns ??= [];
             SddLifecycle.ReviewRuns ??= [];
             SddLifecycle.RequirementSnapshots ??= [];
             SddLifecycle.RequirementChanges ??= [];

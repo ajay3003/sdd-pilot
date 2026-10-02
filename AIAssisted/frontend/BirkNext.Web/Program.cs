@@ -218,6 +218,8 @@ builder.Services.AddHttpClient<IDependencyReviewApiService, DependencyReviewApiS
     client.BaseAddress = new Uri("http://localhost:5000/");
     client.Timeout = TimeSpan.FromMinutes(5);
 });
+builder.Services.AddHttpClient<ISddEvidenceApiService, SddEvidenceApiService>();
+builder.Services.AddScoped<SddEvidenceGraphService>();
 // Trusted GraphQL schema artifacts per (Target Environment, API target) — API Quality Review's fallback schema for compatibility.
 builder.Services.AddHttpClient<IGraphQlSchemaArtifactApiService, GraphQlSchemaArtifactApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
