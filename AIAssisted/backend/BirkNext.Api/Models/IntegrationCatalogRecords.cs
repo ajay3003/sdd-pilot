@@ -119,3 +119,11 @@ public class IntegrationContractArtifactRecord
     public string DocumentJson { get; set; } = string.Empty;
     public DateTimeOffset ImportedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+/// <summary>Safe documented message-flow and test-readiness configuration per Target Environment. JSON contract deliberately has no secret or payload fields.</summary>
+public class IntegrationMessageFlowRecord
+{
+    public string EnvironmentId { get; set; } = string.Empty;
+    public string DocumentJson { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}

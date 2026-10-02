@@ -388,6 +388,7 @@ builder.Services.AddScoped<IContractComparer, ContractComparer>();
 // Integration catalog (Target Environment → Integrations) and Integration Quality Review over it. Read-only evidence ports:
 // a DNS/TCP/TLS namespace probe; no runtime or contract adapter exists in this build, so those domains report Not assessed.
 builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationCatalogService, BirkNext.Api.Services.Integrations.IntegrationCatalogService>();
+builder.Services.AddScoped<BirkNext.Api.Services.Integrations.IIntegrationMessageFlowStore, BirkNext.Api.Services.Integrations.IntegrationMessageFlowStore>();
 builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationNamespaceProbe, BirkNext.Api.Services.Integrations.TlsNamespaceProbe>();
 // Runtime evidence adapters are read-only and off unless IntegrationReview:Azure:Enabled is true (instance identity; no secrets in config/UI).
 builder.Services.AddSingleton<BirkNext.Api.Services.Integrations.IIntegrationAzureCredential, BirkNext.Api.Services.Integrations.IntegrationAzureCredential>();

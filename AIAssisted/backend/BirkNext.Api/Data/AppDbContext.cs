@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<IntegrationReviewRunRecord> IntegrationReviewRuns => Set<IntegrationReviewRunRecord>();
     public DbSet<GraphQlSchemaArtifactRecord> GraphQlSchemaArtifacts => Set<GraphQlSchemaArtifactRecord>();
     public DbSet<IntegrationContractArtifactRecord> IntegrationContractArtifacts => Set<IntegrationContractArtifactRecord>();
+    public DbSet<IntegrationMessageFlowRecord> IntegrationMessageFlows => Set<IntegrationMessageFlowRecord>();
     public DbSet<ApplicationMessagingEvidenceRecord> ApplicationMessagingEvidence => Set<ApplicationMessagingEvidenceRecord>();
     public DbSet<DependencyReviewRunRecord> DependencyReviewRuns => Set<DependencyReviewRunRecord>();
     public DbSet<DependencyInventoryRecord> DependencyInventories => Set<DependencyInventoryRecord>();
@@ -616,6 +617,15 @@ public class AppDbContext : DbContext
             entity.Property(a => a.ContentHash).HasColumnName("content_hash").HasMaxLength(64).IsRequired();
             entity.Property(a => a.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
             entity.Property(a => a.ImportedAt).HasColumnName("imported_at");
+        });
+
+        modelBuilder.Entity<IntegrationMessageFlowRecord>(entity =>
+        {
+            entity.ToTable("integration_message_flows");
+            entity.HasKey(r => r.EnvironmentId);
+            entity.Property(r => r.EnvironmentId).HasColumnName("environment_id").HasMaxLength(200).IsRequired();
+            entity.Property(r => r.DocumentJson).HasColumnName("document_json").HasColumnType("text").IsRequired();
+            entity.Property(r => r.UpdatedAt).HasColumnName("updated_at");
         });
 
         modelBuilder.Entity<SecurityClassificationEvidenceRecord>(entity =>

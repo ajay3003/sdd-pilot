@@ -47,6 +47,10 @@ public interface IIntegrationCatalogApiService
     Task<IntegrationReviewResult> RunAsync(FrontendAnalysisProfile profile, CancellationToken ct = default);
     Task<IReadOnlyList<IntegrationReviewRunSummary>> HistoryAsync(string environmentId, CancellationToken ct = default);
     Task<IntegrationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default);
+    Task<IntegrationMessageFlowPackage> GetMessageFlowReviewAsync(string environmentId, CancellationToken ct = default) => Task.FromResult(new IntegrationMessageFlowPackage(
+        new MessageFlowDefinition { EnvironmentId = environmentId, Name = "Message flow review" }, new AltinnTestConfiguration(), new(false, 0, 0, [], []), [], []));
+    Task<IntegrationMessageFlowPackage> SaveMessageFlowReviewAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default) => Task.FromException<IntegrationMessageFlowPackage>(new NotSupportedException("Message flow configuration is unavailable."));
+    Task<MessageFlowSourceContractOptions?> MessageFlowSourceContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default) => Task.FromResult<MessageFlowSourceContractOptions?>(null);
 
     // SCIM identity provisioning. Default members keep other implementations (test fakes) valid; the backend client overrides them.
     /// <summary>The environment's latest SCIM source analysis and stored safe-check history.</summary>
@@ -237,6 +241,21 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
 
     public async Task<IntegrationReviewResult?> GetRunAsync(Guid runId, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<IntegrationReviewResult>($"api/integration-review/runs/{runId}", Json, ct);
+
+    public async Task<IntegrationMessageFlowPackage> GetMessageFlowReviewAsync(string environmentId, CancellationToken ct = default) =>
+        await http.GetFromJsonAsync<IntegrationMessageFlowPackage>($"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", Json, ct)
+        ?? new IntegrationMessageFlowPackage(new MessageFlowDefinition { EnvironmentId = environmentId, Name = "Message flow review" }, new(), new(false, 0, 0, [], []), [], []);
+
+    public async Task<IntegrationMessageFlowPackage> SaveMessageFlowReviewAsync(string environmentId, IntegrationMessageFlowPackage package, CancellationToken ct = default) =>
+        await Read<IntegrationMessageFlowPackage>(await http.PutAsJsonAsync($"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}", package, Json, ct), ct);
+
+    public async Task<MessageFlowSourceContractOptions?> MessageFlowSourceContractsAsync(string environmentId, Guid snapshotId, CancellationToken ct = default)
+    {
+        using var response = await http.GetAsync($"api/integration-message-flow/{Uri.EscapeDataString(environmentId)}/source-contracts/{snapshotId}", ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<MessageFlowSourceContractOptions>(Json, ct);
+    }
 
     private static async Task<T> Read<T>(HttpResponseMessage response, CancellationToken ct)
     {

@@ -1,0 +1,29 @@
+.mfr-panel { margin: 1.25rem 0; padding: 1.25rem; border: 1px solid var(--border-color, #d6dce5); border-radius: 12px; background: var(--surface-color, #fff); color: var(--text-color, #182230); }
+.mfr-heading-row, .mfr-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; }
+.mfr-heading-row h2 { margin: 0; }
+.mfr-heading-row p, .mfr-note { color: var(--muted-text-color, #526174); }
+.mfr-status { border: 1px solid #b54708; border-radius: 999px; padding: .25rem .65rem; font-weight: 700; color: #93370d; }
+.mfr-card { margin-top: 1rem; padding: 1rem; border: 1px solid var(--border-color, #d6dce5); border-radius: 9px; }
+.mfr-card h3 { margin-top: 0; }
+.mfr-flow { display: grid; gap: .5rem; padding-left: 1.5rem; }
+.mfr-flow li { padding: .6rem; border-left: 3px solid #8b9bb0; background: var(--surface-subtle, #f7f9fc); }
+.mfr-flow li > * { display: block; }
+.mfr-flow small, .mfr-error small, .mfr-readiness small { color: var(--muted-text-color, #526174); }
+.mfr-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.mfr-error { display: grid; gap: .25rem; padding: .65rem 0; border-bottom: 1px solid var(--border-color, #d6dce5); }
+.mfr-readiness { display: grid; gap: .6rem; padding: 0; list-style: none; }
+.mfr-readiness li { display: grid; grid-template-columns: 1.2rem auto; gap: .25rem .5rem; }
+.mfr-readiness small { grid-column: 2; }
+.mfr-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.mfr-form label, .mfr-card > label { display: grid; gap: .3rem; font-weight: 600; }
+.mfr-form input:not([type=checkbox]), .mfr-form select, .mfr-card > label input { min-width: 0; width: 100%; padding: .45rem; }
+.mfr-form .mfr-check { display: flex; align-items: center; }
+.mfr-disclaimer { padding: .75rem; background: #f4f6fa; border-radius: 7px; }
+.mfr-card details { padding: .5rem 0; border-bottom: 1px solid var(--border-color, #d6dce5); }
+.mfr-schema { display: grid; gap: .35rem; grid-column: 1 / -1; overflow-wrap: anywhere; padding: .75rem; background: var(--surface-subtle, #f7f9fc); border-radius: 7px; }
+.mfr-schema ul { max-height: 18rem; overflow: auto; }
+.mfr-checkpoint { display: grid; gap: .4rem; margin: .65rem 0; padding-bottom: .65rem; border-bottom: 1px solid var(--border-color, #d6dce5); }
+.mfr-card summary { cursor: pointer; font-weight: 700; }
+.mfr-panel button:focus-visible, .mfr-panel input:focus-visible, .mfr-panel select:focus-visible, .mfr-panel summary:focus-visible { outline: 3px solid #245fcc; outline-offset: 2px; }
+@media (max-width: 900px) { .mfr-grid { grid-template-columns: 1fr; } .mfr-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .mfr-panel { padding: .75rem; } .mfr-form { grid-template-columns: 1fr; } .mfr-heading-row { align-items: flex-start; flex-direction: column; } .mfr-actions { justify-content: flex-start; } }

@@ -1,0 +1,280 @@
+@using BirkNext.Integrations
+@using BirkNext.Web.Services
+@inject IIntegrationCatalogApiService Api
+
+<section class="mfr-panel" aria-labelledby="mfr-heading" data-testid="mfr-panel">
+    <div class="mfr-heading-row">
+        <div><h2 id="mfr-heading">Message flow review</h2><p>Documented design, source evidence, configuration and runtime observations are shown as separate evidence stages.</p></div>
+        @if (_package is not null) { <span class="mfr-status">Active test: blocked</span> }
+    </div>
+    @if (string.IsNullOrWhiteSpace(EnvironmentId))
+    {
+        <p role="status">Select a Target Environment to review or configure a message flow.</p>
+    }
+    else if (_busy)
+    {
+        <p role="status">Loading message flow configuration…</p>
+    }
+    else if (_package is { } package)
+    {
+        <div class="mfr-actions">
+            <button type="button" class="btn-secondary" @onclick="LoadGeneric">Load generic example</button>
+            <button type="button" class="btn-secondary" @onclick="LoadPilot">Load documented Skolenærvær pilot</button>
+            <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@_saving">@(_saving ? "Saving…" : "Save review configuration")</button>
+            @if (_saved) { <span role="status">Saved</span> }
+            @if (_error is not null) { <span role="alert">@_error</span> }
+        </div>
+        <p class="mfr-note">Saved separately from Target Environment integration settings. Configuration is not verification; no messages are sent or consumed here.</p>
+        <section class="mfr-card" aria-labelledby="mfr-flow-heading">
+            <h3 id="mfr-flow-heading">Overview and flow</h3>
+            <label>Flow name <input @bind="_name" /></label>
+            <p>@package.Flow.Description</p>
+            @if (package.Flow.Limitations.Count > 0) { <ul class="mfr-limitations">@foreach (var limitation in package.Flow.Limitations) { <li>@limitation</li> }</ul> }
+            <details class="mfr-editor"><summary>Edit flow nodes and hops</summary>
+                <div class="mfr-form">
+                    <label>New node name<input @bind="_newNode" /></label>
+                    <label>Role<select @bind="_newRole">@foreach (var role in Enum.GetValues<FlowNodeRole>()) { <option value="@role">@role</option> }</select></label>
+                    <label>State owner<input @bind="_newOwner" /></label>
+                    <button type="button" class="btn-secondary" @onclick="AddNode">Add node (Not assessed)</button>
+                    <label>From<select @bind="_fromNode">@foreach (var node in package.Flow.Nodes) { <option value="@node.Id">@node.Name</option> }</select></label>
+                    <label>To<select @bind="_toNode">@foreach (var node in package.Flow.Nodes) { <option value="@node.Id">@node.Name</option> }</select></label>
+                    <label>Hop mechanism<input @bind="_mechanism" /></label>
+                    <button type="button" class="btn-secondary" @onclick="AddHop" disabled="@(package.Flow.Nodes.Count < 2)">Add hop (Not assessed)</button>
+                </div>
+                <p>Manual entries are not source-confirmed until evidence is supplied; current editor records them as Not assessed.</p>
+            </details>
+            <ol class="mfr-flow">
+                @foreach (var hop in package.Flow.Hops)
+                {
+                    var from = package.Flow.Nodes.FirstOrDefault(n => n.Id == hop.FromNodeId);
+                    var to = package.Flow.Nodes.FirstOrDefault(n => n.Id == hop.ToNodeId);
+                    <li><strong>@from?.Name → @to?.Name</strong><span>@hop.Mechanism</span><small>@hop.Evidence.State · owner: @to?.StateOwner</small>@if (hop.PayloadMode is FlowPayloadMode.Reference or FlowPayloadMode.EncryptedReference) { <small>Payload mode: @hop.PayloadMode. The broker may carry a reference, not business content.</small> }</li>
+                }
+            </ol>
+            <p class="mfr-note">Documented or source-declared flows do not prove runtime delivery. Transport receipt, application receipt and business completion remain distinct.</p>
+        </section>
+        <div class="mfr-grid">
+            <section class="mfr-card" aria-labelledby="mfr-validate-heading"><h3 id="mfr-validate-heading">Validation and error paths</h3>
+                @if (package.Flow.Validation.Count > 0) { <ul>@foreach (var v in package.Flow.Validation) { <li><strong>@v.Layer</strong> — @v.Outcome <small>(@v.Owner · @v.Evidence.State)</small></li> }</ul> }
+                @foreach (var error in package.Flow.ErrorPaths) { <article class="mfr-error"><strong>@error.Condition</strong><span>Owner: @error.Owner</span><span>@error.ExpectedHandling</span><small>Retry: @Display(error.RetryPolicy) · Hold: @Display(error.HoldPolicy) · Dead-letter: @Display(error.DeadLetterPolicy)</small><small>Final state: @error.FinalState · @error.Evidence.State</small></article> }
+                <details><summary>Add a documented error path</summary><div class="mfr-form"><label>Condition<input @bind="_errorCondition" /></label><label>State owner<input @bind="_errorOwner" /></label><label>Expected handling<input @bind="_errorHandling" /></label><label>Transport retry policy<input @bind="_retryPolicy" /></label><label>Domain hold policy<input @bind="_holdPolicy" /></label><label>Dead-letter policy<input @bind="_deadLetterPolicy" /></label><button type="button" class="btn-secondary" @onclick="AddErrorPath">Add error path</button></div></details>
+            </section>
+            <section class="mfr-card" aria-labelledby="mfr-readiness-heading"><h3 id="mfr-readiness-heading">Altinn test readiness</h3>
+                <p><strong>@package.Readiness.Ready / @package.Readiness.Total</strong> prerequisites configured. Active submission remains blocked.</p>
+                <ul class="mfr-readiness">@foreach (var item in package.Readiness.Items) { <li><span aria-label="@(item.Satisfied ? "Configured" : "Needs attention")">@(item.Satisfied ? "Configured" : "○")</span><strong>@item.Label:</strong> @item.State <small>@item.Explanation</small></li> }</ul>
+                <p>Implementation readiness: not source verified. QA configuration: not verified. Runtime: not observed.</p>
+            </section>
+        </div>
+        @if (package.Flow.DataHandling is { } handling)
+        {
+            <section class="mfr-card" aria-labelledby="mfr-data-heading"><h3 id="mfr-data-heading">Data handling</h3>
+                <p><strong>Sensitive data entering:</strong> @Display(string.Join(", ", handling.SensitiveDataEntering))</p>
+                <p><strong>Transit boundary:</strong> @handling.TransitBoundary</p><p><strong>Temporary persistence:</strong> @handling.TemporaryPersistence</p>
+                <p><strong>Encryption:</strong> @handling.Encryption</p><p><strong>Forbidden destinations:</strong> @Display(string.Join(", ", handling.ForbiddenDestinations))</p>
+                <p><strong>Cleanup expectation:</strong> @handling.CleanupExpectation</p><p>Evidence: @handling.Evidence.State. These are documented expectations, not source-verified controls.</p>
+            </section>
+        }
+        @if (package.Flow.Receipts.Count > 0 || package.Flow.Deadlines.Count > 0)
+        {
+            <div class="mfr-grid">
+                @if (package.Flow.Receipts.Count > 0) { <section class="mfr-card"><h3>Receipts</h3>@foreach (var receipt in package.Flow.Receipts) { <p><strong>@receipt.Kind:</strong> @receipt.Producer → @receipt.Consumer. @receipt.Trigger. Return path: @receipt.ReturnPath (@receipt.Evidence.State).</p> }</section> }
+                @if (package.Flow.Deadlines.Count > 0) { <section class="mfr-card"><h3>Reporting lifecycle</h3>@foreach (var deadline in package.Flow.Deadlines) { <p><strong>@deadline.Name</strong> (@deadline.TimeZone): @deadline.Trigger. @deadline.Behavior (@deadline.Evidence.State)</p> }</section> }
+            </div>
+        }
+        @if (package.Flow.AuthorityNotes.Count > 0)
+        {
+            <section class="mfr-card" aria-labelledby="mfr-authority-heading"><h3 id="mfr-authority-heading">Decision and artifact authority</h3><p>The task-provided consolidated Spec-Kit baseline is the pilot authority; older architecture assumptions below are superseded evidence, not current implementation findings.</p><ul>@foreach (var note in package.Flow.AuthorityNotes) { <li><strong>@note.Topic — @note.State.</strong> @note.Description <small>Source: @note.SourceReference. Superseded by: @note.SupersededBy</small></li> }</ul></section>
+        }
+        <section class="mfr-card" aria-labelledby="mfr-config-heading"><h3 id="mfr-config-heading">Altinn Test Configuration</h3>
+            <p>Safe references only. Never enter secrets, tokens, private keys, connection strings, message payloads, or real personal data.</p>
+            <div class="mfr-form">
+                <label>Environment<select @bind="_environment"><option value="Unknown">Needs verification</option><option value="Test">Test</option><option value="QualityAssurance">Quality assurance</option><option value="Staging">Staging</option><option value="Production">Production (active tests blocked)</option></select></label>
+                <label>Altinn product / service type<input @bind="_product" /></label><label>App identifier<input @bind="_app" /></label>
+                <label>Submission mode<select @bind="_submission"><option value="Unknown">Needs verification</option>@foreach (var mode in Enum.GetValues<ExternalSubmissionMode>().Where(x => x != ExternalSubmissionMode.Unknown)) { <option value="@mode">@mode</option> }</select></label>
+                <label>Authentication type<select @bind="_auth"><option value="Unknown">Needs verification</option>@foreach (var auth in Enum.GetValues<ExternalAuthenticationType>().Where(x => x != ExternalAuthenticationType.Unknown)) { <option value="@auth">@auth</option> }</select></label>
+                <label>Safe base URL reference<input @bind="_baseUrl" /></label><label>Endpoint reference (URL without credentials/query)<input @bind="_endpoint" /></label>
+                <label>Tenant reference<input @bind="_tenant" /></label><label>Client / app reference<input @bind="_client" /></label><label>Documented scopes (comma-separated)<input @bind="_documentedScopes" /></label><label>Configured scopes (comma-separated)<input @bind="_scopes" /></label>
+                <label>Certificate reference<input @bind="_certificate" /></label><label>Key reference<input @bind="_key" /></label><label>Test reporter type<input @bind="_reporterType" /></label><label>Test reporter reference<input @bind="_reporter" /></label>
+                <label class="mfr-check"><input type="checkbox" @bind="_reporterApproved" /> Reporter access approved for this test</label>
+                <label>Approved synthetic identity-set reference<input @bind="_identitySet" /></label><label>MU channel reference<input @bind="_channel" /></label>
+                <label>Queue reference<input @bind="_queue" /></label><label>Payload store reference<input @bind="_payload" /></label>
+                <label>Message type<input @bind="_messageType" /></label><label>Contract reference<input @bind="_contract" /></label><label>Contract version<input @bind="_version" /></label>
+                <label>Source Analysis snapshot<select value="@_sourceSnapshot" @onchange="SourceSnapshotChanged"><option value="">No source snapshot selected</option>@foreach (var snapshot in _sourceSnapshots) { <option value="@snapshot.SnapshotId">@snapshot.ArchiveName · @snapshot.Fingerprint · @snapshot.AnalyzedAt.ToString("yyyy-MM-dd HH:mm") UTC</option> }</select></label>
+                @if (_sourceOptions is { } sourceOptions)
+                {
+                    <label>XML Schema contract from selected immutable snapshot<select value="@_sourceContract" @onchange="SourceContractChanged"><option value="">Select an XSD contract</option>@foreach (var contract in sourceOptions.Contracts) { <option value="@contract.Id">@contract.Name · @(contract.XmlSchema?.ExplicitVersion ?? contract.Version ?? "version not declared")</option> }</select></label>
+                    @if (_sourceOptions.Contracts.FirstOrDefault(c => c.Id == _sourceContract) is { XmlSchema: { } schema } selectedContract)
+                    {
+                        <div class="mfr-schema" data-testid="mfr-xsd-evidence"><strong>@selectedContract.Name</strong><span>Snapshot @sourceOptions.SnapshotId · @sourceOptions.ArchiveName · @sourceOptions.Fingerprint</span><span>Evidence: SourceConfirmed from this exact Source Analysis snapshot · runtime: @selectedContract.RuntimeState</span><span>Namespace: @Display(schema.TargetNamespace)</span><span>Version: @(schema.ExplicitVersion ?? schema.VersionEvidence)</span><span>@schema.Elements.Count element(s), @schema.Attributes.Count attribute(s), @schema.Types.Count type(s), @schema.Dependencies.Count import/include(s)</span>
+                            <details><summary>XML Schema structure and restrictions</summary><ul>@foreach (var element in schema.Elements) { <li><code>@element.QualifiedName</code> · path @element.Path · @element.Type · min @element.MinOccurs, max @element.MaxOccurs · nillable @element.Nillable · @string.Join(", ", element.Restrictions.Select(r => r.Facet + "=" + r.Value))</li> }</ul><ul>@foreach (var attr in schema.Attributes) { <li>Attribute <code>@attr.QualifiedName</code> · @attr.Type · use @attr.Use · @string.Join(", ", attr.Restrictions.Select(r => r.Facet + "=" + r.Value))</li> }</ul><ul>@foreach (var type in schema.Types) { <li>Type <code>@type.QualifiedName</code> · @type.Kind · base @type.BaseType · @string.Join(", ", type.Restrictions.Select(r => r.Facet + "=" + r.Value))</li> }</ul><ul>@foreach (var dependency in schema.Dependencies) { <li>@dependency.Kind · namespace @dependency.Namespace · @dependency.SchemaLocation · @(dependency.ResolvedInSnapshot ? "resolved in snapshot" : "unresolved dependency")</li> }</ul><p>@string.Join("; ", selectedContract.Limitations)</p></details>
+                            <p>Source Analysis contract evidence is structured and snapshot-bound. This panel does not validate XML instances or business rules; schema validity does not prove business validity.</p>
+                        </div>
+                    }
+                }
+                <label>Checkpoint configuration reference<input @bind="_checkpoint" /></label><label>Correlation mapping reference<input @bind="_correlation" /></label>
+                <label>Receipt mode/reference<input @bind="_receipt" /></label>
+                <label>Official documentation URLs/references (comma-separated)<input @bind="_documentation" /></label><label>Documentation platform/product<input @bind="_documentationPlatform" /></label><label>Documentation retrieved on<input type="date" @bind="_documentationRetrievedOn" /></label>
+                <label class="mfr-check"><input type="checkbox" @bind="_syntheticApproved" /> Test data is approved synthetic data</label>
+            </div>
+            <p>Verified scopes: @(_package.AltinnConfiguration.VerifiedScopes.Count == 0 ? "None — no token verification has occurred." : string.Join(", ", _package.AltinnConfiguration.VerifiedScopes))</p>
+            @if (_sourceSnapshots.Count == 0) { <p role="status">No Source Analysis snapshots are available to select. Source evidence remains optional; <a href="/source-analysis">open Source Analysis</a>. A manual contract reference remains documented only.</p> }
+            else if (_sourceOptions is { Contracts.Count: 0 }) { <p role="status">This exact snapshot has no parsed XML Schema contracts.</p> }
+            <p class="mfr-note">Configuration state and verification state are independent. Production is blocked by the backend for active execution; this release has no active submission provider.</p>
+        </section>
+        <div class="mfr-grid">
+            <section class="mfr-card" aria-labelledby="mfr-checkpoints-heading"><h3 id="mfr-checkpoints-heading">Checkpoints</h3><ol>@foreach (var checkpoint in package.Flow.Checkpoints) { <li class="mfr-checkpoint"><strong>@checkpoint.Name</strong><span>Configuration @checkpoint.ConfigurationStatus; runtime @checkpoint.RuntimeStatus.</span><label>Observation source<select value="@checkpoint.ProbeType" @onchange="e => SetCheckpointProbe(checkpoint.Id, e.Value?.ToString())"><option>Manual</option><option>Azure App Insights</option><option>Azure Monitor</option><option>Service API</option><option>Read-only DB</option><option>Queue metadata</option><option>Blob metadata</option><option>External platform status</option><option>Log query</option><option>Other</option></select></label><button type="button" class="btn-secondary" aria-pressed="@(checkpoint.ConfigurationStatus == FlowCheckpointConfigurationState.Configured)" @onclick="() => ToggleCheckpoint(checkpoint.Id)">@(checkpoint.ConfigurationStatus == FlowCheckpointConfigurationState.Configured ? "Mark observation source unconfigured" : "Mark observation source configured")</button></li> }</ol><p>Configured probe is not an observed checkpoint. Runtime status remains NotAssessed until evidence is captured.</p></section>
+            <section class="mfr-card" aria-labelledby="mfr-cases-heading"><h3 id="mfr-cases-heading">Test plan</h3>@foreach (var test in package.TestCases) { <details><summary>@test.Name</summary><p>@test.Purpose</p><p>Evidence basis: @test.EvidenceBasis</p><p>Preconditions: @string.Join("; ", test.Preconditions)</p><p>Expected: @string.Join("; ", test.ExpectedFlow)</p><p>Evidence: @string.Join("; ", test.EvidenceRequired)</p><p>@test.AutomationReadiness. @test.Limitations</p></details> }</section>
+        </div>
+        <section class="mfr-card" aria-labelledby="mfr-manual-heading"><h3 id="mfr-manual-heading">Manual test procedure</h3><p>Generate a plan before automation is available. Unconfigured checkpoints remain not assessed, not failed.</p><ol>@foreach (var step in package.ManualTestPlan) { <li>@step</li> }</ol>@if (package.Flow.OpenQuestions.Count > 0) { <h4>Needs clarification</h4><ul>@foreach (var q in package.Flow.OpenQuestions) { <li>@q</li> }</ul> }</section>
+        <p class="mfr-disclaimer">Technical status is derived from the evidence maturity shown above. Runtime/deployed behavior has not been verified.</p>
+    }
+</section>
+
+@code {
+    [Parameter] public string? EnvironmentId { get; set; }
+    private IntegrationMessageFlowPackage? _package;
+    private IReadOnlyList<BirkNext.SourceEvidence.ReviewSourceSnapshot> _sourceSnapshots = [];
+    private MessageFlowSourceContractOptions? _sourceOptions;
+    private string _sourceSnapshot = "", _sourceContract = "";
+    private bool _busy, _saving, _saved, _syntheticApproved, _reporterApproved;
+    private string? _error;
+    private string _name = "Message flow review", _environment = "Unknown", _product = "", _app = "", _submission = "Unknown", _auth = "Unknown", _baseUrl = "", _tenant = "", _client = "", _documentedScopes = "", _scopes = "", _certificate = "", _key = "", _reporterType = "", _reporter = "", _identitySet = "", _channel = "", _queue = "", _payload = "", _messageType = "", _contract = "", _version = "", _checkpoint = "", _correlation = "", _endpoint = "", _receipt = "", _documentation = "", _documentationPlatform = "";
+    private DateOnly? _documentationRetrievedOn;
+    private string _newNode = "", _newOwner = "", _fromNode = "", _toNode = "", _mechanism = "", _errorCondition = "", _errorOwner = "", _errorHandling = "", _retryPolicy = "", _holdPolicy = "", _deadLetterPolicy = "";
+    private FlowNodeRole _newRole = FlowNodeRole.Other;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(EnvironmentId)) return;
+        _busy = true;
+        try
+        {
+            var scope = await Api.IqrSourceScopeAsync(EnvironmentId, null);
+            _sourceSnapshots = scope.Snapshots;
+            _package = await Api.GetMessageFlowReviewAsync(EnvironmentId); Apply(_package.AltinnConfiguration); _name = _package.Flow.Name;
+            if (_package.AltinnConfiguration.SourceSnapshotId is { } snapshotId) { _sourceSnapshot = snapshotId.ToString(); _sourceContract = _package.AltinnConfiguration.SourceContractId ?? ""; await LoadSourceContractsAsync(snapshotId); }
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Message flow configuration could not be loaded."; }
+        finally { _busy = false; }
+    }
+
+    private void LoadGeneric() => Load(MessageFlowReviewExamples.GenericFixture, new AltinnTestConfiguration(), []);
+    private void LoadPilot() => Load(MessageFlowReviewExamples.SkolenærværDocumented, MessageFlowReviewExamples.SkolenærværInitialConfiguration, MessageFlowReviewExamples.SkolenærværTestCases);
+    private void Load(MessageFlowDefinition flow, AltinnTestConfiguration config, IReadOnlyList<ManualIntegrationTestCase> cases)
+    {
+        if (_package is null) return;
+        _name = flow.Name;
+        var selectedFlow = flow with { EnvironmentId = EnvironmentId!, TargetEnvironmentReference = EnvironmentId };
+        _package = _package with { Flow = selectedFlow, AltinnConfiguration = config, TestCases = cases.Count > 0 ? cases : MessageFlowTestCaseDesigner.Generate(selectedFlow),
+            Readiness = IntegrationMessageFlowReadiness.Evaluate(selectedFlow, config), ManualTestPlan = IntegrationMessageFlowReadiness.ManualPlan(selectedFlow, config) };
+        _fromNode = _package.Flow.Nodes.FirstOrDefault()?.Id ?? ""; _toNode = _package.Flow.Nodes.Skip(1).FirstOrDefault()?.Id ?? "";
+        Apply(config); _saved = false;
+    }
+
+    private void Apply(AltinnTestConfiguration c)
+    {
+        _environment = c.Environment.ToString(); _product = c.ProductOrServiceType ?? ""; _app = c.AppIdentifier ?? ""; _submission = c.SubmissionMode.ToString(); _auth = c.AuthenticationType.ToString();
+        _baseUrl = c.BaseUrlReference ?? ""; _tenant = c.TenantReference ?? ""; _client = c.ClientReference ?? ""; _documentedScopes = string.Join(", ", c.DocumentedScopes); _scopes = string.Join(", ", c.ConfiguredScopes); _certificate = c.CertificateReference ?? ""; _key = c.KeyReference ?? "";
+        _reporterType = c.ReporterType ?? ""; _reporter = c.ReporterReference ?? ""; _reporterApproved = c.ReporterApprovedForTest; _identitySet = c.SyntheticIdentitySetReference ?? ""; _channel = c.MuChannelReference ?? "";
+        _queue = c.QueueReference ?? ""; _payload = c.PayloadStoreReference ?? ""; _contract = c.ContractReference ?? ""; _version = c.ContractVersion ?? "";
+        _messageType = c.MessageType ?? ""; _receipt = c.ReceiptMode ?? "";
+        _documentation = string.Join(", ", c.DocumentationReferences); _documentationPlatform = c.DocumentationPlatform ?? ""; _documentationRetrievedOn = c.DocumentationRetrievedOn;
+        _sourceSnapshot = c.SourceSnapshotId?.ToString() ?? ""; _sourceContract = c.SourceContractId ?? "";
+        _checkpoint = c.CheckpointConfigurationReference ?? ""; _correlation = c.CorrelationMappingReference ?? ""; _endpoint = c.EndpointReference ?? ""; _syntheticApproved = c.ApprovedSyntheticData;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_package is null || string.IsNullOrWhiteSpace(EnvironmentId)) return;
+        _saving = true; _error = null; _saved = false;
+        try
+        {
+            var cfg = _package.AltinnConfiguration with { Environment = Enum.Parse<ExternalTestEnvironment>(_environment), ProductOrServiceType = Empty(_product), AppIdentifier = Empty(_app), BaseUrlReference = Empty(_baseUrl), TenantReference = Empty(_tenant),
+                SubmissionMode = Enum.Parse<ExternalSubmissionMode>(_submission), AuthenticationType = Enum.Parse<ExternalAuthenticationType>(_auth), ClientReference = Empty(_client), ReporterReference = Empty(_reporter),
+                DocumentedScopes = _documentedScopes.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(), ConfiguredScopes = _scopes.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(), CertificateReference = Empty(_certificate), KeyReference = Empty(_key), ReporterType = Empty(_reporterType), ReporterApprovedForTest = _reporterApproved,
+                SyntheticIdentitySetReference = Empty(_identitySet), MuChannelReference = Empty(_channel), QueueReference = Empty(_queue), PayloadStoreReference = Empty(_payload), ContractReference = Empty(_contract),
+                ContractVersion = Empty(_version), MessageType = Empty(_messageType), ReceiptMode = Empty(_receipt), CheckpointConfigurationReference = Empty(_checkpoint), CorrelationMappingReference = Empty(_correlation),
+                EndpointReference = Empty(_endpoint), ApprovedSyntheticData = _syntheticApproved, ProductionBlocked = true };
+            cfg = cfg with { DocumentationReferences = _documentation.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList(),
+                DocumentationPlatform = Empty(_documentationPlatform), DocumentationRetrievedOn = _documentationRetrievedOn };
+            cfg = cfg with { SourceSnapshotId = Guid.TryParse(_sourceSnapshot, out var snapshotId) ? snapshotId : null, SourceContractId = Empty(_sourceContract) };
+            _package = await Api.SaveMessageFlowReviewAsync(EnvironmentId, _package with { Flow = _package.Flow with { Name = _name }, AltinnConfiguration = cfg });
+            Apply(_package.AltinnConfiguration); _saved = true;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "Configuration could not be saved. Remove any credential-like value and enter references only."; }
+        finally { _saving = false; }
+    }
+    private static string? Empty(string value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "not configured" : value;
+
+    private async Task SourceSnapshotChanged(ChangeEventArgs e)
+    {
+        _sourceSnapshot = e.Value?.ToString() ?? ""; _sourceContract = ""; _sourceOptions = null;
+        if (Guid.TryParse(_sourceSnapshot, out var id)) await LoadSourceContractsAsync(id);
+        _saved = false;
+    }
+
+    private async Task LoadSourceContractsAsync(Guid id)
+    {
+        try { _sourceOptions = await Api.MessageFlowSourceContractsAsync(EnvironmentId!, id); }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException) { _error = "XML Schema evidence for this exact snapshot is unavailable."; }
+    }
+
+    private void SourceContractChanged(ChangeEventArgs e)
+    {
+        _sourceContract = e.Value?.ToString() ?? "";
+        if (_sourceOptions?.Contracts.FirstOrDefault(c => c.Id == _sourceContract) is { } contract && _package is not null)
+        {
+            _contract = $"Source Analysis: {contract.File}"; _version = contract.XmlSchema?.ExplicitVersion ?? contract.Version ?? "Not declared"; _messageType = contract.Name;
+        }
+        _saved = false;
+    }
+
+    private void SetCheckpointProbe(string id, string? probe)
+    {
+        if (_package is null) return;
+        var checkpoints = _package.Flow.Checkpoints.Select(c => c.Id == id ? c with { ProbeType = string.IsNullOrWhiteSpace(probe) ? "Manual" : probe } : c).ToList();
+        _package = _package with { Flow = _package.Flow with { Checkpoints = checkpoints } }; _saved = false;
+    }
+
+    private void ToggleCheckpoint(string id)
+    {
+        if (_package is null) return;
+        var checkpoints = _package.Flow.Checkpoints.Select(c => c.Id == id ? c with
+        {
+            ConfigurationStatus = c.ConfigurationStatus == FlowCheckpointConfigurationState.Configured ? FlowCheckpointConfigurationState.NotConfigured : FlowCheckpointConfigurationState.Configured
+        } : c).ToList();
+        _package = _package with { Flow = _package.Flow with { Checkpoints = checkpoints } }; _saved = false;
+    }
+
+    private void AddNode()
+    {
+        if (_package is null || string.IsNullOrWhiteSpace(_newNode)) return;
+        var id = "node-" + Guid.NewGuid().ToString("N");
+        var node = new MessageFlowNode(id, _newNode.Trim(), _newRole, string.IsNullOrWhiteSpace(_newOwner) ? "Owner not assessed" : _newOwner.Trim(),
+            new FlowEvidenceProvenance(FlowEvidenceState.NotAssessed, "Manual entry", "No source or runtime evidence attached."));
+        var checkpoint = new FlowCheckpointDefinition("checkpoint-" + Guid.NewGuid().ToString("N"), node.Name, node.Id, "Observation to be configured", "Manual", FlowCheckpointConfigurationState.NotConfigured, FlowCheckpointStatus.NotAssessed);
+        _package = _package with { Flow = _package.Flow with { Nodes = [.. _package.Flow.Nodes, node], Checkpoints = [.. _package.Flow.Checkpoints, checkpoint] } };
+        if (string.IsNullOrWhiteSpace(_fromNode)) _fromNode = id;
+        _newNode = ""; _saved = false;
+    }
+
+    private void AddHop()
+    {
+        if (_package is null || _fromNode == _toNode || string.IsNullOrWhiteSpace(_fromNode) || string.IsNullOrWhiteSpace(_toNode)) return;
+        var hop = new MessageFlowHop("hop-" + Guid.NewGuid().ToString("N"), _fromNode, _toNode, string.IsNullOrWhiteSpace(_mechanism) ? "Mechanism not documented" : _mechanism.Trim(),
+            "Not assessed", null, null, null, FlowPayloadMode.Unknown, "Role not assessed",
+            new FlowEvidenceProvenance(FlowEvidenceState.NotAssessed, "Manual entry", "No source or runtime evidence attached."));
+        _package = _package with { Flow = _package.Flow with { Hops = [.. _package.Flow.Hops, hop] } };
+        _mechanism = ""; _saved = false;
+    }
+
+    private void AddErrorPath()
+    {
+        if (_package is null || string.IsNullOrWhiteSpace(_errorCondition) || string.IsNullOrWhiteSpace(_errorOwner) || string.IsNullOrWhiteSpace(_errorHandling)) return;
+        var evidence = new FlowEvidenceProvenance(FlowEvidenceState.Documented, "Manual documented design", "Authored as a documented expectation; not source or runtime verified.");
+        var item = new MessageErrorPath(_errorCondition.Trim(), _errorOwner.Trim(), _errorHandling.Trim(), Empty(_retryPolicy), Empty(_holdPolicy), Empty(_deadLetterPolicy), "Not assessed", evidence);
+        _package = _package with { Flow = _package.Flow with { ErrorPaths = [.. _package.Flow.ErrorPaths, item] } };
+        _errorCondition = _errorOwner = _errorHandling = _retryPolicy = _holdPolicy = _deadLetterPolicy = ""; _saved = false;
+    }
+}

@@ -667,6 +667,10 @@
             }
         </div>
     }
+    @if (_profile is { } messageFlowProfile)
+    {
+        <MessageFlowReviewPanel EnvironmentId="@messageFlowProfile.Id" />
+    }
 </div>
 
 @code {
