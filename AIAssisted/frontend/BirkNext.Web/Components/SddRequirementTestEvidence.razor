@@ -1,0 +1,76 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IWorkspaceSessionService Workspace
+@inject SddEvidenceGraphService Graph
+
+@* Per requirement, from the shared graph: test design, source-discovered tests, executions and result stay separate dimensions — never one
+   "Covered" column. Shared by Implementation Review and Requirements Traceability. *@
+<section class="te-req" aria-labelledby="te-req-title" data-testid="te-req">
+    <h2 id="te-req-title">@Title</h2>
+    <p class="sd-muted">Designed (specification acceptance scenarios) · Source test (an explicit reference in test source) · Executed (an imported result) · Result. A gap in one
+        dimension is not a failure in another.</p>
+    @if (Rows.Count == 0)
+    {
+        <p role="status">Requirements are not available in this workspace.</p>
+    }
+    else
+    {
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Test evidence by requirement">
+            <table class="te-table" data-testid="te-req-table">
+                <thead><tr><th scope="col">Requirement</th><th scope="col">Test design</th><th scope="col">Source test</th><th scope="col">Latest relevant execution</th><th scope="col">Result</th><th scope="col">Currentness</th><th scope="col"><span class="visually-hidden">History</span></th></tr></thead>
+                <tbody>
+                @foreach (var row in Rows)
+                {
+                    var open = _open.Contains(row.RequirementId);
+                    var shown = row.CurrentResults.Where(c => c.Current.Execution is not null).ToList();
+                    var panel = $"te-req-history-{Safe(row.RequirementId)}";
+                    <tr data-testid="te-req-row" data-requirement="@row.RequirementId">
+                        <th scope="row"><strong>@row.RequirementId</strong><span class="te-req-text">@row.RequirementText</span></th>
+                        <td data-testid="te-req-designed">@(row.Designed.Count == 0 ? "None" : $"{row.Designed.Count} designed")</td>
+                        <td data-testid="te-req-source">@(row.SourceTests.Count == 0 ? "None" : $"{row.SourceTests.Count} source test(s)")@if (row.CandidateSourceTests.Count > 0) { <span class="sd-muted"> · @row.CandidateSourceTests.Count candidate(s) to confirm</span> }</td>
+                        <td data-testid="te-req-executed">@(shown.Count == 0 ? (row.Executions.Count == 0 ? "No execution evidence" : "No current execution") : string.Join("; ", shown.Select(c => $"{SddTestEvidencePanel.When(c.Current.Execution!.ExecutedAt)} · {c.Current.Execution.ResultSource}")))</td>
+                        <td data-testid="te-req-result">@(shown.Count == 0 ? "—" : string.Join("; ", shown.Select(c => c.Current.Result)))</td>
+                        <td data-testid="te-req-currentness">@row.Currentness</td>
+                        <td>
+                            @if (row.Executions.Count + row.SourceTests.Count + row.CandidateSourceTests.Count > 0)
+                            {
+                                <button type="button" class="btn-secondary te-small" aria-expanded="@(open ? "true" : "false")" aria-controls="@panel" @onclick="() => Toggle(row.RequirementId)" data-testid="te-req-expand">@(open ? "Hide" : "Evidence")</button>
+                            }
+                        </td>
+                    </tr>
+                    @if (open)
+                    {
+                        <tr id="@panel" class="te-req-detail"><td colspan="7">
+                            @foreach (var (key, current) in row.CurrentResults)
+                            {
+                                <p><strong>@(Name(row, key))</strong> — @current.Result. @current.Reason <a href="/implementation-review?test-@(row.Executions.Any(e => SddTestEvidenceService.TestKey(e) == key) ? "execution" : "definition")=@Uri.EscapeDataString(LinkTarget(row, key))#test-evidence">Test detail</a></p>
+                            }
+                            @foreach (var c in row.CandidateSourceTests)
+                            {
+                                <p class="sd-muted">Candidate: @c.Definition.FullyQualifiedName mentions @row.RequirementId informally (@string.Join("; ", c.Definition.References.Where(r => r.Id.Equals(row.RequirementId, StringComparison.OrdinalIgnoreCase)).Select(r => r.Basis))). Not linked.</p>
+                            }
+                        </td></tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Test evidence by requirement";
+    private readonly HashSet<string> _open = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<SddRequirementTestEvidenceRow> Rows => SddTestEvidenceService.RequirementRows(Workspace.SddLifecycle, Graph.Build(Workspace));
+
+    private void Toggle(string id) { if (!_open.Remove(id)) _open.Add(id); }
+
+    private static string Name(SddRequirementTestEvidenceRow row, string key) =>
+        row.SourceTests.FirstOrDefault(d => d.Definition.TestDefinitionId == key)?.Definition.FullyQualifiedName
+        ?? (row.Executions.FirstOrDefault(e => SddTestEvidenceService.TestKey(e) == key) is { } e ? e.FullyQualifiedTestName ?? e.TestName : key);
+
+    private static string LinkTarget(SddRequirementTestEvidenceRow row, string key) =>
+        row.Executions.FirstOrDefault(e => SddTestEvidenceService.TestKey(e) == key)?.Id.ToString() ?? key;
+
+    private static string Safe(string id) => new(id.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray());
+}

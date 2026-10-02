@@ -11,6 +11,9 @@ public sealed class SddLifecycleState
     public List<SddImplementationEvidence> ImplementationEvidence { get; set; } = [];
     public List<SddTestEvidence> TestEvidence { get; set; } = [];
     public List<SddTestExecutionEvidence> TestExecutions { get; set; } = [];
+    public List<SddTestDefinitionEvidence> TestDefinitions { get; set; } = [];
+    public List<SddTestResultArtifact> TestResultArtifacts { get; set; } = [];
+    public List<SddTestRunEvidence> TestRuns { get; set; } = [];
     public List<SddSourceSnapshotReference> SourceSnapshots { get; set; } = [];
     public List<SddQualityReviewRun> QualityReviewRuns { get; set; } = [];
     public List<SddReviewRun> ReviewRuns { get; set; } = [];
@@ -162,6 +165,23 @@ public sealed class SddTestExecutionEvidence
     public string Currentness { get; set; } = "Current";
     public string? CurrentnessReason { get; set; }
     public string Fingerprint { get; set; } = "";
+    // Result-artifact provenance (set by provider imports such as TRX; null for the generic JSON import).
+    public Guid? RunId { get; set; }
+    public Guid? ArtifactId { get; set; }
+    public string? FullyQualifiedTestName { get; set; }
+    public string? DataRowLabel { get; set; }
+    public string? ProviderOutcome { get; set; }
+    public double? DurationMs { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? StackTrace { get; set; }
+    /// <summary>Correlated source test definition (only when correlation is Confirmed).</summary>
+    public string? TestDefinitionId { get; set; }
+    public string CorrelationState { get; set; } = "NotAssessed";
+    public string? CorrelationBasis { get; set; }
+    /// <summary>Inferred references of the correlated source test that match a current requirement/AC: candidates for review, never links.</summary>
+    public List<string> CandidateRequirementReferences { get; set; } = [];
+    /// <summary>Provided when the run is bound to a source snapshot by the user; NotAssessed when the source version is unknown.</summary>
+    public string SourceCurrentness { get; set; } = "NotAssessed";
 }
 
 public sealed class SddTestExecutionImportRecord

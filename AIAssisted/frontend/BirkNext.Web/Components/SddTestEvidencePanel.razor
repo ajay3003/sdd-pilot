@@ -1,0 +1,356 @@
+@using BirkNext.TestEvidence
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+@inject IWorkspaceSessionService Workspace
+@inject IWorkspaceAutoSaveService AutoSave
+@inject SddEvidenceGraphService Graph
+@inject IServiceProvider Services
+@inject NavigationManager Navigation
+
+@* Provider test evidence for the shared SDD graph: import of execution-result artifacts (TRX), source test definitions from Source Analysis,
+   run history and per-test detail. Designed ≠ source-discovered ≠ executed ≠ passed; nothing here is a separate review or score. *@
+<section class="te-panel" id="test-evidence" aria-labelledby="te-title" data-testid="te-panel">
+    <h2 id="te-title">Test execution evidence</h2>
+    <p class="sd-muted">Import the test result files your pipeline already produces. A result file says what ran and what happened; Source Analysis says which tests exist and
+        which requirements they reference. Only explicit references link a test to a requirement, and a passed linked test is evidence, not proof that the requirement is complete.</p>
+
+    <div class="te-actions">
+        <button type="button" class="btn-primary" aria-expanded="@(_importOpen ? "true" : "false")" aria-controls="te-import" @onclick="ToggleImport" disabled="@(Api is null)" data-testid="te-import-open">Import test results</button>
+        @if (CurrentSnapshot is { } current)
+        {
+            <button type="button" class="btn-secondary" @onclick="() => RecordDefinitionsAsync(current)" disabled="@_busy" data-testid="te-record-definitions">Record source test definitions</button>
+        }
+        <span role="status" aria-live="polite" class="sd-muted" data-testid="te-message">@_message</span>
+    </div>
+
+    @if (_importOpen)
+    {
+        <section id="te-import" class="te-import" aria-labelledby="te-import-title" @onkeydown="OnImportKey" data-testid="te-import">
+            <h3 id="te-import-title" tabindex="-1" @ref="_importHeading">Import test results</h3>
+            <p class="sd-muted">Supported format: TRX (<code>.trx</code>), written by <code>dotnet test --report-trx</code> or <code>--logger trx</code>. One file at a time; several files of one
+                build are grouped by the build reference you enter, not by import time.</p>
+            <div class="te-form">
+                <label for="te-file">Result file (.trx)
+                    <InputFile id="te-file" accept=".trx" OnChange="OnFileSelected" data-testid="te-file" />
+                </label>
+                <label for="te-snapshot">Source snapshot for correlation
+                    <select id="te-snapshot" @bind="_snapshotId" data-testid="te-snapshot">
+                        <option value="">None — record results without source correlation</option>
+                        @foreach (var snap in Workspace.SddLifecycle.SourceSnapshots.OrderByDescending(x => x.AnalyzedAt))
+                        { <option value="@snap.SnapshotId">@ShortId(snap.SnapshotId) · @snap.AnalyzedAt.ToLocalTime().ToString("g") · @snap.Currentness</option> }
+                    </select>
+                </label>
+                <label for="te-build">Build reference (optional)<input id="te-build" @bind="_build" maxlength="200" data-testid="te-build" /></label>
+                <label for="te-commit">Commit (optional)<input id="te-commit" @bind="_commit" maxlength="200" data-testid="te-commit" /></label>
+                <label for="te-environment">Environment (optional)<input id="te-environment" @bind="_environment" maxlength="200" data-testid="te-environment" /></label>
+                <div class="te-check">
+                    <input type="checkbox" id="te-bind" @bind="_bindSource" disabled="@string.IsNullOrEmpty(_snapshotId)" data-testid="te-bind" aria-describedby="te-bind-help" />
+                    <label for="te-bind">These results were produced from the selected source snapshot</label>
+                    <p id="te-bind-help" class="sd-muted">Leave unchecked when you are not sure. Test identities are still matched, but the results are not treated as verification of that source version.</p>
+                </div>
+            </div>
+            @if (Workspace.SddLifecycle.SourceSnapshots.Count == 0)
+            {
+                <p class="sd-muted" data-testid="te-no-snapshot">No Source Analysis snapshot is recorded in this workspace, so results cannot be matched to source tests or requirement references. Load one under Source Analysis and CodeLinks first, or import without correlation.</p>
+            }
+            <div class="te-actions">
+                <button type="button" class="btn-primary" @onclick="PreviewAsync" disabled="@(_file is null || _busy)" data-testid="te-preview-run">@(_busy ? "Validating…" : "Preview")</button>
+                <button type="button" class="btn-secondary" @onclick="CloseImport">Cancel</button>
+            </div>
+
+            @if (_preview is { } p)
+            {
+                <section class="te-preview" aria-labelledby="te-preview-title" data-testid="te-preview" data-status="@p.Status">
+                    <h4 id="te-preview-title">Preview — nothing is recorded until you import</h4>
+                    @if (p.Status != TestResultImportStatus.Valid)
+                    {
+                        <p data-testid="te-preview-error"><span class="sd-pill sd-pill-attention">Not imported</span> @P(p.Status): @p.Error This is a problem with the file, not a test failure.</p>
+                    }
+                    else
+                    {
+                        var matched = p.Executions.Count(e => e.Correlation.State == TestCorrelationState.Confirmed);
+                        var unmatched = p.Executions.Count(e => e.Correlation.State is TestCorrelationState.Unresolved or TestCorrelationState.NotAssessed);
+                        var ambiguous = p.Executions.Count(e => e.Correlation.State == TestCorrelationState.Ambiguous);
+                        <dl class="te-facts">
+                            <div><dt>Provider</dt><dd>TRX <code>@p.ProviderId</code></dd></div>
+                            <div><dt>Artifact</dt><dd>@p.FileName · @Size(p.SizeBytes) · <code>@ShortId(p.Fingerprint)</code></dd></div>
+                            <div><dt>Run</dt><dd>@RunState(p.Run!.RunState) · @When(p.Run.StartedAt) · @Duration(p.Run.DurationMs)</dd></div>
+                            <div><dt>Tests</dt><dd data-testid="te-preview-counts">@Counts(p.Run.Counts)</dd></div>
+                            <div><dt>Matched source tests</dt><dd data-testid="te-preview-matched">@matched matched · @unmatched without a source match · @ambiguous ambiguous</dd></div>
+                            <div><dt>Requirement links</dt><dd data-testid="te-preview-links">@LinkedPreview(p) result(s) of tests with explicit references to current requirements</dd></div>
+                            <div><dt>Source version</dt><dd data-testid="te-preview-binding">@Binding(p)</dd></div>
+                            @if (AlreadyImported(p) is { } already)
+                            {
+                                <div><dt>Duplicate</dt><dd data-testid="te-preview-duplicate"><span class="sd-pill sd-pill-muted">Already imported</span> @already</dd></div>
+                            }
+                        </dl>
+                        @if (p.Warnings.Count + p.Limitations.Count > 0)
+                        {
+                            <ul class="te-notes" data-testid="te-preview-notes">@foreach (var w in p.Warnings.Concat(p.Limitations)) { <li>@w</li> }</ul>
+                        }
+                        <div class="te-actions">
+                            <button type="button" class="btn-primary" @onclick="ImportAsync" disabled="@(AlreadyImported(p) is not null || _busy)" data-testid="te-import-confirm">Import @p.Executions.Count result(s)</button>
+                        </div>
+                    }
+                </section>
+            }
+        </section>
+    }
+
+    @if (_summary is { } s)
+    {
+        <section class="te-summary" aria-labelledby="te-summary-title" data-testid="te-summary">
+            <h3 id="te-summary-title">@(s.AlreadyImported ? "Not imported — already present" : "Imported")</h3>
+            <dl class="te-facts">
+                <div><dt>Artifact</dt><dd>@s.Artifact</dd></div>
+                <div><dt>Provider</dt><dd><code>@s.Provider</code></dd></div>
+                <div><dt>Tests found</dt><dd data-testid="te-summary-found">@s.TestsFound</dd></div>
+                <div><dt>Passed</dt><dd>@s.Passed</dd></div>
+                <div><dt>Failed</dt><dd>@s.Failed</dd></div>
+                <div><dt>Skipped / not executed</dt><dd>@s.SkippedOrNotExecuted</dd></div>
+                <div><dt>Other (timed out, aborted, execution failed, unknown)</dt><dd>@s.Other</dd></div>
+                <div><dt>Unresolved definitions</dt><dd data-testid="te-summary-unresolved">@s.UnresolvedDefinitions (+@s.AmbiguousDefinitions ambiguous)</dd></div>
+                <div><dt>Requirement-linked</dt><dd data-testid="te-summary-req">@s.RequirementLinked</dd></div>
+                <div><dt>AC-linked</dt><dd>@s.AcceptanceCriterionLinked</dd></div>
+                <div><dt>Duplicates ignored</dt><dd data-testid="te-summary-dupes">@s.DuplicatesIgnored</dd></div>
+            </dl>
+            @if (s.Warnings.Count + s.Limitations.Count > 0) { <ul class="te-notes">@foreach (var w in s.Warnings.Concat(s.Limitations)) { <li>@w</li> }</ul> }
+        </section>
+    }
+
+    <h3>Test runs</h3>
+    @if (Workspace.SddLifecycle.TestRuns.Count == 0)
+    {
+        <p class="sd-muted" data-testid="te-runs-empty">No test results imported yet. Tests found in source are not execution evidence.</p>
+    }
+    else
+    {
+        <div class="sd-scroll" tabindex="0" role="region" aria-label="Test runs">
+            <table class="te-table" data-testid="te-runs">
+                <caption class="visually-hidden">Imported test runs, newest first</caption>
+                <thead><tr><th scope="col">Run</th><th scope="col">Imported</th><th scope="col">Provider</th><th scope="col">Build</th><th scope="col">Environment</th><th scope="col">Source snapshot</th><th scope="col">Total</th><th scope="col">Passed</th><th scope="col">Failed</th><th scope="col">Other</th><th scope="col"><span class="visually-hidden">Actions</span></th></tr></thead>
+                <tbody>
+                @foreach (var run in Workspace.SddLifecycle.TestRuns.OrderByDescending(r => Artifact(r)?.ImportedAt))
+                {
+                    var artifact = Artifact(run);
+                    <tr data-testid="te-run-row" data-run="@run.RunId">
+                        <th scope="row">@(artifact?.FileName ?? "—")<span class="sd-muted"> · @RunState(run.RunState) · @When(run.StartedAt)</span></th>
+                        <td>@When(artifact?.ImportedAt)</td>
+                        <td><code>@run.ProviderId</code></td>
+                        <td>@(run.BuildReference ?? "Unknown")</td>
+                        <td>@(run.EnvironmentReference ?? "Unknown")</td>
+                        <td>@(run.SourceBinding == "Provided" ? ShortId(run.SourceSnapshotId ?? "") : "Unknown (not bound)")</td>
+                        <td>@run.Counts.Total</td><td>@run.Counts.Passed</td><td>@run.Counts.Failed</td><td>@(run.Counts.Total - run.Counts.Passed - run.Counts.Failed)</td>
+                        <td><button type="button" class="btn-secondary te-small" aria-expanded="@(_runId == run.RunId ? "true" : "false")" aria-controls="te-run-tests" @onclick="() => ToggleRun(run.RunId)" data-testid="te-run-open">@(_runId == run.RunId ? "Hide tests" : "Show tests")</button></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    @if (_runId is { } selected && Workspace.SddLifecycle.TestRuns.FirstOrDefault(r => r.RunId == selected) is { } openRun)
+    {
+        var rows = Filtered(openRun).ToList();
+        <section id="te-run-tests" aria-labelledby="te-run-tests-title" data-testid="te-run-tests">
+            <h3 id="te-run-tests-title">Results in @(Artifact(openRun)?.FileName ?? "run")</h3>
+            <label for="te-filter" class="te-inline">Show
+                <select id="te-filter" @bind="_filter" data-testid="te-filter">
+                    <option value="all">All results</option><option value="failed">Failed</option><option value="other">Not passed and not failed</option>
+                    <option value="unmatched">Without a source test match</option><option value="linked">Linked to a requirement</option>
+                </select>
+            </label>
+            <p class="sd-muted">@rows.Count result(s). Results without a source match are kept; they are not discarded or guessed.</p>
+            <div class="sd-scroll" tabindex="0" role="region" aria-label="Test results">
+                <table class="te-table" data-testid="te-results">
+                    <thead><tr><th scope="col">Test</th><th scope="col">Result</th><th scope="col">Duration</th><th scope="col">Source test</th><th scope="col">Requirements</th><th scope="col"><span class="visually-hidden">Details</span></th></tr></thead>
+                    <tbody>
+                    @foreach (var e in rows.Take(_limit))
+                    {
+                        var open = _detail == SddTestEvidenceService.TestKey(e);
+                        <tr data-testid="te-result-row" data-result="@e.Result" data-correlation="@e.CorrelationState">
+                            <th scope="row"><span class="te-name">@(e.FullyQualifiedTestName ?? e.TestName)</span>@if (e.DataRowLabel is not null) { <span class="sd-muted"> (@e.DataRowLabel)</span> }</th>
+                            <td>@ResultPill(e)</td>
+                            <td>@Duration(e.DurationMs)</td>
+                            <td>@Correlation(e)</td>
+                            <td>@(e.RequirementReferences.Count + e.AcceptanceCriterionReferences.Count == 0 ? "None" : string.Join(", ", e.RequirementReferences.Concat(e.AcceptanceCriterionReferences)))</td>
+                            <td><button type="button" class="btn-secondary te-small" aria-expanded="@(open ? "true" : "false")" aria-controls="te-detail" @onclick="() => ToggleDetail(e)" data-testid="te-detail-open">@(open ? "Hide" : "Details")</button></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            @if (rows.Count > _limit) { <button type="button" class="btn-secondary" @onclick="() => _limit = int.MaxValue" data-testid="te-show-all">Show all @rows.Count results</button> }
+        </section>
+    }
+
+    @if (_detail is { } key)
+    {
+        <SddTestEvidenceDetail TestKey="@key" />
+    }
+</section>
+
+@code {
+    private bool _importOpen, _busy, _bindSource, _focusImport;
+    private IBrowserFile? _file;
+    private string _snapshotId = "", _build = "", _commit = "", _environment = "", _filter = "all";
+    private string? _message, _detail;
+    private Guid? _runId;
+    private int _limit = 50;
+    private TestResultArtifactPreview? _preview;
+    private SddTestImportSummary? _summary;
+    private ElementReference _importHeading;
+    private const long MaxUploadBytes = 20 * 1024 * 1024;
+
+    private ITestEvidenceApiService? Api => Services.GetService(typeof(ITestEvidenceApiService)) as ITestEvidenceApiService;
+    private SddSourceSnapshotReference? CurrentSnapshot => Api is null ? null : Workspace.SddLifecycle.SourceSnapshots.FirstOrDefault(s => s.Currentness == "Current");
+    private IReadOnlyList<SddRequirementGraphRow> Rows => Graph.Build(Workspace);
+    private IEnumerable<string> RequirementIds => Rows.Select(r => r.Requirement.Id);
+    private IEnumerable<string> AcceptanceIds => Rows.SelectMany(r => r.Requirement.LinkedAcceptanceScenarios).Select(a => a.Id ?? a.Title);
+
+    protected override void OnInitialized()
+    {
+        if (Api is null) _message = "Test result import is unavailable in this host (no test-evidence service).";
+        // Deep link from Quality Review: ?test-execution={id} opens that test's detail and its run.
+        var query = new Uri(Navigation.Uri).Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2)).Where(p => p.Length == 2).ToDictionary(p => Uri.UnescapeDataString(p[0]), p => Uri.UnescapeDataString(p[1]));
+        if (query.TryGetValue("test-execution", out var id) && Guid.TryParse(id, out var executionId)
+            && Workspace.SddLifecycle.TestExecutions?.FirstOrDefault(e => e.Id == executionId) is { } execution)
+        {
+            _detail = SddTestEvidenceService.TestKey(execution);
+            _runId = execution.RunId;
+        }
+        else if (query.TryGetValue("test-definition", out var definition)) _detail = definition;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusImport) { _focusImport = false; await _importHeading.FocusAsync(); }
+    }
+
+    private void ToggleImport() { _importOpen = !_importOpen; _focusImport = _importOpen; }
+    private void CloseImport() { _importOpen = false; _preview = null; _file = null; }
+    private void OnImportKey(KeyboardEventArgs e) { if (e.Key == "Escape") CloseImport(); }
+    private void ToggleRun(Guid id) { _runId = _runId == id ? null : id; _limit = 50; }
+    private void ToggleDetail(SddTestExecutionEvidence e) { var key = SddTestEvidenceService.TestKey(e); _detail = _detail == key ? null : key; }
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _preview = null;
+        _file = e.File;
+        _message = e.File.Name.EndsWith(".trx", StringComparison.OrdinalIgnoreCase) ? null : "Only .trx files are supported; the file will be rejected.";
+    }
+
+    private async Task PreviewAsync()
+    {
+        if (_file is null || Api is not { } api) return;
+        if (_file.Size > MaxUploadBytes) { _preview = null; _message = "The file exceeds the 20 MB limit. Nothing was imported."; return; }
+        _busy = true;
+        try
+        {
+            var snapshot = Workspace.SddLifecycle.SourceSnapshots.FirstOrDefault(s => s.SnapshotId == _snapshotId);
+            await using var stream = _file.OpenReadStream(MaxUploadBytes);
+            var (preview, error) = await api.PreviewAsync(_file.Name, stream, new TestResultUploadContext(snapshot?.EnvironmentReference, snapshot is null ? null : Guid.Parse(snapshot.SnapshotId),
+                _bindSource && snapshot is not null, _build, _commit, _environment));
+            _preview = preview;
+            _message = error;
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException or TaskCanceledException) { _message = $"The file could not be validated: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_preview is null) return;
+        try
+        {
+            _summary = SddTestEvidenceService.Import(Workspace.SddLifecycle, _preview, RequirementIds, AcceptanceIds);
+            _message = _summary.AlreadyImported ? "Already imported; nothing was added." : $"Imported {_summary.TestsFound - _summary.DuplicatesIgnored} result(s).";
+            _runId = _summary.RunId;
+            _importOpen = false;
+            _preview = null;
+            await AutoSave.SaveNowAsync();
+        }
+        catch (ArgumentException ex) { _message = $"Not imported: {ex.Message}"; }
+    }
+
+    private async Task RecordDefinitionsAsync(SddSourceSnapshotReference snapshot)
+    {
+        _busy = true;
+        try
+        {
+            if (Api is not { } api) return;
+            var (inventory, error) = await api.SourceTestsAsync(snapshot.EnvironmentReference, Guid.Parse(snapshot.SnapshotId));
+            if (inventory is null) { _message = error; return; }
+            var added = SddTestEvidenceService.RecordDefinitions(Workspace.SddLifecycle, inventory, RequirementIds, AcceptanceIds);
+            _message = added == 0 ? "Source test definitions of this snapshot are already recorded."
+                : $"Recorded {added} source test definition(s) from {inventory.Projects.Count} test project(s) ({inventory.Status}). Discovery is not execution.";
+            await AutoSave.SaveNowAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { _message = $"Source test definitions are unavailable: {ex.Message}"; }
+        finally { _busy = false; }
+    }
+
+    private SddTestResultArtifact? Artifact(SddTestRunEvidence run) => Workspace.SddLifecycle.TestResultArtifacts.FirstOrDefault(a => a.ArtifactId == run.ArtifactId);
+
+    private IEnumerable<SddTestExecutionEvidence> Filtered(SddTestRunEvidence run)
+    {
+        var rows = Workspace.SddLifecycle.TestExecutions.Where(e => e.RunId == run.RunId);
+        return _filter switch
+        {
+            "failed" => rows.Where(e => e.Result == "Failed"),
+            "other" => rows.Where(e => e.Result is not ("Passed" or "Failed")),
+            "unmatched" => rows.Where(e => e.CorrelationState != "Confirmed"),
+            "linked" => rows.Where(e => e.RequirementReferences.Count + e.AcceptanceCriterionReferences.Count > 0),
+            _ => rows,
+        };
+    }
+
+    private string? AlreadyImported(TestResultArtifactPreview p) =>
+        Workspace.SddLifecycle.TestResultArtifacts.Any(a => a.Fingerprint == p.Fingerprint) ? "This file was imported before; it is not imported again."
+        : p.Run is { ProviderRunId.Length: > 0 } r && Workspace.SddLifecycle.TestRuns.Any(x => x.ProviderId == p.ProviderId && x.ProviderRunId == r.ProviderRunId) ? "A file with this test run id was imported before."
+        : null;
+
+    private int LinkedPreview(TestResultArtifactPreview p)
+    {
+        var ids = RequirementIds.Concat(AcceptanceIds).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var linked = p.MatchedDefinitions.Where(d => d.References.Any(r => r.Confidence is TestEvidenceConfidence.Confirmed or TestEvidenceConfidence.StronglySupported && ids.Contains(r.Id)))
+            .Select(d => d.TestDefinitionId).ToHashSet(StringComparer.Ordinal);
+        return p.Executions.Count(e => e.Correlation.TestDefinitionId is { } id && linked.Contains(id));
+    }
+
+    private static string Binding(TestResultArtifactPreview p) => p.SourceBinding == TestSourceBinding.Provided
+        ? $"Bound to snapshot {ShortId(p.CorrelationSnapshotId?.ToString() ?? "")} (provided by you)"
+        : p.CorrelationSnapshotId is null ? "Unknown — no source snapshot" : $"Unknown — identities matched against snapshot {ShortId(p.CorrelationSnapshotId.ToString()!)}, version not established";
+
+    private static string Counts(TestResultCounts c) => $"{c.Total} total · {c.Passed} passed · {c.Failed} failed · {c.Skipped + c.NotExecuted} not executed/skipped" +
+        (c.TimedOut + c.Aborted + c.ExecutionFailed + c.Inconclusive + c.Unknown > 0 ? $" · {c.TimedOut + c.Aborted + c.ExecutionFailed + c.Inconclusive + c.Unknown} other" : "");
+
+    private static string P(TestResultImportStatus s) => s switch
+    {
+        TestResultImportStatus.InvalidArtifact => "Invalid file", TestResultImportStatus.UnsupportedFormat => "Unsupported format", TestResultImportStatus.TooLarge => "Too large", _ => "Valid",
+    };
+
+    private static string RunState(string state) => state switch { "Completed" => "Run completed", "Aborted" => "Run aborted", _ => $"Run {state.ToLowerInvariant()}" };
+
+    internal static RenderFragment ResultPill(SddTestExecutionEvidence e) => __builder =>
+    {
+        var (css, text) = e.ExecutionState != "Completed" ? ("sd-pill-muted", e.ExecutionState switch
+            { "NotExecuted" => "Not executed", "TimedOut" => "Timed out", "ExecutionFailed" => "Execution failed", "Aborted" => "Aborted", _ => e.ExecutionState })
+            : e.Result switch { "Passed" => ("sd-pill-complete", "Passed"), "Failed" => ("sd-pill-attention", "Failed"), _ => ("sd-pill-partial", e.Result) };
+        <span class="sd-pill @css">@text</span>
+    };
+
+    private static string Correlation(SddTestExecutionEvidence e) => e.CorrelationState switch
+    {
+        "Confirmed" => "Matched",
+        "Ambiguous" => "Ambiguous — not linked",
+        "Unresolved" => "No source match",
+        _ => "Not correlated",
+    };
+
+    internal static string When(DateTimeOffset? at) => at is { } t ? t.ToLocalTime().ToString("g") : "Unknown";
+    internal static string Duration(double? ms) => ms is not { } v ? "—" : v < 1000 ? $"{v:0.#} ms" : $"{v / 1000:0.##} s";
+    internal static string ShortId(string id) => id.Length > 8 ? id[..8] : id;
+    private static string Size(long bytes) => bytes < 1024 ? $"{bytes} B" : bytes < 1024 * 1024 ? $"{bytes / 1024.0:0.#} KB" : $"{bytes / (1024.0 * 1024):0.#} MB";
+}

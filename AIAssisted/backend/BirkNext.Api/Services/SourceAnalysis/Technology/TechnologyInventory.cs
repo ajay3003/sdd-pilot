@@ -38,6 +38,13 @@ public static class TechnologyInventory
         ("integration.servicebus", new(@"(?i)\bAzure\.Messaging\.ServiceBus\b|\bWolverineFx\.AzureServiceBus\b|\bServiceBus\b", RegexOptions.Compiled)),
         ("integration.soap", new(@"(?i)\bSystem\.ServiceModel\b|\bCoreWCF\b|\bspring-ws\b|\bjaxws\b|\bsoapenv\b", RegexOptions.Compiled)),
         ("integration.grpc", new(@"(?i)\bGrpc\.AspNetCore\b|\bGrpc\.Net\.Client\b|\bio\.grpc\b", RegexOptions.Compiled)),
+        // Test frameworks and result formats: configured/referenced only. A TRX publish step is configuration evidence, not an imported result.
+        ("test.xunit", new(@"(?i)Include=""xunit(?:\.v3)?(?:\.core)?""", RegexOptions.Compiled)),
+        ("test.nunit", new(@"(?i)Include=""NUnit""", RegexOptions.Compiled)),
+        ("test.mstest", new(@"(?i)Include=""MSTest(?:\.TestFramework)?""", RegexOptions.Compiled)),
+        ("test.trx", new(@"(?i)Microsoft\.Testing\.Extensions\.TrxReport|--report-trx\b|--logger\s+[""']?trx|testResultsFormat:\s*['""]?VSTest", RegexOptions.Compiled)),
+        ("test.junit", new(@"(?i)testResultsFormat:\s*['""]?JUnit|--logger\s+[""']?junit", RegexOptions.Compiled)),
+        ("test.playwright", new(@"(?i)Include=""Microsoft\.Playwright[^""]*""|""@playwright/test""\s*:", RegexOptions.Compiled)),
         ("integration.s3", new(@"(?i)\bAWSSDK\.S3\b|\bboto3\b|\bs3://", RegexOptions.Compiled)),
         ("db.oracle", new(@"(?i)\bOracle\.ManagedDataAccess\b|\bOracle\.EntityFrameworkCore\b|\bjdbc:oracle\b|\bojdbc\b", RegexOptions.Compiled)),
         ("db.postgresql", new(@"(?i)\bNpgsql\b|\bjdbc:postgresql\b|\bpostgres(?:ql)?://", RegexOptions.Compiled)),

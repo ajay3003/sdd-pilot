@@ -16,9 +16,10 @@ public static class SpecExplorerService
         @"^(?:[-*]\s+|>\s+)?\*{0,2}(?<id>(?:(?:FR|NFR|SC|US|UC|AC|TS|REQ)-?\d{1,4}|[A-Z][A-Z0-9]*-[A-Z0-9]*\d[A-Z0-9]*))\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // Spec references anywhere in text — used only for extracting linked IDs.
+    // Spec references anywhere in text — used only for extracting linked IDs. The grammar is shared with source-test
+    // reference extraction (BirkNext.Sdd.RequirementReferenceParser) so both read identifiers the same way.
     private static readonly Regex SpecRefRe = new(
-        @"\b(?<id>(?:(?:FR|NFR|SC|US|UC|AC|TS|REQ|TC)-?\d{1,4}|[A-Z][A-Z0-9]*-[A-Z0-9]*\d[A-Z0-9]*))\b",
+        BirkNext.Sdd.RequirementReferenceParser.ReferencePattern,
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex ConstitutionRuleRefRe = new(
@@ -1395,19 +1396,7 @@ public static class SpecExplorerService
         return GetSpecNodeType(id) == SpecNodeType.Requirement ? id : null;
     }
 
-    private static string NormalizeSpecItemId(string value)
-    {
-        var id = value.Trim().ToUpperInvariant();
-        var compact = Regex.Match(id, @"^(FR|NFR|SC|US|UC|AC|TS|REQ|TC)(\d{1,4})$");
-        if (compact.Success)
-            return $"{compact.Groups[1].Value}-{compact.Groups[2].Value.PadLeft(3, '0')}";
-
-        var knownNumeric = Regex.Match(id, @"^(FR|NFR|SC|US|UC|AC|TS|REQ|TC)-(\d{1,4})$");
-        if (knownNumeric.Success)
-            return $"{knownNumeric.Groups[1].Value}-{knownNumeric.Groups[2].Value.PadLeft(3, '0')}";
-
-        return id;
-    }
+    private static string NormalizeSpecItemId(string value) => BirkNext.Sdd.RequirementReferenceParser.Normalize(value);
 
     private static SpecNodeType GetSpecNodeType(string id)
     {

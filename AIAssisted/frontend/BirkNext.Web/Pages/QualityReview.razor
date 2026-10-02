@@ -36,7 +36,7 @@
                 <ul>
                     @foreach (var finding in SddFindings)
                     {
-                        <li><strong>@finding.Code</strong> · @finding.RequirementId · @finding.Severity — @finding.Message <a href="/implementation-review">Review evidence</a></li>
+                        <li><strong>@finding.Code</strong> · @finding.RequirementId · @finding.Severity — @finding.Message <a href="@SddFindingHref(finding)">Review evidence</a></li>
                     }
                 </ul>
             }
@@ -2557,5 +2557,13 @@
         if (string.IsNullOrEmpty(name) || string.Equals(code, name, StringComparison.OrdinalIgnoreCase)) return code;
         return $"{code} — {name}";
     }
+
+    /// <summary>Test findings point at their exact evidence (execution → run, artifact and source provenance; or source test definition).</summary>
+    private static string SddFindingHref(SddQualityReviewFinding finding) => finding.EvidenceReference switch
+    {
+        var r when r.StartsWith("test-execution:", StringComparison.Ordinal) => $"/implementation-review?test-execution={Uri.EscapeDataString(r["test-execution:".Length..])}#test-evidence",
+        var r when r.StartsWith("test-definition:", StringComparison.Ordinal) => $"/implementation-review?test-definition={Uri.EscapeDataString(r["test-definition:".Length..])}#test-evidence",
+        _ => "/implementation-review",
+    };
 
 }

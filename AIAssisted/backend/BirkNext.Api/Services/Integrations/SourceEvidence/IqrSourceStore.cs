@@ -40,6 +40,19 @@ public sealed class IqrSourceStore(AppDbContext db)
         var record = await db.IqrSourceSnapshots.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id && r.EnvironmentId == environmentId && r.IntegrationId == integrationId, ct);
         return record is null ? null : JsonSerializer.Deserialize<IqrSourceSnapshot>(record.EvidenceJson, Json);
     }
+    internal static BirkNext.TestEvidence.SourceTestInventory DiscoverTests(IqrSourceSnapshot snapshot, string repository, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct)
+    {
+        try { return BirkNext.Api.Services.TestEvidence.DotNetXunitTestDiscoveryProvider.Discover(snapshot.Id, snapshot.Archive.Sha256, repository, workspace, ct); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or NullReferenceException or IndexOutOfRangeException)
+        {
+            return new BirkNext.TestEvidence.SourceTestInventory
+            {
+                SnapshotId = snapshot.Id, SnapshotFingerprint = snapshot.Archive.Sha256, RepositoryName = repository, Status = BirkNext.TestEvidence.SourceTestDiscoveryStatus.Partial,
+                Limitations = [$"Source test discovery stopped on an unsupported pattern ({ex.GetType().Name}); no test definitions were recorded."],
+            };
+        }
+    }
+
     public async Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeAsync(string environmentId, string integrationId, string name, byte[] bytes, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(integrationId)) return (null, "Environment and integration identity are required.");
@@ -68,6 +81,9 @@ public sealed class IqrSourceStore(AppDbContext db)
         // captured once here so Dependency Review never needs the archive again. Source Analysis supplies evidence; it does not review dependencies.
         var repository = DependencyReview.SourceDependencyEvidenceExtractor.Identity(name, bytes);
         snapshot = snapshot with { Repository = repository, DependencyEvidence = DependencyReview.SourceDependencyEvidenceExtractor.Extract(repository.DisplayName, bytes, name).Evidence };
+        // Source test definitions (test projects, [Fact]/[Theory], traits, explicit requirement references): discovery only, consumed when execution
+        // results are imported. A failure here never fails the snapshot; it is reported as a limitation of an empty inventory.
+        snapshot = snapshot with { TestInventory = DiscoverTests(snapshot, repository.DisplayName, workspace, ct) };
         // Classification-relevant observations Security Classification consumes (facts with file:line, read by its own analyzer): captured once
         // here so Security Classification never needs the archive. Source Analysis neither shows nor judges them.
         snapshot = snapshot with { SecurityClassificationEvidence = SecurityClassification.ClassificationSourceAnalyzer.ExtractArchive(name, bytes) };

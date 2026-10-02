@@ -220,6 +220,8 @@ builder.Services.AddHttpClient<IDependencyReviewApiService, DependencyReviewApiS
 });
 builder.Services.AddHttpClient<ISddEvidenceApiService, SddEvidenceApiService>();
 builder.Services.AddScoped<SddEvidenceGraphService>();
+// Test evidence: TRX result preview and Source Analysis test definitions; imported executions are recorded in the workspace SDD lifecycle.
+builder.Services.AddHttpClient<ITestEvidenceApiService, TestEvidenceApiService>(client => client.BaseAddress = new Uri("http://localhost:5000/"));
 // Trusted GraphQL schema artifacts per (Target Environment, API target) — API Quality Review's fallback schema for compatibility.
 builder.Services.AddHttpClient<IGraphQlSchemaArtifactApiService, GraphQlSchemaArtifactApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

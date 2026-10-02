@@ -51,6 +51,8 @@
     <Compile Include="../../shared/TechnologyCoverageContracts.cs" Link="Models/TechnologyCoverageContracts.cs" />
 
     <Compile Include="../../shared/PerformanceTestContracts.cs" Link="Models/PerformanceTestContracts.cs" />
+    <Compile Include="../../shared/TestEvidenceContracts.cs" Link="Models/TestEvidenceContracts.cs" />
+    <Compile Include="../../shared/RequirementReferenceParser.cs" Link="Models/RequirementReferenceParser.cs" />
     <Compile Include="../../shared/PipelineReviewContracts.cs" Link="Models/PipelineReviewContracts.cs" />
     <Compile Include="../../shared/SourceChangeImpactContracts.cs" Link="Models/SourceChangeImpactContracts.cs" />
     <Compile Include="../../shared/AzureEnvironmentContracts.cs" Link="Models/AzureEnvironmentContracts.cs" />

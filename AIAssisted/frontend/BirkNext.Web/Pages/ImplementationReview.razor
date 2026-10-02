@@ -173,9 +173,12 @@
         <textarea id="test-result-import" rows="8" @bind="_testResultJson" placeholder='[{"testId":"TEST-1","requirementReferences":["REQ-1"],"acceptanceCriterionReferences":["AC-1"],"executionState":"Completed","result":"Passed","providerId":"JUnitImport","resultSource":"test-results.xml"}]'></textarea>
         <button @onclick="ImportTestResultsAsync">Import test results</button>
         @if (!string.IsNullOrWhiteSpace(_testImportMessage)) { <p role="status">@_testImportMessage</p> }
-        @foreach (var execution in Artifacts.SddLifecycle.TestExecutions.OrderByDescending(x => x.ExecutedAt))
+        @foreach (var execution in Artifacts.SddLifecycle.TestExecutions.Where(x => x.RunId is null).OrderByDescending(x => x.ExecutedAt))
         { <p>@execution.TestId · @execution.ExecutionState / @execution.Result · @execution.ProviderId · @execution.Currentness · @execution.ExecutedAt</p> }
     </section>
+
+    <BirkNext.Web.Components.SddRequirementTestEvidence />
+    <BirkNext.Web.Components.SddTestEvidencePanel />
 </main>
 
 @code {
