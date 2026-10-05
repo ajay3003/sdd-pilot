@@ -4,6 +4,8 @@
 @using BirkNext.PerformanceTests
 @using BirkNext.Web.Models
 @using P = BirkNext.Web.Services.PerformanceTestPresentation
+@using D = BirkNext.Web.Services.PerformanceTestReviewDashboard
+@using BirkNext.Web.Shared.Components.Common
 @using PerformanceThreshold = BirkNext.PerformanceTests.PerformanceThreshold
 @using PerformanceMetric = BirkNext.PerformanceTests.PerformanceMetric
 @using PerformanceReadinessState = BirkNext.PerformanceTests.PerformanceReadinessState
@@ -17,51 +19,136 @@
 @* Performance Test Review: controlled HTTP/API load tests against the configured Target Environment. Configured ≠ Ready ≠ Executed ≠ Passed;
    a metric without a threshold is measured, not passed; a missing provider is a tool limitation, never a performance failure. The backend owns
    every safety rule (production refused, relative paths only, read-only methods, query-only GraphQL, load limits). *@
-<div class="sd-workspace pt-page" data-testid="pt-page">
-    <h1 class="pt-title">Performance Test Review</h1>
-    <p class="sd-muted" data-testid="pt-purpose">Measure how configured HTTP/API targets behave under controlled load and verify latency, throughput and errors against explicit expectations.</p>
+<div class="sd-workspace pt-page ptc" data-testid="pt-page" aria-busy="@(_loaded ? "false" : "true")">
+    <header class="ptc-header">
+        <div class="ptc-header-text">
+            <h1 class="pt-title">Performance Test Review</h1>
+            <p class="ptc-lead" data-testid="pt-purpose">Measure how configured HTTP/API targets behave under controlled load and verify latency, throughput and errors against explicit expectations.</p>
+        </div>
+        @if (_loaded && _profile is not null && _overview is not null)
+        {
+            <div class="ptc-header-side">
+                <span data-testid="pt-status">@Pill(PageState, "Performance test")</span>
+                <div class="ptc-actions" data-testid="pt-definition-bar">
+                    <button type="button" class="btn-primary ptc-run" @onclick="() => _tab = Tab.Run" disabled="@(!CanRun)" data-testid="pt-run-open" aria-describedby="pt-run-reason">Run test</button>
+                    <button type="button" class="btn-secondary" @onclick="() => _tab = Tab.Scenario" data-testid="pt-configure">Configure test</button>
+                    <button type="button" class="btn-secondary" @onclick="SaveAsync" disabled="@(!_dirty && !_isNew)" data-testid="pt-header-save">Save definition</button>
+                    <button type="button" class="ptc-link" @onclick="NewDefinition" data-testid="pt-new">+ New definition</button>
+                </div>
+                @if (!CanRun) { <p class="ptc-run-reason" id="pt-run-reason" data-testid="pt-run-reason">@RunReason</p> }
+            </div>
+        }
+    </header>
 
     @if (!_loaded)
     {
-        <p class="sd-muted" role="status">Loading…</p>
+        <div class="ptc-skeleton" role="status" aria-label="Loading Performance Test Review"><span></span><span></span><span></span><span></span></div>
     }
     else if (_profile is null)
     {
-        <p class="sd-empty" data-testid="pt-no-target">Select a Target Environment to define performance tests for its HTTP/API target.</p>
+        <div class="ptc-empty" data-testid="pt-no-target">
+            <span class="ptc-empty-icon" aria-hidden="true">◎</span>
+            <div><h2>No performance target configured</h2><p>Select a Target Environment to define performance tests for its HTTP/API target.</p>
+                <p><a class="btn-primary" href="admin/system-settings?section=target-environments">Open Target Environments</a></p></div>
+        </div>
     }
     else if (_overview is null)
     {
-        <p class="sd-reason" role="alert" data-testid="pt-unavailable">The BirkNext backend did not answer. Performance tests are stored and executed by the backend.</p>
+        <div class="ptc-empty ptc-empty-error" role="alert" data-testid="pt-unavailable">
+            <span class="ptc-empty-icon" aria-hidden="true">!</span>
+            <div><h2>Performance tests could not be loaded</h2><p>The BirkNext backend did not answer. Performance tests are stored and executed by the backend; nothing is shown until it answers.</p></div>
+        </div>
     }
     else
     {
-        <dl class="sd-summary" data-testid="pt-hero">
-            <div><dt>Target</dt><dd class="pt-small" data-testid="pt-hero-target">@(string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? "Not configured" : _draft.TargetOrigin)</dd></div>
-            <div><dt>Environment</dt><dd class="pt-small" data-testid="pt-hero-environment">@_draft.EnvironmentName (@_draft.EnvironmentType)</dd></div>
-            <div><dt>Provider</dt><dd class="pt-small" data-testid="pt-hero-provider">@ProviderText</dd></div>
-            <div><dt>Execution runtime</dt><dd class="pt-small" data-testid="pt-hero-runtime">@RuntimeText</dd></div>
-            <div><dt>k6 image</dt><dd class="pt-small" data-testid="pt-hero-image">@ImageText</dd></div>
-            <div><dt>Supported targets</dt><dd class="pt-small">REST, GraphQL (query), HTTP</dd></div>
-            <div><dt>Readiness</dt><dd class="pt-small" data-testid="pt-hero-readiness">@ReadinessText</dd></div>
-        </dl>
+        var groups = D.Groups(_isNew, _dirty, _readiness);
+        var (readyCount, requiredCount) = D.RequiredCounts(groups);
+        var envSafety = D.EnvironmentSafety(_draft.EnvironmentType, _readiness);
+        var engine = D.Engine(_overview.Provider);
+        var definitionState = D.DefinitionState(_isNew, _dirty, _draft.Version);
 
-        <div class="sd-filterbar pt-bar" data-testid="pt-definition-bar">
-            <label>Test definition
+        <ul class="ptc-strip" aria-label="Performance test summary" data-testid="pt-strip">
+            <li><span class="ptc-strip-label">Target</span> @Pill(string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? new("Not configured", "!", PtTone.Attention) : new("Configured", "✓", PtTone.Info), null)</li>
+            <li><span class="ptc-strip-label">Environment</span> <strong>@(_draft.EnvironmentType is { Length: > 0 } et ? et : "—")</strong></li>
+            <li><span class="ptc-strip-label">Engine</span> @Pill(engine, null)</li>
+            <li><span class="ptc-strip-label">Definition</span> @Pill(definitionState, null)</li>
+            <li><span class="ptc-strip-label">Readiness</span> @Pill(PageState, null)</li>
+        </ul>
+
+        @if (D.IsProduction(_draft.EnvironmentType))
+        {
+            <section class="ptc-callout ptc-callout-blocked" role="alert" data-testid="pt-production-block" aria-labelledby="pt-prod-h">
+                <span class="ptc-callout-icon" aria-hidden="true">✕</span>
+                <div><h2 id="pt-prod-h">Execution blocked</h2><p>Performance tests cannot run against Production. Select a non-production Target Environment.</p></div>
+            </section>
+        }
+
+        <div class="ptc-primary">
+            <section class="ptc-card ptc-accent-info" aria-labelledby="pt-card-target-h" data-testid="pt-card-target">
+                <h2 id="pt-card-target-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">◎</span>Target</h2>
+                <p class="ptc-value ptc-break" data-testid="pt-hero-target">@(string.IsNullOrWhiteSpace(_draft.TargetOrigin) ? "Not configured" : _draft.TargetOrigin)</p>
+                <p class="ptc-sub">@D.TargetLabel(_draft.TargetType) · from the Target Environment</p>
+                @if (string.IsNullOrWhiteSpace(_draft.TargetOrigin)) { <p><a href="admin/system-settings?section=target-environments">Configure the target</a></p> }
+            </section>
+
+            <section class="ptc-card @(envSafety.Tone switch { PtTone.Blocked => "ptc-accent-blocked", PtTone.Ready => "ptc-accent-ready", PtTone.Attention => "ptc-accent-attention", _ => "ptc-accent-resource" })" aria-labelledby="pt-card-env-h" data-testid="pt-card-environment">
+                <h2 id="pt-card-env-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">⌂</span>Environment</h2>
+                <p class="ptc-value" data-testid="pt-hero-environment">@_draft.EnvironmentName <span class="ptc-env-type">@_draft.EnvironmentType</span></p>
+                <dl class="ptc-facts">
+                    <div><dt>Classification</dt><dd>@D.Classification(_draft.EnvironmentType)</dd></div>
+                    <div><dt>Safety</dt><dd data-testid="pt-env-safety">@Pill(envSafety, "Environment safety")</dd></div>
+                </dl>
+            </section>
+
+            <section class="ptc-card ptc-card-readiness ptc-accent-@PageState.ToneClass" aria-labelledby="pt-card-ready-h" data-testid="pt-card-readiness">
+                <h2 id="pt-card-ready-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">✓</span>Readiness</h2>
+                <p class="ptc-value" data-testid="pt-hero-readiness">@PageState.Label</p>
+                <p class="ptc-sub" data-testid="pt-readiness-count">@(_readiness is null ? "The backend evaluates the remaining checks after saving." : $"{readyCount} of {requiredCount} required checks ready")</p>
+                @if (PageState.Reason is { } why) { <p class="ptc-reason" data-testid="pt-readiness-reason">@why</p> }
+                <ul class="ptc-mini-checks">
+                    @foreach (var c in groups.SelectMany(g => g.Checks.Select(c => (g.Name, c))).Where(x => x.Name != "Optional" || x.c.Key is "resources").Take(7))
+                    {
+                        <li class="ptc-tone-@c.c.Status.ToneClass"><span aria-hidden="true">@c.c.Status.Glyph</span> @c.c.Label<span class="visually-hidden">: @c.c.Status.Label</span></li>
+                    }
+                </ul>
+                <button type="button" class="ptc-link" @onclick="() => _tab = Tab.Readiness" data-testid="pt-view-readiness">View readiness</button>
+            </section>
+
+            <section class="ptc-card ptc-card-engine" aria-labelledby="pt-card-engine-h" data-testid="pt-card-engine">
+                <h2 id="pt-card-engine-h" class="ptc-card-title"><span class="ptc-icon" aria-hidden="true">⚙</span>Execution engine @Pill(engine, "Execution engine")</h2>
+                <dl class="ptc-facts">
+                    <div><dt>Provider</dt><dd data-testid="pt-hero-provider">@ProviderText</dd></div>
+                    <div><dt>Runtime</dt><dd data-testid="pt-hero-runtime">@RuntimeText</dd></div>
+                    <div><dt>Image</dt><dd class="ptc-break" data-testid="pt-hero-image">@ImageText</dd></div>
+                </dl>
+                <ul class="ptc-chips" aria-label="Supported target types" data-testid="pt-target-chips">
+                    @foreach (var t in D.TargetTypes(_overview.Provider?.Capabilities)) { <li class="ptc-chip"><span aria-hidden="true">✓</span> @t</li> }
+                </ul>
+                @if (engine.Tone != PtTone.Ready) { <p class="ptc-sub"><a href="admin/system-settings?section=performance-test-engines" data-testid="pt-open-engines">Open Performance Test Engines</a></p> }
+            </section>
+        </div>
+
+        <section class="ptc-definition" aria-labelledby="pt-def-h" data-testid="pt-definition-card">
+            <h2 id="pt-def-h" class="visually-hidden">Test definition</h2>
+            <label class="ptc-select">Test definition
                 <select value="@(_draft.Id)" @onchange="SelectDefinition" data-testid="pt-definition-select">
                     @foreach (var d in _overview.Definitions) { <option value="@d.Id">@d.Name · v@(d.Version)</option> }
-                    @if (_isNew) { <option value="">(new, not saved)</option> }
+                    @if (_isNew) { <option value="">@(_draft.Name) (draft, not saved)</option> }
                 </select>
             </label>
-            <button type="button" class="btn-secondary" @onclick="NewDefinition" data-testid="pt-new">New definition</button>
-            <button type="button" class="btn-secondary" @onclick="() => _tab = Tab.Scenario" data-testid="pt-configure">Configure test</button>
-            <button type="button" class="btn-primary" @onclick="() => _tab = Tab.Run" disabled="@(!CanRun)" data-testid="pt-run-open">Run test</button>
-        </div>
+            <dl class="ptc-def-facts">
+                <div><dt>Status</dt><dd data-testid="pt-definition-state">@Pill(definitionState, "Test definition")</dd></div>
+                <div><dt>Scenario</dt><dd>@_draft.Scenario.Name</dd></div>
+                <div><dt>Version</dt><dd>@(_isNew ? "—" : $"v{_draft.Version}")</dd></div>
+            </dl>
+        </section>
         @if (_message is { } message) { <p class="sd-reason" role="status" data-testid="pt-message">@message</p> }
 
-        <div class="sd-tabs" role="group" aria-label="Performance test sections" data-testid="pt-tabs">
+        <div class="ptc-tabs" role="group" aria-label="Performance test sections" data-testid="pt-tabs">
             @foreach (var t in Enum.GetValues<Tab>())
             {
-                <button type="button" class="btn-secondary" aria-pressed="@(_tab == t ? "true" : "false")" @onclick="() => _tab = t" data-testid="pt-tab-@t.ToString().ToLowerInvariant()">@t</button>
+                var badge = TabBadge(t);
+                <button type="button" class="ptc-tab" aria-pressed="@(_tab == t ? "true" : "false")" @onclick="() => _tab = t" data-testid="pt-tab-@t.ToString().ToLowerInvariant()">@t@if (badge is { } b) { <span class="ptc-tab-badge ptc-tone-@b.ToneClass"><span aria-hidden="true">@b.Glyph</span><span class="visually-hidden">, @b.Label</span></span> }</button>
             }
         </div>
 
@@ -78,6 +165,22 @@
             case Tab.Compare: @CompareView() break;
             case Tab.History: @History() break;
         }
+
+        <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="pt-technical" Class="ptc-technical">
+            <dl class="ptc-tech">
+                <div><dt>Definition ID</dt><dd><code>@(_isNew ? "(not saved)" : _draft.Id)</code></dd></div>
+                <div><dt>Comparison fingerprint</dt><dd><code>@(_draft.ComparisonFingerprint is { Length: > 0 } fp ? fp : "—")</code></dd></div>
+                @if (_overview.Provider is { } p)
+                {
+                    <div><dt>Provider ID</dt><dd><code>@p.ProviderId</code></dd></div>
+                    <div><dt>Provider detail</dt><dd>@p.Detail</dd></div>
+                    @if (p.Runtime is { } rt) { <div><dt>Runtime ID</dt><dd><code>@rt.RuntimeId</code> @rt.Version</dd></div> }
+                    <div><dt>Image reference</dt><dd><code>@(p.Image ?? "—")</code></dd></div>
+                    <div><dt>Image digest</dt><dd><code>@(p.ImageDigest ?? "—")</code></dd></div>
+                    <div><dt>Image pull</dt><dd>@(p.AllowImagePull ? "Allowed on request" : "Disabled (pull on the host)")</dd></div>
+                }
+            </dl>
+        </ReviewDisclosure>
     }
 </div>
 
@@ -122,7 +225,8 @@
     private TestDataSelection _dataSelection = TestDataSelection.RoundRobin;
     private System.Threading.Timer? _poll;
 
-    private bool CanRun => !_isNew && !_dirty && _readiness?.Ready == true && !(_runs.FirstOrDefault()?.IsActive ?? false);
+    // The backend refuses Production; the button follows the same rule so it never offers what the backend will reject.
+    private bool CanRun => !_isNew && !_dirty && _readiness?.Ready == true && !(_runs.FirstOrDefault()?.IsActive ?? false) && !D.IsProduction(_draft.EnvironmentType);
     private PerformanceTestRun? ActiveRun => _runs.FirstOrDefault(r => r.IsActive);
     private PerformanceBaseline? ActiveBaseline => _baselines.FirstOrDefault(b => b.Status == PerformanceBaselineStatus.Active && b.ComparisonFingerprint == _draft.ComparisonFingerprint);
 
@@ -130,7 +234,62 @@
         ? rt.Availability == ProviderAvailability.Available ? $"{rt.DisplayName} {rt.Version}" : $"{rt.DisplayName}: {P.Label(rt.Availability)} (tool limitation)"
         : "—";
 
-    private string ImageText => _overview?.Provider is { Image: { } image } p ? $"{image} — {(p.ImagePresent ? "present" : "missing")}" : "—";
+    private string ImageText => _overview?.Provider is { Image: { } image } p ? $"{PerformanceEngineCapabilityPresentation.ShortImage(image)} — {(p.ImagePresent ? "present" : "missing")}" : "—";
+
+    private PtStatus PageState => D.PageStatus(_isNew, _dirty, _readiness, ActiveRun, _draft.EnvironmentType);
+
+    /// <summary>Why Run is unavailable, shown next to the button (never only in a tooltip).</summary>
+    private string RunReason => ActiveRun is not null ? "A run is in progress."
+        : D.IsProduction(_draft.EnvironmentType) ? "Blocked: Production is not allowed."
+        : _isNew ? "Save the definition before running."
+        : _dirty ? "Save your changes before running."
+        : _readiness is null ? "Readiness could not be evaluated."
+        : _readiness.Ready ? "" : $"Not ready: {PageState.Reason ?? "see Readiness"}";
+
+    private PtStatus? TabBadge(Tab t) => t switch
+    {
+        Tab.Scenario => _draft.Scenario.Steps.Count > 0 ? new($"{_draft.Scenario.Steps.Count} step(s)", "✓", PtTone.Ready) : new("No steps", "!", PtTone.Attention),
+        Tab.Thresholds => _draft.Thresholds.Count > 0 ? new($"{_draft.Thresholds.Count} configured", _draft.Thresholds.Count.ToString(), PtTone.Info) : null,
+        Tab.Resources => _draft.ResourceObservation is { Enabled: true } ? new("Enabled", "✓", PtTone.Resource) : new("Optional", "○", PtTone.Neutral),
+        Tab.Readiness => PageState.Tone switch { PtTone.Ready => new("Ready", "✓", PtTone.Ready), PtTone.Blocked => new("Blocked", "✕", PtTone.Blocked), PtTone.Running => null, _ => new("Needs action", "!", PtTone.Attention) },
+        Tab.Run => ActiveRun is not null ? new("Running", "▶", PtTone.Running) : null,
+        Tab.History => _runs.Count > 0 ? new($"{_runs.Count} run(s)", _runs.Count.ToString(), PtTone.Neutral) : null,
+        _ => null,
+    };
+
+    /// <summary>Status pill: decorative glyph + text; <paramref name="subject"/> prefixes the spoken text ("Readiness status: Needs configuration").</summary>
+    private static RenderFragment Pill(PtStatus status, string? subject) => __builder =>
+    {
+        <span class="sd-pill @status.PillClass ptc-pill ptc-tone-@status.ToneClass" data-status="@status.Label">@if (subject is not null) {<span class="visually-hidden">@subject status: </span>}<span class="ptc-glyph" aria-hidden="true">@status.Glyph</span> @status.Label</span>
+    };
+
+    private RenderFragment Timeline(PerformanceWorkload w) => __builder =>
+    {
+        var total = Math.Max(1, w.TotalSeconds);
+        <div class="ptc-timeline" data-testid="pt-timeline-visual">
+            <p class="visually-hidden">Workload timeline: @D.PhasesText(w).</p>
+            <ol class="ptc-phases" aria-hidden="true">
+                @foreach (var (phase, start, end) in D.PhaseWindows(w))
+                {
+                    <li class="ptc-phase ptc-phase-@phase.Key" style="flex-grow: @phase.Seconds; flex-basis: @((100.0 * phase.Seconds / total).ToString("0.##", CultureInfo.InvariantCulture))%">
+                        <span class="ptc-phase-label">@phase.Label</span>
+                        <span class="ptc-phase-time">@P.Duration(start)–@P.Duration(end)</span>
+                    </li>
+                }
+            </ol>
+        </div>
+    };
+
+    private async Task NextAction(string? action)
+    {
+        switch (action)
+        {
+            case "save": await SaveAsync(); break;
+            case "run": _tab = Tab.Run; break;
+            case "history": _tab = Tab.History; break;
+            default: _tab = Tab.Readiness; break;
+        }
+    }
 
     private PerformanceReachability? _reachability;
     private bool _checkingNetwork;
@@ -345,35 +504,100 @@
 
     private RenderFragment SaveBar() => @<div class="pt-savebar">
         <button type="button" class="btn-primary" @onclick="SaveAsync" disabled="@(!_dirty && !_isNew)" data-testid="pt-save">Save definition</button>
-        <span class="sd-muted" data-testid="pt-save-state">@(_isNew ? "Not saved yet." : _dirty ? "Unsaved changes — saving creates a new version; earlier runs keep theirs." : "Saved.")</span>
+        <span data-testid="pt-save-state">@Pill(D.DefinitionState(_isNew, _dirty, _draft.Version), "Test definition")</span>
+        @if (_dirty && !_isNew) { <span class="sd-muted">Saving creates a new version; earlier runs keep theirs.</span> }
     </div>;
 
     // ── Tabs ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-    private RenderFragment Overview() => @<section class="pt-section" aria-labelledby="pt-overview-h" data-testid="pt-overview">
-        <h2 id="pt-overview-h">Overview</h2>
-        <dl class="sd-summary">
-            <div><dt>Scenario</dt><dd class="pt-small">@_draft.Scenario.Name · @_draft.Scenario.Steps.Count step(s)</dd></div>
-            <div><dt>Workload</dt><dd class="pt-small">@_draft.Workload.Purpose · @P.Load(_draft.Workload) · @P.Duration(_draft.Workload.TotalSeconds)</dd></div>
-            <div><dt>Thresholds</dt><dd data-testid="pt-overview-thresholds">@_draft.Thresholds.Count</dd></div>
-            <div><dt>Latest run</dt><dd class="pt-small" data-testid="pt-overview-latest">@(_runs.FirstOrDefault() is { } l ? $"{P.Label(l.State)} · {P.Label(l.Verdict)}" : "No run yet")</dd></div>
-            <div><dt>Resource observation</dt><dd class="pt-small" data-testid="pt-overview-resources">@ResourceOverview</dd></div>
-            @if (_draft.ResourceObservation is { Enabled: true } ro)
+    private RenderFragment Overview()
+    {
+        var latest = _runs.FirstOrDefault();
+        var latestState = D.LatestRun(latest);
+        var thresholds = D.Thresholds(_draft.Thresholds);
+        var resources = D.Resources(_draft.ResourceObservation);
+        var baseline = ActiveBaseline;
+        var next = D.Next(PageState, _isNew, _dirty, _readiness, _runs, baseline);
+        return @<section class="pt-section" aria-labelledby="pt-overview-h" data-testid="pt-overview">
+        <h2 id="pt-overview-h" class="visually-hidden">Overview</h2>
+        <div class="ptc-next ptc-accent-@next.Tone.ToString().ToLowerInvariant()" data-testid="pt-next-step" data-tone="@next.Tone">
+            <span class="ptc-next-label">Next step</span>
+            <p>@next.Text</p>
+            @if (next.Action is { } action)
             {
-                <div><dt>Resource targets</dt><dd class="pt-small" data-testid="pt-overview-resource-targets">@(ro.TargetComponentIds.Count == 0 ? "None selected" : string.Join(", ", ro.TargetComponentIds.Select(id => _resourceTargets.FirstOrDefault(t => t.Target.Id == id) is { } t ? $"{t.Target.DisplayName} ({t.Target.ProviderId})" : id)))@(ro.ObserveLoadGenerator ? " · k6 generator health" : "")</dd></div>
+                <button type="button" class="@(action is "run" or "save" ? "btn-primary" : "btn-secondary")" @onclick="() => NextAction(action)" disabled="@(action == "run" && !CanRun)" data-testid="pt-next-action">@next.ActionLabel</button>
             }
-        </dl>
-        <div class="sd-panel" data-testid="pt-baseline-card">
-            <h3>Active baseline</h3>
-            @if (ActiveBaseline is { } b && _runs.FirstOrDefault(r => r.RunId == b.RunId) is var br)
-            {
-                <p>v@(b.Version) · run @P.Short(b.RunId) · since @P.Utc(b.EffectiveFrom) · @((DateTimeOffset.UtcNow - b.EffectiveFrom).Days) day(s) old</p>
-                <p class="sd-muted">P95 @PerformanceTestRules.Format(br?.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms) · @PerformanceTestRules.Format(br?.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)@(b.Reason is null ? "" : $" · Reason: {b.Reason}")</p>
-            }
-            else { <p class="sd-muted">No baseline selected. A baseline is chosen explicitly from a completed run (History → Promote to baseline).</p> }
+        </div>
+
+        <div class="ptc-overview">
+            <article class="ptc-tile ptc-accent-info" data-testid="pt-overview-scenario">
+                <h3 class="ptc-tile-title">Scenario</h3>
+                <p class="ptc-value">@_draft.Scenario.Name</p>
+                <p class="ptc-sub">@_draft.Scenario.Steps.Count step@(_draft.Scenario.Steps.Count == 1 ? "" : "s") · @D.TargetLabel(_draft.TargetType)</p>
+                @if (_draft.Scenario.Steps.Count > 0) { <p class="ptc-methods">@string.Join(" · ", _draft.Scenario.Steps.Take(3).Select(st => $"{st.Method} {st.RelativePath}"))@(_draft.Scenario.Steps.Count > 3 ? " …" : "")</p> }
+            </article>
+
+            <article class="ptc-tile ptc-accent-workload ptc-tile-wide" data-testid="pt-overview-workload">
+                <h3 class="ptc-tile-title">Workload</h3>
+                <p class="ptc-value">@_draft.Workload.Purpose <span class="ptc-value-sub">@P.Load(_draft.Workload) · @P.Duration(_draft.Workload.TotalSeconds)</span></p>
+                @Timeline(_draft.Workload)
+            </article>
+
+            <article class="ptc-tile ptc-accent-@(thresholds.Tone == PtTone.Info ? "ready" : "neutral")" data-testid="pt-overview-threshold-card">
+                <h3 class="ptc-tile-title">Thresholds</h3>
+                <p class="ptc-value"><span data-testid="pt-overview-thresholds">@_draft.Thresholds.Count</span> <span class="ptc-value-sub">configured</span></p>
+                <p>@Pill(thresholds, "Thresholds")</p>
+                @if (thresholds.Reason is { } tr) { <p class="ptc-sub">@tr</p> }
+            </article>
+
+            <article class="ptc-tile ptc-accent-@latestState.ToneClass" data-testid="pt-overview-latest-card">
+                <h3 class="ptc-tile-title">Latest run</h3>
+                <p class="ptc-value" data-testid="pt-overview-latest">@(latest is { } l ? $"{P.Label(l.State)} · {P.Label(l.Verdict)}" : "No run yet")</p>
+                <p>@Pill(latestState, "Latest run")</p>
+                @if (latest?.Metrics is { } lm)
+                {
+                    <dl class="ptc-stats">
+                        <div><dt>P95</dt><dd><span class="visually-hidden">P95 latency: </span>@PerformanceTestRules.Format(lm.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</dd></div>
+                        <div><dt>RPS</dt><dd><span class="visually-hidden">Throughput: </span>@PerformanceTestRules.Format(lm.RequestsPerSecond, PerformanceMetric.ThroughputRps)</dd></div>
+                        <div><dt>Errors</dt><dd><span class="visually-hidden">Error rate: </span>@PerformanceTestRules.Format(lm.ErrorRatePercent, PerformanceMetric.ErrorRatePercent)</dd></div>
+                    </dl>
+                }
+            </article>
+
+            <article class="ptc-tile ptc-baseline" data-testid="pt-baseline-card" data-state="@(baseline is null ? "none" : "active")">
+                <h3 class="ptc-tile-title">Baseline</h3>
+                @if (baseline is { } b && _runs.FirstOrDefault(r => r.RunId == b.RunId) is var br)
+                {
+                    <p class="ptc-value">@Pill(D.Baseline(b), "Baseline")</p>
+                    <p class="ptc-sub">Run @P.Short(b.RunId) · since @P.Utc(b.EffectiveFrom)</p>
+                    <dl class="ptc-stats">
+                        <div><dt>P95</dt><dd><span class="visually-hidden">Baseline P95 latency: </span>@PerformanceTestRules.Format(br?.Metrics?.Latency.P95Ms, PerformanceMetric.LatencyP95Ms)</dd></div>
+                        <div><dt>RPS</dt><dd><span class="visually-hidden">Baseline throughput: </span>@PerformanceTestRules.Format(br?.Metrics?.RequestsPerSecond, PerformanceMetric.ThroughputRps)</dd></div>
+                    </dl>
+                    @if (b.Reason is { } reason) { <p class="ptc-sub">Reason: @reason</p> }
+                    <p class="ptc-tile-actions"><button type="button" class="ptc-link" @onclick="() => _tab = Tab.Compare">Compare</button> <button type="button" class="ptc-link" @onclick="() => _tab = Tab.History">View history</button></p>
+                }
+                else
+                {
+                    <p class="ptc-value">@Pill(D.Baseline(null), "Baseline")</p>
+                    <p class="ptc-sub">@D.Baseline(null).Reason</p>
+                    <p class="ptc-tile-actions"><button type="button" class="ptc-link" @onclick="() => _tab = Tab.History" data-testid="pt-open-history">Open History</button></p>
+                }
+            </article>
+            <article class="ptc-tile ptc-accent-resource ptc-tile-full" data-testid="pt-overview-resource-card">
+                <h3 class="ptc-tile-title">Resource Stability</h3>
+                <p class="ptc-value" data-testid="pt-overview-resources">@ResourceOverview</p>
+                <p>@Pill(resources, "Resource observation")</p>
+                @if (_draft.ResourceObservation is { Enabled: true } ro)
+                {
+                    <p class="ptc-sub" data-testid="pt-overview-resource-targets">@(ro.TargetComponentIds.Count == 0 ? "None selected" : string.Join(", ", ro.TargetComponentIds.Select(id => _resourceTargets.FirstOrDefault(t => t.Target.Id == id) is { } t ? $"{t.Target.DisplayName} ({t.Target.ProviderId})" : id)))@(ro.ObserveLoadGenerator ? " · k6 generator health" : "")</p>
+                }
+            </article>
+
         </div>
         <p class="sd-muted">Load-test metrics are their own evidence: they are not API Quality Review's single-request latency and not browser performance (Lighthouse / Core Web Vitals).</p>
     </section>;
+    }
 
     private RenderFragment Scenario() => @<section class="pt-section" aria-labelledby="pt-scenario-h" data-testid="pt-scenario">
         <h2 id="pt-scenario-h">Scenario</h2>
@@ -471,8 +695,10 @@
             <p class="sd-muted" data-testid="pt-soak-note">Longer controlled runs provide stronger resource-stability evidence (Resources tab). They still do not prove that resources leak or never leak.</p>
         }
         <h3>Timeline</h3>
+        @Timeline(_draft.Workload)
         <ol class="pt-timeline" data-testid="pt-timeline">@foreach (var line in PerformanceTestRules.Timeline(_draft.Workload)) { <li>@line</li> }</ol>
-        <h3>Safety</h3>
+        <h3>Safety <span data-testid="pt-workload-policy">@Pill(D.WorkloadPolicy(_draft.Workload, _overview!.Limits), "Workload policy")</span></h3>
+        @if (D.WorkloadPolicy(_draft.Workload, _overview!.Limits).Reason is { } over) { <p class="ptc-reason" data-testid="pt-workload-over">@over</p> }
         @if (_overview!.Limits is { } lim)
         {
             <dl class="sd-mini" data-testid="pt-safety">
@@ -548,13 +774,29 @@
                     <span class="sd-muted" role="status" aria-live="polite" data-testid="pt-network-result">@(_reachability is { } nr ? $"{nr.State}: {nr.Detail}" : "Sends one request from the k6 container (not the BirkNext host).")</span>
                 </div>
             }
-            <ul class="sd-list" data-testid="pt-readiness-items">
-                @foreach (var item in _readiness.Items)
+            <div class="ptc-groups" data-testid="pt-readiness-items">
+                @foreach (var group in D.Groups(_isNew, _dirty, _readiness))
                 {
-                    <li data-testid="pt-readiness-item" data-key="@item.Key" data-state="@item.State"><span class="sd-pill sd-pill-@P.Tone(item.State)">@P.Label(item.State)</span> <strong>@item.Label</strong> — @item.Detail</li>
+                    <section class="ptc-group ptc-group-@group.Name.ToLowerInvariant()" aria-labelledby="@($"pt-group-{group.Name}")" data-testid="pt-readiness-group" data-group="@group.Name">
+                        <h3 id="@($"pt-group-{group.Name}")">@group.Name</h3>
+                        <ul>
+                            @foreach (var c in group.Checks)
+                            {
+                                var item = _readiness.Items.FirstOrDefault(i => i.Key == c.Key);
+                                <li data-testid="@(item is null ? "pt-readiness-local" : "pt-readiness-item")" data-key="@c.Key" data-state="@(item?.State.ToString() ?? c.Status.Label)">
+                                    @Pill(c.Status, c.Label) <strong>@c.Label</strong>@if (c.Detail is { } detail) { <span class="ptc-check-detail">@detail</span> }
+                                </li>
+                            }
+                        </ul>
+                    </section>
                 }
-            </ul>
+            </div>
+            <div class="ptc-cta" data-testid="pt-readiness-cta">
+                @if (_readiness.Ready) { <button type="button" class="btn-primary" @onclick="() => _tab = Tab.Run">Run performance test</button> }
+                else { <p>@($"Resolve {_readiness.Items.Count(i => i.Blocking)} required item(s) before running.")</p> }
+            </div>
         }
+        @if (_isNew || _dirty) { <div class="ptc-cta"><button type="button" class="btn-primary" @onclick="SaveAsync" data-testid="pt-readiness-save">Save definition</button></div> }
     </section>;
 
     private RenderFragment RunView() => @<section class="pt-section" aria-labelledby="pt-run-h" data-testid="pt-run">
@@ -608,7 +850,7 @@
                 <h3>Latency</h3>
                 <dl class="sd-mini" data-testid="pt-latency">
                     @foreach (var (label, value) in new[] { ("P50", m.Latency.P50Ms), ("P90", m.Latency.P90Ms), ("P95", m.Latency.P95Ms), ("P99", m.Latency.P99Ms), ("Mean", m.Latency.MeanMs), ("Max", m.Latency.MaxMs) })
-                    { <div><dt>@label</dt><dd>@PerformanceTestRules.Format(value, PerformanceMetric.LatencyMeanMs)</dd></div> }
+                    { <div><dt>@label</dt><dd><span class="visually-hidden">@label latency: </span>@PerformanceTestRules.Format(value, PerformanceMetric.LatencyMeanMs)</dd></div> }
                 </dl>
             }
             <h3>Thresholds</h3>
@@ -689,7 +931,14 @@
     private RenderFragment History() => @<section class="pt-section" aria-labelledby="pt-history-h" data-testid="pt-history">
         <h2 id="pt-history-h">History</h2>
         <label>Show <select @bind="_filter" data-testid="pt-history-filter">@foreach (var f in Enum.GetValues<HistoryFilter>()) { <option value="@f">@f</option> }</select></label>
-        @if (_runs.Count == 0) { <p class="sd-empty" data-testid="pt-history-empty">No runs yet.</p> }
+        @if (_runs.Count == 0)
+        {
+            <div class="ptc-empty" data-testid="pt-history-empty">
+                <span class="ptc-empty-icon" aria-hidden="true">◷</span>
+                <div><h3>No runs yet</h3><p>No performance tests have been executed for this definition.</p>
+                    <p><button type="button" class="btn-primary" @onclick="() => _tab = Tab.Run" disabled="@(!CanRun)">Run first test</button></p></div>
+            </div>
+        }
         else
         {
             <div class="sd-scroll" tabindex="0" role="region" aria-label="Run history">

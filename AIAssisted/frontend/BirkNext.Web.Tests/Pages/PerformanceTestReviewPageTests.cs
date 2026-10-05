@@ -4,6 +4,7 @@ using BirkNext.Web.Models;
 using BirkNext.Web.Pages;
 using BirkNext.Web.Services;
 using Bunit;
+using D = BirkNext.Web.Services.PerformanceTestReviewDashboard;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -351,7 +352,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Tab(cut, "scenario");
         cut.Find("[data-testid=pt-target-type]").Change("GraphQlHttp");
         cut.Find("[data-testid=pt-graphql-note]").TextContent.Should().Contain("query operations only").And.Contain("Mutations and subscriptions are blocked");
-        cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Unsaved changes");
+        cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Needs configuration");
+        cut.Find("[data-testid=pt-definition-state] .sd-pill").GetAttribute("data-status").Should().Be("Unsaved changes");
         cut.Find("[data-testid=pt-run-open]").HasAttribute("disabled").Should().BeTrue("an unsaved definition cannot run");
         cut.Find("[data-testid=pt-save]").Click();
         _api.Calls.Should().Contain("update");
@@ -410,7 +412,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-result-state]").TextContent.Should().Be("Completed"));
         cut.Find("[data-testid=pt-result-quality]").TextContent.Should().Contain("Fail");
         cut.Find("[data-testid=pt-threshold-result]").TextContent.Should().Contain("610 ms").And.Contain("< 500 ms").And.Contain("Fail").And.Contain("Required");
-        cut.Find("[data-testid=pt-latency]").TextContent.Should().Contain("P95610 ms");
+        cut.Find("[data-testid=pt-latency]").TextContent.Should().Contain("P95 latency: 610 ms");
         cut.Find("[data-testid=pt-result-nobaseline]").TextContent.Should().Contain("Not configured");
     }
 
@@ -476,10 +478,11 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
     {
         Register(definitions: []);
         var cut = Page();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Not saved yet"));
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-readiness]").TextContent.Should().Be("Needs configuration"));
+        cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().Be("The definition must be saved before execution.");
         Tab(cut, "scenario");
         cut.Find("[data-testid=pt-target]").TextContent.Should().Be("https://paymenthub-qa.example.test", "only the configured target's origin; no free destination field");
-        cut.Find("[data-testid=pt-save-state]").TextContent.Should().Be("Not saved yet.");
+        cut.Find("[data-testid=pt-save-state] .sd-pill").GetAttribute("data-status").Should().Be("Draft · not saved");
         cut.Find("[data-testid=pt-save]").Click();
         _api.Calls.Should().Contain("create");
     }
@@ -493,7 +496,8 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         var cut = Page();
         cut.WaitForAssertion(() => cut.Find("[data-testid=pt-hero-runtime]").TextContent.Should().Be("Podman: Unavailable (tool limitation)"));
         cut.Find("[data-testid=pt-hero-provider]").TextContent.Should().Be("k6: Runtime unavailable (tool limitation)");
-        cut.Find("[data-testid=pt-hero-image]").TextContent.Should().Contain("docker.io/grafana/k6:1.0.0");
+        cut.Find("[data-testid=pt-hero-image]").TextContent.Should().Contain("grafana/k6:1.0.0");
+        cut.Find("[data-testid=pt-technical-body]").TextContent.Should().Contain("docker.io/grafana/k6:1.0.0", "the exact image reference stays available in Technical details");
     }
 
     [Fact]
@@ -545,5 +549,207 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         var noPull = Render<BirkNext.Web.Components.PerformanceTestEngineStatus>();
         noPull.WaitForAssertion(() => noPull.Find("[data-testid=pte-guidance]").TextContent.Should().Contain("Automatic image pull is disabled"));
         noPull.FindAll("[data-testid=pte-pull]").Should().BeEmpty();
+    }
+
+    // ── Control center: status, cards, next step, timeline, grouped readiness ────────────────────────────────────────
+
+    private static string Status(IRenderedComponent<PerformanceTestReview> cut, string testId) =>
+        cut.Find($"[data-testid={testId}] .sd-pill").GetAttribute("data-status")!;
+
+    [Fact]
+    public void ControlCenter_Ready_ShowsTargetEnvironmentReadinessEngine_AndRunAsTheNextStep()
+    {
+        Register(readiness: ReadyState() with
+        {
+            Items = [new("environment", "Environment and production guard", PerformanceReadinessState.Ready, "QA — a non-production environment.", false), .. ReadyState().Items,
+                new("baseline", "Baseline", PerformanceReadinessState.Optional, "Optional — no baseline selected.", false)],
+        });
+        var cut = Page();
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Ready"));
+
+        cut.Find("[data-testid=pt-status] .visually-hidden").TextContent.Should().Be("Performance test status: ");
+        cut.Find("[data-testid=pt-card-target]").ClassList.Should().Contain("ptc-accent-info");
+        Status(cut, "pt-env-safety").Should().Be("Allowed");
+        cut.Find("[data-testid=pt-card-environment]").TextContent.Should().Contain("Non-production");
+        cut.Find("[data-testid=pt-readiness-count]").TextContent.Should().Be("4 of 4 required checks ready");
+        cut.FindAll("[data-testid=pt-target-chips] li").Select(li => li.TextContent.Trim()).Should().Equal("✓ REST", "✓ HTTP", "✓ GraphQL queries");
+        cut.FindAll("[data-testid=pt-run-reason]").Should().BeEmpty();
+        cut.Find("[data-testid=pt-next-step]").GetAttribute("data-tone").Should().Be("Ready");
+        cut.Find("[data-testid=pt-next-step]").TextContent.Should().Contain("Everything is ready");
+        cut.Find("[data-testid=pt-next-action]").HasAttribute("disabled").Should().BeFalse();
+    }
+
+    [Fact]
+    public void Draft_IsNeedsConfiguration_InAmber_WithTheExactReasonNextToTheDisabledRun()
+    {
+        Register(definitions: []);
+        var cut = Page();
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Needs configuration"));
+
+        cut.Find("[data-testid=pt-status] .sd-pill").ClassList.Should().Contain("sd-pill-partial").And.NotContain("sd-pill-attention", "an unsaved draft is not a failure");
+        Status(cut, "pt-definition-state").Should().Be("Draft · not saved");
+        cut.Find("[data-testid=pt-run-open]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("[data-testid=pt-run-open]").GetAttribute("aria-describedby").Should().Be("pt-run-reason");
+        cut.Find("#pt-run-reason").TextContent.Should().Be("Save the definition before running.");
+        cut.Find("[data-testid=pt-tab-overview]").Click();
+        cut.Find("[data-testid=pt-next-step]").TextContent.Should().Contain("Save this test definition");
+        cut.Find("[data-testid=pt-next-action]").TextContent.Should().Be("Save definition");
+    }
+
+    [Fact]
+    public void Production_IsBlocked_InRed_AndRunIsDisabled()
+    {
+        Register(definitions: [Definition with { EnvironmentType = "Production", EnvironmentName = "PaymentHub PROD" }]);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-production-block]").TextContent.Should().Contain("cannot run against Production"));
+
+        Status(cut, "pt-status").Should().Be("Blocked");
+        cut.Find("[data-testid=pt-status] .sd-pill").ClassList.Should().Contain("sd-pill-attention");
+        Status(cut, "pt-env-safety").Should().Be("Blocked");
+        cut.Find("[data-testid=pt-run-open]").HasAttribute("disabled").Should().BeTrue();
+        cut.Find("#pt-run-reason").TextContent.Should().Contain("Production");
+    }
+
+    [Fact]
+    public void ProviderUnavailable_IsBlockedByTooling_NotAFailure_WithALinkToTheEngines()
+    {
+        Register(availability: ProviderAvailability.Unavailable, readiness: new PerformanceTestReadiness
+        {
+            Ready = false, Blockers = ["k6 is not installed."],
+            Items = [new("provider", "Provider", PerformanceReadinessState.ProviderUnavailable, "k6 is not installed.", true)],
+        });
+        var cut = Page();
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked by tooling"));
+
+        cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().StartWith("A tool limitation, not a performance result");
+        cut.Find("[data-testid=pt-open-engines]").GetAttribute("href").Should().Be("admin/system-settings?section=performance-test-engines");
+        cut.FindAll(".sd-pill-attention").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DestructiveOrInvalidScenario_IsBlocked()
+    {
+        Register(readiness: new PerformanceTestReadiness
+        {
+            Ready = false, Blockers = ["DELETE is not allowed."],
+            Items = [new("scenario", "Scenario", PerformanceReadinessState.InvalidScenario, "Destructive methods are not allowed (DELETE).", true)],
+        });
+        var cut = Page();
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Blocked"));
+        cut.Find("[data-testid=pt-readiness-reason]").TextContent.Should().Contain("Destructive methods are not allowed");
+    }
+
+    [Fact]
+    public void Overview_KeepsOptionalAndHistoricalStatesNeutral()
+    {
+        Register();
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-overview-resource-card]"));
+
+        cut.Find("[data-testid=pt-overview-resource-card] .sd-pill").GetAttribute("data-status").Should().Be("Disabled · optional");
+        cut.Find("[data-testid=pt-overview-resource-card] .sd-pill").ClassList.Should().Contain("ptc-tone-neutral").And.NotContain("sd-pill-partial");
+        cut.Find("[data-testid=pt-overview-latest-card] .sd-pill").GetAttribute("data-status").Should().Be("No run yet");
+        cut.Find("[data-testid=pt-overview-latest-card] .sd-pill").ClassList.Should().Contain("ptc-tone-neutral");
+        cut.Find("[data-testid=pt-baseline-card]").GetAttribute("data-state").Should().Be("none");
+        cut.Find("[data-testid=pt-baseline-card] .sd-pill").ClassList.Should().Contain("ptc-tone-baseline").And.NotContain("sd-pill-partial", "no baseline is informational");
+        cut.Find("[data-testid=pt-open-history]").Click();
+        cut.Find("[data-testid=pt-history-empty]").TextContent.Should().Contain("No performance tests have been executed for this definition");
+    }
+
+    [Fact]
+    public void Overview_ShowsTheBaselineAndACompletedPassingRun()
+    {
+        Register();
+        var run = Run(PerformanceRunState.Completed, PerformanceQualityVerdict.Pass);
+        _api.Runs = [run];
+        _api.Baselines = [new PerformanceBaseline { RunId = run.RunId, Version = 2, DefinitionId = "def-1", Status = PerformanceBaselineStatus.Active, ComparisonFingerprint = "cf", EffectiveFrom = DateTimeOffset.UtcNow }];
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-baseline-card]").GetAttribute("data-state").Should().Be("active"));
+
+        cut.Find("[data-testid=pt-baseline-card] .sd-pill").GetAttribute("data-status").Should().Be("Baseline v2");
+        cut.Find("[data-testid=pt-baseline-card]").TextContent.Should().Contain("Baseline P95 latency: 610 ms");
+        cut.Find("[data-testid=pt-overview-latest-card] .sd-pill").GetAttribute("data-status").Should().Be("Completed · Pass");
+        cut.Find("[data-testid=pt-overview-latest-card] .sd-pill").ClassList.Should().Contain("sd-pill-complete");
+        cut.Find("[data-testid=pt-overview-latest-card]").TextContent.Should().Contain("P95 latency: 610 ms");
+    }
+
+    [Fact]
+    public void WorkloadTimeline_ShowsOnlyConfiguredPhases_WithATextEquivalent()
+    {
+        Register(definitions: [Definition with { Workload = new PerformanceWorkload { VirtualUsers = 5, WarmupSeconds = 15, RampUpSeconds = 0, SteadyStateSeconds = 180, RampDownSeconds = 0 } }]);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-timeline-visual]"));
+
+        cut.FindAll("[data-testid=pt-timeline-visual] .ptc-phase-label").Select(e => e.TextContent).Should().Equal("Warm-up", "Steady state");
+        cut.Find("[data-testid=pt-timeline-visual] .visually-hidden").TextContent.Should().Be("Workload timeline: Warm-up 15 s, Steady state 3 min 0 s.");
+        cut.Find("[data-testid=pt-timeline-visual] ol").GetAttribute("aria-hidden").Should().Be("true");
+    }
+
+    [Fact]
+    public void WorkloadPolicy_FlagsAWorkloadBeyondTheLimits()
+    {
+        Register(definitions: [Definition with { Workload = new PerformanceWorkload { VirtualUsers = 80, SteadyStateSeconds = 60 } }]);
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-page]"));
+        Tab(cut, "workload");
+        Status(cut, "pt-workload-policy").Should().Be("Exceeds policy");
+        cut.Find("[data-testid=pt-workload-over]").TextContent.Should().Contain("80 VUs > 50");
+    }
+
+    [Fact]
+    public void ReadinessTab_GroupsRequiredSafetyAndOptional_WithACallToAction()
+    {
+        Register(readiness: ReadyState() with
+        {
+            Items = [new("environment", "Environment and production guard", PerformanceReadinessState.Ready, "QA.", false), new("limits", "Safety limits", PerformanceReadinessState.Ready, "Within limits.", false),
+                .. ReadyState().Items, new("baseline", "Baseline", PerformanceReadinessState.Optional, "Optional — no baseline selected.", false)],
+        });
+        var cut = Page();
+        cut.WaitForAssertion(() => Status(cut, "pt-status").Should().Be("Ready"));
+        Tab(cut, "readiness");
+
+        cut.FindAll("[data-testid=pt-readiness-group]").Select(g => g.GetAttribute("data-group")).Should().Equal("Required", "Safety", "Optional");
+        cut.Find("[data-testid=pt-readiness-group][data-group=Required]").TextContent.Should().Contain("Definition saved").And.Contain("Provider");
+        cut.Find("[data-testid=pt-readiness-group][data-group=Safety]").TextContent.Should().Contain("Safety limits");
+        cut.Find("[data-testid=pt-readiness-group][data-group=Optional]").TextContent.Should().Contain("Baseline");
+        cut.Find("[data-testid=pt-readiness-cta]").TextContent.Should().Contain("Run performance test");
+    }
+
+    [Fact]
+    public void Tabs_CarryAccessibleStatusBadges()
+    {
+        Register();
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-tab-thresholds] .ptc-tab-badge"));
+
+        cut.Find("[data-testid=pt-tab-thresholds]").TextContent.Should().Contain(", 1 configured");
+        cut.Find("[data-testid=pt-tab-resources]").TextContent.Should().Contain(", Optional");
+        cut.Find("[data-testid=pt-tab-overview]").GetAttribute("aria-pressed").Should().Be("true");
+        Tab(cut, "scenario");
+        cut.Find("[data-testid=pt-tab-scenario]").GetAttribute("aria-pressed").Should().Be("true");
+    }
+
+    [Fact]
+    public void BackendUnavailable_ShowsOneErrorCard_WithoutFabricatedValues()
+    {
+        Register();
+        _api.Overview = null;
+        var cut = Page();
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pt-unavailable]").TextContent.Should().Contain("could not be loaded"));
+        cut.FindAll("[data-testid=pt-card-target], [data-testid=pt-status]").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Presentation_RunStatesStayDistinct()
+    {
+        D.LatestRun(Run(PerformanceRunState.Completed, PerformanceQualityVerdict.Fail)).Tone.Should().Be(PtTone.Blocked, "an actual required-threshold failure");
+        D.LatestRun(Run(PerformanceRunState.Completed, PerformanceQualityVerdict.NotAssessed)).Label.Should().Be("Completed · Not assessed");
+        D.LatestRun(Run(PerformanceRunState.Cancelled)).Tone.Should().Be(PtTone.Neutral);
+        D.LatestRun(Run(PerformanceRunState.ExecutionFailed)).Tone.Should().Be(PtTone.Attention, "a tool/run error is not a performance failure");
+        D.LatestRun(Run(PerformanceRunState.Running)).Tone.Should().Be(PtTone.Running);
+        D.PageStatus(false, false, ReadyState(), Run(PerformanceRunState.Running), "QA").Label.Should().Be("Running");
+        D.Thresholds([]).Label.Should().Be("None — measured only");
+        D.Resources(null).Tone.Should().Be(PtTone.Neutral);
+        D.Phases(new PerformanceWorkload { WarmupSeconds = 0, RampUpSeconds = 30, SteadyStateSeconds = 60, RampDownSeconds = 10 }).Select(p => p.Key).Should().Equal("rampup", "steady", "rampdown");
     }
 }
