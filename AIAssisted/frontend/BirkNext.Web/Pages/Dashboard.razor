@@ -14,6 +14,13 @@
 
 <PageTitle>Dashboard</PageTitle>
 
+@if (ResetNotice is { } notice)
+{
+    <div class="notification @(notice.Warn ? "notification-warning" : "notification-success")" role="status" data-testid="reset-notice">
+        <strong>@notice.Title</strong> @notice.Text
+    </div>
+}
+
 @* ── Onboarding ───────────────────────────────────────────────────────────── *@
 @if (!_hasAnyWorkspace && !_hasAnySnapshot)
 {
@@ -1353,4 +1360,15 @@
 
     // ── Data loading ──────────────────────────────────────────────────────────
 
+
+    [SupplyParameterFromQuery(Name = "reset")] public string? ResetQuery { get; set; }
+
+    /// <summary>One-time notice after a local data reset (System Settings, or another tab that reset local data).</summary>
+    private (string Title, string Text, bool Warn)? ResetNotice => ResetQuery switch
+    {
+        "done" => ("Local data reset completed.", "Project and workspace state was cleared; installation settings were preserved. No project is loaded.", false),
+        "warnings" => ("Local data reset completed with warnings.", "The database was cleared, but some browser or session state could not be cleared. Reload BirkNext to finish.", true),
+        "stale" => ("Local data was reset in another tab.", "This tab's previous project state was discarded and not saved. No project is loaded.", true),
+        _ => null,
+    };
 }

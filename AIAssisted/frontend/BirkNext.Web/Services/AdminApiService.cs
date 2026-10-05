@@ -77,6 +77,20 @@ public class AdminApiService
         }
     }
 
+    /// <summary>Local data reset with the structured backend result (epoch, warnings, cleared/preserved domains). Null when unreachable.</summary>
+    public async Task<ResetResponseDto?> ResetLocalDataAsync()
+    {
+        try
+        {
+            var response = await _client.PostAsJsonAsync("api/admin/reset-local-database", new { confirmation = "RESET" });
+            return await response.Content.ReadFromJsonAsync<ResetResponseDto>() ?? new ResetResponseDto { Message = "Reset failed." };
+        }
+        catch (Exception ex)
+        {
+            return new ResetResponseDto { Success = false, Message = $"Request failed: {ex.Message}" };
+        }
+    }
+
     public async Task<(bool Success, string Message)> ResetLocalDatabaseAsync()
     {
         try
@@ -276,6 +290,13 @@ public class ResetResponseDto
 {
     [JsonPropertyName("success")] public bool Success { get; set; }
     [JsonPropertyName("message")] public string Message { get; set; } = "";
+    [JsonPropertyName("status")] public string Status { get; set; } = "";
+    [JsonPropertyName("resetEpoch")] public int ResetEpoch { get; set; }
+    [JsonPropertyName("databaseCleared")] public bool DatabaseCleared { get; set; }
+    [JsonPropertyName("backendStateCleared")] public bool BackendStateCleared { get; set; }
+    [JsonPropertyName("clearedDomains")] public List<string> ClearedDomains { get; set; } = [];
+    [JsonPropertyName("preservedDomains")] public List<string> PreservedDomains { get; set; } = [];
+    [JsonPropertyName("warnings")] public List<string> Warnings { get; set; } = [];
 }
 
 public class EditableSettingsDto

@@ -17,4 +17,7 @@ public sealed class ClassificationTestContextStore
     public void Set(string scope, string environmentId, ClassificationTestContext context) => _contexts[(scope, environmentId)] = context;
 
     public bool Clear(string scope, string environmentId) => _contexts.TryRemove((scope, environmentId), out _);
+
+    /// <summary>Local data reset: removes every temporary test context.</summary>
+    public int ClearAll() { var n = _contexts.Count; _contexts.Clear(); return n; }
 }

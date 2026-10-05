@@ -50,7 +50,10 @@ public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api,
         ProjectTechnologyCoverage? coverage = null;
         try
         {
-            profile = (await contexts.GetActiveContextAsync()).ActiveProfile;
+            // Without an active Target Environment (e.g. right after a local data reset) the context carries an empty placeholder profile:
+            // that is "no target", not a backend that did not answer.
+            var context = await contexts.GetActiveContextAsync();
+            profile = context.ActiveTargetError is null && context.ActiveProfile is { Id.Length: > 0 } active ? active : null;
             coverage = profile is null ? null : await api.GetAsync(profile.Id);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)

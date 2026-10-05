@@ -19,6 +19,9 @@ public interface IFrontendAnalysisSettingsService
     DetectionSnapshot? GetDetectionSnapshot(string profileId);
     Task SaveDetectionSnapshotAsync(IJSRuntime js, string profileId, DetectionSnapshot snapshot);
     Task RemoveDetectionSnapshotAsync(IJSRuntime js, string profileId);
+    /// <summary>Local data reset: replaces every Target Environment with the generic seed profiles (no project URLs, integrations,
+    /// thresholds, authentication or expectations) and forgets detection snapshots.</summary>
+    Task ResetForLocalDataResetAsync(IJSRuntime js) => Task.CompletedTask;
 
     FrontendAnalysisProfile CreateProfile(string name, FrontendEnvironmentType environmentType);
     void                    DeleteProfile(string profileId);
@@ -108,6 +111,14 @@ public sealed class FrontendAnalysisSettingsService : IFrontendAnalysisSettingsS
     // ── Detection snapshots (separate evidence store, never part of the saved profile) ──────────
 
     private Dictionary<string, DetectionSnapshot> _detectionSnapshots = new(StringComparer.Ordinal);
+
+    public async Task ResetForLocalDataResetAsync(IJSRuntime js)
+    {
+        _settings = BuildSeedSettings();
+        IsLoaded = true;
+        _detectionSnapshots = new(StringComparer.Ordinal);
+        await SaveAsync(js);
+    }
 
     public async Task LoadDetectionSnapshotsAsync(IJSRuntime js)
     {

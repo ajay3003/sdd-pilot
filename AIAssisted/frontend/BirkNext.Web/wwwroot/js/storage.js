@@ -10,4 +10,14 @@ window.birkNextStorage = {
     // Target Environment so restart restores discovery history without ever restoring a live credential.
     getDiscovery: () => localStorage.getItem('birknext:endpoint-discovery'),
     setDiscovery: (value) => localStorage.setItem('birknext:endpoint-discovery', value),
+    // Local data reset: removes the named project keys and every key starting with one of the prefixes. Returns the removed keys.
+    removeProjectState: (keys, prefixes) => {
+        const removed = [];
+        for (const key of keys) { if (localStorage.getItem(key) !== null) { localStorage.removeItem(key); removed.push(key); } }
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+            const key = localStorage.key(i);
+            if (key && prefixes.some(p => key.startsWith(p))) { localStorage.removeItem(key); removed.push(key); }
+        }
+        return removed;
+    },
 };

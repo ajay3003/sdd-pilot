@@ -97,6 +97,7 @@ builder.Services.AddSingleton<IReviewContextProvider, ReviewContextProvider>();
 builder.Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
 builder.Services.AddSingleton<IWorkspaceArtifactStatusService, WorkspaceArtifactStatusService>();
 builder.Services.AddScoped<IWorkspaceSessionRestoreService, WorkspaceSessionRestoreService>();
+builder.Services.AddSingleton<LocalDataResetEpoch>();
 builder.Services.AddHttpClient<IWorkspacePersistenceApiService, WorkspacePersistenceApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 builder.Services.AddHttpClient<IRecommendedWorkflowApiService, RecommendedWorkflowApiService>(client =>

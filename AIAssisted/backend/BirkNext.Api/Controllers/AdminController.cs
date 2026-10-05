@@ -79,19 +79,15 @@ public class AdminController : ControllerBase
                 Message = "Confirmation text must be exactly 'RESET'."
             });
 
-        var (success, message, deletedRows, resetAtUtc) = await _adminService.ResetLocalDatabaseAsync();
-
-        if (!success)
-            return BadRequest(new ResetDatabaseResponse { Success = false, Message = message });
-
-        return Ok(new ResetDatabaseResponse
+        var coordinator = HttpContext.RequestServices.GetRequiredService<BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator>();
+        var result = await coordinator.ResetAsync(HttpContext.RequestAborted);
+        var response = new ResetDatabaseResponse
         {
-            Success = true,
-            Message = message,
-            DeletedRows = deletedRows,
-            ResetAtUtc = resetAtUtc,
-            PreservedDomains = AdminService.ResetPreservedDomains.ToList()
-        });
+            Success = result.Success, Message = result.Message, Status = result.Status, ResetId = result.ResetId, DeletedRows = result.DeletedRows,
+            ResetAtUtc = result.ResetAt, ResetEpoch = result.ResetEpoch, DatabaseCleared = result.DatabaseCleared, BackendStateCleared = result.BackendStateCleared,
+            ClearedDomains = result.ClearedDomains, PreservedDomains = result.PreservedDomains, Warnings = result.Warnings,
+        };
+        return result.Success ? Ok(response) : result.Status == "Blocked" ? Conflict(response) : BadRequest(response);
     }
 
     [HttpPost("environment-diagnostics")]

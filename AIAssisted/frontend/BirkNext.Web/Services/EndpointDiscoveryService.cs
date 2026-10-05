@@ -12,6 +12,8 @@ public sealed record BackendIntegration(string Name, string Protocol, string? Re
 
 public interface IEndpointDiscoveryService
 {
+    /// <summary>Local data reset: forgets all discovery in memory (the storage key is removed by the reset coordinator).</summary>
+    void ResetForLocalDataReset() { }
     void ConfigureTarget(FrontendAnalysisProfile profile) { }
     WcagAssessment GetAssessment(string profileId, PageAnalysis? page = null) => BrowserQualityAssessmentService.ForPage(BrowserQualityAssessmentService.Assess(GetSnapshot(profileId)), page);
     Task SaveWcagSettingsAsync(IJSRuntime js, string profileId, WcagSettings settings);
@@ -90,6 +92,8 @@ public sealed class EndpointDiscoveryService : IEndpointDiscoveryService
     }
 
     private Task? _loadTask;
+
+    public void ResetForLocalDataReset() { _byProfile = new(StringComparer.Ordinal); _loadTask = null; }
     public Task LoadAsync(IJSRuntime js) => _loadTask ??= LoadCoreAsync(js);
     private async Task LoadCoreAsync(IJSRuntime js)
     {

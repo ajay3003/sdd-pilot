@@ -99,6 +99,25 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
     }
 
     [Fact]
+    public void CoveragePage_WithoutAnActiveTarget_SaysSo_InsteadOfBlamingTheBackend()
+    {
+        Services.AddSingleton<FeatureVisibilityService>();
+        var context = new Mock<IFrontendAnalysisContextFactory>();
+        context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" });
+        Services.AddSingleton(context.Object);
+        Services.AddSingleton(new Mock<IWorkspaceSessionService>().Object);
+        var api = new Mock<ITechnologyCoverageApiService>(MockBehavior.Strict);
+        Services.AddSingleton(api.Object);
+        Services.AddScoped<ProjectApplicabilityState>();
+
+        var cut = Render<TechnologyCoverage>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid=tc-no-target]"));
+        cut.FindAll("[data-testid=tc-unavailable]").Should().BeEmpty();
+        api.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public void CoveragePage_DocumentOnlyProject_SaysWhatIsMissing()
     {
         Register(new ProjectTechnologyCoverage { EnvironmentId = "doc", Notices = ["No source archive has been analyzed for this environment."] });

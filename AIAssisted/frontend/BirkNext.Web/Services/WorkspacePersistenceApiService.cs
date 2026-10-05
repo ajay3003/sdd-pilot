@@ -7,6 +7,26 @@ namespace BirkNext.Web.Services;
 /// Frontend HTTP client for backend WorkspacePersistenceService.
 /// Handles communication with the backend API for workspace operations.
 /// </summary>
+/// <summary>
+/// The local data reset epoch this browser last saw (from current-state or the reset response). Workspace writes carry it; the backend
+/// refuses a write from before the last reset (another tab, or this tab before its own reset was applied) with 409 "stale-reset-epoch",
+/// and <see cref="StaleDetected"/> lets the app clear its leftover project state instead of saving it again.
+/// </summary>
+public sealed class LocalDataResetEpoch
+{
+    public int? Value { get; private set; }
+    public event Func<int, Task>? StaleDetected;
+    public void Observe(int epoch) => Value = epoch;
+    /// <summary>Records the newer epoch and notifies listeners WITHOUT awaiting them: the refusal is detected inside an auto-save that holds the
+    /// save gate, and the listener pauses auto-save (which waits for that gate), so awaiting here would deadlock.</summary>
+    internal Task RaiseStaleAsync(int epoch)
+    {
+        Value = epoch;
+        if (StaleDetected is { } handler) _ = Task.Run(() => handler(epoch));
+        return Task.CompletedTask;
+    }
+}
+
 public interface IWorkspacePersistenceApiService
 {
     // Workspace operations
@@ -69,6 +89,7 @@ public class CurrentWorkspaceStateDto
     public string? WorkspaceName { get; set; }
     public string? ProjectName { get; set; }
     public int ArtifactCount { get; set; }
+    public int ResetEpoch { get; set; }
     public string Status { get; set; } = "NotSaved";
     public DateTimeOffset? LastSavedAt { get; set; }
     public bool IsDirty { get; set; }
@@ -79,15 +100,34 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
     private readonly HttpClient _httpClient;
     private readonly ILogger<WorkspacePersistenceApiService> _logger;
     private readonly IWorkspaceArtifactRepository _artifactRepository;
+    private readonly LocalDataResetEpoch? _epoch;
 
     public WorkspacePersistenceApiService(
         HttpClient httpClient,
         ILogger<WorkspacePersistenceApiService> logger,
-        IWorkspaceArtifactRepository artifactRepository)
+        IWorkspaceArtifactRepository artifactRepository,
+        LocalDataResetEpoch? epoch = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _artifactRepository = artifactRepository;
+        _epoch = epoch;
+    }
+
+    /// <summary>True (and handled) when the backend refused the write because local data was reset after this state was loaded.</summary>
+    private async Task<bool> StaleAfterResetAsync(HttpResponseMessage response)
+    {
+        if (response.StatusCode != System.Net.HttpStatusCode.Conflict) return false;
+        try
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            if (!doc.RootElement.TryGetProperty("code", out var code) || code.GetString() != "stale-reset-epoch") return false;
+            var epoch = doc.RootElement.TryGetProperty("resetEpoch", out var e) && e.TryGetInt32(out var v) ? v : 0;
+            _logger.LogWarning("Workspace write refused: local data was reset (epoch {Epoch}); clearing this browser's leftover state", epoch);
+            if (_epoch is not null) await _epoch.RaiseStaleAsync(epoch);
+            return true;
+        }
+        catch (JsonException) { return false; }
     }
 
     public async Task<SavedWorkspaceDto?> SaveCurrentAsync(string? name = null)
@@ -97,8 +137,9 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             var artifacts = GetArtifactsFromRepository();
             var response = await _httpClient.PostAsJsonAsync(
                 "api/workspace-persistence/save-current",
-                new { name, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle) });
+                new { name, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle), resetEpoch = _epoch?.Value });
 
+            if (await StaleAfterResetAsync(response)) return null;
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("SaveCurrent failed with status {StatusCode}", response.StatusCode);
@@ -254,7 +295,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
 
             // The project identity is always sent: the slug when a Sample Project is selected, an empty string when the
             // user explicitly cleared the selection (the backend treats null as "not provided" and "" as "cleared").
-            var request = new { generatedName, projectName = _artifactRepository.CurrentProject ?? string.Empty, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle) };
+            var request = new { generatedName, projectName = _artifactRepository.CurrentProject ?? string.Empty, artifacts, sddLifecycleJson = JsonSerializer.Serialize(_artifactRepository.SddLifecycle), resetEpoch = _epoch?.Value };
             _logger.LogInformation("DIAG: [AutoSaveAsync] Request object created with {ArtifactCount} artifacts", artifacts.Count);
 
             var response = await _httpClient.PostAsJsonAsync(
@@ -262,6 +303,8 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
                 request);
 
             _logger.LogInformation("DIAG: [AutoSaveAsync] POST returned status {Status}", response.StatusCode);
+            if (await StaleAfterResetAsync(response)) return null;
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent) return null; // nothing to save yet
 
             if (!response.IsSuccessStatusCode)
             {
@@ -289,6 +332,7 @@ public class WorkspacePersistenceApiService : IWorkspacePersistenceApiService
             System.Diagnostics.Debug.WriteLine("DIAG: [PersistenceApi] GetCurrentStateAsync CALLED");
             var result = await _httpClient.GetFromJsonAsync<CurrentWorkspaceStateDto>(
                 "api/workspace-persistence/current-state");
+            if (result is not null) _epoch?.Observe(result.ResetEpoch);
             System.Diagnostics.Debug.WriteLine($"DIAG: [PersistenceApi] GetCurrentStateAsync returned: workspaceId={result?.CurrentWorkspaceId}, artifacts={result?.ArtifactCount}, status={result?.Status}");
             return result;
         }

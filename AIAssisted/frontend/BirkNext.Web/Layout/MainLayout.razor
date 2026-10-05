@@ -5,6 +5,9 @@
 @inject IWorkspacePersistenceApiService WorkspacePersistence
 @inject IWorkspaceSessionRestoreService WorkspaceRestore
 @inject ILogger<MainLayout> Logger
+@inject IServiceProvider LayoutServices
+@inject NavigationManager Navigation
+@implements IDisposable
 
 @if (!_ready)
 {
@@ -35,6 +38,9 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Another tab (or an earlier reset this tab missed) reset local data: discard this tab's leftover project state instead of saving it.
+        _resetEpoch = LayoutServices.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch;
+        if (_resetEpoch is not null) _resetEpoch.StaleDetected += OnStaleAfterResetAsync;
         try
         {
             await FeatureViz.LoadAsync(AdminApi);
@@ -47,6 +53,22 @@ else
             _ready = true;
         }
     }
+
+    private async Task OnStaleAfterResetAsync(int epoch)
+    {
+        if (LayoutServices.GetService(typeof(ApplicationRuntimeResetService)) is not ApplicationRuntimeResetService RuntimeReset) return;
+        await InvokeAsync(async () =>
+        {
+            await RuntimeReset.PauseAutoSaveForResetAsync();
+            try { await RuntimeReset.ClearFrontendRuntimeStateAsync(); }
+            finally { RuntimeReset.ResumeAutoSaveAfterReset(); }
+            Navigation.NavigateTo("dashboard?reset=stale");
+        });
+    }
+
+    private LocalDataResetEpoch? _resetEpoch;
+
+    public void Dispose() { if (_resetEpoch is not null) _resetEpoch.StaleDetected -= OnStaleAfterResetAsync; }
 
     private async Task RestoreCurrentWorkspaceAsync()
     {

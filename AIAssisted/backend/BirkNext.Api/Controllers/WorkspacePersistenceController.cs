@@ -19,9 +19,22 @@ public class WorkspacePersistenceController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>
+    /// Refuses a workspace write made before the last local data reset. Without this, a browser tab that still holds the previous project
+    /// recreates it: auto-save and save-current create a new workspace from the payload when none is current.
+    /// </summary>
+    private ActionResult? StaleAfterReset(int? clientEpoch)
+    {
+        var state = HttpContext.RequestServices.GetService<BirkNext.Api.Services.LocalDataReset.LocalDataResetState>();
+        if (state is null || state.Accepts(clientEpoch)) return null;
+        _logger.LogWarning("Workspace write refused: client reset epoch {Client} is older than {Current}", clientEpoch, state.Epoch);
+        return Conflict(new { code = "stale-reset-epoch", resetEpoch = state.Epoch, error = "Local data was reset; this browser state is from before the reset and was not saved." });
+    }
+
     [HttpPost("save-current")]
     public async Task<ActionResult<SavedWorkspaceDto>> SaveCurrent([FromBody] SaveRequest? request = null)
     {
+        if (StaleAfterReset(request?.ResetEpoch) is { } stale) return stale;
         try
         {
             var result = await _service.SaveCurrentAsync(request?.Name, request?.Artifacts ?? new(), request?.SddLifecycleJson);
@@ -161,11 +174,18 @@ public class WorkspacePersistenceController : ControllerBase
     [HttpPost("auto-save")]
     public async Task<ActionResult<SavedWorkspaceDto>> AutoSave([FromBody] AutoSaveRequest? request = null)
     {
+        if (StaleAfterReset(request?.ResetEpoch) is { } stale) return stale;
         try
         {
             _logger.LogInformation("TRACE: [WorkspacePersistenceController.AutoSave]");
             _logger.LogInformation("  ProjectName={Project}", request?.ProjectName);
             _logger.LogInformation("  RequestArtifacts={Count}", request?.Artifacts?.Count ?? 0);
+
+            // Nothing to save and no workspace to update (e.g. right after a local data reset): creating an empty "Auto_…" workspace
+            // would make the installation look like it has a project again.
+            if ((request?.Artifacts?.Count ?? 0) == 0 && string.IsNullOrWhiteSpace(request?.ProjectName)
+                && await _service.GetCurrentWorkspaceIdAsync() is null)
+                return NoContent();
 
             var result = await _service.AutoSaveAsync(request?.GeneratedName, request?.ProjectName, request?.Artifacts ?? new(), request?.SddLifecycleJson);
             _logger.LogInformation("  ResponseArtifacts={Count}", result.Artifacts.Count);
@@ -188,6 +208,7 @@ public class WorkspacePersistenceController : ControllerBase
             _logger.LogInformation("DIAG: [Controller] GetCurrentState ENTERED");
             var result = await _service.GetCurrentStateAsync();
             _logger.LogInformation($"DIAG: [Controller] GetCurrentState returned: workspaceId={result?.CurrentWorkspaceId}, artifacts={result?.ArtifactCount}");
+            if (result is not null) result.ResetEpoch = HttpContext.RequestServices.GetService<BirkNext.Api.Services.LocalDataReset.LocalDataResetState>()?.Epoch ?? 0;
             return Ok(result);
         }
         catch (Exception ex)
@@ -239,6 +260,8 @@ public class WorkspacePersistenceController : ControllerBase
         public string? Name { get; set; }
         public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
         public string? SddLifecycleJson { get; set; }
+        /// <summary>The local data reset epoch the client last saw (from current-state or the reset response).</summary>
+        public int? ResetEpoch { get; set; }
     }
 
     public class SaveAsRequest
@@ -268,6 +291,8 @@ public class WorkspacePersistenceController : ControllerBase
         public string? ProjectName { get; set; }
         public List<WorkspaceArtifactDto> Artifacts { get; set; } = new();
         public string? SddLifecycleJson { get; set; }
+        /// <summary>The local data reset epoch the client last saw (from current-state or the reset response).</summary>
+        public int? ResetEpoch { get; set; }
     }
 
     public class ImportRequest

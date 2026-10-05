@@ -22,6 +22,8 @@ public sealed class BrowserAutomationEvidenceStore(TimeProvider? clock = null)
     public static readonly TimeSpan Validity = TimeSpan.FromMinutes(30);
     private readonly TimeProvider _clock = clock ?? TimeProvider.System;
     private readonly ConcurrentDictionary<string, (bool Passed, string Id, DateTimeOffset Time, string Where, string? Blocker)> _results = new();
+    /// <summary>Local data reset: forgets every recorded diagnostic result (they name Target Environments).</summary>
+    public void Clear() => _results.Clear();
     private static string Key(string id, string url, string type) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{id}\n{url}\n{type}")));
     public void Record(BrowserAutomationDiagnosticReport report)
     {

@@ -7,6 +7,8 @@ namespace BirkNext.Web.Services;
 
 public interface IIntegrationTargetRegistryService
 {
+    /// <summary>Local data reset: forgets integration target hints in memory (the storage key is removed by the reset coordinator).</summary>
+    void ResetForLocalDataReset() { }
     IntegrationTargetRegistry Registry { get; }
     Task LoadAsync(IJSRuntime js);
     Task SaveAsync(IJSRuntime js);
@@ -25,6 +27,8 @@ public sealed class IntegrationTargetRegistryService : IIntegrationTargetRegistr
 
     private bool _isLoaded;
     private IntegrationTargetRegistry _registry = new();
+
+    public void ResetForLocalDataReset() { _registry = new(); _isLoaded = false; }
 
     public IntegrationTargetRegistry Registry => _registry;
 

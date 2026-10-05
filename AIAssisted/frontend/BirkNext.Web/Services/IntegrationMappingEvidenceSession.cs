@@ -11,6 +11,9 @@ public sealed class IntegrationMappingEvidenceSession
 {
     private readonly Dictionary<string, Dictionary<string, IntegrationMappingEvidenceCheck>> _byEnvironment = new(StringComparer.Ordinal);
 
+    /// <summary>Local data reset: forgets every mapping evidence check.</summary>
+    public void Clear() => _byEnvironment.Clear();
+
     public void Record(string environmentId, IntegrationMappingEvidenceCheck check)
     {
         if (!_byEnvironment.TryGetValue(environmentId, out var checks)) _byEnvironment[environmentId] = checks = new(StringComparer.Ordinal);

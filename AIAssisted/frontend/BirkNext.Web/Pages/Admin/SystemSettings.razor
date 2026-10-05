@@ -1331,9 +1331,9 @@ else if (_settings is not null)
                         </div>
                         <div class="danger-zone-action">
                             <div class="danger-zone-description">
-                                <strong>Reset Local Database</strong>
-                                <p>Deletes saved workspaces and artifacts, lifecycle and traceability evidence, review and analysis results, test evidence, and run history stored in the local database. The database schema and migration history remain intact. Target environment, integration catalog, performance test definition, provider, and installation configuration are preserved. This operation cannot be undone.</p>
-                                <p>Application binaries, source code, configuration files, frontend analysis profiles, and uploaded files outside the database are not modified or deleted.</p>
+                                <strong>Reset Local Data</strong>
+                                <p data-testid="reset-scope">Removes all local project and workspace data: workspaces and SDD artifacts, Source Analysis snapshots and evidence, Target Environments (back to generic defaults), integration catalogs and applied templates such as M2LB, review and test results, performance definitions and history, Critical E2E flows, and the browser's cached project state. This operation cannot be undone.</p>
+                                <p data-testid="reset-preserved">Preserved: installation and provider settings (feature visibility, logging, k6/Podman, Azure/AI providers), the database schema, the Sample Project catalog, and files outside BirkNext. Uploaded source archives are not stored on disk.</p>
                                 @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
                                 {
                                     <p class="danger-zone-reason">@_settings.Maintenance.ResetNotAllowedReason</p>
@@ -1341,8 +1341,8 @@ else if (_settings is not null)
                             </div>
                             <button class="btn-danger-outline"
                                     disabled="@(!_settings.Maintenance.ResetAllowed || _isResetting || _isEditMode)"
-                                    @onclick="OpenResetModal">
-                                Reset Local Database
+                                    @onclick="OpenResetModal" data-testid="reset-open">
+                                Reset Local Data
                             </button>
                         </div>
                     </div>
@@ -1358,9 +1358,9 @@ else if (_settings is not null)
 {
     <div class="modal-backdrop" @onclick="CancelReset" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-panel" @onclick:stopPropagation="true">
-            <h2 id="modal-title" class="modal-title">Reset Local Database</h2>
+            <h2 id="modal-title" class="modal-title">Reset Local Data</h2>
             <div class="notification notification-warning">
-                Saved workspaces, project/review evidence, analysis results, and execution history in the database will be permanently deleted. The schema, migration history, installation/provider configuration, target environment setup, and external uploaded files are preserved. This action cannot be undone.
+                All local project, workspace, analysis, review and test evidence data will be permanently deleted, Target Environments return to generic defaults, and this browser's project state is cleared. Installation and provider settings, the schema and files outside BirkNext are preserved. Close other BirkNext tabs: their unsaved project state will be discarded. This action cannot be undone.
             </div>
             <p class="modal-body-text">Type <strong>RESET</strong> in the box below to confirm.</p>
             <input class="modal-confirm-input"
@@ -1374,7 +1374,7 @@ else if (_settings is not null)
                 <SecondaryButton OnClick="CancelReset" Disabled="@_isResetting">Cancel</SecondaryButton>
                 <DangerButton OnClick="ExecuteResetAsync"
                               Disabled="@(_resetConfirmText != "RESET" || _isResetting)">
-                    @(_isResetting ? "Resetting..." : "Reset Database")
+                    @(_isResetting ? "Resetting..." : "Reset local data")
                 </DangerButton>
             </div>
         </div>
@@ -3029,20 +3029,17 @@ else if (_settings is not null)
         await RuntimeReset.PauseAutoSaveForResetAsync();
         try
         {
-            var (success, message) = await AdminApi.ResetLocalDatabaseAsync();
-            _resetSuccess       = success;
-            _resetResultMessage = message;
-            if (success)
+            var result = await AdminApi.ResetLocalDataAsync();
+            _resetSuccess       = result?.Success == true;
+            _resetResultMessage = result?.Message ?? "Reset failed.";
+            if (_resetSuccess && result is not null)
             {
-                // Clear frontend localStorage
-                await JS.InvokeVoidAsync("localStorage.removeItem", "ce-standalone-constitution");
-                await JS.InvokeVoidAsync("localStorage.removeItem", "pe-standalone-plan");
-                await JS.InvokeVoidAsync("localStorage.removeItem", "te-standalone-tasks");
-                await JS.InvokeVoidAsync("localStorage.removeItem", "birknext:extraction:session");
-
-                // Clear frontend runtime/session state that corresponds to deleted DB data
-                // This prevents stale Workspace/Dashboard state from appearing after reset
+                // The backend committed the reset: adopt its epoch first, so nothing this tab still holds can be saved again,
+                // then clear every frontend store (see ApplicationRuntimeResetService) and land on the clean Dashboard.
+                (ServiceProvider.GetService(typeof(LocalDataResetEpoch)) as LocalDataResetEpoch)?.Observe(result.ResetEpoch);
                 await RuntimeReset.ClearFrontendRuntimeStateAsync();
+                var warned = result.Warnings.Count > 0 || RuntimeReset.LastWarnings.Count > 0;
+                Navigation.NavigateTo(warned ? "dashboard?reset=warnings" : "dashboard?reset=done");
             }
         }
         finally

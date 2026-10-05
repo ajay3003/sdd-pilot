@@ -48,6 +48,8 @@ public sealed record ApiReviewRunSummary(DateTimeOffset GeneratedAt, string Envi
 /// </summary>
 public interface IApiReviewHistoryService
 {
+    /// <summary>Local data reset: forgets API review history in memory (the storage key is removed by the reset coordinator).</summary>
+    void ResetForLocalDataReset() { }
     Task LoadAsync(IJSRuntime js);
     ApiReviewHistory For(string profileId);
     Task RecordAsync(IJSRuntime js, string profileId, ApiReviewReport report);
@@ -61,6 +63,8 @@ public sealed class ApiReviewHistoryService : IApiReviewHistoryService
     private static readonly JsonSerializerOptions Options = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull, Converters = { new JsonStringEnumConverter() } };
     private Dictionary<string, ApiReviewHistory> _byProfile = new(StringComparer.Ordinal);
     private bool _loaded;
+
+    public void ResetForLocalDataReset() { _byProfile = new(StringComparer.Ordinal); _loaded = false; }
 
     public async Task LoadAsync(IJSRuntime js)
     {

@@ -405,6 +405,15 @@ internal sealed class AuthenticatedBrowserSessionManager : IAuthenticatedBrowser
         _logger.LogInformation("Authenticated browser session {SessionId} cleaned up: {CleanupReason}", entry.SessionId, reason);
     }
 
+    /// <summary>Local data reset: disposes every BirkNext-owned authenticated browser session (they belong to Target Environments that the
+    /// reset removes). Unlike shutdown, the expiry loop keeps running for sessions started afterwards.</summary>
+    public async Task<int> DisposeAllForResetAsync()
+    {
+        var entries = _sessions.Values.ToList();
+        foreach (var entry in entries) { entry.Status = AuthenticatedBrowserSessionStatus.Disposed; await RemoveAndDisposeAsync(entry, "local_data_reset"); }
+        return entries.Count;
+    }
+
     private async Task DisposeAllAsync(string reason)
     {
         if (!_shutdown.IsCancellationRequested) _shutdown.Cancel();

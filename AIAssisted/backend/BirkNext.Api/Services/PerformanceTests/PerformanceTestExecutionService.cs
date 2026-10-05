@@ -16,6 +16,9 @@ public sealed class PerformanceTestProviderRegistry(IEnumerable<IPerformanceTest
     /// <summary>Last container-network check for a provider + target origin.</summary>
     public PerformanceReachability? LastReachability(string providerId, string origin) => _reachability.GetValueOrDefault($"{providerId}|{origin}");
 
+    /// <summary>Local data reset: forgets per-target reachability checks. Provider/runtime status (host capability) is kept.</summary>
+    public void ClearReachability() => _reachability.Clear();
+
     public async Task<PerformanceReachability> CheckReachabilityAsync(PerformanceTestDefinition d, CancellationToken ct = default)
     {
         if (Find(d.ProviderId) is not { } provider)
@@ -199,6 +202,9 @@ public sealed class PerformanceTestExecutionService(IServiceScopeFactory scopes,
         }, config, windows);
     }
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> _active = new();
+
+    /// <summary>True while a run is executing in this process (the reset refuses to run under an active writer).</summary>
+    public bool HasActiveRuns => !_active.IsEmpty;
     private readonly ConcurrentDictionary<string, Guid> _activeByEnvironment = new(StringComparer.Ordinal);
     private int _orphansCleaned;
 

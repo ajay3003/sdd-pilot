@@ -11,21 +11,14 @@ using System.Text.Json.Nodes;
 
 namespace BirkNext.Api.Services;
 
-public class AdminService
+public class AdminService : BirkNext.Api.Services.LocalDataReset.ILocalDatabaseReset
 {
     private static readonly SemaphoreSlim ResetGate = new(1, 1);
-    private static readonly HashSet<string> PreservedConfigurationTables = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "integration_platforms", "integration_definitions", "integration_environment_states",
-        "integration_contract_artifacts", "graphql_schema_artifacts", "integration_message_flows",
-        "performance_test_definitions", "performance_test_data_profiles"
-    };
-    private static readonly List<string> PreservedResetDomains =
-    [
-        "Database schema and migration history", "Application and installation settings", "Target environment and integration configuration",
-        "Performance test definitions and data profiles", "Provider configuration", "External uploaded files"
-    ];
-    public static IReadOnlyList<string> ResetPreservedDomains => PreservedResetDomains;
+    // Every table in the EF model is application data and is reset. Target-environment integration catalogs, applied templates (the M2LB
+    // domain extension is derived from integration_environment_states) and performance test definitions are project state, not installation
+    // configuration. Installation settings live in appsettings files, never in these tables. See docs/local-data-reset.md.
+    private static readonly HashSet<string> PreservedConfigurationTables = new(StringComparer.OrdinalIgnoreCase);
+    public static IReadOnlyList<string> ResetPreservedDomains => BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator.Preserved;
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
     private readonly AppDbContext _db;

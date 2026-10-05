@@ -51,6 +51,8 @@ public class WorkspaceStateDto
     public WorkspaceStatus Status { get; set; } = WorkspaceStatus.NotSaved;
     public DateTimeOffset? LastSavedAt { get; set; }
     public bool IsDirty { get; set; }
+    /// <summary>Local data reset epoch. Workspace writes must echo it; a write from before the last reset is refused (409).</summary>
+    public int ResetEpoch { get; set; }
 }
 
 [JsonConverter(typeof(JsonStringEnumConverter))]

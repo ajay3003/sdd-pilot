@@ -165,6 +165,14 @@ public class ResetDatabaseResponse
     public int DeletedRows { get; set; }
     public DateTimeOffset? ResetAtUtc { get; set; }
     public List<string> PreservedDomains { get; set; } = [];
+    /// <summary>"Completed", "CompletedWithWarnings", "Blocked", "Refused" or "Failed".</summary>
+    public string Status { get; set; } = "";
+    public Guid? ResetId { get; set; }
+    public int ResetEpoch { get; set; }
+    public bool DatabaseCleared { get; set; }
+    public bool BackendStateCleared { get; set; }
+    public List<string> ClearedDomains { get; set; } = [];
+    public List<string> Warnings { get; set; } = [];
 }
 
 // ── Editable Settings ──────────────────────────────────────────────────────

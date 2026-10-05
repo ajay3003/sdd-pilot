@@ -307,6 +307,20 @@ public sealed partial class BrowserCompanionService(BrowserCompanionEvidenceSani
         }
     }
 
+    /// <summary>Local data reset: forgets every pairing challenge and session (each is bound to a Target Environment the reset removes).
+    /// The installed browser extension is untouched; it pairs again on request.</summary>
+    public int UnpairAll()
+    {
+        lock (_gate)
+        {
+            var count = _sessionsByProfile.Count;
+            _challengesByProfile.Clear();
+            _sessionsByProfile.Clear();
+            logger.LogInformation("Browser Companion: {Count} pairing(s) removed by local data reset", count);
+            return count;
+        }
+    }
+
     public BrowserCompanionStatus Unpair(string profileId)
     {
         lock (_gate)

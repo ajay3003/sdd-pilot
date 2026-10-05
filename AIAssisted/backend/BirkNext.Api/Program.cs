@@ -80,6 +80,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<AdminService>();
+builder.Services.AddScoped<BirkNext.Api.Services.LocalDataReset.ILocalDatabaseReset>(sp => sp.GetRequiredService<AdminService>());
+builder.Services.AddSingleton<BirkNext.Api.Services.LocalDataReset.LocalDataResetState>();
+builder.Services.AddScoped<BirkNext.Api.Services.LocalDataReset.LocalDataResetCoordinator>();
 builder.Services.AddScoped<ISystemSettingsStatusEngine, SystemSettingsStatusEngine>();
 builder.Services.AddScoped<IGeneralPageService, GeneralPageService>();
 builder.Services.AddScoped<IConfigurationHealthPageService, ConfigurationHealthPageService>();

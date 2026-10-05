@@ -22,6 +22,8 @@ public interface ICriticalE2EStore
     int SetArchived(string flowId, IReadOnlyCollection<string> runIds, DateTimeOffset? archivedAt, string? reason);
     /// <summary>Permanently removes the named runs of one flow. Returns how many were removed.</summary>
     int RemoveRuns(string flowId, IReadOnlyCollection<string> runIds);
+    /// <summary>Local data reset: removes every flow, run and known module (memory and the App_Data files). Returns the number of flows and runs removed.</summary>
+    int ClearAll() => 0;
 }
 
 /// <summary>
@@ -192,6 +194,20 @@ public sealed class CriticalE2EStore : ICriticalE2EStore
             // A corrupt file must not stop the backend from starting; it is QA history, not the system of record.
             _logger.LogWarning(ex, "Critical E2E store could not read {Path}; starting empty", Path.GetFileName(path));
             return default;
+        }
+    }
+
+    public int ClearAll()
+    {
+        lock (_flows)
+        {
+            var removed = _flows.Count + _history.Count;
+            _flows.Clear();
+            _history.Clear();
+            _modules.Clear();
+            Write(_flowsPath, new List<CriticalE2EFlowDefinition>());
+            Write(_historyPath, new List<CriticalE2ERunResult>());
+            return removed;
         }
     }
 
