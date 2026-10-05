@@ -1,0 +1,18 @@
+@using BirkNext.SecurityExpectations
+@* Security Configuration Review state: a text label with an icon; color is never the only signal. *@
+<span class="scr-badge scr-badge-@State.ToString().ToLowerInvariant()" data-testid="scr-badge" data-state="@State">
+    <span class="scr-badge-icon" aria-hidden="true">@Icon</span>@SecurityExpectationsPanel.StateLabel(State)
+</span>
+
+@code {
+    [Parameter, EditorRequired] public SecurityConfigurationAssessmentState State { get; set; }
+    private string Icon => State switch
+    {
+        SecurityConfigurationAssessmentState.Consistent => "✓",
+        SecurityConfigurationAssessmentState.Conflict => "✕",
+        SecurityConfigurationAssessmentState.NeedsReview => "!",
+        SecurityConfigurationAssessmentState.Partial => "◐",
+        SecurityConfigurationAssessmentState.NotApplicable => "–",
+        _ => "○",
+    };
+}

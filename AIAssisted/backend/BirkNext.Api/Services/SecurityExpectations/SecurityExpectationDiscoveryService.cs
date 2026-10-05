@@ -224,7 +224,12 @@ public sealed class SecurityExpectationDiscoveryService(AppDbContext db, IReview
         if (!new[] { result.SourceSnapshotId }.Concat(result.SourceScope?.RelatedSourceSnapshotIds ?? []).Contains(candidate.SourceSnapshotId))
             throw new SecurityDiscoveryReviewException("Candidate source binding is inconsistent; refresh discovery.");
         var approved = SecurityExpectationValues.Copy(request.Approved);
-        if(accept) {
+        if(accept && request.Scope is { Length: > 0 } scope) {
+            // Component-scoped approval (Client/Application IDs): other components' values are not a conflict.
+            try { approved = SecurityExpectationValues.AcceptScoped(request.Approved,candidate with { IsCurrent=true },scope,result.SourceFingerprints.GetValueOrDefault(candidate.SourceSnapshotId,result.SourceFingerprint),DateTimeOffset.UtcNow); }
+            catch(InvalidOperationException e) { throw new SecurityDiscoveryReviewException(e.Message); }
+        }
+        else if(accept) {
             if(SecurityExpectationValues.DeriveState(candidate,request.Approved,result.Candidates.Count(c => c.FieldType == candidate.FieldType))==SecurityCandidateState.Conflict && !request.Replace)
                 throw new SecurityDiscoveryReviewException("Conflicting candidates require an explicit selection or replacement.");
             try { approved = SecurityExpectationValues.Accept(request.Approved,candidate with { IsCurrent=true },result.SourceFingerprints.GetValueOrDefault(candidate.SourceSnapshotId,result.SourceFingerprint),request.Replace,DateTimeOffset.UtcNow); }

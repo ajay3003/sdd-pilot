@@ -65,6 +65,7 @@
 
     <Compile Include="../../shared/SourceArchitectureContracts.cs" Link="Models/SourceArchitectureContracts.cs" />
     <Compile Include="../../shared/SecurityExpectationContracts.cs" Link="Models/SecurityExpectationContracts.cs" />
+    <Compile Include="../../shared/SecurityConfigurationReview.cs" Link="Models/SecurityConfigurationReview.cs" />
     <Compile Include="../../shared/ActiveCdcTestContracts.cs" Link="Models/ActiveCdcTestContracts.cs" />
     <Compile Include="../../shared/ServiceBusContracts.cs" Link="Models/ServiceBusContracts.cs" />
     <Compile Include="../../shared/DependencyReviewContracts.cs" Link="Models/DependencyReviewContracts.cs" />

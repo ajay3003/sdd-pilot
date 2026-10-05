@@ -5,140 +5,268 @@
 @using BirkNext.Web.Services
 @using BirkNext.SourceEvidence
 @using Microsoft.Extensions.DependencyInjection
+@using Microsoft.JSInterop
 @inject IServiceProvider Services
+@inject IJSRuntime JS
 @implements IDisposable
 
+@* Security Configuration Review: assessment first, logical values second, raw evidence last. The assessment is computed by the shared
+   SecurityConfigurationReviewEngine from the discovery and the approved expectations; this component only presents it. *@
 <section class="sec" data-testid="security-expectations" aria-labelledby="sec-heading">
-    <h3 id="sec-heading">Security Expectations</h3>
-    <p class="sec-note">These are expectations only - no validation is performed here. Source Analysis snapshot discovery may suggest values, but nothing is approved or validated automatically. Never enter secrets, passwords, or tokens.</p>
-    <dl class="sec-summary">
-        <div><dt>Approved expectations</dt><dd data-testid="sec-approved-count">@ApprovedCount</dd></div>
-        <div><dt>Unique source candidates</dt><dd>@(_result is null ? "Not analyzed" : _result.Candidates.Count.ToString())</dd></div>
-        <div><dt>Needs review</dt><dd>@(_result is null ? "Not analyzed" : _result.Candidates.Where(c => State(c) is SecurityCandidateState.Detected or SecurityCandidateState.Suggested or SecurityCandidateState.NeedsReview or SecurityCandidateState.Conflict).Select(c => c.FieldType).Distinct().Count().ToString())</dd></div>
-        <div><dt>Supporting evidence</dt><dd>@(_result?.SupportingEvidenceCount.ToString() ?? "Not analyzed")</dd></div>
-        <div><dt>Source snapshot</dt><dd data-testid="sec-snapshot">@(Selected?.ArchiveName ?? _result?.SourceDisplayName ?? "Not selected") · @Short(Selected?.Fingerprint ?? _result?.SourceFingerprint ?? "")</dd></div>
-    </dl>
-    <div class="sec-actions">
-        <button type="button" class="btn-primary" data-testid="sec-discover" disabled="@(_busy || !_scope.Resolved || Api is null)" @onclick="DiscoverAsync">Refresh candidates</button>
-        <button type="button" class="btn-secondary" aria-expanded="@(_reviewOpen ? "true" : "false")" aria-controls="sec-review" disabled="@(_result is null)" @onclick="() => _reviewOpen = !_reviewOpen">Review detected values</button>
-    </div>
-    <p class="sec-muted">Analyzed @(Selected?.AnalyzedAt.ToUniversalTime().ToString("u") ?? _result?.SourceAnalyzedAt?.ToUniversalTime().ToString("u") ?? "Unknown (legacy discovery)") · Source Analysis: @(Selected?.SourceStatus ?? "—")</p>
-    <SourceEvidencePrerequisite State="_scope" Prefix="sec" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" ConsumerName="Security Expectations" EmptyHeadingLevel="4"
-                                OtherSectionsNote="Approved expectations stay visible and editable without a snapshot; only source candidates need one.">
-        <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="sec" Busy="_busy" Label="Source snapshot for candidates" MissingEvidenceLabel="no expectation evidence" OnPrimaryChanged="PrimaryChangedAsync" />
-        <ReviewSourceScopePanel State="_scope" Prefix="sec" Busy="_busy" EvidenceLabel="Expectation evidence" MissingEvidenceLabel="no expectation evidence" AllowManualRelated="true"
-                                RelatedExplanation="Suggested when the primary references a source that yields expectation candidates of its own (shared identity or auth configuration). Include only sources relevant to this review."
-                                OnScopeChanged="ScopeChangedAsync" OnChangeSnapshot="FocusSelectorAsync" />
-    </SourceEvidencePrerequisite>
-    @if (Editable) { <p class="sec-muted">Save or cancel manual edits before accepting or rejecting source candidates.</p> }
-    <p class="sec-status" role="status" aria-live="polite" tabindex="-1" @ref="_statusRef" data-testid="sec-status">@_status</p>
-    @if (_error is not null) { <p role="alert" class="sec-error">@_error</p> }
-    @if (_result is not null)
-    {
-        <div id="sec-review" hidden="@(!_reviewOpen)" class="sec-review" role="region" aria-label="Review source-derived expectations">
-            <p>@_result.Status · @SafeCandidates.Count safe additions · @_result.Candidates.Count(c => State(c) == SecurityCandidateState.Conflict) conflicts · @_result.Candidates.Count(c => c.EvidenceState == ArchitectureEvidenceState.Inferred) inferred · @_result.Candidates.Count(c => State(c) == SecurityCandidateState.Stale) stale</p>
-            <button type="button" class="btn-secondary" data-testid="sec-accept-safe" disabled="@(_busy || Editable || SafeCandidates.Count == 0)" @onclick="AcceptSafeAsync">Accept all safe candidates</button>
-            <p class="sec-muted">Only current, valid, non-conflicting candidates with Confirmed or Strongly supported evidence are eligible. This action adds values only after your click.</p>
-            <ReviewDisclosure Text="Discovery details" TestId="sec-discovery-details">
-                <p>Source snapshot @_result.SourceSnapshotId · Fingerprint @_result.SourceFingerprint · Analyzer @_result.AnalyzerVersion · @_result.ExtractedAt.ToUniversalTime().ToString("u")</p>
-                @foreach (var snapshot in _result.SourceFingerprints.Where(p => p.Key != _result.SourceSnapshotId)) { <p>Related snapshot @snapshot.Key · Fingerprint @snapshot.Value</p> }
-                @if (_result.SourceScope is null) { <p>Legacy source discovery. Historical evidence and original review decisions are retained.</p> }
-                @foreach (var decision in _result.ReviewDecisions) { <p>Original candidate @decision.CandidateId · @decision.State · @decision.At.ToUniversalTime().ToString("u")</p> }
-                @foreach (var note in _result.Diagnostics.Concat(_result.UnsupportedEvidence)) { <p>@SafeText(note)</p> }
-                @if (_history.Count > 1) { <p>@_history.Count recent discovery results available separately from approved settings.</p> }
-            </ReviewDisclosure>
+    <header class="scr-header">
+        <h3 id="sec-heading">Security Configuration Review</h3>
+        <p class="scr-subtitle">Compare source-declared security configuration with approved expectations for the selected environment.</p>
+        <p class="sec-note">Approved expectations are your policy; source values are declarations, not runtime verification. Nothing is approved or validated automatically. Never enter secrets, passwords, or tokens.</p>
+    </header>
+
+    <div class="scr-context" data-testid="scr-context">
+        <dl>
+            <div><dt>Reviewing environment</dt><dd data-testid="scr-environment">@EnvironmentLabel</dd></div>
+            <div><dt>Target</dt><dd class="scr-wrap">@(Profile?.TargetUrl is { Length: > 0 } url ? url : "Not configured")</dd></div>
+            <div><dt>Source</dt><dd data-testid="sec-snapshot">@(Selected?.ArchiveName ?? _result?.SourceDisplayName ?? "Not selected")@(SnapshotShort is { Length: > 0 } s ? $" · {s}" : "")</dd></div>
+            <div><dt>Source Analysis</dt><dd><span class="scr-neutral">@(Selected?.SourceStatus ?? "—")</span></dd></div>
+            <div><dt>Related sources</dt><dd>@(_scope.Request?.RelatedSnapshotIds.Count is > 0 and var n ? n.ToString() : "None")</dd></div>
+            <div><dt>Approved values</dt><dd data-testid="sec-approved-count">@ApprovedCount</dd></div>
+        </dl>
+        @if (Selected?.SourceStatus == "Partial")
+        {
+            <p class="scr-muted">Some analysis capabilities are partial. Absence of evidence should not be interpreted as proof of absence.</p>
+        }
+        <div class="sec-actions">
+            <button type="button" class="btn-primary" data-testid="sec-discover" disabled="@(_busy || !_scope.Resolved || Api is null)" @onclick="DiscoverAsync">@(_result is null ? "Review source configuration" : "Refresh review")</button>
+            <a class="btn-secondary scr-link" href="source-analysis">Open Source Analysis</a>
         </div>
-    }
-    @foreach (var group in Groups)
+        <ReviewDisclosure Text="Change source" Hint="@(Selected?.ArchiveName ?? "None selected")" TestId="scr-source" @bind-Expanded="_sourceOpen">
+            <SourceEvidencePrerequisite State="_scope" Prefix="sec" SourceAnalysisEnabled="@(Services.GetService<FeatureVisibilityService>()?.SourceAnalysis ?? true)" ConsumerName="Security Configuration Review" EmptyHeadingLevel="4"
+                                        OtherSectionsNote="Approved expectations stay visible and editable without a snapshot; only the review needs one.">
+                <SourceSnapshotSelector @ref="_selector" State="_scope" Prefix="sec" Busy="_busy" Label="Source snapshot" MissingEvidenceLabel="no security configuration evidence" OnPrimaryChanged="PrimaryChangedAsync" />
+                <ReviewSourceScopePanel State="_scope" Prefix="sec" Busy="_busy" EvidenceLabel="Security configuration evidence" MissingEvidenceLabel="no security configuration evidence" AllowManualRelated="true"
+                                        RelatedExplanation="Suggested when the primary references a source with its own identity or endpoint configuration. Include only sources relevant to this review."
+                                        OnScopeChanged="ScopeChangedAsync" OnChangeSnapshot="FocusSelectorAsync" />
+            </SourceEvidencePrerequisite>
+        </ReviewDisclosure>
+    </div>
+
+    @if (Editable) { <p class="scr-muted">Save or cancel manual edits before approving or ignoring source values.</p> }
+    <p class="sec-status" role="status" aria-live="polite" data-testid="sec-status">@_status</p>
+    @if (_error is not null) { <p role="alert" class="sec-error">@_error</p> }
+
+    @if (Editable)
     {
-        <section class="sec-group" aria-labelledby="@($"sec-{group.Key}")">
-            <h4 id="@($"sec-{group.Key}")">@group.Label</h4>
-            @if (group.Key == "headers") { <p class="sec-muted">Default baseline: @string.Join(", ", ApprovedSecurityExpectations.DefaultHeaders). Source-declared configuration does not prove runtime headers.</p> }
-            @foreach (var field in group.Fields)
+        @foreach (var field in SecurityConfigurationReviewEngine.ReviewedFields)
+        {
+            var fieldId = $"sec-field-{field}";
+            <div class="sec-field" id="@fieldId" data-testid="@fieldId">
+                <label for="@($"{fieldId}-input")">@SecurityExpectationValues.Label(field)</label>
+                @if (SecurityExpectationValues.Singleton(field))
+                {
+                    <input id="@($"{fieldId}-input")" type="@(field == SecurityExpectationField.Authority ? "url" : "text")" class="form-control" value="@string.Join("", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())" />
+                }
+                else
+                {
+                    <textarea id="@($"{fieldId}-input")" class="form-control" rows="3" value="@string.Join("\n", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())"></textarea>
+                }
+                @if (field == SecurityExpectationField.ClientId && Settings.ScopedClientIds.Count > 0)
+                {
+                    <p class="scr-muted">Component-scoped Client IDs (@Settings.ScopedClientIds.Count) are approved from the review and kept unchanged by this field.</p>
+                }
+            </div>
+        }
+    }
+    else if (Review is { HasSource: true } review)
+    {
+        <section class="scr-overview" aria-labelledby="scr-overview-heading" data-testid="scr-summary">
+            <h4 id="scr-overview-heading">Assessment</h4>
+            <p class="scr-overall"><SecurityAssessmentBadge State="review.Assessment" /> <span data-testid="scr-overall">@review.Summary</span></p>
+            <ul class="scr-cards" role="list">
+                <li class="scr-card scr-tone-consistent"><span class="scr-num" data-testid="scr-count-consistent">@review.Consistent</span><span>Consistent</span></li>
+                <li class="scr-card scr-tone-review"><span class="scr-num" data-testid="scr-count-review">@review.NeedsReview</span><span>Needs review</span></li>
+                <li class="scr-card scr-tone-conflict"><span class="scr-num" data-testid="scr-count-conflict">@review.Conflicts</span><span>Conflicts</span></li>
+                <li class="scr-card scr-tone-review"><span class="scr-num" data-testid="scr-count-placeholder">@review.Placeholders</span><span>Placeholders / defaults</span></li>
+                <li class="scr-card scr-tone-review"><span class="scr-num" data-testid="scr-count-mismatch">@review.EnvironmentMismatches</span><span>Environment mismatches</span></li>
+                <li class="scr-card scr-tone-neutral"><span class="scr-num" data-testid="scr-count-notassessed">@review.NotAssessed</span><span>Not assessed</span></li>
+            </ul>
+        </section>
+
+        <section class="scr-attention" aria-labelledby="scr-attention-heading" data-testid="scr-attention">
+            <h4 id="scr-attention-heading">@(review.Attention.Count == 0 ? "Nothing needs attention" : review.Attention.Count == 1 ? "1 item needs attention" : $"{review.Attention.Count} items need attention")</h4>
+            @if (review.Attention.Count > 0)
             {
-                var fieldId = $"sec-field-{field}";
-                var candidates = _result?.Candidates.Where(c => c.FieldType == field)
-                    .OrderBy(c => CandidatePriority(State(c))).ThenBy(c => c.NormalizedValue, StringComparer.Ordinal).ToList() ?? [];
-                <div class="sec-field" id="@fieldId" data-testid="@fieldId">
-                    @if (Editable)
+                <ol class="scr-attention-list">
+                    @foreach (var item in review.Attention)
                     {
-                        <label for="@($"{fieldId}-input")">@SecurityExpectationValues.Label(field)</label>
-                        @if (SecurityExpectationValues.Singleton(field))
-                        {
-                            <input id="@($"{fieldId}-input")" type="@(field == SecurityExpectationField.Authority ? "url" : "text")" class="form-control" value="@string.Join("", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())" />
-                        }
-                        else
-                        {
-                            <textarea id="@($"{fieldId}-input")" class="form-control" rows="3" value="@string.Join("\n", SecurityExpectationValues.Values(Settings, field))" @onchange="e => Set(field, e.Value?.ToString())"></textarea>
-                        }
+                        <li>
+                            <button type="button" class="scr-attention-item" data-testid="@($"scr-attention-{item.CheckId}")" @onclick="() => GoToAsync(item.CheckId)">
+                                <SecurityAssessmentBadge State="item.State" />
+                                <strong>@item.Title</strong>
+                                <span class="scr-wrap">@SafeText(item.Summary)</span>
+                            </button>
+                        </li>
                     }
-                    else
+                </ol>
+            }
+            else
+            {
+                <p class="scr-muted">Every assessed expectation matches its approved values. Not-assessed checks are listed under All.</p>
+            }
+        </section>
+
+        <div class="scr-filters" role="group" aria-label="Filter review checks">
+            @foreach (var (key, label) in Filters)
+            {
+                <button type="button" class="scr-filter @(Filter == key ? "is-active" : "")" aria-pressed="@(Filter == key ? "true" : "false")" data-testid="@($"scr-filter-{key}")" @onclick="() => _filter = key">@label (@review.Checks.Count(c => Matches(c, key)))</button>
+            }
+        </div>
+
+        <div class="scr-checks">
+            @foreach (var check in review.Checks.Where(c => Matches(c, Filter)))
+            {
+                var cardId = $"scr-check-{check.Id}";
+                var headingId = $"{cardId}-heading";
+                <article @key="check.Id" class="scr-check scr-state-@StateKey(check.Assessment)" id="@cardId" data-testid="@cardId" aria-labelledby="@headingId">
+                    <header class="scr-check-header">
+                        <h5 id="@headingId" tabindex="-1" @ref="_headings[check.Id]">@check.Name</h5>
+                        <SecurityAssessmentBadge State="check.Assessment" />
+                        <span class="visually-hidden">@check.Name assessment: @StateLabel(check.Assessment).</span>
+                    </header>
+                    <p class="scr-check-summary scr-wrap">@SafeText(check.Summary)</p>
+                    <dl class="scr-facts">
+                        <div><dt>Scope</dt><dd>@(check.Metadata.Scope == SecurityExpectationScope.EnvironmentAndComponent ? $"{EnvironmentLabel} · per component ({check.Scopes.Count})" : EnvironmentLabel)</dd></div>
+                        <div><dt>Approved</dt><dd class="scr-wrap">@(check.ApprovedValues.Count == 0 ? "No approved value" : string.Join(", ", check.ApprovedValues.Select(SafeText)))</dd></div>
+                        <div><dt>Detected logical values</dt><dd>@check.ValueGroups.Count</dd></div>
+                        <div><dt>Observed in</dt><dd>@(check.Occurrences == 0 ? "Not declared in source" : $"{Plural(check.Components, "component")} · {Plural(check.Files, "file")} · {Plural(check.Occurrences, "occurrence")}")</dd></div>
+                    </dl>
+                    @if (check.Findings.Count > 0)
                     {
-                        <h5>@SecurityExpectationValues.Label(field)</h5>
-                        <p class="sec-muted">Approved</p>
-                        <ul class="sec-approved">
-                            @foreach (var value in SecurityExpectationValues.Values(Settings, field))
+                        <ul class="scr-findings" aria-label="@($"{check.Name} findings")">
+                            @foreach (var same in check.Findings.OrderBy(f => f.RequiresAttention ? 0 : 1).GroupBy(f => (f.Type, f.RequiresAttention)))
                             {
-                                var provenance = Settings.Origins.LastOrDefault(p => p.FieldType == field && p.NormalizedValue == SecurityExpectationValues.Normalize(field, value));
-                                <li>@SafeText(value) <span class="sec-state">@OriginLabel(SecurityExpectationValues.Origin(Settings, field, value))</span>
-                                    @if (provenance?.SourceSnapshotId is { } snapshot && snapshot != _scope.Current?.SnapshotId) { <span class="sec-muted">Source evidence is from an older snapshot; expectation remains approved.</span> }
+                                @* More than two findings of one type are one line; each value group carries its own status chip. *@
+                                var findings = same.ToList();
+                                <li class="@(same.Key.RequiresAttention ? "scr-finding" : "scr-finding scr-finding-info")" data-testid="scr-finding" data-type="@same.Key.Type" data-count="@findings.Count">
+                                    <span class="scr-finding-type">@FindingName(same.Key.Type)@(same.Key.RequiresAttention ? "" : " · informational")</span>
+                                    @if (findings.Count > 2)
+                                    {
+                                        <span>@SecurityConfigurationReviewEngine.FindingLabel(same.Key.Type, findings.Count) See the values marked below.</span>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var finding in findings) { <span class="scr-wrap">@SafeText(finding.Message)</span> }
+                                    }
                                 </li>
                             }
                         </ul>
-                        @if (!SecurityExpectationValues.Values(Settings, field).Any()) { <p class="sec-muted">No approved value</p> }
                     }
-                    @if (candidates.Count == 0) { <p class="sec-muted">@(_result is null ? "Source candidates: Not analyzed" : "No source candidate - not evidence of a security defect.")</p> }
-                    @if (candidates.Count > 0)
+                    @foreach (var scopeGroups in check.ValueGroups.GroupBy(g => g.Scope))
                     {
-                        <p>@candidates.Count unique candidates · @candidates.Sum(c => c.SupportingEvidenceCount) evidence items · @(candidates.Any(c => !Matches(c) && State(c) != SecurityCandidateState.Rejected) ? "Needs review" : "Matches source")</p>
-                        <button type="button" class="sec-review-toggle" data-testid="@($"sec-review-{field}")" aria-expanded="@(_expandedField == field ? "true" : "false")" @onclick="() => _expandedField = _expandedField == field ? null : field">Review @SecurityExpectationValues.Label(field)</button>
-                    }
-                    @if (_expandedField == field)
-                    {
-                    @foreach (var candidate in candidates)
-                    {
-                        var matches = Matches(candidate);
-                        var state = State(candidate);
-                        var valid = Valid(candidate);
-                        <div class="sec-candidate" data-testid="sec-candidate" data-field="@field" data-candidate="@candidate.Id">
-                            <div><strong>@(valid || candidate.FormatState is "InvalidFormat" or "Placeholder" ? SafeText(candidate.Value) : "Unresolved candidate; value not displayed")</strong> <span class="sec-state">@StateLabel(state)</span>@if (candidate.EnvironmentScope.Length > 0) { <span class="sec-state">@candidate.EnvironmentScope source</span> }@if (candidate.FormatState is "InvalidFormat" or "Placeholder") { <span class="sec-state">@candidate.FormatState</span> }</div>
-                            <p class="sec-muted">@EvidenceSummary(candidate) · @(matches ? "Matches current source; approved value is unchanged." : "Not approved")</p>
-                            <div class="sec-actions">
-                                @if (state != SecurityCandidateState.Rejected && state != SecurityCandidateState.Stale && valid && !matches)
-                                {
-                                    <button type="button" class="btn-secondary" disabled="@(_busy || Editable)" data-testid="sec-accept" aria-label="@($"{SecurityExpectationValues.AcceptAction(candidate, Settings, candidates.Count)} {SecurityExpectationValues.Label(field)} candidate {candidate.Value}")" @onclick="() => ReviewAsync(candidate, true, state == SecurityCandidateState.Conflict)">@SecurityExpectationValues.AcceptAction(candidate, Settings, candidates.Count)</button>
-                                }
-                                @if (state != SecurityCandidateState.Rejected && !matches)
-                                {
-                                    <button type="button" class="btn-secondary" disabled="@(_busy || Editable)" data-testid="sec-reject" aria-label="@($"Ignore {SecurityExpectationValues.Label(field)} candidate from {SafeText(candidate.SourceComponent)}")" @onclick="() => ReviewAsync(candidate, false, false)">@(state == SecurityCandidateState.Conflict ? "Keep current" : "Ignore")</button>
-                                }
-                            </div>
-                            <button type="button" class="sec-evidence-toggle" data-testid="@($"sec-evidence-{candidate.Id}-toggle")" aria-expanded="@(_evidenceOpen.Contains(candidate.Id) ? "true" : "false")" @onclick="() => ToggleEvidence(candidate.Id)">Evidence (@candidate.SupportingEvidenceCount)</button>
-                            @if (_evidenceOpen.Contains(candidate.Id))
+                        @if (scopeGroups.Key.Length > 0) { <h6 class="scr-scope">@scopeGroups.Key</h6> }
+                        var groups = scopeGroups.ToList();
+                        var visible = _showAll.Contains($"{check.Id}|{scopeGroups.Key}") ? groups : groups.Take(MaxGroups).ToList();
+                        <ul class="scr-groups" role="list">
+                            @foreach (var group in visible)
                             {
-                                <div class="sec-evidence-scroll" tabindex="0" role="region" aria-label="Supporting source evidence">
-                                <table><caption>Supporting source evidence. Discovery details contain snapshot provenance.</caption><thead><tr><th scope="col">Component / source</th><th scope="col">File</th><th scope="col">Symbol / config key</th><th scope="col">Raw value</th><th scope="col">Evidence kind</th><th scope="col">Confidence</th></tr></thead><tbody>
-                                @foreach (var evidence in candidate.SupportingEvidence)
-                                {
-                                    <tr><td>@SafeText(evidence.Repository)</td><td>@SafeText(evidence.FilePath):@evidence.Line</td><td>@SafeText(evidence.SymbolOrKey)</td><td><code>@SafeText(evidence.RawValue)</code></td><td>@evidence.EvidenceKind</td><td>@evidence.State · @SafeText(evidence.Confidence)</td></tr>
-                                }
-                                @if (candidate.SupportingEvidence.Count == 0)
-                                {
-                                    <tr><td>@SafeText(candidate.SourceComponent)</td><td>@SafeText(candidate.SourceFile):@candidate.SourceLine</td><td>@SafeText(candidate.SourceSymbol)</td><td><code>@SafeText(candidate.Value)</code></td><td>@candidate.EvidenceType</td><td>@candidate.EvidenceState · @SafeText(candidate.Confidence)</td></tr>
-                                }
-                                </tbody></table></div>
+                                var evidenceId = $"scr-ev-{Hash(group.Id)}";
+                                <li class="scr-group" data-testid="scr-group" data-status="@group.Status">
+                                    <div class="scr-group-head">
+                                        <code class="scr-value">@(Unsafe(group.Value) ? "[Redacted]" : group.Value)</code>
+                                        <span class="scr-chip scr-chip-@ChipKey(group)">@group.Status</span>
+                                    </div>
+                                    <p class="scr-muted">@string.Join(", ", group.Environments) · @Plural(group.Occurrences, "occurrence") · @Plural(group.Components, "component") · @Plural(group.Files, "file")</p>
+                                    <div class="sec-actions">
+                                        @if (CanApprove(check, group))
+                                        {
+                                            <button type="button" class="btn-secondary" data-testid="sec-accept" disabled="@(_busy || Editable)"
+                                                    aria-label="@($"{ApproveLabel(check, group)}: {check.Name} {SafeText(group.Value)}{(group.Scope.Length > 0 ? $" for {group.Scope}" : "")}")"
+                                                    @onclick="() => ApproveAsync(check, group)">@ApproveLabel(check, group)</button>
+                                        }
+                                        @if (!group.IsApproved && !group.IsIgnored && group.CandidateIds.Count > 0 && IsCurrent)
+                                        {
+                                            <button type="button" class="btn-secondary" data-testid="sec-reject" disabled="@(_busy || Editable)"
+                                                    aria-label="@($"Ignore candidate: {check.Name} {SafeText(group.Value)}")" @onclick="() => IgnoreAsync(group)">Ignore candidate</button>
+                                        }
+                                        @if (!Unsafe(group.Value) && !group.IsInvalid)
+                                        {
+                                            <button type="button" class="btn-link scr-copy" aria-label="@($"Copy {check.Name} value {group.Value}")" @onclick="() => CopyAsync(group.Value)">@(_copied == group.Value ? "Copied" : "Copy")</button>
+                                        }
+                                        <button type="button" class="sec-evidence-toggle" data-testid="scr-evidence-toggle" aria-expanded="@(_evidenceOpen.Contains(group.Id) ? "true" : "false")" aria-controls="@evidenceId" @onclick="() => ToggleEvidence(group.Id)">Evidence (@group.Occurrences)</button>
+                                    </div>
+                                    <div id="@evidenceId" class="scr-evidence" hidden="@(!_evidenceOpen.Contains(group.Id))" data-testid="scr-evidence">
+                                        @if (_evidenceOpen.Contains(group.Id))
+                                        {
+                                            @foreach (var component in group.Evidence.GroupBy(e => e.Component))
+                                            {
+                                                <div class="scr-evidence-component">
+                                                    <strong>@(component.Key.Length > 0 ? SafeText(component.Key) : "Unresolved component")</strong>
+                                                    <ul>
+                                                        @foreach (var e in component)
+                                                        {
+                                                            <li>
+                                                                <span class="scr-wrap">@SafeText(e.File)@(e.Line > 0 ? $":{e.Line}" : "")</span>
+                                                                <span class="scr-muted scr-wrap">@SafeText(e.Key) · @(e.Environment.Length == 0 ? "Shared configuration" : e.Environment) · @ApplicabilityLabel(e.Applicability)</span>
+                                                                <code class="scr-wrap">@SafeText(e.RawValue)</code>
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                </div>
+                                            }
+                                            <ReviewDisclosure Text="Technical details" TestId="@($"scr-tech-{Hash(group.Id)}")">
+                                                <ul class="scr-tech">
+                                                    @foreach (var e in group.Evidence)
+                                                    {
+                                                        <li class="scr-wrap">@SafeText(e.File) · snapshot @e.SourceSnapshotId.ToString("N")[..8] (@e.SourceRole) · @e.EvidenceKind · @e.State · @SafeText(e.Confidence)</li>
+                                                    }
+                                                    <li class="scr-wrap">Candidates: @string.Join(", ", group.CandidateIds.Select(id => id[..Math.Min(12, id.Length)]))</li>
+                                                </ul>
+                                            </ReviewDisclosure>
+                                        }
+                                    </div>
+                                </li>
                             }
-                        </div>
+                        </ul>
+                        @if (groups.Count > MaxGroups)
+                        {
+                            var key = $"{check.Id}|{scopeGroups.Key}";
+                            <button type="button" class="btn-link scr-more" aria-expanded="@(_showAll.Contains(key) ? "true" : "false")" @onclick="() => ToggleShowAll(key)">@(_showAll.Contains(key) ? "Show fewer values" : $"Show {groups.Count - MaxGroups} more values")</button>
+                        }
                     }
-                    }
-                </div>
+                </article>
             }
+            @if (!review.Checks.Any(c => Matches(c, Filter))) { <p class="scr-muted" data-testid="scr-filter-empty">No check matches this filter.</p> }
+        </div>
+
+        <section class="scr-limitations" aria-labelledby="scr-limitations-heading" data-testid="scr-limitations">
+            <h4 id="scr-limitations-heading">Assessment limitations</h4>
+            <ul>@foreach (var limitation in review.Limitations) { <li>@SafeText(limitation)</li> }</ul>
         </section>
+    }
+    else
+    {
+        <section class="scr-empty" data-testid="scr-empty" aria-labelledby="scr-empty-heading">
+            <h4 id="scr-empty-heading">@(_result is null ? "No source security configuration evidence is available" : "The review is not current")</h4>
+            <p>@(Review?.Summary ?? "No source security configuration evidence is available.") Approved expectations below remain in effect.</p>
+            <div class="sec-actions">
+                <a class="btn-secondary scr-link" href="source-analysis">Open Source Analysis</a>
+                <button type="button" class="btn-secondary" @onclick="OpenSourceAsync">Choose source snapshot</button>
+            </div>
+            <p class="scr-muted">Approved values: @(ApprovedCount == 0 ? "none" : string.Join(", ", SecurityConfigurationReviewEngine.ReviewedFields.Where(f => SecurityExpectationValues.Values(Settings, f).Any()).Select(f => SecurityExpectationMetadata.For(f).Name)))</p>
+        </section>
+    }
+
+    @if (_result is not null && !Editable)
+    {
+        <ReviewDisclosure Text="Technical evidence" TestId="scr-technical">
+            <p>Source snapshot @_result.SourceSnapshotId · Fingerprint @_result.SourceFingerprint · Analyzer @_result.AnalyzerVersion · @_result.ExtractedAt.ToUniversalTime().ToString("u") · @_result.Candidates.Count discovery candidates · @_result.SupportingEvidenceCount evidence occurrences</p>
+            @foreach (var snapshot in _result.SourceFingerprints.Where(p => p.Key != _result.SourceSnapshotId)) { <p>Related snapshot @snapshot.Key · Fingerprint @snapshot.Value</p> }
+            @if (_result.SourceScope is null) { <p>Legacy source discovery. Historical evidence and original review decisions are retained.</p> }
+            @foreach (var decision in _result.ReviewDecisions) { <p>Decision @decision.CandidateId[..Math.Min(12, decision.CandidateId.Length)] · @decision.State · @decision.At.ToUniversalTime().ToString("u")</p> }
+            @foreach (var note in _result.Diagnostics.Concat(_result.UnsupportedEvidence)) { <p>@SafeText(note)</p> }
+            @if (_history.Count > 1) { <p>@_history.Count recent reviews are kept separately from approved settings.</p> }
+        </ReviewDisclosure>
     }
     @if (!Editable)
     {
         <ReviewDisclosure Text="Defaults" TestId="sec-defaults">
-            <p class="sec-muted">Restore changes approved settings only; discovery history is retained. The full reset clears identity and allowed hosts and restores headers.</p>
+            <p class="scr-muted">Restore changes approved settings only; review history is retained. The full reset clears identity, scoped Client IDs and allowed hosts and restores headers.</p>
             <div class="sec-actions">@Defaults</div>
         </ReviewDisclosure>
     }
@@ -151,68 +279,121 @@
     [Parameter] public EventCallback<ApprovedSecurityExpectations> ApprovedChanged { get; set; }
     [Parameter] public RenderFragment? Defaults { get; set; }
     private ISecurityExpectationApi? Api => Services.GetService<ISecurityExpectationApi>();
+    private FrontendAnalysisProfile? Profile => Services.GetService<IFrontendAnalysisSettingsService>()?.Settings.Profiles.FirstOrDefault(p => p.Id == EnvironmentId);
+    private string EnvironmentType => Profile?.EnvironmentType.ToString() ?? "Custom";
+    private string EnvironmentLabel => Profile is null ? "Selected Target Environment" : $"{Profile.Name} ({Profile.EnvironmentType})";
     private string? _loadedEnvironment;
-    /// <summary>The source scope for candidate discovery (shared source components; the current snapshot is offered, never chosen silently).</summary>
+    /// <summary>The source scope (shared source components; the current snapshot is offered, never chosen silently).</summary>
     private readonly ReviewSourceScopeState _scope = new();
     private SourceSnapshotSelector? _selector;
     private ReviewSourceSnapshot? Selected => _scope.Primary;
-    private async Task FocusSelectorAsync() { if (_selector is not null) await _selector.FocusAsync(); }
+    private string SnapshotShort => (Selected?.SnapshotId ?? _result?.SourceSnapshotId)?.ToString("N")[..8] ?? "";
+    private bool _sourceOpen;
+    private async Task FocusSelectorAsync() { _sourceOpen = true; StateHasChanged(); if (_selector is not null) await _selector.FocusAsync(); }
+    private Task OpenSourceAsync() => FocusSelectorAsync();
     private async Task ReloadScopeAsync()
     {
         if (Api is null) return;
         try { _scope.Options = await Api.SourceScopeAsync(EnvironmentId, _scope.Request); }
         catch (Exception e) when (e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error = "Source Analysis snapshots could not be loaded; approved expectations are unchanged."; }
     }
-    /// <summary>Related sources changed: the previous discovery no longer matches the scope.</summary>
-    private async Task ScopeChangedAsync() { _result = null; _expandedField = null; await ReloadScopeAsync(); }
-    /// <summary>A snapshot was chosen: show its latest stored discovery (with that discovery's related sources) if there is one.</summary>
+    /// <summary>Related sources changed: the previous review no longer matches the scope.</summary>
+    private async Task ScopeChangedAsync() { _result = null; await ReloadScopeAsync(); }
+    /// <summary>A snapshot was chosen: show its latest stored review (with that review's related sources) if there is one.</summary>
     private async Task PrimaryChangedAsync(Guid? id)
     {
         _result = id is null ? null : _history.FirstOrDefault(r => r.SourceSnapshotId == id);
         foreach (var related in _result?.SourceScope?.RelatedSourceSnapshotIds ?? [])
             if (_scope.Snapshots.FirstOrDefault(s => s.SnapshotId == related) is { } s) _scope.Include(s.RepositoryKey, related);
-        _expandedField = null;
         await ReloadScopeAsync();
     }
-    private SecurityExpectationField? _expandedField;
+
+    private const int MaxGroups = 8;
+    private static readonly (string Key, string Label)[] Filters = [("attention", "Needs attention"), ("all", "All"), ("consistent", "Consistent"), ("approved", "Approved"), ("notassessed", "Not assessed")];
+    private string? _filter;
+    private string Filter => _filter ?? (Review?.Attention.Count > 0 ? "attention" : "all");
+    private static bool Matches(SecurityConfigurationCheckResult c, string filter) => filter switch
+    {
+        "attention" => c.Assessment is SecurityConfigurationAssessmentState.NeedsReview or SecurityConfigurationAssessmentState.Conflict,
+        "consistent" => c.Assessment == SecurityConfigurationAssessmentState.Consistent,
+        "approved" => c.ApprovedValues.Count > 0,
+        "notassessed" => c.Assessment is SecurityConfigurationAssessmentState.NotAssessed or SecurityConfigurationAssessmentState.NotApplicable or SecurityConfigurationAssessmentState.Partial,
+        _ => true,
+    };
+    private readonly Dictionary<string, ElementReference> _headings = [];
     private readonly HashSet<string> _evidenceOpen = [];
+    private readonly HashSet<string> _showAll = [];
     private void ToggleEvidence(string id) { if (!_evidenceOpen.Add(id)) _evidenceOpen.Remove(id); }
-    private static string Short(string fingerprint) => fingerprint[..Math.Min(8, fingerprint.Length)];
+    private void ToggleShowAll(string key) { if (!_showAll.Add(key)) _showAll.Remove(key); }
     private SecurityExpectationDiscoveryResult? _result;
     private IReadOnlyList<SecurityExpectationDiscoveryResult> _history = [];
-    private bool _busy, _reviewOpen;
+    private bool _busy;
     private bool _disposed;
     private string _status = "";
     private string? _error;
-    private ElementReference _statusRef;
+    private string? _copied;
     private bool IsCurrent => _result is not null && _result.IsCurrent && (_scope.PrimaryId is null || _result.SourceSnapshotId == _scope.PrimaryId);
-    private int ApprovedCount => Enum.GetValues<SecurityExpectationField>().Sum(f => SecurityExpectationValues.Values(Settings, f).Count());
-    private static string EvidenceSummary(SecurityExpectationCandidate c)
+    private int ApprovedCount => Enum.GetValues<SecurityExpectationField>().Sum(f => SecurityExpectationValues.Values(Settings, f).Count()) + Settings.ScopedClientIds.Count;
+
+    /// <summary>The review, recomputed from the discovery and the current approved values (deterministic; no request).</summary>
+    private SecurityConfigurationReview? Review => _result is null && _scope.PrimaryId is null ? null
+        : SecurityConfigurationReviewEngine.Review(_result, Settings, new(EnvironmentType, _scope.PrimaryId ?? _result?.SourceSnapshotId, Selected?.SourceStatus));
+
+    private bool CanApprove(SecurityConfigurationCheckResult check, SecurityValueGroup group) =>
+        IsCurrent && group.ApprovalCandidateId is { } id && !group.IsApproved && !Unsafe(group.Value) && check.Metadata.AssessedFromSource &&
+        _result!.Candidates.FirstOrDefault(c => c.Id == id) is { } c && Valid(c) && c.IsCurrent && c.CandidateState != SecurityCandidateState.Stale;
+
+    private static string ApproveLabel(SecurityConfigurationCheckResult check, SecurityValueGroup group) =>
+        check.Metadata.Scope == SecurityExpectationScope.EnvironmentAndComponent && group.Scope.Length > 0 ? "Approve for this component"
+        : check.Metadata.Cardinality == SecurityValueCardinality.Multiple ? "Add to approved values"
+        : check.ApprovedValues.Count > 0 ? "Replace approved value" : "Approve this value";
+
+    private static string Hash(string id) => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(id)))[..12];
+    private static string Plural(int n, string word) => n == 1 ? $"1 {word}" : $"{n} {word}s";
+    private static string StateKey(SecurityConfigurationAssessmentState s) => s.ToString().ToLowerInvariant();
+    public static string StateLabel(SecurityConfigurationAssessmentState s) => s switch
     {
-        if (c.SupportingEvidence.Count == 0) return SafeText(c.SourceComponent);
-        var files = c.SupportingEvidence.Select(e => (e.Repository, e.FilePath)).Distinct().Count();
-        var components = c.SupportingEvidence.Select(e => e.Repository).Distinct(StringComparer.Ordinal).Count();
-        return $"{c.SupportingEvidenceCount} occurrences · {files} files · {components} components";
-    }
-    private static int CandidatePriority(SecurityCandidateState state) => state switch
-    {
-        SecurityCandidateState.Accepted or SecurityCandidateState.MatchesSource => 0,
-        SecurityCandidateState.NeedsReview or SecurityCandidateState.Conflict => 1,
-        SecurityCandidateState.Detected or SecurityCandidateState.Suggested => 2,
-        SecurityCandidateState.Rejected => 3,
-        _ => 4
+        SecurityConfigurationAssessmentState.NeedsReview => "Needs review", SecurityConfigurationAssessmentState.NotAssessed => "Not assessed",
+        SecurityConfigurationAssessmentState.NotApplicable => "Not applicable", _ => s.ToString(),
     };
-    private static readonly (string Key, string Label, SecurityExpectationField[] Fields)[] Groups = [
-        ("identity", "Identity expectations", [SecurityExpectationField.Authority, SecurityExpectationField.TenantId, SecurityExpectationField.ClientId, SecurityExpectationField.RedirectUrl]),
-        ("hosts", "Allowed application hosts", [SecurityExpectationField.BackendDomain, SecurityExpectationField.RestHost, SecurityExpectationField.GraphQlHost, SecurityExpectationField.CdnHost]),
-        ("headers", "Expected security headers", [SecurityExpectationField.SecurityHeader]) ];
+    private static string FindingName(SecurityConfigurationFindingType t) => t switch
+    {
+        SecurityConfigurationFindingType.ConfigurationConflict => "Conflict", SecurityConfigurationFindingType.UnexpectedValue => "Unexpected value",
+        SecurityConfigurationFindingType.UnapprovedValue => "Not approved", SecurityConfigurationFindingType.PlaceholderValue => "Placeholder / default",
+        SecurityConfigurationFindingType.EnvironmentMismatch => "Environment mismatch", SecurityConfigurationFindingType.MissingExpectedValue => "Missing for this environment",
+        SecurityConfigurationFindingType.StaleApprovedValue => "Stale approval", SecurityConfigurationFindingType.AmbiguousScope => "Ambiguous scope",
+        SecurityConfigurationFindingType.InvalidValue => "Invalid format", _ => "Not assessed",
+    };
+    private static string ChipKey(SecurityValueGroup g) => g.IsApproved ? "approved" : g.IsPlaceholder || g.IsInvalid ? "placeholder" : g.IsIgnored ? "muted"
+        : g.AppliesToSelectedEnvironment ? "review" : "muted";
+    private static string ApplicabilityLabel(SecurityValueApplicability a) => a switch
+    {
+        SecurityValueApplicability.SelectedEnvironment => "applies (environment file)", SecurityValueApplicability.SharedConfiguration => "applies (shared)",
+        SecurityValueApplicability.Overridden => "overridden", _ => "other environment",
+    };
+
+    /// <summary>Focus requested for a card heading; applied after the render that shows it (the filter may have changed).</summary>
+    private (string CheckId, bool PreventScroll)? _pendingFocus;
+    private void GoToAsync(string checkId) { _filter = "all"; _pendingFocus = (checkId, false); }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingFocus is not { } focus || _disposed) return;
+        _pendingFocus = null;
+        if (_headings.TryGetValue(focus.CheckId, out var heading)) { try { await heading.FocusAsync(focus.PreventScroll); } catch (Exception e) when (e is JSException or InvalidOperationException) { } }
+    }
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _copied = text; }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { _copied = null; }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
-        if(_loadedEnvironment == EnvironmentId) return;
-        _loadedEnvironment = EnvironmentId; _result = null; _scope.PickPrimary(null); _scope.Options = null; _expandedField = null; _history = []; _status = ""; _error = null;
-        if(Api is null) return;
+        if (_loadedEnvironment == EnvironmentId) return;
+        _loadedEnvironment = EnvironmentId; _result = null; _scope.PickPrimary(null); _scope.Options = null; _history = []; _status = ""; _error = null; _filter = null; _evidenceOpen.Clear();
+        if (Api is null) return;
         try { await LoadAsync(); }
-        catch(Exception e) when(e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error = "Source discovery is unavailable; approved expectations are unchanged."; }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error = "Source review is unavailable; approved expectations are unchanged."; }
     }
     private async Task LoadAsync()
     {
@@ -220,13 +401,13 @@
         var initialLoad = _scope.Options is null && _result is null;
         var history = await Api!.HistoryAsync(env);
         var options = await Api.SourceScopeAsync(env, null);
-        if(env != EnvironmentId) return;
+        if (env != EnvironmentId) return;
         _history = history;
         _result ??= history.FirstOrDefault();
         if (initialLoad)
         {
-            // The latest discovery's exact scope is proposed again. Without one, this panel's convention preselects the current snapshot —
-            // candidates are still only discovered on an explicit "Refresh candidates" click, and nothing is approved automatically.
+            // The latest review's exact scope is proposed again. Without one the current snapshot is preselected — the review still only runs on
+            // an explicit click, and nothing is approved automatically.
             _scope.Options = options;
             if (_result is not null && options.Snapshots.Any(s => s.SnapshotId == _result.SourceSnapshotId))
             {
@@ -235,94 +416,89 @@
                     if (options.Snapshots.FirstOrDefault(s => s.SnapshotId == related) is { } s) _scope.Include(s.RepositoryKey, related);
             }
             else if (_result is null && _scope.Current is { } current) _scope.PickPrimary(current.SnapshotId);
+            _sourceOpen = _scope.PrimaryId is null;
         }
         _scope.Options = await Api.SourceScopeAsync(env, _scope.Request);
     }
-    private bool Valid(SecurityExpectationCandidate c) => SecurityExpectationValues.Normalize(c.FieldType,c.Value) == c.NormalizedValue && c.NormalizedValue.Length > 0 &&
+    private bool Valid(SecurityExpectationCandidate c) => SecurityExpectationValues.Normalize(c.FieldType, c.Value) == c.NormalizedValue && c.NormalizedValue.Length > 0 &&
         c.EvidenceState is not (ArchitectureEvidenceState.Unresolved or ArchitectureEvidenceState.Conflict);
-    private bool Matches(SecurityExpectationCandidate c) => Valid(c) && SecurityExpectationValues.Matches(Settings,c);
-    private SecurityCandidateState State(SecurityExpectationCandidate c)
-    {
-        if(!IsCurrent || !c.IsCurrent) return SecurityCandidateState.Stale;
-        if(c.CandidateState == SecurityCandidateState.Rejected) return c.CandidateState;
-        if(Matches(c))
-        {
-            var approval = Settings.Origins.LastOrDefault(p => p.FieldType == c.FieldType && p.NormalizedValue == c.NormalizedValue);
-            var acceptedHere = approval?.Origin == SecurityExpectationOrigin.AcceptedFromSource && approval.SourceSnapshotId == c.SourceSnapshotId &&
-                approval.SourceFingerprint == _result!.SourceFingerprint && (approval.SourceCandidateId == c.Id || c.CandidateState == SecurityCandidateState.Accepted);
-            return acceptedHere ? SecurityCandidateState.Accepted : SecurityCandidateState.MatchesSource;
-        }
-        return SecurityExpectationValues.DeriveState(c, Settings, _result!.Candidates.Count(x => x.FieldType == c.FieldType));
-    }
-    private List<SecurityExpectationCandidate> SafeCandidates => _result?.Candidates.Where(c => Valid(c) && IsCurrent && c.IsCurrent && !Matches(c) &&
-        State(c) == SecurityCandidateState.Detected && c.EvidenceState is ArchitectureEvidenceState.Confirmed or ArchitectureEvidenceState.StronglySupported).ToList() ?? [];
     private async Task DiscoverAsync()
     {
-        _busy=true; _error=null;
-        try {
+        _busy = true; _error = null;
+        try
+        {
             await LoadAsync();
-            if(_scope.Request is not { } scope) { _status="No source snapshot selected; no approved expectations were changed."; return; }
-            _result=await Api!.DiscoverAsync(EnvironmentId,new(scope.PrimarySnapshotId,SecurityExpectationValues.Copy(Settings),scope.RelatedSnapshotIds));
-            _expandedField = null;
+            if (_scope.Request is not { } scope) { _status = "No source snapshot selected; no approved expectations were changed."; return; }
+            _result = await Api!.DiscoverAsync(EnvironmentId, new(scope.PrimarySnapshotId, SecurityExpectationValues.Copy(Settings), scope.RelatedSnapshotIds));
             _history = new[] { _result }.Concat(_history).DistinctBy(r => r.Id).Take(30).ToList();
-            _reviewOpen=true;
-            _status=$"Source discovery {_result.Status}. {_result.Candidates.Count(c=>c.CandidateState==SecurityCandidateState.Detected)} detected, {_result.Candidates.Count(c=>c.CandidateState==SecurityCandidateState.Suggested)} suggested, {_result.Candidates.Count(c=>c.CandidateState==SecurityCandidateState.Conflict)} conflicts, 0 approved automatically. No approved expectations were changed.";
-        } catch(Exception e) when(e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error=e is InvalidOperationException ? e.Message : "Source discovery is unavailable; approved expectations are unchanged."; }
-        finally { _busy=false; }
+            var review = Review;
+            _status = review is { HasSource: true }
+                ? $"Review refreshed: {review.Attention.Count} item(s) need attention, {review.Consistent} consistent. 0 approved automatically; no approved expectations were changed."
+                : "Review refreshed. 0 approved automatically; no approved expectations were changed.";
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or System.Text.Json.JsonException or TaskCanceledException) { _error = e is InvalidOperationException ? e.Message : "Source review is unavailable; approved expectations are unchanged."; }
+        finally { _busy = false; }
     }
-    private async Task<ApprovedSecurityExpectations> ApplyReviewAsync(SecurityExpectationCandidate candidate, bool accept, bool replace,
-        ApprovedSecurityExpectations? approved = null, Func<bool>? unchanged = null)
+    private async Task<ApprovedSecurityExpectations> ApplyReviewAsync(SecurityExpectationCandidate candidate, bool accept, bool replace, string? scope = null)
     {
         var environmentId = EnvironmentId;
         var approvedBefore = System.Text.Json.JsonSerializer.Serialize(Settings);
-        if (_disposed || Editable || unchanged?.Invoke() == false)
+        if (_disposed || Editable)
             throw new InvalidOperationException("Target Environment or approved values changed; refresh review. Your current expectations were preserved.");
-        var response = await Api!.ReviewAsync(EnvironmentId,new(_result!.Id,candidate.Id,_result.Revision,SecurityExpectationValues.Copy(approved ?? Settings),replace),accept);
-        if (_disposed || EnvironmentId != environmentId || Editable || !(unchanged?.Invoke() ?? approvedBefore == System.Text.Json.JsonSerializer.Serialize(Settings)))
+        var response = await Api!.ReviewAsync(EnvironmentId, new(_result!.Id, candidate.Id, _result.Revision, SecurityExpectationValues.Copy(Settings), replace, scope), accept);
+        if (_disposed || EnvironmentId != environmentId || Editable || approvedBefore != System.Text.Json.JsonSerializer.Serialize(Settings))
             throw new InvalidOperationException("Target Environment or approved values changed; refresh review. Your current expectations were preserved.");
-        if(accept) await ApprovedChanged.InvokeAsync(response.Approved);
-        _result=response.Discovery;
+        if (accept) await ApprovedChanged.InvokeAsync(response.Approved);
+        _result = response.Discovery;
         return response.Approved;
     }
-    private async Task ReviewAsync(SecurityExpectationCandidate candidate, bool accept, bool replace)
+    private async Task ApproveAsync(SecurityConfigurationCheckResult check, SecurityValueGroup group)
     {
-        if(_busy || Editable) return;
-        _busy=true; _error=null;
-        try { await ApplyReviewAsync(candidate,accept,replace); _status=accept ? "Accepted from source and saved to approved expectations." : "Candidate ignored. Approved expectations are unchanged."; }
-        catch(Exception e) when(e is HttpRequestException or InvalidOperationException or Microsoft.JSInterop.JSException or System.Text.Json.JsonException or TaskCanceledException) { _error=e is InvalidOperationException ? e.Message : "Review could not be saved. Refresh discovery before reviewing again."; }
-        finally { _busy=false; if (!_disposed) await _statusRef.FocusAsync(); }
+        if (_busy || Editable || _result?.Candidates.FirstOrDefault(c => c.Id == group.ApprovalCandidateId) is not { } candidate) return;
+        _busy = true; _error = null;
+        try
+        {
+            var scoped = check.Metadata.Scope == SecurityExpectationScope.EnvironmentAndComponent && group.Scope.Length > 0;
+            var replace = !scoped && check.Metadata.Cardinality == SecurityValueCardinality.Single && SecurityExpectationValues.Values(Settings, check.Field).Any();
+            await ApplyReviewAsync(candidate, true, replace, scoped ? group.Scope : null);
+            _status = $"{check.Name}: {(scoped ? $"approved for {group.Scope}" : replace ? "approved value replaced" : "value approved")} and saved to approved expectations.";
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JSException or System.Text.Json.JsonException or TaskCanceledException) { _error = e is InvalidOperationException ? e.Message : "Review could not be saved. Refresh the review before trying again."; }
+        finally { _busy = false; await KeepFocusAsync(check.Id); }
     }
-    private async Task AcceptSafeAsync()
+    private async Task IgnoreAsync(SecurityValueGroup group)
     {
-        if(_busy || Editable) return;
-        var safe=SafeCandidates;
-        var environmentId = EnvironmentId;
-        var initialSettings = Settings;
-        var initialJson = System.Text.Json.JsonSerializer.Serialize(Settings);
-        var approved = SecurityExpectationValues.Copy(Settings);
-        // Parent parameter delivery may lag during a bulk event. Thread the successfully saved
-        // projection through every request; allow only the original object or our latest save.
-        bool Unchanged() => EnvironmentId == environmentId &&
-            ((ReferenceEquals(Settings, initialSettings) && System.Text.Json.JsonSerializer.Serialize(Settings) == initialJson) ||
-             System.Text.Json.JsonSerializer.Serialize(Settings) == System.Text.Json.JsonSerializer.Serialize(approved));
-        _busy=true; _error=null;
-        var accepted=0;
-        try { foreach(var candidate in safe) { approved = await ApplyReviewAsync(candidate,true,false,approved,Unchanged); accepted++; } _status=$"Accepted {accepted} safe candidates by your explicit action."; }
-        catch(Exception e) when(e is HttpRequestException or InvalidOperationException or Microsoft.JSInterop.JSException or System.Text.Json.JsonException or TaskCanceledException) { _error=$"{accepted} candidates saved. Review stopped; refresh discovery before continuing."; }
-        finally { _busy=false; if (!_disposed) await _statusRef.FocusAsync(); }
+        if (_busy || Editable || _result is null) return;
+        _busy = true; _error = null;
+        try
+        {
+            // Ignoring a logical value ignores each discovery candidate behind it; source evidence is never deleted.
+            foreach (var id in group.CandidateIds)
+                if (_result.Candidates.FirstOrDefault(c => c.Id == id) is { CandidateState: not SecurityCandidateState.Rejected } candidate)
+                    await ApplyReviewAsync(candidate, false, false);
+            _status = "Candidate ignored: it is removed from approval consideration. Source evidence and approved expectations are unchanged.";
+        }
+        catch (Exception e) when (e is HttpRequestException or InvalidOperationException or JSException or System.Text.Json.JsonException or TaskCanceledException) { _error = e is InvalidOperationException ? e.Message : "Review could not be saved. Refresh the review before trying again."; }
+        finally { _busy = false; await KeepFocusAsync(group.Id.Split('|')[0]); }
+    }
+    /// <summary>The acted-on button may disappear; focus returns to its card heading without scrolling the page.</summary>
+    private Task KeepFocusAsync(string checkId)
+    {
+        if (!_disposed) _pendingFocus = (checkId, true);
+        return Task.CompletedTask;
     }
     private void Set(SecurityExpectationField field, string? text)
     {
-        if(field==SecurityExpectationField.Authority) Settings.ExpectedAuthority=text;
-        else if(field==SecurityExpectationField.TenantId) Settings.ExpectedTenant=text;
-        else if(field==SecurityExpectationField.ClientId) Settings.ExpectedClientId=text;
-        else {
-            var list=(List<string>)SecurityExpectationValues.Values(Settings,field);
-            list.Clear(); list.AddRange((text??"").Split('\n').Select(x=>x.Trim()).Where(x=>x.Length>0).Distinct());
+        if (field == SecurityExpectationField.Authority) Settings.ExpectedAuthority = text;
+        else if (field == SecurityExpectationField.TenantId) Settings.ExpectedTenant = text;
+        else if (field == SecurityExpectationField.ClientId) Settings.ExpectedClientId = text;
+        else
+        {
+            var list = (List<string>)SecurityExpectationValues.Values(Settings, field);
+            list.Clear(); list.AddRange((text ?? "").Split('\n').Select(x => x.Trim()).Where(x => x.Length > 0).Distinct());
         }
     }
+    private static bool Unsafe(string text) => SecurityExpectationValues.SecretShaped(text);
     private static string SafeText(string text) => SecurityExpectationValues.SecretShaped(text) ? "[Redacted]" : text;
-    private static string StateLabel(SecurityCandidateState state) => state == SecurityCandidateState.MatchesSource ? "Matches source" : state == SecurityCandidateState.NeedsReview ? "Needs review" : state.ToString();
-    private static string OriginLabel(SecurityExpectationOrigin origin) => origin==SecurityExpectationOrigin.AcceptedFromSource ? "Accepted from source" : origin.ToString();
     public void Dispose() => _disposed = true;
 }

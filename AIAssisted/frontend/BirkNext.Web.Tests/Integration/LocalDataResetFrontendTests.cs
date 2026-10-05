@@ -66,6 +66,23 @@ public sealed class LocalDataResetFrontendTests
     }
 
     [Fact]
+    public async Task Reset_LeavesNoApprovedSecurityConfigurationFromThePreviousProject()
+    {
+        var (provider, _) = Build();
+        var settings = provider.GetRequiredService<FrontendAnalysisSettingsService>();
+        settings.Settings.Profiles.Add(new FrontendAnalysisProfile { Id = "m2lb-dev", Name = "M2LB DEV", Security = new()
+        {
+            ExpectedAuthority = "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111", ExpectedTenant = "11111111-1111-1111-1111-111111111111",
+            ScopedClientIds = [new("Frontend.Web · AzureAd", "22222222-2222-2222-2222-222222222222")], AllowedRedirectUrls = ["https://m2lb.example.test/callback"],
+        } });
+
+        await provider.GetRequiredService<ApplicationRuntimeResetService>().ClearFrontendRuntimeStateAsync();
+
+        settings.Settings.Profiles.Should().OnlyContain(p => p.Security.ExpectedAuthority == null && p.Security.ExpectedTenant == null && p.Security.ExpectedClientId == null
+            && p.Security.ScopedClientIds.Count == 0 && p.Security.AllowedRedirectUrls.Count == 0);
+    }
+
+    [Fact]
     public async Task Reset_RemovesEveryProjectStorageKey_AndSavesTheSeed()
     {
         var (provider, js) = Build();

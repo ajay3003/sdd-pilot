@@ -79,14 +79,17 @@ public sealed record SecurityExpectationDiscoveryResult
 }
 
 public sealed record SecurityExpectationProvenance(SecurityExpectationField FieldType, string NormalizedValue, SecurityExpectationOrigin Origin,
-    Guid? SourceSnapshotId = null, string? SourceFingerprint = null, DateTimeOffset? AcceptedAt = null, string? SourceCandidateId = null);
+    Guid? SourceSnapshotId = null, string? SourceFingerprint = null, DateTimeOffset? AcceptedAt = null, string? SourceCandidateId = null, string? Scope = null);
 
 /// <summary>Approved Target Environment configuration only. Discovery candidates never belong here.</summary>
 public class ApprovedSecurityExpectations
 {
     [JsonPropertyName("expectedAuthority")] public string? ExpectedAuthority { get; set; }
     [JsonPropertyName("expectedTenant")] public string? ExpectedTenant { get; set; }
+    /// <summary>Legacy project-wide Client ID approval. Kept as-is; it is never redistributed to component scopes automatically.</summary>
     [JsonPropertyName("expectedClientId")] public string? ExpectedClientId { get; set; }
+    /// <summary>Client/Application IDs approved per component client registration (component · configuration section).</summary>
+    [JsonPropertyName("scopedClientIds")] public List<ScopedSecurityValue> ScopedClientIds { get; set; } = [];
     [JsonPropertyName("allowedRedirectUrls")] public List<string> AllowedRedirectUrls { get; set; } = [];
     [JsonPropertyName("allowedBackendDomains")] public List<string> AllowedBackendDomains { get; set; } = [];
     [JsonPropertyName("allowedRestHosts")] public List<string> AllowedRestHosts { get; set; } = [];
@@ -98,7 +101,8 @@ public class ApprovedSecurityExpectations
 }
 
 public sealed record SecurityDiscoveryRequest(Guid SourceSnapshotId, ApprovedSecurityExpectations Approved, List<Guid>? RelatedSourceSnapshotIds = null);
-public sealed record SecurityCandidateReviewRequest(Guid DiscoveryId, string CandidateId, int Revision, ApprovedSecurityExpectations Approved, bool Replace = false);
+/// <summary>Scope: for a component-scoped expectation (Client/Application IDs) the component scope the approval applies to.</summary>
+public sealed record SecurityCandidateReviewRequest(Guid DiscoveryId, string CandidateId, int Revision, ApprovedSecurityExpectations Approved, bool Replace = false, string? Scope = null);
 public sealed record SecurityCandidateReviewResponse(SecurityExpectationDiscoveryResult Discovery, ApprovedSecurityExpectations Approved);
 public sealed record SecurityCandidateDecision(string CandidateId, SecurityCandidateState State, DateTimeOffset At);
 
@@ -199,13 +203,30 @@ public static class SecurityExpectationValues
         return uri.Scheme.ToLowerInvariant() + "://" + host + path + uri.Query;
     }
     public static bool Matches(ApprovedSecurityExpectations settings, SecurityExpectationCandidate candidate) =>
-        Values(settings, candidate.FieldType).Any(v => Normalize(candidate.FieldType, v) == candidate.NormalizedValue);
+        Values(settings, candidate.FieldType).Any(v => Normalize(candidate.FieldType, v) == candidate.NormalizedValue) ||
+        candidate.FieldType == SecurityExpectationField.ClientId && settings.ScopedClientIds.Any(s => Normalize(candidate.FieldType, s.Value) == candidate.NormalizedValue);
     public static SecurityExpectationOrigin Origin(ApprovedSecurityExpectations settings, SecurityExpectationField field, string value) =>
         settings.Origins.LastOrDefault(p => p.FieldType == field && p.NormalizedValue == Normalize(field, value))?.Origin ?? SecurityExpectationOrigin.Existing;
     public static ApprovedSecurityExpectations Copy(ApprovedSecurityExpectations s) => new() {
         ExpectedAuthority = s.ExpectedAuthority, ExpectedTenant = s.ExpectedTenant, ExpectedClientId = s.ExpectedClientId,
         AllowedRedirectUrls = [.. s.AllowedRedirectUrls], AllowedBackendDomains = [.. s.AllowedBackendDomains], AllowedRestHosts = [.. s.AllowedRestHosts],
-        AllowedGraphQlHosts = [.. s.AllowedGraphQlHosts], AllowedCdnHosts = [.. s.AllowedCdnHosts], ExpectedSecurityHeaders = [.. s.ExpectedSecurityHeaders], Origins = [.. s.Origins] };
+        AllowedGraphQlHosts = [.. s.AllowedGraphQlHosts], AllowedCdnHosts = [.. s.AllowedCdnHosts], ExpectedSecurityHeaders = [.. s.ExpectedSecurityHeaders], Origins = [.. s.Origins],
+        ScopedClientIds = [.. s.ScopedClientIds] };
+    /// <summary>Approves a Client/Application ID for one component scope; other scopes and the legacy project-wide value are unchanged.</summary>
+    public static ApprovedSecurityExpectations AcceptScoped(ApprovedSecurityExpectations current, SecurityExpectationCandidate candidate, string scope, string fingerprint, DateTimeOffset at)
+    {
+        if (candidate.FieldType != SecurityExpectationField.ClientId || string.IsNullOrWhiteSpace(scope))
+            throw new InvalidOperationException("Only Client/Application IDs are approved per component scope.");
+        if (!candidate.IsCurrent || candidate.EvidenceState is ArchitectureEvidenceState.Unresolved or ArchitectureEvidenceState.Conflict ||
+            Normalize(candidate.FieldType, candidate.Value) != candidate.NormalizedValue || SecurityConfigurationReviewEngine.IsPlaceholder(candidate.FieldType, candidate.NormalizedValue, candidate.FormatState))
+            throw new InvalidOperationException("Candidate is stale, unresolved or a placeholder; refresh the review or correct the source.");
+        var next = Copy(current);
+        next.ScopedClientIds.RemoveAll(s => s.Scope == scope);
+        next.ScopedClientIds.Add(new(scope, candidate.NormalizedValue));
+        next.Origins.RemoveAll(p => p.FieldType == candidate.FieldType && p.Scope == scope);
+        next.Origins.Add(new(candidate.FieldType, candidate.NormalizedValue, SecurityExpectationOrigin.AcceptedFromSource, candidate.SourceSnapshotId, fingerprint, at, candidate.Id, scope));
+        return next;
+    }
     public static ApprovedSecurityExpectations Accept(ApprovedSecurityExpectations current, SecurityExpectationCandidate candidate, string fingerprint, bool replace, DateTimeOffset at)
     {
         if (!candidate.IsCurrent || candidate.EvidenceState is ArchitectureEvidenceState.Unresolved or ArchitectureEvidenceState.Conflict ||

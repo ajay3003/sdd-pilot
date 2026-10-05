@@ -1,0 +1,6 @@
+.scr-badge { display:inline-flex; align-items:center; gap:.3rem; padding:.1rem .5rem; border-radius:999px; border:1px solid; font-size:.75rem; font-weight:600; white-space:nowrap; line-height:1.4; }
+.scr-badge-icon { font-weight:700; }
+.scr-badge-consistent { background:var(--clr-success-bg,#dcfce7); color:var(--clr-success,#15803d); border-color:var(--clr-success-border,#bbf7d0); }
+.scr-badge-needsreview,.scr-badge-partial { background:var(--clr-warning-bg,#fef3c7); color:var(--clr-warning,#92400e); border-color:var(--clr-warning-border,#fde68a); }
+.scr-badge-conflict { background:var(--clr-danger-bg,#fef2f2); color:#b91c1c; border-color:var(--clr-danger-border,#fecaca); }
+.scr-badge-notassessed,.scr-badge-notapplicable { background:#f1f5f9; color:#334155; border-color:#cbd5e1; }
