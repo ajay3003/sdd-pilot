@@ -1,8 +1,12 @@
 @using BirkNext.Web.Services
+@using Microsoft.AspNetCore.Components.Routing
 @inject FeatureVisibilityService FeatureViz
+@inject NavigationManager Navigation
 @inject IServiceProvider ServiceProvider
 @implements IDisposable
 
+@* Rows and sections come from NavigationCatalog; statuses from the shared applicability evaluation (NavStatusPresentation).
+   Each row is [icon] [label] [status]. Feature Visibility decides which rows exist; collapsing a section is session UI state. *@
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="dashboard">QA Review Studio</a>
@@ -13,305 +17,90 @@
 </div>
 
 <div class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <nav class="flex-column">
-        @if (FeatureViz.ShowSectionGettingStarted)
+    <nav class="flex-column" aria-label="Main">
+        @foreach (var group in NavigationCatalog.Sections)
         {
-            <div class="nav-section px-3">Getting Started</div>
-            @if (FeatureViz.RecommendedWorkflow)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="getting-started" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-workflow" aria-hidden="true"></span> Recommended Workflow
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.UserGuide)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="user-guide" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-user-guide" aria-hidden="true"></span> User Guide
-                    </NavLink>
-                </div>
-            }
-        }
-
-        @if (FeatureViz.ShowSectionReview)
-        {
-            <div class="nav-section px-3">Review</div>
-            @if (FeatureViz.Dashboard)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="dashboard">
-                        <span class="nav-icon nav-icon-dashboard" aria-hidden="true"></span> Dashboard
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.SpecificationExplorer)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="specification-explorer" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-specification-explorer" aria-hidden="true"></span> Specification Explorer
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.ConstitutionExplorer)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="constitution-explorer" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution" aria-hidden="true"></span> Constitution Explorer
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.DataModelExplorer)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="data-model-explorer" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-data-model-explorer" aria-hidden="true"></span> Data Model Explorer
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.PlanExplorer)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="plan-explorer" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-plan-explorer" aria-hidden="true"></span> Plan Explorer
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.TaskExplorer)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="task-explorer" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-task-explorer" aria-hidden="true"></span> Task Explorer
-                    </NavLink>
-                </div>
-            }
-        }
-
-        @if (FeatureViz.ShowSectionLibrary)
-        {
-            <div class="nav-section px-3">Library</div>
-            @if (FeatureViz.SampleProjects)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="sample-projects" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-sample-projects" aria-hidden="true"></span> Sample Projects
-                    </NavLink>
-                </div>
-            }
-        }
-
-        @if (FeatureViz.ShowSectionTraceability)
-        {
-            <div class="nav-section px-3">Traceability</div>
-            @if (FeatureViz.TraceabilityCoverage)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="traceability" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-traceability" aria-hidden="true"></span> Traceability &amp; Coverage
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.TraceabilitySuggestions)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="traceability/suggestions" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-suggestions" aria-hidden="true"></span> Traceability Suggestions
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.CodeTraceability)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="code-traceability" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-code-trace" aria-hidden="true"></span> Code Traceability
-                    </NavLink>
-                </div>
-            }
-        }
-
-        @if (FeatureViz.ShowSectionAnalysis)
-        {
-            <div class="nav-section px-3">Analysis</div>
-            @if (FeatureViz.SpecDrift)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="spec-drift" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-spec-drift" aria-hidden="true"></span> Spec Drift
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.ImpactAnalysis)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="impact-analysis" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-impact-analysis" aria-hidden="true"></span> Impact Analysis
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.ArtifactTraceability)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="artifact-traceability" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-artifact-traceability" aria-hidden="true"></span> Requirements Traceability
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.ImplementationReview)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="task-alignment" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Implementation Review
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.ImplementationTraceability)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="implementation-traceability" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Implementation Traceability
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.SourceAnalysis)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="source-analysis" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-source-analysis" aria-hidden="true"></span> Source Analysis
-                    </NavLink>
-                </div>
-            }
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="technology-coverage" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-source-analysis" aria-hidden="true"></span> Technology Coverage
-                </NavLink>
+            if (!group.Visible(FeatureViz)) continue;
+            var items = group.Items.Where(i => i.Visible(FeatureViz)).ToList();
+            if (items.Count == 0) continue;
+            var collapsed = _sections.IsCollapsed(group.Id);
+            var listId = $"nav-section-{group.Id}";
+            <button type="button" class="nav-section" data-testid="nav-section-@group.Id"
+                    aria-expanded="@((!collapsed).ToString().ToLowerInvariant())" aria-controls="@listId"
+                    @onclick="() => _sections.Toggle(group.Id)" @onclick:stopPropagation="true">@group.Label</button>
+            <div id="@listId" class="nav-group" hidden="@collapsed">
+                @foreach (var item in items)
+                {
+                    var status = item.ReviewId is { } reviewId ? NavStatusPresentation.For(item, _applicability?.For(reviewId)) : null;
+                    <div class="nav-item px-2">
+                        <NavLink class="nav-link" href="@item.Route" Match="@item.Match" title="@item.Title">
+                            <span class="nav-icon @item.Icon" aria-hidden="true"></span>
+                            <span class="nav-label">@item.Label</span>
+                            @if (status is not null)
+                            {
+                                <span class="nav-applicability nav-status-@status.Kind.ToString().ToLowerInvariant()" aria-hidden="true"
+                                      data-testid="nav-applicability-@item.ReviewId" data-kind="@status.Kind" title="@status.Tooltip">@status.Text</span>
+                                <span class="visually-hidden">, @status.Spoken</span>
+                            }
+                        </NavLink>
+                    </div>
+                }
             </div>
-            @if (FeatureViz.AzureEnvironmentAnalysis)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="azure-environment" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-source-analysis" aria-hidden="true"></span> Azure Environment @Badge("azure-environment")
-                    </NavLink>
-                </div>
-            }
         }
-
-        @if (FeatureViz.ShowSectionQuality)
-        {
-            <div class="nav-section px-3">Quality</div>
-            @if (FeatureViz.QualityReview)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-qa-auditor" aria-hidden="true"></span> Quality Review @Badge("quality-review")
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.FrontendQualityReview)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="frontend-quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Frontend Quality Review @Badge("frontend-quality-review")
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.ApiQualityReview)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="api-quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> API Quality Review @Badge("api-quality-review")
-                    </NavLink>
-                </div>
-            }
-            @if (FeatureViz.IntegrationQualityReview)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="integration-quality-review" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Integration Quality Review @Badge("integration-quality-review")
-                    </NavLink>
-                </div>
-            }
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="performance-test-review" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Performance Test Review @Badge("performance-test-review")
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="security-classification-review" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Security Classification <span class="nav-ext" title="Domain-specific extension: M2LB child security classification">M2LB extension</span>@Badge("security-classification-review")
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="dependency-review" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Dependency Review @Badge("dependency-review")
-                </NavLink>
-            </div>
-            <div class="nav-item px-3">
-                <NavLink class="nav-link" href="pipeline-review" Match="NavLinkMatch.All">
-                    <span class="nav-icon nav-icon-task-alignment" aria-hidden="true"></span> Pipeline Review @Badge("pipeline-review")
-                </NavLink>
-            </div>
-            @if (FeatureViz.CriticalE2ERegression)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="critical-e2e-regression" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-constitution-compliance" aria-hidden="true"></span> Critical E2E Regression @Badge("critical-e2e-regression")
-                    </NavLink>
-                </div>
-            }
-        }
-
-        @if (FeatureViz.ShowSectionAiReview)
-        {
-            <div class="nav-section px-3">AI REVIEW</div>
-            @if (FeatureViz.AiChangeReview)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="ai-change-auditor" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-ai-auditor" aria-hidden="true"></span> AI Change Review
-                    </NavLink>
-                </div>
-            }
-        }
-
-        @if (FeatureViz.ShowSectionAdmin)
-        {
-            <div class="nav-section px-3">Admin</div>
-            @if (FeatureViz.AdminSystemSettings)
-            {
-                <div class="nav-item px-3">
-                    <NavLink class="nav-link" href="admin/system-settings" Match="NavLinkMatch.All">
-                        <span class="nav-icon nav-icon-settings" aria-hidden="true"></span> System Settings
-                    </NavLink>
-                </div>
-            }
-        }
-
     </nav>
 </div>
 
 @code {
     private bool collapseNavMenu = false;
     private ProjectApplicabilityState? _applicability;
+    private IWorkspaceSessionService? _workspace;
+    private NavigationSectionState _sections = new();
 
     protected override async Task OnInitializedAsync()
     {
-        // Optional: applicability labels reviews (never hides them). Absent in hosts that do not register it.
-        _applicability = ServiceProvider.GetService(typeof(ProjectApplicabilityState)) as ProjectApplicabilityState;
+        // Optional services: hosts (and tests) that do not register them still render the menu, without statuses.
+        _sections = ServiceProvider.GetService<NavigationSectionState>() ?? _sections;
+        ExpandCurrentSection();
+        Navigation.LocationChanged += OnLocationChanged;
+
+        _applicability = ServiceProvider.GetService<ProjectApplicabilityState>();
         if (_applicability is null) return;
         _applicability.Changed += OnApplicabilityChanged;
+        // Project switch, workspace load and Reset Local Database all rebuild the workspace; statuses follow.
+        _workspace = ServiceProvider.GetService<IWorkspaceSessionService>();
+        if (_workspace is not null) _workspace.ReviewContextRebuildNeeded += OnWorkspaceChanged;
         try { await _applicability.EnsureLoadedAsync(); } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { }
+    }
+
+    /// <summary>The current page's section is always open; other sections keep the state the person chose.</summary>
+    private void ExpandCurrentSection()
+    {
+        if (NavigationCatalog.SectionFor(NavigationCatalog.RelativePath(Navigation)) is { } section) _sections.Expand(section.Id);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        ExpandCurrentSection();
+        // The active target, integrations or extensions may have changed on the page just left.
+        _ = RefreshApplicabilityAsync();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnWorkspaceChanged(object? sender, EventArgs e) => _ = RefreshApplicabilityAsync();
+
+    private async Task RefreshApplicabilityAsync()
+    {
+        if (_applicability is null) return;
+        try { await _applicability.RefreshAsync(); } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException) { }
     }
 
     private void OnApplicabilityChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose() { if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged; }
-
-    private RenderFragment? Badge(string reviewId)
+    public void Dispose()
     {
-        var a = _applicability?.For(reviewId);
-        if (TechnologyCoveragePresentation.NavBadge(a) is not { } text) return null;
-        return @<span class="nav-applicability" data-testid="nav-applicability-@reviewId" title="@(BirkNext.Applicability.ScoreSemantics.Label(a!.Status)): @a.Reason">@text</span>;
+        Navigation.LocationChanged -= OnLocationChanged;
+        if (_applicability is not null) _applicability.Changed -= OnApplicabilityChanged;
+        if (_workspace is not null) _workspace.ReviewContextRebuildNeeded -= OnWorkspaceChanged;
     }
 
     private string? NavMenuCssClass => collapseNavMenu ? "collapse" : null;

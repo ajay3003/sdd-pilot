@@ -23,7 +23,7 @@ main {
     }
 
     .sidebar {
-        width: 250px;
+        width: 264px; /* was 250px; +14px fits "Security Classification  Extension" and "Dependency Review  No evidence" on one line */
         height: 100vh;
         position: sticky;
         top: 0;

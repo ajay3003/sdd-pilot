@@ -37,19 +37,29 @@ public sealed class ProjectApplicabilityState(ITechnologyCoverageApiService api,
     public bool Loaded { get; private set; }
     public event Action? Changed;
 
+    private int _generation;
+
     public Task EnsureLoadedAsync() => _loading ??= RefreshAsync();
 
+    /// <summary>Re-evaluates for the current profile, catalog and workspace (project switch, template applied, reset). When refreshes
+    /// overlap, only the latest one is published, so an older response can never overwrite a newer state.</summary>
     public async Task RefreshAsync()
     {
+        var generation = ++_generation;
+        FrontendAnalysisProfile? profile = null;
+        ProjectTechnologyCoverage? coverage = null;
         try
         {
-            Profile = (await contexts.GetActiveContextAsync()).ActiveProfile;
-            Coverage = Profile is null ? null : await api.GetAsync(Profile.Id);
+            profile = (await contexts.GetActiveContextAsync()).ActiveProfile;
+            coverage = profile is null ? null : await api.GetAsync(profile.Id);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or InvalidOperationException)
         {
-            Coverage = null;
+            coverage = null;
         }
+        if (generation != _generation) return;
+        Profile = profile;
+        Coverage = coverage;
         Reviews = ApplicabilityEvaluator.EvaluateAll(TechnologyCoveragePresentation.Input(Coverage, Profile,
             workspace.Has(WorkspaceArtifactKind.Specification), workspace.Has(WorkspaceArtifactKind.Plan) || workspace.Has(WorkspaceArtifactKind.Constitution)));
         Loaded = true;

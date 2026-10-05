@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @inject IIntegrationCatalogApiService Api
 @inject IntegrationMappingEvidenceSession MappingEvidence
+@inject IServiceProvider ServiceProvider
 @implements IDisposable
 
 @* Target Environment → Integrations: the configured, expected integrations Integration Quality Review runs from. Persisted
@@ -725,6 +726,8 @@
             _saveState = SaveState.Saved;
             _saveMessage = $"Saved. {done}";
             await LoadAsync(importLegacy: false);
+            // Configured integrations and applied templates (domain extensions) change review applicability in the sidebar.
+            if (ServiceProvider.GetService<ProjectApplicabilityState>() is { } applicability) _ = applicability.RefreshAsync();
             return true;
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException)

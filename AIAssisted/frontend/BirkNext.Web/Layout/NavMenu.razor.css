@@ -13,98 +13,152 @@
     letter-spacing: 0.01em;
 }
 
-.bi {
-    display: inline-block;
-    position: relative;
-    width: 1.1rem;
-    height: 1.1rem;
-    margin-right: 0.65rem;
-    top: -1px;
-    flex: 0 0 1.1rem;
-    color: currentColor;
-    background-color: currentColor;
-    -webkit-mask-position: center;
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: contain;
-    mask-position: center;
-    mask-repeat: no-repeat;
-    mask-size: contain;
-    opacity: 0.75;
-}
+/* ── Rows: [icon] [label] [status] ────────────────────────────────────────────
+   Fixed icon column, label takes the rest and truncates on one line (the full label is the link title and its
+   accessible name), status sits in a right-aligned auto column and never overlaps the label. */
 
-.nav-item ::deep a.active .bi,
-.nav-item ::deep a:hover .bi {
-    opacity: 1;
-}
-
-.bi-house-door-fill-nav-menu {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.5 14.5v-3.505c0-.245.25-.495.5-.495h2c.25 0 .5.25.5.5v3.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.146-.354L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.354 1.146a.5.5 0 0 0-.708 0l-6 6A.5.5 0 0 0 1.5 7.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5Z'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6.5 14.5v-3.505c0-.245.25-.495.5-.495h2c.25 0 .5.25.5.5v3.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5v-7a.5.5 0 0 0-.146-.354L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293L8.354 1.146a.5.5 0 0 0-.708 0l-6 6A.5.5 0 0 0 1.5 7.5v7a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5Z'/%3E%3C/svg%3E");
-}
-
-.bi-file-text-nav-menu {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 4a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm-.5 2.5A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zM5 8a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1H5z'/%3E%3Cpath d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M5 4a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm-.5 2.5A.5.5 0 0 1 5 6h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zM5 8a.5.5 0 0 0 0 1h6a.5.5 0 0 0 0-1H5zm0 2a.5.5 0 0 0 0 1h3a.5.5 0 0 0 0-1H5z'/%3E%3Cpath d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z'/%3E%3C/svg%3E");
-}
-
-.bi-card-list-nav-menu {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z'/%3E%3Cpath d='M5 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 5 8zm0-2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm-1-5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zM4 8a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zm0 2.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h13zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2h-13z'/%3E%3Cpath d='M5 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 5 8zm0-2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm0 5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm-1-5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zM4 8a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0zm0 2.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0z'/%3E%3C/svg%3E");
-}
-
-.bi-graph-up-nav-menu {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M0 0h1v15h15v1H0V0Zm14.817 3.113a.5.5 0 0 1 .07.704l-4.5 5.5a.5.5 0 0 1-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 0 1-.808-.588l4-5.5a.5.5 0 0 1 .758-.06l2.609 2.61 4.15-5.073a.5.5 0 0 1 .704-.07Z'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M0 0h1v15h15v1H0V0Zm14.817 3.113a.5.5 0 0 1 .07.704l-4.5 5.5a.5.5 0 0 1-.74.037L7.06 6.767l-3.656 5.027a.5.5 0 0 1-.808-.588l4-5.5a.5.5 0 0 1 .758-.06l2.609 2.61 4.15-5.073a.5.5 0 0 1 .704-.07Z'/%3E%3C/svg%3E");
-}
-
-.bi-arrow-left-right-nav-menu {
-    -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1 11.5a.5.5 0 0 0 .5.5h11.793l-3.147 3.146a.5.5 0 0 0 .708.708l4-4a.5.5 0 0 0 0-.708l-4-4a.5.5 0 0 0-.708.708L13.293 11H1.5a.5.5 0 0 0-.5.5Zm14-7a.5.5 0 0 1-.5.5H2.707l3.147 3.146a.5.5 0 1 1-.708.708l-4-4a.5.5 0 0 1 0-.708l4-4a.5.5 0 1 1 .708.708L2.707 4H14.5a.5.5 0 0 1 .5.5Z'/%3E%3C/svg%3E");
-    mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill-rule='evenodd' d='M1 11.5a.5.5 0 0 0 .5.5h11.793l-3.147 3.146a.5.5 0 0 0 .708.708l4-4a.5.5 0 0 0 0-.708l-4-4a.5.5 0 0 0-.708.708L13.293 11H1.5a.5.5 0 0 0-.5.5Zm14-7a.5.5 0 0 1-.5.5H2.707l3.147 3.146a.5.5 0 1 1-.708.708l-4-4a.5.5 0 0 1 0-.708l4-4a.5.5 0 1 1 .708.708L2.707 4H14.5a.5.5 0 0 1 .5.5Z'/%3E%3C/svg%3E");
+.nav-group[hidden] {
+    display: none;
 }
 
 .nav-item {
-    font-size: 0.875rem;
-    padding-bottom: 0.125rem;
+    font-size: 0.84rem;
+    padding-bottom: 1px;
 }
 
-    .nav-item:last-of-type {
-        padding-bottom: 0.75rem;
-    }
+.nav-item ::deep a {
+    display: grid;
+    grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 0.5rem;
+    min-height: 2rem;
+    padding: 0.3rem 0.45rem;
+    border-radius: 6px;
+    color: #a9b6c8;
+    font-weight: 450;
+    line-height: 1.25;
+    box-shadow: inset 3px 0 0 transparent;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
 
-    .nav-item ::deep a {
-        color: #94a3b8;
-        border-radius: 6px;
-        min-height: 2.5rem;
-        display: flex;
-        align-items: center;
-        line-height: 1.3;
-        padding: 0.55rem 0;
-        font-weight: 450;
-        transition: background-color 0.15s ease, color 0.15s ease;
-    }
+.nav-item ::deep a .nav-icon {
+    margin-right: 0;
+    top: 0;
+}
 
-.nav-item ::deep a.active {
-    background-color: rgba(255, 255, 255, 0.15);
-    color: #f1f5f9;
+.nav-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .nav-item ::deep a:hover {
-    background-color: rgba(255, 255, 255, 0.08);
+    background-color: rgba(255, 255, 255, 0.07);
     color: #e2e8f0;
 }
 
+/* Selected: same size and radius as every row; background + left indicator bar, so not colour alone. The weight stays
+   the same as other rows so a selected label is never wider (and truncated) than when it is not selected. */
+.nav-item ::deep a.active {
+    background-color: rgba(255, 255, 255, 0.11);
+    box-shadow: inset 3px 0 0 #93c5fd;
+    color: #f8fafc;
+    font-weight: 450;
+}
+
+.nav-item ::deep a:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: -2px;
+}
+
+/* ── Section headings: real buttons (aria-expanded/aria-controls) ─────────────
+   #94a3b8 on the #1e293b sidebar is 5.7:1 (WCAG AA for small text); the former #64748b was 3.0:1. */
+
 .nav-section {
-    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: calc(100% - 1rem);
+    margin: 0.75rem 0.5rem 0.15rem;
+    padding: 0.3rem 0.5rem;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: #94a3b8;
     font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.08em;
-    margin-top: 0.9rem;
-    margin-bottom: 0.25rem;
+    text-align: left;
     text-transform: uppercase;
+    cursor: pointer;
 }
 
 .nav-section:first-child {
-    margin-top: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.nav-section::after {
+    content: "";
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-right: 0.15rem;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg);
+    transition: transform 0.15s ease;
+}
+
+.nav-section[aria-expanded="false"]::after {
+    transform: rotate(-45deg);
+}
+
+.nav-section:hover {
+    color: #cbd5e1;
+}
+
+.nav-section:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 0;
+}
+
+/* ── Status: compact, neutral, secondary to the selected row ─────────────────
+   Text always carries the meaning (Partial, Setup, No evidence, N/A, Unsupported, Extension, provider); the border
+   style only reinforces it. No state uses a failure colour. #cbd5e1 on the sidebar is 10:1. */
+
+.nav-applicability {
+    justify-self: end;
+    max-width: 6.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 0.3rem;
+    border: 1px solid rgba(203, 213, 225, 0.45);
+    border-radius: 999px;
+    color: #cbd5e1;
+    font-size: 0.66rem;
+    font-weight: 500;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+.nav-status-partial,
+.nav-status-setup {
+    border-color: rgba(203, 213, 225, 0.75);
+}
+
+.nav-status-notapplicable,
+.nav-status-unsupported,
+.nav-status-noevidence {
+    border-style: dotted;
+}
+
+.nav-status-extension {
+    border-style: dashed;
+    border-color: rgba(203, 213, 225, 0.75);
+}
+
+.nav-status-provider {
+    background-color: rgba(255, 255, 255, 0.08);
 }
 
 @media (min-width: 641px) {
@@ -119,18 +173,22 @@
     .nav-scrollable {
         height: calc(100vh - 3.5rem);
         overflow-y: auto;
+        padding-bottom: 0.75rem;
+        /* Functional but quiet scrollbar. */
+        scrollbar-width: thin;
+        scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+    }
+
+    .nav-scrollable::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    .nav-scrollable::-webkit-scrollbar-thumb {
+        background-color: rgba(148, 163, 184, 0.35);
+        border-radius: 4px;
+    }
+
+    .nav-scrollable::-webkit-scrollbar-track {
+        background: transparent;
     }
 }
-
-/* Applicability labels a review without hiding it (Partial, N/A, Unsupported, Setup, No evidence). Neutral, never a failure colour. */
-.nav-applicability, .nav-ext {
-    margin-left: .4rem;
-    padding: 0 .35rem;
-    border: 1px solid rgba(255, 255, 255, .55);
-    border-radius: 999px;
-    font-size: .68rem;
-    line-height: 1.3;
-    color: #fff;
-    white-space: nowrap;
-}
-.nav-ext { border-style: dashed; }

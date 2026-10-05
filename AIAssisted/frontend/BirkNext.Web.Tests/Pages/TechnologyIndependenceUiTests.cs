@@ -66,7 +66,9 @@ public sealed class TechnologyIndependenceUiTests : BunitContext
         cut.Find("[data-testid=nav-applicability-security-classification-review]").TextContent.Should().Be("N/A");
         cut.FindAll("a[href='azure-environment']").Should().ContainSingle("unsupported reviews stay reachable, with an explanation");
         cut.FindAll("a[href='technology-coverage']").Should().ContainSingle();
-        cut.Find("a[href='security-classification-review']").TextContent.Should().Contain("M2LB extension");
+        // Not enabled for this project: the generic menu names neither M2LB nor an extension, only the neutral N/A.
+        cut.Find("a[href='security-classification-review']").TextContent.Should().NotContain("M2LB").And.NotContain("Extension");
+        cut.Find("a[href='azure-environment'] .nav-label").TextContent.Should().Be("Environment Analysis", "the menu does not present Azure as universal");
     }
 
     [Fact]
