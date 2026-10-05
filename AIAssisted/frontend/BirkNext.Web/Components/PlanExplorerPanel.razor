@@ -776,12 +776,19 @@
                     }
                     else
                     {
+                        @foreach (var shared in SharedPhaseKeys)
+                        {
+                            <p class="pe-phase-shared-note" role="note" data-phase-key="@shared.Key">
+                                @shared.Count() source sections map to @PlanAnalysisService.PhaseDisplayLabel(shared.First()):
+                                @string.Join(" · ", shared.Select(p => p.Title))
+                            </p>
+                        }
                         <div class="pe-phase-timeline">
                             @foreach (var phase in visiblePhases)
                             {
                                 var isExpanded = _expanded.Contains(phase.NodeId);
                                 var phaseClass = phase.PhaseNumber == 0 ? "is-pre" : phase.PhaseNumber == 99 ? "is-post" : string.Empty;
-                                var phaseLabel = phase.PhaseNumber == 0 ? "Pre" : phase.PhaseNumber == 99 ? "Post" : $"P{phase.PhaseNumber}";
+                                var phaseLabel = PhaseNodeLabel(phase);
                                 <div class="pe-phase-item @phaseClass @(isExpanded ? "is-expanded" : "")">
                                     <div class="pe-phase-node">
                                         <span class="pe-phase-number">@phaseLabel</span>
@@ -1153,6 +1160,19 @@
     private string AdrBadge         => _plan?.ArchitectureDecisions.Count > 0 ? $"({_plan.ArchitectureDecisions.Count})" : string.Empty;
     private string RiskBadge         => _plan?.Risks.Count > 0 ? $"({_plan.Risks.Count})" : string.Empty;
     private string ComplexityBadge   => _plan?.ComplexityItems.Count > 0 ? $"({_plan.ComplexityItems.Count})" : string.Empty;
+    // Several source headings mapping to one phase key is allowed; surface it neutrally.
+    private IEnumerable<IGrouping<string, PlanImplementationPhase>> SharedPhaseKeys =>
+        _plan is null ? [] : _plan.Phases.GroupBy(p => p.PhaseKey, StringComparer.Ordinal).Where(g => g.Count() > 1);
+
+    private static string PhaseNodeLabel(PlanImplementationPhase phase) => phase.IdentityKind switch
+    {
+        PlanPhaseIdentityKind.Labelled when phase.PhaseLabel is { } label => label[(label.LastIndexOf(' ') + 1)..],
+        _ when phase.PhaseNumber == 0 => "Pre",
+        _ when phase.PhaseNumber == 99 => "Post",
+        _ when phase.PhaseNumber is int n => $"P{n}",
+        _ => "–",
+    };
+
     private string PhasesBadge       => _plan?.Phases.Count > 0 ? $"({_plan.Phases.Count})" : string.Empty;
     private string TestingBadge      => _plan?.TestingInfo is not null ? "(✓)" : string.Empty;
     private string ConstitutionBadge

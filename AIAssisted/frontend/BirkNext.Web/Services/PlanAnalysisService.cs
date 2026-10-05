@@ -31,8 +31,13 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     private static readonly Regex VersionRe = new(
         @"\s+(\d+[\.\dxX]*(?:[-+]\S*)?)\s*(?:\(.*\))?$", RegexOptions.Compiled);
 
+    // "Phase 1:", "Step 2 —", "Phase0", "3." and a bare "Phase 4" all carry a numeric identity.
     private static readonly Regex PhaseNumberRe = new(
-        @"^(?:(?:phase|step)\s+)?(\d+)[:\-–.\s]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        @"^(?:(?:phase|step)\s*)?(\d+)(?:[:\-–—.\s]|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // "Phase A —", "Group B:", "Stage IV" — a non-numeric phase identifier (upper-case label).
+    private static readonly Regex PhaseLabelRe = new(
+        @"^(?i:(phase|step|group|stage|wave|part))\s+([A-Z]{1,4})(?=$|[\s:\-–—.])", RegexOptions.Compiled);
 
     // ── Meta regexes ────────────────────────────────────────────────────────
 
@@ -246,6 +251,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         PlanSectionType currentSection = PlanSectionType.Other;
         string sectionHeading = string.Empty;
         var sectionLines = new List<string>();
+        int? sectionFirstLine = null;
 
         void FlushSection()
         {
@@ -284,7 +290,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                     ParseConstitutionCheckSection(raw, checkItems, gates);
                     break;
                 case PlanSectionType.ImplementationPhases:
-                    ParseImplementationPhasesSection(raw, phases);
+                    ParseImplementationPhasesSection(raw, phases, sectionHeading, sectionFirstLine);
                     break;
                 case PlanSectionType.Testing:
                     testingInfo = ParseTestingSection(raw);
@@ -414,6 +420,7 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                 if (matched) continue;
             }
 
+            if (sectionLines.Count == 0) sectionFirstLine = tok.LineIndex;
             sectionLines.Add(tok.RawLine);
         }
 
@@ -1795,16 +1802,20 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
     // ── Implementation Phases ────────────────────────────────────────────────
 
-    private static void ParseImplementationPhasesSection(string raw, List<PlanImplementationPhase> phases)
+    private static void ParseImplementationPhasesSection(
+        string raw, List<PlanImplementationPhase> phases, string sectionHeading, int? sectionFirstLine)
     {
         var tokens = MarkdownTokenizer.Tokenize(raw);
         string? currentH3 = null;
+        int? currentLine = null;
         var itemLines = new List<string>();
 
         void Flush()
         {
             if (currentH3 is null) return;
-            var phase = ParsePhase(currentH3, string.Join("\n", itemLines));
+            var unnumbered = phases.Count(p => p.IdentityKind == PlanPhaseIdentityKind.Unnumbered);
+            var phase = ParsePhase(currentH3, string.Join("\n", itemLines),
+                new PhaseSource(sectionHeading, phases.Count, currentLine, unnumbered + 1));
             if (phase is not null) phases.Add(phase);
             itemLines.Clear(); currentH3 = null;
         }
@@ -1813,33 +1824,78 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
         {
             // Only H3 headings start new phases; H4+ are sub-sections within a phase body
             if (tok.Kind == MarkdownTokenKind.Heading && tok.HeadingLevel == 3)
-            { Flush(); currentH3 = tok.Content; continue; }
+            {
+                Flush();
+                currentH3 = tok.Content;
+                currentLine = sectionFirstLine is int first ? first + tok.LineIndex + 1 : null;
+                continue;
+            }
             if (currentH3 is not null) itemLines.Add(tok.RawLine);
         }
         Flush();
-        phases.Sort((a, b) => a.PhaseNumber.CompareTo(b.PhaseNumber));
+        SortPhases(phases);
     }
 
-    private static PlanImplementationPhase? ParsePhase(string heading, string body)
+    private readonly record struct PhaseSource(string? Section, int Order, int? Line, int UnnumberedOrdinal);
+
+    /// <summary>
+    /// Deterministic, stable phase order: numbered phases by number (1, 2, 10 — never lexical),
+    /// then labelled / unnumbered phases in source order, then post-phase. Ties keep source order.
+    /// </summary>
+    private static void SortPhases(List<PlanImplementationPhase> phases)
+    {
+        static int Rank(PlanImplementationPhase p) => p.PhaseNumber switch
+        {
+            null => 1,
+            >= 99 => 2,
+            _ => 0,
+        };
+
+        var ordered = phases
+            .OrderBy(Rank)
+            .ThenBy(p => p.PhaseNumber ?? 0)
+            .ThenBy(p => p.SourceOrder)
+            .ToList();
+        phases.Clear();
+        phases.AddRange(ordered);
+    }
+
+    private static PlanImplementationPhase? ParsePhase(string heading, string body, PhaseSource source)
     {
         if (string.IsNullOrWhiteSpace(heading)) return null;
 
-        int phaseNum = 0;
+        int? phaseNum = null;
+        var kind = PlanPhaseIdentityKind.Unnumbered;
+        string? phaseLabel = null;
+        string? phaseKey = null;
         var title = StripMarkdown(heading);
 
         var numMatch = PhaseNumberRe.Match(heading);
+        var labelMatch = numMatch.Success ? Match.Empty : PhaseLabelRe.Match(heading);
         if (numMatch.Success)
         {
             phaseNum = int.TryParse(numMatch.Groups[1].Value, out var n) ? n : 0;
-            title = StripMarkdown(heading[(numMatch.Index + numMatch.Length)..].TrimStart(':', '-', '–', ' ').Trim());
+            kind = PlanPhaseIdentityKind.Numbered;
+            title = StripMarkdown(heading[(numMatch.Index + numMatch.Length)..].TrimStart(':', '-', '–', '—', ' ').Trim());
             if (string.IsNullOrEmpty(title)) title = $"Phase {phaseNum}";
+        }
+        else if (labelMatch.Success)
+        {
+            // "Phase A — Foundation" is a declared phase, not Phase 0. Title keeps the full heading.
+            var word = labelMatch.Groups[1].Value;
+            word = char.ToUpperInvariant(word[0]) + word[1..].ToLowerInvariant();
+            kind = PlanPhaseIdentityKind.Labelled;
+            phaseLabel = $"{word} {labelMatch.Groups[2].Value}";
+            phaseKey = $"{word}{labelMatch.Groups[2].Value}";
         }
         else if (heading.Contains("post", StringComparison.OrdinalIgnoreCase) ||
                  heading.Contains("after", StringComparison.OrdinalIgnoreCase))
-        { phaseNum = 99; }
+        { phaseNum = 99; kind = PlanPhaseIdentityKind.PostPhase; }
         else if (heading.Contains("pre-", StringComparison.OrdinalIgnoreCase) ||
                  heading.Contains("prerequisite", StringComparison.OrdinalIgnoreCase))
-        { phaseNum = 0; }
+        { phaseNum = 0; kind = PlanPhaseIdentityKind.PrePhase; }
+        else
+        { phaseKey = $"Unnumbered{source.UnnumberedOrdinal}"; }
 
         var blocks  = new List<PlanSectionBlock>();
         var tasks   = new List<string>();
@@ -1943,7 +1999,14 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
 
         return new PlanImplementationPhase
         {
-            PhaseNumber = phaseNum,
+            PhaseNumber   = phaseNum,
+            IdentityKind  = kind,
+            PhaseLabel    = phaseLabel,
+            PhaseKey      = phaseKey ?? $"Phase{phaseNum}",
+            SourceHeading = heading,
+            SourceSection = source.Section,
+            SourceOrder   = source.Order,
+            SourceLine    = source.Line,
             Title       = string.IsNullOrEmpty(title) ? heading : title,
             Description = descSb.Length > 0 ? descSb.ToString().Trim() : null,
             Tasks  = tasks,
@@ -1958,8 +2021,8 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
     {
         // Scan all sections for phase references (Phase 0, Phase 1, etc.)
         // This allows phases to be detected even in Project Structure or other sections
-        var phaseMatches = new Dictionary<int, PlanImplementationPhase>();
-
+        // Every matching heading is kept — two "Phase 0" headings are two source declarations
+        // of the same phase key, not one to be discarded.
         foreach (var section in sections)
         {
             var tokens = MarkdownTokenizer.Tokenize(section.RawContent);
@@ -1973,29 +2036,29 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
                     {
                         if (int.TryParse(numMatch.Groups[1].Value, out var phaseNum))
                         {
-                            var title = StripMarkdown(heading[(numMatch.Index + numMatch.Length)..].TrimStart(':', '-', '–', ' ').Trim());
+                            var title = StripMarkdown(heading[(numMatch.Index + numMatch.Length)..].TrimStart(':', '-', '–', '—', ' ').Trim());
                             if (string.IsNullOrEmpty(title)) title = $"Phase {phaseNum}";
 
-                            if (!phaseMatches.ContainsKey(phaseNum))
+                            phases.Add(new PlanImplementationPhase
                             {
-                                phaseMatches[phaseNum] = new PlanImplementationPhase
-                                {
-                                    PhaseNumber = phaseNum,
-                                    Title = title,
-                                    Tasks = [],
-                                    Checks = [],
-                                    Blocks = [],
-                                };
-                            }
+                                PhaseNumber = phaseNum,
+                                IdentityKind = PlanPhaseIdentityKind.Numbered,
+                                PhaseKey = $"Phase{phaseNum}",
+                                SourceHeading = heading,
+                                SourceSection = section.Title,
+                                SourceOrder = phases.Count,
+                                Title = title,
+                                Tasks = [],
+                                Checks = [],
+                                Blocks = [],
+                            });
                         }
                     }
                 }
             }
         }
 
-        // Add detected phases to the list, sorted by phase number
-        foreach (var phase in phaseMatches.Values.OrderBy(p => p.PhaseNumber))
-            phases.Add(phase);
+        SortPhases(phases);
     }
 
     // ── Testing ──────────────────────────────────────────────────────────────
@@ -2682,12 +2745,20 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             .Select(p => new SemanticPlanPhase
             {
                 PhaseNumber = p.PhaseNumber,
+                IdentityKind = p.IdentityKind,
+                PhaseKey = p.PhaseKey,
+                PhaseLabel = p.PhaseLabel,
                 Title = p.Title,
                 Description = p.Description,
                 TaskIds = p.Tasks,
                 Checks = p.Checks,
+                SourceHeading = p.SourceHeading,
+                SourceSection = p.SourceSection,
+                SourceOrder = p.SourceOrder,
+                SourceLine = p.SourceLine,
             })
             .ToList();
+        var phaseGroups = GroupPhases(phases);
 
         var milestones = document.Milestones
             .Select(m => new SemanticPlanMilestone
@@ -2748,9 +2819,44 @@ public sealed class PlanAnalysisService : IPlanAnalysisService
             HasRiskAssessment = document.Risks.Count > 0,
             DecisionToRequirements = [],
             RiskToRequirements = [],
-            PhaseToTasks = phases.ToDictionary(p => $"Phase{p.PhaseNumber}", p => p.TaskIds),
+            PhaseToTasks = phaseGroups.ToDictionary(g => g.PhaseKey, g => g.TaskIds),
+            PhaseGroups = phaseGroups,
         };
     }
+
+    /// <summary>
+    /// Groups phases by <see cref="SemanticPlanPhase.PhaseKey"/>. Several source headings may map to
+    /// one key ("Phase 0 — Foundation" and "Phase 0 — Setup"); every entry and its tasks are kept,
+    /// in the order the phases are given. Keys are unique by construction, so the result can be
+    /// turned into a dictionary safely.
+    /// </summary>
+    public static List<SemanticPlanPhaseGroup> GroupPhases(IEnumerable<SemanticPlanPhase> phases) =>
+        phases
+            .GroupBy(p => p.PhaseKey, StringComparer.Ordinal)
+            .Select(g => new SemanticPlanPhaseGroup
+            {
+                PhaseKey = g.Key,
+                DisplayLabel = PhaseDisplayLabel(g.First()),
+                Sources = [.. g],
+                TaskIds = [.. g.SelectMany(p => p.TaskIds)],
+            })
+            .ToList();
+
+    /// <summary>Human label for a phase identity: "Phase 3", "Phase 0", "Post-phase", "Group B", or the heading.</summary>
+    public static string PhaseDisplayLabel(SemanticPlanPhase phase) => PhaseDisplayLabel(
+        phase.IdentityKind, phase.PhaseNumber, phase.PhaseLabel, phase.SourceHeading, phase.Title);
+
+    public static string PhaseDisplayLabel(PlanImplementationPhase phase) => PhaseDisplayLabel(
+        phase.IdentityKind, phase.PhaseNumber, phase.PhaseLabel, phase.SourceHeading, phase.Title);
+
+    private static string PhaseDisplayLabel(
+        PlanPhaseIdentityKind kind, int? number, string? label, string heading, string title) => kind switch
+    {
+        PlanPhaseIdentityKind.Labelled when !string.IsNullOrEmpty(label) => label,
+        PlanPhaseIdentityKind.PostPhase => "Post-phase",
+        _ when number is int n => $"Phase {n}",
+        _ => string.IsNullOrWhiteSpace(heading) ? title : StripMarkdown(heading),
+    };
 
     private static List<string> ExtractRequirementReferences(string text) =>
         FrIdRe.Matches(text)

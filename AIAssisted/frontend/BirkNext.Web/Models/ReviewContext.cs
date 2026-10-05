@@ -434,9 +434,10 @@ public static class ReviewContextFactory
     {
         var links = new Dictionary<string, List<string>>();
 
-        foreach (var phase in plan.Phases)
+        // Several source phases may share one key; merge their tasks rather than overwrite.
+        foreach (var group in BirkNext.Web.Services.PlanAnalysisService.GroupPhases(plan.Phases))
         {
-            links[$"Phase{phase.PhaseNumber}"] = [..phase.TaskIds];
+            links[group.PhaseKey] = [..group.TaskIds];
         }
 
         foreach (var decision in plan.ArchitectureDecisions)

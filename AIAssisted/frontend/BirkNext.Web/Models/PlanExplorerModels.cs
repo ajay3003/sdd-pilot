@@ -229,10 +229,53 @@ public sealed class PlanGate
 
 // ── Implementation Phase ──────────────────────────────────────────────────────
 
+/// <summary>
+/// How a phase heading identified its phase. A heading without a number is never
+/// treated as Phase 0: it is either Labelled ("Phase A", "Group B") or Unnumbered.
+/// </summary>
+public enum PlanPhaseIdentityKind
+{
+    Numbered,    // "Phase 1", "Step 2", "Phase0", "3."
+    PrePhase,    // "Pre-requisites" — grouped with Phase 0 (number 0)
+    PostPhase,   // "Post-deployment" — number 99
+    Labelled,    // "Phase A", "Group B", "Stage IV" — non-numeric identifier
+    Unnumbered,  // no recognisable phase identity
+}
+
 public sealed class PlanImplementationPhase
 {
     public string NodeId { get; } = Guid.NewGuid().ToString("N")[..10];
-    public int PhaseNumber { get; init; }           // 0 = pre, 99 = post
+
+    /// <summary>Numeric phase identity; null when the heading carries no number. 0 = pre, 99 = post.</summary>
+    public int? PhaseNumber { get; init; }
+
+    private PlanPhaseIdentityKind? _identityKind;
+    public PlanPhaseIdentityKind IdentityKind
+    {
+        get => _identityKind ?? (PhaseNumber is null ? PlanPhaseIdentityKind.Unnumbered : PlanPhaseIdentityKind.Numbered);
+        init => _identityKind = value;
+    }
+
+    /// <summary>Labelled identity as written, e.g. "Phase A" or "Group B".</summary>
+    public string? PhaseLabel { get; init; }
+
+    private string? _phaseKey;
+    /// <summary>
+    /// Grouping identity ("Phase0", "PhaseA", "Unnumbered1"). Several source headings may share
+    /// one key; it is not a unique record identity — use NodeId / SourceOrder for that.
+    /// </summary>
+    public string PhaseKey
+    {
+        get => _phaseKey ?? (PhaseNumber is int n ? $"Phase{n}" : $"Unnumbered{SourceOrder + 1}");
+        init => _phaseKey = value;
+    }
+
+    // ── Provenance ──────────────────────────────────────────────────────────
+    public string SourceHeading { get; init; } = string.Empty;  // original heading text
+    public string? SourceSection { get; init; }                 // enclosing ## section
+    public int SourceOrder { get; init; }                       // 0-based order of declaration in the plan
+    public int? SourceLine { get; init; }                       // 1-based line in the plan, when known
+
     public string Title { get; init; } = string.Empty;
     public string? Description { get; init; }
     public List<string> Tasks { get; init; } = [];

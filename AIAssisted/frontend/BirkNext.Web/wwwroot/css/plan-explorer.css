@@ -1011,6 +1011,12 @@
 
 .pe-phases { display: flex; flex-direction: column; gap: 0; }
 
+.pe-phase-shared-note {
+    margin: 0 0 0.75rem;
+    font-size: 0.8125rem;
+    color: var(--clr-text-muted, var(--clr-text-body));
+}
+
 .pe-phase-timeline {
     position: relative;
     padding-left: 2.25rem;

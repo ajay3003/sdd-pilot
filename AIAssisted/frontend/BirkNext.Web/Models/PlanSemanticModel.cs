@@ -57,7 +57,11 @@ public sealed class PlanSemanticModel
     // ── Relationships ───────────────────────────────────────────────────────
     public Dictionary<string, List<string>> DecisionToRequirements { get; init; } = [];
     public Dictionary<string, List<string>> RiskToRequirements { get; init; } = [];
+    /// <summary>Phase key → tasks of every source section mapped to that key, in source order.</summary>
     public Dictionary<string, List<string>> PhaseToTasks { get; init; } = [];
+
+    /// <summary>Phases grouped by <see cref="SemanticPlanPhase.PhaseKey"/>; every source entry is retained.</summary>
+    public List<SemanticPlanPhaseGroup> PhaseGroups { get; init; } = [];
 }
 
 /// <summary>
@@ -123,11 +127,32 @@ public sealed class SemanticPlanDependency
 /// </summary>
 public sealed class SemanticPlanPhase
 {
-    public int PhaseNumber { get; init; }
+    /// <summary>Numeric identity; null for labelled ("Phase A") or unnumbered headings.</summary>
+    public int? PhaseNumber { get; init; }
+    public PlanPhaseIdentityKind IdentityKind { get; init; }
+    public string PhaseKey { get; init; } = string.Empty;
+    public string? PhaseLabel { get; init; }
     public string Title { get; init; } = string.Empty;
     public string? Description { get; init; }
     public List<string> TaskIds { get; init; } = [];
     public List<string> Checks { get; init; } = [];
+    public string SourceHeading { get; init; } = string.Empty;
+    public string? SourceSection { get; init; }
+    public int SourceOrder { get; init; }
+    public int? SourceLine { get; init; }
+}
+
+/// <summary>
+/// All source phase entries that share one grouping key. Multiple entries are not an error:
+/// plans may legitimately declare the same phase in more than one section.
+/// </summary>
+public sealed class SemanticPlanPhaseGroup
+{
+    public string PhaseKey { get; init; } = string.Empty;
+    public string DisplayLabel { get; init; } = string.Empty;
+    public List<SemanticPlanPhase> Sources { get; init; } = [];
+    public List<string> TaskIds { get; init; } = [];
+    public bool HasMultipleSources => Sources.Count > 1;
 }
 
 /// <summary>
