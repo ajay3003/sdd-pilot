@@ -12,7 +12,9 @@ using Microsoft.Extensions.Options;
 
 namespace BirkNext.Api.Services.PipelineReview;
 
-public sealed record PipelineReviewSource(Guid Id, string ArchiveName, string Fingerprint, DateTimeOffset AnalyzedAt, int CiCdAnalyzerVersion, int Pipelines, int Templates, string? Repository);
+/// <summary>One selectable snapshot. <paramref name="Status"/> is the Source Analysis status; <paramref name="CiCdStatus"/> the CI/CD domain status (null without one).</summary>
+public sealed record PipelineReviewSource(Guid Id, string ArchiveName, string Fingerprint, DateTimeOffset AnalyzedAt, int CiCdAnalyzerVersion, int Pipelines, int Templates, string? Repository,
+    string? Status = null, string? CiCdStatus = null);
 
 public sealed record PipelineReviewSources(bool SourceAnalysisEnabled, List<PipelineReviewSource> Snapshots, Guid? DefaultSnapshotId);
 
@@ -39,7 +41,8 @@ public sealed class PipelineReviewService(IReviewSourceEvidenceProvider sources,
     }
 
     private static PipelineReviewSource Source(IqrSourceSnapshot s) => new(s.Id, s.Archive.FileName, s.Archive.Sha256, s.AnalyzedAt, s.EvidenceDomains?.CiCd.AnalyzerVersion ?? 0,
-        s.EvidenceDomains?.CiCd.Pipelines.Count(p => !p.IsTemplate) ?? 0, s.EvidenceDomains?.CiCd.Pipelines.Count(p => p.IsTemplate) ?? 0, s.Repository?.DisplayName);
+        s.EvidenceDomains?.CiCd.Pipelines.Count(p => !p.IsTemplate) ?? 0, s.EvidenceDomains?.CiCd.Pipelines.Count(p => p.IsTemplate) ?? 0, s.Repository?.DisplayName,
+        s.Status.ToString(), s.EvidenceDomains?.CiCd.Status.ToString());
 
     private async Task<IqrSourceSnapshot?> Resolve(string environmentId, Guid? snapshotId, CancellationToken ct)
     {

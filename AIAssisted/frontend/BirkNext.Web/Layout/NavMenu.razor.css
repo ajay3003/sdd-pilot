@@ -142,7 +142,8 @@
 }
 
 .nav-status-partial,
-.nav-status-setup {
+.nav-status-setup,
+.nav-status-needsrefresh {
     border-color: rgba(203, 213, 225, 0.75);
 }
 

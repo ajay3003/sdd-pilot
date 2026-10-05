@@ -113,7 +113,7 @@ public static class NavigationCatalog
     }
 }
 
-public enum NavStatusKind { Partial, Setup, NoEvidence, NotApplicable, Unsupported, Extension, Provider }
+public enum NavStatusKind { Partial, Setup, NeedsRefresh, NoEvidence, NotApplicable, Unsupported, Extension, Provider }
 
 /// <summary>Compact sidebar status. <see cref="Text"/> is the short badge, <see cref="Spoken"/> its full words for screen readers,
 /// <see cref="Tooltip"/> the reason.</summary>
@@ -152,6 +152,8 @@ public static class NavStatusPresentation
                 Join("Unsupported technology — a tool limitation, not a project finding.", reason)),
             ApplicabilityStatus.NeedsConfiguration => new(NavStatusKind.Setup, "Setup", ScoreSemantics.Label(applicability.Status),
                 Join("Needs configuration before it can run.", reason)),
+            ApplicabilityStatus.NeedsRefresh => new(NavStatusKind.NeedsRefresh, "Needs refresh", ScoreSemantics.Label(applicability.Status),
+                Join("Applies, but the evidence is outdated: analyze the source again.", reason)),
             _ => new(NavStatusKind.NoEvidence, "No evidence", ScoreSemantics.Label(applicability.Status),
                 Join("Not enough evidence yet to decide whether it applies.", reason)),
         };

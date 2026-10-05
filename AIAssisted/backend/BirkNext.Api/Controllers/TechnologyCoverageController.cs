@@ -32,6 +32,10 @@ public sealed class TechnologyCoverageController(IqrSourceStore sources, IIntegr
                 .Concat(configured.Platforms.Where(p => p.Enabled).Select(p => IntegrationTechnology.Map(p.Kind, p.Name)))
                 .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
             DomainExtensions = configured.DomainExtensions, Notices = notices,
+            CiCdEvidenceVersion = latest?.EvidenceDomains?.CiCd.AnalyzerVersion,
+            // Mirrors Pipeline Review: no CI/CD domain, or an older analyzer that found pipelines, needs re-analysis (v1 without pipelines is N/A).
+            CiCdEvidenceOutdated = latest is not null && (latest.EvidenceDomains?.CiCd is not { } cicd
+                || cicd.AnalyzerVersion < BirkNext.PipelineReview.PipelineReviewText.RequiredCiCdVersion && cicd.Pipelines.Count > 0),
         });
     }
 }

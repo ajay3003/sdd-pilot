@@ -4,7 +4,9 @@ using BirkNext.PipelineReview;
 
 namespace BirkNext.Web.Services;
 
-public sealed record PipelineReviewSourceOption(Guid Id, string ArchiveName, string Fingerprint, DateTimeOffset AnalyzedAt, int CiCdAnalyzerVersion, int Pipelines, int Templates, string? Repository);
+/// <summary>One selectable Source Analysis snapshot; <paramref name="Status"/> is the Source Analysis status, <paramref name="CiCdStatus"/> the CI/CD domain status.</summary>
+public sealed record PipelineReviewSourceOption(Guid Id, string ArchiveName, string Fingerprint, DateTimeOffset AnalyzedAt, int CiCdAnalyzerVersion, int Pipelines, int Templates, string? Repository,
+    string? Status = null, string? CiCdStatus = null);
 public sealed record PipelineReviewSourceList(bool SourceAnalysisEnabled, List<PipelineReviewSourceOption> Snapshots, Guid? DefaultSnapshotId);
 
 /// <summary>Pipeline Review reads (all GET): snapshots, the review of one snapshot, a path probe and a comparison of two snapshots.</summary>

@@ -43,6 +43,46 @@ A guard test, `The_review_never_parses_YAML_or_reads_source_files`, keeps YAML/H
 
 Results are cached by `snapshotId + RulesVersion + metadata state`; the cache is never keyed by "latest". `PipelineReviewText.RulesVersion` versions the rules, and each result records the rules version and the CI/CD analyzer version it used.
 
+## Readiness states (page and sidebar)
+
+Source Analysis owns the CI/CD evidence. Pipeline Review only interprets it and never re-parses or regenerates it. Re-analysis always goes through Source Analysis.
+
+The page status comes from `PipelineReviewDashboard.PageStatus`. The sidebar status comes from the shared `ApplicabilityEvaluator`. They use one vocabulary:
+
+| State | When | Tone |
+| --- | --- | --- |
+| **Needs refresh** | A snapshot whose CI/CD evidence is older than `PipelineReviewText.RequiredCiCdVersion` (v2), or has no CI/CD domain at all. Sidebar: `ApplicabilityStatus.NeedsRefresh`, set from `ProjectTechnologyCoverage.CiCdEvidenceOutdated`. | amber |
+| **N/A** | Current evidence with no pipeline definition. Exception: v1 evidence that found no pipelines is also N/A, because v1 already detected pipeline files. | grey |
+| **Unsupported** | No reviewable pipeline, and the CI/CD domain reports `Unsupported`. A tool limitation, not a project finding. | grey |
+| **Analysis failed** | The CI/CD domain reports `FailedAnalysis`. The only red state. | red |
+| **Partial** | Reviewed, but a pattern-based provider is involved, templates are unresolved, or there are assessment gaps. | amber |
+| **Ready** | Reviewed with none of the above. Ready says nothing about pipeline quality: findings are listed under Gaps. | green |
+
+Notes on the rules:
+
+- Outdated evidence is never shown as N/A. A snapshot analyzed before CI/CD evidence existed is the main case: its technology inventory has no pipeline entries, so before this rule the sidebar showed N/A for it.
+- The CI/CD domain's own "Partial" status is not used for Partial. It is a disclaimer every pipeline carries (expressions are never evaluated), and the limitations already state it.
+
+**Page layout.** The page always shows the full structure, including when evidence is stale:
+
+- header status pill;
+- summary bar (provider, CI/CD evidence, Source Analysis, metadata);
+- source card (project name; the raw archive name is in Technical details);
+- readiness checklist;
+- optional enrichment card;
+- summary tiles;
+- the seven views.
+
+A view without evidence shows a placeholder that says what will populate it. Unknown counts are shown as "—", never 0. The snapshot's own pipeline-file count from older evidence is shown, labelled historical.
+
+**Azure DevOps metadata** is optional enrichment: definition names, environments and checks. The source review never needs it. Its states are Not included, Not configured, Not authorized, Unavailable and Included.
+
+**Flow types** (Build / Test / Security / Package / Deploy / Other) are derived from the evidence attached to a stage, never from its name alone. The order of checks is: deployments, then validation categories, then published artifacts. Single-job pipelines show their validation steps in definition order instead. The backend lists a step once per category it matches, so the page merges these into one node.
+
+**Conditions** are translated into plain language only for `succeeded`, `failed`, `succeededOrFailed`, `always`, `canceled`, `and`, `or`, `not`, `eq` and `ne` over `variables`. Anything else is shown raw.
+
+**Tests** read as *Defined*. Whether a test ran or passed needs run evidence, which a definition cannot show.
+
 ## CI/CD evidence v2 (Source Analysis, additive)
 
 All v2 additions are additive; v1 fields are unchanged. The review needs v2, and a snapshot analyzed by v1 asks the person to re-analyze.

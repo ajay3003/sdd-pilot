@@ -42,6 +42,9 @@ public enum ApplicabilityStatus
     NotEnoughEvidence,
     /// <summary>The review applies but needs configuration first (a target, credentials, a selected domain extension).</summary>
     NeedsConfiguration,
+    /// <summary>The review applies, but its evidence was produced by an older analyzer than the review needs (e.g. CI/CD evidence v1 for
+    /// Pipeline Review). Re-analyzing the source fixes it. Neutral — never N/A, never Unsupported, never a quality result.</summary>
+    NeedsRefresh,
 }
 
 /// <summary>Whether a review ran. Separate from what it found: FailedToExecute (an analyzer threw) is never a project-quality failure.</summary>
@@ -194,6 +197,7 @@ public static class ScoreSemantics
         ApplicabilityStatus.NotApplicable => "Not applicable",
         ApplicabilityStatus.Unsupported => "Unsupported technology",
         ApplicabilityStatus.NotEnoughEvidence => "Not enough evidence",
+        ApplicabilityStatus.NeedsRefresh => "Needs refresh",
         _ => "Needs configuration",
     };
 

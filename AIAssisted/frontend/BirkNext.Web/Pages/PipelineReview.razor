@@ -3,6 +3,8 @@
 @using BirkNext.SourceArchitecture
 @using BirkNext.Web.Models
 @using P = BirkNext.Web.Services.PipelineReviewPresentation
+@using D = BirkNext.Web.Services.PipelineReviewDashboard
+@using BirkNext.Web.Shared.Components.Common
 @inject IPipelineReviewApiService Api
 @inject IFrontendAnalysisContextFactory ContextFactory
 @inject IReportExportService ExportService
@@ -10,90 +12,253 @@
 
 <PageTitle>Pipeline Review</PageTitle>
 
-<div class="sd-workspace pr-page" data-testid="pr-page">
-    <h1 class="pr-title">Pipeline Review</h1>
-    <p class="sd-muted">How changes reach your environments: what runs first, what gates each deployment, which artifact is promoted, and where validation may be skipped — read from pipeline definitions, explained in plain language.</p>
+<div class="sd-workspace pr-page prv" data-testid="pr-page" aria-busy="@(_loaded ? "false" : "true")">
+    <header class="prv-header">
+        <div class="prv-header-text">
+            <h1 class="pr-title">Pipeline Review</h1>
+            <p class="prv-lead">Understand how changes move through build, test, validation and deployment — read from the pipeline definitions in Source Analysis.</p>
+        </div>
+        @if (_loaded)
+        {
+            var headerStatus = D.PageStatus(_result, Selected);
+            <div class="prv-header-status">
+                <span data-testid="pr-status">@Pill(headerStatus, "Pipeline Review")</span>
+                @if (_result is { State: D.Reviewed } reviewed)
+                {
+                    @foreach (var provider in D.Providers(reviewed)) { <span class="prv-provider" data-testid="pr-provider"><span class="visually-hidden">Pipeline provider: </span>@provider</span> }
+                }
+            </div>
+        }
+    </header>
 
     @if (!_loaded)
     {
-        <p class="sd-muted" role="status">Loading…</p>
+        <div class="prv-skeleton" role="status" aria-label="Loading Pipeline Review">
+            <span></span><span></span><span></span>
+        </div>
     }
     else if (_profile is null)
     {
-        <p class="sd-empty" data-testid="pr-no-target">Select a Target Environment to review the pipelines of its Source Analysis snapshots.</p>
+        <div class="prv-empty" data-testid="pr-no-target">
+            <span class="prv-empty-icon" aria-hidden="true">⌁</span>
+            <div><h2>No Target Environment selected</h2><p>Select a Target Environment to review the pipelines of its Source Analysis snapshots.</p></div>
+        </div>
     }
     else if (!_sources.SourceAnalysisEnabled)
     {
-        <p class="sd-empty" data-testid="pr-source-disabled">Source Analysis is disabled in Feature Visibility, so pipeline source cannot be selected. Pipeline Review reads pipeline definitions from Source Analysis snapshots.</p>
+        <div class="prv-empty" data-testid="pr-source-disabled">
+            <span class="prv-empty-icon" aria-hidden="true">⌁</span>
+            <div><h2>Source Analysis is turned off</h2><p>Source Analysis is disabled in Feature Visibility, so pipeline source cannot be selected. Pipeline Review reads pipeline definitions from Source Analysis snapshots.</p></div>
+        </div>
     }
     else if (_sources.Snapshots.Count == 0)
     {
-        <div class="sd-empty" data-testid="pr-source-required">
-            <h2>Pipeline source required</h2>
-            <p>Pipeline Review reads the pipeline definitions (YAML) in a Source Analysis snapshot. Analyze the repository that contains your pipelines first.</p>
-            <p><a class="btn-primary" href="source-analysis" data-testid="pr-open-source-analysis">Open Source Analysis</a></p>
+        <div class="prv-empty" data-testid="pr-source-required">
+            <span class="prv-empty-icon" aria-hidden="true">⌁</span>
+            <div>
+                <h2>Pipeline source required</h2>
+                <p>Pipeline Review reads the pipeline definitions (YAML) in a Source Analysis snapshot. Analyze the repository that contains your pipelines first.</p>
+                <p class="prv-actions"><a class="btn-primary" href="source-analysis" data-testid="pr-open-source-analysis">Open Source Analysis</a> <a class="btn-secondary" href="technology-coverage">Technology Coverage</a></p>
+            </div>
         </div>
     }
     else
     {
-        <div class="sd-filterbar" data-testid="pr-scope">
-            <label>Source snapshot
-                <select value="@_snapshotId" @onchange="SelectSnapshot" data-testid="pr-snapshot">
-                    @foreach (var s in _sources.Snapshots.OrderByDescending(s => s.AnalyzedAt))
+        var source = Selected;
+        var status = D.PageStatus(_result, source);
+        <ul class="prv-bar" aria-label="Pipeline Review summary" data-testid="pr-summary-bar">
+            <li><span class="prv-bar-label">Provider</span> <strong>@(_result is { State: D.Reviewed } rv && D.Providers(rv).Count > 0 ? string.Join(", ", D.Providers(rv)) : "—")</strong></li>
+            <li><span class="prv-bar-label">CI/CD evidence</span> @if (source is not null) { @Pill(D.EvidenceStatus(source), null) }</li>
+            <li><span class="prv-bar-label">Source Analysis</span> @Pill(D.SourceStatus(source?.Status), null)</li>
+            <li><span class="prv-bar-label">Metadata</span> @Pill(D.MetadataStatus(_metadata, _result?.Metadata), null)</li>
+        </ul>
+
+        @if (_result is { State: D.NeedsRefresh } stale && source is not null)
+        {
+            <section class="prv-callout prv-callout-caution" data-testid="pr-state" data-state="@stale.State" aria-labelledby="pr-state-h">
+                <span class="prv-callout-icon" aria-hidden="true">⚠</span>
+                <div class="prv-callout-body">
+                    <h2 id="pr-state-h">CI/CD evidence needs refresh</h2>
+                    <p>This source snapshot was analyzed before the current CI/CD evidence model was available, so its pipelines cannot be reviewed yet. It is not a pipeline problem.</p>
+                    <p class="prv-callout-meta" data-testid="pr-evidence-versions"><span>Current: <strong>@(source.CiCdAnalyzerVersion <= 0 ? "none" : $"v{source.CiCdAnalyzerVersion}")</strong></span><span>Required: <strong>v@(PipelineReviewText.RequiredCiCdVersion)</strong></span></p>
+                    <p class="prv-actions">
+                        <a class="btn-primary" href="source-analysis" data-testid="pr-reanalyze">Re-analyze in Source Analysis</a>
+                        <span class="prv-hint">Analyze @D.SourceName(source) again to produce CI/CD evidence v@(PipelineReviewText.RequiredCiCdVersion); this page refreshes when you return.</span>
+                    </p>
+                </div>
+            </section>
+        }
+        else if (status.Tone == CapabilityTone.Danger)
+        {
+            <section class="prv-callout prv-callout-danger" data-testid="pr-state" data-state="FailedAnalysis" aria-labelledby="pr-state-h">
+                <span class="prv-callout-icon" aria-hidden="true">✕</span>
+                <div class="prv-callout-body"><h2 id="pr-state-h">Pipeline analysis failed</h2><p>@(_result?.StateReason is { Length: > 0 } reason ? reason : "Source Analysis could not read the pipeline definitions in this snapshot.")</p>
+                    <p class="prv-actions"><a class="btn-secondary" href="source-analysis">Open Source Analysis</a></p></div>
+            </section>
+        }
+        else if (_result is { State: D.NoPipelines } none)
+        {
+            <section class="prv-callout prv-callout-neutral" data-testid="pr-state" data-state="@none.State" aria-labelledby="pr-state-h">
+                <span class="prv-callout-icon" aria-hidden="true">⌁</span>
+                <div class="prv-callout-body">
+                    <h2 id="pr-state-h">@(status.Label == "Unsupported" ? "Pipeline detected, provider not supported" : "No pipeline definition detected")</h2>
+                    <p>@none.StateReason</p>
+                    <ul class="prv-causes"><li>No supported pipeline files in this snapshot (pipelines may live in another repository).</li><li>The pipeline technology is not supported — a tool limitation, not a quality failure.</li></ul>
+                    <p class="prv-actions"><a class="btn-secondary" href="source-analysis">Open Source Analysis</a> <a class="btn-secondary" href="technology-coverage">Technology Coverage</a></p>
+                </div>
+            </section>
+        }
+
+        <div class="prv-context">
+            <section class="prv-card prv-card-source" aria-labelledby="pr-source-h" data-testid="pr-source-card">
+                <h2 id="pr-source-h" class="prv-card-title"><span class="prv-icon" aria-hidden="true">⧉</span>Source</h2>
+                @if (source is not null)
+                {
+                    <p class="prv-source-name" data-testid="pr-source-name">@D.SourceName(source)</p>
+                    <dl class="prv-facts">
+                        <div><dt>Snapshot</dt><dd>@P.Utc(source.AnalyzedAt)</dd></div>
+                        <div><dt>Source Analysis</dt><dd>@Pill(D.SourceStatus(source.Status), "Source Analysis")</dd></div>
+                        <div><dt>CI/CD evidence</dt><dd>@Pill(D.EvidenceStatus(source), "CI/CD evidence")</dd></div>
+                    </dl>
+                }
+                <div class="prv-source-actions" data-testid="pr-scope">
+                    <label class="prv-select">Change snapshot
+                        <select value="@_snapshotId" @onchange="SelectSnapshot" data-testid="pr-snapshot">
+                            @foreach (var s in _sources.Snapshots.OrderByDescending(s => s.AnalyzedAt))
+                            {
+                                <option value="@s.Id">@D.OptionText(s, s.Id == NewestId)</option>
+                            }
+                        </select>
+                    </label>
+                    <a class="btn-secondary" href="source-analysis">Open Source Analysis</a>
+                </div>
+            </section>
+
+            <section class="prv-card" aria-labelledby="pr-ready-h" data-testid="pr-readiness">
+                <h2 id="pr-ready-h" class="prv-card-title"><span class="prv-icon" aria-hidden="true">✓</span>Readiness</h2>
+                <ul class="prv-checklist">
+                    @foreach (var item in D.Readiness(_result, source, _metadata))
                     {
-                        <option value="@s.Id">@s.ArchiveName · @P.Utc(s.AnalyzedAt) · @s.Pipelines pipeline(s)</option>
+                        <li data-testid="pr-readiness-item"><span class="prv-check-label">@item.Label</span>@Pill(item.Status, item.Label)@if (item.Detail is { } detail) { <span class="prv-check-detail">@detail</span> }</li>
                     }
-                </select>
-            </label>
-            <label class="sd-check"><input type="checkbox" checked="@_metadata" @onchange="ToggleMetadata" data-testid="pr-metadata" /> Include Azure DevOps metadata (read-only, optional)</label>
-            @if (_result is { State: "Reviewed" })
+                </ul>
+                <p class="prv-overall">Overall @Pill(status, "Overall readiness")</p>
+            </section>
+
+            <section class="prv-card prv-card-enrich" aria-labelledby="pr-enrich-h" data-testid="pr-enrichment">
+                <h2 id="pr-enrich-h" class="prv-card-title"><span class="prv-icon" aria-hidden="true">+</span>Optional enrichment</h2>
+                <p class="prv-muted" id="pr-metadata-help">Azure DevOps metadata adds definition names, environments and their checks when configured. The source review works without it.</p>
+                <label class="prv-toggle"><input type="checkbox" checked="@_metadata" @onchange="ToggleMetadata" data-testid="pr-metadata" aria-describedby="pr-metadata-help" /> Include Azure DevOps metadata <span class="prv-muted">(read-only)</span></label>
+                <p class="prv-enrich-state">Status @Pill(D.MetadataStatus(_metadata, _result?.Metadata), "Azure DevOps metadata")</p>
+            </section>
+        </div>
+
+        <ul class="prv-cards" aria-label="Pipeline summary" data-testid="pr-summary-cards">
+            @foreach (var card in D.Cards(_result, source))
+            {
+                <li class="prv-tile prv-role-@card.Role" data-testid="pr-summary-card" data-key="@card.Key">
+                    <span class="prv-tile-label">@card.Label</span>
+                    <span class="prv-tile-value">@card.Value</span>
+                    @if (card.Note is { } note) { <span class="prv-tile-note">@note</span> }
+                </li>
+            }
+        </ul>
+
+        @if (_error is not null) { <p class="sd-reason" role="alert" data-testid="pr-error">@_error</p> }
+        @if (_result is { State: D.Reviewed } boundary) { <p class="sd-boundary" data-testid="pr-boundary">@boundary.Boundary</p> }
+
+        <div class="prv-tabbar">
+            <div class="prv-tabs" role="group" aria-label="Pipeline Review views">
+                @foreach (var (key, label) in Tabs)
+                {
+                    <button class="prv-tab" aria-pressed="@(_tab == key ? "true" : "false")" @onclick="() => ShowTab(key)" data-testid="@($"pr-tab-{key}")">@label</button>
+                }
+            </div>
+            @if (_result is { State: D.Reviewed })
             {
                 <button class="btn-secondary" @onclick="Export" data-testid="pr-export">Export HTML</button>
             }
         </div>
-        @if (_error is not null) { <p class="sd-reason" role="alert" data-testid="pr-error">@_error</p> }
-        @if (_result is { } r)
+
+        @if (_result is { State: D.Reviewed } r)
         {
-            @if (r.State != "Reviewed")
+            @switch (_tab)
             {
-                <div class="sd-empty" data-testid="pr-state">
-                    <p><strong>@(r.State == "NoPipelines" ? "No pipeline definitions in this snapshot" : "Analyze the source again")</strong></p>
-                    <p>@r.StateReason</p>
-                    @if (r.State == "NeedsReanalysis") { <p><a class="btn-secondary" href="source-analysis">Open Source Analysis</a></p> }
-                </div>
+                case "flow": @RenderFlow(r) break;
+                case "gaps": @RenderGaps(r) break;
+                case "tests": @RenderTests(r) break;
+                case "environments": @RenderEnvironments(r) break;
+                case "dependencies": @RenderDependencies(r) break;
+                case "changes": @RenderChanges(r) break;
+                default: @RenderOverview(r) break;
             }
-            else
-            {
-                <p class="sd-boundary" data-testid="pr-boundary">@r.Boundary</p>
-                <div class="sd-tabs" role="group" aria-label="Pipeline Review views">
-                    @foreach (var (key, label) in Tabs)
-                    {
-                        <button class="btn-secondary" aria-pressed="@(_tab == key ? "true" : "false")" @onclick="() => ShowTab(key)" data-testid="@($"pr-tab-{key}")">@label</button>
-                    }
-                </div>
-                @switch (_tab)
-                {
-                    case "flow": @RenderFlow(r) break;
-                    case "gaps": @RenderGaps(r) break;
-                    case "tests": @RenderTests(r) break;
-                    case "environments": @RenderEnvironments(r) break;
-                    case "dependencies": @RenderDependencies(r) break;
-                    case "changes": @RenderChanges(r) break;
-                    default: @RenderOverview(r) break;
-                }
-                <details class="pr-details" data-testid="pr-limitations">
-                    <summary>Limitations and what this review cannot see (@r.Limitations.Count)</summary>
-                    <ul class="sd-list">@foreach (var l in r.Limitations) { <li>@l</li> }</ul>
-                    <p class="sd-muted">@r.Metadata.Detail</p>
-                </details>
-            }
+            <details class="pr-details" data-testid="pr-limitations">
+                <summary>Limitations and what this review cannot see (@r.Limitations.Count)</summary>
+                <ul class="sd-list">@foreach (var l in r.Limitations) { <li>@l</li> }</ul>
+                <p class="sd-muted">@r.Metadata.Detail</p>
+            </details>
         }
+        else
+        {
+            <section class="prv-placeholder" data-testid="pr-placeholder" data-tab="@_tab" aria-labelledby="pr-placeholder-h">
+                <h2 id="pr-placeholder-h">@Tabs.First(t => t.Key == _tab).Label</h2>
+                <p>@Placeholder(_tab, _result?.State)</p>
+            </section>
+        }
+
+        <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="pr-technical" Class="prv-technical">
+            <dl class="prv-tech">
+                @if (source is not null)
+                {
+                    <div><dt>Snapshot ID</dt><dd><code>@source.Id</code></dd></div>
+                    <div><dt>Archive</dt><dd><code>@source.ArchiveName</code></dd></div>
+                    <div><dt>Fingerprint</dt><dd><code>@source.Fingerprint</code></dd></div>
+                    <div><dt>CI/CD domain status</dt><dd>@(source.CiCdStatus ?? "—")</dd></div>
+                }
+                <div><dt>Evidence model</dt><dd>@(source is null ? "—" : D.EvidenceLabel(source)) · v@(PipelineReviewText.RequiredCiCdVersion) required</dd></div>
+                @if (_result is { } tr)
+                {
+                    <div><dt>Review state</dt><dd>@tr.State · rules v@(tr.RulesVersion)</dd></div>
+                    <div><dt>Metadata</dt><dd>@tr.Metadata.State — @tr.Metadata.Detail</dd></div>
+                    @foreach (var p in tr.Pipelines)
+                    {
+                        <div data-testid="pr-tech-pipeline"><dt>@(p.IsTemplate ? "Template" : "Pipeline file")</dt><dd><code>@p.File</code> · @BirkNext.SourceDomains.SourceDomainText.Label(p.Platform) · <code>@p.Id</code></dd></div>
+                    }
+                }
+            </dl>
+        </ReviewDisclosure>
     }
 </div>
 
 @code {
     private static readonly (string Key, string Label)[] Tabs =
         [("overview", "Overview"), ("flow", "Flow"), ("gaps", "Gaps"), ("tests", "Tests"), ("environments", "Environments"), ("dependencies", "Dependencies"), ("changes", "Changes")];
+
+    private PipelineReviewSourceOption? Selected => _sources.Snapshots.FirstOrDefault(s => s.Id == _snapshotId);
+    private Guid? NewestId => _sources.Snapshots.OrderByDescending(s => s.AnalyzedAt).Select(s => (Guid?)s.Id).FirstOrDefault();
+
+    /// <summary>Status pill: decorative glyph + text; <paramref name="subject"/> prefixes the spoken text ("Pipeline Review status: Needs refresh").</summary>
+    private static RenderFragment Pill(CapabilityStatus status, string? subject) => __builder =>
+    {
+        <span class="sd-pill @status.PillClass prv-pill" data-status="@status.Label">@if (subject is not null) {<span class="visually-hidden">@subject status: </span>}<span class="prv-glyph" aria-hidden="true">@status.Glyph</span> @status.Label</span>
+    };
+
+    /// <summary>What each view shows once evidence exists — never invented content.</summary>
+    private static string Placeholder(string tab, string? state)
+    {
+        if (state == D.NoPipelines) return "No pipeline definition was detected in this snapshot, so there is nothing to show here.";
+        if (state != D.NeedsRefresh) return "Select a snapshot with pipeline definitions to populate this view.";
+        return tab switch
+        {
+            "flow" => "Refresh the CI/CD evidence in Source Analysis to build the pipeline flow.",
+            "gaps" => "Refresh the CI/CD evidence to evaluate pipeline gaps.",
+            "tests" => "Refresh the CI/CD evidence to inspect test gates.",
+            "environments" => "Refresh the CI/CD evidence to see deployments and environment progression.",
+            "dependencies" => "Refresh the CI/CD evidence to see pipeline relationships, templates and path coverage.",
+            "changes" => "Refresh the CI/CD evidence to compare pipeline definitions between snapshots.",
+            _ => "Refresh the CI/CD evidence in Source Analysis to populate the overview: provider, stages, gates, artifacts and environments.",
+        };
+    }
 
     private FrontendAnalysisProfile? _profile;
     private PipelineReviewSourceList _sources = new(true, [], null);
@@ -222,6 +387,26 @@
                 <div><dt>Environments</dt><dd>@r.Environments.Count</dd></div>
                 <div><dt>Unresolved</dt><dd>@(r.UnresolvedTemplates.Count + r.Findings.Count(f => f.EvidenceState == ArchitectureEvidenceState.Unresolved))</dd></div>
             </dl>
+            <div class="prv-overview-grid">
+                <div>
+                    <h3>Triggers</h3>
+                    <ul class="prv-chips" data-testid="pr-triggers">
+                        @foreach (var (p, t) in runnable.SelectMany(p => p.Triggers.Select(t => (p, t))))
+                        {
+                            <li class="prv-chip"><span class="prv-chip-kind">@(runnable.Count > 1 ? $"{p.Name}: " : "")@t.Kind</span> @Code(t.Text)</li>
+                        }
+                        @if (runnable.All(p => p.Triggers.Count == 0)) { <li class="prv-chip prv-chip-muted">No trigger detected (manual)</li> }
+                    </ul>
+                </div>
+                <div>
+                    <h3>Artifacts named in definitions</h3>
+                    <ul class="prv-chips" data-testid="pr-artifacts">
+                        @foreach (var a in runnable.SelectMany(p => p.Artifacts).Distinct(StringComparer.Ordinal)) { <li class="prv-chip prv-chip-artifact"><code>@a</code></li> }
+                        @if (!runnable.Any(p => p.Artifacts.Count > 0)) { <li class="prv-chip prv-chip-muted">None detected</li> }
+                    </ul>
+                    <p class="sd-muted">Named in the definitions; whether they were published in a run needs run evidence.</p>
+                </div>
+            </div>
             @if (r.DeliveryPath.Count > 0)
             {
                 <h3>Apparent delivery path</h3>
@@ -243,6 +428,7 @@
             </ul>
             @if (r.Findings.Count > 0) { <button class="sd-link" @onclick="@(() => ShowTab("gaps"))" data-testid="pr-all-gaps">See all @r.Findings.Count gaps</button> }
             <h3>Test gating by environment</h3>
+            @if (r.Environments.Count == 0) { <p class="sd-muted" data-testid="pr-no-environments">No deployment to an environment was detected in these definitions, so no test gates a deployment. Tests still run as defined.</p> }
             <dl class="sd-facts" data-testid="pr-gating-summary">
                 @foreach (var env in r.Environments)
                 {
@@ -299,19 +485,49 @@
         </section>
         <section class="sd-panel" aria-labelledby="pr-map-h" data-testid="pr-map">
             <h2 id="pr-map-h">Flow map</h2>
-            <p class="sd-muted">A structured outline of the same flow: stages in execution order per pipeline, with their dependencies.</p>
+            <p class="sd-muted">Stages in execution order per pipeline. The type comes from what the stage contains (deployments, tests by category, published artifacts) — not from its name; "Other" when nothing classifies it.</p>
+            <ul class="prv-legend" aria-label="Stage types">
+                @foreach (var t in Enum.GetValues<FlowNodeType>()) { <li class="prv-node-type prv-type-@t.ToString().ToLowerInvariant()">@D.TypeLabel(t)</li> }
+            </ul>
             @foreach (var p in r.Pipelines.Where(p => !p.IsTemplate))
             {
                 var stages = r.Nodes.Where(n => n.Kind == PipelineNodeKind.Stage && n.PipelineId == p.Id).ToList();
-                <div role="group" aria-label="@($"Flow map for {p.Name}")" class="pr-map-group">
+                <div role="group" aria-label="@($"Flow map for {p.Name}")" class="pr-map-group prv-map-group">
                     <h3>@p.Name <span class="sd-context">@p.Role · <code>@p.File</code></span></h3>
-                    @if (stages.Count == 0) { <p class="sd-muted">Single job (no stages).</p> }
-                    <ol class="pr-map">
-                        @foreach (var s in stages)
+                    @if (stages.Count == 0)
+                    {
+                        var steps = D.Steps(r, p.Id);
+                        <p class="sd-muted">Single job (no stages).@(steps.Count > 0 ? " Its validation steps in definition order:" : "")</p>
+                        @if (steps.Count > 0)
+                        {
+                            <ol class="prv-flow" aria-label="@($"Validation steps of {p.Name} in definition order")" data-testid="pr-step-flow">
+                                @foreach (var (step, index) in steps.Select((t, i) => (t, i)))
+                                {
+                                    var type = D.StepType(step.Categories);
+                                    <li class="prv-node prv-type-@type.ToString().ToLowerInvariant()" data-testid="pr-flow-node" data-type="@type">
+                                        <span class="prv-node-types"><span class="visually-hidden">Step @(index + 1) of @steps.Count, </span>@foreach (var cat in step.Categories) { <span class="prv-node-type">@PipelineReviewText.Label(cat)</span> }</span>
+                                        <span class="prv-node-name">@step.Name</span>
+                                        @if (step.Condition is { } c) { <span class="prv-node-meta" title="@c">runs when: @(D.ReadableCondition(c) ?? c)</span> }
+                                        @if (step.ContinueOnError) { <span class="prv-node-meta">continues on error</span> }
+                                    </li>
+                                }
+                            </ol>
+                        }
+                    }
+                    <ol class="pr-map prv-flow" aria-label="@($"Stages of {p.Name} in execution order")">
+                        @foreach (var (s, index) in stages.Select((s, i) => (s, i)))
                         {
                             var deps = r.Edges.Where(e => e.Kind == PipelineEdgeKind.DependsOn && e.ToId == s.Id).Select(e => r.Nodes.FirstOrDefault(n => n.Id == e.FromId)?.Label ?? e.FromId).ToList();
                             var deploys = r.Edges.Where(e => e.Kind == PipelineEdgeKind.DeploysTo && e.FromId == s.Id).Select(e => r.Nodes.FirstOrDefault(n => n.Id == e.ToId)?.Label).ToList();
-                            <li>@s.Label <span class="sd-context">@(deps.Count == 0 ? "starts first / in parallel" : $"after {string.Join(", ", deps)}")@(deploys.Count > 0 ? $" · deploys to {string.Join(", ", deploys)}" : "")</span></li>
+                            var type = D.StageType(r, s);
+                            var condition = s.Evidence?.Condition;
+                            <li class="prv-node prv-type-@type.ToString().ToLowerInvariant()" data-testid="pr-flow-node" data-type="@type">
+                                <span class="prv-node-type">@D.TypeLabel(type)<span class="visually-hidden"> stage, step @(index + 1) of @stages.Count:</span></span>
+                                <span class="prv-node-name">@s.Label</span>
+                                <span class="prv-node-meta">@(deps.Count == 0 ? "starts first / in parallel" : $"after {string.Join(", ", deps)}")</span>
+                                @if (deploys.Count > 0) { <span class="prv-node-meta">deploys to @string.Join(", ", deploys)</span> }
+                                @if (condition is not null) { <span class="prv-node-meta" title="@condition">runs when: @(D.ReadableCondition(condition) ?? condition)</span> }
+                            </li>
                         }
                     </ol>
                 </div>
@@ -370,6 +586,7 @@
             </div>
             <ul class="sd-list">@foreach (var n in m.Notes) { <li>@n</li> }</ul>
             <h2>Tests and checks in pipelines <span class="sd-count">@r.Tests.Count</span></h2>
+            <p class="sd-muted" data-testid="pr-tests-defined">Status of every row: <span class="sd-pill sd-pill-muted">Defined</span> — the pipeline intends to run it. Whether it ran or passed needs run results (for example imported test evidence), which a definition cannot show.</p>
             <div class="sd-scroll" tabindex="0" role="region" aria-label="Tests in pipelines">
                 <table data-testid="pr-test-table">
                     <thead><tr><th scope="col">Test</th><th scope="col">Pipeline / stage</th><th scope="col">When it runs</th><th scope="col">What it gates</th><th scope="col"><span class="visually-hidden">Evidence</span></th></tr></thead>
@@ -379,7 +596,7 @@
                             var key = $"t:{t.Evidence.File}:{t.Evidence.Line}:{t.Category}";
                             <tr data-testid="pr-test-row"><th scope="row">@PipelineReviewText.Label(t.Category)<span class="sd-context">@t.Name · <code>@t.Tool</code>@(t.Targets.Count > 0 ? $" · {string.Join(", ", t.Targets)}" : "")</span></th>
                                 <td>@t.PipelineName<span class="sd-context">@(t.Stage ?? t.Job)</span></td>
-                                <td>@Code(t.WhenItRuns)@if (t.ContinueOnError) { <span class="sd-pill sd-pill-partial">continueOnError</span> }</td>
+                                <td>@Code(t.WhenItRuns)@if (D.ReadableCondition(t.Condition) is { } readable) { <span class="sd-context" data-testid="pr-test-condition" title="@t.Condition">Runs when: @readable</span> }@if (t.ContinueOnError) { <span class="sd-pill sd-pill-partial">continueOnError</span> }</td>
                                 <td>@(t.Gates.Count == 0 ? t.RunsAfter.Count > 0 ? $"Runs after {string.Join(", ", t.RunsAfter.Select(id => EnvName(r, id)).Distinct())}" : "Does not gate a deployment" : string.Join(", ", t.Gates.Select(id => EnvName(r, id)).Distinct()))</td>
                                 <td>@EvidenceButton(key, t.Name)</td></tr>
                             @if (Open(key)) { <tr><td colspan="5">@EvidenceTable([t.Evidence])</td></tr> }

@@ -95,7 +95,7 @@ public static class PipelineReviewBuilder
         if (cicd is null) return result with { State = "NeedsReanalysis", StateReason = NeedsReanalysis };
         result = result with { CiCdAnalyzerVersion = cicd.AnalyzerVersion };
         if (cicd.Pipelines.Count == 0) return result with { State = "NoPipelines", StateReason = cicd.StatusReason ?? "No pipeline definition was found in this snapshot." };
-        if (cicd.AnalyzerVersion < 2) return result with { State = "NeedsReanalysis", StateReason = NeedsReanalysis };
+        if (cicd.AnalyzerVersion < PipelineReviewText.RequiredCiCdVersion) return result with { State = "NeedsReanalysis", StateReason = NeedsReanalysis };
 
         var definitions = cicd.Pipelines.GroupBy(p => p.File, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var runnable = cicd.Pipelines.Where(p => !p.IsTemplate).OrderBy(p => p.File, StringComparer.Ordinal).ToList();
@@ -611,7 +611,7 @@ public static class PipelineReviewBuilder
     public static PathProbeResult Probe(IqrSourceSnapshot snapshot, PipelineReviewResult review, string path, PipelineMetadataSummary? metadata = null)
     {
         var cicd = snapshot.EvidenceDomains?.CiCd;
-        if (cicd is null || cicd.AnalyzerVersion < 2) return new PathProbeResult(path, [], [NeedsReanalysis]);
+        if (cicd is null || cicd.AnalyzerVersion < PipelineReviewText.RequiredCiCdVersion) return new PathProbeResult(path, [], [NeedsReanalysis]);
         var definitions = cicd.Pipelines.GroupBy(p => p.File, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
         var ctx = new Context { Snapshot = snapshot, Definitions = definitions, Metadata = metadata ?? review.Metadata,
             Pipelines = cicd.Pipelines.Where(p => !p.IsTemplate).Select(p => new EffectivePipeline(p, definitions)).ToList() };

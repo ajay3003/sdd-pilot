@@ -273,6 +273,10 @@ public sealed record ProjectApplicabilityInput
     public bool HasDocumentation { get; init; }
     public bool HasSbom { get; init; }
     public List<string> DomainExtensions { get; init; } = [];
+    /// <summary>The latest snapshot's CI/CD evidence is older than Pipeline Review needs (or absent because the snapshot predates evidence
+    /// domains), so pipelines cannot be judged until the source is analyzed again. Computed by the backend; false when unknown.</summary>
+    public bool CiCdEvidenceOutdated { get; init; }
+    public int? CiCdEvidenceVersion { get; init; }
 
     public bool Has(Capability c) => Capabilities.Any(e => e.Capability == c);
     public bool Detected(string technologyId) => Technologies.Any(t => t.TechnologyId == technologyId);
@@ -445,6 +449,12 @@ public static class ApplicabilityEvaluator
     {
         if (!input.HasSourceSnapshot)
             return Result(review, ApplicabilityStatus.NotEnoughEvidence, "No source archive has been analyzed.", input, "Upload source that contains pipeline definitions.");
+        // Outdated evidence is not "no pipelines": the snapshot was read by an older CI/CD analyzer, so pipelines cannot be judged yet.
+        if (input.CiCdEvidenceOutdated)
+            return Result(review, ApplicabilityStatus.NeedsRefresh,
+                input.CiCdEvidenceVersion is { } v
+                    ? $"The latest snapshot has CI/CD evidence v{v}; Pipeline Review needs v{BirkNext.PipelineReview.PipelineReviewText.RequiredCiCdVersion}."
+                    : "The latest snapshot was analyzed before CI/CD evidence existed.", input, "Analyze the source again in Source Analysis.");
         var pipelines = input.Technologies.Where(t => t.Area == TechnologyArea.Pipeline).ToList();
         if (pipelines.Count == 0)
             return Result(review, ApplicabilityStatus.NotApplicable, "No pipeline definitions were found in the analyzed source (they may live in another repository).", input);
@@ -536,4 +546,8 @@ public sealed record ProjectTechnologyCoverage
     public List<string> ConfiguredIntegrations { get; init; } = [];
     public List<string> DomainExtensions { get; init; } = [];
     public List<string> Notices { get; init; } = [];
+    /// <summary>CI/CD evidence version of the latest snapshot (null when it has no CI/CD evidence domain).</summary>
+    public int? CiCdEvidenceVersion { get; init; }
+    /// <summary>True when the latest snapshot's CI/CD evidence is older than Pipeline Review needs (see <see cref="ProjectApplicabilityInput.CiCdEvidenceOutdated"/>).</summary>
+    public bool CiCdEvidenceOutdated { get; init; }
 }

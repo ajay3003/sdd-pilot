@@ -85,6 +85,7 @@ public static class TechnologyCoveragePresentation
             HasRequirements = hasRequirements, HasDocumentation = hasDocumentation,
             HasSbom = coverage?.Source?.Technologies.Any(t => t.TechnologyId == "dependency.sbom") ?? false,
             DomainExtensions = coverage?.DomainExtensions ?? [],
+            CiCdEvidenceOutdated = coverage?.CiCdEvidenceOutdated ?? false, CiCdEvidenceVersion = coverage?.CiCdEvidenceVersion,
         };
     }
 
@@ -99,7 +100,7 @@ public static class TechnologyCoveragePresentation
     public static string Tone(ApplicabilityStatus status) => status switch
     {
         ApplicabilityStatus.Applicable => "complete",
-        ApplicabilityStatus.PartiallyApplicable or ApplicabilityStatus.NeedsConfiguration => "partial",
+        ApplicabilityStatus.PartiallyApplicable or ApplicabilityStatus.NeedsConfiguration or ApplicabilityStatus.NeedsRefresh => "partial",
         _ => "muted",
     };
 
@@ -111,6 +112,7 @@ public static class TechnologyCoveragePresentation
         ApplicabilityStatus.NotApplicable => "N/A",
         ApplicabilityStatus.Unsupported => "Unsupported",
         ApplicabilityStatus.NeedsConfiguration => "Setup",
+        ApplicabilityStatus.NeedsRefresh => "Needs refresh",
         _ => "No evidence",
     };
 

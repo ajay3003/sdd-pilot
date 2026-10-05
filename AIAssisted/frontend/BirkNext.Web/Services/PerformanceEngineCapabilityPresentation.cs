@@ -2,9 +2,9 @@ using BirkNext.PerformanceTests;
 
 namespace BirkNext.Web.Services;
 
-/// <summary>Visual tone of a capability state. Maps onto the shared <c>sd-pill</c> tones; none of them is a failure tone,
-/// because a missing engine, runtime or metric is a tool limitation and never a test or project-quality result.</summary>
-public enum CapabilityTone { Positive, Caution, Neutral, Planned }
+/// <summary>Visual tone of a capability state. Maps onto the shared <c>sd-pill</c> tones. A missing engine, runtime, metric or outdated
+/// evidence is a tool limitation (never <see cref="Danger"/>); Danger is only for an actual analysis/runtime error.</summary>
+public enum CapabilityTone { Positive, Caution, Neutral, Planned, Danger }
 
 /// <summary>One status pill: text (always shown), a decorative glyph and its tone.</summary>
 public sealed record CapabilityStatus(string Label, string Glyph, CapabilityTone Tone)
@@ -14,6 +14,7 @@ public sealed record CapabilityStatus(string Label, string Glyph, CapabilityTone
     {
         CapabilityTone.Positive => "sd-pill-complete",
         CapabilityTone.Caution => "sd-pill-partial",
+        CapabilityTone.Danger => "sd-pill-attention",
         _ => "sd-pill-muted",
     };
 }

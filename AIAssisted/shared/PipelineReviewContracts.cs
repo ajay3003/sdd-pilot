@@ -258,6 +258,8 @@ public sealed record PipelineReviewComparison(Guid PreviousSnapshotId, Guid Curr
 public static class PipelineReviewText
 {
     public const int RulesVersion = 1;
+    /// <summary>CI/CD evidence version Pipeline Review needs (job dependencies, conditions, artifacts, resources, template uses).</summary>
+    public const int RequiredCiCdVersion = 2;
     public const string Boundary = "Read from pipeline definitions in the selected Source Analysis snapshot. A step in a definition means the pipeline intends to run it — " +
         "not that it ran, passed or deployed. Approvals and checks configured in Azure DevOps are not visible in YAML.";
     public const string ApprovalNotAssessable = "Approval checks are not assessable from YAML alone (Azure DevOps environment approvals and checks live outside the repository).";
