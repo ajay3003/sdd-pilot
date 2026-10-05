@@ -150,14 +150,18 @@ public sealed class AuthenticationReadinessTests
     }
 
     [Fact]
-    public void AStoppedProxyIsActionRequiredRatherThanAFailure()
+    public void AStoppedProxyIsNotStarted_NotActionRequiredAndNotAFailure()
     {
         var summary = Summarize(Proxy(LocalHttpsProxyState.Stopped, LocalHttpsProxyRuntimePhase.Stopped, DedicatedBrowserVerification.NotRunning));
-        summary.State.Should().Be(AuthenticationReadiness.ActionRequired);
+        summary.State.Should().Be(AuthenticationReadiness.NotStarted, "a saved configuration with a trusted certificate and a stopped proxy has nothing to fix");
+        summary.Label.Should().Be("Proxy not started");
+        summary.Detail.Should().Contain("Start the proxy to verify authentication");
+        summary.CanVerify.Should().BeFalse();
         var proxy = Item(summary, "proxy");
         proxy.StatusLabel.Should().Be("Not running");
-        proxy.State.Should().Be(AuthPrerequisiteState.NeedsAttention, "stopped is a resting state, not a fault");
-        proxy.Tone.Should().NotBe("error");
+        proxy.State.Should().Be(AuthPrerequisiteState.Idle, "stopped is a resting state, not a fault");
+        proxy.Blocks.Should().BeFalse();
+        proxy.Tone.Should().Be("muted");
         proxy.ActionLabel.Should().Be("Start proxy");
     }
 
@@ -258,8 +262,9 @@ public sealed class AuthenticationReadinessTests
         var summary = Summarize(
             Proxy(LocalHttpsProxyState.Stopped, LocalHttpsProxyRuntimePhase.Stopped, DedicatedBrowserVerification.NotRunning),
             Certificate(ProxyCertificateTrustState.NotTrusted));
-        // The browser is waiting on the proxy, so there are two things to fix, not three.
-        summary.Detail.Should().Be("2 prerequisites need attention.");
+        // The browser is waiting on the proxy and the proxy is merely not started: the certificate is the one thing to fix.
+        summary.State.Should().Be(AuthenticationReadiness.ActionRequired);
+        summary.Detail.Should().Be("1 prerequisite needs attention.");
     }
 
     [Fact]
@@ -393,7 +398,7 @@ public sealed class AuthenticationReadinessTests
         AuthenticationReadinessPresentation.VerificationBlockedReason(Summarize()).Should().BeEmpty();
         var blocked = AuthenticationReadinessPresentation.VerificationBlockedReason(
             Summarize(Proxy(LocalHttpsProxyState.Stopped, LocalHttpsProxyRuntimePhase.Stopped, DedicatedBrowserVerification.NotRunning)));
-        blocked.Should().Contain("local https proxy");
+        blocked.Should().Contain("Local HTTPS Proxy (Not running)").And.Contain("Dedicated Edge browser (Waiting for the proxy)");
     }
 
     [Fact]

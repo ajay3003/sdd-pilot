@@ -40,6 +40,8 @@ public sealed class LocalDataResetFrontendTests
         services.AddSingleton<FrontendAnalysisSettingsService>();
         services.AddSingleton<IFrontendAnalysisSettingsService>(sp => sp.GetRequiredService<FrontendAnalysisSettingsService>());
         services.AddSingleton<IntegrationMappingEvidenceSession>();
+        services.AddSingleton(new Mock<ILocalHttpsProxyApiService>().Object);
+        services.AddSingleton<LocalHttpsProxyRuntime>();
         services.AddSingleton<IJSRuntime>(js);
         services.AddSingleton(sp => new ApplicationRuntimeResetService(
             sp.GetRequiredService<IWorkspaceSessionService>(), sp.GetRequiredService<IWorkspaceStateManager>(),
@@ -118,6 +120,16 @@ public sealed class LocalDataResetFrontendTests
         provider.GetRequiredService<IWorkspaceStateManager>().CurrentWorkspaceId.Should().BeNull();
         mapping.For("m2lb-dev").Should().BeEmpty();
         reset.LastWarnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Reset_ForgetsTheProxySession_SoTheNextPageReprobes()
+    {
+        var (provider, _) = Build();
+        var runtime = provider.GetRequiredService<LocalHttpsProxyRuntime>();
+        await provider.GetRequiredService<ApplicationRuntimeResetService>().ClearFrontendRuntimeStateAsync();
+        runtime.SessionActive.Should().BeFalse();
+        runtime.Loaded.Should().BeFalse("the next Authentication page asks the backend again instead of showing the old answer");
     }
 
     [Fact]

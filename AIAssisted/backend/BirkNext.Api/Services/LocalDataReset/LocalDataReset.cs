@@ -114,7 +114,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Integration, dependency, SCIM, security classification, security expectation and Azure environment results",
         "Performance test definitions, data profiles, runs, baselines and drift history; Active CDC run history",
         "Critical E2E flows and run history (App_Data/critical-e2e)",
-        "BirkNext-owned authenticated browser sessions, Browser Companion pairings, captured API credentials, temporary security-classification test contexts",
+        "BirkNext-owned authenticated browser sessions, the running local HTTPS proxy session (and the dedicated browser it opened), Browser Companion pairings, captured API credentials, temporary security-classification test contexts",
         "Diagnostic, reachability and review caches",
     ];
 
@@ -124,7 +124,7 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
         "Application and installation settings (appsettings, feature visibility, logging)",
         "Provider capability and configuration (k6 image, Podman, Azure/AI providers)",
         "Sample project catalog files",
-        "Browser profiles, the local proxy certificate and the Azure sign-in of this machine",
+        "The HTTPS inspection certificate (Windows user store), local proxy port configuration and capability, browser profiles and the Azure sign-in of this machine",
         "Uploaded or external files outside the database (Source Analysis archives are never stored on disk)",
         "The highest synthetic CDC key per environment (so test keys are never reused)",
     ];
@@ -153,6 +153,8 @@ public sealed class LocalDataResetCoordinator(ILocalDatabaseReset admin, AppDbCo
 
             await Step(warnings, "Critical E2E flows and history", () => { services.GetService<ICriticalE2EStore>()?.ClearAll(); return Task.CompletedTask; });
             await Step(warnings, "authenticated browser sessions", async () => { if (services.GetService<AuthenticatedBrowserSessionManager>() is { } m) await m.DisposeAllForResetAsync(); });
+            // The project-bound proxy SESSION stops; the certificate, port configuration and proxy capability are installation state and stay.
+            await Step(warnings, "local HTTPS proxy session", async () => { if (services.GetService<LocalHttpsProxyService>() is { } proxy) await proxy.StopForLocalDataResetAsync(); });
             await Step(warnings, "Browser Companion pairings", () => { services.GetService<BrowserCompanionService>()?.UnpairAll(); return Task.CompletedTask; });
             await Step(warnings, "captured API credentials", () => { services.GetService<TransientAuthenticatedApiContextStore>()?.InvalidateAll(); return Task.CompletedTask; });
             await Step(warnings, "security classification test contexts", () => { services.GetService<ClassificationTestContextStore>()?.ClearAll(); return Task.CompletedTask; });

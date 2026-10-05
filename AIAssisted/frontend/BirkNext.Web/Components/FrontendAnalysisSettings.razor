@@ -734,7 +734,7 @@
                         <button type="button" class="btn-secondary fa-btn-sm" data-testid="authentication-verification-open" @onclick='() => _activeTab = "target"'>Open verification instructions</button>
                         @if (SelectedTestingMethod == AuthenticatedTestingMethod.LocalHttpsProxy && !AuthReadiness.CanVerify)
                         {
-                            <p class="fa-auth-help" data-testid="authentication-verification-blocked">Proxy-assisted verification also needs the prerequisites above.</p>
+                            <p class="fa-auth-help" data-testid="authentication-verification-blocked">Proxy-assisted verification also needs the prerequisites above. @AuthenticationReadinessPresentation.VerificationBlockedReason(AuthReadiness)</p>
                         }
                     }
                     <p class="fa-auth-help" data-testid="authentication-verification-scope">Verification confirms the target's authentication configuration and sign-in workflow. It does not create an authenticated testing context.</p>
@@ -1662,7 +1662,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         _proxyRuntime is null ? null : ProxyStatus.Certificate,
         _proxyRuntime?.Loaded == true,
         CurrentProfile is { } scope ? LocalHttpsProxyScope.Fingerprint(scope) : null,
-        LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile));
+        LocalHttpsProxyScope.EnvironmentAllowed(CurrentProfile),
+        CurrentProfile?.Id);
 
     /// <summary>
     /// The one canonical pane state. Every card on the Authentication tab reads its verdict from here rather than
@@ -1734,8 +1735,10 @@ else if (FaSettings.Settings.Profiles.Count == 0)
         {
             case "certificate-install": await runtime.InstallCertificateAsync(); break;
             case "certificate-recheck":
-            case "proxy-recheck": await runtime.RefreshAsync(); break;
+            case "proxy-recheck": await runtime.RecheckAsync(profile); break;
             case "proxy-start": await runtime.StartAsync(profile); break;
+            // The running session belongs to an earlier version of this environment's configuration: stop it and start one for the saved one.
+            case "proxy-restart": await runtime.RestartAsync(profile); break;
             case "proxy-stop": await runtime.StopAsync(); break;
             case "edge-open": await runtime.OpenBrowserAsync(); break;
             // Closes only the browser this runtime launched, then opens it again on the current port.

@@ -105,6 +105,7 @@ later run reuse a key that already exists in the real Event Hub or downstream sy
 | --- | --- | --- |
 | Critical E2E flows and history (`App_Data/critical-e2e/flows.json`, `history.json`, in memory) | Yes | Project flows and evidence |
 | BirkNext-owned authenticated browser sessions | Yes (disposed) | Bound to removed Target Environments |
+| Local HTTPS proxy **session** (listener, the dedicated Edge it opened, its in-memory credential) and the remembered identity of the last session | Yes (stopped, `LocalHttpsProxyService.StopForLocalDataResetAsync`) | Bound to a removed Target Environment. Keeping the remembered identity made the Authentication tab bind to a deleted environment and show the certificate as Unknown |
 | Browser Companion pairings and challenges | Yes | Bound to Target Environments. The installed extension pairs again on request |
 | Captured authenticated API credentials (`TransientAuthenticatedApiContextStore`) | Yes | Belong to a project target |
 | Security-classification test contexts | Yes | Project test data |
@@ -114,7 +115,8 @@ later run reuse a key that already exists in the real Event Hub or downstream sy
 | Reset epoch, last reset time, CDC key floors (`App_Data/local-data-reset.json`) | Kept and advanced | Resurrection protection; no key reuse |
 | Performance provider and runtime status (k6 image, Podman) | No | Host capability |
 | Dependency advisory cache (nuget.org/OSV responses) | No | Global, not project data |
-| Local HTTPS proxy server, managed Edge processes and profiles, proxy certificate, Azure sign-in | No | User-started tooling and machine identity. They no longer refer to any stored project |
+| HTTPS inspection certificate (Windows user store), proxy port configuration and proxy capability | No | Installation state. The certificate is re-probed on the next Authentication page; the proxy starts normally |
+| Managed Edge (CDP) processes and Edge profiles, Azure sign-in | No | User-started tooling and machine identity. They no longer refer to any stored project |
 | Logs | No | Diagnostic history |
 
 ### Frontend (memory and browser storage)
@@ -142,8 +144,8 @@ later run reuse a key that already exists in the real Event Hub or downstream sy
 
 - **Per-page scanner caches.** WASM security and WASM performance scanner results live in a page component. They disappear on navigation,
   and the reset always navigates to the Dashboard.
-- **Proxy and Edge sessions keep running.** A running local HTTPS proxy or managed Edge window is not stopped. Stop it in Authentication if
-  it is no longer needed.
+- **Managed Edge windows keep running.** A managed Edge (CDP) window is not closed. The local HTTPS proxy session, by contrast, is
+  stopped, together with the dedicated browser it opened.
 - **Restart required for the fix.** A backend started before this change still runs the old reset, which preserved the integration catalog.
   Restart it to get this behaviour.
 

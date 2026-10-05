@@ -208,7 +208,7 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
     {
         var cut = Render(Proxy(DedicatedBrowserVerification.NotRunning, LocalHttpsProxyState.Stopped, edgePort: null));
         cut.Find("[data-testid=auth-verify]").HasAttribute("disabled").Should().BeTrue();
-        Text(cut, "auth-verify-blocked").Should().Contain("local https proxy");
+        Text(cut, "auth-verify-blocked").Should().Contain("Local HTTPS Proxy (Not running)");
     }
 
     // ── No duplicated warnings ───────────────────────────────────────────────
@@ -218,8 +218,8 @@ public sealed class AuthenticationPanelStructureTests : BunitContext
     {
         var cut = Render(Proxy(DedicatedBrowserVerification.NotRunning, LocalHttpsProxyState.Stopped, edgePort: null));
 
-        // The hero counts what needs attention; the card carries the sentence and the action.
-        Text(cut, "auth-readiness-detail").Should().Be("1 prerequisite needs attention.");
+        // The hero states the resting state; the card carries the sentence and the action.
+        Text(cut, "auth-readiness-detail").Should().Contain("Start the proxy to verify authentication");
         Text(cut, "auth-card-proxy").Should().Contain("cannot be captured until the proxy is started");
         cut.Find("[data-testid=auth-readiness-hero]").TextContent
             .Should().NotContain("cannot be captured", "the hero counts problems; it does not restate them");

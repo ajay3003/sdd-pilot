@@ -91,6 +91,9 @@ public sealed class ApplicationRuntimeResetService
         Get<IApiReviewHistoryService>()?.ResetForLocalDataReset();
         Get<IIntegrationTargetRegistryService>()?.ResetForLocalDataReset();
         await Step("Browser Companion", async () => { if (Get<BrowserCompanionRuntime>() is { } companion) await companion.FollowAsync(null); });
+        // The backend stopped the project-bound proxy session; the observer forgets it, so the next page re-probes the certificate for the
+        // then-selected environment instead of showing the deleted environment's session (or a blank "Unknown").
+        Get<LocalHttpsProxyRuntime>()?.ResetForLocalDataReset();
         await Step("browser storage", async () =>
         {
             if (_js is not null) await _js.InvokeAsync<string[]>("birkNextStorage.removeProjectState", new object?[] { ProjectStorageKeys.ToArray(), ProjectStoragePrefixes.ToArray() });

@@ -467,6 +467,40 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task LocalDataReset_StopsTheProjectSession_ForgetsItsIdentity_AndKeepsTheCertificateAndCapability()
+    {
+        var port = await StartWithCredentialAsync();
+        var certificateBefore = (await _service.GetRuntimeAsync()).Certificate;
+
+        Assert.True(await _service.StopForLocalDataResetAsync());
+
+        var after = await _service.GetRuntimeAsync();
+        Assert.Null(after.SessionId);
+        Assert.Null(after.RuntimeId);
+        Assert.Null(after.ProfileId);
+        Assert.Null(after.ContextFingerprint);
+        Assert.Equal(LocalHttpsProxyState.Stopped, after.State);
+        Assert.False(_store.IsAuthenticatedApiContextAvailable("dev", Fp));
+        using (var probe = new TcpClient()) await Assert.ThrowsAnyAsync<SocketException>(() => probe.ConnectAsync(IPAddress.Loopback, port));
+
+        // The certificate is installation state: still discoverable, same thumbprint, and a new environment's proxy starts normally.
+        var compatible = await _service.CheckCompatibilityAsync(Scope("new-dev", Fp2));
+        Assert.Equal(certificateBefore.State, compatible.Certificate.State);
+        Assert.Equal(certificateBefore.Thumbprint, compatible.Certificate.Thumbprint);
+        Assert.True(compatible.CanStart);
+        Assert.True(await StartAsync(Scope("new-dev", Fp2)) > 0);
+    }
+
+    [Fact]
+    public async Task LocalDataReset_WithoutASession_IsIdempotent()
+    {
+        Assert.False(await _service.StopForLocalDataResetAsync());
+        Assert.False(await _service.StopForLocalDataResetAsync());
+        Assert.Equal(LocalHttpsProxyState.Stopped, (await _service.GetRuntimeAsync()).State);
+        Assert.True((await _service.CheckCompatibilityAsync(Scope())).CanStart);
+    }
+
+    [Fact]
     public async Task AnotherEnvironmentRequiresExplicitStop()
     {
         await StartWithCredentialAsync();

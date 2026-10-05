@@ -86,10 +86,24 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
     public LocalHttpsProxyStatus For(FrontendAnalysisProfile? profile) =>
         ForFingerprint(profile is null ? null : LocalHttpsProxyScope.Fingerprint(profile));
 
-    /// <summary>Status for a precomputed proxy context fingerprint (e.g. <see cref="FrontendAnalysisContext.ReviewIdentity"/>); Stale when it does not match the running session.</summary>
+    /// <summary>
+    /// Status for a precomputed proxy context fingerprint (e.g. <see cref="FrontendAnalysisContext.ReviewIdentity"/>); Stale when it does not
+    /// match the running session. A stale status keeps every fact that is not bound to the session — the certificate (machine state), port
+    /// and capability flags, and the session's own identity so the page can name it — and drops only what the session captured: the
+    /// credential, observed traffic and endpoints. It used to be a blank record, which turned a trusted certificate into "Unknown" and a
+    /// running proxy into "Not running" the moment the authentication configuration was saved.
+    /// </summary>
     public LocalHttpsProxyStatus ForFingerprint(string? fingerprint) => _identity is null ||
         (fingerprint is not null && _identity == fingerprint)
-        ? Status : new() { State = LocalHttpsProxyState.Stale, Evidence = "This proxy belongs to another environment configuration. Its runtime is unchanged; stop it explicitly before starting another." };
+        ? Status : Status with
+        {
+            State = LocalHttpsProxyState.Stale, AuthenticatedCredentialAvailable = false, AuthenticatedRequestsObserved = 0, ObservedNetworkEndpoints = [],
+            Evidence = "This proxy session was started for another environment configuration. Its runtime is unchanged; restart or stop it explicitly.",
+        };
+
+    /// <summary>True when a proxy session is running for a configuration other than <paramref name="profile"/>'s current one.</summary>
+    public bool RunningForOtherConfiguration(FrontendAnalysisProfile? profile) =>
+        profile is not null && _owner is not null && _identity is not null && _identity != LocalHttpsProxyScope.Fingerprint(profile);
 
     public bool SessionActive => _owner is not null;
 
@@ -114,8 +128,11 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         Changed?.Invoke();
         try
         {
+            // A live session is adopted as it is (it may belong to another configuration and is then named, never taken over). A runtime
+            // that only remembers its last, stopped session is not a session: checking compatibility for THIS profile re-probes the
+            // certificate and capability. Adopting the remembered one left the page bound to a configuration that no longer exists.
             var current = await api.GetRuntimeAsync();
-            var result = current is { RuntimeId: not null } ? current : await api.CheckCompatibilityAsync(LocalHttpsProxyScope.Request(profile));
+            var result = current is { SessionId: not null } ? current : await api.CheckCompatibilityAsync(LocalHttpsProxyScope.Request(profile));
             if (generation != _generation || _disposed) return;
             Apply(result, profile.Id, identity);
             EnsurePolling();
@@ -146,6 +163,36 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         finally { if (generation == _generation) { Busy = false; Changed?.Invoke(); } }
     }
 
+    /// <summary>
+    /// Restarts the proxy for the profile's current configuration: stops the running session (which closes the dedicated browser it launched
+    /// and wipes its in-memory credential), then starts a new one. Explicit only — saving a configuration never restarts anything.
+    /// </summary>
+    public async Task RestartAsync(FrontendAnalysisProfile profile)
+    {
+        if (Busy || _disposed) return;
+        if (_owner is not null) await StopAsync();
+        if (_owner is null) await StartAsync(profile);
+    }
+
+    /// <summary>
+    /// Local data reset: forgets the session this observer was bound to (the backend stops the project-bound session itself), so the next
+    /// synchronization checks compatibility for the then-selected profile and re-probes the certificate.
+    /// </summary>
+    public void ResetForLocalDataReset()
+    {
+        ++_generation;
+        _owner = null; _identity = null; _selectedIdentity = null;
+        Status = new(); Loaded = false; BrowserWasRouted = false; Busy = false;
+        LastRestResult = null; LastGraphQlResult = null; LastExecutionError = null;
+        Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// "Recheck": with a live session, its status; without one, a compatibility check for the profile, which re-probes the certificate in
+    /// the Windows user store. The plain runtime read only repeats what the backend last said.
+    /// </summary>
+    public Task RecheckAsync(FrontendAnalysisProfile profile) => _owner is not null ? RefreshAsync() : CheckCompatibilityAsync(profile);
+
     public async Task RefreshAsync()
     {
         if (_disposed || Busy) return;
@@ -154,10 +201,12 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         try
         {
             var result = await api.GetRuntimeAsync();
-            if (result is { RuntimeId: null, SessionId: null })
+            // Without a live session the backend answers with its last (possibly stopped, possibly another configuration's) description;
+            // the profile-specific facts from this profile's compatibility check stay authoritative.
+            if (result is { SessionId: null })
                 result = result with { LocalIntegrationAvailable = Status.LocalIntegrationAvailable, EnvironmentAllowed = Status.EnvironmentAllowed,
                     PortAvailable = Status.PortAvailable, Certificate = Status.Certificate, ApprovedHosts = Status.ApprovedHosts,
-                    CanStart = Status.LocalIntegrationAvailable && Status.EnvironmentAllowed && Status.PortAvailable };
+                    CanStart = Status.CanStart, FailureReason = result.FailureReason ?? Status.FailureReason };
             if (generation == _generation && operation == _operation)
             {
                 Apply(result, _owner?.ProfileId, _identity);
@@ -179,7 +228,9 @@ public sealed class LocalHttpsProxyRuntime(ILocalHttpsProxyApiService api) : IAs
         MarkLoaded();
         ArgumentNullException.ThrowIfNull(result);
         Status = result;
-        _identity = result.ContextFingerprint ?? fingerprint;
+        // Only a live session is bound to a configuration. A stopped or never-started runtime describes this machine (certificate,
+        // port, capability) and applies to whichever profile is selected; binding it made every later configuration read as Stale.
+        _identity = result.SessionId is null ? null : result.ContextFingerprint ?? fingerprint;
         _owner = result.SessionId is { } id ? new(id, result.ProfileId ?? profileId!, _identity!) : null;
         BrowserWasRouted |= Routed(result);
     }

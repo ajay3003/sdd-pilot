@@ -160,6 +160,26 @@ public sealed class LocalHttpsProxyService(IOptions<LocalHttpsProxyOptions> opti
         finally { _gate.Release(); }
     }
 
+    /// <summary>
+    /// Local data reset: a proxy session belongs to a Target Environment the reset removes, so it is stopped (its listener, the dedicated
+    /// browser it launched and its in-memory credential), and the remembered identity of the last session is forgotten. The HTTPS
+    /// inspection certificate, the port configuration and the proxy capability are installation state and are untouched — the next start
+    /// works exactly as before. Returns true when a session was running.
+    /// </summary>
+    public async Task<bool> StopForLocalDataResetAsync()
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            var running = _session is { } session;
+            if (_session is { } active) await StopSessionAsync(active, "local data reset");
+            _last = new() { State = LocalHttpsProxyState.Stopped, RuntimeStatus = LocalHttpsProxyRuntimePhase.Stopped };
+            logger?.LogInformation("ProxyResetForLocalData {WasRunning}", running);
+            return running;
+        }
+        finally { _gate.Release(); }
+    }
+
     public Task<ProxyCertificateStatus> InstallCertificateAsync(LocalHttpsProxyCertificateRequest request) => CertificateActionAsync(request, () => authority.Install());
 
     public Task<ProxyCertificateStatus> RemoveCertificateAsync(LocalHttpsProxyCertificateRequest request) => CertificateActionAsync(request, () => authority.Remove());

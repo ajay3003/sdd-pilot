@@ -16,10 +16,14 @@ public enum AuthenticationReadiness
     NotConfigured,
     /// <summary>Backend state has not arrived yet. Rendering anything else here would be a guess.</summary>
     Checking,
+    /// <summary>Configuration is saved and nothing is broken; the proxy is simply not started. Not "Action required": a resting state.</summary>
+    NotStarted,
 }
 
 /// <summary>How one authentication prerequisite stands. Deliberately not a boolean: Unknown is not Missing.</summary>
-public enum AuthPrerequisiteState { Ok, NeedsAttention, Unknown, Failed, NotRequired, Checking }
+public enum AuthPrerequisiteState { Ok, NeedsAttention, Unknown, Failed, NotRequired, Checking,
+    /// <summary>Available and simply not started (a stopped proxy). Needed for verification and capture, but not a fault.</summary>
+    Idle }
 
 /// <summary>
 /// One prerequisite row: what it is, where it stands, one sentence, and at most one action.
@@ -59,6 +63,10 @@ public sealed record AuthenticationReadinessSummary(
 {
     public int Attention => Prerequisites.Count(p => p.Blocks);
     public bool CanVerify => State == AuthenticationReadiness.Ready;
+    /// <summary>What stands between this environment and proxy-assisted verification, by name (empty when it can run).</summary>
+    public IReadOnlyList<string> VerifyBlockers => CanVerify ? [] : Prerequisites
+        .Where(p => p.State is not (AuthPrerequisiteState.Ok or AuthPrerequisiteState.NotRequired))
+        .Select(p => $"{p.Title}: {p.StatusLabel}").ToList();
     public string Tone => State switch
     {
         AuthenticationReadiness.Ready => "ready",
@@ -100,7 +108,8 @@ public static class AuthenticationReadinessPresentation
         ProxyCertificateStatus? certificate,
         bool loaded,
         string? scopeFingerprint = null,
-        bool environmentAllowed = true)
+        bool environmentAllowed = true,
+        string? profileId = null)
     {
         // Nothing is claimed before the backend has answered. A page that renders "Not running" during its own first
         // fetch teaches the reader to distrust it.
@@ -121,11 +130,17 @@ public static class AuthenticationReadinessPresentation
         // The prerequisites belong to the chosen METHOD, not to the authentication configuration: a certificate is
         // trusted or it is not regardless of which provider is saved. They are therefore reported — and remain
         // operable — even while the configuration itself is missing, which is a separate answer in its own right.
+        // A session running for another configuration owns its browser; that browser is not this configuration's.
+        var foreign = proxy?.SessionId is not null && scopeFingerprint is { Length: > 0 }
+            && proxy.ContextFingerprint is { Length: > 0 } running && running != scopeFingerprint;
         var prerequisites = new List<AuthenticationPrerequisite>
         {
             Certificate(certificate),
-            Proxy(proxy, scopeFingerprint, environmentAllowed),
-            Browser(proxy),
+            Proxy(proxy, scopeFingerprint, environmentAllowed, profileId),
+            foreign
+                ? new(BrowserId, "Dedicated Edge browser", "Waiting for the proxy", AuthPrerequisiteState.NotRequired,
+                    "The open dedicated browser belongs to the proxy session of the earlier configuration. It is closed when that session stops; open it again after the proxy is restarted.")
+                : Browser(proxy),
         };
 
         var state =
@@ -136,6 +151,8 @@ public static class AuthenticationReadinessPresentation
             : prerequisites.Any(p => p.State == AuthPrerequisiteState.NeedsAttention) ? AuthenticationReadiness.ActionRequired
             // Unknown is not failure. It is a reason not to promise Ready, which is a different thing to say.
             : prerequisites.Any(p => p.State == AuthPrerequisiteState.Unknown) ? AuthenticationReadiness.Limited
+            // Only the proxy is not started: nothing is broken and nothing needs fixing until the user wants to verify or capture.
+            : prerequisites.Any(p => p.State == AuthPrerequisiteState.Idle) ? AuthenticationReadiness.NotStarted
             // Prerequisites can all be in place while the saved configuration is still half-written. That is not Ready,
             // and it is not a prerequisite the three cards above could ever show.
             : configuration == AuthConfigurationState.Partial ? AuthenticationReadiness.Limited
@@ -149,6 +166,10 @@ public static class AuthenticationReadinessPresentation
                 "Authentication configuration and proxy prerequisites are available. Ready to capture; no traffic from the dedicated browser has been observed yet.",
             AuthenticationReadiness.Ready => "Authentication configuration and proxy prerequisites are available.",
             AuthenticationReadiness.NotConfigured => "No authentication provider is configured for this Target Environment.",
+            AuthenticationReadiness.NotStarted when configuration == AuthConfigurationState.Partial =>
+                "The saved authentication configuration is incomplete. The certificate is in place; start the proxy to verify authentication or capture authenticated traffic.",
+            AuthenticationReadiness.NotStarted =>
+                "Authentication configuration is saved and the certificate is in place. Start the proxy to verify authentication or capture authenticated traffic.",
             AuthenticationReadiness.ActionRequired => $"{attention} prerequisite{(attention == 1 ? "" : "s")} need{(attention == 1 ? "s" : "")} attention.",
             _ when configuration == AuthConfigurationState.Partial && prerequisites.All(p => p.State != AuthPrerequisiteState.Unknown) =>
                 "The saved authentication configuration is incomplete.",
@@ -162,6 +183,7 @@ public static class AuthenticationReadinessPresentation
         AuthenticationReadiness.ActionRequired => "Action required",
         AuthenticationReadiness.Limited => "Limited",
         AuthenticationReadiness.Checking => "Checking…",
+        AuthenticationReadiness.NotStarted => "Proxy not started",
         _ => "Not configured",
     };
 
@@ -199,7 +221,7 @@ public static class AuthenticationReadinessPresentation
     /// <paramref name="environmentAllowed"/> is the client-side environment policy — non-production only — and not a
     /// runtime flag: it is knowable before any backend answer, so the card never offers a start that policy forbids.
     /// </summary>
-    private static AuthenticationPrerequisite Proxy(LocalHttpsProxyStatus? proxy, string? scopeFingerprint, bool environmentAllowed)
+    private static AuthenticationPrerequisite Proxy(LocalHttpsProxyStatus? proxy, string? scopeFingerprint, bool environmentAllowed, string? profileId = null)
     {
         if (proxy is null)
             return new(ProxyId, "Local HTTPS Proxy", "Unknown", AuthPrerequisiteState.Unknown, "The proxy runtime could not be read.", "Recheck", "proxy-recheck");
@@ -213,6 +235,13 @@ public static class AuthenticationReadinessPresentation
         // silently; stopping it stays an explicit act.
         var foreign = proxy.SessionId is not null && scopeFingerprint is { Length: > 0 }
             && proxy.ContextFingerprint is { Length: > 0 } running && running != scopeFingerprint;
+        // The same environment, an earlier version of its configuration (e.g. authentication was changed and saved): the session's
+        // credential is bound to the old configuration and must not be used for the new one. Say so, and offer the one fix.
+        if (foreign && profileId is { Length: > 0 } && proxy.ProfileId == profileId)
+            return new(ProxyId, "Local HTTPS Proxy", "Restart required", AuthPrerequisiteState.NeedsAttention,
+                "The proxy is running for an earlier version of this environment's configuration. Restart it to capture with the saved configuration; the certificate and proxy port are unchanged.",
+                "Restart proxy", "proxy-restart",
+                Facts(("Port", proxy.Port > 0 ? proxy.Port.ToString() : "—"), ("Started", proxy.StartedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—")));
         if (foreign)
             return new(ProxyId, "Local HTTPS Proxy", "Running for another environment", AuthPrerequisiteState.NeedsAttention,
                 $"The proxy is running for {proxy.ProfileId ?? "another environment"}. Stop it before starting one here.",
@@ -228,8 +257,14 @@ public static class AuthenticationReadinessPresentation
                 return new(ProxyId, "Local HTTPS Proxy", "Not available here", AuthPrerequisiteState.NeedsAttention,
                     "The local HTTPS proxy is available for non-production environments only.");
 
+            // The compatibility check for THIS profile answered that the proxy cannot start here (e.g. the target host is excluded by the
+            // interception policy). A Start button would only fail; the reason is the useful answer. Only a stated reason counts: CanStart
+            // alone defaults to false before any check has answered.
+            if (!proxy.CanStart && proxy.SessionId is null && proxy.State is not LocalHttpsProxyState.Stale && proxy.FailureReason is { Length: > 0 } refused)
+                return new(ProxyId, "Local HTTPS Proxy", "Cannot start for this target", AuthPrerequisiteState.NeedsAttention, refused, "Recheck", "proxy-recheck");
+
             // Stopped is an ordinary resting state, not an error: nothing is broken, it simply has not been started.
-            return new(ProxyId, "Local HTTPS Proxy", "Not running", AuthPrerequisiteState.NeedsAttention,
+            return new(ProxyId, "Local HTTPS Proxy", "Not running", AuthPrerequisiteState.Idle,
                 "Authenticated HTTPS traffic cannot be captured until the proxy is started.", "Start proxy", "proxy-start");
         }
 
@@ -380,8 +415,9 @@ public static class AuthenticationReadinessPresentation
         AuthenticationReadiness.Ready => "",
         AuthenticationReadiness.NotConfigured => "Configure an authentication provider for this environment first.",
         AuthenticationReadiness.Checking => "Checking prerequisites…",
+        // Each blocker by name and current state, e.g. "Local HTTPS Proxy (Not running)".
         _ => "Requires " + string.Join(", ", summary.Prerequisites.Where(p => p.State != AuthPrerequisiteState.Ok)
-            .Select(p => p.Title.ToLowerInvariant())) + ".",
+            .Select(p => $"{p.Title} ({p.StatusLabel})")) + ".",
     };
 }
 
