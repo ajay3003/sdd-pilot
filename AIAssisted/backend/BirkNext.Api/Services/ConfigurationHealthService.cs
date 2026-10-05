@@ -72,7 +72,8 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
     {
         var provider = _config["DatabaseSettings:Provider"] ?? "Unknown";
         var mode = _config["DatabaseSettings:Mode"] ?? "Unknown";
-        var host = _config["DatabaseSettings:Host"];
+        var connectionString = _config.GetConnectionString("Default") ?? "";
+        var host = ParseHost(connectionString) ?? _config["DatabaseSettings:Host"];
 
         if (string.IsNullOrWhiteSpace(host))
         {
@@ -86,6 +87,22 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
             };
         }
 
+        if (mode.Equals("Unknown", StringComparison.OrdinalIgnoreCase)
+            || (mode.Equals("Local", StringComparison.OrdinalIgnoreCase)
+                && !(host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                    || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                    || host.Equals("::1", StringComparison.OrdinalIgnoreCase))))
+        {
+            return new ConfigurationHealthCheck
+            {
+                Name = "Database Configuration",
+                Status = "Warning",
+                Message = "Database mode needs review",
+                Details = "Local reset is enabled only when the configured mode and database host identify a loopback database.",
+                IsRequired = true
+            };
+        }
+
         return new ConfigurationHealthCheck
         {
             Name = "Database Configuration",
@@ -94,6 +111,17 @@ public sealed class ConfigurationHealthService : IConfigurationHealthService
             Details = $"Host: {host}, Provider: {provider}",
             IsRequired = true
         };
+    }
+
+    private static string? ParseHost(string connectionString)
+    {
+        foreach (var segment in connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = segment.Split('=', 2);
+            if (pair.Length == 2 && pair[0].Trim().Equals("Host", StringComparison.OrdinalIgnoreCase))
+                return pair[1].Trim();
+        }
+        return null;
     }
 
     private ConfigurationHealthCheck CheckLoggingConfiguration()

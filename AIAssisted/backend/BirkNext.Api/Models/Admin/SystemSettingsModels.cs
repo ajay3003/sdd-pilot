@@ -162,6 +162,9 @@ public class ResetDatabaseResponse
 {
     public bool Success { get; set; }
     public string Message { get; set; } = "";
+    public int DeletedRows { get; set; }
+    public DateTimeOffset? ResetAtUtc { get; set; }
+    public List<string> PreservedDomains { get; set; } = [];
 }
 
 // ── Editable Settings ──────────────────────────────────────────────────────

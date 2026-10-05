@@ -79,12 +79,19 @@ public class AdminController : ControllerBase
                 Message = "Confirmation text must be exactly 'RESET'."
             });
 
-        var (success, message) = await _adminService.ResetLocalDatabaseAsync();
+        var (success, message, deletedRows, resetAtUtc) = await _adminService.ResetLocalDatabaseAsync();
 
         if (!success)
             return BadRequest(new ResetDatabaseResponse { Success = false, Message = message });
 
-        return Ok(new ResetDatabaseResponse { Success = true, Message = message });
+        return Ok(new ResetDatabaseResponse
+        {
+            Success = true,
+            Message = message,
+            DeletedRows = deletedRows,
+            ResetAtUtc = resetAtUtc,
+            PreservedDomains = AdminService.ResetPreservedDomains.ToList()
+        });
     }
 
     [HttpPost("environment-diagnostics")]

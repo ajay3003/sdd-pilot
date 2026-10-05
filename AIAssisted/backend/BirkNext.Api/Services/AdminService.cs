@@ -2,6 +2,9 @@ using BirkNext.Api.Data;
 using BirkNext.Api.Models.Admin;
 using BirkNext.Api.Services.FrontendQualityEngines;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -10,6 +13,19 @@ namespace BirkNext.Api.Services;
 
 public class AdminService
 {
+    private static readonly SemaphoreSlim ResetGate = new(1, 1);
+    private static readonly HashSet<string> PreservedConfigurationTables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "integration_platforms", "integration_definitions", "integration_environment_states",
+        "integration_contract_artifacts", "graphql_schema_artifacts", "integration_message_flows",
+        "performance_test_definitions", "performance_test_data_profiles"
+    };
+    private static readonly List<string> PreservedResetDomains =
+    [
+        "Database schema and migration history", "Application and installation settings", "Target environment and integration configuration",
+        "Performance test definitions and data profiles", "Provider configuration", "External uploaded files"
+    ];
+    public static IReadOnlyList<string> ResetPreservedDomains => PreservedResetDomains;
     private readonly IConfiguration _config;
     private readonly IWebHostEnvironment _env;
     private readonly AppDbContext _db;
@@ -95,7 +111,7 @@ public class AdminService
         var frontendOrigin = _config["FRONTEND_ORIGIN"] ?? "http://localhost:5173";
         var composeProjectName = _config["RuntimeSettings:ComposeProjectName"] ?? "birknext-studio-local";
         var expectedVolume = _config["RuntimeSettings:ExpectedDatabaseVolume"] ?? "birknext-studio-local_postgres_data";
-        var dbMode = _config["DatabaseSettings:Mode"] ?? "Local";
+        var dbMode = _config["DatabaseSettings:Mode"] ?? "Unknown";
         var dbProvider = _config["DatabaseSettings:Provider"] ?? "PostgreSQL";
         var dbHost = _config["DatabaseSettings:Host"] ?? "localhost";
         var dbPort = _config.GetValue<int>("DatabaseSettings:Port", 5432);
@@ -124,9 +140,13 @@ public class AdminService
             : System.IO.Path.GetFullPath(System.IO.Path.Combine(_env.ContentRootPath, logPath));
         var logFiles = BuildLogFileEntries(absoluteLogPath);
 
-        var resetAllowed = _config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true);
-        var isLocalMode = dbMode.Equals("Local", StringComparison.OrdinalIgnoreCase);
-        var resetNotAllowedReason = ResolveResetNotAllowedReason(resetAllowed, isLocalMode);
+        var resetPolicyEnabled = _config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true);
+        var isSafeLocalMode = IsSafeLocalResetEnvironment(dbMode);
+        var resetAllowed = resetPolicyEnabled && isSafeLocalMode;
+        var resetNotAllowedReason = ResolveResetNotAllowedReason(resetPolicyEnabled, isSafeLocalMode);
+        var maintenanceDbMode = dbMode.Equals("Local", StringComparison.OrdinalIgnoreCase) && !IsLoopbackDatabaseHost()
+            ? "Unverified"
+            : dbMode;
 
         var featureVisibility = BuildFeatureVisibility();
 
@@ -186,8 +206,8 @@ public class AdminService
             },
             Maintenance = new MaintenanceInfo
             {
-                ResetAllowed = resetAllowed && isLocalMode,
-                DatabaseMode = dbMode,
+                ResetAllowed = resetAllowed,
+                DatabaseMode = maintenanceDbMode,
                 ResetNotAllowedReason = resetNotAllowedReason
             },
             FeatureVisibility = featureVisibility,
@@ -424,44 +444,93 @@ public class AdminService
         return (true, "Settings saved. Feature visibility changes apply immediately. Logging changes require a backend restart.");
     }
 
-    public async Task<(bool Success, string Message)> ResetLocalDatabaseAsync()
+    public async Task<(bool Success, string Message, int DeletedRows, DateTimeOffset? ResetAtUtc)> ResetLocalDatabaseAsync()
     {
-        var resetAllowed = _config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true);
-        var dbMode = _config["DatabaseSettings:Mode"] ?? "Local";
+        var dbMode = _config["DatabaseSettings:Mode"] ?? "Unknown";
+        if (!_config.GetValue<bool>("AdminSettings:AllowLocalDatabaseReset", true))
+            return (false, "Reset is disabled by local administrator policy.", 0, null);
+        if (!IsSafeLocalResetEnvironment(dbMode))
+            return (false, "Reset is available only for a Local database on a non-production backend.", 0, null);
 
-        if (!resetAllowed)
-            return (false, "Reset is disabled in AdminSettings.");
-
-        if (!dbMode.Equals("Local", StringComparison.OrdinalIgnoreCase))
-            return (false, "Reset is only available in Local database mode. Shared database cannot be reset from the UI.");
+        if (!await ResetGate.WaitAsync(0))
+            return (false, "A local database reset is already in progress.", 0, null);
 
         _logger.LogWarning("Local database reset initiated by admin action");
 
         try
         {
             await using var transaction = await _db.Database.BeginTransactionAsync();
+            var tables = _db.Model.GetRelationalModel().Tables
+                .Where(t => !PreservedConfigurationTables.Contains(t.Name))
+                .ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
 
-            // Delete in dependency order: child tables first, then parent tables
-            await _db.CodeLinks.ExecuteDeleteAsync();
-            await _db.TraceLinks.ExecuteDeleteAsync();
-            await _db.CandidateLinks.ExecuteDeleteAsync();
-            await _db.TraceabilitySuggestions.ExecuteDeleteAsync();
-            await _db.ProjectDocuments.ExecuteDeleteAsync();
-            await _db.CodeFiles.ExecuteDeleteAsync();
-            await _db.QaDeltaReviews.ExecuteDeleteAsync();
-            await _db.ReviewedCandidates.ExecuteDeleteAsync();
-            await _db.Scenarios.ExecuteDeleteAsync();
+            // Refuse to remove records while a tracked CDC or performance operation is active.
+            var activeCdc = await _db.ActiveCdcRuns.AnyAsync(r => r.Status.ToLower() == "running");
+            var activePerformance = await _db.PerformanceTestRuns.AnyAsync(r =>
+                r.State.ToLower() == "queued" || r.State.ToLower() == "preparing"
+                || r.State.ToLower() == "running" || r.State.ToLower() == "cancelling");
+            if (activeCdc || activePerformance)
+                return (false, "Reset is blocked while a CDC or performance test is running.", 0, null);
+
+            var orderedTables = OrderTablesForDelete(tables);
+            var sql = _db.GetService<ISqlGenerationHelper>();
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var connection = _db.Database.GetDbConnection();
+            foreach (var table in orderedTables)
+            {
+                var tableName = sql.DelimitIdentifier(table.Name, table.Schema);
+                await using var command = connection.CreateCommand();
+                command.Transaction = transaction.GetDbTransaction();
+                command.CommandText = $"DELETE FROM {tableName}";
+                counts[table.Name] = await command.ExecuteNonQueryAsync();
+            }
 
             await transaction.CommitAsync();
-
-            _logger.LogWarning("Local database reset completed — all application data cleared");
-            return (true, "Database reset successfully. All application data has been cleared.");
+            _logger.LogWarning("Local database reset completed. Cleared {TableCount} data tables; preserved installation configuration tables.", counts.Count);
+            var deleted = counts.Values.Sum();
+            return (true, $"Local database reset completed. {deleted} data records were removed. Installation and provider configuration, database schema, and migration history were preserved.", deleted, DateTimeOffset.UtcNow);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Local database reset failed");
-            return (false, "Reset failed. See server logs for details.");
+            return (false, "Reset failed. See server logs for details.", 0, null);
         }
+        finally
+        {
+            ResetGate.Release();
+        }
+    }
+
+    private bool IsSafeLocalResetEnvironment(string databaseMode)
+    {
+        if (!(_env.IsDevelopment() || _env.IsEnvironment("Local") || _env.IsEnvironment("Test"))
+            || !databaseMode.Equals("Local", StringComparison.OrdinalIgnoreCase)) return false;
+        return IsLoopbackDatabaseHost();
+    }
+
+    private bool IsLoopbackDatabaseHost()
+    {
+        var connection = _config.GetConnectionString("Default") ?? "";
+        var host = ParseConnectionStringParam(connection, "Host") ?? _config["DatabaseSettings:Host"];
+        return host is not null && (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("::1", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IReadOnlyList<ITable> OrderTablesForDelete(IReadOnlyDictionary<string, ITable> tables)
+    {
+        var result = new List<ITable>();
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Visit(ITable table)
+        {
+            if (!visited.Add(table.Name)) return;
+            foreach (var fk in table.ForeignKeyConstraints)
+                if (tables.TryGetValue(fk.PrincipalTable.Name, out var parent)) Visit(parent);
+            result.Add(table);
+        }
+        foreach (var table in tables.Values) Visit(table);
+        result.Reverse();
+        return result;
     }
 
     /// <summary>
@@ -529,12 +598,14 @@ public class AdminService
         return files;
     }
 
-    private static string ResolveResetNotAllowedReason(bool resetAllowed, bool isLocalMode)
+    private string ResolveResetNotAllowedReason(bool resetPolicyEnabled, bool isSafeLocalMode)
     {
-        if (!resetAllowed)
+        if (!resetPolicyEnabled)
             return "Reset is disabled in AdminSettings.";
-        if (!isLocalMode)
-            return "Reset is only available in Local database mode.";
+        if (!_env.IsDevelopment() && !_env.IsEnvironment("Local") && !_env.IsEnvironment("Test"))
+            return "Reset is disabled outside Development, Local, or Test backend environments.";
+        if (!isSafeLocalMode)
+            return "Reset requires Local database mode and a loopback database host.";
         return "";
     }
 

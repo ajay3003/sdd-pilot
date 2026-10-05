@@ -46,6 +46,9 @@ public interface IWorkspaceAutoSaveService
     /// </summary>
     Task<bool> SaveNowAsync();
 
+    Task PauseForResetAsync();
+    void ResumeAfterReset();
+
     /// <summary>
     /// Raised when auto-save completes successfully.
     /// </summary>
@@ -65,6 +68,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
     private readonly int AutoSaveIntervalMs;  // Wait after last change (default 3 seconds)
     private readonly int AutoSaveThrottleMs;  // Max one save per window (default 30 seconds)
     private bool _isMonitoring = false;
+    private volatile bool _resetInProgress;
     private readonly SemaphoreSlim _saveGate = new(1, 1);
 
     public event EventHandler? AutoSaveCompleted;
@@ -154,6 +158,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
     public void OnArtifactChanged()
     {
+        if (_resetInProgress) return;
         System.Diagnostics.Debug.WriteLine($"DIAG: [AutoSave] OnArtifactChanged ENTERED, _isMonitoring={_isMonitoring}");
         if (!_isMonitoring)
         {
@@ -197,12 +202,14 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
 
     public async Task<bool> SaveNowAsync()
     {
+        if (_resetInProgress) return false;
         // An explicit user choice supersedes any pending debounced save of the same state.
         CancelAutoSaveTimer();
         _isMonitoring = true;
         await _saveGate.WaitAsync();
         try
         {
+            if (_resetInProgress) return false;
             var result = await _persistence.AutoSaveAsync();
             if (result is null)
             {
@@ -225,6 +232,16 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         }
     }
 
+    public async Task PauseForResetAsync()
+    {
+        _resetInProgress = true;
+        CancelAutoSaveTimer();
+        await _saveGate.WaitAsync();
+        _saveGate.Release();
+    }
+
+    public void ResumeAfterReset() => _resetInProgress = false;
+
     private void CancelAutoSaveTimer()
     {
         _autoSaveTimer?.Dispose();
@@ -242,6 +259,7 @@ public class WorkspaceAutoSaveService : IWorkspaceAutoSaveService
         await _saveGate.WaitAsync();
         try
         {
+            if (_resetInProgress) return;
             var repoHash = RuntimeHelpers.GetHashCode(_artifactRepository);
             var artifacts = _artifactRepository.GetAllArtifacts().ToList();
             var artifactCount = artifacts.Count;

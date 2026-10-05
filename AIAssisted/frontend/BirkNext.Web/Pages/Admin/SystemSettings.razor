@@ -1332,8 +1332,8 @@ else if (_settings is not null)
                         <div class="danger-zone-action">
                             <div class="danger-zone-description">
                                 <strong>Reset Local Database</strong>
-                                <p>Deletes all imported artifacts, AI reviews, test scenarios, traceability links, traceability suggestions, implementation mappings, project documents, analysis results, and other application data stored in the local database. Also clears any active extraction session. The database server continues running and the application will recreate its schema when required. This operation cannot be undone.</p>
-                                <p>This operation does not modify application binaries, source code, configuration files, or frontend analysis profiles.</p>
+                                <p>Deletes saved workspaces and artifacts, lifecycle and traceability evidence, review and analysis results, test evidence, and run history stored in the local database. The database schema and migration history remain intact. Target environment, integration catalog, performance test definition, provider, and installation configuration are preserved. This operation cannot be undone.</p>
+                                <p>Application binaries, source code, configuration files, frontend analysis profiles, and uploaded files outside the database are not modified or deleted.</p>
                                 @if (!_settings.Maintenance.ResetAllowed && !string.IsNullOrWhiteSpace(_settings.Maintenance.ResetNotAllowedReason))
                                 {
                                     <p class="danger-zone-reason">@_settings.Maintenance.ResetNotAllowedReason</p>
@@ -1360,8 +1360,7 @@ else if (_settings is not null)
         <div class="modal-panel" @onclick:stopPropagation="true">
             <h2 id="modal-title" class="modal-title">Reset Local Database</h2>
             <div class="notification notification-warning">
-                All local QA Review Studio data will be permanently deleted: imported artifacts, AI reviews, test scenarios, traceability links, implementation mappings, and analysis results.
-                The database server will continue running. This action cannot be undone.
+                Saved workspaces, project/review evidence, analysis results, and execution history in the database will be permanently deleted. The schema, migration history, installation/provider configuration, target environment setup, and external uploaded files are preserved. This action cannot be undone.
             </div>
             <p class="modal-body-text">Type <strong>RESET</strong> in the box below to confirm.</p>
             <input class="modal-confirm-input"
@@ -1905,8 +1904,8 @@ else if (_settings is not null)
     [
         DiagnosticSection("Maintenance", "System maintenance and reset controls",
         [
-            DiagnosticItem("Database Reset", _settings?.Maintenance.ResetAllowed == true ? "Allowed" : "Not allowed", _settings?.Maintenance.ResetAllowed == true ? SystemSettingsStatus.Warning : SystemSettingsStatus.Unavailable, _settings?.Maintenance.ResetNotAllowedReason ?? "Local database reset availability.", ""),
-            DiagnosticItem("Database Mode", OrUnavailable(_settings?.Maintenance.DatabaseMode), string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) ? SystemSettingsStatus.Unavailable : SystemSettingsStatus.Pass, "Configured maintenance database mode.", "")
+            DiagnosticItem("Database Reset", _settings?.Maintenance.ResetAllowed == true ? "Allowed" : "Not allowed", _settings?.Maintenance.ResetAllowed == true ? SystemSettingsStatus.Pass : string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) || _settings?.Maintenance.DatabaseMode is "Unknown" or "Unverified" ? SystemSettingsStatus.Warning : SystemSettingsStatus.Info, _settings?.Maintenance.ResetAllowed == true ? "Local reset is enabled and restricted to a local database." : _settings?.Maintenance.ResetNotAllowedReason ?? "Reset availability could not be determined.", ""),
+            DiagnosticItem("Database Mode", OrUnavailable(_settings?.Maintenance.DatabaseMode), string.IsNullOrWhiteSpace(_settings?.Maintenance.DatabaseMode) || _settings?.Maintenance.DatabaseMode is "Unknown" or "Unverified" ? SystemSettingsStatus.Warning : SystemSettingsStatus.Pass, "Configured maintenance database mode and host classification.", "")
         ])
     ];
 
@@ -3027,6 +3026,7 @@ else if (_settings is not null)
     {
         if (_resetConfirmText != "RESET" || _isResetting) return;
         _isResetting = true;
+        await RuntimeReset.PauseAutoSaveForResetAsync();
         try
         {
             var (success, message) = await AdminApi.ResetLocalDatabaseAsync();
@@ -3047,6 +3047,7 @@ else if (_settings is not null)
         }
         finally
         {
+            RuntimeReset.ResumeAutoSaveAfterReset();
             _isResetting      = false;
             _showResetModal   = false;
             _resetConfirmText = "";

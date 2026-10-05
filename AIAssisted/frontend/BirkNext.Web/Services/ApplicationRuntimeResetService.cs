@@ -16,6 +16,7 @@ public sealed class ApplicationRuntimeResetService
     private readonly IDashboardSnapshotService _dashboardSnapshot;
     private readonly RuntimeReviewSessionService _runtimeReviews;
     private readonly IExtractionSessionService _extractionSession;
+    private readonly IWorkspaceAutoSaveService? _autoSave;
 
     public ApplicationRuntimeResetService(
         IWorkspaceSessionService workspace,
@@ -23,7 +24,8 @@ public sealed class ApplicationRuntimeResetService
         QualityReviewSessionService qualitySession,
         IDashboardSnapshotService dashboardSnapshot,
         RuntimeReviewSessionService runtimeReviews,
-        IExtractionSessionService extractionSession)
+        IExtractionSessionService extractionSession,
+        IWorkspaceAutoSaveService? autoSave = null)
     {
         _workspace = workspace;
         _stateManager = stateManager;
@@ -31,7 +33,12 @@ public sealed class ApplicationRuntimeResetService
         _dashboardSnapshot = dashboardSnapshot;
         _runtimeReviews = runtimeReviews;
         _extractionSession = extractionSession;
+        _autoSave = autoSave;
     }
+
+    public Task PauseAutoSaveForResetAsync() => _autoSave?.PauseForResetAsync() ?? Task.CompletedTask;
+
+    public void ResumeAutoSaveAfterReset() => _autoSave?.ResumeAfterReset();
 
     /// <summary>
     /// Clear all frontend runtime state that corresponds to deleted backend database data.
