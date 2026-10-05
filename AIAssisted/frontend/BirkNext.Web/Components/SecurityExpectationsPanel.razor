@@ -41,6 +41,7 @@
             <p class="sec-muted">Only current, valid, non-conflicting candidates with Confirmed or Strongly supported evidence are eligible. This action adds values only after your click.</p>
             <ReviewDisclosure Text="Discovery details" TestId="sec-discovery-details">
                 <p>Source snapshot @_result.SourceSnapshotId · Fingerprint @_result.SourceFingerprint · Analyzer @_result.AnalyzerVersion · @_result.ExtractedAt.ToUniversalTime().ToString("u")</p>
+                @foreach (var snapshot in _result.SourceFingerprints.Where(p => p.Key != _result.SourceSnapshotId)) { <p>Related snapshot @snapshot.Key · Fingerprint @snapshot.Value</p> }
                 @if (_result.SourceScope is null) { <p>Legacy source discovery. Historical evidence and original review decisions are retained.</p> }
                 @foreach (var decision in _result.ReviewDecisions) { <p>Original candidate @decision.CandidateId · @decision.State · @decision.At.ToUniversalTime().ToString("u")</p> }
                 @foreach (var note in _result.Diagnostics.Concat(_result.UnsupportedEvidence)) { <p>@SafeText(note)</p> }
@@ -56,7 +57,8 @@
             @foreach (var field in group.Fields)
             {
                 var fieldId = $"sec-field-{field}";
-                var candidates = _result?.Candidates.Where(c => c.FieldType == field).ToList() ?? [];
+                var candidates = _result?.Candidates.Where(c => c.FieldType == field)
+                    .OrderBy(c => CandidatePriority(State(c))).ThenBy(c => c.NormalizedValue, StringComparer.Ordinal).ToList() ?? [];
                 <div class="sec-field" id="@fieldId" data-testid="@fieldId">
                     @if (Editable)
                     {
@@ -89,7 +91,7 @@
                     @if (candidates.Count > 0)
                     {
                         <p>@candidates.Count unique candidates · @candidates.Sum(c => c.SupportingEvidenceCount) evidence items · @(candidates.Any(c => !Matches(c) && State(c) != SecurityCandidateState.Rejected) ? "Needs review" : "Matches source")</p>
-                        <button type="button" data-testid="@($"sec-review-{field}")" aria-expanded="@(_expandedField == field ? "true" : "false")" @onclick="() => _expandedField = _expandedField == field ? null : field">Review @SecurityExpectationValues.Label(field)</button>
+                        <button type="button" class="sec-review-toggle" data-testid="@($"sec-review-{field}")" aria-expanded="@(_expandedField == field ? "true" : "false")" @onclick="() => _expandedField = _expandedField == field ? null : field">Review @SecurityExpectationValues.Label(field)</button>
                     }
                     @if (_expandedField == field)
                     {
@@ -99,8 +101,8 @@
                         var state = State(candidate);
                         var valid = Valid(candidate);
                         <div class="sec-candidate" data-testid="sec-candidate" data-field="@field" data-candidate="@candidate.Id">
-                            <div><strong>@(valid ? candidate.Value : "Unresolved candidate; value not displayed")</strong> <span class="sec-state">@StateLabel(state)</span></div>
-                            <p class="sec-muted">@SafeText(candidate.SourceComponent) · @(matches ? "Matches current source; approved value is unchanged." : "Not approved")</p>
+                            <div><strong>@(valid || candidate.FormatState is "InvalidFormat" or "Placeholder" ? SafeText(candidate.Value) : "Unresolved candidate; value not displayed")</strong> <span class="sec-state">@StateLabel(state)</span>@if (candidate.EnvironmentScope.Length > 0) { <span class="sec-state">@candidate.EnvironmentScope source</span> }@if (candidate.FormatState is "InvalidFormat" or "Placeholder") { <span class="sec-state">@candidate.FormatState</span> }</div>
+                            <p class="sec-muted">@EvidenceSummary(candidate) · @(matches ? "Matches current source; approved value is unchanged." : "Not approved")</p>
                             <div class="sec-actions">
                                 @if (state != SecurityCandidateState.Rejected && state != SecurityCandidateState.Stale && valid && !matches)
                                 {
@@ -111,18 +113,18 @@
                                     <button type="button" class="btn-secondary" disabled="@(_busy || Editable)" data-testid="sec-reject" aria-label="@($"Ignore {SecurityExpectationValues.Label(field)} candidate from {SafeText(candidate.SourceComponent)}")" @onclick="() => ReviewAsync(candidate, false, false)">@(state == SecurityCandidateState.Conflict ? "Keep current" : "Ignore")</button>
                                 }
                             </div>
-                            <button type="button" data-testid="@($"sec-evidence-{candidate.Id}-toggle")" aria-expanded="@(_evidenceOpen.Contains(candidate.Id) ? "true" : "false")" @onclick="() => ToggleEvidence(candidate.Id)">View evidence (@candidate.SupportingEvidenceCount)</button>
+                            <button type="button" class="sec-evidence-toggle" data-testid="@($"sec-evidence-{candidate.Id}-toggle")" aria-expanded="@(_evidenceOpen.Contains(candidate.Id) ? "true" : "false")" @onclick="() => ToggleEvidence(candidate.Id)">Evidence (@candidate.SupportingEvidenceCount)</button>
                             @if (_evidenceOpen.Contains(candidate.Id))
                             {
                                 <div class="sec-evidence-scroll" tabindex="0" role="region" aria-label="Supporting source evidence">
-                                <table><caption>Supporting source evidence</caption><thead><tr><th scope="col">Source / snapshot</th><th scope="col">File</th><th scope="col">Symbol / config key</th><th scope="col">Raw value</th><th scope="col">Evidence kind</th><th scope="col">Confidence</th></tr></thead><tbody>
+                                <table><caption>Supporting source evidence. Discovery details contain snapshot provenance.</caption><thead><tr><th scope="col">Component / source</th><th scope="col">File</th><th scope="col">Symbol / config key</th><th scope="col">Raw value</th><th scope="col">Evidence kind</th><th scope="col">Confidence</th></tr></thead><tbody>
                                 @foreach (var evidence in candidate.SupportingEvidence)
                                 {
-                                    <tr><td>@SafeText(evidence.Repository) · @evidence.SourceSnapshotId · @Short(evidence.SourceFingerprint)</td><td>@SafeText(evidence.FilePath):@evidence.Line</td><td>@SafeText(evidence.SymbolOrKey)</td><td>@SafeText(evidence.RawValue)</td><td>@evidence.EvidenceKind</td><td>@evidence.State · @SafeText(evidence.Confidence)</td></tr>
+                                    <tr><td>@SafeText(evidence.Repository)</td><td>@SafeText(evidence.FilePath):@evidence.Line</td><td>@SafeText(evidence.SymbolOrKey)</td><td><code>@SafeText(evidence.RawValue)</code></td><td>@evidence.EvidenceKind</td><td>@evidence.State · @SafeText(evidence.Confidence)</td></tr>
                                 }
                                 @if (candidate.SupportingEvidence.Count == 0)
                                 {
-                                    <tr><td>@SafeText(candidate.SourceComponent) · @candidate.SourceSnapshotId</td><td>@SafeText(candidate.SourceFile):@candidate.SourceLine</td><td>@SafeText(candidate.SourceSymbol)</td><td>@SafeText(candidate.Value)</td><td>@candidate.EvidenceType</td><td>@candidate.EvidenceState · @SafeText(candidate.Confidence)</td></tr>
+                                    <tr><td>@SafeText(candidate.SourceComponent)</td><td>@SafeText(candidate.SourceFile):@candidate.SourceLine</td><td>@SafeText(candidate.SourceSymbol)</td><td><code>@SafeText(candidate.Value)</code></td><td>@candidate.EvidenceType</td><td>@candidate.EvidenceState · @SafeText(candidate.Confidence)</td></tr>
                                 }
                                 </tbody></table></div>
                             }
@@ -185,6 +187,21 @@
     private ElementReference _statusRef;
     private bool IsCurrent => _result is not null && _result.IsCurrent && (_scope.PrimaryId is null || _result.SourceSnapshotId == _scope.PrimaryId);
     private int ApprovedCount => Enum.GetValues<SecurityExpectationField>().Sum(f => SecurityExpectationValues.Values(Settings, f).Count());
+    private static string EvidenceSummary(SecurityExpectationCandidate c)
+    {
+        if (c.SupportingEvidence.Count == 0) return SafeText(c.SourceComponent);
+        var files = c.SupportingEvidence.Select(e => (e.Repository, e.FilePath)).Distinct().Count();
+        var components = c.SupportingEvidence.Select(e => e.Repository).Distinct(StringComparer.Ordinal).Count();
+        return $"{c.SupportingEvidenceCount} occurrences · {files} files · {components} components";
+    }
+    private static int CandidatePriority(SecurityCandidateState state) => state switch
+    {
+        SecurityCandidateState.Accepted or SecurityCandidateState.MatchesSource => 0,
+        SecurityCandidateState.NeedsReview or SecurityCandidateState.Conflict => 1,
+        SecurityCandidateState.Detected or SecurityCandidateState.Suggested => 2,
+        SecurityCandidateState.Rejected => 3,
+        _ => 4
+    };
     private static readonly (string Key, string Label, SecurityExpectationField[] Fields)[] Groups = [
         ("identity", "Identity expectations", [SecurityExpectationField.Authority, SecurityExpectationField.TenantId, SecurityExpectationField.ClientId, SecurityExpectationField.RedirectUrl]),
         ("hosts", "Allowed application hosts", [SecurityExpectationField.BackendDomain, SecurityExpectationField.RestHost, SecurityExpectationField.GraphQlHost, SecurityExpectationField.CdnHost]),

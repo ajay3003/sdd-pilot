@@ -97,6 +97,25 @@ public sealed class SecurityExpectationDiscoveryTests
         JsonSerializer.Serialize(evidence,Json).Should().NotContain("DO-NOT-RETAIN").And.NotContain("ClientSecret").And.NotContain("ConnectionStrings");
         new ApprovedSecurityExpectations().ExpectedSecurityHeaders.Should().BeEquivalentTo(ApprovedSecurityExpectations.DefaultHeaders);
     }
+    [Fact] public void SafeMalformedIdentifierIsRetainedAsUnresolvedReviewEvidence()
+    {
+        var files=GenericFixture.Append(("Shop.Ui/appsettings.invalid.json", """{"AzureAd":{"TenantId":"not-a-guid"}}""")).ToArray();
+        var candidate=Analyze(files).SecurityExpectationsEvidence!.Candidates.Single(c=>c.FieldType==SecurityExpectationField.TenantId && c.Value=="not-a-guid");
+        candidate.FormatState.Should().Be("InvalidFormat");candidate.CandidateState.Should().Be(SecurityCandidateState.NeedsReview);
+        candidate.EvidenceState.Should().Be(ArchitectureEvidenceState.Unresolved);
+        FluentActions.Invoking(()=>SecurityExpectationValues.Accept(new(),candidate,"fingerprint",false,DateTimeOffset.UtcNow))
+            .Should().Throw<InvalidOperationException>();
+    }
+    [Fact] public void RecognizedAppSettingsEnvironmentFilesKeepIdentityCandidatesInSeparateScopes()
+    {
+        var snapshot=Analyze(("Shop.Ui/Shop.Ui.csproj","""<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><PackageReference Include="Microsoft.Authentication.WebAssembly.Msal" Version="8.0.0"/></ItemGroup></Project>"""),
+            ("Shop.Ui/Program.cs","builder.Services.AddMsalAuthentication(options => builder.Configuration.Bind(\"AzureAd\", options.ProviderOptions.Authentication));"),
+            ("Shop.Ui/appsettings.Development.json","""{"AzureAd":{"TenantId":"11111111-1111-1111-1111-111111111111"}}"""),
+            ("Shop.Ui/appsettings.Production.json","""{"AzureAd":{"TenantId":"11111111-1111-1111-1111-111111111111"}}"""));
+        var candidates=SecurityExpectationDiscoveryService.Project(snapshot,"qa",new()).Candidates.Where(c=>c.FieldType==SecurityExpectationField.TenantId).ToList();
+        candidates.Should().HaveCount(2);candidates.Select(c=>c.EnvironmentScope).Should().BeEquivalentTo("Development","Production");
+        candidates.Select(c=>c.Id).Should().OnlyHaveUniqueItems();
+    }
     [Theory]
     [InlineData(SecurityExpectationField.RestHost,"HTTPS://API.Example.test.:8443/v1","api.example.test:8443")]
     [InlineData(SecurityExpectationField.RestHost,"API.Example.test.","api.example.test")]
@@ -116,7 +135,8 @@ public sealed class SecurityExpectationDiscoveryTests
         var evidence=Analyze(("App/App.csproj","<Project Sdk=\"Microsoft.NET.Sdk.Web\"/>"),
             ("App/Program.cs","builder.Services.AddHttpClient(\"X\", c => c.BaseAddress = new Uri(builder.Configuration[\"Remote:BaseUrl\"])); builder.Services.AddGraphQLServer();"),
             ("App/appsettings.json","""{"AzureAd":{"RedirectUri":"/callback","ClientId":"client_secret=DO-NOT-RETAIN"},"GraphQl":{"Endpoint":"not an endpoint"},"RandomGuid":"11111111-1111-1111-1111-111111111111"}""")).SecurityExpectationsEvidence!;
-        evidence.Candidates.Should().BeEmpty();evidence.Diagnostics.Should().NotBeEmpty();
+        evidence.Candidates.Should().NotBeEmpty().And.OnlyContain(c=>c.FormatState=="InvalidFormat" && c.CandidateState==SecurityCandidateState.NeedsReview);
+        evidence.Diagnostics.Should().NotBeEmpty();
         JsonSerializer.Serialize(evidence,Json).Should().NotContain("DO-NOT-RETAIN");
     }
     [Fact] public async Task DiscoverIsReadOnly_ExplicitAddPreservesManualValueAndRecordsProvenance()
@@ -174,8 +194,39 @@ public sealed class SecurityExpectationDiscoveryTests
         var old=new SecurityExpectationDiscoveryResult {TargetEnvironmentId="qa",SourceSnapshotId=snapshot.Id,SourceFingerprint=snapshot.Archive.Sha256,
             Candidates=[Candidate(SecurityExpectationField.RestHost,"api.example.test",snapshot.Id),Candidate(SecurityExpectationField.RestHost,"api.example.test",snapshot.Id)]};
         var json=JsonSerializer.Serialize(old,Json);db.SecurityExpectationDiscoveries.Add(new(){Id=old.Id,EnvironmentId="qa",SourceSnapshotId=snapshot.Id,CreatedAt=DateTimeOffset.UtcNow,EvidenceJson=json});await db.SaveChangesAsync();
-        var result=(await new SecurityExpectationDiscoveryService(db).ListAsync("qa")).Single();result.Candidates.Should().HaveCount(1);result.SupportingEvidenceCount.Should().Be(2);
+        var result=(await new SecurityExpectationDiscoveryService(db).ListAsync("qa")).Single();result.Candidates.Should().HaveCount(1);result.SupportingEvidenceCount.Should().Be(1);
         result.Candidates.Single().IsCurrent.Should().BeFalse();db.SecurityExpectationDiscoveries.Single().EvidenceJson.Should().Be(json);
+    }
+    [Fact] public async Task RepeatedRefreshKeepsCandidateEvidenceIdentityAndIgnoreDecision()
+    {
+        using var db=Db(); var snapshot=Analyze(GenericFixture); await Insert(db,snapshot);
+        var service=new SecurityExpectationDiscoveryService(db);
+        var result=await service.DiscoverAsync("qa",new(snapshot.Id,new()));
+        var candidate=result.Candidates.First(); var id=candidate.Id; var evidenceCount=candidate.SupportingEvidenceCount;
+        await service.ReviewAsync("qa",new(result.Id,id,result.Revision,new()),false);
+        for(var i=0;i<5;i++)
+        {
+            result=await service.DiscoverAsync("qa",new(snapshot.Id,new()));
+            result.Candidates.First(c=>c.Id==id).CandidateState.Should().Be(SecurityCandidateState.Rejected);
+            result.Candidates.First(c=>c.Id==id).SupportingEvidenceCount.Should().Be(evidenceCount);
+        }
+        result.Candidates.Select(c=>c.Id).Should().OnlyHaveUniqueItems();
+        (await service.ListAsync("qa")).First().Candidates.Select(c=>c.Id).Should().BeEquivalentTo(result.Candidates.Select(c=>c.Id));
+    }
+    [Fact] public async Task ConflictingLegacyDecisionsForEquivalentValuesRemainVisibleAsConflict()
+    {
+        using var db=Db(); var snapshot=Snapshot(SecurityExpectationField.TenantId,"11111111-1111-1111-1111-111111111111"); await Insert(db,snapshot);
+        var prior=new SecurityExpectationDiscoveryResult { Id=Guid.NewGuid(), TargetEnvironmentId="qa", SourceSnapshotId=snapshot.Id,
+            SourceFingerprint=snapshot.Archive.Sha256, SourceScope=new(snapshot.Id,[]), IsCurrent=true,
+            Candidates=[Candidate(SecurityExpectationField.TenantId,"{11111111-1111-1111-1111-111111111111}",snapshot.Id) with {Id="legacy-a"},
+                Candidate(SecurityExpectationField.TenantId,"11111111-1111-1111-1111-111111111111",snapshot.Id) with {Id="legacy-b"}] };
+        db.SecurityExpectationDiscoveries.Add(new() {Id=prior.Id,EnvironmentId="qa",SourceSnapshotId=snapshot.Id,CreatedAt=DateTimeOffset.UtcNow,
+            EvidenceJson=JsonSerializer.Serialize(prior,Json),DecisionsJson=JsonSerializer.Serialize(new[] {
+                new SecurityCandidateDecision("legacy-a",SecurityCandidateState.Accepted,DateTimeOffset.UtcNow),
+                new SecurityCandidateDecision("legacy-b",SecurityCandidateState.Rejected,DateTimeOffset.UtcNow)},Json)});
+        await db.SaveChangesAsync();
+        var result=await new SecurityExpectationDiscoveryService(db).DiscoverAsync("qa",new(snapshot.Id,new()));
+        result.Candidates.Should().ContainSingle().Which.CandidateState.Should().Be(SecurityCandidateState.Conflict);
     }
     [Theory]
     [InlineData(false)]

@@ -9,6 +9,8 @@
 .sec-field { border:1px solid var(--clr-border,#cbd5e1); border-radius:.5rem; padding:.65rem; display:grid; gap:.35rem; min-width:0; }
 .sec-field label,.sec-field h5 { font-size:.9rem; font-weight:600; }
 .sec-candidate { border-top:1px solid var(--clr-border,#cbd5e1); padding-top:.5rem; display:grid; gap:.35rem; min-width:0; font-size:.85rem; }
+.sec-review-toggle,.sec-evidence-toggle { width:auto !important; max-width:100%; justify-self:start; padding:.35rem .65rem; }
+.sec-candidate code { white-space:pre-wrap; overflow-wrap:anywhere; }
 .sec-approved { list-style:none; margin:0; padding:0; display:grid; gap:.35rem; font-size:.85rem; }
 .sec-state { display:inline-block; padding:.1rem .35rem; border-radius:.3rem; border:1px solid #cbd5e1; background:#f1f5f9; color:#334155; font-size:.75rem; }
 .sec-status { font-size:.85rem; }
@@ -26,5 +28,6 @@
 
 .sec select { max-width:100%; min-width:0; }
 .sec-evidence-scroll { overflow-x:auto; max-width:100%; min-width:0; }
-.sec-evidence-scroll table { border-collapse:collapse; min-width:650px; font-size:.8rem; }
-.sec-evidence-scroll th,.sec-evidence-scroll td { padding:.4rem; text-align:left; border-bottom:1px solid #cbd5e1; max-width:220px; overflow-wrap:anywhere; }
+.sec-evidence-scroll table { border-collapse:collapse; width:100%; table-layout:auto; font-size:.8rem; }
+.sec-evidence-scroll th,.sec-evidence-scroll td { padding:.4rem; text-align:left; border-bottom:1px solid #cbd5e1; overflow-wrap:anywhere; vertical-align:top; }
+.sec-evidence-scroll th:nth-child(4),.sec-evidence-scroll td:nth-child(4) { min-width:15rem; }

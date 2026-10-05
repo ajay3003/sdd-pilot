@@ -34,6 +34,17 @@ public sealed class SecurityExpectationsPanelTests : BunitContext
         cut.FindAll("[data-testid=sec-candidate],table").Should().BeEmpty();
         cut.Find("[data-testid=sec-review-GraphQlHost]").GetAttribute("aria-expanded").Should().Be("false");
     }
+    [Fact] public void ReviewAndEvidenceActionsUseCompactControlsAndEvidenceStartsCollapsed()
+    {
+        _api.Candidates=[_api.Make("long-value",SecurityExpectationField.RedirectUrl,"https://example.test/authentication/login-callback?client=web")];
+        var cut=Panel();Discover(cut);
+        cut.Find("[data-testid=sec-review-RedirectUrl]").ClassList.Should().Contain("sec-review-toggle");
+        cut.Find("[data-testid=sec-review-RedirectUrl]").GetAttribute("aria-expanded").Should().Be("true");
+        var evidence=cut.Find("[data-testid=sec-evidence-long-value-toggle]");
+        evidence.ClassList.Should().Contain("sec-evidence-toggle");evidence.TextContent.Should().Be("Evidence (1)");
+        evidence.GetAttribute("aria-expanded").Should().Be("false");cut.FindAll("table").Should().BeEmpty();
+        cut.Find("[data-candidate=long-value]").TextContent.Should().Contain("login-callback?client=web");
+    }
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

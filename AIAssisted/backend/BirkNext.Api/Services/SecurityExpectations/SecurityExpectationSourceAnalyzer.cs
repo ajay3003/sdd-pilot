@@ -13,7 +13,7 @@ namespace BirkNext.Api.Services.SecurityExpectations;
 /// Only public identifiers, explicit endpoint hosts, redirect/authority URLs and header names leave the in-memory workspace.</summary>
 public static class SecurityExpectationSourceAnalyzer
 {
-    public const int Version = 1;
+    public const int Version = 2;
     public static SecuritySourceEvidence Analyze(IqrSourceSnapshot snapshot, IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default)
     {
         var input = ArchitectureInput.From(snapshot.Id, workspace);
@@ -29,21 +29,42 @@ public static class SecurityExpectationSourceAnalyzer
         var diagnostics = new List<string>();
         void Add(SecurityExpectationField field, string raw, string component, ArchitectureEvidence evidence, ArchitectureEvidenceState state = ArchitectureEvidenceState.Confirmed)
         {
-            // Never retain invalid raw values or their contents in diagnostics.
+            var environmentScope = ConfigurationEnvironment(evidence.File);
+            // Credential-shaped and unsafe values are never retained. Safe malformed values remain review-only evidence.
             var normalized = SecurityExpectationValues.Normalize(field, raw);
-            if (normalized is null) { diagnostics.Add($"{field}: explicit value is malformed, unresolved or credential-shaped; value not retained ({ArchitectureText.Safe(evidence.File)})."); return; }
+            if (normalized is null)
+            {
+                if (string.IsNullOrWhiteSpace(raw) || raw.Length > 500 || SecurityExpectationValues.SecretShaped(raw) || raw.Any(char.IsControl))
+                {
+                    diagnostics.Add($"{field}: explicit value is empty, unsafe or too large; value not retained ({ArchitectureText.Safe(evidence.File)}).");
+                    return;
+                }
+                var invalidKey = $"{field}|invalid|{raw.Trim()}";
+                var invalidId = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(invalidKey))).ToLowerInvariant();
+                candidates.Add(new() {
+                    Id = invalidId, FieldType = field, Value = raw.Trim(), NormalizedValue = (SecurityExpectationValues.IsPlaceholder(raw) ? "placeholder:" : "invalid:") + invalidId,
+                    FormatState = SecurityExpectationValues.IsPlaceholder(raw) ? "Placeholder" : "InvalidFormat", EnvironmentScope = environmentScope, CandidateState = SecurityCandidateState.NeedsReview, EvidenceState = ArchitectureEvidenceState.Unresolved,
+                    Confidence = "Format could not be normalized", SourceSnapshotId = snapshot.Id, SourceComponent = component,
+                    SourceFile = ArchitectureText.Safe(evidence.File), SourceLine = evidence.Line, SourceSymbol = ArchitectureText.Safe(evidence.Symbol), EvidenceType = evidence.Kind.ToString(),
+                    SupportingEvidence = [new(snapshot.Id, snapshot.Archive.FileName + " / " + component, ArchitectureText.Safe(evidence.File), evidence.Line,
+                        ArchitectureText.Safe(evidence.Symbol), evidence.Kind.ToString(), raw.Trim(), "Format could not be normalized", ArchitectureEvidenceState.Unresolved, snapshot.Archive.Sha256, environmentScope)],
+                    Explanation = "Explicit source value needs format review. It has not been normalized or approved.",
+                    SuggestedAction = "Review format"
+                });
+                return;
+            }
             var value = field is SecurityExpectationField.BackendDomain or SecurityExpectationField.RestHost or SecurityExpectationField.GraphQlHost or SecurityExpectationField.CdnHost
                 ? normalized : raw.Trim();
             var key = $"{field}|{component}|{evidence.File}|{evidence.Symbol}|{normalized}";
             candidates.Add(new() {
                 Id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key))).ToLowerInvariant(),
-                FieldType = field, Value = value, NormalizedValue = normalized,
+                FieldType = field, Value = value, NormalizedValue = normalized, EnvironmentScope = environmentScope,
                 CandidateState = state == ArchitectureEvidenceState.Inferred ? SecurityCandidateState.Suggested : SecurityCandidateState.Detected,
                 EvidenceState = state, Confidence = state == ArchitectureEvidenceState.Confirmed ? "Explicit source configuration" : "Source role requires review",
                 SourceSnapshotId = snapshot.Id, SourceComponent = component, SourceFile = ArchitectureText.Safe(evidence.File),
                 SourceLine = evidence.Line, SourceSymbol = ArchitectureText.Safe(evidence.Symbol), EvidenceType = evidence.Kind.ToString(),
                 SupportingEvidence = [new(snapshot.Id, snapshot.Archive.FileName + " / " + component, ArchitectureText.Safe(evidence.File), evidence.Line,
-                    ArchitectureText.Safe(evidence.Symbol), evidence.Kind.ToString(), raw.Trim(), state == ArchitectureEvidenceState.Confirmed ? "Explicit source configuration" : "Source role requires review", state, snapshot.Archive.Sha256)],
+                    ArchitectureText.Safe(evidence.Symbol), evidence.Kind.ToString(), raw.Trim(), state == ArchitectureEvidenceState.Confirmed ? "Explicit source configuration" : "Source role requires review", state, snapshot.Archive.Sha256, environmentScope)],
                 Explanation = evidence.Explanation, SuggestedAction = SecurityExpectationValues.Singleton(field) ? "Accept or explicitly replace" : "Add or ignore"
             });
             if (field == SecurityExpectationField.Authority && Uri.TryCreate(raw, UriKind.Absolute, out var authority) &&
@@ -153,6 +174,17 @@ public static class SecurityExpectationSourceAnalyzer
             SourceSnapshotId = snapshot.Id, SourceFingerprint = snapshot.Archive.Sha256, AnalyzerVersion = Version,
             Candidates = candidates.DistinctBy(c => c.Id).ToList(), Diagnostics = diagnostics.Distinct().ToList(),
             UnsupportedEvidence = limitations.Where(l => l.Contains("unsupported", StringComparison.OrdinalIgnoreCase) || l.Contains("Not analyzed", StringComparison.OrdinalIgnoreCase)).ToList()
+        };
+    }
+
+    private static string ConfigurationEnvironment(string path)
+    {
+        var normalized = path.Replace('\\', '/');
+        var match = Regex.Match(normalized, @"(?:^|/)appsettings\.(Development|Local|Test|QA|Staging|Production)\.json$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success) return "";
+        return match.Groups[1].Value.ToLowerInvariant() switch
+        {
+            "development" => "Development", "local" => "Local", "test" => "Test", "qa" => "QA", "staging" => "Staging", _ => "Production"
         };
     }
 

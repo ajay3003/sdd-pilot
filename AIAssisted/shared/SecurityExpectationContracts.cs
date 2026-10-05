@@ -22,6 +22,8 @@ public sealed record SecurityExpectationCandidate
     public SecurityExpectationField FieldType { get; init; }
     public string Value { get; init; } = "";
     public string NormalizedValue { get; init; } = "";
+    public string FormatState { get; init; } = "Valid";
+    public string EnvironmentScope { get; init; } = "";
     public SecurityCandidateState CandidateState { get; init; }
     public ArchitectureEvidenceState EvidenceState { get; init; }
     public string Confidence { get; init; } = "";
@@ -38,7 +40,7 @@ public sealed record SecurityExpectationCandidate
 }
 
 public sealed record SecurityExpectationEvidence(Guid SourceSnapshotId, string Repository, string FilePath,
-    int Line, string SymbolOrKey, string EvidenceKind, string RawValue, string Confidence, ArchitectureEvidenceState State, string SourceFingerprint = "");
+    int Line, string SymbolOrKey, string EvidenceKind, string RawValue, string Confidence, ArchitectureEvidenceState State, string SourceFingerprint = "", string EnvironmentScope = "");
 public sealed record SecurityExpectationSourceScope(Guid PrimarySourceSnapshotId, List<Guid> RelatedSourceSnapshotIds);
 public sealed record SecurityExpectationFieldDefinition(SecurityExpectationField Field, bool IsSingleton, string ValueType, string NormalizationRule);
 
@@ -107,7 +109,7 @@ public static class SecurityExpectationValues
         field is SecurityExpectationField.Authority or SecurityExpectationField.RedirectUrl ? "URL" :
         field is SecurityExpectationField.TenantId or SecurityExpectationField.ClientId ? "Identifier" : field == SecurityExpectationField.SecurityHeader ? "Header name" : "Host and port",
         field switch {
-            SecurityExpectationField.Authority => "URL scheme/host normalization; preserve authority path and version",
+            SecurityExpectationField.Authority => "URL scheme/host normalization; preserve authority path and version; ignore one final slash",
             SecurityExpectationField.RedirectUrl => "URL scheme/host normalization; preserve path case and trailing slash",
             SecurityExpectationField.TenantId => "GUID formatting or domain case; no GUID/domain alias mapping",
             SecurityExpectationField.ClientId => "GUID formatting; exact comparison for legacy public identifiers",
@@ -116,6 +118,7 @@ public static class SecurityExpectationValues
     public static SecurityCandidateState DeriveState(SecurityExpectationCandidate candidate, ApprovedSecurityExpectations approved, int uniqueFieldCandidates)
     {
         if (!candidate.IsCurrent) return SecurityCandidateState.Stale;
+        if (candidate.FormatState != "Valid") return SecurityCandidateState.NeedsReview;
         if (candidate.CandidateState == SecurityCandidateState.Rejected) return SecurityCandidateState.Rejected;
         if (Matches(approved, candidate)) return SecurityCandidateState.MatchesSource;
         if (Singleton(candidate.FieldType))
@@ -129,14 +132,30 @@ public static class SecurityExpectationValues
         => DeriveState(candidate, approved, uniqueFieldCandidates) == SecurityCandidateState.Conflict ? "Replace with detected" :
             !Singleton(candidate.FieldType) ? "Add" : uniqueFieldCandidates > 1 ? "Choose this value" : "Accept";
     public static List<SecurityExpectationCandidate> Group(IEnumerable<SecurityExpectationCandidate> observations)
-        => observations.GroupBy(c => (c.FieldType, c.NormalizedValue)).OrderBy(g => g.Key.FieldType).ThenBy(g => g.Key.NormalizedValue, StringComparer.Ordinal)
+        => observations.Where(c => !string.IsNullOrWhiteSpace(c.NormalizedValue))
+        .GroupBy(c => (c.FieldType, c.EnvironmentScope, c.NormalizedValue)).OrderBy(g => g.Key.FieldType).ThenBy(g => g.Key.EnvironmentScope, StringComparer.Ordinal).ThenBy(g => g.Key.NormalizedValue, StringComparer.Ordinal)
         .Select(g => {
             var first = g.OrderBy(c => c.SourceComponent, StringComparer.Ordinal).ThenBy(c => c.SourceFile, StringComparer.Ordinal).ThenBy(c => c.SourceSymbol, StringComparer.Ordinal).First();
-            var evidence = g.SelectMany(c => c.SupportingEvidence.Count > 0 ? c.SupportingEvidence : [new SecurityExpectationEvidence(c.SourceSnapshotId,c.SourceComponent,c.SourceFile,c.SourceLine,c.SourceSymbol,c.EvidenceType,c.Value,c.Confidence,c.EvidenceState)])
-                .OrderBy(e => e.Repository,StringComparer.Ordinal).ThenBy(e => e.FilePath,StringComparer.Ordinal).ThenBy(e => e.SymbolOrKey,StringComparer.Ordinal).ThenBy(e => e.Line).ToList();
-            var key = $"{g.Key.FieldType}|{g.Key.NormalizedValue}|{string.Join(",",evidence.Select(e => e.SourceSnapshotId).Distinct().Order())}";
-            return first with { Id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key))), SupportingEvidence = evidence, SourceOccurrenceIds = g.SelectMany(c => c.SourceOccurrenceIds.Count > 0 ? c.SourceOccurrenceIds : [c.Id]).ToList(), NormalizationRule = Definition(first.FieldType).NormalizationRule };
+            var evidence = g.SelectMany(c => c.SupportingEvidence.Count > 0 ? c.SupportingEvidence : [new SecurityExpectationEvidence(c.SourceSnapshotId,c.SourceComponent,c.SourceFile,c.SourceLine,c.SourceSymbol,c.EvidenceType,c.Value,c.Confidence,c.EvidenceState, EnvironmentScope:c.EnvironmentScope)])
+                .OrderBy(EvidenceIdentity,StringComparer.Ordinal).ThenBy(e => e.State).ThenBy(e => e.Confidence,StringComparer.Ordinal)
+                .DistinctBy(EvidenceIdentity).OrderBy(e => EvidencePriority(e.State)).ThenBy(e => e.Repository,StringComparer.Ordinal)
+                .ThenBy(e => e.FilePath,StringComparer.Ordinal).ThenBy(e => e.SymbolOrKey,StringComparer.Ordinal).ThenBy(e => e.Line).ToList();
+            var key = $"{g.Key.FieldType}|{g.Key.EnvironmentScope}|{g.Key.NormalizedValue}";
+            var id = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)));
+            var source = evidence.FirstOrDefault();
+            return first with { Id = id, Value = first.FormatState == "Valid" ? g.Key.NormalizedValue : first.Value, EnvironmentScope = g.Key.EnvironmentScope, SupportingEvidence = evidence,
+                SourceSnapshotId = source?.SourceSnapshotId ?? first.SourceSnapshotId,
+                SourceFile = source?.FilePath ?? first.SourceFile,
+                SourceLine = source?.Line ?? first.SourceLine, SourceSymbol = source?.SymbolOrKey ?? first.SourceSymbol,
+                SourceOccurrenceIds = g.SelectMany(c => c.SourceOccurrenceIds.Count > 0 ? c.SourceOccurrenceIds : [c.Id]).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
+                NormalizationRule = Definition(first.FieldType).NormalizationRule };
         }).ToList();
+    private static string EvidenceIdentity(SecurityExpectationEvidence e) => string.Concat(new[] { e.SourceSnapshotId.ToString("N"),
+        e.SourceFingerprint, e.EnvironmentScope, e.Repository, e.FilePath, e.Line.ToString(System.Globalization.CultureInfo.InvariantCulture), e.SymbolOrKey, e.EvidenceKind, e.RawValue }
+        .Select(part => $"{part.Length}:{part}"));
+    private static int EvidencePriority(ArchitectureEvidenceState state) => state switch {
+        ArchitectureEvidenceState.Confirmed => 0, ArchitectureEvidenceState.StronglySupported => 1,
+        ArchitectureEvidenceState.Inferred => 2, ArchitectureEvidenceState.Unresolved => 3, _ => 4 };
     public static bool Singleton(SecurityExpectationField field) => field is SecurityExpectationField.Authority or SecurityExpectationField.TenantId or SecurityExpectationField.ClientId;
     public static string Label(SecurityExpectationField field) => field switch {
         SecurityExpectationField.Authority => "Expected Authority", SecurityExpectationField.TenantId => "Expected Tenant",
@@ -151,10 +170,12 @@ public static class SecurityExpectationValues
         SecurityExpectationField.RestHost => settings.AllowedRestHosts, SecurityExpectationField.GraphQlHost => settings.AllowedGraphQlHosts,
         SecurityExpectationField.CdnHost => settings.AllowedCdnHosts, _ => settings.ExpectedSecurityHeaders };
     public static bool SecretShaped(string value) => Regex.IsMatch(value, @"(?i)(secret|password|access.?token|refresh.?token|api.?key|sharedaccess|accountkey|sig=|bearer\s|connectionstring|eyJ[A-Za-z0-9_-]{10})");
+    public static bool IsPlaceholder(string value) => Regex.IsMatch(value.Trim(), @"^(\$\{[A-Za-z0-9_.:-]+\}|__[A-Za-z0-9_.:-]+__|<[A-Za-z0-9_.:-]+>)$", RegexOptions.CultureInvariant);
     public static string? Normalize(SecurityExpectationField field, string value)
     {
         value = value.Trim();
-        if (value.Length is 0 or > 500 || SecretShaped(value) || value.Contains('*') || value.Any(char.IsControl)) return null;
+        if (value.Length >= 2 && value[0] == value[^1] && value[0] is '\'' or '"') value = value[1..^1].Trim();
+        if (value.Length is 0 or > 500 || SecretShaped(value) || value.Any(char.IsControl)) return null;
         if (field == SecurityExpectationField.ClientId) return Guid.TryParse(value, out var client) ? client.ToString("D")
             : Regex.IsMatch(value, @"^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$") ? value : null;
         if (field == SecurityExpectationField.TenantId) return Guid.TryParse(value, out var tenant) ? tenant.ToString("D")
@@ -163,14 +184,19 @@ public static class SecurityExpectationValues
             return new[] { "Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy", "Permissions-Policy", "Strict-Transport-Security", "X-Frame-Options" }
                 .FirstOrDefault(h => h.Equals(value, StringComparison.OrdinalIgnoreCase));
         var urlField = field is SecurityExpectationField.Authority or SecurityExpectationField.RedirectUrl;
-        var input = urlField || value.Contains("://") ? value : "https://" + value;
+        var wildcardHost = !urlField && value.StartsWith("*.", StringComparison.Ordinal);
+        if (value.Contains('*') && !wildcardHost) return null;
+        var hostValue = wildcardHost ? value[2..] : value;
+        var input = urlField || hostValue.Contains("://") ? hostValue : "https://" + hostValue;
         if (!Uri.TryCreate(input, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https") || uri.UserInfo.Length > 0 ||
             uri.Fragment.Length > 0 || SecretShaped(uri.Query) || Uri.CheckHostName(uri.IdnHost.TrimEnd('.')) == UriHostNameType.Unknown) return null;
         var name = uri.IdnHost.TrimEnd('.').ToLowerInvariant();
         var host = (uri.HostNameType == UriHostNameType.IPv6 ? "[" + name.Trim('[', ']') + "]" : name) + (uri.IsDefaultPort ? "" : ":" + uri.Port);
-        if (!urlField) return uri.Query.Length == 0 && (value.Contains("://") || uri.AbsolutePath == "/") ? host : null;
-        if (uri.Query.Length > 0) return null;
-        return uri.Scheme.ToLowerInvariant() + "://" + host + uri.AbsolutePath + uri.Query;
+        if (!urlField) return uri.Query.Length == 0 && (hostValue.Contains("://") || uri.AbsolutePath == "/") ? (wildcardHost ? "*." : "") + host : null;
+        if (field == SecurityExpectationField.Authority && uri.Query.Length > 0) return null;
+        var path = uri.AbsolutePath;
+        if (field == SecurityExpectationField.Authority && path.EndsWith("/", StringComparison.Ordinal)) path = path[..^1];
+        return uri.Scheme.ToLowerInvariant() + "://" + host + path + uri.Query;
     }
     public static bool Matches(ApprovedSecurityExpectations settings, SecurityExpectationCandidate candidate) =>
         Values(settings, candidate.FieldType).Any(v => Normalize(candidate.FieldType, v) == candidate.NormalizedValue);

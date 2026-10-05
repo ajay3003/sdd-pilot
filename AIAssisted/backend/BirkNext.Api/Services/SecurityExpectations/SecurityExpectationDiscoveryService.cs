@@ -88,9 +88,20 @@ public sealed class SecurityExpectationDiscoveryService(AppDbContext db, IReview
                 Diagnostics = result.Diagnostics.Concat(related.SelectMany(r => r.Diagnostics)).Distinct().ToList(),
                 UnsupportedEvidence = result.UnsupportedEvidence.Concat(related.SelectMany(r => r.UnsupportedEvidence)).Distinct().ToList() };
         }
-        result = CurrentView(result, result.IsCurrent, []);
+        var requestedRelated = result.SourceScope?.RelatedSourceSnapshotIds.Order().ToList() ?? [];
+        var previousRows = await db.SecurityExpectationDiscoveries.AsNoTracking().Where(r => r.EnvironmentId == environmentId && r.SourceSnapshotId == snapshot.Id)
+            .OrderByDescending(r => r.CreatedAt).Take(30).Select(r => new { r.EvidenceJson, r.DecisionsJson }).ToListAsync(ct);
+        var decisions = new List<SecurityCandidateDecision>();
+        foreach (var previous in previousRows)
+        {
+            var prior = JsonSerializer.Deserialize<SecurityExpectationDiscoveryResult>(previous.EvidenceJson, Json);
+            if (prior?.SourceScope?.RelatedSourceSnapshotIds.Order().SequenceEqual(requestedRelated) == true)
+                decisions = RemapDecisions(prior, result.Candidates, JsonSerializer.Deserialize<List<SecurityCandidateDecision>>(previous.DecisionsJson, Json) ?? []);
+            if (prior?.SourceScope?.RelatedSourceSnapshotIds.Order().SequenceEqual(requestedRelated) == true) break;
+        }
+        result = CurrentView(result, result.IsCurrent, decisions);
         db.SecurityExpectationDiscoveries.Add(new() { Id = result.Id, EnvironmentId = environmentId, SourceSnapshotId = snapshot.Id,
-            CreatedAt = result.ExtractedAt, EvidenceJson = JsonSerializer.Serialize(result, Json) });
+            CreatedAt = result.ExtractedAt, EvidenceJson = JsonSerializer.Serialize(result, Json), DecisionsJson = JsonSerializer.Serialize(decisions, Json) });
         await db.SaveChangesAsync(ct);
         return result;
     }
@@ -147,7 +158,13 @@ public sealed class SecurityExpectationDiscoveryService(AppDbContext db, IReview
     }
     private static SecurityExpectationDiscoveryResult CurrentView(SecurityExpectationDiscoveryResult result, bool current, List<SecurityCandidateDecision> decisions) =>
         result with { IsCurrent = current, ReviewDecisions = decisions, Candidates = result.Candidates.Select(c => c with { IsCurrent = current && c.IsCurrent,
-            CandidateState = !current || !c.IsCurrent ? SecurityCandidateState.Stale : decisions.LastOrDefault(d=>d.CandidateId==c.Id)?.State ?? c.CandidateState }).ToList() };
+            CandidateState = !current || !c.IsCurrent ? SecurityCandidateState.Stale : DecisionState(c, decisions) ?? c.CandidateState }).ToList() };
+    private static SecurityCandidateState? DecisionState(SecurityExpectationCandidate candidate, List<SecurityCandidateDecision> decisions)
+    {
+        var states = decisions.Where(d => d.CandidateId == candidate.Id).Select(d => d.State).Distinct().ToList();
+        if (states.Count > 1) return SecurityCandidateState.Conflict;
+        return decisions.LastOrDefault(d => d.CandidateId == candidate.Id)?.State;
+    }
 
     public async Task<IReadOnlyList<SecurityExpectationDiscoveryResult>> ListAsync(string environmentId, CancellationToken ct = default)
     {
@@ -155,11 +172,35 @@ public sealed class SecurityExpectationDiscoveryService(AppDbContext db, IReview
             .OrderByDescending(r=>r.CreatedAt).Take(30).ToListAsync(ct);
         return rows.Select(row => {
             var result = JsonSerializer.Deserialize<SecurityExpectationDiscoveryResult>(row.EvidenceJson,Json)! with { Revision = row.Revision };
-            if (result.SourceScope is null) result = result with { Candidates = SecurityExpectationValues.Group(result.Candidates).Select(c => c with { IsCurrent = false, CandidateState = SecurityCandidateState.Stale }).ToList() };
-            return CurrentView(result, true,
-                JsonSerializer.Deserialize<List<SecurityCandidateDecision>>(row.DecisionsJson,Json) ?? []);
+            var candidates = SecurityExpectationValues.Group(result.Candidates.Select(c =>
+            {
+                var normalized = c.FormatState == "Valid" ? SecurityExpectationValues.Normalize(c.FieldType, c.Value) : null;
+                return normalized is null ? c : c with { NormalizedValue = normalized, Value = normalized };
+            }));
+            var decisions = RemapDecisions(result, candidates, JsonSerializer.Deserialize<List<SecurityCandidateDecision>>(row.DecisionsJson,Json) ?? []);
+            result = result with { Candidates = candidates };
+            if (result.SourceScope is null) result = result with { Candidates = result.Candidates.Select(c => c with { IsCurrent = false, CandidateState = SecurityCandidateState.Stale }).ToList() };
+            return CurrentView(result, true, decisions);
         }).ToList();
     }
+    private static List<SecurityCandidateDecision> RemapDecisions(SecurityExpectationDiscoveryResult prior,
+        List<SecurityExpectationCandidate> currentCandidates, List<SecurityCandidateDecision> priorDecisions)
+    {
+        var priorCandidates = prior.Candidates.ToDictionary(c => c.Id, StringComparer.Ordinal);
+        return priorDecisions.Where(d => priorCandidates.ContainsKey(d.CandidateId))
+            .Select(d => (Decision: d, Candidate: priorCandidates[d.CandidateId]))
+            .Select(x => (x.Decision, Candidate: currentCandidates.FirstOrDefault(c => c.FieldType == x.Candidate.FieldType &&
+                SemanticValue(c) == SemanticValue(x.Candidate) && c.EnvironmentScope == x.Candidate.EnvironmentScope)))
+            .Where(x => x.Candidate is not null)
+            .Select(x => x.Decision with { CandidateId = x.Candidate!.Id })
+            .GroupBy(d => d.CandidateId, StringComparer.Ordinal)
+            .Select(g => g.Select(d => d.State).Distinct().Count() > 1
+                ? new SecurityCandidateDecision(g.Key, SecurityCandidateState.Conflict, g.Max(d => d.At))
+                : g.OrderBy(d => d.At).Last())
+            .ToList();
+    }
+    private static string SemanticValue(SecurityExpectationCandidate candidate) =>
+        candidate.FormatState == "Valid" ? SecurityExpectationValues.Normalize(candidate.FieldType, candidate.Value) ?? candidate.NormalizedValue : candidate.NormalizedValue;
     public async Task<SecurityCandidateReviewResponse> ReviewAsync(string environmentId, SecurityCandidateReviewRequest request, bool accept, CancellationToken ct = default)
     {
         // Serializable binding check + review update preserves the explicitly selected immutable scope.
@@ -190,6 +231,7 @@ public sealed class SecurityExpectationDiscoveryService(AppDbContext db, IReview
             catch(InvalidOperationException e) { throw new SecurityDiscoveryReviewException(e.Message); }
         }
         var decisions = JsonSerializer.Deserialize<List<SecurityCandidateDecision>>(row.DecisionsJson,Json) ?? [];
+        decisions.RemoveAll(d => d.CandidateId == candidate.Id);
         decisions.Add(new(candidate.Id,accept ? SecurityCandidateState.Accepted : SecurityCandidateState.Rejected,DateTimeOffset.UtcNow));
         row.DecisionsJson = JsonSerializer.Serialize(decisions,Json); row.Revision++;
         try {
