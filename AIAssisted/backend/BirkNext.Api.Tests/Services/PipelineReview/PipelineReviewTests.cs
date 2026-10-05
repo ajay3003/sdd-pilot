@@ -31,6 +31,33 @@ public sealed class PipelineReviewTests
 
     private static DeploymentReview Deployment(PipelineReviewResult r, string environment) => r.Deployments.Single(d => d.Environment == environment);
 
+    [Fact]
+    public void Repository_CI_pipeline_remains_readable_by_Source_Analysis_and_Pipeline_Review()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "azure-pipelines.yml"))) root = root.Parent;
+        root.Should().NotBeNull("the test runs from a repository build output directory");
+
+        var source = File.ReadAllText(Path.Combine(root!.FullName, "azure-pipelines.yml"));
+        var pipeline = Review(("azure-pipelines.yml", source));
+        pipeline.State.Should().NotBe("NeedsReanalysis");
+        pipeline.Story.Should().NotBeEmpty();
+
+        var evidence = Snapshot(("repo/azure-pipelines.yml", source)).EvidenceDomains!.CiCd;
+        evidence.Status.Should().NotBe(SourceDomainStatus.FailedAnalysis);
+        evidence.Pipelines.Should().ContainSingle();
+        var ci = evidence.Pipelines.Single();
+        ci.JobDetails.Should().ContainSingle(j => j.Name == "QualityGates");
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Build);
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Test || s.Kind == PipelineStepKind.UnitTest);
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.E2ETest);
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.SecurityScan);
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("test-results"));
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("pipeline-diagnostics"));
+        ci.Steps.Should().Contain(s => s.Kind == PipelineStepKind.Publish && s.ArtifactsPublished.Contains("birknext-tester-package"));
+        ci.Triggers.Should().Contain(t => t.Type == "pull-request");
+    }
+
     // ── Evidence (Source Analysis owns parsing) ─────────────────────────────────────────────────────────────────────
 
     [Fact]

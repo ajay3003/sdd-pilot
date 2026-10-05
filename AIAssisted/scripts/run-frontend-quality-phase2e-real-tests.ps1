@@ -4,6 +4,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "..\frontend\BirkNext.Web.PlaywrightTests\BirkNext.Web.PlaywrightTests.csproj"
+$resultArgs = @()
+if ($env:TEST_RESULTS_DIRECTORY) { New-Item -ItemType Directory -Force -Path $env:TEST_RESULTS_DIRECTORY | Out-Null; $resultArgs = @('--logger', 'trx', '--results-directory', $env:TEST_RESULTS_DIRECTORY) }
 
 & dotnet build $project -c Release --no-restore --no-dependencies -p:RunPreStartedPlaywrightTests=true
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -20,5 +22,5 @@ if ($selected -eq 0)
     exit 2
 }
 
-& dotnet test $project -c Release --no-build -p:RunPreStartedPlaywrightTests=true --filter $TestFilter
+& dotnet test $project -c Release --no-build -p:RunPreStartedPlaywrightTests=true --filter $TestFilter @resultArgs
 exit $LASTEXITCODE

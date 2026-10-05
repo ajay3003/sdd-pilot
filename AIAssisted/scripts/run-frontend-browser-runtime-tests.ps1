@@ -4,6 +4,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 $project = Join-Path $PSScriptRoot "..\backend\BirkNext.Api.Tests\BirkNext.Api.Tests.csproj"
+$resultArgs = @()
+if ($env:TEST_RESULTS_DIRECTORY) { New-Item -ItemType Directory -Force -Path $env:TEST_RESULTS_DIRECTORY | Out-Null; $resultArgs = @('--logger', 'trx', '--results-directory', $env:TEST_RESULTS_DIRECTORY) }
 
 $discovery = & dotnet test $project -c Release --no-build --list-tests --filter $TestFilter 2>&1
 $discovery | ForEach-Object { Write-Host $_ }
@@ -18,5 +20,5 @@ if ($selected -eq 0) {
     exit 2
 }
 
-& dotnet test $project -c Release --no-build --filter $TestFilter
+& dotnet test $project -c Release --no-build --filter $TestFilter @resultArgs
 exit $LASTEXITCODE

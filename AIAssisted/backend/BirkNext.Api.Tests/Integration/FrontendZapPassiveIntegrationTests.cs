@@ -87,19 +87,20 @@ public sealed class FrontendZapPassiveIntegrationTests
     private sealed class TestTopology : IAsyncDisposable
     {
         private const string Image = FrontendZapPassiveReviewService.Image;
+        private static string Runtime => Environment.GetEnvironmentVariable("FrontendPassiveSecurity__ContainerRuntime") ?? "podman";
         private readonly string _network, _fixture;
         private readonly string? _fixtureUntrusted;
         public FrontendZapPassiveReviewService Service { get; }
         private TestTopology(string network, string fixture, string? fixtureUntrusted, FrontendZapPassiveReviewService service) { _network = network; _fixture = fixture; _fixtureUntrusted = fixtureUntrusted; Service = service; }
         public PassiveSecurityReviewRequest Request(string path) => new($"http://{_fixture}:8081{path}", "local-zap-fixture", $"http://{_fixture}:8081", "Internal", TimeoutSeconds: 300);
-        public int RequestCount(string path) => Run("podman", "logs", _fixture).Output.Split("REQ ", StringSplitOptions.RemoveEmptyEntries).Count(x => x.StartsWith(path, StringComparison.Ordinal));
-        public int RequestCountUntrusted(string path) => _fixtureUntrusted == null ? 0 : Run("podman", "logs", _fixtureUntrusted).Output.Split("REQ ", StringSplitOptions.RemoveEmptyEntries).Count(x => x.StartsWith(path, StringComparison.Ordinal));
+        public int RequestCount(string path) => Run(Runtime, "logs", _fixture).Output.Split("REQ ", StringSplitOptions.RemoveEmptyEntries).Count(x => x.StartsWith(path, StringComparison.Ordinal));
+        public int RequestCountUntrusted(string path) => _fixtureUntrusted == null ? 0 : Run(Runtime, "logs", _fixtureUntrusted).Output.Split("REQ ", StringSplitOptions.RemoveEmptyEntries).Count(x => x.StartsWith(path, StringComparison.Ordinal));
         public static async Task<TestTopology> StartAsync()
         {
             var id = Guid.NewGuid().ToString("N"); var network = $"birknext-zap-test-{id}"; var fixture = $"birknext-zap-fixture-{id}";
-            Run("podman", "network", "create", "--label", "birknext.engine=zap-passive-test", network).ExitCode.Should().Be(0);
-            Run("podman", "run", "-d", "--rm", "--name", fixture, "--network", network, "--label", "birknext.engine=zap-passive-test", Image, "python3", "-c", $"import base64;exec(base64.b64decode('{Script()}'))").ExitCode.Should().Be(0);
-            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["FrontendPassiveSecurity:Enabled"]="true", ["FrontendPassiveSecurity:ContainerRuntime"]="podman", ["FrontendPassiveSecurity:ContainerNetwork"] = network, [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:BaseUrl"]=$"http://{fixture}:8081", [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:EnvironmentType"]="Internal" }).Build();
+            Run(Runtime, "network", "create", "--label", "birknext.engine=zap-passive-test", network).ExitCode.Should().Be(0);
+            Run(Runtime, "run", "-d", "--rm", "--name", fixture, "--network", network, "--label", "birknext.engine=zap-passive-test", Image, "python3", "-c", $"import base64;exec(base64.b64decode('{Script()}'))").ExitCode.Should().Be(0);
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["FrontendPassiveSecurity:Enabled"]="true", ["FrontendPassiveSecurity:ContainerRuntime"]=Runtime, ["FrontendPassiveSecurity:ContainerNetwork"] = network, [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:BaseUrl"]=$"http://{fixture}:8081", [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:EnvironmentType"]="Internal" }).Build();
             var service = new FrontendZapPassiveReviewService(NullLogger<FrontendZapPassiveReviewService>.Instance, new(new BrowserTargetValidator(), config), new PassiveSecurityEvidenceSanitizer(), config, new ZapProcessRunner());
             await Task.Delay(250);
             return new(network, fixture, null, service);
@@ -107,15 +108,15 @@ public sealed class FrontendZapPassiveIntegrationTests
         public static async Task<TestTopology> StartDualAsync()
         {
             var id = Guid.NewGuid().ToString("N"); var network = $"birknext-zap-test-{id}"; var fixture = $"birknext-zap-fixture-{id}"; var fixtureUntrusted = $"birknext-zap-untrusted-{id}";
-            Run("podman", "network", "create", "--label", "birknext.engine=zap-passive-test", network).ExitCode.Should().Be(0);
-            Run("podman", "run", "-d", "--rm", "--name", fixture, "--network", network, "--label", "birknext.engine=zap-passive-test", "-e", $"UNTRUSTED_HOST={fixtureUntrusted}", Image, "python3", "-c", $"import base64;exec(base64.b64decode('{ScriptWithParams()}'))").ExitCode.Should().Be(0);
-            Run("podman", "run", "-d", "--rm", "--name", fixtureUntrusted, "--network", network, "--label", "birknext.engine=zap-passive-test", Image, "python3", "-c", $"import base64;exec(base64.b64decode('{Script()}'))").ExitCode.Should().Be(0);
-            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["FrontendPassiveSecurity:Enabled"]="true", ["FrontendPassiveSecurity:ContainerRuntime"]="podman", ["FrontendPassiveSecurity:ContainerNetwork"] = network, [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:BaseUrl"]=$"http://{fixture}:8081", [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:EnvironmentType"]="Internal" }).Build();
+            Run(Runtime, "network", "create", "--label", "birknext.engine=zap-passive-test", network).ExitCode.Should().Be(0);
+            Run(Runtime, "run", "-d", "--rm", "--name", fixture, "--network", network, "--label", "birknext.engine=zap-passive-test", "-e", $"UNTRUSTED_HOST={fixtureUntrusted}", Image, "python3", "-c", $"import base64;exec(base64.b64decode('{ScriptWithParams()}'))").ExitCode.Should().Be(0);
+            Run(Runtime, "run", "-d", "--rm", "--name", fixtureUntrusted, "--network", network, "--label", "birknext.engine=zap-passive-test", Image, "python3", "-c", $"import base64;exec(base64.b64decode('{Script()}'))").ExitCode.Should().Be(0);
+            var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string,string?> { ["FrontendPassiveSecurity:Enabled"]="true", ["FrontendPassiveSecurity:ContainerRuntime"]=Runtime, ["FrontendPassiveSecurity:ContainerNetwork"] = network, [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:BaseUrl"]=$"http://{fixture}:8081", [$"FrontendPassiveSecurity:TrustedProfiles:local-zap-fixture:EnvironmentType"]="Internal" }).Build();
             var service = new FrontendZapPassiveReviewService(NullLogger<FrontendZapPassiveReviewService>.Instance, new(new BrowserTargetValidator(), config), new PassiveSecurityEvidenceSanitizer(), config, new ZapProcessRunner());
             await Task.Delay(250);
             return new(network, fixture, fixtureUntrusted, service);
         }
-        public async ValueTask DisposeAsync() { Run("podman", "rm", "--force", _fixture); if (_fixtureUntrusted != null) Run("podman", "rm", "--force", _fixtureUntrusted); Run("podman", "network", "rm", _network); await Task.CompletedTask; }
+        public async ValueTask DisposeAsync() { Run(Runtime, "rm", "--force", _fixture); if (_fixtureUntrusted != null) Run(Runtime, "rm", "--force", _fixtureUntrusted); Run(Runtime, "network", "rm", _network); await Task.CompletedTask; }
         private static string Script() => Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(@"from http.server import BaseHTTPRequestHandler,HTTPServer
 from urllib.parse import urlparse
 class H(BaseHTTPRequestHandler):
