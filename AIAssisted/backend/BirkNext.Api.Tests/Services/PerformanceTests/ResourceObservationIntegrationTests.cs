@@ -336,7 +336,12 @@ public sealed class ResourceObservationIntegrationTests
         runtime.Containers["pay-api-1"] = new ContainerInstanceInfo("0a1b2c3d4e5f", "t0", 0, true, null, null, null);
         runtime.OnStats = _ => PodmanContainerExecutionRuntime.ParseStats("""{"CPU":3.5,"MemUsage":0,"MemLimit":0,"PIDs":0}""", new HashSet<string> { "cpu" });
         var provider = new PodmanResourceObservationProvider(runtime);
-        (await provider.StatusAsync()).Availability.Should().Be("Partial");
+        var status = await provider.StatusAsync();
+        status.Availability.Should().Be("Partial");
+        status.Metrics.Should().Equal(ResourceMetric.CpuPercent);
+        status.UnavailableMetrics.Should().Equal([ResourceMetric.ContainerMemoryBytes], "memory is unavailable on this host — never reported as 0");
+        status.Scope.Should().Be("Approved Podman containers");
+        status.Summary.Should().NotBeNullOrWhiteSpace();
         var spec = new ResourceTargetSpec(new ResourceObservationTarget { Id = Api }, "pay-api-1");
         var sample = await provider.SampleAsync(spec);
         sample.State.Should().Be(ResourceCollectionState.PartialEvidence);
@@ -344,6 +349,17 @@ public sealed class ResourceObservationIntegrationTests
         sample.Sample.Cpu!.CpuPercent.Should().Be(3.5);
         (await provider.SampleAsync(spec with { ContainerName = "missing" })).State.Should().Be(ResourceCollectionState.TargetNotFound);
         (await provider.SampleAsync(spec with { ContainerName = "bad name;rm" })).State.Should().Be(ResourceCollectionState.TargetNotFound);
+    }
+
+    [Fact]
+    public async Task DotNetSelfProvider_DeclaresItsBirkNextOnlyScope_AndExternalDotNetTargetsAsUnsupported()
+    {
+        var status = await new DotNetRuntimeSelfObservationProvider().StatusAsync();
+        status.DisplayName.Should().Be("BirkNext API runtime");
+        status.Scope.Should().Be("BirkNext API process only");
+        status.UnavailableMetrics.Should().BeEmpty();
+        status.Limits.Should().ContainSingle().Which.Should().Be(new ResourceScopeLimit("External .NET targets", "Unsupported",
+            "No process attachment or exported runtime telemetry provider is configured."));
     }
 
     [Fact]

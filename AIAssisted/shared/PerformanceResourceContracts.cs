@@ -263,7 +263,22 @@ public sealed record ResourceDriftAssessment
     public List<ResourceFinding> Findings { get; init; } = [];
 }
 
-public sealed record ResourceProviderCapability(string ProviderId, string DisplayName, string Availability, string Detail, List<ResourceMetric> Metrics);
+/// <summary>What one resource observation provider can measure here. <see cref="Availability"/> is "Available", "Partial", "Unavailable",
+/// "Unsupported" or "Not implemented"; <see cref="Detail"/> is the full reason.</summary>
+public sealed record ResourceProviderCapability(string ProviderId, string DisplayName, string Availability, string Detail, List<ResourceMetric> Metrics)
+{
+    /// <summary>Metrics this provider measures elsewhere but cannot on this host (rootless Podman: container memory). Unavailable — never 0.</summary>
+    public List<ResourceMetric> UnavailableMetrics { get; init; } = [];
+    /// <summary>What the provider observes, e.g. "BirkNext API process only" or "Approved Podman containers".</summary>
+    public string? Scope { get; init; }
+    /// <summary>One-line summary for compact display; <see cref="Detail"/> keeps the full explanation.</summary>
+    public string? Summary { get; init; }
+    /// <summary>Scopes the provider explicitly does not cover, with their state and reason (e.g. external .NET targets: Unsupported).</summary>
+    public List<ResourceScopeLimit> Limits { get; init; } = [];
+}
+
+/// <summary>A scope a provider does not cover: <paramref name="Status"/> uses the provider availability vocabulary.</summary>
+public sealed record ResourceScopeLimit(string Label, string Status, string Reason);
 
 public sealed record ResourceTargetStatus(ResourceObservationTarget Target, bool Allowed, string Availability, string Detail, string? Instance);
 

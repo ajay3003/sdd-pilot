@@ -1,4 +1,439 @@
-/* Image references and digests are long unbroken tokens: wrap them inside the card instead of widening the page. */
-.pte-root dd, .pte-root dt, .pte-root code { overflow-wrap: anywhere; word-break: break-word; min-width: 0; }
-.pte-root dl > div { min-width: 0; }
-.pte-subhead { margin: 1rem 0 .3rem; font-size: 1rem; }
+/* System Settings → Performance Test Engines. Design tokens only; status pills reuse the shared .sd-pill tones (source-domains.css).
+   Cards are not interactive (no hover lift). Long unbroken values (image references, digests) wrap inside their box. */
+
+.pte {
+    position: relative; /* keeps visually-hidden spans from escaping and widening the page */
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+    min-width: 0;
+    color: var(--clr-text-body, #334155);
+}
+
+/* ── Header ─────────────────────────────────────────── */
+
+.pte-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem 1.5rem;
+}
+
+.pte-header-text { min-width: 0; flex: 1 1 28rem; }
+
+.pte-title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.pte-lead {
+    margin: 0.3rem 0 0;
+    font-size: 0.95rem;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.pte-sub {
+    margin: 0.25rem 0 0;
+    max-width: 60rem;
+    font-size: 0.85rem;
+    color: var(--clr-text-muted, #475569);
+}
+
+.pte-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.pte-link { font-size: 0.85rem; }
+
+/* ── Summary strip ──────────────────────────────────── */
+
+.pte-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+    gap: 0.75rem;
+    margin: 0;
+}
+
+.pte-summary > div {
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--clr-surface, #f8fafc);
+    min-width: 0;
+}
+
+.pte-summary dt {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--clr-text-muted, #475569);
+}
+
+.pte-summary dd {
+    margin: 0.3rem 0 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--clr-text-heading, #0f172a);
+    overflow-wrap: anywhere;
+}
+
+/* ── Sections ───────────────────────────────────────── */
+
+.pte-section { display: grid; gap: 0.6rem; min-width: 0; }
+
+.pte-section-title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.pte-section-sub {
+    margin: -0.3rem 0 0.15rem;
+    font-size: 0.85rem;
+    color: var(--clr-text-muted, #475569);
+}
+
+.pte-engine-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 30rem), 1fr));
+    gap: 1rem;
+}
+
+.pte-resource-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+    gap: 1rem;
+    align-items: start;
+}
+
+/* ── Cards ──────────────────────────────────────────── */
+
+.pte-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    align-content: start;
+    min-width: 0;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--clr-surface-white, #fff);
+}
+
+.pte-engine { padding: 1.15rem 1.25rem; }
+
+.pte-card-head {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.75rem;
+}
+
+.pte-card-titles { min-width: 0; }
+
+.pte-card-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+    overflow-wrap: anywhere;
+}
+
+.pte-engine .pte-card-title { font-size: 1.15rem; }
+
+.pte-card-kind,
+.pte-scope {
+    margin: 0.1rem 0 0;
+    font-size: 0.8rem;
+    color: var(--clr-text-muted, #475569);
+}
+
+.pte-scope {
+    display: inline-block;
+    margin-top: 0.3rem;
+    padding: 0 0.45rem;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--clr-surface, #f8fafc);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    font-size: 0.74rem;
+}
+
+.pte-card-summary,
+.pte-reason,
+.pte-guidance,
+.pte-why-text {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.pte-guidance {
+    padding: 0.5rem 0.7rem;
+    border-left: 3px solid var(--clr-border-hover, #cbd5e1);
+    background: var(--clr-surface, #f8fafc);
+}
+
+.pte-icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--radius-md, 6px);
+    background-color: var(--clr-surface-selected, #eff6ff);
+    position: relative;
+}
+
+.pte-icon::after {
+    content: "";
+    position: absolute;
+    inset: 0.45rem;
+    background-color: var(--clr-primary, #2563eb);
+    -webkit-mask: var(--pte-icon) center / contain no-repeat;
+    mask: var(--pte-icon) center / contain no-repeat;
+}
+
+/* Speedometer (engine) and activity line (resource provider). */
+.pte-icon-engine {
+    --pte-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 2a7 7 0 0 0-6.06 10.5.5.5 0 0 0 .43.25h11.26a.5.5 0 0 0 .43-.25A7 7 0 0 0 8 2Zm0 1a6 6 0 0 1 5.33 8.75H2.67A6 6 0 0 1 8 3Zm3.35 2.15a.5.5 0 0 0-.7 0L8.4 7.4a1.5 1.5 0 1 0 .7.7l2.25-2.25a.5.5 0 0 0 0-.7Z'/%3E%3C/svg%3E");
+}
+
+.pte-icon-resource {
+    --pte-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M6 1.5a.5.5 0 0 1 .47.33L9.5 10.6l1.53-3.83A.5.5 0 0 1 11.5 6.5H15a.5.5 0 0 1 0 1h-3.16l-1.88 4.69a.5.5 0 0 1-.93-.02L6 3.4 4.47 7.73A.5.5 0 0 1 4 8H1a.5.5 0 0 1 0-1h2.65l1.88-5.17A.5.5 0 0 1 6 1.5Z'/%3E%3C/svg%3E");
+}
+
+.pte-tone-planned .pte-icon,
+.pte-tone-neutral.pte-resource .pte-icon { background-color: var(--clr-surface, #f8fafc); }
+
+.pte-tone-planned .pte-icon::after,
+.pte-tone-neutral.pte-resource .pte-icon::after { background-color: var(--clr-text-muted, #475569); }
+
+/* Future and unsupported providers are visually secondary. */
+.pte-other-grid .pte-card {
+    background: var(--clr-surface, #f8fafc);
+    padding: 0.8rem 1rem;
+}
+
+/* ── Status pill (shared .sd-pill + glyph) ──────────── */
+
+.pte-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.74rem;
+    line-height: 1.5;
+    vertical-align: middle;
+}
+
+.pte-glyph { font-size: 0.8em; line-height: 1; }
+
+/* Not implemented is outlined (dashed) to keep it distinct from Unsupported. */
+.sd-pill.pte-tone-planned {
+    border-style: dashed;
+    background: transparent;
+}
+
+/* ── Facts (label / value) ──────────────────────────── */
+
+.pte-facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+    gap: 0.6rem 1.25rem;
+    margin: 0;
+    padding: 0.75rem 0;
+    border-top: 1px solid var(--clr-border-subtle, #f1f5f9);
+    border-bottom: 1px solid var(--clr-border-subtle, #f1f5f9);
+}
+
+.pte-facts > div { min-width: 0; }
+
+.pte-facts dt,
+.pte-chips-title {
+    margin: 0;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--clr-text-muted, #475569);
+}
+
+.pte-facts dd {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.2rem 0 0;
+    font-size: 0.92rem;
+    font-weight: 500;
+    color: var(--clr-text-heading, #0f172a);
+    min-width: 0;
+}
+
+.pte-image { overflow-wrap: anywhere; word-break: break-word; }
+
+/* ── Capability chips ───────────────────────────────── */
+
+.pte-chips-block { display: grid; gap: 0.4rem; }
+
+.pte-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pte-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: 999px;
+    background: var(--clr-surface, #f8fafc);
+    font-size: 0.8rem;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.pte-chip.is-on > span[aria-hidden] { color: var(--clr-success, #15803d); font-weight: 700; }
+
+.pte-chip.is-off {
+    border-style: dashed;
+    background: transparent;
+    color: var(--clr-text-muted, #475569);
+}
+
+.pte-chips-small .pte-chip { padding: 0.1rem 0.5rem; font-size: 0.76rem; }
+
+/* ── Per-metric availability (Partial providers) ────── */
+
+.pte-metric-states {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+    gap: 0.5rem;
+    margin: 0;
+}
+
+.pte-metric-states > div {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-md, 6px);
+    min-width: 0;
+}
+
+.pte-metric-states dt { font-size: 0.84rem; font-weight: 600; color: var(--clr-text-heading, #0f172a); }
+.pte-metric-states dd { margin: 0; }
+
+/* ── Scope limits (e.g. external .NET targets) ──────── */
+
+.pte-limits { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.35rem; }
+
+.pte-limits li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.5rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--clr-border-subtle, #f1f5f9);
+    font-size: 0.84rem;
+}
+
+.pte-limit-label { font-weight: 600; color: var(--clr-text-heading, #0f172a); }
+
+.pte-limit-reason {
+    flex-basis: 100%;
+    font-size: 0.8rem;
+    color: var(--clr-text-muted, #475569);
+}
+
+/* ── States ─────────────────────────────────────────── */
+
+.pte-loading,
+.pte-empty { margin: 0; font-size: 0.9rem; color: var(--clr-text-muted, #475569); }
+
+.pte-error {
+    display: grid;
+    gap: 0.2rem;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--clr-warning-border, #fde68a);
+    border-radius: var(--radius-lg, 8px);
+    background: var(--clr-warning-bg-light, #fefce8);
+    color: var(--clr-warning, #92400e);
+    font-size: 0.88rem;
+}
+
+.pte-muted { color: var(--clr-text-muted, #475569); font-weight: 500; }
+
+/* ── Technical details ──────────────────────────────── */
+
+.pte-technical-body { display: grid; gap: 0.5rem; padding-top: 0.5rem; min-width: 0; }
+
+.pte-tech-title {
+    margin: 0.5rem 0 0;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--clr-text-heading, #0f172a);
+}
+
+.pte-tech {
+    display: grid;
+    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
+    gap: 0.35rem 1rem;
+    margin: 0;
+    font-size: 0.82rem;
+}
+
+.pte-tech > div { display: contents; }
+.pte-tech dt { color: var(--clr-text-muted, #475569); font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.pte-tech dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.pte-tech code {
+    font-size: 0.8rem;
+    color: var(--clr-text-body, #334155);
+    background: var(--clr-surface, #f8fafc);
+    padding: 0 0.25rem;
+    border-radius: var(--radius-sm, 4px);
+    overflow-wrap: anywhere;
+    word-break: break-all;
+}
+
+.pte-tech-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem; }
+
+.pte-copy {
+    padding: 0 0.45rem;
+    border: 1px solid var(--clr-border-input, #d1d5db);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--clr-surface-white, #fff);
+    color: var(--clr-text-body, #334155);
+    font-size: 0.74rem;
+    line-height: 1.6;
+    cursor: pointer;
+}
+
+.pte-copy:hover { border-color: var(--clr-border-hover, #cbd5e1); }
+
+.pte-copy:focus-visible,
+.pte-refresh:focus-visible {
+    outline: 2px solid var(--clr-primary, #2563eb);
+    outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+    .pte-tech { grid-template-columns: minmax(0, 1fr); }
+    .pte-tech dd { margin-bottom: 0.35rem; }
+    .pte-card-head { grid-template-columns: auto minmax(0, 1fr); }
+    .pte-card-head > :last-child { grid-column: 1 / -1; justify-self: start; }
+}

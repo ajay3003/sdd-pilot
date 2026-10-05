@@ -279,7 +279,7 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         cut.WaitForAssertion(() => cut.FindAll("[data-testid=pte-resource]").Should().HaveCount(3));
         cut.Find("[data-testid=pte-resource][data-provider='resource.podman']").GetAttribute("data-availability").Should().Be("Partial");
         cut.Find("[data-testid=pte-resource][data-provider='resource.browser']").TextContent.Should().Contain("does not represent Blazor/.NET WASM managed memory");
-        cut.Find("[data-testid=pte-availability]").TextContent.Should().StartWith("Ready", "the k6 provider status is unchanged by resource providers");
+        cut.Find("[data-testid=pte-availability] .sd-pill").GetAttribute("data-status").Should().Be("Ready", "the k6 provider status is unchanged by resource providers");
     }
 
     [Fact]
@@ -535,13 +535,15 @@ public sealed class PerformanceTestReviewPageTests : BunitContext
         Register(availability: ProviderAvailability.ImageMissing);
         _api.ProviderList = [Provider(ProviderAvailability.ImageMissing) with { Detail = "The k6 image docker.io/grafana/k6:1.0.0 is not available locally." }];
         var cut = Render<BirkNext.Web.Components.PerformanceTestEngineStatus>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid=pte-runtime]").TextContent.Should().Contain("Podman").And.Contain("available, 5.4.2"));
-        cut.Find("[data-testid=pte-image]").TextContent.Should().Contain("missing").And.Contain("allowed on request");
+        cut.WaitForAssertion(() => cut.Find("[data-testid=pte-runtime]").TextContent.Should().Contain("Podman 5.4.2").And.Contain("Available"));
+        cut.Find("[data-testid=pte-image] dd").TextContent.Should().Be("grafana/k6:1.0.0");
+        cut.Find("[data-testid=pte-image-status]").TextContent.Should().Contain("Missing");
+        cut.Find("[data-testid=pte-technical-body]").TextContent.Should().Contain("Allowed on request");
         cut.Find("[data-testid=pte-pull]").Click();
         _api.Calls.Should().Contain("prepare");
         _api.ProviderList = [Provider(ProviderAvailability.ImageMissing) with { AllowImagePull = false }];
         var noPull = Render<BirkNext.Web.Components.PerformanceTestEngineStatus>();
-        noPull.WaitForAssertion(() => noPull.Find("[data-testid=pte-image]").TextContent.Should().Contain("disabled"));
+        noPull.WaitForAssertion(() => noPull.Find("[data-testid=pte-guidance]").TextContent.Should().Contain("Automatic image pull is disabled"));
         noPull.FindAll("[data-testid=pte-pull]").Should().BeEmpty();
     }
 }

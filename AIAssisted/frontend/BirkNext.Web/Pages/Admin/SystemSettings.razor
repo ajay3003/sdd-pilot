@@ -651,7 +651,7 @@ else if (_settings is not null)
             @if (_activeSection == "performance-test-engines")
             {
                 <div class="settings-card settings-card-full-width">
-                    <div class="settings-card-title">Performance Test Engines</div>
+                    @* The component renders its own heading (Performance Test Engines). *@
                     <BirkNext.Web.Components.PerformanceTestEngineStatus />
                 </div>
             }

@@ -72,18 +72,22 @@ public sealed class PodmanResourceObservationProvider(IContainerExecutionRuntime
 {
     public string ProviderId => ResourceProviderIds.Podman;
     public string DisplayName => "Podman container resources";
+    private const string Scope = "Approved Podman containers";
     private static readonly List<ResourceMetric> All = [ResourceMetric.ContainerMemoryBytes, ResourceMetric.CpuPercent];
 
     public async Task<ResourceProviderCapability> StatusAsync(CancellationToken ct = default)
     {
         var status = await runtime.StatusAsync(ct);
         if (status.Availability != ProviderAvailability.Available)
-            return new(ProviderId, DisplayName, "Unavailable", $"{runtime.DisplayName}: {status.Detail}", []);
+            return new(ProviderId, DisplayName, "Unavailable", $"{runtime.DisplayName}: {status.Detail}", [])
+                { Scope = Scope, Summary = $"{runtime.DisplayName} is not available.", UnavailableMetrics = All };
         var controllers = await runtime.ControllersAsync(ct);
         return controllers.Contains("memory")
             ? new(ProviderId, DisplayName, "Available", $"{runtime.DisplayName} {status.Version}: container memory and CPU.", All)
+                { Scope = Scope, Summary = "Container memory and CPU." }
             : new(ProviderId, DisplayName, "Partial", $"{runtime.DisplayName} {status.Version}: CPU only — container memory accounting is not available (no memory cgroup controller delegated, typical for rootless Podman). Memory is reported as unavailable, never 0.",
-                [ResourceMetric.CpuPercent]);
+                [ResourceMetric.CpuPercent])
+                { Scope = Scope, Summary = "CPU only; container memory accounting is unavailable on this host.", UnavailableMetrics = [ResourceMetric.ContainerMemoryBytes] };
     }
 
     public async Task<ResourceSampleResult> ProbeAsync(ResourceTargetSpec target, CancellationToken ct = default)
@@ -122,7 +126,7 @@ public sealed class PodmanResourceObservationProvider(IContainerExecutionRuntime
 public sealed class DotNetRuntimeSelfObservationProvider : IResourceObservationProvider
 {
     public string ProviderId => ResourceProviderIds.DotNetRuntime;
-    public string DisplayName => ".NET runtime (BirkNext process)";
+    public string DisplayName => "BirkNext API runtime";
     private readonly object _gate = new();
     private (DateTimeOffset At, TimeSpan Cpu, long Allocated, int GcIndexGen)? _previous;
     private long _lastGcIndex = -1;
@@ -136,7 +140,11 @@ public sealed class DotNetRuntimeSelfObservationProvider : IResourceObservationP
     ];
 
     public Task<ResourceProviderCapability> StatusAsync(CancellationToken ct = default) => Task.FromResult(new ResourceProviderCapability(ProviderId, DisplayName, "Available",
-        "In-process runtime counters of the BirkNext API itself. Other .NET applications are Unsupported (no attach; exported runtime telemetry is not implemented).", Supported));
+        "In-process runtime counters of the BirkNext API itself. Other .NET applications are Unsupported (no attach; exported runtime telemetry is not implemented).", Supported)
+    {
+        Scope = "BirkNext API process only", Summary = "Runtime counters from the BirkNext API process.",
+        Limits = [new("External .NET targets", "Unsupported", "No process attachment or exported runtime telemetry provider is configured.")],
+    });
 
     public Task<ResourceSampleResult> ProbeAsync(ResourceTargetSpec target, CancellationToken ct = default) => Task.FromResult(target.Target.Id == PerformanceResourceOptions.SelfTargetId
         ? new ResourceSampleResult(null, ResourceCollectionState.Collected, "BirkNext API process (this process).")
@@ -240,9 +248,12 @@ public sealed class ResourceObservationRegistry(PerformanceTestOptions options, 
             catch (Exception ex) when (ex is not OperationCanceledException) { list.Add(new(p.ProviderId, p.DisplayName, "Unavailable", $"Status could not be determined ({ex.GetType().Name}).", [])); }
         }
         list.Add(new(ResourceProviderIds.Browser, "Browser memory", "Unsupported",
-            "Not a resource provider: the JavaScript heap does not represent Blazor/.NET WASM managed memory, and GC timing makes browser leak verdicts untrustworthy.", []));
-        list.Add(new(ResourceProviderIds.OpenTelemetry, "OpenTelemetry runtime metrics", "Not implemented", "Future provider for exported runtime metrics of other services.", []));
-        list.Add(new(ResourceProviderIds.AppInsights, "Application Insights metrics", "Not implemented", "Future observability adapter; Resource Stability does not depend on Azure.", []));
+            "Not a resource provider: the JavaScript heap does not represent Blazor/.NET WASM managed memory, and GC timing makes browser leak verdicts untrustworthy.", [])
+            { Scope = "Browser", Summary = "Browser JavaScript heap is not a reliable measure of Blazor/.NET WASM managed memory." });
+        list.Add(new(ResourceProviderIds.OpenTelemetry, "OpenTelemetry runtime metrics", "Not implemented", "Future provider for exported runtime metrics of other services.", [])
+            { Scope = "External services", Summary = "Future provider for exported runtime metrics from target services." });
+        list.Add(new(ResourceProviderIds.AppInsights, "Application Insights metrics", "Not implemented", "Future observability adapter; Resource Stability does not depend on Azure.", [])
+            { Scope = "External services", Summary = "Future observability adapter." });
         return list;
     }
 }

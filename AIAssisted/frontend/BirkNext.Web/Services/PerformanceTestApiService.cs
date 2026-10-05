@@ -27,6 +27,10 @@ public interface IPerformanceTestApiService
     Task<List<ResourceTargetStatus>> ResourceTargetsAsync(string environmentId, string environmentType, CancellationToken ct = default) => Task.FromResult<List<ResourceTargetStatus>>([]);
     /// <summary>Resource observation providers and what each can measure (System Settings).</summary>
     Task<List<ResourceProviderCapability>> ResourceProvidersAsync(CancellationToken ct = default) => Task.FromResult<List<ResourceProviderCapability>>([]);
+    /// <summary>Like <see cref="ProvidersAsync"/>, but null when the backend did not answer (an error, not "no providers installed").</summary>
+    async Task<List<PerformanceProviderStatus>?> ProvidersOrNullAsync(CancellationToken ct = default) => await ProvidersAsync(ct);
+    /// <summary>Like <see cref="ResourceProvidersAsync"/>, but null when the backend did not answer.</summary>
+    async Task<List<ResourceProviderCapability>?> ResourceProvidersOrNullAsync(CancellationToken ct = default) => await ResourceProvidersAsync(ct);
     Task<PerformanceApiResult<PerformanceTestDefinition>> SaveDefinitionAsync(string environmentId, PerformanceTestDefinition definition, bool create, CancellationToken ct = default);
     Task<PerformanceApiResult<PerformanceTestDataProfile>> SaveDataProfileAsync(string environmentId, PerformanceTestDataProfile profile, CancellationToken ct = default);
     Task<PerformanceTestReadiness?> ReadinessAsync(string environmentId, string definitionId, CancellationToken ct = default);
@@ -78,6 +82,10 @@ public sealed class PerformanceTestApiService(HttpClient http) : IPerformanceTes
         await Get<List<ResourceTargetStatus>>($"{Base}/resource-targets?{Env(environmentId)}&environmentType={Uri.EscapeDataString(environmentType)}", ct) ?? [];
 
     public async Task<List<ResourceProviderCapability>> ResourceProvidersAsync(CancellationToken ct = default) => await Get<List<ResourceProviderCapability>>($"{Base}/resource-providers", ct) ?? [];
+
+    public Task<List<PerformanceProviderStatus>?> ProvidersOrNullAsync(CancellationToken ct = default) => Get<List<PerformanceProviderStatus>>($"{Base}/providers", ct);
+
+    public Task<List<ResourceProviderCapability>?> ResourceProvidersOrNullAsync(CancellationToken ct = default) => Get<List<ResourceProviderCapability>>($"{Base}/resource-providers", ct);
 
     public Task<PerformanceApiResult<PerformanceReachability>> NetworkCheckAsync(string environmentId, string definitionId, CancellationToken ct = default) =>
         Post<PerformanceReachability>($"{Base}/definitions/{Uri.EscapeDataString(definitionId)}/network-check?{Env(environmentId)}", ct);

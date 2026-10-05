@@ -1,72 +1,234 @@
 @using BirkNext.PerformanceTests
+@using BirkNext.Web.Shared.Components.Common
+@using P = BirkNext.Web.Services.PerformanceEngineCapabilityPresentation
 @inject IServiceProvider ServiceProvider
+@inject IJSRuntime JS
 
-@* Installation-level performance-test engines: provider (k6), execution runtime (Podman) and the pinned provider image. Per-test
-   scenario/workload/thresholds live in Performance Test Review; the target and its environment live in Target Environment. A missing runtime
-   or image is a tool limitation, never a test failure. *@
-<div class="pte-root" data-testid="pte-status">
-    <p class="settings-card-note">What this BirkNext installation can run for Performance Test Review. k6 runs as an on-demand container (created per run, removed afterwards); it is never part of the BirkNext images. Capabilities an engine lacks are shown as not supported.</p>
-    @if (_providers is null) { <p role="status">Checking engines…</p> }
-    else if (_providers.Count == 0) { <p data-testid="pte-none">No performance test engine status is available (the backend did not answer).</p> }
-    else
+@* System Settings → Performance Test Engines: what this installation can run (engines, their execution runtime and image) and what
+   Resource Stability can observe. Capability only — test definitions live in Performance Test Review, the target in Target Environment.
+   Every value comes from the backend probe; a missing runtime, image or metric is a tool limitation, never a test failure. Raw
+   provider/runtime ids, image references and digests live under Technical details. *@
+<div class="pte" data-testid="pte-status" aria-busy="@(_loading ? "true" : "false")">
+    <header class="pte-header">
+        <div class="pte-header-text">
+            <h2 class="pte-title">Performance Test Engines</h2>
+            <p class="pte-lead">Runtime engines and observability providers available to Performance Test Review.</p>
+            <p class="pte-sub">Engines run on demand in an isolated container. Resource providers determine which runtime and container metrics BirkNext can observe during a test.</p>
+        </div>
+        <div class="pte-actions">
+            <button type="button" class="btn-secondary pte-refresh" @onclick="LoadAsync" disabled="@_loading" data-testid="pte-refresh">@(_loading ? "Checking…" : "Refresh")</button>
+            <a class="pte-link" href="performance-test-review">Open Performance Test Review</a>
+        </div>
+    </header>
+
+    @if (_providers is null && _resources is null && _loading)
     {
-        @foreach (var p in _providers)
-        {
-            <dl class="settings-layers" data-testid="pte-provider" data-availability="@p.Availability">
-                <div><dt>Engine</dt><dd>@p.DisplayName <code>@p.ProviderId</code></dd></div>
-                <div><dt>Status</dt><dd data-testid="pte-availability">@(p.Availability == ProviderAvailability.Available ? "Ready" : p.Availability.ToString()) — @p.Detail</dd></div>
-                <div><dt>Version</dt><dd>@(p.Version ?? "—")</dd></div>
-                @if (p.Runtime is { } rt)
-                {
-                    <div><dt>Execution runtime</dt><dd data-testid="pte-runtime">@rt.DisplayName <code>@rt.RuntimeId</code> — @(rt.Availability == ProviderAvailability.Available ? $"available, {rt.Version}" : rt.Detail)</dd></div>
-                }
-                @if (p.Image is { } image)
-                {
-                    <div><dt>Image</dt><dd data-testid="pte-image"><code>@image</code> — @(p.ImagePresent ? $"present{(p.ImageDigest is null ? "" : $" ({p.ImageDigest})")}" : "missing") · pulls @(p.AllowImagePull ? "allowed on request" : "disabled (pull it once on the host)")</dd></div>
-                }
-                <div><dt>HTTP</dt><dd>@Yes(p.Capabilities.Http)</dd></div>
-                <div><dt>GraphQL (query)</dt><dd>@Yes(p.Capabilities.GraphQl)</dd></div>
-                <div><dt>Virtual-user workload</dt><dd>@Yes(p.Capabilities.Modes.Contains(WorkloadMode.VirtualUsers))</dd></div>
-                <div><dt>Arrival-rate workload</dt><dd>@Yes(p.Capabilities.Modes.Contains(WorkloadMode.ArrivalRate))</dd></div>
-                <div><dt>Cancellation</dt><dd>@Yes(p.Capabilities.Cancellation)</dd></div>
-            </dl>
-            @if (p.Availability == ProviderAvailability.ImageMissing && p.AllowImagePull)
-            {
-                <button type="button" class="btn-secondary" @onclick="() => PullAsync(p.ProviderId)" disabled="@_pulling" data-testid="pte-pull">@(_pulling ? "Pulling…" : $"Pull {p.Image}")</button>
-            }
-            @if (_message is { } m) { <p role="status" data-testid="pte-message">@m</p> }
-        }
+        <p class="pte-loading" role="status">Checking engines and resource providers…</p>
     }
-    <h4 class="pte-subhead">Resource observation (Resource Stability)</h4>
-    <p class="settings-card-note">Separate from the k6 provider: what BirkNext can measure about application components during a run. Unavailable metrics are reported as unavailable, never as 0; none of this is a memory-leak detector.</p>
-    @if (_resourceProviders is null) { <p role="status">Checking resource providers…</p> }
-    else if (_resourceProviders.Count == 0) { <p data-testid="pte-resource-none">No resource observation status is available.</p> }
+    else if (_providers is null && _resources is null)
+    {
+        <div class="pte-error" role="alert" data-testid="pte-error">
+            <strong>Performance engine capabilities could not be loaded.</strong>
+            <span>The backend did not answer. Nothing is shown as unsupported because nothing could be checked.</span>
+        </div>
+    }
     else
     {
-        <dl class="settings-layers" data-testid="pte-resources">
-            @foreach (var r in _resourceProviders)
+        var engines = P.Order(_providers ?? []);
+        var resources = P.Order(_resources ?? []);
+        var current = resources.Where(P.IsCurrent).ToList();
+        var other = resources.Where(r => !P.IsCurrent(r)).ToList();
+        var engineSummary = P.EngineSummary(engines);
+        var resourceSummary = P.ResourceSummary(resources);
+        var runtime = engines.FirstOrDefault()?.Runtime;
+
+        <dl class="pte-summary" data-testid="pte-summary">
+            <div>
+                <dt>Performance engine</dt>
+                <dd>@if (engineSummary is { } es) { @Pill(es, "Performance engine") } else { <span class="pte-muted">None installed</span> }</dd>
+            </div>
+            @if (runtime is not null)
             {
-                <div data-testid="pte-resource" data-provider="@r.ProviderId" data-availability="@r.Availability"><dt>@r.DisplayName <code>@r.ProviderId</code></dt>
-                    <dd>@r.Availability — @r.Detail@(r.Metrics.Count > 0 ? $" Metrics: {string.Join(", ", r.Metrics.Select(ResourceFormat.Label))}." : "")</dd></div>
+                <div><dt>Execution</dt><dd>@P.RuntimeText(runtime)</dd></div>
             }
+            <div>
+                <dt>Resource observation</dt>
+                <dd>@if (resourceSummary is { } rs) { @Pill(rs, "Resource observation") } else { <span class="pte-muted">No providers</span> }</dd>
+            </div>
         </dl>
+
+        <section class="pte-section" aria-labelledby="pte-engines-heading">
+            <h3 id="pte-engines-heading" class="pte-section-title">@(engines.Count == 1 ? "Engine" : "Engines")</h3>
+            @if (_providers is null)
+            {
+                <p class="pte-error" role="alert" data-testid="pte-engines-error">Engine status could not be loaded.</p>
+            }
+            else if (engines.Count == 0)
+            {
+                <p class="pte-empty" data-testid="pte-none">No performance-test providers are installed.</p>
+            }
+            else
+            {
+                <div class="pte-engine-grid">
+                    @foreach (var p in engines)
+                    {
+                        var status = P.Engine(p.Availability);
+                        <article class="pte-card pte-engine" data-testid="pte-provider" data-availability="@p.Availability" aria-labelledby="@($"pte-engine-{p.ProviderId}")">
+                            <div class="pte-card-head">
+                                <span class="pte-icon pte-icon-engine" aria-hidden="true"></span>
+                                <div class="pte-card-titles">
+                                    <h4 id="@($"pte-engine-{p.ProviderId}")" class="pte-card-title">@p.DisplayName</h4>
+                                    <p class="pte-card-kind">Performance test provider</p>
+                                </div>
+                                <span data-testid="pte-availability">@Pill(status, p.DisplayName)</span>
+                            </div>
+
+                            @if (p.Availability != ProviderAvailability.Available)
+                            {
+                                <p class="pte-reason" data-testid="pte-reason">@p.Detail</p>
+                            }
+                            @if (p.Availability == ProviderAvailability.ImageMissing)
+                            {
+                                @if (p.AllowImagePull)
+                                {
+                                    <button type="button" class="btn-secondary" @onclick="() => PullAsync(p.ProviderId)" disabled="@_pulling" data-testid="pte-pull">@(_pulling ? "Pulling…" : "Pull the configured image")</button>
+                                }
+                                else
+                                {
+                                    <p class="pte-guidance" data-testid="pte-guidance">Automatic image pull is disabled. Pull the configured image on the BirkNext host, then refresh. The exact reference is under Technical details.</p>
+                                }
+                            }
+                            @if (_message is { } m) { <p role="status" class="pte-guidance" data-testid="pte-message">@m</p> }
+
+                            <dl class="pte-facts">
+                                <div><dt>Version</dt><dd>@(p.Version ?? "—")</dd></div>
+                                @if (p.Runtime is { } rt)
+                                {
+                                    <div data-testid="pte-runtime"><dt>Runtime</dt><dd>@P.RuntimeText(rt) @Pill(P.Runtime(rt.Availability), $"{rt.DisplayName} runtime")</dd></div>
+                                }
+                                @if (p.Image is { } image)
+                                {
+                                    <div data-testid="pte-image"><dt>Image</dt><dd class="pte-image" title="@image">@P.ShortImage(image)</dd></div>
+                                    <div data-testid="pte-image-status"><dt>Image status</dt><dd>@(p.ImagePresent ? "Present" : "Missing")</dd></div>
+                                }
+                            </dl>
+
+                            <div class="pte-chips-block">
+                                <p class="pte-chips-title" id="@($"pte-caps-{p.ProviderId}")">Capabilities</p>
+                                <ul class="pte-chips" aria-labelledby="@($"pte-caps-{p.ProviderId}")" data-testid="pte-capabilities">
+                                    @foreach (var chip in P.Chips(p.Capabilities))
+                                    {
+                                        <li class="pte-chip @(chip.Supported ? "is-on" : "is-off")" data-supported="@chip.Supported.ToString().ToLowerInvariant()">
+                                            <span aria-hidden="true">@(chip.Supported ? "✓" : "—")</span>
+                                            @chip.Label<span class="visually-hidden">: @(chip.Supported ? "supported" : "not supported")</span>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="pte-section" aria-labelledby="pte-resources-heading">
+            <h3 id="pte-resources-heading" class="pte-section-title">Resource Stability</h3>
+            <p class="pte-section-sub">Runtime and container evidence BirkNext can observe during a performance test. Unavailable metrics are shown as unavailable, never as zero.</p>
+            @if (_resources is null)
+            {
+                <p class="pte-error" role="alert" data-testid="pte-resources-error">Resource provider status could not be loaded.</p>
+            }
+            else if (current.Count == 0)
+            {
+                <p class="pte-empty" data-testid="pte-resource-none">No resource observation providers are installed.</p>
+            }
+            else
+            {
+                <div class="pte-resource-grid" data-testid="pte-resources">
+                    @foreach (var r in current) { @ResourceCard(r) }
+                </div>
+            }
+        </section>
+
+        @if (other.Count > 0)
+        {
+            <section class="pte-section" aria-labelledby="pte-other-heading">
+                <h3 id="pte-other-heading" class="pte-section-title">Unsupported and planned</h3>
+                <p class="pte-section-sub">Shown for transparency. Not part of what this installation can observe today.</p>
+                <div class="pte-resource-grid pte-other-grid" data-testid="pte-resources-other">
+                    @foreach (var r in other) { @ResourceCard(r) }
+                </div>
+            </section>
+        }
+
+        <ReviewDisclosure Text="Technical details" CollapseText="Hide technical details" TestId="pte-technical" Class="pte-technical">
+            <div class="pte-technical-body">
+                @foreach (var p in engines)
+                {
+                    <h4 class="pte-tech-title">@p.DisplayName</h4>
+                    <dl class="pte-tech">
+                        @TechRow("Provider ID", p.ProviderId, copy: true)
+                        @TechRow("Provider version", p.Version)
+                        @TechRow("Availability", p.Availability.ToString())
+                        <div><dt>Probe detail</dt><dd>@p.Detail</dd></div>
+                        @if (p.Runtime is { } rt)
+                        {
+                            @TechRow("Runtime ID", rt.RuntimeId)
+                            @TechRow("Runtime version", rt.Version)
+                            <div><dt>Runtime detail</dt><dd>@rt.Detail</dd></div>
+                        }
+                        @if (p.Image is { } image)
+                        {
+                            @TechRow("Image reference", image, copy: true)
+                            @TechRow("Image digest", p.ImageDigest, copy: true)
+                            <div><dt>Image pull</dt><dd>@(p.AllowImagePull ? "Allowed on request" : "Disabled (pull on the host)")</dd></div>
+                        }
+                        <div><dt>Workload purposes</dt><dd>@(p.Capabilities.Purposes.Count == 0 ? "—" : string.Join(", ", p.Capabilities.Purposes))</dd></div>
+                    </dl>
+                }
+                @if (resources.Count > 0)
+                {
+                    <h4 class="pte-tech-title">Resource providers</h4>
+                    <dl class="pte-tech">
+                        @foreach (var r in resources)
+                        {
+                            <div data-testid="pte-tech-resource"><dt><code>@r.ProviderId</code></dt><dd>@r.Availability — @r.Detail</dd></div>
+                        }
+                    </dl>
+                }
+            </div>
+        </ReviewDisclosure>
     }
 </div>
 
 @code {
     private List<PerformanceProviderStatus>? _providers;
-    private List<ResourceProviderCapability>? _resourceProviders;
+    private List<ResourceProviderCapability>? _resources;
     private IPerformanceTestApiService? _api;
+    private bool _loading;
     private bool _pulling;
     private string? _message;
-
-    private static string Yes(bool supported) => supported ? "Supported" : "Not supported";
+    private string? _copied;
 
     protected override async Task OnInitializedAsync()
     {
         _api = ServiceProvider.GetService(typeof(IPerformanceTestApiService)) as IPerformanceTestApiService;
-        _providers = _api is null ? [] : await _api.ProvidersAsync();
-        _resourceProviders = _api is null ? [] : await _api.ResourceProvidersAsync();
+        await LoadAsync();
+    }
+
+    /// <summary>Re-probes on request (no polling). Previous values stay on screen while checking, so the layout does not jump.</summary>
+    private async Task LoadAsync()
+    {
+        if (_api is null) { _providers = []; _resources = []; return; }
+        _loading = true;
+        try
+        {
+            var providers = _api.ProvidersOrNullAsync();
+            var resources = _api.ResourceProvidersOrNullAsync();
+            _providers = await providers;
+            _resources = await resources;
+        }
+        finally { _loading = false; }
     }
 
     private async Task PullAsync(string providerId)
@@ -75,6 +237,85 @@
         var result = await _api!.PrepareProviderAsync(providerId);
         _pulling = false;
         _message = result.Value is null ? $"Not pulled: {result.Error}" : "Image pulled.";
-        _providers = await _api.ProvidersAsync();
+        _providers = await _api.ProvidersOrNullAsync();
+    }
+
+    private async Task CopyAsync(string text)
+    {
+        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", text); _copied = text; }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException or TaskCanceledException) { _copied = null; }
+    }
+
+    /// <summary>Status pill: glyph (decorative) + text; <paramref name="subject"/> prefixes the spoken text ("k6 status: Ready"). Null where
+    /// the label right before it already names the subject (metric rows).</summary>
+    private RenderFragment Pill(CapabilityStatus status, string? subject) =>
+        @<span class="sd-pill @status.PillClass pte-pill pte-tone-@status.Tone.ToString().ToLowerInvariant()" data-status="@status.Label">@if (subject is not null) {<span class="visually-hidden">@subject status: </span>}<span class="pte-glyph" aria-hidden="true">@status.Glyph</span> @status.Label</span>;
+
+    private RenderFragment TechRow(string label, string? value, bool copy = false) =>
+        @<div>
+            <dt>@label</dt>
+            <dd class="pte-tech-value">
+                @if (string.IsNullOrWhiteSpace(value)) { <span>—</span> }
+                else
+                {
+                    <code>@value</code>
+                    @if (copy)
+                    {
+                        <button type="button" class="pte-copy" @onclick="() => CopyAsync(value)" aria-label="@($"Copy {label.ToLowerInvariant()}")">@(_copied == value ? "Copied" : "Copy")</button>
+                    }
+                }
+            </dd>
+        </div>;
+
+    private RenderFragment ResourceCard(ResourceProviderCapability r)
+    {
+        var status = P.Resource(r.Availability);
+        var titleId = $"pte-res-{r.ProviderId.Replace('.', '-')}";
+        var metrics = P.Metrics(r);
+        return @<article class="pte-card pte-resource pte-tone-@status.Tone.ToString().ToLowerInvariant()" data-testid="pte-resource" data-provider="@r.ProviderId" data-availability="@r.Availability" aria-labelledby="@titleId">
+            <div class="pte-card-head">
+                <span class="pte-icon pte-icon-resource" aria-hidden="true"></span>
+                <div class="pte-card-titles">
+                    <h4 id="@titleId" class="pte-card-title">@r.DisplayName</h4>
+                    @if (r.Scope is { } scope) { <p class="pte-scope" data-testid="pte-scope"><span class="visually-hidden">Scope: </span>@scope</p> }
+                </div>
+                @Pill(status, r.DisplayName)
+            </div>
+            <p class="pte-card-summary">@(r.Summary ?? r.Detail)</p>
+
+            @if (metrics.Any(m => !m.Available))
+            {
+                <dl class="pte-metric-states" data-testid="pte-metric-states">
+                    @foreach (var (label, available) in metrics)
+                    {
+                        <div data-available="@available.ToString().ToLowerInvariant()"><dt>@label</dt><dd>@Pill(P.Resource(available ? "Available" : "Unavailable"), null)</dd></div>
+                    }
+                </dl>
+            }
+            else if (metrics.Count > 0)
+            {
+                <ul class="pte-chips pte-chips-small" aria-label="@($"Metrics observed by {r.DisplayName}")" data-testid="pte-metrics">
+                    @foreach (var (label, _) in metrics) { <li class="pte-chip is-on">@label</li> }
+                </ul>
+            }
+
+            @if (r.Limits.Count > 0)
+            {
+                <ul class="pte-limits" data-testid="pte-limits">
+                    @foreach (var limit in r.Limits)
+                    {
+                        <li><span class="pte-limit-label">@limit.Label</span> @Pill(P.Resource(limit.Status), null)<span class="pte-limit-reason">@limit.Reason</span></li>
+                    }
+                </ul>
+            }
+
+            @if (r.Availability is "Partial" or "Unavailable" or "Unsupported" && r.Summary is not null && r.Detail != r.Summary)
+            {
+                <ReviewDisclosure Text="@($"Why {status.Label.ToLowerInvariant()}?")" CollapseText="Hide explanation" Class="disclosure-inline disclosure-small pte-why"
+                                  TestId="@($"pte-why-{r.ProviderId.Replace('.', '-')}")">
+                    <p class="pte-why-text">@r.Detail</p>
+                </ReviewDisclosure>
+            }
+        </article>;
     }
 }
