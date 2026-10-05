@@ -548,48 +548,38 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_ExplainsTraceabilityMetricNavigation()
+    public void UserGuide_ExplainsCoverageAndQualityAreSeparate()
     {
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
-        text.Should().Contain("summary card", "User Guide must explain that health summary cards are clickable");
-        text.Should().Contain("Missing User Stories", "User Guide must explain the Missing User Stories health card");
-        text.Should().Contain("Missing Success Criteria", "User Guide must explain the Missing Success Criteria health card");
-        text.Should().Contain("work queue",    "User Guide must describe the Gaps tab as a QA work queue");
+        text.Should().Contain("coverage is reported separately");
+        text.Should().Contain("assessed checks");
+        text.Should().Contain("Unsupported");
     }
 
     // =========================================================================
 
     [Fact]
-    public void UserGuide_ExplainsRequirementVsUserStoryViews()
+    public void UserGuide_ExplainsDesignedAndExecutedTestEvidence()
     {
         var cut = Render<UserGuide>();
 
         var guideText = cut.Markup;
-        guideText.Should().Contain("Coverage Is Requirement-Centric",
-            "User Guide must explain why coverage is calculated at requirement level");
-        guideText.Should().Contain("Coverage Requirements");
-        guideText.Should().Contain("Missing User Story");
-        guideText.Should().Contain("Missing Success Criteria");
-        guideText.Should().Contain("Missing Tests");
-        guideText.Should().Contain("Orphan Tests");
+        guideText.Should().Contain("designed test is not an executed test");
+        guideText.Should().Contain("execution records");
+        guideText.Should().Contain("requirement links remain separate");
     }
 
     [Fact]
-    public void UserGuide_DescribesStandardSpecificationExplorerWorkflow()
+    public void UserGuide_DescribesCurrentGettingStartedAndSourceWorkflow()
     {
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
-        text.IndexOf("Traceability &amp; Coverage", StringComparison.Ordinal)
-            .Should().BeLessThan(text.IndexOf("Flow View", StringComparison.Ordinal));
-        text.Should().Contain("default</em> view shown after analysis");
-        text.Should().Contain("QA risk picture first");
-        text.Should().Contain("Spec Explorer");
-        text.Should().Contain("Flow View");
-        text.Should().NotContain("Extraction Review");
-        text.Should().NotContain("Architecture View");
+        text.Should().Contain("href=\"/getting-started\"", "the current workspace-aware Recommended Workflow is prominent");
+        text.Should().Contain("href=\"/source-analysis\"");
+        text.Should().Contain("analyze source once");
     }
 
     [Fact]
@@ -1089,19 +1079,15 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_ExplainsFlowViewReadinessModel()
+    public void UserGuide_ExplainsEvidenceAndApplicabilityStates()
     {
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
-        text.Should().Contain("QA Readiness",              "User Guide must explain the QA Readiness score");
-        text.Should().Contain("Story Readiness Status",    "User Guide must explain readiness status");
-        text.Should().Contain("Blocked",                   "User Guide must describe blocked stories");
-        text.Should().Contain("At Risk",                   "User Guide must describe at-risk stories");
-        text.Should().Contain("Priority Sorting",          "User Guide must explain priority sorting");
-        text.Should().Contain("Flow View Filters",         "User Guide must describe the filter chips");
-        text.Should().Contain("Coverage Summary",          "User Guide must describe the consolidated coverage section");
-        text.Should().Contain("No implementation links",   "User Guide must explain the implementation status message");
+        text.Should().Contain("NotApplicable");
+        text.Should().Contain("Unavailable");
+        text.Should().Contain("Needs refresh");
+        text.Should().Contain("not a project quality finding");
     }
 
     // =========================================================================
@@ -1596,16 +1582,15 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_ExplainsSpecExplorerPurpose()
+    public void UserGuide_ExplainsSpecificationIdentifierSupportAndEvidenceBoundary()
     {
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
-        text.Should().Contain("Spec Explorer is the specification structure and navigation layer");
-        text.Should().Contain("Traceability &amp; Coverage is for coverage analysis");
-        text.Should().Contain("Flow View is for QA readiness");
-        text.Should().NotContain("Extraction Review is for extraction quality review");
-        text.Should().NotContain("Architecture View is for technical assumptions and architecture");
+        text.Should().Contain("JIRA-123");
+        text.Should().Contain("US-A1");
+        text.Should().Contain("designed test");
+        text.Should().Contain("runtime verification");
     }
 
     [Fact]
@@ -1747,29 +1732,27 @@ public class ViewBehaviorTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_ExplainsImplementationCoverageVsValidationCoverage()
+    public void UserGuide_ExplainsSharedTraceabilityGraph()
     {
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
         text.Should().Contain("Task Explorer");
-        text.Should().Contain("Implementation Coverage");
-        text.Should().Contain("Traceability &amp; Coverage = Validation Coverage");
-        text.Should().Contain("Task Explorer = Implementation Coverage");
+        text.Should().Contain("requirement → plan → task → implementation evidence → designed test → test execution");
+        text.Should().Contain("not full implementation verification");
     }
 
     [Fact]
-    public void UserGuide_DoesNotPointToLegacyTraceability()
+    public void UserGuide_LinksCurrentNavigationFeaturesAndNamesOptionalExtensions()
     {
         var cut = Render<UserGuide>();
 
         var text = cut.Markup;
         text.Should().Contain("Specification Explorer");
-        text.Should().Contain("Traceability &amp; Coverage");
-        text.Should().Contain("Legacy session-level coverage view");
-        text.Should().Contain("hidden from the sidebar by default");
-        text.Should().Contain("Artifact Traceability");
-        text.Should().Contain("href=\"/artifact-traceability\"");
+        text.Should().Contain("Security Classification");
+        text.Should().Contain("M2LB child-security-classification extension");
+        text.Should().Contain("href=\"/source-analysis\"");
+        text.Should().Contain("href=\"/performance-test-review\"");
     }
 
     private IRenderedComponent<RecommendedWorkflow> RenderRecommendedWorkflowForTraceability()

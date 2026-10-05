@@ -3,7 +3,10 @@
 .ug-page {
     padding: 1.5rem 2rem 3rem;
     max-width: 1200px;
+    width: 100%;
+    min-width: 0;
     margin: 0 auto;
+    box-sizing: border-box;
 }
 
 
@@ -23,7 +26,7 @@
 }
 
 .ug-toc-link {
-    color: rgba(99, 102, 241, 0.85);
+    color: #4f46e5;
     text-decoration: none;
     padding: 0.18rem 0.45rem;
     border-radius: 0.25rem;
@@ -34,7 +37,7 @@
 
 .ug-toc-link:hover {
     background: rgba(99, 102, 241, 0.1);
-    color: rgba(129, 140, 248, 1);
+    color: #3730a3;
 }
 
 .ug-toc-sep {
@@ -724,7 +727,7 @@
 }
 
 .ug-callout-tip strong {
-    color: #5eead4;
+    color: #0f766e;
 }
 
 /* ── Section 7: FAQ ──────────────────────────────────────────────────────── */
@@ -957,6 +960,11 @@
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 @media (max-width: 960px) {
+    .ug-cap-grid,
+    .ug-audience-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .ug-core-flow-layout,
     .ug-ai-flow-row,
     .ug-ecosystem-layout {

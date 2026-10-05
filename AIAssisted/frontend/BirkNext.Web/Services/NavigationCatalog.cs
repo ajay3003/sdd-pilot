@@ -21,7 +21,9 @@ public sealed record NavItem(
     NavLinkMatch Match = NavLinkMatch.All,
     string? ReviewId = null,
     string? Hint = null,
-    string? ProviderWhenApplicable = null)
+    string? ProviderWhenApplicable = null,
+    string? FeatureId = null,
+    bool OptionalByDefault = false)
 {
     /// <summary>Tooltip for the row: the full label (it may be truncated) plus a short purpose where the label alone is ambiguous.</summary>
     public string Title => Hint is null ? Label : $"{Label}: {Hint}";
@@ -60,9 +62,9 @@ public static class NavigationCatalog
         ]),
         new("traceability", "Traceability", f => f.ShowSectionTraceability,
         [
-            new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.TraceabilityCoverage),
-            new("traceability/suggestions", "Traceability Suggestions", "nav-icon-suggestions", f => f.TraceabilitySuggestions),
-            new("code-traceability", "Code Traceability", "nav-icon-code-trace", f => f.CodeTraceability),
+            new("traceability", "Traceability & Coverage", "nav-icon-traceability", f => f.TraceabilityCoverage, OptionalByDefault: true),
+            new("traceability/suggestions", "Traceability Suggestions", "nav-icon-suggestions", f => f.TraceabilitySuggestions, OptionalByDefault: true),
+            new("code-traceability", "Code Traceability", "nav-icon-code-trace", f => f.CodeTraceability, OptionalByDefault: true),
         ]),
         new("analysis", "Analysis", f => f.ShowSectionAnalysis,
         [
@@ -77,7 +79,7 @@ public static class NavigationCatalog
             new("technology-coverage", "Technology Coverage", "nav-icon-source-analysis", Always),
             // The page is the Azure provider of environment analysis; the menu stays generic and names the provider in the status.
             new("azure-environment", "Environment Analysis", "nav-icon-source-analysis", f => f.AzureEnvironmentAnalysis,
-                ReviewId: "azure-environment", Hint: "read-only cloud environment inventory (provider: Azure)", ProviderWhenApplicable: "Azure"),
+                ReviewId: "azure-environment", Hint: "read-only cloud environment inventory (provider: Azure)", ProviderWhenApplicable: "Azure", FeatureId: "environment-analysis"),
         ]),
         new("quality", "Quality", f => f.ShowSectionQuality,
         [
@@ -93,7 +95,7 @@ public static class NavigationCatalog
         ]),
         new("ai-review", "AI REVIEW", f => f.ShowSectionAiReview,
         [
-            new("ai-change-auditor", "AI Change Review", "nav-icon-ai-auditor", f => f.AiChangeReview),
+            new("ai-change-auditor", "AI Change Review", "nav-icon-ai-auditor", f => f.AiChangeReview, OptionalByDefault: true),
         ]),
         new("admin", "Admin", f => f.ShowSectionAdmin,
         [

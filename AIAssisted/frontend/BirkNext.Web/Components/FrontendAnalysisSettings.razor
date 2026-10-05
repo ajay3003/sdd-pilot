@@ -1602,20 +1602,8 @@ else if (FaSettings.Settings.Profiles.Count == 0)
     private string? _browserDetectionMessage;
     private string? _currentBrowserDetectionAttemptId;
 
-    private static readonly (string Key, string Label)[] Tabs =
-    [
-        ("general",     "General"),
-        ("target",      "Target Application"),
-        ("auth",        "Authentication"),
-        ("endpoint",    "Endpoint Discovery"),
-        ("browser",     "Browser Discovery"),
-        ("performance", "Performance Thresholds"),
-        ("cwv",         "Core Web Vitals"),
-        ("security",    "Security Expectations"),
-        ("features",    "Frontend Review Engines"),
-        ("validation",    "Validation"),
-        ("integrations",  "Integrations"),
-    ];
+    private static readonly (string Key, string Label)[] Tabs = DocumentationCatalog.TargetEnvironmentTabDefinitions
+        .Select(tab => (tab.Key, tab.Label)).ToArray();
 
     // ── Computed ─────────────────────────────────────────────────────────────
 

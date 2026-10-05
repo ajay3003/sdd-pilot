@@ -258,7 +258,8 @@
     private (string Route, string Label)? ReturnTarget => ReturnTo is { } key && ReturnTargets.TryGetValue(key, out var label) ? (key, label) : null;
 
     /// <summary>Core analysis areas, then the reusable source-evidence domains — grouped so the navigation stays readable.</summary>
-    private static readonly (string Group, string[] Areas)[] AreaGroups = [("Core analysis", ["Overview", "Architecture", "Database", "Observability"]), ("Source evidence", ["Infrastructure", "Configuration", "CI/CD", "Contracts"])];
+    private static readonly (string Group, string[] Areas)[] AreaGroups = DocumentationCatalog.SourceAnalysisGroups
+        .Select(group => (group.Label, group.Areas.ToArray())).ToArray();
     private static string AreaSlug(string area) => area.Replace("/", "");
     private string _area = "Overview";
     private string? _focusDatabase;

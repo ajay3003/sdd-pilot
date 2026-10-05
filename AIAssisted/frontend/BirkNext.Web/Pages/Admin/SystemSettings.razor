@@ -135,32 +135,19 @@ else if (_settings is not null)
                 </div>
             </div>
 
-            <div class="ss-nav-group">
-                <div class="ss-nav-group-label">Configuration</div>
-                @NavItem("general",            "General")
-                @NavItem("config-health",      "Configuration Health", _configHealthIssueCount)
-                @NavItem("feature-visibility", "Feature Visibility")
-                @NavItem("platform",           "Platform")
-            </div>
-            <div class="ss-nav-group">
-                <div class="ss-nav-group-label">Analysis</div>
-                @NavItem("target-environments", "Target Environments")
-                @NavItem("frontend-quality-engines", "Frontend Engine Capabilities")
-                @NavItem("performance-test-engines", "Performance Test Engines")
-                @NavItem("ai",                 "AI")
-            </div>
-            <div class="ss-nav-group">
-                <div class="ss-nav-group-label">Developer</div>
-                @NavItem("environment-diagnostics", "Environment Diagnostics")
-                @NavItem("diagnostics",        "System Diagnostics")
-                @NavItem("doc-health",         "Documentation Health", _docHealthIssueCount)
-                @if (IsDeveloperDiagnosticsVisible)
-                {
-                    @NavItem("review-context-validation", "ReviewContext Validation")
-                }
-                @NavItem("ui-migration",       "Runtime Diagnostics")
-                @NavItem("maintenance",        "Maintenance")
-            </div>
+            @foreach (var group in DocumentationCatalog.SettingsGroups)
+            {
+                <div class="ss-nav-group">
+                    <div class="ss-nav-group-label">@group.Label</div>
+                    @foreach (var item in group.Items)
+                    {
+                        if (!item.DeveloperOnly || IsDeveloperDiagnosticsVisible)
+                        {
+                            @NavItem(item.Id, item.Label, item.Id == "config-health" ? _configHealthIssueCount : item.Id == "doc-health" ? _docHealthIssueCount : 0)
+                        }
+                    }
+                </div>
+            }
         </nav>
 
         @* â”€â”€ Right Content â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ *@
@@ -1193,7 +1180,7 @@ else if (_settings is not null)
             {
                 <DiagnosticPageRenderer
                     Title="Documentation Health"
-                    Description="Developer-only diagnostic. Validates navigation links, documentation cross-links, removed-page references, and menu synchronisation across the application's documentation pages."
+                    Description="Developer-only deterministic check of current routable pages, navigation coverage, User Guide feature routes and anchors, settings coverage, provider/extension scope and known legacy terms."
                     HasRun="@_docHealthComputed"
                     ShowRunArea="false"
                     OverallStatus="@DocumentationHealthSummary.OverallStatus"
@@ -1801,7 +1788,7 @@ else if (_settings is not null)
                     group.Select(finding => DiagnosticItem(
                         finding.Description,
                         finding.Detail ?? "",
-                        finding.Severity == "Error" ? SystemSettingsStatus.Fail : SystemSettingsStatus.Warning,
+                        finding.Severity switch { "Error" => SystemSettingsStatus.Fail, "Pass" => SystemSettingsStatus.Pass, _ => SystemSettingsStatus.Warning },
                         finding.Description,
                         ""))))
                 .ToList();
@@ -3161,43 +3148,14 @@ else if (_settings is not null)
 
     private List<DocHealthFinding> RunDocumentationHealthChecks()
     {
-        var findings = new List<DocHealthFinding>();
-
-        // 1. Validate NavMenu links are known routes.
-        foreach (var (label, href) in DocNavLinks)
-        {
-            var normalised = "/" + href.TrimStart('/');
-            if (!KnownRoutes.Contains(normalised))
-                findings.Add(new("Error", "Navigation Link", $"NavMenu item \"{label}\" links to \"{href}\" which is not a known route.", $"Route checked: {normalised}"));
-            if (RemovedRoutes.Contains(href) || RemovedRoutes.Contains(normalised))
-                findings.Add(new("Error", "Removed Route Reference", $"NavMenu item \"{label}\" links to a removed route: {href}"));
-        }
-
-        // 2. Validate documentation page links are known routes.
-        foreach (var (page, href, ctx) in DocPageLinks)
-        {
-            var normalised = href.StartsWith('/') ? href : "/" + href;
-            if (!KnownRoutes.Contains(normalised))
-                findings.Add(new("Error", "Broken Documentation Link", $"{page} â€” \"{ctx}\" links to \"{href}\" which is not a known route.", $"Route checked: {normalised}"));
-            if (RemovedRoutes.Contains(href) || RemovedRoutes.Contains(normalised))
-                findings.Add(new("Error", "Removed Route Reference", $"{page} â€” \"{ctx}\" references a removed route: {href}"));
-        }
-
-        // 3. Menu synchronisation â€” check MenuItemRegistry hrefs are in KnownRoutes via DocNavLinks.
-        var navLinkHrefSet = new HashSet<string>(DocNavLinks.Select(l => "/" + l.Href.TrimStart('/')), StringComparer.OrdinalIgnoreCase);
-        foreach (var (menuLabel, _) in MenuItemRegistry)
-        {
-            // Find matching nav link by label
-            var matchingNav = DocNavLinks.FirstOrDefault(l =>
-                string.Equals(l.Label, menuLabel, StringComparison.OrdinalIgnoreCase));
-            if (matchingNav == default)
-                findings.Add(new("Warning", "Menu Mismatch", $"MenuItemRegistry entry \"{menuLabel}\" has no matching DocNavLinks entry. If this menu item exists in NavMenu, add it to DocNavLinks."));
-        }
-
-        // 4. Orphan documentation check â€” pages that exist but have no menu item.
-        var menuLabels = new HashSet<string>(MenuItemRegistry.Select(m => m.Label), StringComparer.OrdinalIgnoreCase);
-        // (No-op for now: pages without menu entries are internal/redirect pages â€” not an error.)
-
+        var anchors = new[] { "overview", "concepts", "getting-started", "source-analysis", "technology-coverage", "environment-analysis", "traceability", "quality-reviews", "performance", "pipeline", "testing", "system-settings", "feature-matrix", "workflows", "where", "scenarios", "discovery", "validation", "faq", "glossary", "ecosystem", "optional-capabilities", "feature-details", "about" };
+        var guideSource = DocumentationCatalog.ReadGuideSource(typeof(BirkNext.Web.Pages.UserGuide).Assembly);
+        var findings = DocumentationCatalog.Check(DocumentationCatalog.CurrentNavigation, DocumentationCatalog.Features,
+                DocumentationCatalog.DiscoverRoutes(typeof(BirkNext.Web.Pages.UserGuide).Assembly), anchors,
+                DocumentationCatalog.DocumentedSettingsSections, DocumentationCatalog.DocumentedTargetEnvironmentTabs, DocumentationCatalog.DocumentedSourceAnalysisDomains,
+                guideSource)
+            .Select(f => new DocHealthFinding(f.Severity switch { "Fail" => "Error", "Pass" => "Pass", "Unavailable" => "Unavailable", _ => "Warning" }, f.Category, f.Message, f.RecommendedFix)).ToList();
+        if (guideSource is null) findings.Add(new("Unavailable", "User Guide", "Embedded User Guide source could not be read, so anchor and legacy checks did not run.", "Verify that the User Guide resource is included in the application build."));
         return findings;
     }
 

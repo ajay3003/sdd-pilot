@@ -40,19 +40,12 @@ public class UxConsistencyTests : BunitContext
     }
 
     [Fact]
-    public void UserGuide_HasSpecDeltasMovedFaq()
+    public void UserGuide_CoversCurrentProviderAndExtensionBoundaries()
     {
         var cut = Render<UserGuide>();
 
-        cut.Markup.Should().Contain("Where did Specification Deltas go?",
-            "FAQ for displaced Spec Deltas users must be present in the user guide");
-
-        // The answer is collapsed by default — click the question button to expand it
-        cut.FindAll("button.ug-faq-q")
-           .First(b => b.TextContent.Contains("Where did Specification Deltas go?"))
-           .Click();
-
-        cut.Markup.Should().Contain("Spec Drift is the only entry point for specification change analysis",
-            "FAQ answer must direct users to Spec Drift as the replacement");
+        cut.Markup.Should().Contain("current provider is Azure");
+        cut.Markup.Should().Contain("M2LB child-security-classification extension");
+        cut.Markup.Should().Contain("does not make BirkNext Azure-only");
     }
 }
