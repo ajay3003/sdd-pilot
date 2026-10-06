@@ -180,7 +180,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
 
     private void CaptureRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath)
     {
-        var fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+        var fingerprint = ArtifactFingerprint.Compute(text);
         var role = type.ToString();
         var current = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.IsCurrentSelection);
         if (current?.Fingerprint == fingerprint) return;

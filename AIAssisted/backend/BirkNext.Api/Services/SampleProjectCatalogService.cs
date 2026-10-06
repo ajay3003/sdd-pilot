@@ -1,6 +1,7 @@
 using SysPath = System.IO.Path;
 using SysDir = System.IO.Directory;
 using SysFile = System.IO.File;
+using BirkNext.Api.Services.SampleProjects;
 
 namespace BirkNext.Api.Services;
 
@@ -10,7 +11,7 @@ namespace BirkNext.Api.Services;
 /// Single source of truth for:
 /// - SampleData directory resolution
 /// - Project enumeration
-/// - Artifact file detection
+/// - Bounded recursive document inventory (role classification is the frontend classifier's job)
 /// - README metadata extraction
 ///
 /// Does NOT own presentation mapping; controller and page-model builders
@@ -27,7 +28,7 @@ public sealed class SampleProjectCatalogService : ISampleProjectCatalogService
 
     /// <summary>
     /// Discover all valid Sample Projects from the filesystem.
-    /// Returns canonical project metadata: slug, display name, description, artifact status.
+    /// Returns canonical project metadata: slug, display name, description, document inventory.
     /// </summary>
     public IReadOnlyList<SampleProjectInfo> DiscoverProjects()
     {
@@ -53,6 +54,18 @@ public sealed class SampleProjectCatalogService : ISampleProjectCatalogService
         }
 
         return projects;
+    }
+
+    /// <summary>Discover one project by slug (exact directory name, case-insensitive); null when absent.</summary>
+    public SampleProjectInfo? FindProject(string slug)
+    {
+        var (basePath, _) = ResolveBaseDirectory();
+        if (basePath is null || !SysDir.Exists(basePath)) return null;
+        var dir = SysDir.GetDirectories(basePath)
+            .FirstOrDefault(d => string.Equals(SysPath.GetFileName(d), slug, StringComparison.OrdinalIgnoreCase));
+        if (dir is null || new DirectoryInfo(dir).Attributes.HasFlag(FileAttributes.ReparsePoint)) return null;
+        try { return BuildProjectInfo(dir); }
+        catch { return null; }
     }
 
     /// <summary>
@@ -88,23 +101,9 @@ public sealed class SampleProjectCatalogService : ISampleProjectCatalogService
         var domain = readmePath is not null ? ExtractDomain(readmePath) : string.Empty;
         var description = readmePath is not null ? ExtractDescription(readmePath) : string.Empty;
 
-        var allMd = SysDir.GetFiles(projectDir, "*.md", SearchOption.TopDirectoryOnly)
-            .Select(f => SysPath.GetFileName(f))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var supportedArtifacts = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["constitution.md"] = allMd.Contains("constitution.md"),
-            ["spec.md"] = allMd.Contains("spec.md"),
-            ["data-model.md"] = allMd.Contains("data-model.md"),
-            ["plan.md"] = allMd.Contains("plan.md"),
-            ["tasks.md"] = allMd.Contains("tasks.md"),
-        };
-
-        var contextOnlyFiles = allMd
-            .Where(f => !supportedArtifacts.ContainsKey(f) &&
-                       !f.Equals("README.md", StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        // Generic recursive document inventory: no fixed filenames, folders or mandatory artifact set.
+        // Artifact roles are classified from document content by the frontend classifier.
+        var inventory = SampleProjectDocumentInventory.Enumerate(projectDir);
 
         return new SampleProjectInfo(
             Slug: slug,
@@ -112,8 +111,7 @@ public sealed class SampleProjectCatalogService : ISampleProjectCatalogService
             Domain: domain,
             Description: description,
             DirectoryPath: SysPath.GetFullPath(projectDir),
-            SupportedArtifacts: supportedArtifacts,
-            ContextOnlyFiles: contextOnlyFiles);
+            Inventory: inventory);
     }
 
     private static string? FindReadme(string dir) =>
@@ -162,6 +160,7 @@ public sealed class SampleProjectCatalogService : ISampleProjectCatalogService
 public interface ISampleProjectCatalogService
 {
     IReadOnlyList<SampleProjectInfo> DiscoverProjects();
+    SampleProjectInfo? FindProject(string slug);
     (string? Path, string Source) ResolveBaseDirectory();
 }
 
@@ -175,5 +174,4 @@ public sealed record SampleProjectInfo(
     string Domain,
     string Description,
     string DirectoryPath,
-    IReadOnlyDictionary<string, bool> SupportedArtifacts,
-    IReadOnlyList<string> ContextOnlyFiles);
+    SampleProjectInventory Inventory);

@@ -43,6 +43,7 @@ public sealed class SampleProjectsNavigationTests : BunitContext
         Services.AddSingleton(Mock.Of<IIntegrationTargetRegistryService>());
         Services.AddSingleton(NullLogger<SampleProjects>.Instance);
         Services.AddSingleton(new SampleProjectsApiService(client));
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
 
         JSInterop.Setup<bool>("confirm", _ => true).SetResult(true);
 
@@ -120,59 +121,35 @@ public sealed class SampleProjectsNavigationTests : BunitContext
     }
 
     [Fact]
-    public void ZeroSupportedArtifacts_SelectionFails_ClearsCurrentProject()
+    public void ZeroSupportedArtifacts_IsNeutralAndStillSelectable()
     {
-        // Production contract: selecting a project with zero supported artifacts FAILS.
-        // CurrentProject must be cleared (set to null).
-        // Error message shown, no navigation occurs.
-
-        // Create projects: one normal, one with zero supported artifacts
+        // Contract: artifact roles are optional. A project without supported documents is not a failure: the card says
+        // so neutrally (no "Missing expected" list) and the project can still be selected.
         var normalProject = CreateProject("person-module", "Person Module", "PERSON");
         var emptyProject = new SampleProjectDto(
             "empty-project", "Empty Project", "", "", "C:\\SampleData\\empty-project", true,
-            new[] { new SampleFileDto("readme.md", false, "", "", "", false, false) });  // Context-only file, no supported
+            new[] { new SampleFileDto("Program.cs", true, null, null, null, false, false, RelativePath: "src/Program.cs") });
 
         _handler.SetProjects(normalProject, emptyProject);
 
         var cut = Render<SampleProjects>();
         cut.WaitForAssertion(() => cut.Markup.Should().Contain("Empty Project"));
 
-        // Arrange: Set stale project identity before attempting the failing selection
-        _workspace.CurrentProject = "person-module";
-
-        // Verify precondition: stale state exists
-        _workspace.CurrentProject.Should().Be("person-module");
-
-        // Capture navigation state BEFORE attempting selection
-        var nav = Services.GetRequiredService<NavigationManager>();
-        var initialUri = nav.Uri;
-
-        // Act: Click "Load Supported Artifacts" button for empty project
-        var projectCards = cut.FindAll(".sp-card");
-        var emptyCard = projectCards.Single(card => card.TextContent.Contains("Empty Project", StringComparison.Ordinal));
-        var loadButton = emptyCard.QuerySelector("button.sp-btn-primary");
-
-        loadButton.Should().NotBeNull();
-        loadButton!.Click();
-
-        // Assert: Selection fails, clears stale identity, and does NOT navigate
+        var emptyCard = cut.FindAll(".sp-card").Single(card => card.TextContent.Contains("Empty Project", StringComparison.Ordinal));
         cut.WaitForAssertion(() =>
         {
-            // CurrentProject must be cleared (selection failed)
-            _workspace.CurrentProject.Should().BeNull();
+            emptyCard = cut.FindAll(".sp-card").Single(card => card.TextContent.Contains("Empty Project", StringComparison.Ordinal));
+            emptyCard.QuerySelector("[data-testid=sp-no-artifacts]")!.TextContent.Should().Contain("No supported document artifacts detected");
+        });
+        emptyCard.TextContent.Should().NotContain("Missing Expected");
+        emptyCard.QuerySelectorAll("[data-testid=sp-role-state]").Select(e => e.TextContent.Trim()).Should().OnlyContain(t => t.EndsWith("Not found"));
 
-            // Error message visible in UI
-            cut.Markup.Should().Contain("No supported artifacts found");
+        emptyCard.QuerySelector("button.sp-btn-primary")!.Click();
 
-            // No Workspace artifact copies (identity-only design)
+        cut.WaitForAssertion(() =>
+        {
+            _workspace.CurrentProject.Should().Be("empty-project");
             _workspace.GetAllArtifacts().Should().BeEmpty();
-
-            // Verify CurrentProject is not set to the failing project slug
-            _workspace.CurrentProject.Should().NotBe("empty-project");
-
-            // EXPLICIT NO-NAVIGATION ASSERTION: URI must not change
-            // If navigation occurred, URI would change from current page to reviewer route
-            nav.Uri.Should().Be(initialUri, because: "zero-artifact selection must not navigate");
         });
     }
 

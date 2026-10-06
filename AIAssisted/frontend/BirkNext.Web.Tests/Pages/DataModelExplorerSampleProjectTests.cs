@@ -88,7 +88,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("data-model.md is not available");
+            markup.Should().Contain("No Data Model document was detected");
         });
     }
 
@@ -148,7 +148,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("data-model.md is not available");
+            markup.Should().NotContain("No Data Model document was detected");
         });
     }
 

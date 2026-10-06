@@ -63,6 +63,7 @@ public sealed class SampleProjectSelectionPersistenceTests : BunitContext
         Services.AddSingleton(NullLogger<MainLayout>.Instance);
         Services.AddSingleton(NullLogger<SampleProjects>.Instance);
         Services.AddSingleton(sampleProjectsApi);
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
         JSInterop.Setup<bool>("confirm", _ => true).SetResult(true);
     }
 

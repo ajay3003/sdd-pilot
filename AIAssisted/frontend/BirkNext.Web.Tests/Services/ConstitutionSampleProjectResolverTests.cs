@@ -44,7 +44,7 @@ public sealed class ConstitutionSampleProjectResolverTests
         result.IsSuccess.Should().BeFalse();
         result.IsMissing.Should().BeTrue();
         result.Content.Should().BeNull();
-        result.ErrorMessage.Should().Contain("not available");
+        result.ErrorMessage.Should().Contain("No Constitution document was detected");
     }
 
     [Fact]

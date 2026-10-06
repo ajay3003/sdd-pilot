@@ -1,5 +1,5 @@
-using System.Collections.Concurrent;
 using BirkNext.Web.Models;
+using BirkNext.Web.Services.SampleProjects;
 
 namespace BirkNext.Web.Services;
 
@@ -9,33 +9,33 @@ namespace BirkNext.Web.Services;
 /// Enforces the production policy:
 /// Automatic Explorer content comes exclusively from SampleData/{project}/
 ///
-/// Supports:
-/// - Constitution → constitution.md
-/// - Specification → spec.md
-/// - Plan → plan.md
-/// - Tasks → tasks.md
-/// - DataModel → data-model.md
+/// Documents are resolved by artifact ROLE, not by filename: the project's documents are discovered recursively and
+/// classified by <see cref="ISampleProjectArtifactDiscovery"/> (front matter, canonical filenames as strong hints,
+/// document structure from the shared Markdown engine and the domain extractors). For each role:
+/// - one detected document → it is returned;
+/// - several detected documents → the explicit choice is returned, otherwise "selection required" (never the first one);
+/// - none → "not found" (neutral; roles are optional).
 ///
 /// Does NOT support:
 /// - cross-project fallback
 /// - examples/* substitution
 /// - workspace loading for automatic Explorers
-/// - arbitrary file discovery
 /// - previous-project content persistence
 /// </summary>
 public sealed class SampleProjectDocumentResolver : ISampleProjectDocumentResolver
 {
     private readonly SampleProjectsApiService _apiService;
     private readonly IWorkspaceSessionService _workspace;
-    private readonly ConcurrentDictionary<string, Task<SampleProjectDto?>> _projectCache;
+    private readonly ISampleProjectArtifactDiscovery _discovery;
 
     public SampleProjectDocumentResolver(
         SampleProjectsApiService apiService,
-        IWorkspaceSessionService workspace)
+        IWorkspaceSessionService workspace,
+        ISampleProjectArtifactDiscovery? discovery = null)
     {
         _apiService = apiService ?? throw new ArgumentNullException(nameof(apiService));
         _workspace = workspace ?? throw new ArgumentNullException(nameof(workspace));
-        _projectCache = new ConcurrentDictionary<string, Task<SampleProjectDto?>>();
+        _discovery = discovery ?? new SampleProjectArtifactDiscoveryService(apiService);
     }
 
     public async Task<SampleProjectDocumentResult> ResolveAsync(
@@ -46,32 +46,45 @@ public sealed class SampleProjectDocumentResolver : ISampleProjectDocumentResolv
         if (string.IsNullOrWhiteSpace(projectSlug))
             return SampleProjectDocumentResult.InvalidProject("Project slug cannot be empty");
 
-        // Validate project exists
-        var project = await GetProjectAsync(projectSlug);
-        if (project is null)
-            return SampleProjectDocumentResult.InvalidProject($"Project '{projectSlug}' not found");
-
-        var filename = GetDocumentFilename(documentType);
-
-        // Check if document exists in project (via Files list)
-        var hasFile = project.Files?.Any(f => f.Filename.Equals(filename, StringComparison.OrdinalIgnoreCase)) == true;
-        if (!hasFile)
-            return SampleProjectDocumentResult.MissingDocument(projectSlug, documentType, filename);
-
-        // Fetch document content
+        SampleProjectDiscoveryResult? discovery;
         try
         {
-            var content = await _apiService.GetFileAsync(projectSlug, filename);
-            if (string.IsNullOrEmpty(content))
-                return SampleProjectDocumentResult.MissingDocument(projectSlug, documentType, filename);
-
-            return SampleProjectDocumentResult.Success(projectSlug, documentType, filename, content);
+            discovery = await _discovery.DiscoverAsync(projectSlug, cancellationToken);
         }
         catch (Exception ex)
         {
-            return SampleProjectDocumentResult.Error(projectSlug, documentType, $"Failed to load {filename}: {ex.Message}");
+            return SampleProjectDocumentResult.Error(projectSlug, documentType, $"Failed to discover documents: {ex.Message}");
         }
+        if (discovery is null)
+            return SampleProjectDocumentResult.InvalidProject($"Project '{projectSlug}' not found");
+
+        var role = discovery.Role(ToRole(documentType));
+        if (role.State == SampleRoleState.NotFound)
+            return SampleProjectDocumentResult.MissingDocument(projectSlug, documentType, null);
+
+        var primary = role.Primary;
+        if (primary is null)
+            return SampleProjectDocumentResult.SelectionRequired(projectSlug, documentType, role.Documents.Select(d => d.RelativePath).ToList());
+
+        var content = _discovery.GetContent(discovery.ProjectSlug, primary.RelativePath)
+                      ?? await _apiService.GetFileAsync(projectSlug, primary.RelativePath);
+        if (string.IsNullOrEmpty(content))
+            return SampleProjectDocumentResult.Error(projectSlug, documentType, $"{primary.RelativePath} could not be read.");
+
+        return SampleProjectDocumentResult.Success(projectSlug, documentType, primary.RelativePath, content);
     }
+
+    public static WorkspaceArtifactType ToRole(ExplorerDocumentType documentType) => documentType switch
+    {
+        ExplorerDocumentType.Constitution => WorkspaceArtifactType.Constitution,
+        ExplorerDocumentType.Specification => WorkspaceArtifactType.Specification,
+        ExplorerDocumentType.Plan => WorkspaceArtifactType.Plan,
+        ExplorerDocumentType.Tasks => WorkspaceArtifactType.Tasks,
+        ExplorerDocumentType.DataModel => WorkspaceArtifactType.DataModel,
+        _ => throw new ArgumentException($"Unknown document type: {documentType}"),
+    };
+
+    public static string RoleLabel(ExplorerDocumentType documentType) => SampleArtifactClassifier.Label(ToRole(documentType));
 
     /// <summary>
     /// Get all available Sample Projects.
@@ -128,48 +141,6 @@ public sealed class SampleProjectDocumentResolver : ISampleProjectDocumentResolv
             // when the new project's documents are loaded.
         }
     }
-
-    private static string GetDocumentFilename(ExplorerDocumentType documentType) =>
-        documentType switch
-        {
-            ExplorerDocumentType.Constitution => "constitution.md",
-            ExplorerDocumentType.Specification => "spec.md",
-            ExplorerDocumentType.Plan => "plan.md",
-            ExplorerDocumentType.Tasks => "tasks.md",
-            ExplorerDocumentType.DataModel => "data-model.md",
-            _ => throw new ArgumentException($"Unknown document type: {documentType}"),
-        };
-
-    private async Task<SampleProjectDto?> GetProjectAsync(string projectSlug)
-    {
-        if (!_projectCache.TryGetValue(projectSlug, out var cachedTask))
-        {
-            cachedTask = FetchProjectAsync(projectSlug);
-            _projectCache.TryAdd(projectSlug, cachedTask);
-        }
-
-        try
-        {
-            return await cachedTask;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private async Task<SampleProjectDto?> FetchProjectAsync(string projectSlug)
-    {
-        try
-        {
-            var projects = await _apiService.GetProjectsAsync();
-            return projects?.FirstOrDefault(p => p.Slug.Equals(projectSlug, StringComparison.OrdinalIgnoreCase));
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }
 
 public interface ISampleProjectDocumentResolver
@@ -203,7 +174,9 @@ public sealed record SampleProjectDocumentResult(
     string? Filename,
     string? Content,
     bool IsMissing,
-    string? ErrorMessage)
+    string? ErrorMessage,
+    bool RequiresSelection = false,
+    IReadOnlyList<string>? Candidates = null)
 {
     public static SampleProjectDocumentResult Success(
         string projectSlug,
@@ -219,10 +192,11 @@ public sealed record SampleProjectDocumentResult(
             IsMissing: false,
             ErrorMessage: null);
 
+    /// <summary>No document with this role was detected. Neutral: artifact roles are optional.</summary>
     public static SampleProjectDocumentResult MissingDocument(
         string projectSlug,
         ExplorerDocumentType documentType,
-        string filename) =>
+        string? filename) =>
         new(
             IsSuccess: false,
             ProjectSlug: projectSlug,
@@ -230,7 +204,23 @@ public sealed record SampleProjectDocumentResult(
             Filename: filename,
             Content: null,
             IsMissing: true,
-            ErrorMessage: $"{filename} is not available for project '{projectSlug}'");
+            ErrorMessage: $"No {SampleProjectDocumentResolver.RoleLabel(documentType)} document was detected in project '{projectSlug}'");
+
+    /// <summary>Several documents have this role and none was chosen. All are kept; the user picks one on Sample Projects.</summary>
+    public static SampleProjectDocumentResult SelectionRequired(
+        string projectSlug,
+        ExplorerDocumentType documentType,
+        IReadOnlyList<string> candidates) =>
+        new(
+            IsSuccess: false,
+            ProjectSlug: projectSlug,
+            DocumentType: documentType,
+            Filename: null,
+            Content: null,
+            IsMissing: false,
+            ErrorMessage: $"{candidates.Count} {SampleProjectDocumentResolver.RoleLabel(documentType)} documents were detected in project '{projectSlug}'; choose which one to open on Sample Projects.",
+            RequiresSelection: true,
+            Candidates: candidates);
 
     public static SampleProjectDocumentResult InvalidProject(string message) =>
         new(

@@ -41,6 +41,7 @@ public class DashboardPageTests : BunitContext
             BaseAddress = new Uri("http://localhost/")
         };
         Services.AddSingleton(new SampleProjectsApiService(client));
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
     }
 
     [Fact]
@@ -306,6 +307,7 @@ public class DashboardPageTests : BunitContext
             BaseAddress = new Uri("http://localhost/")
         };
         ctx.Services.AddSingleton(new SampleProjectsApiService(client));
+        ctx.Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
 
         return ctx.Render<Dashboard>();
     }
@@ -318,7 +320,7 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Autorisasjon");
-            cut.Markup.Should().Contain("5 / 5 artifacts available");
+            cut.Markup.Should().Contain("5 artifact roles detected");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
@@ -330,7 +332,7 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("5 / 5 artifacts available");
+            cut.Markup.Should().Contain("5 artifact roles detected");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
@@ -358,7 +360,7 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("3 / 5 artifacts available");
+            cut.Markup.Should().Contain("3 artifact roles detected");
         });
     }
 
@@ -385,7 +387,7 @@ public class DashboardPageTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("0 / 5 artifacts available");
+            cut.Markup.Should().Contain("0 artifact roles detected");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
@@ -403,7 +405,7 @@ public class DashboardPageTests : BunitContext
         {
             cut.Markup.Should().Contain("Artifact availability unavailable");
             cut.Markup.Should().NotContain("artifacts loaded");
-            cut.Markup.Should().NotContain("artifacts available");
+            cut.Markup.Should().NotContain("artifact roles detected");
         });
     }
 
@@ -434,13 +436,14 @@ public class DashboardPageTests : BunitContext
             BaseAddress = new Uri("http://localhost/")
         };
         ctx.Services.AddSingleton(new SampleProjectsApiService(client));
+        ctx.Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
 
         var cut = ctx.Render<Dashboard>();
 
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("2 / 5 artifacts loaded");
-            cut.Markup.Should().NotContain("artifacts available");
+            cut.Markup.Should().NotContain("artifact roles detected");
         });
     }
 
@@ -471,6 +474,7 @@ public class DashboardPageTests : BunitContext
             BaseAddress = new Uri("http://localhost/")
         };
         ctx.Services.AddSingleton(new SampleProjectsApiService(client));
+        ctx.Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
 
         var cut = ctx.Render<Dashboard>();
 
@@ -505,7 +509,7 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("Autorisasjon");
-            cut.Markup.Should().Contain("5 / 5 artifacts available");
+            cut.Markup.Should().Contain("5 artifact roles detected");
             cut.Markup.Should().NotContain("artifacts loaded");
         });
     }
@@ -559,6 +563,13 @@ public class DashboardPageTests : BunitContext
 
             if (request.Method == HttpMethod.Get && path == "api/sample-projects/meta")
                 return Json(new SampleProjectsMetaDto("C:\\SampleData", "test", true));
+
+            // Document text for generic discovery; the bulk endpoint is absent, so discovery reads each file.
+            if (request.Method == HttpMethod.Get && path.EndsWith("/file", StringComparison.Ordinal))
+            {
+                var filename = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(request.RequestUri.Query)["filename"].ToString();
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent($"# {filename}", Encoding.UTF8, "text/plain") });
+            }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
         }

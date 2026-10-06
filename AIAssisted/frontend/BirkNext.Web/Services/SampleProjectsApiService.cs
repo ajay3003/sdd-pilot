@@ -23,6 +23,22 @@ public class SampleProjectsApiService(HttpClient client)
         }
     }
 
+    /// <summary>All readable candidate documents of one project; null when the request fails.</summary>
+    public async Task<List<SampleDocumentContentDto>?> GetDocumentsAsync(string slug)
+    {
+        try
+        {
+            var response = await client.GetAsync($"api/sample-projects/{Uri.EscapeDataString(slug)}/documents");
+            if (!response.IsSuccessStatusCode) return null;
+            return await response.Content.ReadFromJsonAsync<List<SampleDocumentContentDto>>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <param name="filename">Project-relative document path (for example <c>specs/001-feature/spec.md</c>).</param>
     public async Task<string?> GetFileAsync(string slug, string filename)
     {
         try

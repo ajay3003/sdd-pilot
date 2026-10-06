@@ -86,7 +86,7 @@ public sealed class TaskExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("tasks.md is not available");
+            markup.Should().Contain("No Tasks document was detected");
         });
     }
 
@@ -146,7 +146,7 @@ public sealed class TaskExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("tasks.md is not available");
+            markup.Should().NotContain("No Tasks document was detected");
         });
     }
 

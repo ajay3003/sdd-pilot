@@ -1,0 +1,39 @@
+@using BirkNext.Web.Services
+@* Neutral Explorer state when the selected Sample Project has no single document for this role. Roles are optional, so
+   "not detected" is information, not an error; several documents need an explicit choice rather than an arbitrary pick. *@
+
+<div class="sdu" role="status" data-testid="sample-document-unavailable">
+    @if (Result?.RequiresSelection == true)
+    {
+        <p>
+            @(Result.Candidates?.Count ?? 0) @Role documents were detected in <strong>@ProjectName</strong>.
+            Choose which one to open on <a href="sample-projects">Sample Projects</a>.
+        </p>
+        @if (Result.Candidates is { Count: > 0 } candidates)
+        {
+            <ul class="sdu-list">
+                @foreach (var path in candidates)
+                {
+                    <li><code>@path</code></li>
+                }
+            </ul>
+        }
+    }
+    else if (Result is { IsMissing: false, IsSuccess: false })
+    {
+        <p>The @Role document for <strong>@ProjectName</strong> could not be read. @Result.ErrorMessage</p>
+    }
+    else
+    {
+        <p>No @Role document was detected in <strong>@ProjectName</strong>.</p>
+        <p class="sdu-hint">Documents are detected by their content in any folder of the project. See <a href="sample-projects">Sample Projects</a> for what was found.</p>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ExplorerDocumentType DocumentType { get; set; }
+    [Parameter] public string? ProjectName { get; set; }
+    [Parameter] public SampleProjectDocumentResult? Result { get; set; }
+
+    private string Role => SampleProjectDocumentResolver.RoleLabel(DocumentType);
+}

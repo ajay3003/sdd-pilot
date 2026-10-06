@@ -2,8 +2,10 @@
 @using System.Runtime.CompilerServices
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using BirkNext.Web.Services.SampleProjects
 @using Microsoft.JSInterop
 @inject SampleProjectsApiService ProjectsApi
+@inject ISampleProjectArtifactDiscovery DocumentDiscovery
 @inject IWorkspaceSessionService Workspace
 @inject IWorkspaceArtifactStatusService ArtifactStatus
 @inject IWorkspaceAutoSaveService AutoSave
@@ -20,7 +22,7 @@
 <div class="sp-page">
     <div class="sp-page-header">
         <h1 class="sp-page-title">Sample Projects</h1>
-        <p class="sp-page-desc">Browse project folders and load supported artifacts into BirkNext reviewers. Supported artifacts are ready to open; context-only files require no dedicated reviewer.</p>
+        <p class="sp-page-desc">Browse project folders. BirkNext scans each folder recursively and detects supported artifacts (constitution, specification, data model, plan, tasks, research) by their content — any filename or folder structure works, and every role is optional.</p>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(Workspace.CurrentProject))
@@ -86,23 +88,21 @@
         <div class="sp-project-list">
             @foreach (var project in _projects)
             {
-                var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
-                var missing   = project.Files.Where(f => f.IsSupported && !f.Exists).ToList();
-                var context   = project.Files.Where(f => f.IsContextOnly).ToList();
-
+                var discovery = _discovery.GetValueOrDefault(project.Slug);
                 var loadState = GetLoadResult(project);
                 var readmeOpen = _readmeOpen.Contains(project.Slug);
                 var allOpen    = _allFilesOpen.Contains(project.Slug);
+                var headingId  = $"sp-name-{project.Slug}";
 
-                <div class="sp-card @(IsCurrentWorkspace(project) ? "sp-card-selected" : "")">
+                <article class="sp-card @(IsCurrentWorkspace(project) ? "sp-card-selected" : "")" aria-labelledby="@headingId" data-testid="sp-card" data-slug="@project.Slug">
                     @* ── Card header ──────────────────────────────────────── *@
                     <div class="sp-card-header">
                         <div class="sp-card-title-row">
                             <span class="sp-card-icon" aria-hidden="true">📁</span>
-                            <span class="sp-card-name">@project.Name</span>
+                            <h2 class="sp-card-name" id="@headingId">@project.Name</h2>
                             @if (IsCurrentWorkspace(project))
                             {
-                                <span class="sp-card-selected-badge" aria-label="Active project">✓ Selected</span>
+                                <span class="sp-card-selected-badge">✓ Selected</span>
                             }
                             @if (!string.IsNullOrEmpty(project.Domain))
                             {
@@ -113,90 +113,180 @@
                         {
                             <p class="sp-card-desc">@project.Description</p>
                         }
+                        @if (discovery is not null)
+                        {
+                            <p class="sp-card-summary" data-testid="sp-artifact-summary">@CoverageSummary(discovery)</p>
+                        }
                     </div>
 
-                    @* ── Supported artifacts ──────────────────────────────── *@
-                    @if (supported.Count > 0)
+                    @if (discovery is null)
                     {
-                        <div class="sp-section">
-                            <div class="sp-section-label sp-section-supported">
-                                Supported Artifacts (@supported.Count)
-                            </div>
-                            @foreach (var f in supported)
-                            {
-                                <div class="sp-file-row">
-                                    <span class="sp-file-status sp-status-ok" aria-label="Available">✓</span>
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    <span class="sp-file-arrow" aria-hidden="true">→</span>
-                                    <a class="sp-reviewer-link"
-                                       href="@f.ReviewerRoute"
-                                       aria-disabled="@IsProjectLoading(project)"
-                                       @onclick:preventDefault="true"
-                                       @onclick="() => OpenReviewerAsync(project, f.ReviewerRoute)">
-                                        @f.ReviewerName
-                                    </a>
-                                </div>
-                            }
+                        <div class="sp-section sp-discovering" role="status">
+                            <span class="sp-btn-spinner" aria-hidden="true"></span> Discovering documents…
                         </div>
                     }
-
-                    @* ── Context-only files ───────────────────────────────── *@
-                    @if (context.Count > 0)
+                    else
                     {
-                        <div class="sp-section">
-                            <div class="sp-section-label sp-section-context">
-                                Context-Only (@context.Count)
-                            </div>
-                            @foreach (var f in context)
+                        @* ── Artifact coverage. Roles are optional: nothing here is a project failure. ── *@
+                        <section class="sp-section" aria-labelledby="sp-cov-@project.Slug" data-testid="sp-coverage">
+                            <h3 class="sp-section-label" id="sp-cov-@project.Slug">Artifact coverage</h3>
+                            @if (discovery.DetectedCount == 0)
                             {
-                                <div class="sp-file-row sp-file-row-context">
-                                    <span class="sp-file-status sp-status-ctx" aria-label="Context only">📄</span>
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    <span class="sp-file-context-note">Available as context. No dedicated explorer yet.</span>
-                                </div>
+                                <p class="sp-coverage-empty" data-testid="sp-no-artifacts">No supported document artifacts detected.@(discovery.Documents.Count > 0 ? " The documents found are listed below." : "")</p>
                             }
-                        </div>
-                    }
-
-                    @* ── Missing expected ─────────────────────────────────── *@
-                    @if (missing.Count > 0)
-                    {
-                        <div class="sp-section">
-                            <div class="sp-section-label sp-section-missing">
-                                Missing Expected (@missing.Count)
-                            </div>
-                            @foreach (var f in missing)
-                            {
-                                <div class="sp-file-row sp-file-row-missing">
-                                    <span class="sp-file-status sp-status-miss" aria-label="Missing">⚠</span>
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    <span class="sp-file-arrow" aria-hidden="true">→</span>
-                                    <span class="sp-reviewer-name">@f.ReviewerName</span>
-                                    <span class="sp-file-missing-note">(not found)</span>
-                                </div>
-                            }
-                        </div>
-                    }
-
-                    @* ── Recommended pages ────────────────────────────────── *@
-                    @if (supported.Count > 0)
-                    {
-                        <div class="sp-section sp-section-rec">
-                            <div class="sp-section-label">Recommended Pages</div>
-                            <div class="sp-rec-links">
-                                @foreach (var f in supported)
+                            <ul class="sp-coverage">
+                                @foreach (var role in discovery.Roles)
                                 {
-                                    <a class="sp-rec-chip"
-                                       href="@f.ReviewerRoute"
-                                       aria-disabled="@IsProjectLoading(project)"
-                                       @onclick:preventDefault="true"
-                                       @onclick="() => OpenReviewerAsync(project, f.ReviewerRoute)">
-                                        @f.ReviewerName
-                                    </a>
+                                    var explorer = ExplorerFor(role.Role);
+                                    <li class="sp-role" data-testid="sp-role" data-role="@role.Role" data-state="@role.State">
+                                        <div class="sp-role-row">
+                                            <span class="sp-role-name">@SampleArtifactClassifier.Label(role.Role)</span>
+                                            <span class="sp-role-count" aria-label="@($"{role.Documents.Count} document{(role.Documents.Count == 1 ? "" : "s")}")">@(role.Documents.Count == 0 ? "—" : role.Documents.Count.ToString())</span>
+                                            <span class="sp-role-state sp-state-@RoleStateClass(role)" data-testid="sp-role-state"><span aria-hidden="true">@RoleStateIcon(role)</span> @RoleStateText(role)</span>
+                                            @if (role.Documents.Count > 0 && explorer is not null)
+                                            {
+                                                <a class="sp-reviewer-link"
+                                                   href="@explorer.Value.Route"
+                                                   aria-disabled="@IsProjectLoading(project)"
+                                                   @onclick:preventDefault="true"
+                                                   @onclick="() => OpenReviewerAsync(project, explorer.Value.Route)">
+                                                    @explorer.Value.Name
+                                                </a>
+                                            }
+                                            else if (role.Documents.Count > 0)
+                                            {
+                                                <span class="sp-role-note">No dedicated explorer — available as context</span>
+                                            }
+                                        </div>
+                                        @if (role.Documents.Count > 0)
+                                        {
+                                            <ul class="sp-role-docs">
+                                                @foreach (var doc in role.Documents)
+                                                {
+                                                    var isChosen = role.Documents.Count > 1 && ReferenceEquals(role.Primary, doc);
+                                                    <li class="sp-doc" data-testid="sp-role-doc">
+                                                        <code class="sp-path">@doc.RelativePath</code>
+                                                        <span class="sp-confidence">@doc.Confidence</span>
+                                                        @if (isChosen)
+                                                        {
+                                                            <span class="sp-doc-chosen">Opened by explorers</span>
+                                                        }
+                                                        @if (doc.DuplicateOf is not null)
+                                                        {
+                                                            <span class="sp-doc-note">Same content as <code>@doc.DuplicateOf</code></span>
+                                                        }
+                                                        <details class="sp-why">
+                                                            <summary>Why detected?</summary>
+                                                            <ul>
+                                                                @foreach (var reason in doc.Reasons)
+                                                                {
+                                                                    <li>@reason</li>
+                                                                }
+                                                            </ul>
+                                                        </details>
+                                                    </li>
+                                                }
+                                            </ul>
+                                            @if (role.State == SampleRoleState.Multiple && explorer is not null)
+                                            {
+                                                <label class="sp-choose">
+                                                    <span>Document the @explorer.Value.Name opens</span>
+                                                    <select value="@(role.ChosenPath ?? "")" data-testid="sp-choose-document"
+                                                            @onchange="e => ChooseDocument(project, role.Role, e.Value?.ToString())">
+                                                        <option value="">Choose a document…</option>
+                                                        @foreach (var doc in role.Documents)
+                                                        {
+                                                            <option value="@doc.RelativePath">@doc.RelativePath</option>
+                                                        }
+                                                    </select>
+                                                </label>
+                                            }
+                                        }
+                                    </li>
                                 }
-                                <a class="sp-rec-chip" href="quality-review">Quality Review</a>
-                            </div>
-                        </div>
+                            </ul>
+                        </section>
+
+                        @if (discovery.NeedsReview.Count > 0)
+                        {
+                            <section class="sp-section" aria-labelledby="sp-review-@project.Slug" data-testid="sp-needs-review">
+                                <h3 class="sp-section-label sp-section-review" id="sp-review-@project.Slug"><span aria-hidden="true">◐</span> Needs review (@discovery.NeedsReview.Count)</h3>
+                                <p class="sp-section-note">Explorers do not open these until the role is clear. Front matter such as <code>type: plan</code> declares a role explicitly.</p>
+                                <ul class="sp-doc-list">
+                                    @foreach (var doc in discovery.NeedsReview)
+                                    {
+                                        <li class="sp-doc">
+                                            <code class="sp-path">@doc.RelativePath</code>
+                                            <span class="sp-doc-note">@string.Join(" ", doc.Reasons)</span>
+                                            @if (doc.Candidates.Count > 0)
+                                            {
+                                                <details class="sp-why">
+                                                    <summary>Candidate roles</summary>
+                                                    <ul>
+                                                        @foreach (var candidate in doc.Candidates)
+                                                        {
+                                                            <li><strong>@SampleArtifactClassifier.Label(candidate.Role)</strong> (@candidate.Confidence): @string.Join("; ", candidate.Reasons)</li>
+                                                        }
+                                                    </ul>
+                                                </details>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            </section>
+                        }
+
+                        @if (discovery.ParseErrors.Count > 0 || discovery.Error is not null)
+                        {
+                            <section class="sp-section" aria-labelledby="sp-err-@project.Slug" data-testid="sp-read-errors">
+                                <h3 class="sp-section-label sp-section-error" id="sp-err-@project.Slug"><span aria-hidden="true">✕</span> Could not be read (@discovery.ParseErrors.Count)</h3>
+                                @if (discovery.Error is not null)
+                                {
+                                    <p class="sp-section-note">@discovery.Error</p>
+                                }
+                                <ul class="sp-doc-list">
+                                    @foreach (var doc in discovery.ParseErrors)
+                                    {
+                                        <li class="sp-doc"><code class="sp-path">@doc.RelativePath</code> <span class="sp-doc-note">@string.Join(" ", doc.Reasons)</span></li>
+                                    }
+                                </ul>
+                            </section>
+                        }
+
+                        @if (discovery.Unclassified.Count > 0)
+                        {
+                            <details class="sp-section sp-other" data-testid="sp-other-documents">
+                                <summary class="sp-section-label">Other documents (@discovery.Unclassified.Count)</summary>
+                                <ul class="sp-doc-list">
+                                    @foreach (var doc in discovery.Unclassified)
+                                    {
+                                        <li class="sp-doc"><code class="sp-path">@doc.RelativePath</code> <span class="sp-doc-note">@string.Join(" ", doc.Reasons)</span></li>
+                                    }
+                                </ul>
+                            </details>
+                        }
+
+                        <details class="sp-section sp-discovery-details" data-testid="sp-discovery-details">
+                            <summary class="sp-section-label">Discovery details</summary>
+                            <dl class="sp-stats">
+                                <dt>Files scanned</dt><dd>@(discovery.Stats?.FilesScanned.ToString() ?? "—")</dd>
+                                <dt>Markdown documents</dt><dd>@discovery.Documents.Count</dd>
+                                <dt>Supported artifacts</dt><dd>@discovery.DetectedCount</dd>
+                                <dt>Needs review</dt><dd>@discovery.NeedsReview.Count</dd>
+                                <dt>Other documents</dt><dd>@discovery.Unclassified.Count</dd>
+                                <dt>Other file types</dt><dd>@discovery.UnsupportedFiles.Count</dd>
+                                <dt>Skipped documents</dt><dd>@SkippedText(discovery)</dd>
+                                <dt>Ignored folders</dt><dd>@(discovery.Stats is { IgnoredDirectories.Count: > 0 } ignored ? string.Join(", ", ignored.IgnoredDirectories) : "None")</dd>
+                                @if (discovery.Stats is { SkippedLinks: > 0 } links)
+                                {
+                                    <dt>Links not followed</dt><dd>@links.SkippedLinks</dd>
+                                }
+                                @if (discovery.Stats?.Truncated == true)
+                                {
+                                    <dt>Limits</dt><dd>Scan limits were reached; some files are not listed.</dd>
+                                }
+                            </dl>
+                        </details>
                     }
 
                     @* ── Load result ──────────────────────────────────────── *@
@@ -211,14 +301,14 @@
                                 <div class="sp-confirm-title">Loaded workspace: @loadState.ProjectName</div>
                                 <div class="sp-confirm-grid">
                                     <div class="sp-confirm-column">
-                                        <div class="sp-confirm-label">Loaded artifacts</div>
+                                        <div class="sp-confirm-label">Artifacts available to explorers</div>
                                         @foreach (var file in loadState.LoadedArtifacts)
                                         {
                                             <div class="sp-confirm-row"><span class="sp-confirm-ok" aria-hidden="true">✓</span><span>@file</span></div>
                                         }
                                     </div>
                                     <div class="sp-confirm-column">
-                                        <div class="sp-confirm-label">Context-only files</div>
+                                        <div class="sp-confirm-label">Other documents</div>
                                         @if (loadState.ContextOnlyFiles.Count == 0)
                                         {
                                             <div class="sp-confirm-muted">None</div>
@@ -403,30 +493,45 @@
                     @* ── All files viewer ─────────────────────────────────── *@
                     @if (allOpen)
                     {
-                        var allFiles = project.Files.OrderBy(f => f.Filename).ToList();
-                        <div class="sp-all-files-box">
+                        var filter = _fileFilter.GetValueOrDefault(project.Slug, "all");
+                        var rows = AllFileRows(project, discovery, filter);
+                        <div class="sp-all-files-box" data-testid="sp-all-files">
                             <div class="sp-all-files-header">
                                 <span>All Files</span>
-                                <button class="sp-readme-close" @onclick="() => CloseAllFiles(project.Slug)">×</button>
+                                <select class="sp-file-filter" value="@filter" aria-label="Show files"
+                                        @onchange="e => SetFileFilter(project.Slug, e)">
+                                    <option value="all">All</option>
+                                    <option value="artifacts">Artifacts</option>
+                                    <option value="review">Needs review</option>
+                                    <option value="other">Other documents</option>
+                                    <option value="unsupported">Other file types</option>
+                                </select>
+                                <button class="sp-readme-close" aria-label="Close file list" @onclick="() => CloseAllFiles(project.Slug)">×</button>
                             </div>
-                            @foreach (var f in allFiles)
-                            {
-                                <div class="sp-all-file-row">
-                                    <span class="sp-file-name">@f.Filename</span>
-                                    @if (f.IsSupported && f.Exists)
-                                    {
-                                        <span class="sp-file-type-badge sp-badge-supported">Supported → @f.ReviewerName</span>
-                                    }
-                                    else if (f.IsContextOnly)
-                                    {
-                                        <span class="sp-file-type-badge sp-badge-context">Context-only</span>
-                                    }
-                                    else if (f.IsSupported && !f.Exists)
-                                    {
-                                        <span class="sp-file-type-badge sp-badge-missing">Missing</span>
-                                    }
-                                </div>
-                            }
+                            <div class="sp-table-wrap">
+                                <table class="sp-files-table">
+                                    <thead>
+                                        <tr><th scope="col">Path</th><th scope="col">Type</th><th scope="col">Detected role</th><th scope="col">Confidence</th><th scope="col">Explorers</th><th scope="col">Reason</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var row in rows)
+                                        {
+                                            <tr data-testid="sp-file-row">
+                                                <th scope="row"><code class="sp-path">@row.Path</code></th>
+                                                <td>@row.Type</td>
+                                                <td>@row.Role</td>
+                                                <td>@row.Confidence</td>
+                                                <td>@row.Used</td>
+                                                <td class="sp-file-reason">@row.Reason</td>
+                                            </tr>
+                                        }
+                                        @if (rows.Count == 0)
+                                        {
+                                            <tr><td colspan="6" class="sp-confirm-muted">No files in this view.</td></tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     }
 
@@ -435,7 +540,7 @@
                         @{
                             var isSelectedProject = IsCurrentWorkspace(project);
                             var isLoading = _loadingSlug == project.Slug;
-                            var isDisabled = isSelectedProject || supported.Count == 0 || isLoading;
+                            var isDisabled = isSelectedProject || isLoading;
                         }
                         <button class="sp-btn sp-btn-primary"
                                 disabled="@isDisabled"
@@ -457,12 +562,12 @@
                                 @(readmeOpen ? "Close README" : "README")
                             </button>
                         }
-                        <button class="sp-btn sp-btn-icon" title="Copy folder path"
+                        <button class="sp-btn sp-btn-icon" title="Copy folder path" aria-label="Copy folder path"
                                 @onclick="() => CopyPath(project.AbsolutePath)">
-                            📋
+                            <span aria-hidden="true">📋</span>
                         </button>
                     </div>
-                </div>
+                </article>
             }
         </div>
     }
@@ -480,6 +585,8 @@
     private HashSet<string> _readmeOpen = [];
     private HashSet<string> _allFilesOpen = [];
     private Dictionary<string, string> _readmeContent = [];
+    private Dictionary<string, SampleProjectDiscoveryResult> _discovery = [];
+    private Dictionary<string, string> _fileFilter = [];
     private string? _selectionError;
     private bool _clearingSelection;
 
@@ -579,17 +686,136 @@
             _projects = new();
             System.Diagnostics.Debug.WriteLine($"Error loading projects: {ex.Message}");
         }
+
+        // Re-read the catalog for every consumer (Explorers, Dashboard); document classification stays cached per project
+        // until its file inventory changes. Each card fills in as its own discovery completes.
+        DocumentDiscovery.Invalidate();
+        await Task.WhenAll(_projects.Select(DiscoverAsync));
     }
 
-    private static readonly IReadOnlyDictionary<string, WorkspaceArtifactKind> _artifactKindMap =
-        new Dictionary<string, WorkspaceArtifactKind>(StringComparer.OrdinalIgnoreCase)
+    private async Task DiscoverAsync(SampleProjectDto project)
+    {
+        try
         {
-            ["constitution"] = WorkspaceArtifactKind.Constitution,
-            ["spec"]         = WorkspaceArtifactKind.Specification,
-            ["plan"]         = WorkspaceArtifactKind.Plan,
-            ["tasks"]        = WorkspaceArtifactKind.Tasks,
-            ["datamodel"]    = WorkspaceArtifactKind.DataModel,
-        };
+            _discovery[project.Slug] = await DocumentDiscovery.DiscoverAsync(project);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Sample Project document discovery failed for {ProjectSlug}", project.Slug);
+            _discovery[project.Slug] = new SampleProjectDiscoveryResult(project.Slug, [], [], [], project.Discovery,
+                SampleArtifactClassifier.RoleOrder.Select(r => new SampleRoleSummary(r, [], null)).ToList(),
+                "The project documents could not be read.");
+        }
+        StateHasChanged();
+    }
+
+    private void ChooseDocument(SampleProjectDto project, WorkspaceArtifactType role, string? relativePath)
+    {
+        DocumentDiscovery.ChooseDocument(project.Slug, role, relativePath);
+        _ = RefreshDiscoveryAsync(project);
+    }
+
+    private async Task RefreshDiscoveryAsync(SampleProjectDto project)
+    {
+        _discovery[project.Slug] = await DocumentDiscovery.DiscoverAsync(project);
+        StateHasChanged();
+    }
+
+    private static (string Name, string Route)? ExplorerFor(WorkspaceArtifactType role) => role switch
+    {
+        WorkspaceArtifactType.Constitution => ("Constitution Explorer", "/constitution-explorer"),
+        WorkspaceArtifactType.Specification => ("Specification Explorer", "/specification-explorer"),
+        WorkspaceArtifactType.DataModel => ("Data Model Explorer", "/data-model-explorer"),
+        WorkspaceArtifactType.Plan => ("Plan Explorer", "/plan-explorer"),
+        WorkspaceArtifactType.Tasks => ("Task Explorer", "/task-explorer"),
+        _ => null,
+    };
+
+    private static string CoverageSummary(SampleProjectDiscoveryResult d)
+    {
+        var parts = new List<string> { $"{d.DetectedCount} supported artifact{(d.DetectedCount == 1 ? "" : "s")}" };
+        if (d.NeedsReview.Count > 0) parts.Add($"{d.NeedsReview.Count} to review");
+        if (d.Unclassified.Count > 0) parts.Add($"{d.Unclassified.Count} other document{(d.Unclassified.Count == 1 ? "" : "s")}");
+        if (d.ParseErrors.Count > 0) parts.Add($"{d.ParseErrors.Count} unreadable");
+        return string.Join(" · ", parts);
+    }
+
+    private static string RoleStateClass(SampleRoleSummary role) => role.State switch
+    {
+        SampleRoleState.Detected => "detected",
+        SampleRoleState.Multiple => role.Primary is null ? "review" : "detected",
+        _ => "none",
+    };
+
+    private static string RoleStateIcon(SampleRoleSummary role) => role.State switch
+    {
+        SampleRoleState.Detected => "✓",
+        SampleRoleState.Multiple => role.Primary is null ? "◐" : "✓",
+        _ => "—",
+    };
+
+    private static string RoleStateText(SampleRoleSummary role) => role.State switch
+    {
+        SampleRoleState.Detected => "Detected",
+        SampleRoleState.Multiple => role.Primary is null ? "Multiple — choose one" : "Multiple",
+        _ => "Not found",
+    };
+
+    private static string SkipText(string? reason) => reason switch
+    {
+        "TooLarge" => "too large",
+        "Binary" => "binary content",
+        "Unreadable" => "unreadable",
+        "DocumentLimit" => "document limit reached",
+        _ => reason ?? "",
+    };
+
+    private static string SkippedText(SampleProjectDiscoveryResult d) =>
+        d.SkippedDocuments.Count == 0 ? "None" : string.Join(", ", d.SkippedDocuments.Select(f => $"{f.RelativePath ?? f.Filename} ({SkipText(f.SkipReason)})"));
+
+    private void SetFileFilter(string slug, ChangeEventArgs e) => _fileFilter[slug] = e.Value?.ToString() ?? "all";
+
+    private sealed record FileRow(string Path, string Type, string Role, string Confidence, string Used, string Reason);
+
+    private static List<FileRow> AllFileRows(SampleProjectDto project, SampleProjectDiscoveryResult? d, string filter)
+    {
+        var rows = new List<(string Group, FileRow Row)>();
+        if (d is not null)
+        {
+            foreach (var doc in d.Documents)
+            {
+                var role = d.Roles.FirstOrDefault(r => r.Role == doc.Role);
+                var used = doc.Status != ArtifactDiscoveryStatus.Detected ? "No"
+                    : role?.Primary is { } p && ReferenceEquals(p, doc) ? (ExplorerFor(doc.Role!.Value) is null ? "Context" : "Yes")
+                    : "Choose on card";
+                var (group, label) = doc.Status switch
+                {
+                    ArtifactDiscoveryStatus.Detected => ("artifacts", SampleArtifactClassifier.Label(doc.Role!.Value)),
+                    ArtifactDiscoveryStatus.NeedsReview => ("review", "Needs review"),
+                    ArtifactDiscoveryStatus.ParseError => ("review", "Could not be read"),
+                    _ => ("other", "Other document"),
+                };
+                rows.Add((group, new FileRow(doc.RelativePath, "Markdown", label,
+                    doc.Status is ArtifactDiscoveryStatus.Detected or ArtifactDiscoveryStatus.NeedsReview ? doc.Confidence.ToString() : "—",
+                    used, string.Join(" ", doc.Reasons))));
+            }
+            foreach (var f in d.SkippedDocuments)
+                rows.Add(("other", new FileRow(f.RelativePath ?? f.Filename, "Markdown", "Not read", "—", "No", $"Skipped: {SkipText(f.SkipReason)}")));
+            foreach (var f in d.UnsupportedFiles)
+                rows.Add(("unsupported", new FileRow(f.RelativePath ?? f.Filename, FileType(f.Filename), "—", "—", "No", "Not a document type BirkNext classifies")));
+        }
+        else
+        {
+            rows.AddRange(project.Files.Select(f => ("all", new FileRow(f.RelativePath ?? f.Filename, FileType(f.Filename), "…", "…", "…", "Discovering…"))));
+        }
+        return rows.Where(r => filter == "all" || r.Group == filter).Select(r => r.Row).OrderBy(r => r.Path, StringComparer.Ordinal).ToList();
+    }
+
+    private static string FileType(string fileName)
+    {
+        var ext = System.IO.Path.GetExtension(fileName);
+        return string.IsNullOrEmpty(ext) ? "File" : ext.TrimStart('.').ToUpperInvariant();
+    }
 
     private bool IsProjectLoading(SampleProjectDto project) =>
         string.Equals(_loadingSlug, project.Slug, StringComparison.Ordinal);
@@ -635,22 +861,8 @@
         _ignoredHints.Remove(project.Slug);
         StateHasChanged();
 
-        // Validate project availability by checking supported files exist
-        var supported = project.Files.Where(f => f.IsSupported && f.Exists).ToList();
-        var missing = project.Files.Where(f => f.IsSupported && !f.Exists).ToList();
-
-        if (supported.Count == 0)
-        {
-            Workspace.CurrentProject = null;
-            var failedMsg = "No supported artifacts found.";
-            if (missing.Count > 0)
-                failedMsg += $" Missing: {string.Join(", ", missing.Select(f => f.Filename))}.";
-
-            _loadState[project.Slug] = new LoadResult(project.Name, failedMsg, true, [], []);
-            _loadingSlug = null;
-            StateHasChanged();
-            return false;
-        }
+        // Every project is selectable: artifact roles are optional, so a project with few or no supported documents is
+        // not a failure (Explorers then show a neutral "not detected" state).
 
         // Only set the project identity; artifact content comes from DocumentResolver
         // (explorers and analysis features all use DocumentResolver directly).
@@ -674,13 +886,13 @@
         DashboardSnapshot.ClearQualityReview();
 
         // Report project selection success
-        var contextOnly = project.Files
-            .Where(f => f.IsContextOnly && f.Exists)
-            .Select(f => f.Filename)
-            .ToList();
-        var msg = $"✅ Selected {project.Name}. {supported.Count} artifact{(supported.Count != 1 ? "s" : "")} available for review.";
-        var supportedNames = supported.Select(f => f.Filename).ToList();
-        _loadState[project.Slug] = new LoadResult(project.Name, msg, false, supportedNames, contextOnly);
+        var discovery = _discovery.GetValueOrDefault(project.Slug);
+        var available = discovery?.Documents.Where(d => d.Status == ArtifactDiscoveryStatus.Detected).Select(d => d.RelativePath).ToList() ?? [];
+        var other = discovery?.Unclassified.Select(d => d.RelativePath).ToList() ?? [];
+        var msg = available.Count == 0
+            ? $"Selected {project.Name}. No supported document artifacts were detected."
+            : $"Selected {project.Name}. {available.Count} artifact{(available.Count != 1 ? "s" : "")} available for review.";
+        _loadState[project.Slug] = new LoadResult(project.Name, msg, false, available, other);
 
         _loadingSlug = null;
         StateHasChanged();
@@ -709,44 +921,6 @@
         }
         _clearingSelection = false;
         StateHasChanged();
-    }
-
-    private void ClearWorkspaceArtifactSlots()
-    {
-        Workspace.Clear(WorkspaceArtifactKind.Constitution);
-        Workspace.Clear(WorkspaceArtifactKind.Specification);
-        Workspace.Clear(WorkspaceArtifactKind.DataModel);
-        Workspace.Clear(WorkspaceArtifactKind.Plan);
-        Workspace.Clear(WorkspaceArtifactKind.Tasks);
-    }
-
-    private async Task<List<SampleProjectArtifactText>> FetchProjectTextsAsync(
-        SampleProjectDto project,
-        IReadOnlyList<(SampleFileDto File, string Content)> loadedArtifacts)
-    {
-        var result = loadedArtifacts
-            .Select(item => new SampleProjectArtifactText
-            {
-                FileName = item.File.Filename,
-                Content = item.Content
-            })
-            .ToList();
-        var loadedFileNames = result
-            .Select(item => item.FileName)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var file in project.Files.Where(f => f.Exists && !loadedFileNames.Contains(f.Filename)))
-        {
-            var content = await ProjectsApi.GetFileAsync(project.Slug, file.Filename);
-            if (content is null) continue;
-            result.Add(new SampleProjectArtifactText
-            {
-                FileName = file.Filename,
-                Content = NormalizeArtifactText(content)
-            });
-        }
-
-        return result;
     }
 
     private async Task ApplyHintsAsync(DetectedTargetEnvironmentHints hints)

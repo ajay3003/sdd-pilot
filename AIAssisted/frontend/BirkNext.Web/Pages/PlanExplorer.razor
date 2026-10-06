@@ -27,9 +27,7 @@
 
     @if (_isMissingDocument && !string.IsNullOrWhiteSpace(_selectedProjectName))
     {
-        <div style="padding: 32px; text-align: center; color: #999;">
-            <p>plan.md is not available for <strong>@_selectedProjectName</strong>.</p>
-        </div>
+        <BirkNext.Web.Components.SampleDocumentUnavailable DocumentType="ExplorerDocumentType.Plan" ProjectName="@_selectedProjectName" Result="@_documentResult" />
     }
     else
     {
@@ -53,6 +51,7 @@
     private string? _selectedProject;
     private string? _selectedProjectName;
     private bool _isMissingDocument;
+    private SampleProjectDocumentResult? _documentResult;
     private string? _previousProject;
 
     private const string StorageKey = "pe-standalone-plan";
@@ -147,8 +146,9 @@
             await UpdateSelectedProjectName();
             BuildSemanticModel(result.Content);
         }
-        else if (result.IsMissing)
+        else if (result.ProjectSlug is not null)
         {
+            _documentResult = result;
             _selectedProject = projectSlug;
             _isMissingDocument = true;
             await UpdateSelectedProjectName();

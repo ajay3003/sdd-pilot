@@ -118,7 +118,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("spec.md is not available");
+            markup.Should().Contain("No Specification document was detected");
         });
     }
 
@@ -178,7 +178,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("spec.md is not available");
+            markup.Should().NotContain("No Specification document was detected");
         });
     }
 
@@ -300,7 +300,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("spec.md is not available");
+            cut.Markup.Should().Contain("No Specification document was detected");
             cut.Markup.Should().NotContain("OLD WORKSPACE SPEC");
             cut.FindAll("[data-testid='spec-explorer-analyze']").Should().BeEmpty();
         });

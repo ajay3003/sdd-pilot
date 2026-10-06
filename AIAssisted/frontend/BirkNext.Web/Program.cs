@@ -180,10 +180,15 @@ builder.Services.AddHttpClient<ProjectDocumentApiService>(client =>
 builder.Services.AddHttpClient<SampleProjectsApiService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));
 
+// Generic Sample Project document discovery (recursive inventory + deterministic role classification), shared by the
+// Sample Projects page, the Dashboard and the document resolver the Explorers use.
+builder.Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp =>
+    new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
 builder.Services.AddSingleton<ISampleProjectDocumentResolver>(sp =>
     new SampleProjectDocumentResolver(
         sp.GetRequiredService<SampleProjectsApiService>(),
-        sp.GetRequiredService<IWorkspaceSessionService>()));
+        sp.GetRequiredService<IWorkspaceSessionService>(),
+        sp.GetRequiredService<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>()));
 
 builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

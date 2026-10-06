@@ -10,6 +10,7 @@
 @inject IReportExportService ExportService
 @inject IWorkflowReadinessService WorkflowReadiness
 @inject SampleProjectsApiService SampleProjects
+@inject BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery SampleDocumentDiscovery
 @inject IJSRuntime JS
 
 <PageTitle>Dashboard</PageTitle>
@@ -80,7 +81,7 @@
                     }
                     else if (_isSampleProjectMode)
                     {
-                        <span class="db-workspace-count">@_sampleProjectAvailableCount / 5 artifacts available</span>
+                        <span class="db-workspace-count">@_sampleProjectAvailableCount artifact role@(_sampleProjectAvailableCount == 1 ? "" : "s") detected</span>
                     }
                     else
                     {
@@ -1324,19 +1325,18 @@
             _isSampleProjectMode = true;
             _sampleProjectDisplayName = project.Name;
 
-            var canonicalMapping = new Dictionary<string, WorkspaceArtifactKind>
+            // Roles come from generic document discovery (any filename or folder), never from canonical filenames.
+            var discovery = await SampleDocumentDiscovery.DiscoverAsync(project);
+            foreach (var (role, artifactKind) in new[]
             {
-                { "constitution.md", WorkspaceArtifactKind.Constitution },
-                { "spec.md", WorkspaceArtifactKind.Specification },
-                { "plan.md", WorkspaceArtifactKind.Plan },
-                { "tasks.md", WorkspaceArtifactKind.Tasks },
-                { "data-model.md", WorkspaceArtifactKind.DataModel }
-            };
-
-            foreach (var (filename, artifactKind) in canonicalMapping)
+                (WorkspaceArtifactType.Constitution, WorkspaceArtifactKind.Constitution),
+                (WorkspaceArtifactType.Specification, WorkspaceArtifactKind.Specification),
+                (WorkspaceArtifactType.Plan, WorkspaceArtifactKind.Plan),
+                (WorkspaceArtifactType.Tasks, WorkspaceArtifactKind.Tasks),
+                (WorkspaceArtifactType.DataModel, WorkspaceArtifactKind.DataModel),
+            })
             {
-                var file = project.Files.FirstOrDefault(f => f.Filename == filename);
-                var isAvailable = file is not null && file.Exists && file.IsSupported;
+                var isAvailable = discovery.Role(role).Documents.Count > 0;
                 _sampleProjectArtifacts[artifactKind] = isAvailable;
                 if (isAvailable)
                 {

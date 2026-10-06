@@ -39,6 +39,7 @@ public sealed class SampleProjectsSelectedStateTests : BunitContext
         Services.AddSingleton(Moq.Mock.Of<IIntegrationTargetRegistryService>());
         Services.AddSingleton(NullLogger<SampleProjects>.Instance);
         Services.AddSingleton(new SampleProjectsApiService(httpClient));
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(sp => new BirkNext.Web.Services.SampleProjects.SampleProjectArtifactDiscoveryService(sp.GetRequiredService<SampleProjectsApiService>()));
 
         JSInterop.Setup<bool>("confirm", _ => true).SetResult(true);
 

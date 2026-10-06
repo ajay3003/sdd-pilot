@@ -1,28 +1,20 @@
 using BirkNext.Api.Models;
 using BirkNext.Api.Services;
+using BirkNext.Api.Services.SampleProjects;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
-using SysPath = System.IO.Path;
-using SysFile = System.IO.File;
 
 namespace BirkNext.Api.Controllers;
 
+/// <summary>
+/// Sample Project catalog and read-only document access. The catalog returns each project's recursive file inventory;
+/// it does not assume fixed filenames, folders or a mandatory artifact set. Artifact roles are classified on the client.
+/// </summary>
 [ApiController]
 [Route("api/sample-projects")]
 public class SampleProjectsController(ISampleProjectCatalogService catalog) : ControllerBase
 {
-    private static readonly Dictionary<string, (string Kind, string Reviewer, string Route)> SupportedFiles =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ["constitution.md"] = ("constitution", "Constitution Explorer", "/constitution-explorer"),
-            ["spec.md"]         = ("spec",         "Specification Explorer", "/specification-explorer"),
-            ["data-model.md"]   = ("datamodel",    "Data Model Explorer",   "/data-model-explorer"),
-            ["plan.md"]         = ("plan",         "Plan Explorer",         "/plan-explorer"),
-            ["tasks.md"]        = ("tasks",        "Task Explorer",         "/task-explorer"),
-        };
-
-    private static readonly Regex SafeSlug    = new(@"^[a-zA-Z0-9_\-]+$", RegexOptions.Compiled);
-    private static readonly Regex SafeFilename = new(@"^[a-zA-Z0-9_\-\.]+$", RegexOptions.Compiled);
+    private static readonly Regex SafeSlug = new(@"^[a-zA-Z0-9_\-]+$", RegexOptions.Compiled);
 
     // ── GET /api/sample-projects ──────────────────────────────────────────────
 
@@ -30,7 +22,7 @@ public class SampleProjectsController(ISampleProjectCatalogService catalog) : Co
     public IActionResult GetProjects()
     {
         var catalogProjects = catalog.DiscoverProjects();
-        var dtos = catalogProjects.Select(p => BuildProjectDto(p)).ToList();
+        var dtos = catalogProjects.Select(BuildProjectDto).ToList();
         return Ok(dtos);
     }
 
@@ -46,65 +38,78 @@ public class SampleProjectsController(ISampleProjectCatalogService catalog) : Co
             Exists: path is not null));
     }
 
-    // ── GET /api/sample-projects/{slug}/file?filename=spec.md ─────────────────
+    // ── GET /api/sample-projects/{slug}/file?filename=specs/001-x/spec.md ─────
 
+    /// <summary>
+    /// Reads one document. <paramref name="filename"/> is a project-relative path; only readable candidate documents of
+    /// the project's own inventory are served, so traversal, absolute paths, links and unlisted files are refused.
+    /// </summary>
     [HttpGet("{slug}/file")]
-    public async Task<IActionResult> GetFile(string slug, [FromQuery] string filename)
+    public async Task<IActionResult> GetFile(string slug, [FromQuery] string filename, CancellationToken ct)
+    {
+        if (!SafeSlug.IsMatch(slug))
+            return BadRequest("Invalid project slug.");
+        if (SampleProjectDocumentInventory.NormalizeRelative(filename) is null)
+            return BadRequest("Invalid filename.");
+
+        var project = catalog.FindProject(slug);
+        if (project is null)
+            return NotFound("Project not found.");
+
+        var file = SampleProjectDocumentInventory.FindReadableDocument(project.Inventory, filename);
+        if (file is null)
+            return NotFound("File not found.");
+
+        var content = await SampleProjectDocumentInventory.ReadDocumentAsync(project.DirectoryPath, file, ct);
+        return content is null ? NotFound("File not found.") : Content(content, "text/plain; charset=utf-8");
+    }
+
+    // ── GET /api/sample-projects/{slug}/documents ─────────────────────────────
+
+    /// <summary>All readable candidate documents of one project, in path order, for client-side role classification.</summary>
+    [HttpGet("{slug}/documents")]
+    public async Task<IActionResult> GetDocuments(string slug, CancellationToken ct)
     {
         if (!SafeSlug.IsMatch(slug))
             return BadRequest("Invalid project slug.");
 
-        if (string.IsNullOrWhiteSpace(filename) || !SafeFilename.IsMatch(filename) ||
-            filename.Contains(".."))
-            return BadRequest("Invalid filename.");
-
-        var projectDir = ResolveProjectDir(slug);
-        if (projectDir is null)
+        var project = catalog.FindProject(slug);
+        if (project is null)
             return NotFound("Project not found.");
 
-        var filePath = SysPath.GetFullPath(SysPath.Combine(projectDir, filename));
-        if (!filePath.StartsWith(projectDir + SysPath.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-            return Forbid();
-
-        if (!SysFile.Exists(filePath))
-            return NotFound("File not found.");
-
-        var content = await SysFile.ReadAllTextAsync(filePath);
-        return Content(content, "text/plain; charset=utf-8");
+        var result = new List<SampleDocumentContentDto>();
+        foreach (var file in project.Inventory.Files.Where(f => f.IsDocument && f.SkipReason is null))
+        {
+            try
+            {
+                var content = await SampleProjectDocumentInventory.ReadDocumentAsync(project.DirectoryPath, file, ct);
+                result.Add(new SampleDocumentContentDto(file.RelativePath, content, content is null ? "The document could not be read." : null));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                result.Add(new SampleDocumentContentDto(file.RelativePath, null, "The document could not be read."));
+            }
+        }
+        return Ok(result);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private SampleProjectDto BuildProjectDto(SampleProjectInfo info)
+    private static SampleProjectDto BuildProjectDto(SampleProjectInfo info)
     {
-        var files = new List<SampleFileDto>();
-
-        // Supported artifacts (fixed order)
-        foreach (var (filename, (kind, reviewer, route)) in SupportedFiles)
-        {
-            var exists = info.SupportedArtifacts.TryGetValue(filename, out var hasFile) && hasFile;
-            files.Add(new SampleFileDto(
-                Filename:      filename,
-                Exists:        exists,
-                ArtifactKind:  kind,
-                ReviewerName:  reviewer,
-                ReviewerRoute: route,
-                IsSupported:   true,
-                IsContextOnly: false));
-        }
-
-        // Context-only files
-        foreach (var filename in info.ContextOnlyFiles.OrderBy(f => f))
-        {
-            files.Add(new SampleFileDto(
-                Filename:      filename,
-                Exists:        true,
-                ArtifactKind:  null,
-                ReviewerName:  null,
-                ReviewerRoute: null,
-                IsSupported:   false,
-                IsContextOnly: true));
-        }
+        var inventory = info.Inventory;
+        var files = inventory.Files.Select(f => new SampleFileDto(
+            Filename: f.FileName,
+            Exists: true,
+            ArtifactKind: null,
+            ReviewerName: null,
+            ReviewerRoute: null,
+            IsSupported: f.IsDocument && f.SkipReason is null,
+            IsContextOnly: false,
+            RelativePath: f.RelativePath,
+            SizeBytes: f.SizeBytes,
+            LastModifiedUtc: f.LastModifiedUtc,
+            SkipReason: f.SkipReason)).ToList();
 
         return new SampleProjectDto(
             Slug:         info.Slug,
@@ -113,16 +118,8 @@ public class SampleProjectsController(ISampleProjectCatalogService catalog) : Co
             Description:  info.Description,
             AbsolutePath: info.DirectoryPath,
             HasReadme:    !string.IsNullOrEmpty(info.Description),
-            Files:        files);
-    }
-
-    private string? ResolveProjectDir(string slug)
-    {
-        var catalogProjects = catalog.DiscoverProjects();
-        var project = catalogProjects.FirstOrDefault(p => p.Slug.Equals(slug, StringComparison.OrdinalIgnoreCase));
-        if (project is null)
-            return null;
-
-        return SysPath.Exists(project.DirectoryPath) ? project.DirectoryPath : null;
+            Files:        files,
+            Discovery:    new SampleDiscoveryStatsDto(inventory.FilesScanned, inventory.DocumentCount,
+                              inventory.IgnoredDirectories, inventory.SkippedLinks, inventory.Truncated));
     }
 }

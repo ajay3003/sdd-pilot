@@ -87,7 +87,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("plan.md is not available");
+            markup.Should().Contain("No Plan document was detected");
         });
     }
 
@@ -147,7 +147,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("plan.md is not available");
+            markup.Should().NotContain("No Plan document was detected");
         });
     }
 

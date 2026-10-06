@@ -244,14 +244,14 @@ public class SampleProjectsPageModelBuilder : ISampleProjectsPageModelBuilder
 
     private LibraryItem BuildSampleProjectItem(SampleProjectInfo info)
     {
-        var supportedCount = info.SupportedArtifacts.Count(f => f.Value);
+        var documentCount = info.Inventory.DocumentCount;
         return new LibraryItem
         {
             Name = info.DisplayName,
             Type = "Sample Project",
             Status = LibraryStatus.Ready,
             Source = "Filesystem",
-            Description = info.Description.Length > 0 ? info.Description : $"Sample project with {supportedCount} artifact(s)",
+            Description = info.Description.Length > 0 ? info.Description : $"Sample project with {documentCount} document(s)",
             Actions = [
                 new LibraryAction
                 {
