@@ -18,6 +18,8 @@ public sealed class TaskExplorerSampleProjectTests : BunitContext
 
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver));
 
         JSInterop.SetupVoid("localStorage.setItem", _ => true).SetVoidResult();
         JSInterop.SetupVoid("localStorage.removeItem", _ => true).SetVoidResult();
@@ -86,7 +88,7 @@ public sealed class TaskExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("No Tasks document was detected");
+            markup.Should().Contain("No Task artifact was detected in");
         });
     }
 
@@ -123,7 +125,7 @@ public sealed class TaskExplorerSampleProjectTests : BunitContext
         var cut = Render<TaskExplorer>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Sample Project:"));
+            cut.Markup.Should().Contain("Sample Project project a"));
 
         // Deselect project
         _documentResolver.SetSelectedProject(null);
@@ -133,7 +135,7 @@ public sealed class TaskExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Header should be gone when no project is selected
-            markup.Should().NotContain("Sample Project:");
+            markup.Should().NotContain("Sample Project project a");
         });
     }
 
@@ -145,8 +147,8 @@ public sealed class TaskExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("No Tasks document was detected");
+            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("No Task artifact was detected in");
         });
     }
 

@@ -1,0 +1,15 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
+@* The artifact is loaded but its analysis failed: a distinct state from "no artifact", so the explorer never falls back
+   to the empty state for content it could not parse. *@
+
+<div class="eae" role="alert" data-testid="explorer-analysis-error">
+    <strong>Artifact loaded · analysis failed</strong>
+    <p>The @ArtifactExplorerRoles.Label(Role) artifact could not be analysed: @Message</p>
+    <p class="eae-hint">The artifact is still in the workspace. Check its Markdown structure, or import a corrected version.</p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public WorkspaceArtifactType Role { get; set; }
+    [Parameter] public string? Message { get; set; }
+}

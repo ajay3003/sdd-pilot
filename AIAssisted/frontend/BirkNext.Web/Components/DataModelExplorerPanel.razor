@@ -8,11 +8,11 @@
     <div class="dme-empty-state">
         <div class="dme-empty-icon" aria-hidden="true">🗄️</div>
         <h3 class="dme-empty-title">Data Model Explorer</h3>
-        <p class="dme-empty-desc">Parse and explore database entities, tables, relationships, constraints, indexes, and traceability from your data-model.md file.</p>
+        <p class="dme-empty-desc">Parse and explore database entities, tables, relationships, constraints, indexes, and traceability from a Data Model artifact; any file name works.</p>
 
         <div class="dme-input-area">
             <div class="dme-input-header">
-                <span class="dme-input-label">data-model.md</span>
+                <span class="dme-input-label">Data Model document</span>
                 <span class="dme-input-hint">Supports .md and .txt</span>
             </div>
             <SpecificationImport
@@ -22,7 +22,8 @@
                 OnFileRemoved="OnFileRemoved"
                 IsDisabled="false" />
             <textarea class="dme-textarea"
-                      placeholder="Or paste data-model.md content here…"
+                      aria-label="Data Model content"
+                      placeholder="Or paste data model content here…"
                       rows="12"
                       @bind="_localText"
                       @bind:event="oninput"></textarea>

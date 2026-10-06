@@ -98,7 +98,7 @@ public class ConstitutionExplorerPageModelBuilder(
             return new ReviewPageModel
             {
                 Title = "Constitution Explorer",
-                Description = "Review and analyze constitution.md files",
+                Description = "Review and analyze Constitution artifacts",
                 ReadinessStatus = ReviewStatus.Empty,
                 RequiredInputs = new[] { "Constitution" }.ToList(),
                 Summary = new ReviewSummary
@@ -141,7 +141,7 @@ public class ConstitutionExplorerPageModelBuilder(
         return new ReviewPageModel
         {
             Title = "Constitution Explorer",
-            Description = "Review and analyze constitution.md files",
+            Description = "Review and analyze Constitution artifacts",
             ReadinessStatus = ReviewStatus.Ready,
             ArtifactKind = "Constitution",
             Results = results,
@@ -173,7 +173,7 @@ public class DataModelExplorerPageModelBuilder(
             return new ReviewPageModel
             {
                 Title = "Data Model Explorer",
-                Description = "Review and analyze data-model.md files",
+                Description = "Review and analyze Data Model artifacts",
                 ReadinessStatus = ReviewStatus.Empty,
                 RequiredInputs = new[] { "DataModel" }.ToList(),
                 Summary = new ReviewSummary
@@ -216,7 +216,7 @@ public class DataModelExplorerPageModelBuilder(
         return new ReviewPageModel
         {
             Title = "Data Model Explorer",
-            Description = "Review and analyze data-model.md files",
+            Description = "Review and analyze Data Model artifacts",
             ReadinessStatus = ReviewStatus.Ready,
             ArtifactKind = "DataModel",
             Results = results,
@@ -248,7 +248,7 @@ public class PlanExplorerPageModelBuilder(
             return new ReviewPageModel
             {
                 Title = "Plan Explorer",
-                Description = "Review and analyze plan.md files",
+                Description = "Review and analyze Plan artifacts",
                 ReadinessStatus = ReviewStatus.Empty,
                 RequiredInputs = new[] { "Plan" }.ToList(),
                 Summary = new ReviewSummary
@@ -305,7 +305,7 @@ public class PlanExplorerPageModelBuilder(
         return new ReviewPageModel
         {
             Title = "Plan Explorer",
-            Description = "Review and analyze plan.md files",
+            Description = "Review and analyze Plan artifacts",
             ReadinessStatus = ReviewStatus.Ready,
             ArtifactKind = "Plan",
             Results = results,
@@ -339,7 +339,7 @@ public class TaskExplorerPageModelBuilder(
             return new ReviewPageModel
             {
                 Title = "Task Explorer",
-                Description = "Review and analyze tasks.md files",
+                Description = "Review and analyze Task artifacts",
                 ReadinessStatus = ReviewStatus.Empty,
                 RequiredInputs = new[] { "Tasks" }.ToList(),
                 Summary = new ReviewSummary
@@ -395,7 +395,7 @@ public class TaskExplorerPageModelBuilder(
         return new ReviewPageModel
         {
             Title = "Task Explorer",
-            Description = "Review and analyze tasks.md files",
+            Description = "Review and analyze Task artifacts",
             ReadinessStatus = ReviewStatus.Ready,
             ArtifactKind = "Tasks",
             Results = results,

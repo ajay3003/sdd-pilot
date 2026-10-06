@@ -20,6 +20,7 @@ public sealed class SddLifecycleState
     public List<SddRequirementSnapshot> RequirementSnapshots { get; set; } = [];
     public List<SddRequirementChange> RequirementChanges { get; set; } = [];
     public List<SddBaselineManifest> Baselines { get; set; } = [];
+    public List<SddExplorerSelection> ExplorerSelections { get; set; } = [];
 }
 
 /// <summary>Immutable manifest of explicit artifact revision references; content remains owned by Revisions.</summary>
@@ -116,6 +117,21 @@ public sealed class SddArtifactRevision
     public bool IsCurrentSelection { get; set; }
     public Guid? SupersedesRevisionId { get; set; }
     public Guid? SupersededByRevisionId { get; set; }
+    /// <summary>Project the revision belongs to: a Sample Project slug, or null for the manual workspace (no project selected).</summary>
+    public string? WorkspaceScope { get; set; }
+    /// <summary>How the content arrived: File, Drop or Paste for explorer imports; null for older or programmatic captures.</summary>
+    public string? Origin { get; set; }
+}
+
+/// <summary>
+/// Which artifact an explorer shows for a role in a workspace scope when several are available. A viewing choice only:
+/// it never changes authority or baseline.
+/// </summary>
+public sealed class SddExplorerSelection
+{
+    public string? WorkspaceScope { get; set; }
+    public string Role { get; set; } = "";
+    public string ArtifactId { get; set; } = "";
 }
 
 public sealed class SddClarification

@@ -18,6 +18,8 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
 
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver));
         Services.AddSingleton<IDataModelAnalysisService>(new DataModelAnalysisService());
         Services.AddSingleton<IReportExportService>(new ReportExportService());
 
@@ -88,7 +90,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("No Data Model document was detected");
+            markup.Should().Contain("No Data Model artifact was detected in");
         });
     }
 
@@ -125,7 +127,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         var cut = Render<DataModelExplorer>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Sample Project:"));
+            cut.Markup.Should().Contain("Sample Project project a"));
 
         // Deselect project
         _documentResolver.SetSelectedProject(null);
@@ -135,7 +137,7 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Header should be gone when no project is selected
-            markup.Should().NotContain("Sample Project:");
+            markup.Should().NotContain("Sample Project project a");
         });
     }
 
@@ -147,8 +149,8 @@ public sealed class DataModelExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("No Data Model document was detected");
+            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("No Data Model artifact was detected in");
         });
     }
 

@@ -357,7 +357,7 @@
     color: var(--clr-text-body);
 }
 
-.pe-dep-name  { font-weight: 500; }
+.pe-dep-name  { font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
 .pe-dep-version { font-family: monospace; font-size: 0.75rem; color: var(--clr-text-subtle); }
 .pe-dep-badge { font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.35rem; background: var(--clr-surface); border: 1px solid var(--clr-border); border-radius: var(--radius-sm); color: var(--clr-text-subtle); }
 

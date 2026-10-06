@@ -60,6 +60,45 @@ public sealed class WorkspaceSessionService : IWorkspaceSessionService
     public WorkspaceArtifact? Get(WorkspaceArtifactType type)
         => Get((WorkspaceArtifactKind)(int)type);
 
+    public IReadOnlyList<SddArtifactRevision> GetArtifactRevisions(WorkspaceArtifactType type) =>
+        SddLifecycle.Revisions.Where(x => x.Role == type.ToString()).ToList();
+
+    public WorkspaceArtifact? GetRevision(Guid revisionId)
+    {
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == revisionId);
+        return revision is null ? null : new WorkspaceArtifact(revision.Content, revision.CapturedAt.UtcDateTime, revision.FileName, revision.SourceReference);
+    }
+
+    public void SelectRevision(Guid revisionId)
+    {
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == revisionId)
+            ?? throw new InvalidOperationException("Artifact revision was not found.");
+        if (!Enum.TryParse<WorkspaceArtifactType>(revision.Role, out var role)) throw new InvalidOperationException("Artifact revision has an unsupported role.");
+        foreach (var item in SddLifecycle.Revisions.Where(x => x.Role == revision.Role && x.WorkspaceScope == revision.WorkspaceScope)) item.IsCurrentSelection = item.RevisionId == revisionId;
+        if (revision.WorkspaceScope is null)
+            _artifacts[(WorkspaceArtifactKind)(int)role] = new WorkspaceArtifact(revision.Content, revision.CapturedAt.UtcDateTime, revision.FileName, revision.SourceReference);
+        NotifyArtifactsChanged();
+    }
+
+    public SddArtifactRevision? AddArtifactRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath,
+        string? workspaceScope, string? origin, bool select)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var role = type.ToString();
+        var name = string.IsNullOrWhiteSpace(fileName) ? role : fileName.Trim();
+        var fingerprint = ArtifactFingerprint.Compute(text);
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.WorkspaceScope == workspaceScope && x.Fingerprint == fingerprint);
+        if (revision is null)
+        {
+            revision = new SddArtifactRevision { Role = role, FileName = name, SourceReference = sourcePath,
+                Content = text, Fingerprint = fingerprint, WorkspaceScope = workspaceScope, Origin = origin,
+                Revision = SddLifecycle.Revisions.Where(x => x.Role == role && x.WorkspaceScope == workspaceScope && x.FileName == name).Select(x => x.Revision).DefaultIfEmpty(0).Max() + 1 };
+            SddLifecycle.Revisions.Add(revision);
+        }
+        if (select) SelectRevision(revision.RevisionId);
+        return revision;
+    }
+
     public bool Has(WorkspaceArtifactType type) => Has((WorkspaceArtifactKind)(int)type);
 
     public void Clear(WorkspaceArtifactType type) => Clear((WorkspaceArtifactKind)(int)type);

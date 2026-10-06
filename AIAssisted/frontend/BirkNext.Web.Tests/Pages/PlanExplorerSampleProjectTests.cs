@@ -19,6 +19,8 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
         Services.AddSingleton<IPlanAnalysisService, PlanAnalysisService>();
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver));
 
         JSInterop.SetupVoid("localStorage.setItem", _ => true).SetVoidResult();
         JSInterop.SetupVoid("localStorage.removeItem", _ => true).SetVoidResult();
@@ -87,7 +89,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("No Plan document was detected");
+            markup.Should().Contain("No Plan artifact was detected in");
         });
     }
 
@@ -124,7 +126,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         var cut = Render<PlanExplorer>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Sample Project:"));
+            cut.Markup.Should().Contain("Sample Project project a"));
 
         // Deselect project
         _documentResolver.SetSelectedProject(null);
@@ -134,7 +136,7 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Header should be gone when no project is selected
-            markup.Should().NotContain("Sample Project:");
+            markup.Should().NotContain("Sample Project project a");
         });
     }
 
@@ -146,8 +148,8 @@ public sealed class PlanExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("No Plan document was detected");
+            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("No Plan artifact was detected in");
         });
     }
 

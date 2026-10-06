@@ -110,11 +110,21 @@
 .pe-view-toggle,
 .te-view-toggle {
     display: flex;
+    flex-wrap: wrap;
+    max-width: 100%;
     gap: 2px;
     background: var(--clr-surface);
     border: 1px solid var(--clr-border);
     border-radius: var(--radius-md);
     padding: 2px;
+}
+
+/* Explorer headers: many view tabs wrap instead of widening the page. */
+.ce-header-right,
+.pe-header-right,
+.te-header-right {
+    min-width: 0;
+    max-width: 100%;
 }
 
 .view-toggle-btn,

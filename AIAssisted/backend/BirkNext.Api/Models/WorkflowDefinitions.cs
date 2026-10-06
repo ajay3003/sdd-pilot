@@ -55,8 +55,8 @@ public static class WorkflowDefinitions
         new()
         {
             StepKey = "LoadSampleProject",
-            Title = "Load Sample Project",
-            Description = "Load a sample project or import artifacts to get started",
+            Title = "Load project artifacts",
+            Description = "Load a Sample Project or import documents in the explorers; explorers read artifacts by role from the current workspace",
             Route = "sample-projects",
             ActionLabel = "Open Sample Projects",
             StepType = WorkflowStepType.ArtifactLoad,

@@ -189,6 +189,14 @@ builder.Services.AddSingleton<ISampleProjectDocumentResolver>(sp =>
         sp.GetRequiredService<SampleProjectsApiService>(),
         sp.GetRequiredService<IWorkspaceSessionService>(),
         sp.GetRequiredService<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>()));
+// Document explorers read artifacts by role from the current workspace (Sample Project discovery + imported revisions).
+builder.Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(sp =>
+    new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(
+        sp.GetRequiredService<IWorkspaceSessionService>(),
+        sp.GetRequiredService<ISampleProjectDocumentResolver>(),
+        sp.GetRequiredService<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(),
+        sp.GetRequiredService<IWorkspaceUpdateCoordinator>(),
+        sp.GetRequiredService<IWorkspaceStateManager>()));
 
 builder.Services.AddHttpClient<IApiReviewService, ApiReviewService>(client =>
     client.BaseAddress = new Uri("http://localhost:5000/"));

@@ -1,0 +1,349 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
+@implements IDisposable
+@inject IArtifactExplorerContext Explorer
+@inject IServiceProvider Services
+@* Shared frame of every document explorer: reads the role's artifacts from the current workspace and shows loading,
+   error, empty, choose-an-artifact or the loaded artifact (context bar + selector) around the explorer's own content.
+   Explorers get the selected artifact's content from here and never look up files by name. *@
+
+<section class="axh" data-testid="artifact-explorer" data-role="@Role" data-status="@StatusKey">
+    @if (_state is null)
+    {
+        <div class="axh-card axh-loading" role="status" aria-live="polite" data-testid="artifact-explorer-loading">
+            <span class="axh-spinner" aria-hidden="true"></span>
+            Loading @Label artifacts…
+        </div>
+    }
+    else
+    {
+        switch (_state.Status)
+        {
+            case ExplorerArtifactStatus.Error:
+                <div class="axh-card axh-error" role="alert" data-testid="artifact-explorer-error">
+                    <h2 class="axh-title">The @Label artifact could not be loaded</h2>
+                    <p class="axh-text">@_state.Error</p>
+                    <div class="axh-actions">
+                        <button type="button" class="btn-secondary" @onclick="ReloadAsync">Try again</button>
+                    </div>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.ProjectUnavailable:
+                <div class="axh-card" role="status" data-testid="artifact-explorer-project-unavailable">
+                    <div class="axh-icon" aria-hidden="true">@Icon</div>
+                    <h2 class="axh-title">The selected project is not available</h2>
+                    <p class="axh-text">
+                        Project <strong>@(_state.ProjectName ?? _state.ProjectSlug)</strong> is no longer in the Sample Projects catalog,
+                        so its documents cannot be read.
+                    </p>
+                    <div class="axh-actions">
+                        <a class="btn-primary" href="sample-projects">Open Sample Projects</a>
+                    </div>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.Empty:
+                <div class="axh-card axh-empty" role="status" data-testid="artifact-explorer-empty">
+                    <div class="axh-icon" aria-hidden="true">@Icon</div>
+                    @if (_state.HasProject)
+                    {
+                        <h2 class="axh-title">No @Label artifact was detected in @(_state.ProjectName ?? _state.ProjectSlug)</h2>
+                        <p class="axh-text">
+                            The project's documents are classified by content in any folder, and none was recognised as a @Label artifact.
+                            Import a @Label document into this project, or check what was found on Sample Projects.
+                        </p>
+                    }
+                    else
+                    {
+                        <h2 class="axh-title">No @Label artifact is loaded</h2>
+                        <p class="axh-text">
+                            No project is selected and no @Label document has been imported. Import a @Label document into the
+                            current workspace, or load a project from Sample Projects.
+                        </p>
+                    }
+                    <div class="axh-actions">
+                        <button type="button" class="btn-primary" aria-expanded="@(_importOpen ? "true" : "false")"
+                                data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
+                            Import @Label.ToLowerInvariant()
+                        </button>
+                        <a class="btn-secondary axh-link-button" href="sample-projects">Open Sample Projects</a>
+                    </div>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.SelectionRequired:
+                <div class="axh-card axh-choose" role="status" data-testid="artifact-explorer-choose">
+                    <h2 class="axh-title">Choose a @Label artifact</h2>
+                    <p class="axh-text">
+                        @_state.Artifacts.Count @Label artifacts are available in @WorkspaceLabel and none is selected or marked
+                        authoritative, so BirkNext does not pick one. Choose the artifact to open.
+                    </p>
+                    <ul class="axh-choices">
+                        @foreach (var artifact in _state.Artifacts)
+                        {
+                            <li>
+                                <button type="button" class="axh-choice" data-testid="artifact-explorer-choice"
+                                        @onclick="() => SelectAsync(artifact.Id)">
+                                    <span class="axh-choice-name">@artifact.DisplayName</span>
+                                    <span class="axh-choice-meta">@MetaLine(artifact)</span>
+                                    <span class="axh-badges">@Badges(artifact)</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                    <div class="axh-actions">
+                        <button type="button" class="btn-secondary" aria-expanded="@(_importOpen ? "true" : "false")"
+                                data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
+                            Import @Label.ToLowerInvariant()
+                        </button>
+                    </div>
+                </div>
+                break;
+
+            case ExplorerArtifactStatus.Loaded:
+                var selected = _state.Selected!;
+                <div class="axh-context" data-testid="artifact-explorer-context">
+                    <div class="axh-context-main">
+                        <div class="axh-context-heading">
+                            <span class="axh-role"><span aria-hidden="true">@Icon</span> @Label</span>
+                            <strong class="axh-name" data-testid="artifact-explorer-name">@selected.DisplayName</strong>
+                        </div>
+                        <dl class="axh-meta">
+                            <div><dt>File</dt><dd data-testid="artifact-explorer-file">@selected.FileName</dd></div>
+                            @if (!string.IsNullOrWhiteSpace(selected.SourcePath) && selected.SourcePath != selected.FileName)
+                            {
+                                <div><dt>Path</dt><dd>@selected.SourcePath</dd></div>
+                            }
+                            <div><dt>Source</dt><dd data-testid="artifact-explorer-source">@SourceText(selected)</dd></div>
+                            @if (selected.Revision is { } revision)
+                            {
+                                <div><dt>Revision</dt><dd>@revision@(selected.RevisionCount > 1 ? $" of {selected.RevisionCount}" : "")</dd></div>
+                            }
+                        </dl>
+                        <span class="axh-badges">@Badges(selected)@ReasonBadge</span>
+                    </div>
+                    <div class="axh-context-actions">
+                        @if (_state.Artifacts.Count > 1)
+                        {
+                            <label class="axh-select-label" for="@($"{_id}-select")">@_state.Artifacts.Count @Label artifacts</label>
+                            <select id="@($"{_id}-select")" class="axh-select" data-testid="artifact-explorer-selector"
+                                    value="@selected.Id" @onchange="OnSelectorChanged">
+                                @foreach (var artifact in _state.Artifacts)
+                                {
+                                    <option value="@artifact.Id">@OptionText(artifact)</option>
+                                }
+                            </select>
+                        }
+                        <button type="button" class="btn-secondary" aria-expanded="@(_importOpen ? "true" : "false")"
+                                data-testid="artifact-explorer-import-toggle" @onclick="ToggleImport">
+                            Import @Label.ToLowerInvariant()
+                        </button>
+                    </div>
+                </div>
+                break;
+        }
+
+        @if (_saveWarning is not null)
+        {
+            <p class="axh-notice" role="alert" data-testid="artifact-explorer-save-warning">@_saveWarning</p>
+        }
+
+        @if (_suggestedRole is { } suggested)
+        {
+            <p class="axh-notice" role="status" data-testid="artifact-explorer-role-warning">
+                The imported document looks like a @ArtifactExplorerRoles.Label(suggested) artifact. It was added as a @Label artifact
+                as you chose; import it in the @ArtifactExplorerRoles.Label(suggested) explorer if that was not intended.
+            </p>
+        }
+
+        @if (_importOpen && _state.Status is not (ExplorerArtifactStatus.Error or ExplorerArtifactStatus.ProjectUnavailable))
+        {
+            <ArtifactImportPanel Role="Role" WorkspaceLabel="@WorkspaceLabel" OnImported="OnImportedAsync" OnCancel="ToggleImport" />
+        }
+
+        @if (_state.Status == ExplorerArtifactStatus.Loaded && ChildContent is not null)
+        {
+            @ChildContent(_state)
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public WorkspaceArtifactType Role { get; set; }
+    /// <summary>The explorer's content for the loaded artifact.</summary>
+    [Parameter] public RenderFragment<ArtifactExplorerState>? ChildContent { get; set; }
+    /// <summary>Raised after every load, so the page can (re)build its analysis or clear it.</summary>
+    [Parameter] public EventCallback<ArtifactExplorerState> OnStateChanged { get; set; }
+
+    private readonly string _id = "axh-" + Guid.NewGuid().ToString("N")[..8];
+    private ArtifactExplorerState? _state;
+    private string? _loadedScope;
+    private bool _importOpen;
+    private WorkspaceArtifactType? _suggestedRole;
+    private string? _saveWarning;
+    private int _loadVersion;
+    private bool _disposed;
+
+    private string Label => ArtifactExplorerRoles.Label(Role);
+    private string Icon => ArtifactExplorerRoles.Icon(Role);
+    private string StatusKey => _state is null ? "Loading" : _state.Status.ToString();
+    private string WorkspaceLabel => _state?.HasProject == true ? $"project {_state.ProjectName ?? _state.ProjectSlug}" : "the current workspace";
+
+    protected override async Task OnInitializedAsync()
+    {
+        Explorer.Changed += OnExplorerChanged;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // A project switch can happen without a repository event (for example a restored selection); re-read when the
+        // scope differs from the loaded one. This runs on render only; there is no polling.
+        if (!firstRender && _state is not null && !string.Equals(Explorer.CurrentScope, _loadedScope, StringComparison.Ordinal))
+        {
+            await LoadAsync();
+            StateHasChanged();
+        }
+    }
+
+    private void OnExplorerChanged(object? sender, EventArgs e)
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(async () =>
+        {
+            await LoadAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task ReloadAsync()
+    {
+        _state = null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var version = ++_loadVersion;
+        var scope = Explorer.CurrentScope;
+        // Another project: show loading rather than the previous project's artifact while its documents are read.
+        if (_state is not null && !string.Equals(scope, _loadedScope, StringComparison.Ordinal))
+        {
+            _state = null;
+            _suggestedRole = null;
+        }
+        ArtifactExplorerState state;
+        try
+        {
+            state = await Explorer.GetStateAsync(Role);
+        }
+        catch (Exception ex)
+        {
+            state = new ArtifactExplorerState(Role, ExplorerArtifactStatus.Error, scope, null, [], Error: ex.Message);
+        }
+        if (version != _loadVersion || _disposed) return;
+        _state = state;
+        _loadedScope = scope;
+        await OnStateChanged.InvokeAsync(state);
+    }
+
+    private void ToggleImport() => _importOpen = !_importOpen;
+
+    private async Task OnImportedAsync(ArtifactImportResult result)
+    {
+        _importOpen = false;
+        _suggestedRole = result.SuggestedRole;
+        await PersistAsync();
+        await LoadAsync();
+    }
+
+    /// <summary>Imports pasted text from an explorer panel's own input, exactly like the import panel.</summary>
+    public async Task ImportPastedAsync(string text)
+    {
+        var result = Explorer.Import(new ArtifactImportRequest(Role, text, null, "Paste"));
+        if (result.IsSuccess) await OnImportedAsync(result);
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Saves the workspace now. Auto-save only runs where a page owns it, so explorer imports and selections are saved
+    /// explicitly. A failed save is reported, never hidden: the change then lasts for this session only.
+    /// </summary>
+    private async Task PersistAsync()
+    {
+        if (Services.GetService(typeof(IWorkspaceAutoSaveService)) is not IWorkspaceAutoSaveService autoSave) return;
+        _saveWarning = await autoSave.SaveNowAsync()
+            ? null
+            : "The change is shown in this session but could not be saved to the workspace, so it will be lost on reload. Check that the BirkNext backend is running.";
+    }
+
+    private async Task OnSelectorChanged(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is { Length: > 0 } id) await SelectAsync(id);
+    }
+
+    private async Task SelectAsync(string id)
+    {
+        _suggestedRole = null;
+        Explorer.Select(Role, id);
+        await PersistAsync();
+        await LoadAsync();
+    }
+
+    private string SourceText(ExplorerArtifact artifact) => artifact.Source switch
+    {
+        ExplorerArtifactSource.SampleProject => $"Sample Project {_state?.ProjectName ?? _state?.ProjectSlug}",
+        _ => (artifact.Origin switch { "File" => "Imported file", "Drop" => "Dropped file", "Paste" => "Pasted text", _ => "Workspace" })
+             + (_state?.HasProject == true ? $" in project {_state.ProjectName ?? _state.ProjectSlug}" : " in the manual workspace"),
+    };
+
+    private static string MetaLine(ExplorerArtifact artifact) =>
+        string.IsNullOrWhiteSpace(artifact.SourcePath) || artifact.SourcePath == artifact.FileName ? artifact.FileName : artifact.SourcePath;
+
+    private static string OptionText(ExplorerArtifact artifact)
+    {
+        var text = artifact.DisplayName == artifact.FileName ? artifact.FileName : $"{artifact.DisplayName} ({MetaLine(artifact)})";
+        if (artifact.IsAuthoritative) text += $" · {artifact.Authority}";
+        if (artifact.Currentness != ExplorerArtifactCurrentness.Current) text += $" · {artifact.Currentness}";
+        return text;
+    }
+
+    private RenderFragment Badges(ExplorerArtifact artifact) => __builder =>
+    {
+        <span class="axh-badge axh-badge-source">@(artifact.Source == ExplorerArtifactSource.SampleProject ? "Sample Project" : "Imported")</span>
+        if (artifact.IsAuthoritative)
+        {
+            <span class="axh-badge axh-badge-authority" data-testid="artifact-explorer-authoritative">Authoritative · @artifact.Authority</span>
+        }
+        else if (artifact.Authority is not ("Unknown" or ""))
+        {
+            <span class="axh-badge">@artifact.Authority</span>
+        }
+        if (artifact.Currentness != ExplorerArtifactCurrentness.Current)
+        {
+            <span class="axh-badge axh-badge-stale" data-testid="artifact-explorer-currentness">@artifact.Currentness</span>
+        }
+    };
+
+    private RenderFragment ReasonBadge => __builder =>
+    {
+        var text = _state?.Reason switch
+        {
+            ExplorerSelectionReason.Explicit => "Selected",
+            ExplorerSelectionReason.Authoritative => "Opened because it is authoritative",
+            ExplorerSelectionReason.OnlyArtifact => "Only artifact",
+            _ => null,
+        };
+        if (text is not null)
+        {
+            <span class="axh-badge axh-badge-reason" data-testid="artifact-explorer-reason">@text</span>
+        }
+    };
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Explorer.Changed -= OnExplorerChanged;
+    }
+}

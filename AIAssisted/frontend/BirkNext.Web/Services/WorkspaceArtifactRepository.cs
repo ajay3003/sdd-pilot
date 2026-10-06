@@ -73,12 +73,73 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     public WorkspaceArtifact? Get(WorkspaceArtifactType type)
         => _artifacts.TryGetValue(type, out var a) ? a : null;
 
+    public IReadOnlyList<SddArtifactRevision> GetArtifactRevisions(WorkspaceArtifactType type) =>
+        SddLifecycle.Revisions.Where(x => x.Role == type.ToString())
+            .OrderByDescending(x => x.IsCurrentSelection)
+            .ThenByDescending(x => x.CapturedAt)
+            .ToList();
+
+    public WorkspaceArtifact? GetRevision(Guid revisionId)
+    {
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == revisionId);
+        return revision is null ? null : new WorkspaceArtifact(revision.Content, revision.CapturedAt.UtcDateTime, revision.FileName, revision.SourceReference);
+    }
+
+    /// <summary>
+    /// Makes the revision the current selection for its role within its workspace scope. Selection is not authority:
+    /// the revision's authority and any baseline are unchanged. Only the manual workspace (no project) also replaces the
+    /// role's session artifact, because a selected Sample Project's documents are resolved on demand, never copied.
+    /// </summary>
+    public void SelectRevision(Guid revisionId)
+    {
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.RevisionId == revisionId)
+            ?? throw new InvalidOperationException("Artifact revision was not found.");
+        if (!Enum.TryParse<WorkspaceArtifactType>(revision.Role, out var role))
+            throw new InvalidOperationException("Artifact revision has an unsupported role.");
+        foreach (var item in SddLifecycle.Revisions.Where(x => x.Role == revision.Role && x.WorkspaceScope == revision.WorkspaceScope))
+            item.IsCurrentSelection = item.RevisionId == revisionId;
+        if (revision.WorkspaceScope is null)
+            _artifacts[role] = new WorkspaceArtifact(revision.Content, revision.CapturedAt.UtcDateTime, revision.FileName, revision.SourceReference);
+        NotifyArtifactsChanged();
+    }
+
+    /// <summary>
+    /// Adds imported content as an artifact revision of <paramref name="type"/> in <paramref name="workspaceScope"/>.
+    /// Content already present for that role and scope reuses its revision. Revisions are numbered per document
+    /// (scope, role and file name). Authority starts as Unknown: importing never approves or baselines anything.
+    /// </summary>
+    public SddArtifactRevision? AddArtifactRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath,
+        string? workspaceScope, string? origin, bool select)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        var role = type.ToString();
+        var name = string.IsNullOrWhiteSpace(fileName) ? role : fileName.Trim();
+        var fingerprint = ArtifactFingerprint.Compute(text);
+        var revision = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.WorkspaceScope == workspaceScope && x.Fingerprint == fingerprint);
+        if (revision is null)
+        {
+            revision = new SddArtifactRevision
+            {
+                Role = role, FileName = name, SourceReference = sourcePath,
+                Content = text, Fingerprint = fingerprint,
+                Revision = SddLifecycle.Revisions
+                    .Where(x => x.Role == role && x.WorkspaceScope == workspaceScope && string.Equals(x.FileName, name, StringComparison.Ordinal))
+                    .Select(x => x.Revision).DefaultIfEmpty(0).Max() + 1,
+                Authority = "Unknown", CapturedAt = DateTimeOffset.UtcNow,
+                WorkspaceScope = workspaceScope, Origin = origin
+            };
+            SddLifecycle.Revisions.Add(revision);
+        }
+        if (select) SelectRevision(revision.RevisionId);
+        return revision;
+    }
+
     public bool Has(WorkspaceArtifactType type) => _artifacts.ContainsKey(type);
 
     public void Clear(WorkspaceArtifactType type)
     {
         _artifacts.Remove(type);
-        foreach (var revision in SddLifecycle.Revisions.Where(x => x.Role == type.ToString() && x.IsCurrentSelection))
+        foreach (var revision in SddLifecycle.Revisions.Where(x => x.Role == type.ToString() && x.WorkspaceScope is null && x.IsCurrentSelection))
             revision.IsCurrentSelection = false;
     }
 
@@ -136,6 +197,7 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
             SddLifecycle.RequirementSnapshots ??= [];
             SddLifecycle.RequirementChanges ??= [];
             SddLifecycle.Baselines ??= [];
+            SddLifecycle.ExplorerSelections ??= [];
             foreach (var evidence in SddLifecycle.ImplementationEvidence) evidence.TargetResolutions ??= [];
             foreach (var (type, artifact) in GetAllArtifacts())
                 CaptureRevision(type, artifact.Text, artifact.FileName, artifact.SourcePath);
@@ -182,13 +244,14 @@ public sealed class WorkspaceArtifactRepository : IWorkspaceSessionService
     {
         var fingerprint = ArtifactFingerprint.Compute(text);
         var role = type.ToString();
-        var current = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.IsCurrentSelection);
+        // Set() is the manual workspace's session artifact, so it captures into the unscoped (no project) revisions only.
+        var current = SddLifecycle.Revisions.FirstOrDefault(x => x.Role == role && x.WorkspaceScope is null && x.IsCurrentSelection);
         if (current?.Fingerprint == fingerprint) return;
 
         if (current is not null) current.IsCurrentSelection = false;
         // Content seen before (switching A → B → A) re-selects its existing revision instead of storing another full copy: revisions are captured
         // for new fingerprints only, so repeated workspace switching cannot grow the lifecycle (memory and persisted JSON) without bound.
-        var existing = SddLifecycle.Revisions.LastOrDefault(x => x.Role == role && x.Fingerprint == fingerprint);
+        var existing = SddLifecycle.Revisions.LastOrDefault(x => x.Role == role && x.WorkspaceScope is null && x.Fingerprint == fingerprint);
         if (existing is not null) { existing.IsCurrentSelection = true; return; }
         SddLifecycle.Revisions.Add(new SddArtifactRevision
         {

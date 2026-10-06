@@ -10,11 +10,11 @@
         <div class="ce-empty-state">
             <div class="ce-empty-icon" aria-hidden="true">⚖️</div>
             <h3 class="ce-empty-title">Constitution Explorer</h3>
-            <p class="ce-empty-desc">Transform a constitution.md into a navigable view of principles, standards, constraints, governance, and rule traceability. Paste or import a constitution file below.</p>
+            <p class="ce-empty-desc">Turn a Constitution artifact into a navigable view of principles, standards, constraints, governance, and rule traceability. Paste or import a constitution document below; any file name works.</p>
 
             <div class="ce-input-area">
                 <div class="ce-input-header">
-                    <span class="ce-input-label">constitution.md</span>
+                    <span class="ce-input-label">Constitution document</span>
                     <span class="ce-input-hint">Supports platform, module, frontend, and service constitutions</span>
                 </div>
                 <SpecificationImport
@@ -25,7 +25,8 @@
                     IsDisabled="false" />
                 <textarea
                     class="ce-textarea"
-                    placeholder="Or paste constitution.md content here..."
+                    aria-label="Constitution content"
+                    placeholder="Or paste constitution content here..."
                     rows="12"
                     @bind="_localText"></textarea>
                 @if (!string.IsNullOrWhiteSpace(_localText))

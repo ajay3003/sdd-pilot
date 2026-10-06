@@ -172,10 +172,10 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         {
             Number = 1,
             Key = "LoadWorkspace",
-            Title = "Load Sample Project",
-            Description = "Load a sample project or resume a saved workspace to begin the review workflow.",
+            Title = "Load project artifacts",
+            Description = "Load a Sample Project, import documents in an explorer, or resume a saved workspace to begin the review workflow.",
             Route = "sample-projects",
-            ActionLabel = "Load Sample Project",
+            ActionLabel = "Open Sample Projects",
             Color = "#0284c7",
             CanOpen = true,
             IsCurrent = true,

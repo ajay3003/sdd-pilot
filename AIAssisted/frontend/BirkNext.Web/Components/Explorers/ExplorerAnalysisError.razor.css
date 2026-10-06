@@ -1,0 +1,21 @@
+.eae {
+    padding: 0.85rem 1rem;
+    background: var(--clr-warning-bg-light);
+    border: 1px solid var(--clr-warning-border);
+    border-radius: var(--radius-lg);
+    color: var(--clr-text-body);
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+}
+
+.eae strong {
+    color: var(--clr-warning);
+}
+
+.eae p {
+    margin: 0.35rem 0 0;
+}
+
+.eae-hint {
+    color: var(--clr-text-muted);
+}

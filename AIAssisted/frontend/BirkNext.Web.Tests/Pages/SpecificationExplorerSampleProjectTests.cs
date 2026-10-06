@@ -23,6 +23,8 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
         Services.AddSingleton<MarkdownRenderingService>();
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(_documentResolver);
+        Services.AddSingleton<BirkNext.Web.Services.Explorers.IArtifactExplorerContext>(new BirkNext.Web.Services.Explorers.ArtifactExplorerContext(_workspace, _documentResolver, _documentResolver));
         Services.AddSingleton(_extractionService.Object);
         Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
         Services.AddSingleton(new FeatureVisibilityService());
@@ -118,7 +120,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().Contain("No Specification document was detected");
+            markup.Should().Contain("No Specification artifact was detected in");
         });
     }
 
@@ -155,7 +157,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         var cut = Render<SpecificationExplorer>();
 
         cut.WaitForAssertion(() =>
-            cut.Markup.Should().Contain("Sample Project:"));
+            cut.Markup.Should().Contain("Sample Project project a"));
 
         // Deselect project
         _documentResolver.SetSelectedProject(null);
@@ -165,7 +167,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         {
             var markup = cut.Markup;
             // Header should be gone when no project is selected
-            markup.Should().NotContain("Sample Project:");
+            markup.Should().NotContain("Sample Project project a");
         });
     }
 
@@ -177,8 +179,8 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             var markup = cut.Markup;
-            markup.Should().NotContain("Sample Project:");
-            markup.Should().NotContain("No Specification document was detected");
+            markup.Should().NotContain("Sample Project project a");
+            markup.Should().NotContain("No Specification artifact was detected in");
         });
     }
 
@@ -300,9 +302,47 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
 
         cut.WaitForAssertion(() =>
         {
-            cut.Markup.Should().Contain("No Specification document was detected");
+            cut.Markup.Should().Contain("No Specification artifact was detected in");
             cut.Markup.Should().NotContain("OLD WORKSPACE SPEC");
             cut.FindAll("[data-testid='spec-explorer-analyze']").Should().BeEmpty();
+        });
+    }
+
+    [Fact]
+    public void SpecificationExplorer_NoSampleProject_OpensManuallyImportedCustomFileName()
+    {
+        const string spec = "# School attendance requirements\n\n- FR-001: The system shall record absence.";
+        string? analyzedText = null;
+        _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements.md", null, null, "File", select: true);
+        _extractionService
+            .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .Callback<string, ExtractionProfile, CancellationToken>((text, _, _) => analyzedText = text)
+            .ReturnsAsync(MakeResult([], spec));
+
+        var cut = Render<SpecificationExplorer>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='artifact-explorer-name']").TextContent.Should().Be("School attendance requirements");
+            cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements.md");
+            cut.Markup.Should().NotContain("No Sample Project selected");
+        });
+        cut.Find("[data-testid='spec-explorer-analyze']").Click();
+        cut.WaitForAssertion(() => analyzedText.Should().Be(spec));
+    }
+
+    [Fact]
+    public void SpecificationExplorer_EmptyWorkspace_OffersImportAndSampleProjects()
+    {
+        var cut = Render<SpecificationExplorer>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='artifact-explorer-empty'] h2").TextContent.Should().Be("No Specification artifact is loaded");
+            cut.Find("[data-testid='artifact-explorer-import-toggle']").TextContent.Trim().Should().Be("Import specification");
+            cut.Find("[data-testid='artifact-explorer-empty'] a[href='sample-projects']").TextContent.Should().Be("Open Sample Projects");
+            cut.Markup.Should().NotContain("No Sample Project selected");
+            cut.Markup.Should().NotContain("specification.md files");
         });
     }
 

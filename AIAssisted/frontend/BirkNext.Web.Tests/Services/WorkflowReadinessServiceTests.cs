@@ -21,7 +21,7 @@ public sealed class WorkflowReadinessServiceTests
         readiness.WorkspaceName.Should().Be("No workspace loaded");
         readiness.ArtifactStatus.ArtifactCount.Should().Be(0);
         readiness.NextRecommendedAction.Should().NotBeNull();
-        readiness.NextRecommendedAction!.Title.Should().Be("Load Sample Project");
+        readiness.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
         readiness.SpecificationExplorerState.Should().BeNull();
         readiness.TraceabilityState.Should().BeNull();
         readiness.ImplementationReviewState.Should().BeNull();

@@ -10,11 +10,11 @@
         <div class="pe-empty-state">
             <div class="pe-empty-icon" aria-hidden="true">📐</div>
             <h3 class="pe-empty-title">Plan Explorer</h3>
-            <p class="pe-empty-desc">Transform a plan.md into a navigable view of architecture decisions, risks and constraints, implementation phases, constitution gates, and testing strategy. Paste or import a plan file below.</p>
+            <p class="pe-empty-desc">Turn a Plan artifact into a navigable view of architecture decisions, risks and constraints, implementation phases, constitution gates, and testing strategy. Paste or import a plan document below; any file name works.</p>
 
             <div class="pe-input-area">
                 <div class="pe-input-header">
-                    <span class="pe-input-label">plan.md</span>
+                    <span class="pe-input-label">Plan document</span>
                     <span class="pe-input-hint">Supports implementation plans, feature plans, and architecture plans</span>
                 </div>
                 <SpecificationImport
@@ -25,7 +25,8 @@
                     IsDisabled="false" />
                 <textarea
                     class="pe-textarea"
-                    placeholder="Or paste plan.md content here..."
+                    aria-label="Plan content"
+                    placeholder="Or paste plan content here..."
                     rows="12"
                     @bind="_localText"></textarea>
                 @if (!string.IsNullOrWhiteSpace(_localText))
@@ -527,7 +528,7 @@
                     @if (techSections.Count == 0)
                     {
                         <div class="pe-empty-tab">
-                            <span>No technical context section found. Add a <code>## Technical Context</code> section to your plan.md.</span>
+                            <span>No technical context section found. Add a <code>## Technical Context</code> section to the Plan artifact.</span>
                         </div>
                     }
                     else
@@ -556,7 +557,7 @@
                     @if (structureSections.Count == 0)
                     {
                         <div class="pe-empty-tab">
-                            <span>No project structure section found. Add a <code>## Project Structure</code> section to your plan.md.</span>
+                            <span>No project structure section found. Add a <code>## Project Structure</code> section to the Plan artifact.</span>
                         </div>
                     }
                     else
@@ -705,7 +706,7 @@
                             @if (!string.IsNullOrWhiteSpace(_search) || _complexityFilter is not null)
                             { <span>No complexity items match the current filter.</span> }
                             else
-                            { <span>No complexity items found. Add a <code>## Complexity</code> section to your plan.md.</span> }
+                            { <span>No complexity items found. Add a <code>## Complexity</code> section to the Plan artifact.</span> }
                         </div>
                     }
                     else
@@ -875,7 +876,7 @@
                     @if (testing is null)
                     {
                         <div class="pe-empty-tab">
-                            <span>No testing section found. Add a <code>## Testing</code> section to your plan.md.</span>
+                            <span>No testing section found. Add a <code>## Testing</code> section to the Plan artifact.</span>
                         </div>
                     }
                     else

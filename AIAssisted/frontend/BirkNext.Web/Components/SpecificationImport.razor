@@ -64,6 +64,8 @@
 
 @code {
     [Parameter] public EventCallback<string> OnFileImported { get; set; }
+    /// <summary>Raised with the file name and how it arrived ("Drop" or "File"), after the same checks as OnFileImported.</summary>
+    [Parameter] public EventCallback<ImportedDocument> OnDocumentImported { get; set; }
     [Parameter] public EventCallback OnFileRemoved { get; set; }
     [Parameter] public bool IsDisabled { get; set; }
     [Parameter] public string InputId { get; set; } = "spec-file-input";
@@ -105,7 +107,7 @@
         _dragCounter = 0;
         _state = ImportState.Reading;
         await InvokeAsync(StateHasChanged);
-        await HandleFileContent(name, size, content);
+        await HandleFileContent(name, size, content, "Drop");
         await InvokeAsync(StateHasChanged);
     }
 
@@ -158,7 +160,7 @@
                 System.Text.Encoding.UTF8,
                 detectEncodingFromByteOrderMarks: true);
             var content = await reader.ReadToEndAsync();
-            await HandleFileContent(file.Name, file.Size, content);
+            await HandleFileContent(file.Name, file.Size, content, "File");
         }
         catch (Exception ex)
         {
@@ -167,7 +169,7 @@
         }
     }
 
-    private async Task HandleFileContent(string name, long size, string rawContent)
+    private async Task HandleFileContent(string name, long size, string rawContent, string origin)
     {
         var ext = Path.GetExtension(name).ToLowerInvariant();
         if (ext is not (".md" or ".txt"))
@@ -197,6 +199,7 @@
         _fileSize = size;
         _state = ImportState.FileLoaded;
         await OnFileImported.InvokeAsync(content);
+        await OnDocumentImported.InvokeAsync(new ImportedDocument(name, content, origin));
     }
 
     private async Task HandleRemove()
@@ -232,6 +235,8 @@
         _errorMessage = msg;
         _state = ImportState.Error;
     }
+
+    public sealed record ImportedDocument(string FileName, string Content, string Origin);
 
     private static string TrimBom(string s) => s.Length > 0 && s[0] == '﻿' ? s[1..] : s;
 

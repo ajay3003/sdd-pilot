@@ -11,11 +11,11 @@
         <div class="te-empty-state">
             <div class="te-empty-icon" aria-hidden="true">🗂</div>
             <h3 class="te-empty-title">Task Explorer</h3>
-            <p class="te-empty-desc">Transform tasks.md into a navigable hierarchy of phases, user stories, task groups, and tables. Paste, import, or drag a tasks.md file.</p>
+            <p class="te-empty-desc">Turn a Task artifact into a navigable hierarchy of phases, user stories, task groups, and tables. Paste, import, or drag a task document; any file name works.</p>
 
             <div class="te-input-area">
                 <div class="te-input-header">
-                    <span class="te-input-label">tasks.md</span>
+                    <span class="te-input-label">Task document</span>
                 </div>
                 <SpecificationImport
                     @ref="_importRef"
@@ -25,7 +25,8 @@
                     IsDisabled="false" />
                 <textarea
                     class="te-textarea"
-                    placeholder="Or paste tasks.md content here..."
+                    aria-label="Task content"
+                    placeholder="Or paste task content here..."
                     rows="12"
                     @bind="_localTasksText"></textarea>
                 @if (!string.IsNullOrWhiteSpace(_localTasksText))
@@ -184,7 +185,7 @@
                         <div>
                             <div class="te-section-kicker">Changes</div>
                             <h3>Compare task versions</h3>
-                            <p class="te-changes-subtext">Compare the current tasks.md with a previous version.</p>
+                            <p class="te-changes-subtext">Compare the current Task artifact with a previous version.</p>
                         </div>
                     </div>
                     <TaskChangesPanel CurrentTasksText="@(_lastBuiltText)" />
@@ -397,7 +398,7 @@
                             <div class="te-section-kicker">Impact</div>
                             <h3>Requirement coverage and implementation gaps</h3>
                         </div>
-                        <span>Task completion tracks tasks.md status. Requirement implementation coverage measures requirement-to-task linkage.</span>
+                        <span>Task completion tracks the Task artifact status. Requirement implementation coverage measures requirement-to-task linkage.</span>
                     </div>
 
                     <!-- Requirement Implementation Coverage and Delivery Risk Analysis -->
@@ -661,7 +662,7 @@
                         }
                         else if (_tree.Roots.Count == 0)
                         {
-                            <span>No tasks detected. Task Explorer expects headings and task IDs such as T001, T002 in tasks.md.</span>
+                            <span>No tasks detected. Task Explorer expects headings and task IDs such as T001, T002 in the Task artifact.</span>
                         }
                         else
                         {

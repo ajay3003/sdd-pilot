@@ -39,7 +39,7 @@ public class ReviewPageModelService(
             {
                 return CreateBlockedOrEmptyModel(
                     "Constitution Explorer",
-                    "Navigate and analyze constitution.md files",
+                    "Navigate and analyze Constitution artifacts",
                     new[] { "Constitution" },
                     new[] { "Constitution" });
             }
@@ -50,7 +50,7 @@ public class ReviewPageModelService(
         {
             return CreateFailedModel(
                 "Constitution Explorer",
-                "Navigate and analyze constitution.md files",
+                "Navigate and analyze Constitution artifacts",
                 $"Failed to load constitution: {ex.Message}");
         }
     }
@@ -65,7 +65,7 @@ public class ReviewPageModelService(
             {
                 return CreateBlockedOrEmptyModel(
                     "Data Model Explorer",
-                    "Navigate and analyze data-model.md files",
+                    "Navigate and analyze Data Model artifacts",
                     new[] { "DataModel" },
                     new[] { "DataModel" });
             }
@@ -76,7 +76,7 @@ public class ReviewPageModelService(
         {
             return CreateFailedModel(
                 "Data Model Explorer",
-                "Navigate and analyze data-model.md files",
+                "Navigate and analyze Data Model artifacts",
                 $"Failed to load data model: {ex.Message}");
         }
     }
@@ -91,7 +91,7 @@ public class ReviewPageModelService(
             {
                 return CreateBlockedOrEmptyModel(
                     "Plan Explorer",
-                    "Navigate and analyze plan.md files",
+                    "Navigate and analyze Plan artifacts",
                     new[] { "Plan" },
                     new[] { "Plan" });
             }
@@ -102,7 +102,7 @@ public class ReviewPageModelService(
         {
             return CreateFailedModel(
                 "Plan Explorer",
-                "Navigate and analyze plan.md files",
+                "Navigate and analyze Plan artifacts",
                 $"Failed to load plan: {ex.Message}");
         }
     }
@@ -117,7 +117,7 @@ public class ReviewPageModelService(
             {
                 return CreateBlockedOrEmptyModel(
                     "Task Explorer",
-                    "Navigate and analyze tasks.md files",
+                    "Navigate and analyze Task artifacts",
                     new[] { "Tasks" },
                     new[] { "Tasks" });
             }
@@ -128,7 +128,7 @@ public class ReviewPageModelService(
         {
             return CreateFailedModel(
                 "Task Explorer",
-                "Navigate and analyze tasks.md files",
+                "Navigate and analyze Task artifacts",
                 $"Failed to load tasks: {ex.Message}");
         }
     }

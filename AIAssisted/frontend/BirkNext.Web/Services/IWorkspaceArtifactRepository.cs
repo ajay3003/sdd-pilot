@@ -20,6 +20,11 @@ public interface IWorkspaceArtifactRepository
     void Set(WorkspaceArtifactType type, string text,
              string? fileName = null, string? sourcePath = null, DateTime? lastModified = null);
     WorkspaceArtifact? Get(WorkspaceArtifactType type);
+    IReadOnlyList<SddArtifactRevision> GetArtifactRevisions(WorkspaceArtifactType type);
+    WorkspaceArtifact? GetRevision(Guid revisionId);
+    void SelectRevision(Guid revisionId);
+    SddArtifactRevision? AddArtifactRevision(WorkspaceArtifactType type, string text, string? fileName, string? sourcePath,
+        string? workspaceScope, string? origin, bool select);
     bool Has(WorkspaceArtifactType type);
     void Clear(WorkspaceArtifactType type);
     IEnumerable<(WorkspaceArtifactType Type, WorkspaceArtifact Artifact)> GetAllArtifacts();

@@ -10,7 +10,8 @@ Sample Projects no longer assumes a fixed set of root-level files (`constitution
 | Recursive, bounded file inventory; safe document reads | Backend `SampleProjectDocumentInventory` (`Services/SampleProjects/`), served by `SampleProjectsController` |
 | Artifact-role classification | Frontend `SampleArtifactClassifier` (pure, deterministic) |
 | Per-project discovery, cache, explicit document choice | Frontend `SampleProjectArtifactDiscoveryService` (`ISampleProjectArtifactDiscovery`, singleton) |
-| Role → document for Explorers, Quality Review, traceability | `SampleProjectDocumentResolver` (by role, never by filename) |
+| Role → document for Quality Review, traceability | `SampleProjectDocumentResolver` (by role, never by filename) |
+| Role → artifacts for the document Explorers | `ArtifactExplorerContext` (see [artifact-explorers.md](artifact-explorers.md)) |
 | Selected project identity | `WorkspaceArtifactRepository.CurrentProject` (unchanged: identity only, no document copies) |
 
 Discovery is separate from Source Analysis. It looks at documents only and never at source technology.
@@ -72,8 +73,9 @@ All detected documents of a role are kept, and the same filename in different fo
 primary document is set as follows:
 
 - When there is exactly one document, it is the primary.
-- When there are several, the user chooses one on the project card with *Document the … Explorer opens*. Until then the
-  resolver returns `RequiresSelection` and Explorers show the candidate list.
+- When there are several, the user chooses one on the project card with *Document the … Explorer opens*, or in the
+  Explorer's artifact selector (both set the same choice). Until then the resolver returns `RequiresSelection` and
+  Explorers ask the user to choose.
 - Discovery never picks the first, shortest or root-level file, and it never marks anything Baseline or authoritative.
 
 Duplicate content is flagged ("Same content as …") using the shared `ArtifactFingerprint`, the same SHA-256 that
@@ -83,10 +85,12 @@ repository revisions use.
 
 Discovery is cached per project. The cache key is a fingerprint of the inventory (path, size, modification time), so a
 changed, added or removed file triggers a re-read. The Sample Projects page re-reads the catalog every time it opens.
-The explicit document choice lasts for the session only.
+The discovery choice lasts for the session only. An Explorer selection is also kept in the workspace lifecycle
+(`SddLifecycleState.ExplorerSelections`), so Explorers keep it across reloads.
 
 ## Known limitations
 
-- The explicit choice among several documents is not persisted across reloads.
+- The choice made on the project card is not persisted across reloads. A choice made in an Explorer is persisted, but
+  only Explorers read it after a reload.
 - Quality Review, Artifact Traceability and Task-to-Spec Alignment still label their input cards with canonical names
   (`spec.md` …). Their content comes from the role-based resolver.

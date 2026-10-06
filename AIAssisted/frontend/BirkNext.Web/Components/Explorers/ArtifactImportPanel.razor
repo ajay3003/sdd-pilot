@@ -1,0 +1,94 @@
+@using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
+@using BirkNext.Web.Components
+@inject IArtifactExplorerContext Explorer
+@* Adds a document to the current workspace as an artifact of one role. A file (picker or drop) and pasted text go
+   through the same repository import, so explorers never keep content of their own. *@
+
+<form class="aip" data-testid="artifact-import-panel" @onsubmit="SubmitAsync" @onsubmit:preventDefault="true"
+      aria-labelledby="@($"{_id}-title")">
+    <h3 id="@($"{_id}-title")" class="aip-title">Import a @Label document</h3>
+    <p class="aip-hint">
+        Adds the document to @WorkspaceLabel as a @Label artifact. Any file name works; names such as
+        <code>@ArtifactExplorerRoles.CommonFileName(Role)</code> are only common examples.
+    </p>
+
+    <SpecificationImport @ref="_import" InputId="@($"{_id}-file")"
+                         OnDocumentImported="OnFileLoaded" OnFileRemoved="OnFileRemoved" />
+
+    <div class="aip-field">
+        <label for="@($"{_id}-name")">Document name</label>
+        <input id="@($"{_id}-name")" class="aip-input" type="text" maxlength="200" autocomplete="off"
+               placeholder="@($"For example {ArtifactExplorerRoles.ExampleCustomFileName(Role)}")"
+               data-testid="artifact-import-name" @bind="_name" />
+    </div>
+
+    <div class="aip-field">
+        <label for="@($"{_id}-text")">@Label content</label>
+        <textarea id="@($"{_id}-text")" class="aip-textarea" rows="10" data-testid="artifact-import-text"
+                  placeholder="@($"Paste {Label.ToLowerInvariant()} content here…")"
+                  @bind="_text" @bind:event="oninput"></textarea>
+    </div>
+
+    @if (_error is not null)
+    {
+        <p class="aip-error" role="alert" data-testid="artifact-import-error">@_error</p>
+    }
+
+    <div class="aip-actions">
+        <button type="submit" class="btn-primary" disabled="@string.IsNullOrWhiteSpace(_text)" data-testid="artifact-import-submit">
+            Add to workspace
+        </button>
+        @if (OnCancel.HasDelegate)
+        {
+            <button type="button" class="btn-secondary" @onclick="OnCancel">Cancel</button>
+        }
+    </div>
+</form>
+
+@code {
+    [Parameter, EditorRequired] public WorkspaceArtifactType Role { get; set; }
+    [Parameter] public string WorkspaceLabel { get; set; } = "the current workspace";
+    [Parameter] public EventCallback<ArtifactImportResult> OnImported { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly string _id = "aip-" + Guid.NewGuid().ToString("N")[..8];
+    private SpecificationImport? _import;
+    private string? _name;
+    private string _text = "";
+    private string? _fileOrigin;
+    private string? _error;
+
+    private string Label => ArtifactExplorerRoles.Label(Role);
+
+    private void OnFileLoaded(SpecificationImport.ImportedDocument document)
+    {
+        _name = document.FileName;
+        _text = document.Content;
+        _fileOrigin = document.Origin;
+        _error = null;
+    }
+
+    private void OnFileRemoved()
+    {
+        _fileOrigin = null;
+        _text = "";
+        _name = null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        var result = Explorer.Import(new ArtifactImportRequest(Role, _text, _name, _fileOrigin ?? "Paste"));
+        if (!result.IsSuccess)
+        {
+            _error = result.Error;
+            return;
+        }
+        _error = null;
+        _text = "";
+        _name = null;
+        _fileOrigin = null;
+        _import?.Reset();
+        await OnImported.InvokeAsync(result);
+    }
+}
