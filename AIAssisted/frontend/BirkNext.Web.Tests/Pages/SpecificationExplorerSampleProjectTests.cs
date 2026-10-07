@@ -15,12 +15,15 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
     private readonly WorkspaceArtifactRepository _workspace = new();
     private readonly MockSampleProjectDocumentResolver _documentResolver = new();
     private readonly Mock<IScenarioExtractionService> _extractionService = new();
+    private readonly Mock<IExtractionSessionService> _session = new();
+    private readonly Mock<ISaveReviewedCandidatesMutation> _saveReviewed = new();
 
     public SpecificationExplorerSampleProjectTests()
     {
         JSInterop.Mode = JSRuntimeMode.Loose;
 
         Services.AddSingleton<IWorkspaceSessionService>(_workspace);
+        Services.AddSingleton<IWorkspaceStateManager, WorkspaceStateManager>();
         Services.AddSingleton<MarkdownRenderingService>();
         Services.AddSingleton<ISampleProjectDocumentResolver>(_documentResolver);
         Services.AddSingleton<BirkNext.Web.Services.SampleProjects.ISampleProjectArtifactDiscovery>(_documentResolver);
@@ -28,16 +31,17 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         Services.AddSingleton(_extractionService.Object);
         Services.AddSingleton<IExtractionCandidateMetricsService, ExtractionCandidateMetricsService>();
         Services.AddSingleton(new FeatureVisibilityService());
-        var session = new Mock<IExtractionSessionService>();
-        session.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
-        session.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
-        session.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
-        session.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
-        Services.AddSingleton(session.Object);
+        _session.Setup(s => s.LoadAsync()).ReturnsAsync((ExtractionSessionSnapshot?)null);
+        _session.Setup(s => s.GetSpecificationAnalysisAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync((SpecificationAnalysisCacheEntry?)null);
+        _session.Setup(s => s.SaveSpecificationAnalysisAsync(It.IsAny<SpecificationAnalysisCacheEntry>())).Returns(Task.CompletedTask);
+        _session.Setup(s => s.SaveAsync(It.IsAny<ExtractionSessionSnapshot>())).Returns(Task.CompletedTask);
+        _session.Setup(s => s.ClearAsync()).Returns(Task.CompletedTask);
+        _session.Setup(s => s.IsExpired(It.IsAny<ExtractionSessionSnapshot>())).Returns(false);
+        Services.AddSingleton(_session.Object);
 
         var createScenarios = new Mock<ICreateScenariosMutation>();
-        var saveReviewed = new Mock<ISaveReviewedCandidatesMutation>();
-        saveReviewed
+        _saveReviewed
             .Setup(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<ISaveReviewedCandidatesResult>>());
         var saveLinks = new Mock<ISaveCandidateLinksMutation>();
@@ -49,7 +53,7 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             .Setup(q => q.ExecuteAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IOperationResult<IGetReviewedCandidatesResult>>());
         Services.AddSingleton(createScenarios.Object);
-        Services.AddSingleton(saveReviewed.Object);
+        Services.AddSingleton(_saveReviewed.Object);
         Services.AddSingleton(saveLinks.Object);
         Services.AddSingleton(reviewed.Object);
 
@@ -210,10 +214,11 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             var secondFeatureCount = secondRender.Split("Feature").Length - 1;
             secondFeatureCount.Should().Be(featureCount);
         });
+        _extractionService.Verify(s => s.ExtractAsync(projectSpec, ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
-    public void SpecificationExplorer_AnalyzeUsesSelectedSampleProjectSpecification()
+    public void SpecificationExplorer_AutomaticallyAnalyzesSelectedSampleProjectSpecification()
     {
         const string projectSlug = "project-a";
         const string workspaceSpec = "# OLD WORKSPACE SPEC";
@@ -237,9 +242,6 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             ], sampleProjectSpec));
 
         var cut = Render<SpecificationExplorer>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-explorer-analyze']").Should().NotBeNull());
-
-        cut.Find("[data-testid='spec-explorer-analyze']").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -253,10 +255,12 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
     }
 
     [Fact]
-    public void SpecificationExplorer_SeparatesParsedStructureFromUnassessedTraceabilityAndUnrunAnalysis()
+    public void SpecificationExplorer_AutomaticallyAnalyzesWithoutAssessingTraceability()
     {
         const string spec = "# School attendance requirements\n\n## Requirements\n\n- FR-001: The system shall record absence.\n\n## Tests\n\n- Given an absence, when saved, then it is recorded.";
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements-person.md", null, null, "File", select: true);
+        _extractionService.Setup(s => s.ExtractAsync(spec, ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(MakeResult([], spec));
 
         var cut = Render<SpecificationExplorer>();
 
@@ -265,14 +269,14 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements-person.md");
             cut.Find("[data-testid='se-traceability-state']").TextContent.Should().Contain("Not assessed for this Specification");
             cut.Find("[data-testid='se-traceability-state'] a[href='artifact-traceability']").TextContent.Should().Contain("Open Requirements Traceability");
-            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Not run");
-            cut.Find("[data-testid='extract-pre-state']").TextContent.Should().Contain("No review analysis has been run");
-            cut.FindAll("[data-testid='requirements-metric'], [data-testid='tests-metric'], [data-testid='clarifications-metric']").Should().BeEmpty();
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='requirements-metric']").TextContent.Should().Contain("Requirements analyzed");
             cut.Markup.Should().NotContain("HEALTHY");
             cut.Markup.Should().NotContain("coverage attention");
             cut.Markup.Should().NotContain("No traceability information available");
         });
-        _extractionService.Verify(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Never);
+        _extractionService.Verify(s => s.ExtractAsync(spec, ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Once);
+        _saveReviewed.Verify(m => m.ExecuteAsync(It.IsAny<SaveReviewedCandidatesInput>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -281,11 +285,9 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         const string spec = "# Empty review spec\n\n## Notes\nNo candidate patterns.";
         _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "custom-spec.txt", null, null, "File", select: true);
         _extractionService.Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeResult([], spec));
+            .ReturnsAsync(ExtractionPipelineResult.NonSuccess(PipelineStatus.NoResults, spec.Length, spec.Split('\n').Length, 1, ExtractionProfile.Speckit));
 
         var cut = Render<SpecificationExplorer>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Not run"));
-        cut.Find("[data-testid='spec-explorer-analyze']").Click();
 
         cut.WaitForAssertion(() =>
         {
@@ -294,6 +296,52 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             cut.Find("[data-testid='spec-no-review-candidates']").TextContent.Should().Contain("No review candidates were found");
             cut.FindAll("[data-testid='extract-pre-state']").Should().BeEmpty();
         });
+        _session.Verify(s => s.SaveSpecificationAnalysisAsync(It.IsAny<SpecificationAnalysisCacheEntry>()), Times.Once);
+    }
+
+    [Fact]
+    public void SpecificationExplorer_ReusesCachedResultForCurrentArtifact()
+    {
+        const string spec = "# Cached specification";
+        _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "requirements-person.md", null, null, "File", select: true);
+        var candidate = new CandidateSnapshot(
+            Guid.NewGuid(), "FR-007: Cached candidate", ScenarioKind.Requirement,
+            ClassificationSignal.Rfc2119Lowercase, null, BlockType.UnorderedListItem,
+            null, false, CandidateReviewStatus.AutoAccepted, CandidateSaveState.Pending, null, null);
+        _session.Setup(s => s.GetSpecificationAnalysisAsync(It.IsAny<string>(), It.IsAny<string>()))
+            .ReturnsAsync(new SpecificationAnalysisCacheEntry("cached-key", "speckit-deterministic-v1", DateTimeOffset.UtcNow, spec.Length, 1, 2, [candidate]));
+
+        var cut = Render<SpecificationExplorer>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='spec-review-candidates']").TextContent.Should().Contain("FR-007: Cached candidate");
+        });
+        _extractionService.Verify(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Never);
+        _session.Verify(s => s.SaveSpecificationAnalysisAsync(It.IsAny<SpecificationAnalysisCacheEntry>()), Times.Never);
+    }
+
+    [Fact]
+    public void SpecificationExplorer_AnalysisFailureDoesNotRetryUntilExplicitRetry()
+    {
+        const string spec = "# Retry specification";
+        _workspace.AddArtifactRevision(WorkspaceArtifactType.Specification, spec, "retry-spec.md", null, null, "File", select: true);
+        _extractionService.SetupSequence(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("private internal detail"))
+            .ReturnsAsync(MakeResult([], spec));
+
+        var cut = Render<SpecificationExplorer>();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Failed"));
+        cut.Render();
+        _extractionService.Verify(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Once);
+        cut.Markup.Should().NotContain("private internal detail");
+
+        cut.Find("[data-testid='spec-explorer-analyze']").Click();
+
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed"));
+        _extractionService.Verify(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -307,19 +355,19 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         _documentResolver.SetSelectedProject(projectASlug);
         _extractionService
             .Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(MakeResult([
-                new ExtractionCandidate
-                {
-                    Title = "FR-001: Project A only",
+            .Returns<string, ExtractionProfile, CancellationToken>((text, _, _) => Task.FromResult(text.Contains("Project A", StringComparison.Ordinal)
+                ? MakeResult([
+            new ExtractionCandidate
+            {
+                Title = "FR-001: Project A only",
                     Classification = ScenarioKind.Requirement,
                     ClassificationSignal = ClassificationSignal.Rfc2119Lowercase,
                     SourceBlockType = BlockType.UnorderedListItem
                 }
-            ], "# Project A Specification"));
+            ], text)
+                : MakeResult([], text)));
 
         var cut = Render<SpecificationExplorer>();
-        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-explorer-analyze']").Should().NotBeNull());
-        cut.Find("[data-testid='spec-explorer-analyze']").Click();
         cut.WaitForAssertion(() =>
             cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("1"));
 
@@ -330,9 +378,57 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
         {
             cut.Markup.Should().Contain("Project B Specification");
             cut.Markup.Should().NotContain("FR-001: Project A only");
-            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Stale");
-            cut.FindAll("[data-testid='candidates-metric']").Should().BeEmpty();
-            cut.Find("[data-testid='extract-pre-state']").TextContent.Should().Contain("Analysis is stale");
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='candidates-metric']").TextContent.Should().Contain("0");
+        });
+    }
+
+    [Fact]
+    public void SpecificationExplorer_RapidArtifactSwitchDoesNotRenderLatePreviousResult()
+    {
+        const string projectA = "project-a";
+        const string projectB = "project-b";
+        const string specA = "# Project A Specification";
+        const string specB = "# Project B Specification";
+        var pendingA = new TaskCompletionSource<ExtractionPipelineResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _documentResolver.SetProjectSpecification(projectA, specA);
+        _documentResolver.SetProjectSpecification(projectB, specB);
+        _documentResolver.SetSelectedProject(projectA);
+        _extractionService.Setup(s => s.ExtractAsync(It.IsAny<string>(), ExtractionProfile.Speckit, It.IsAny<CancellationToken>()))
+            .Returns<string, ExtractionProfile, CancellationToken>((text, _, _) => text == specA
+                ? pendingA.Task
+                : Task.FromResult(MakeResult([
+                    new ExtractionCandidate
+                    {
+                        Title = "FR-002: Project B candidate",
+                        Classification = ScenarioKind.Requirement,
+                        ClassificationSignal = ClassificationSignal.Rfc2119Lowercase,
+                        SourceBlockType = BlockType.UnorderedListItem,
+                    }
+                ], text)));
+
+        var cut = Render<SpecificationExplorer>();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzing"));
+
+        _documentResolver.SetSelectedProject(projectB);
+        cut.Render();
+        cut.WaitForAssertion(() => cut.Find("[data-testid='spec-review-candidates']").TextContent.Should().Contain("Project B candidate"));
+
+        pendingA.SetResult(MakeResult([
+            new ExtractionCandidate
+            {
+                Title = "FR-001: Project A candidate",
+                Classification = ScenarioKind.Requirement,
+                ClassificationSignal = ClassificationSignal.Rfc2119Lowercase,
+                SourceBlockType = BlockType.UnorderedListItem,
+            }
+        ], specA));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid='spec-review-state']").TextContent.Should().Be("Analyzed");
+            cut.Find("[data-testid='spec-review-candidates']").TextContent.Should().Contain("Project B candidate");
+            cut.Markup.Should().NotContain("Project A candidate");
         });
     }
 
@@ -374,7 +470,6 @@ public sealed class SpecificationExplorerSampleProjectTests : BunitContext
             cut.Find("[data-testid='artifact-explorer-file']").TextContent.Should().Be("requirements.md");
             cut.Markup.Should().NotContain("No Sample Project selected");
         });
-        cut.Find("[data-testid='spec-explorer-analyze']").Click();
         cut.WaitForAssertion(() => analyzedText.Should().Be(spec));
     }
 

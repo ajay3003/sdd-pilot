@@ -4,10 +4,14 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
 @using BirkNext.Web.Services.Explorers
+@using BirkNext.Web.GraphQL
 @using System.Security.Cryptography
 @using System.Text
+@implements IDisposable
 
 @inject BirkNext.Web.Services.IScenarioExtractionService ExtractionService
+@inject IExtractionSessionService ExtractionSession
+@inject IWorkspaceStateManager WorkspaceStateManager
 
 <PageTitle>Specification Explorer — QA Review Studio</PageTitle>
 
@@ -45,10 +49,10 @@
                         <div class="review-results-title">
                             <p class="section-kicker">Deterministic review</p>
                             <h2>Specification Review Analysis</h2>
-                            <p>Run analysis explicitly to generate review candidates from this artifact.</p>
+                            <p>Deterministic review analysis runs automatically for the current Specification. Re-analysis is available when needed.</p>
                         </div>
-                        <span class="se-analysis-state @(_analysisError is not null ? "is-failed" : IsAnalysisStale ? "is-stale" : HasCurrentAnalysis ? "is-current" : "")" data-testid="spec-review-state">
-                            @(_analysisError is not null ? "Failed" : IsAnalysisStale ? "Stale" : HasCurrentAnalysis ? "Analyzed" : "Not run")
+                        <span class="se-analysis-state @(_analysisError is not null ? "is-failed" : _isAnalyzing ? "is-analyzing" : IsAnalysisStale ? "is-stale" : HasCurrentAnalysis ? "is-current" : "")" data-testid="spec-review-state">
+                            @(_analysisError is not null ? "Failed" : _isAnalyzing ? "Analyzing" : IsAnalysisStale ? "Stale" : HasCurrentAnalysis ? "Analyzed" : "Not run")
                         </span>
                     </div>
 
@@ -62,6 +66,10 @@
                             <div class="summary-slot" data-testid="candidates-metric"><span>@ReviewSummary.Candidates</span><small>Review candidates</small><small class="summary-slot-detail" data-testid="candidates-by-type">@ReviewSummary.RequirementCandidates requirement · @ReviewSummary.TestCandidates test · @ReviewSummary.ClarificationCandidates clarification</small></div>
                         </div>
                     }
+                    else if (_isAnalyzing)
+                    {
+                        <p class="se-analysis-notice" role="status" aria-live="polite">Analyzing the current Specification. Structure remains available while deterministic review analysis runs.</p>
+                    }
                     else if (IsAnalysisStale)
                     {
                         <p class="se-analysis-notice" role="status">The previous review analysis belongs to a different Specification artifact or revision. Run analysis for the selected artifact.</p>
@@ -72,14 +80,14 @@
                             data-testid="spec-explorer-analyze"
                             disabled="@_isAnalyzing"
                             @onclick="AnalyzeSelectedSpecificationAsync">
-                        @(_isAnalyzing ? "Analyzing..." : HasCurrentAnalysis || IsAnalysisStale ? "Re-analyze Specification" : _analysisError is not null ? "Retry Analysis" : "Analyze Specification")
+                        @(_isAnalyzing ? "Analyzing..." : HasCurrentAnalysis || IsAnalysisStale ? "Re-analyze" : _analysisError is not null ? "Retry analysis" : "Analyze Specification")
                     </button>
 
                     @if (!string.IsNullOrWhiteSpace(_analysisError))
                     {
                         <div class="notification notification-error" role="alert">@_analysisError</div>
                     }
-                    else if (_analysisError is null && !HasCurrentAnalysis)
+                    else if (_analysisError is null && !HasCurrentAnalysis && !_isAnalyzing)
                     {
                         <div class="extract-pre-state" data-testid="extract-pre-state" role="status">
                             <h3>@(IsAnalysisStale ? "Analysis is stale" : "Review analysis not run")</h3>
@@ -116,6 +124,10 @@
     private bool _isAnalyzing;
     private string? _analysisError;
     private string? _parseError;
+    private readonly HashSet<string> _attemptedAnalysisKeys = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _inFlightAnalysisKeys = new(StringComparer.Ordinal);
+    private bool _disposed;
+    private const string AnalyzerVersion = "speckit-deterministic-v1";
 
     private bool HasCurrentAnalysis => _pipelineResult is not null && _artifactKey is not null && _analysisArtifactKey == _artifactKey;
     private bool IsAnalysisStale => _pipelineResult is not null && !HasCurrentAnalysis;
@@ -137,7 +149,7 @@
     }
     private SpecificationReviewSummary ReviewSummary => SpecificationReviewProjection.Summarize(_projection, ReviewCandidates);
 
-    private void OnArtifactChanged(ArtifactExplorerState state)
+    private async Task OnArtifactChanged(ArtifactExplorerState state)
     {
         var text = state.Content ?? string.Empty;
         var artifactKey = BuildArtifactKey(state, text);
@@ -159,42 +171,113 @@
         catch (Exception ex)
         {
             _parseError = ex.Message;
+            return;
         }
+
+        await EnsureAnalysisCurrentAsync(artifactKey, text);
     }
 
-    private async Task AnalyzeSelectedSpecificationAsync()
+    private Task AnalyzeSelectedSpecificationAsync()
     {
-        if (_isAnalyzing || string.IsNullOrWhiteSpace(_text))
+        if (_artifactKey is null || string.IsNullOrWhiteSpace(_text)) return Task.CompletedTask;
+        _attemptedAnalysisKeys.Remove(_artifactKey);
+        return EnsureAnalysisCurrentAsync(_artifactKey, _text, force: true);
+    }
+
+    private async Task EnsureAnalysisCurrentAsync(string analysisKey, string analyzedText, bool force = false)
+    {
+        if (_disposed || string.IsNullOrWhiteSpace(analyzedText) || _inFlightAnalysisKeys.Contains(analysisKey) || (!force && _attemptedAnalysisKeys.Contains(analysisKey)))
             return;
 
-        var analyzedText = _text;
-        var analyzedArtifactKey = _artifactKey;
+        if (!force && HasCurrentAnalysis) return;
+        _attemptedAnalysisKeys.Add(analysisKey);
+        _inFlightAnalysisKeys.Add(analysisKey);
+        var analyzedArtifactKey = analysisKey;
         try
         {
             _isAnalyzing = true;
             _analysisError = null;
-            var result = await ExtractionService.ExtractAsync(analyzedText, ExtractionProfile.Speckit);
-            if (result.Status != PipelineStatus.Success)
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+
+            if (!force)
             {
-                if (analyzedArtifactKey == _artifactKey)
+                var cached = await ExtractionSession.GetSpecificationAnalysisAsync(analysisKey, AnalyzerVersion);
+                if (cached is not null)
+                {
+                    var restoredSnapshot = new ExtractionSessionSnapshot
+                    {
+                        Profile = ExtractionProfile.Speckit,
+                        PipelineStatus = cached.Candidates.Count == 0 ? PipelineStatus.NoResults : PipelineStatus.Success,
+                        InputLengthChars = cached.InputLengthChars,
+                        InputLineCount = cached.InputLineCount,
+                        DurationMs = cached.DurationMs,
+                        Candidates = cached.Candidates,
+                        SpecMarkdown = analyzedText,
+                    };
+                    var restored = ExtractionPipelineResult.Restore(restoredSnapshot).WithSpecMarkdown(analyzedText);
+                    if (_artifactKey == analyzedArtifactKey && !_disposed)
+                    {
+                        _pipelineResult = restored;
+                        _candidates = restored.Candidates.ToList();
+                        _analysisArtifactKey = analyzedArtifactKey;
+                    }
+                    return;
+                }
+            }
+
+            var result = await ExtractionService.ExtractAsync(analyzedText, ExtractionProfile.Speckit);
+            if (result.Status is not (PipelineStatus.Success or PipelineStatus.NoResults))
+            {
+                if (analyzedArtifactKey == _artifactKey && !_disposed)
                 {
                     _pipelineResult = null;
                     _analysisArtifactKey = null;
                     _candidates = [];
-                    _analysisError = "Specification review analysis did not complete.";
+                    _analysisError = result.Status switch
+                    {
+                        PipelineStatus.EmptyInput => "The selected Specification has no content to analyze.",
+                        PipelineStatus.InputTooLarge => "The selected Specification is too large for deterministic review analysis.",
+                        _ => "Specification review analysis did not complete.",
+                    };
                 }
                 return;
             }
 
-            _pipelineResult = result.WithSpecMarkdown(analyzedText);
-            _candidates = _pipelineResult.Candidates.ToList();
-            _analysisArtifactKey = analyzedArtifactKey;
-        }
-        catch (Exception ex)
-        {
-            if (analyzedArtifactKey == _artifactKey)
+            var completed = result.WithSpecMarkdown(analyzedText);
+            var cacheEntry = new SpecificationAnalysisCacheEntry(
+                analyzedArtifactKey,
+                AnalyzerVersion,
+                DateTimeOffset.UtcNow,
+                completed.InputLengthChars,
+                completed.InputLineCount,
+                completed.DurationMs,
+                completed.Candidates.Select(candidate => new CandidateSnapshot(
+                    candidate.CandidateId,
+                    candidate.Title,
+                    candidate.Classification,
+                    candidate.ClassificationSignal,
+                    candidate.ContextHeading,
+                    candidate.SourceBlockType,
+                    candidate.Confidence,
+                    false,
+                    CandidateReviewStatus.New,
+                    CandidateSaveState.Pending,
+                    null,
+                    null)).ToList());
+            await ExtractionSession.SaveSpecificationAnalysisAsync(cacheEntry);
+            if (_artifactKey == analyzedArtifactKey && !_disposed)
             {
-                _analysisError = $"Analysis failed: {ex.Message}";
+                _pipelineResult = completed;
+                _candidates = completed.Candidates.ToList();
+                _analysisArtifactKey = analyzedArtifactKey;
+            }
+        }
+        catch (Exception)
+        {
+            if (analyzedArtifactKey == _artifactKey && !_disposed)
+            {
+                _analysisError = "Specification review analysis failed. Retry analysis to try again.";
                 _pipelineResult = null;
                 _analysisArtifactKey = null;
                 _candidates = [];
@@ -202,13 +285,20 @@
         }
         finally
         {
-            _isAnalyzing = false;
+            _inFlightAnalysisKeys.Remove(analyzedArtifactKey);
+            if (analyzedArtifactKey == _artifactKey && !_disposed)
+            {
+                _isAnalyzing = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
-    private static string BuildArtifactKey(ArtifactExplorerState state, string content)
+    private string BuildArtifactKey(ArtifactExplorerState state, string content)
     {
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(content)));
-        return $"{state.ProjectSlug}|{state.Selected?.Id}|{state.Selected?.Revision}|{hash}";
+        return $"{WorkspaceStateManager.CurrentWorkspaceId}|{state.ProjectSlug}|{state.Selected?.Id}|{state.Selected?.Revision}|{hash}|{AnalyzerVersion}";
     }
+
+    public void Dispose() => _disposed = true;
 }

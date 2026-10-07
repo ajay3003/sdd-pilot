@@ -91,6 +91,11 @@
     color: #176b35;
 }
 
+.se-analysis-state.is-analyzing {
+    color: var(--color-text-secondary, #475569);
+    background: var(--color-surface-subtle, #f1f5f9);
+}
+
 .se-analysis-state.is-stale {
     border-color: #e6bd64;
     background: #fff8e8;

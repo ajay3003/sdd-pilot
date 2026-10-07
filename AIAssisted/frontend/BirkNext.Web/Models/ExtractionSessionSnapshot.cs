@@ -27,7 +27,19 @@ public sealed class ExtractionSessionSnapshot
     public ExtractionViewMode ActiveViewMode { get; init; } = ExtractionViewMode.Traceability;
     public bool HasActiveViewMode { get; init; }
     public string SpecMarkdown { get; init; } = string.Empty;
+    // Deterministic Specification Explorer results share this existing browser session
+    // storage entry without becoming the active extraction/review session.
+    public List<SpecificationAnalysisCacheEntry> SpecificationAnalyses { get; set; } = [];
 }
+
+public sealed record SpecificationAnalysisCacheEntry(
+    string ArtifactKey,
+    string AnalyzerVersion,
+    DateTimeOffset AnalyzedAt,
+    int InputLengthChars,
+    int InputLineCount,
+    long DurationMs,
+    List<CandidateSnapshot> Candidates);
 
 public sealed record CandidateSnapshot(
     Guid CandidateId,

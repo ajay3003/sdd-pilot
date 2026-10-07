@@ -137,6 +137,43 @@ public class ExtractionSessionServiceTests : BunitContext
     }
 
     [Fact]
+    public async Task SaveSpecificationAnalysisAsync_PreservesInteractiveSessionAndStoresBoundedAnalysisEntry()
+    {
+        var currentSession = MakeSnapshot();
+        var json = JsonSerializer.Serialize(currentSession, JsonOptions);
+        JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true).SetResult(json);
+        JSInterop.SetupVoid("birkNextStorage.setItem", _ => true);
+        var entry = new SpecificationAnalysisCacheEntry("workspace|artifact|fingerprint", "speckit-v1", DateTimeOffset.UtcNow,
+            24, 2, 3, []);
+
+        await CreateService().SaveSpecificationAnalysisAsync(entry);
+
+        var invocation = JSInterop.VerifyInvoke("birkNextStorage.setItem");
+        var saved = JsonSerializer.Deserialize<ExtractionSessionSnapshot>(invocation.Arguments[1]!.ToString()!, JsonOptions);
+        saved!.SessionId.Should().Be("test-session-id");
+        saved.Candidates.Should().HaveCount(1);
+        var storedEntry = saved.SpecificationAnalyses.Should().ContainSingle().Which;
+        storedEntry.ArtifactKey.Should().Be(entry.ArtifactKey);
+        storedEntry.AnalyzerVersion.Should().Be(entry.AnalyzerVersion);
+        storedEntry.Candidates.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task LoadAsync_CacheOnlyDocumentIsNotRestoredAsInteractiveExtractionSession()
+    {
+        var cacheOnly = new ExtractionSessionSnapshot
+        {
+            SpecificationAnalyses = [new SpecificationAnalysisCacheEntry("key", "v1", DateTimeOffset.UtcNow, 10, 1, 1, [])],
+        };
+        JSInterop.Setup<string?>("birkNextStorage.getItem", _ => true)
+            .SetResult(JsonSerializer.Serialize(cacheOnly, JsonOptions));
+
+        var loaded = await CreateService().LoadAsync();
+
+        loaded.Should().BeNull();
+    }
+
+    [Fact]
     public async Task ClearAsync_CallsRemoveItemWithStorageKey()
     {
         JSInterop.SetupVoid("birkNextStorage.removeItem", _ => true);
