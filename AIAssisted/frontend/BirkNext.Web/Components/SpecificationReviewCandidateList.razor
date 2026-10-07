@@ -1,0 +1,129 @@
+@using BirkNext.Web.Models
+@using BirkNext.Web.Services
+
+@* Review candidates are items suggested for human review. Counts here are candidate records, never logical entity counts. *@
+<section class="src" aria-labelledby="@HeadingId" data-testid="spec-review-candidate-list">
+    <div class="src-head">
+        <h3 id="@HeadingId">Review candidates</h3>
+        <p class="src-note">Items the deterministic analysis suggests for human review. A review candidate is not a finding, a defect or a failed requirement.</p>
+    </div>
+
+    <div class="src-toolbar">
+        <div class="src-filters" role="group" aria-label="Filter review candidates by candidate type" data-testid="src-filters">
+            @Filter(null, "All candidates", Candidates.Count)
+            @Filter(ReviewCandidateType.Requirement, "Requirement candidates", Summary.RequirementCandidates)
+            @Filter(ReviewCandidateType.Test, "Test candidates", Summary.TestCandidates)
+            @Filter(ReviewCandidateType.Clarification, "Clarification candidates", Summary.ClarificationCandidates)
+        </div>
+        <div class="src-search">
+            <label for="@SearchId">Search candidates</label>
+            <input id="@SearchId" type="search" data-testid="src-search" placeholder="ID, text, Given/When/Then"
+                   value="@_search" @oninput="OnSearch" />
+        </div>
+    </div>
+
+    <p class="src-count" role="status" aria-live="polite" data-testid="src-count">@CountText</p>
+
+    @if (Filtered.Count == 0)
+    {
+        <p class="src-empty" data-testid="src-empty">No review candidates match the current filter@(string.IsNullOrWhiteSpace(_search) ? "" : " and search").</p>
+    }
+    else
+    {
+        <ol id="@ListId" class="src-items" data-testid="spec-review-candidates" aria-label="Specification review candidates">
+            @foreach (var candidate in Visible)
+            {
+                var structured = candidate.Entity is { Kind: SpecEntityKind.Test, HasStructuredScenario: true } scenario ? scenario : null;
+                <li @key="candidate.CandidateId" class="src-item" data-candidate-type="@candidate.Type">
+                    <div class="src-item-meta">
+                        <span class="src-type src-type--@candidate.Type.ToString().ToLowerInvariant()">@ReviewCandidateTypes.Label(candidate.Type) candidate</span>
+                        @if (candidate.Entity is { } entity)
+                        {
+                            <span class="src-entity" data-testid="src-entity">Refers to @EntityLabel(entity)</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(candidate.ContextHeading))
+                        {
+                            <span class="src-context">In: @candidate.ContextHeading</span>
+                        }
+                    </div>
+                    <TraceabilityItemText ItemType="@($"{ReviewCandidateTypes.Label(candidate.Type)} candidate")"
+                                          Text="@candidate.Text"
+                                          Given="@structured?.Given" When="@structured?.When" Then="@structured?.Then" />
+                </li>
+            }
+        </ol>
+        @if (Filtered.Count > SpecificationReviewProjection.CandidatePreviewSize)
+        {
+            <button type="button" class="src-more" data-testid="src-show-all" aria-expanded="@(_showAll ? "true" : "false")" aria-controls="@ListId"
+                    @onclick="() => _showAll = !_showAll">
+                @(_showAll ? "Show less" : $"Show all {Filtered.Count}")
+            </button>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<SpecReviewCandidate> Candidates { get; set; } = [];
+    [Parameter, EditorRequired] public SpecificationReviewSummary Summary { get; set; } = default!;
+
+    private readonly string _id = Guid.NewGuid().ToString("N")[..8];
+    private string HeadingId => $"src-title-{_id}";
+    private string SearchId => $"src-search-{_id}";
+    private string ListId => $"src-list-{_id}";
+
+    private ReviewCandidateType? _type;
+    private string _search = string.Empty;
+    private bool _showAll;
+    private IReadOnlyList<SpecReviewCandidate>? _source;
+
+    private IReadOnlyList<SpecReviewCandidate> Filtered => SpecificationReviewProjection.Filter(Candidates, _type, _search);
+    private IEnumerable<SpecReviewCandidate> Visible => _showAll ? Filtered : Filtered.Take(SpecificationReviewProjection.CandidatePreviewSize);
+
+    private string CountText
+    {
+        get
+        {
+            var filtered = Filtered.Count;
+            var shown = _showAll ? filtered : Math.Min(filtered, SpecificationReviewProjection.CandidatePreviewSize);
+            var what = _type is { } type ? $"{ReviewCandidateTypes.Label(type).ToLowerInvariant()} candidate{(filtered == 1 ? "" : "s")}" : $"candidate{(filtered == 1 ? "" : "s")}";
+            return $"Showing {shown} of {filtered} {what}";
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // A different analysis result (another artifact or a re-analysis) starts from the default view.
+        if (!ReferenceEquals(_source, Candidates))
+        {
+            _source = Candidates;
+            _type = null;
+            _search = string.Empty;
+            _showAll = false;
+        }
+    }
+
+    private void OnSearch(ChangeEventArgs e)
+    {
+        _search = e.Value?.ToString() ?? string.Empty;
+        _showAll = false;
+    }
+
+    private void Select(ReviewCandidateType? type)
+    {
+        _type = type;
+        _showAll = false;
+    }
+
+    private RenderFragment Filter(ReviewCandidateType? type, string label, int count) =>
+        @<button type="button" class="src-filter @(_type == type ? "is-active" : "")" aria-pressed="@(_type == type ? "true" : "false")"
+                 data-testid="@($"src-filter-{(type?.ToString() ?? "All").ToLowerInvariant()}")" @onclick="() => Select(type)">
+            @label <span class="src-filter-count">@count</span>
+        </button>;
+
+    private static string EntityLabel(SpecLogicalEntity entity) => entity.Kind switch
+    {
+        SpecEntityKind.SuccessCriterion => $"{entity.DisplayId} (success criterion)",
+        SpecEntityKind.UserStory => entity.DisplayId,
+        _ => entity.DisplayId,
+    };
+}

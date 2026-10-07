@@ -1,0 +1,152 @@
+@using BirkNext.Web.Models
+
+@* Primary context (tree) and many-to-many relations come from SpecificationReviewProjection; nothing is computed from text here. *@
+@if (Projection.Entities.Count > 0)
+{
+    var summary = Projection.Summary();
+    var tests = Projection.Count(SpecEntityKind.Test);
+    var clarifications = Projection.Count(SpecEntityKind.Clarification);
+    var stories = Projection.OfKind(SpecEntityKind.UserStory).Where(s => Projection.PrimaryChildrenOf(s.Key).Any()).ToList();
+    var topRequirements = Projection.OfKind(SpecEntityKind.Requirement).Where(r => Projection.PrimaryParentOf(r.Key) is null).ToList();
+    var unparented = Projection.OfKind(SpecEntityKind.Test).Where(t => Projection.PrimaryParentOf(t.Key) is null).ToList();
+    var multiLinked = unparented.Where(t => Projection.Targets(t.Key, SpecRelationType.Verifies, SpecEntityKind.Requirement).Count > 1).ToList();
+    var orphanTests = unparented.Except(multiLinked).ToList();
+    var specLevel = Projection.OfKind(SpecEntityKind.Clarification).Where(c => Projection.PrimaryParentOf(c.Key) is null).ToList();
+
+    <section class="srp" aria-labelledby="srp-title" data-testid="spec-relationships">
+        <p class="section-kicker">Specification relationships</p>
+        <h2 id="srp-title">Primary context</h2>
+        <p class="srp-intro">
+            Each item is placed under one parent for navigation: the section it sits in, or the one item it explicitly names.
+            Traceability links can be many-to-many and are listed on each item. This is document structure, not a coverage verdict.
+        </p>
+
+        <dl class="srp-metrics" aria-label="Relationship metrics" data-testid="srp-metrics">
+            <div><dt>Tests linked to requirements</dt><dd data-testid="srp-tests-linked">@summary.TestsLinkedToRequirements / @tests</dd></div>
+            <div><dt>Tests in a user story</dt><dd data-testid="srp-tests-story">@summary.TestsWithUserStoryContext / @tests</dd></div>
+            <div><dt>Clarifications linked to requirements</dt><dd data-testid="srp-clar-linked">@summary.ClarificationsLinkedToRequirements / @clarifications</dd></div>
+            <div><dt>Specification-level clarifications</dt><dd data-testid="srp-clar-spec">@summary.SpecificationLevelClarifications</dd></div>
+        </dl>
+
+        @if (Projection.Duplicates.Count > 0)
+        {
+            <p class="srp-duplicates" role="note" data-testid="srp-duplicates">
+                Duplicate identifiers, each counted once:
+                @string.Join(", ", Projection.Duplicates.Select(d => $"{d.DisplayId} ({d.Occurrences} definitions)")).
+            </p>
+        }
+
+        <div class="srp-groups">
+            @foreach (var story in stories)
+            {
+                <details class="srp-group" data-testid="srp-group" data-entity="@story.Key">
+                    <summary><span class="srp-kind">User story</span> <span class="srp-group-title">@story.Text</span> <span class="srp-group-count">@ChildCount(story.Key)</span></summary>
+                    <ul class="srp-list">@foreach (var child in Projection.PrimaryChildrenOf(story.Key)) { @Item(child, 0) }</ul>
+                </details>
+            }
+            @if (topRequirements.Count > 0)
+            {
+                <details class="srp-group" data-testid="srp-group" data-entity="requirements">
+                    <summary><span class="srp-kind">Requirements</span> <span class="srp-group-title">Not inside a user story</span> <span class="srp-group-count">@Plural(topRequirements.Count, "requirement")</span></summary>
+                    <ul class="srp-list">@foreach (var requirement in topRequirements) { @Item(requirement, 0) }</ul>
+                </details>
+            }
+            @if (multiLinked.Count > 0)
+            {
+                <details class="srp-group" data-testid="srp-group" data-entity="multi-linked-tests">
+                    <summary><span class="srp-kind">Tests</span> <span class="srp-group-title">With multiple requirement links</span> <span class="srp-group-count">@Plural(multiLinked.Count, "test")</span></summary>
+                    <ul class="srp-list">@foreach (var test in multiLinked) { @Item(test, 0) }</ul>
+                </details>
+            }
+            @if (orphanTests.Count > 0)
+            {
+                <details class="srp-group" data-testid="srp-group" data-entity="unplaced-tests">
+                    <summary><span class="srp-kind">Tests</span> <span class="srp-group-title">Without a requirement or user story</span> <span class="srp-group-count">@Plural(orphanTests.Count, "test")</span></summary>
+                    <ul class="srp-list">@foreach (var test in orphanTests) { @Item(test, 0) }</ul>
+                </details>
+            }
+            @if (specLevel.Count > 0)
+            {
+                <details class="srp-group" data-testid="srp-group" data-entity="specification-clarifications">
+                    <summary><span class="srp-kind">Clarifications</span> <span class="srp-group-title">Specification level</span> <span class="srp-group-count">@Plural(specLevel.Count, "clarification")</span></summary>
+                    <ul class="srp-list">@foreach (var clarification in specLevel) { @Item(clarification, 0) }</ul>
+                </details>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public SpecificationEntityProjection Projection { get; set; } = SpecificationEntityProjection.Empty;
+
+    private RenderFragment Item(SpecLogicalEntity entity, int depth) => __builder =>
+    {
+        var parent = Projection.PrimaryParentOf(entity.Key);
+        var otherLinks = Projection.RelationsFrom(entity.Key).Where(r => r.TargetKey != parent?.ParentKey).ToList();
+        var children = depth == 0 ? Projection.PrimaryChildrenOf(entity.Key).ToList() : [];
+        <li @key="entity.Key" class="srp-item srp-item--@entity.Kind.ToString().ToLowerInvariant()" data-testid="srp-item" data-entity="@entity.Key">
+            <div class="srp-item-meta">
+                <span class="srp-kind">@KindLabel(entity.Kind)</span>
+                <span class="srp-id">@entity.DisplayId</span>
+                @if (parent is { Provenance: SpecRelationProvenance.ExplicitReference })
+                {
+                    <span class="srp-provenance">Placed by explicit reference</span>
+                }
+                @foreach (var link in otherLinks)
+                {
+                    <span class="srp-link" data-testid="srp-link">@LinkLabel(link, parent is not null)</span>
+                }
+            </div>
+            <TraceabilityItemText ItemType="@KindLabel(entity.Kind)" Text="@ItemText(entity)"
+                                  Given="@entity.Given" When="@entity.When" Then="@entity.Then" />
+            @if (children.Count > 0)
+            {
+                <ul class="srp-list srp-list--nested" aria-label="@($"Items under {entity.DisplayId}")">
+                    @foreach (var child in children) { @Item(child, depth + 1) }
+                </ul>
+            }
+        </li>
+    };
+
+    private string ChildCount(string key)
+    {
+        var children = Projection.PrimaryChildrenOf(key).ToList();
+        var parts = new[]
+        {
+            (children.Count(c => c.Kind == SpecEntityKind.Requirement), "requirement"),
+            (children.Count(c => c.Kind == SpecEntityKind.Test), "test"),
+            (children.Count(c => c.Kind == SpecEntityKind.Clarification), "clarification"),
+        }.Where(p => p.Item1 > 0).Select(p => Plural(p.Item1, p.Item2));
+        return string.Join(" · ", parts);
+    }
+
+    private static string Plural(int count, string noun) => $"{count} {noun}{(count == 1 ? "" : "s")}";
+
+    private static string ItemText(SpecLogicalEntity entity) =>
+        entity.Kind == SpecEntityKind.Clarification && !string.IsNullOrWhiteSpace(entity.Answer)
+            ? $"{entity.Text}\nAnswer: {entity.Answer}"
+            : entity.Text;
+
+    private static string KindLabel(SpecEntityKind kind) => kind switch
+    {
+        SpecEntityKind.Requirement => "Requirement",
+        SpecEntityKind.Test => "Test",
+        SpecEntityKind.Clarification => "Clarification",
+        SpecEntityKind.UserStory => "User story",
+        _ => "Success criterion",
+    };
+
+    private string LinkLabel(SpecRelation relation, bool hasPrimaryParent)
+    {
+        var target = Projection.Find(relation.TargetKey)?.DisplayId ?? relation.TargetKey;
+        var verb = relation.Type switch
+        {
+            SpecRelationType.Verifies => "verifies",
+            SpecRelationType.Clarifies => "clarifies",
+            _ => "belongs to",
+        };
+        verb = hasPrimaryParent ? $"Also {verb}" : char.ToUpperInvariant(verb[0]) + verb[1..];
+        var via = relation.Provenance == SpecRelationProvenance.StructuralNesting ? "section" : "reference";
+        return $"{verb} {target} ({via})";
+    }
+}

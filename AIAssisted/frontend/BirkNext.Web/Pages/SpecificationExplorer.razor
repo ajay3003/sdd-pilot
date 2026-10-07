@@ -29,6 +29,8 @@
                     Candidates="@CandidatesForCurrentArtifact"
                     IsEmbeddedInReview="false" />
 
+                <SpecificationRelationshipsPanel Projection="_projection" />
+
                 <section class="se-traceability-state" aria-labelledby="se-traceability-title" data-testid="se-traceability-state">
                     <div>
                         <p class="section-kicker">Traceability &amp; Coverage</p>
@@ -53,10 +55,11 @@
                     @if (HasCurrentAnalysis)
                     {
                         <div class="review-summary-strip" aria-label="Review analysis metrics">
-                            <div class="summary-slot" data-testid="requirements-metric"><span>@RequirementMetric</span><small>Requirements analyzed</small></div>
-                            <div class="summary-slot" data-testid="tests-metric"><span>@TestMetric</span><small>Tests analyzed</small></div>
-                            <div class="summary-slot" data-testid="clarifications-metric"><span>@ClarificationMetric</span><small>Clarifications analyzed</small></div>
-                            <div class="summary-slot" data-testid="candidates-metric"><span>@CandidateMetric</span><small>Review candidates</small></div>
+                            @* Unique logical entities of the analyzed Specification; candidate records are counted separately. *@
+                            <div class="summary-slot" data-testid="requirements-metric"><span>@ReviewSummary.Requirements</span><small>Requirements analyzed</small></div>
+                            <div class="summary-slot" data-testid="tests-metric"><span>@ReviewSummary.Tests</span><small>Tests analyzed</small></div>
+                            <div class="summary-slot" data-testid="clarifications-metric"><span>@ReviewSummary.Clarifications</span><small>Clarifications analyzed</small></div>
+                            <div class="summary-slot" data-testid="candidates-metric"><span>@ReviewSummary.Candidates</span><small>Review candidates</small><small class="summary-slot-detail" data-testid="candidates-by-type">@ReviewSummary.RequirementCandidates requirement · @ReviewSummary.TestCandidates test · @ReviewSummary.ClarificationCandidates clarification</small></div>
                         </div>
                     }
                     else if (IsAnalysisStale)
@@ -92,7 +95,7 @@
                     }
                     else
                     {
-                        <ExtractionReviewList PipelineResult="_pipelineResult!" InitialSession="null" SpecMarkdown="@_pipelineResult!.SpecMarkdown" ProjectSlug="@_projectSlug" />
+                        <SpecificationReviewCandidateList Candidates="ReviewCandidates" Summary="ReviewSummary" />
                     }
                 </section>
             </div>
@@ -103,7 +106,9 @@
 
 @code {
     private string _text = string.Empty;
-    private string? _projectSlug;
+    private SpecificationEntityProjection _projection = SpecificationEntityProjection.Empty;
+    private ExtractionPipelineResult? _candidatesSource;
+    private IReadOnlyList<SpecReviewCandidate> _reviewCandidates = [];
     private string? _artifactKey;
     private string? _analysisArtifactKey;
     private List<ExtractionCandidate> _candidates = [];
@@ -115,10 +120,22 @@
     private bool HasCurrentAnalysis => _pipelineResult is not null && _artifactKey is not null && _analysisArtifactKey == _artifactKey;
     private bool IsAnalysisStale => _pipelineResult is not null && !HasCurrentAnalysis;
     private IReadOnlyList<ExtractionCandidate> CandidatesForCurrentArtifact => HasCurrentAnalysis ? _candidates : [];
-    private int RequirementMetric => _pipelineResult?.RequirementCount ?? 0;
-    private int TestMetric => _pipelineResult?.TestCount ?? 0;
-    private int ClarificationMetric => _pipelineResult?.NeedsClarificationCount ?? 0;
     private int CandidateMetric => _pipelineResult?.Candidates.Count ?? 0;
+    // The pipeline's per-type counts are candidate distributions; entity counts come from the logical entity projection.
+    private IReadOnlyList<SpecReviewCandidate> ReviewCandidates
+    {
+        get
+        {
+            if (!HasCurrentAnalysis) return [];
+            if (!ReferenceEquals(_candidatesSource, _pipelineResult))
+            {
+                _candidatesSource = _pipelineResult;
+                _reviewCandidates = SpecificationReviewProjection.BuildCandidates(_projection, _candidates);
+            }
+            return _reviewCandidates;
+        }
+    }
+    private SpecificationReviewSummary ReviewSummary => SpecificationReviewProjection.Summarize(_projection, ReviewCandidates);
 
     private void OnArtifactChanged(ArtifactExplorerState state)
     {
@@ -127,8 +144,8 @@
         if (string.Equals(artifactKey, _artifactKey, StringComparison.Ordinal)) return;
         // Preserve prior analysis only as stale context; it is never rendered as current for another artifact.
         _text = text;
-        _projectSlug = state.ProjectSlug;
         _artifactKey = artifactKey;
+        _projection = SpecificationEntityProjection.Empty;
         _candidates = [];
         _analysisError = null;
         _parseError = null;
@@ -137,6 +154,7 @@
         {
             var tree = SpecExplorerService.Parse(text);
             _ = SpecExplorerService.BuildSemanticModel(tree, text);
+            _projection = SpecificationReviewProjection.Build(tree);
         }
         catch (Exception ex)
         {
