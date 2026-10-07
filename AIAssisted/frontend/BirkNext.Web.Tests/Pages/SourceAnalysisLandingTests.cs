@@ -22,12 +22,20 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     private readonly Mock<IIntegrationCatalogApiService> _api = new();
     private List<IqrSourceSnapshot> _snapshots = [];
     private int _uploads;
+    private SourceUploadFailure? _uploadFailure;
 
     public SourceAnalysisLandingTests()
     {
         _api.Setup(a => a.ListSourceSnapshotsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _snapshots.ToList());
-        _api.Setup(a => a.AnalyzeSourceSnapshotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(() => { _uploads++; var s = Snapshot("shop-api.zip", new string('e', 64), DateTimeOffset.Parse("2026-09-30T12:00:00Z"), Arch(ArchitectureStatus.Complete, 2), Db(DatabaseAnalysisStatus.Complete, 1, 0)); _snapshots.Insert(0, s); return (s, (string?)null); });
+        _api.Setup(a => a.AnalyzeSourceSnapshotDetailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                if (_uploadFailure is { } failure) return ((IqrSourceSnapshot?)null, failure);
+                _uploads++;
+                var s = Snapshot("shop-api.zip", new string('e', 64), DateTimeOffset.Parse("2026-09-30T12:00:00Z"), Arch(ArchitectureStatus.Complete, 2), Db(DatabaseAnalysisStatus.Complete, 1, 0));
+                _snapshots.Insert(0, s);
+                return (s, (SourceUploadFailure?)null);
+            });
         var context = new Mock<IFrontendAnalysisContextFactory>();
         context.Setup(c => c.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveProfile = new FrontendAnalysisProfile { Id = "dev", Name = "Dev" } });
         Services.AddSingleton(_api.Object);
@@ -207,7 +215,7 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     public void Upload_SelectsTheNewSnapshot_OnTheOverview_WithoutReanalyzingOnLoad()
     {
         var cut = Render<SourceAnalysis>();
-        _api.Verify(a => a.AnalyzeSourceSnapshotAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "opening the page only reads stored snapshots");
+        _api.Verify(a => a.AnalyzeSourceSnapshotDetailedAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<CancellationToken>()), Times.Never, "opening the page only reads stored snapshots");
 
         cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "shop-api.zip"));
 
@@ -222,6 +230,35 @@ public sealed class SourceAnalysisLandingTests : BunitContext
     public void Presentation_UsesModelLabelsOnly()
     {
         var snapshot = Snapshot("x.zip", "abc", DateTimeOffset.UnixEpoch, Arch(ArchitectureStatus.NeedsReview, 1), Db(DatabaseAnalysisStatus.NeedsReview, 1, 0), SourceAnalysisStatus.Failed);
+    [Fact]
+    public void FailedReplacementShowsSafeActionableReasonKeepsSelectionAndRetryClearsError()
+    {
+        var existing = Snapshot("current.zip", new string('a', 64), DateTimeOffset.Parse("2026-09-29T08:15:00Z"), Arch(ArchitectureStatus.Complete, 2), Db(DatabaseAnalysisStatus.Complete, 1, 0));
+        _snapshots = [existing];
+        var cut = Render<SourceAnalysis>();
+        cut.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().Be(existing.Id.ToString());
+
+        _uploadFailure = new("ARCHIVE_PATH_TRAVERSAL", "validation", "Archive entry escapes the project root: ../private.txt.", "../private.txt");
+        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "unsafe.zip"));
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid=sa-error]").GetAttribute("role").Should().Be("alert");
+            cut.Markup.Should().Contain("Source archive rejected").And.Contain("ARCHIVE_PATH_TRAVERSAL").And.Contain("../private.txt")
+                .And.Contain("Rebuild the ZIP from the project folder");
+            cut.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().Be(existing.Id.ToString());
+        });
+
+        _uploadFailure = null;
+        cut.FindComponents<InputFile>()[0].UploadFiles(InputFileContent.CreateFromBinary([1, 2, 3], "retry.zip"));
+        cut.WaitForAssertion(() =>
+        {
+            cut.FindAll("[data-testid=sa-error]").Should().BeEmpty();
+            cut.Find("[data-testid=sa-current-archive]").TextContent.Should().Be("shop-api.zip");
+            cut.Find("[data-testid=source-snapshot]").GetAttribute("value").Should().NotBe(existing.Id.ToString());
+        });
+    }
+
         SourceAnalysisOverview.Architecture(snapshot).Status.Should().Be("Needs review");
         SourceAnalysisOverview.Database(snapshot).Status.Should().Be("Needs review");
         SourceAnalysisOverview.ShortFingerprint("abc").Should().Be("abc");

@@ -10,6 +10,19 @@ using BirkNext.Integrations;
 
 namespace BirkNext.Api.Services.Integrations.SourceEvidence;
 
+public sealed record SourceArchiveValidationFailure(string Code, string Stage, string Message, string? EntryPath = null,
+    long? Actual = null, long? Limit = null);
+
+public sealed record SourceArchiveReadResult(IqrSourceArchiveReader.Workspace? Workspace, SourceArchiveValidationFailure? Failure, long? EntryCount = null)
+{
+    public bool IsValid => Workspace is not null && Failure is null;
+    public void Deconstruct(out IqrSourceArchiveReader.Workspace? workspace, out string? error)
+    {
+        workspace = Workspace;
+        error = Failure?.Message;
+    }
+}
+
 /// <summary>Bounded virtual workspace. Never writes archive entries or the upload to disk.</summary>
 public static class IqrSourceArchiveReader
 {
@@ -39,8 +52,15 @@ public static class IqrSourceArchiveReader
 
     public static (Workspace? Workspace, string? Error) Read(string name, byte[] bytes, CancellationToken ct = default)
     {
-        if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return (null, "Only .zip source archives are supported.");
-        if (bytes.Length == 0 || bytes.Length > MaxArchiveBytes) return (null, "Source archive must be between 1 byte and 50 MB.");
+        var result = ReadDetailed(name, bytes, ct);
+        return (result.Workspace, result.Failure?.Message);
+    }
+
+    public static SourceArchiveReadResult ReadDetailed(string name, byte[] bytes, CancellationToken ct = default)
+    {
+        if (!name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) return Reject("ARCHIVE_UNSUPPORTED_FORMAT", "Only ZIP source archives are supported.");
+        if (bytes.Length == 0) return Reject("ARCHIVE_EMPTY_UPLOAD", "The uploaded file is empty.", actual: 0, limit: 1);
+        if (bytes.Length > MaxArchiveBytes) return Reject("ARCHIVE_TOO_LARGE", $"Archive is {FormatBytes(bytes.Length)}; the maximum compressed size is {FormatBytes(MaxArchiveBytes)}.", actual: bytes.Length, limit: MaxArchiveBytes);
         var files = new List<SourceFile>();
         var limitations = new HashSet<string>(StringComparer.Ordinal);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -48,23 +68,36 @@ public static class IqrSourceArchiveReader
         var configurationFiles = new List<SourceFile>();
         var evidenceFiles = new List<SourceFile>();
         var allPaths = new List<string>();
+        var fileEntryCount = 0;
+        long? entryCount = null;
         try
         {
             using var zip = new ZipArchive(new MemoryStream(bytes), ZipArchiveMode.Read);
-            if (zip.Entries.Count > 20_000) return (null, "Source archive exceeds 20,000 entries.");
+            entryCount = zip.Entries.Count;
+            if (zip.Entries.Count > 20_000) return Reject("ARCHIVE_TOO_MANY_ENTRIES", $"Archive contains {zip.Entries.Count:N0} entries; the maximum is 20,000.", actual: zip.Entries.Count, limit: 20_000, entryCount: entryCount);
             long total = 0;
             long actualRead = 0;
             foreach (var entry in zip.Entries)
             {
                 ct.ThrowIfCancellationRequested();
-                var path = entry.FullName.Replace('\\', '/');
-                if (path.StartsWith('/') || path.Contains(':') || path.Contains('\0') || path.Split('/').Any(s => s is ".." or ".")
-                    || ((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000)
-                    return (null, "Source archive contains an unsafe path or symbolic link.");
-                if (!names.Add(path)) return (null, "Source archive contains duplicate paths.");
-                if (entry.Length > MaxExpandedBytes - total) return (null, "Source archive exceeds the 100 MB expanded size limit.");
+                var originalPath = entry.FullName;
+                var normalized = NormalizeEntryPath(originalPath);
+                if (normalized.Failure is { } pathFailure) return new(null, pathFailure, entryCount);
+                var path = normalized.Path!;
+                if (((entry.ExternalAttributes >> 16) & 0xF000) == 0xA000)
+                    return Reject("ARCHIVE_SYMLINK_UNSUPPORTED", "Symbolic links are not supported in source archives.", path, entryCount: entryCount);
+                if (normalized.IsRoot)
+                {
+                    // Common ZIP tools add a harmless ./ directory entry for the archive root.
+                    if (normalized.IsDirectory) continue;
+                    return Reject("ARCHIVE_INVALID_PATH", "An archive file has no usable relative path.", entryCount: entryCount);
+                }
+                if (!names.Add(path)) return Reject("ARCHIVE_DUPLICATE_PATH", $"Archive contains duplicate paths after normalizing separators and case: {SafeLabel(path)}.", path, entryCount: entryCount);
+                if (entry.Length > MaxExpandedBytes - total) return Reject("ARCHIVE_EXPANDED_SIZE_EXCEEDED", $"Archive expands beyond the {FormatBytes(MaxExpandedBytes)} limit.", path, total + entry.Length, MaxExpandedBytes, entryCount);
                 total += entry.Length;
-                if (path.EndsWith('/') || path.Split('/').Any(Ignored.Contains)) continue;
+                if (normalized.IsDirectory) continue;
+                fileEntryCount++;
+                if (path.Split('/').Any(Ignored.Contains)) continue;
                 allPaths.Add(path);
                 var extension = Path.GetExtension(path).ToLowerInvariant();
                 if (extension is ".zip" or ".tar" or ".gz" or ".7z") { limitations.Add("Nested archives are not analyzed."); continue; }
@@ -83,11 +116,11 @@ public static class IqrSourceArchiveReader
                 while ((count = input.Read(chunk, 0, chunk.Length)) > 0)
                 {
                     actualRead += count;
-                    if (actualRead > MaxExpandedBytes) return (null, "Source archive exceeds the 100 MB actual read limit.");
-                    if (buffer.Length + count > MaxFileBytes) return (null, "Source entry exceeds its bounded read limit.");
+                    if (actualRead > MaxExpandedBytes) return Reject("ARCHIVE_EXPANDED_SIZE_EXCEEDED", $"Archive data exceeds the {FormatBytes(MaxExpandedBytes)} expanded read limit.", path, actualRead, MaxExpandedBytes, entryCount);
+                    if (buffer.Length + count > MaxFileBytes) return Reject("ARCHIVE_ENTRY_TOO_LARGE", $"Archive entry exceeds the {FormatBytes(MaxFileBytes)} analysis read limit.", path, buffer.Length + count, MaxFileBytes, entryCount);
                     buffer.Write(chunk, 0, count);
                 }
-                if (buffer.Length != entry.Length) return (null, "Source entry length does not match archive metadata.");
+                if (buffer.Length != entry.Length) return Reject("ARCHIVE_INVALID_ZIP", "Invalid or incomplete ZIP archive.", path, entryCount: entryCount);
                 buffer.Position = 0;
                 using var textReader = new StreamReader(buffer, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
                 var content = textReader.ReadToEnd();
@@ -129,10 +162,43 @@ public static class IqrSourceArchiveReader
             }
         }
         catch (Exception ex) when (ex is InvalidDataException or IOException or NotSupportedException or ArgumentException)
-        { return (null, "Source archive is invalid or unreadable."); }
+        {
+            var failure = ex is NotSupportedException
+                ? new SourceArchiveValidationFailure("ARCHIVE_ENCRYPTED_UNSUPPORTED", "validation", "Encrypted entries or unsupported ZIP compression methods are not supported.")
+                : new SourceArchiveValidationFailure("ARCHIVE_INVALID_ZIP", "validation", "Invalid or incomplete ZIP archive.");
+            return new(null, failure, entryCount);
+        }
+        if (fileEntryCount == 0) return Reject("ARCHIVE_EMPTY", "Archive contains no files.", entryCount: entryCount);
         var sha = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-        return (new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths), null);
+        return new(new Workspace(new SourceArchive(SafeLabel(Path.GetFileName(name.Replace('\\', '/'))), sha, files.Count + configurations.Count + evidenceFiles.Count), files, [.. limitations], configurations, configurationFiles, evidenceFiles, allPaths), null);
     }
+
+    private sealed record NormalizedPath(string? Path, bool IsDirectory, bool IsRoot, SourceArchiveValidationFailure? Failure);
+
+    private static NormalizedPath NormalizeEntryPath(string value)
+    {
+        var path = value.Replace('\\', '/');
+        var isDirectory = path.EndsWith('/');
+        if (path.Contains('\0')) return new(null, isDirectory, false, new("ARCHIVE_INVALID_PATH", "validation", "Archive entry contains an invalid path character."));
+        if (path.StartsWith('/') || path.StartsWith("//", StringComparison.Ordinal) || Regex.IsMatch(path, @"^[A-Za-z]:"))
+            return new(null, isDirectory, false, new("ARCHIVE_ABSOLUTE_PATH", "validation", $"Archive entry must be relative to the project root: {SafeLabel(path)}.", SafeLabel(path)));
+        if (path.Contains(':')) return new(null, isDirectory, false, new("ARCHIVE_INVALID_PATH", "validation", $"Archive entry contains a path character that is not portable across platforms: {SafeLabel(path)}.", SafeLabel(path)));
+        var segments = new List<string>();
+        foreach (var segment in path.Split('/'))
+        {
+            if (segment.Length == 0 || segment == ".") continue;
+            if (segment == "..") return new(null, isDirectory, false, new("ARCHIVE_PATH_TRAVERSAL", "validation", $"Archive entry escapes the project root: {SafeLabel(path)}.", SafeLabel(path)));
+            segments.Add(segment);
+        }
+        var normalized = string.Join('/', segments);
+        if (normalized.Length > 4096) return new(null, isDirectory, false, new("ARCHIVE_PATH_TOO_LONG", "validation", "An archive entry path exceeds the 4,096 character safety limit.", SafeLabel(normalized), normalized.Length, 4096));
+        return new(normalized, isDirectory, normalized.Length == 0, null);
+    }
+
+    private static SourceArchiveReadResult Reject(string code, string message, string? entryPath = null, long? actual = null, long? limit = null, long? entryCount = null) =>
+        new(null, new SourceArchiveValidationFailure(code, "validation", message, entryPath is null ? null : SafeLabel(entryPath), actual, limit), entryCount);
+
+    private static string FormatBytes(long value) => value >= 1024 * 1024 ? $"{value / (1024d * 1024):0.#} MB" : $"{value / 1024d:0.#} KB";
 
     public static string SafeLabel(string value)
     {

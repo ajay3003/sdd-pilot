@@ -5,6 +5,40 @@ using BirkNext.Web.Models;
 
 namespace BirkNext.Web.Services;
 
+public sealed record SourceUploadFailure(string Code, string Stage, string Message, string? EntryPath = null,
+    long? Actual = null, long? Limit = null)
+{
+    public string Guidance => Code switch
+    {
+        "NO_ACTIVE_ENVIRONMENT" => "Select or create a Target Environment, then retry the upload.",
+        "ARCHIVE_TOO_LARGE" => "Choose a ZIP archive smaller than 50 MB.",
+        "ARCHIVE_EXPANDED_SIZE_EXCEEDED" => "Remove generated or unnecessary files and create a smaller source archive.",
+        "ARCHIVE_TOO_MANY_ENTRIES" => "Remove generated folders such as build output, package caches, or dependencies, then retry.",
+        "ARCHIVE_ENTRY_TOO_LARGE" => "Reduce or remove the oversized file, then retry.",
+        "ARCHIVE_PATH_TRAVERSAL" or "ARCHIVE_ABSOLUTE_PATH" or "ARCHIVE_INVALID_PATH" => "Rebuild the ZIP from the project folder so every entry stays inside the archive root.",
+        "ARCHIVE_DUPLICATE_PATH" => "Remove duplicate entries that map to the same path, including case-only duplicates.",
+        "ARCHIVE_SYMLINK_UNSUPPORTED" => "Replace symbolic links with regular files or folders before creating the ZIP.",
+        "ARCHIVE_ENCRYPTED_UNSUPPORTED" => "Remove encryption from the ZIP and retry.",
+        "ARCHIVE_EMPTY" or "ARCHIVE_EMPTY_UPLOAD" => "Choose a ZIP that contains at least one file.",
+        "ARCHIVE_INVALID_ZIP" => "Re-create the ZIP and make sure the archive finishes writing before upload.",
+        "SOURCE_ANALYSIS_FAILED" => "The archive passed validation. Retry the analysis or reduce the archive if it contains many large files.",
+        "SOURCE_SNAPSHOT_SAVE_FAILED" => "The archive passed validation, but the snapshot was not saved. Retry the upload later.",
+        "UPLOAD_INVALID_FORM" or "UPLOAD_MULTIPART_REQUIRED" or "UPLOAD_FILE_COUNT_INVALID" => "Choose one ZIP file and retry the upload.",
+        _ => "Review the reason above, correct the archive or environment, and retry. Existing snapshots are unchanged.",
+    };
+
+    public string StageLabel => Stage switch
+    {
+        "prerequisite" => "Environment prerequisite",
+        "upload" => "Upload",
+        "validation" => "Archive validation",
+        "extraction" => "Archive reading",
+        "analysis" => "Source analysis",
+        "persistence" => "Snapshot save",
+        _ => "Source upload",
+    };
+}
+
 /// <summary>
 /// Client for the backend integration catalog (Target Environment → Integrations) and Integration Quality Review over it.
 /// The catalog is persisted by the backend; this client never holds a secret — authentication is a mechanism name.
@@ -14,7 +48,13 @@ public interface IIntegrationCatalogApiService
     Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => Task.FromResult<IReadOnlyList<IqrSourceSnapshot>>([]);
     /// <summary>Read-only source suggestions for one configured field (Source Analysis Infrastructure evidence). Null when unavailable.</summary>
     Task<BirkNext.SourceDomains.SourceInfrastructureSuggestion?> InfrastructureSuggestionAsync(string environmentId, BirkNext.SourceDomains.InfrastructureResourceKind kind, string field, string? configured, string? targetEnvironment, string? parent, CancellationToken ct = default) => Task.FromResult<BirkNext.SourceDomains.SourceInfrastructureSuggestion?>(null);
-    Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source analysis is unavailable."));
+    Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) =>
+        Task.FromResult<(IqrSourceSnapshot?, string?)>((null, "Source Analysis is unavailable."));
+    async Task<(IqrSourceSnapshot? Snapshot, SourceUploadFailure? Error)> AnalyzeSourceSnapshotDetailedAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default)
+    {
+        var (snapshot, error) = await AnalyzeSourceSnapshotAsync(environmentId, fileName, content, ct);
+        return (snapshot, error is null ? null : new("SOURCE_UPLOAD_FAILED", "upload", error));
+    }
     /// <summary>Source Analysis snapshots for binding one to an integration (read-only metadata; no upload).</summary>
     Task<ReviewSourceOptions> IqrSourceScopeAsync(string environmentId, Guid? primary, CancellationToken ct = default) => Task.FromResult(new ReviewSourceOptions());
     Task<IntegrationReviewResult> RunWithSourceAsync(FrontendAnalysisProfile profile, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default) =>
@@ -83,26 +123,59 @@ public sealed class IntegrationCatalogApiService(HttpClient http) : IIntegration
         catch (HttpRequestException) { return null; }
     }
     public async Task<IReadOnlyList<IqrSourceSnapshot>> ListSourceSnapshotsAsync(string environmentId, CancellationToken ct = default) => await http.GetFromJsonAsync<List<IqrSourceSnapshot>>($"api/source-analysis?{Env(environmentId)}", Json, ct) ?? [];
-    public Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) => UploadSource($"api/source-analysis/snapshots?{Env(environmentId)}", fileName, content, ct);
+    public async Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeSourceSnapshotAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default)
+    {
+        var (snapshot, failure) = await AnalyzeSourceSnapshotDetailedAsync(environmentId, fileName, content, ct);
+        return (snapshot, failure?.Message);
+    }
+    public Task<(IqrSourceSnapshot? Snapshot, SourceUploadFailure? Error)> AnalyzeSourceSnapshotDetailedAsync(string environmentId, string fileName, Stream content, CancellationToken ct = default) =>
+        UploadSource($"api/source-analysis/snapshots?{Env(environmentId)}", fileName, content, ct);
     public async Task<ReviewSourceOptions> IqrSourceScopeAsync(string environmentId, Guid? primary, CancellationToken ct = default) =>
         await http.GetFromJsonAsync<ReviewSourceOptions>($"api/integration-review/source/scope?{Env(environmentId)}{(primary is { } id ? $"&primary={id}" : "")}", Json, ct) ?? new();
-    private async Task<(IqrSourceSnapshot? Snapshot, string? Error)> UploadSource(string route, string fileName, Stream content, CancellationToken ct)
+    private async Task<(IqrSourceSnapshot? Snapshot, SourceUploadFailure? Error)> UploadSource(string route, string fileName, Stream content, CancellationToken ct)
     {
         using var body = new MultipartFormDataContent();
         body.Add(new StreamContent(content), "file", fileName);
         using var response = await http.PostAsync(route, body, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
-            {
-                var text = await response.Content.ReadAsStringAsync(ct);
-                try { using var json = JsonDocument.Parse(text); return (null, json.RootElement.TryGetProperty("message", out var message) ? message.GetString() : "Source archive validation failed."); }
-                catch (JsonException) { return (null, "Source archive validation failed. Check ZIP validity, safe paths and the 50 MB upload / 100 MB expanded limits."); }
-            }
-            return (null, "Source archive could not be analyzed. No new evidence was selected.");
-        }
-        return (await response.Content.ReadFromJsonAsync<IqrSourceSnapshot>(Json, ct), null);
+        if (!response.IsSuccessStatusCode) return (null, await ReadSourceUploadFailure(response, ct));
+        var snapshot = await response.Content.ReadFromJsonAsync<IqrSourceSnapshot>(Json, ct);
+        return snapshot is null
+            ? (null, new("SOURCE_SNAPSHOT_RESPONSE_INVALID", "persistence", "The upload completed, but no source snapshot was returned."))
+            : (snapshot, null);
     }
+
+    private static async Task<SourceUploadFailure> ReadSourceUploadFailure(HttpResponseMessage response, CancellationToken ct)
+    {
+        var status = (int)response.StatusCode;
+        try
+        {
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            var root = json.RootElement;
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("code", out var codeNode) && codeNode.ValueKind == JsonValueKind.String
+                && codeNode.GetString() is { Length: > 0 } code && root.TryGetProperty("message", out var messageNode)
+                && messageNode.ValueKind == JsonValueKind.String && messageNode.GetString() is { Length: > 0 } message)
+            {
+                var stage = root.TryGetProperty("stage", out var stageNode) && stageNode.ValueKind == JsonValueKind.String ? stageNode.GetString() ?? "upload" : "upload";
+                var entry = root.TryGetProperty("entryPath", out var entryNode) && entryNode.ValueKind == JsonValueKind.String ? entryNode.GetString() : null;
+                long? actual = root.TryGetProperty("actual", out var actualNode) && actualNode.ValueKind == JsonValueKind.Number && actualNode.TryGetInt64(out var actualValue) ? actualValue : null;
+                long? limit = root.TryGetProperty("limit", out var limitNode) && limitNode.ValueKind == JsonValueKind.Number && limitNode.TryGetInt64(out var limitValue) ? limitValue : null;
+                return new(code, stage, message, entry, actual, limit);
+            }
+            if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("detail", out var detail) && detail.ValueKind == JsonValueKind.String
+                && status >= 500)
+                return StatusFallback(status);
+        }
+        catch (JsonException) { }
+        return StatusFallback(status);
+    }
+
+    private static SourceUploadFailure StatusFallback(int status) => status switch
+    {
+        413 => new("ARCHIVE_TOO_LARGE", "upload", "Upload exceeds the 50 MB compressed archive limit.", Actual: null, Limit: 50L * 1024 * 1024),
+        400 or 422 => new("ARCHIVE_REJECTED", "validation", "The source archive was rejected, but the server did not return a structured reason. Try creating the ZIP again or contact support with the error code."),
+        >= 500 => new("SOURCE_ANALYSIS_UNAVAILABLE", "analysis", "Source Analysis could not complete the request. No new snapshot was selected."),
+        _ => new("SOURCE_UPLOAD_FAILED", "upload", "Source upload could not be completed. Existing snapshots are unchanged."),
+    };
     public async Task<IntegrationReviewResult> RunWithSourceAsync(FrontendAnalysisProfile profile, IReadOnlyList<IqrSourceSelection> selections, CancellationToken ct = default)
     {
         var request = new IntegrationReviewRunRequest { EnvironmentId = profile.Id, EnvironmentName = profile.Name, SourceSelections = selections.ToList() };

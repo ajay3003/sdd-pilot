@@ -48,7 +48,7 @@
     </section>
 
     <section id="source-analysis" class="ug-section"><h2 class="ug-section-title">Source Analysis</h2>
-        <p><a href="/source-analysis">Source Analysis</a> is the shared owner of uploaded source archives and their analyzed snapshots. It detects and normalizes source evidence that other reviews can consume. Consumers select existing snapshots; they do not need a duplicate source ZIP upload.</p>
+        <p><a href="/source-analysis">Source Analysis</a> accepts safe ZIP repositories up to 50 MB compressed and 100 MB expanded, including nested folders, multiple top-level services, document-only archives and technologies it cannot analyze. Unsupported technology is reported as an analysis limitation, not an invalid archive. ZIPs must not contain traversal paths or symbolic links; archives are read in memory and are not extracted to disk. Source snapshots belong to a Target Environment, which does not need an application URL. Other reviews select existing snapshots; they do not need a duplicate source ZIP upload.</p>
         <p>Current areas include:</p><ul class="ug-fd-list">@foreach (var domain in DocumentationCatalog.DocumentedSourceAnalysisDomains) { <li>@domain</li> }</ul>
         <p>Source Analysis describes source declarations and analyzer findings. It does not establish deployment state, runtime behavior, successful pipeline execution or contract use in production.</p>
         <p>Each snapshot has a fingerprint and provenance. Re-analysis produces a new snapshot. Consumers keep the exact snapshot scope used; a newer snapshot may be offered, but evidence is not silently switched. Old analyzer evidence can need refresh when source changes.</p>

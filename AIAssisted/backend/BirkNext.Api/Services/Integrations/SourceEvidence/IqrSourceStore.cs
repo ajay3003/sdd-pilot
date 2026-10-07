@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BirkNext.Api.Services.Integrations.SourceEvidence;
 
 public sealed class InvalidSourceSelectionException(string message) : Exception(message);
+public sealed class SourceSnapshotPersistenceException : Exception { }
 
 public sealed class IqrSourceStore(AppDbContext db)
 {
@@ -58,8 +59,14 @@ public sealed class IqrSourceStore(AppDbContext db)
     public async Task<(IqrSourceSnapshot? Snapshot, string? Error)> AnalyzeAsync(string environmentId, string integrationId, string name, byte[] bytes, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(environmentId) || string.IsNullOrWhiteSpace(integrationId)) return (null, "Environment and integration identity are required.");
-        var (workspace, error) = IqrSourceArchiveReader.Read(name, bytes, ct);
-        if (workspace is null) return (null, error);
+        var result = IqrSourceArchiveReader.ReadDetailed(name, bytes, ct);
+        if (!result.IsValid) return (null, result.Failure?.Message);
+        return (await AnalyzeValidatedAsync(environmentId, integrationId, name, bytes, result.Workspace!, ct), null);
+    }
+
+    internal async Task<IqrSourceSnapshot> AnalyzeValidatedAsync(string environmentId, string integrationId, string name, byte[] bytes,
+        IqrSourceArchiveReader.Workspace workspace, CancellationToken ct = default)
+    {
         ct.ThrowIfCancellationRequested();
         var snapshot = IqrSourceAnalyzer.Analyze(integrationId, workspace, DateTimeOffset.UtcNow, ct);
         snapshot = snapshot with { DatabaseArchitecture = await DatabaseArchitecture.DatabaseArchitectureAnalyzer.AnalyzeAsync(snapshot.Id, workspace, snapshot.AnalyzedAt, ct) };
@@ -109,8 +116,10 @@ public sealed class IqrSourceStore(AppDbContext db)
         // Insert only. Identical archive hashes still create distinct evidence versions when analyzed again.
         db.IqrSourceSnapshots.Add(new IqrSourceSnapshotRecord { Id = snapshot.Id, EnvironmentId = environmentId, IntegrationId = integrationId,
             AnalyzedAt = snapshot.AnalyzedAt, EvidenceJson = JsonSerializer.Serialize(snapshot, Json) });
-        await db.SaveChangesAsync(ct);
-        return (snapshot, null);
+        try { await db.SaveChangesAsync(ct); }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception) { throw new SourceSnapshotPersistenceException(); }
+        return snapshot;
     }
 
     private static string? FingerprintFile(IqrSourceArchiveReader.Workspace workspace, string path)

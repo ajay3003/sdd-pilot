@@ -4,7 +4,16 @@
 .sa-card h3 { margin: 0; font-size: 1rem; display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; }
 .sa-muted { color: var(--clr-text-muted); font-size: .84rem; margin: 0; }
 .sa-safety { margin: 0; font-size: .84rem; color: var(--clr-text-muted); border-left: 3px solid var(--clr-border); padding: .1rem .6rem; max-width: 60rem; }
-.sa-error { margin: 0; font-size: .86rem; color: var(--clr-danger, #b91c1c); }
+.sa-error-card { margin: .25rem 0 0; padding: .7rem .8rem; border: 1px solid var(--clr-danger, #b91c1c); border-left-width: 4px; border-radius: var(--radius-md); background: var(--clr-danger-bg, #fff7f7); color: var(--clr-text); min-width: 0; overflow-wrap: anywhere; }
+.sa-error-card h3 { margin: 0 0 .25rem; color: var(--clr-danger, #b91c1c); font-size: .95rem; }
+.sa-error-card p { margin: .25rem 0; font-size: .86rem; }
+.sa-error-path code, .sa-error-details code { white-space: normal; overflow-wrap: anywhere; }
+.sa-error-details { margin-top: .35rem; font-size: .8rem; }
+.sa-error-details summary { cursor: pointer; font-weight: 600; width: fit-content; }
+.sa-error-details dl { margin: .4rem 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .35rem .8rem; }
+.sa-error-details dl > div { min-width: 0; }
+.sa-error-details dt { color: var(--clr-text-muted); font-size: .72rem; }
+.sa-error-details dd { margin: 0; overflow-wrap: anywhere; }
 .sa-status { margin: 0; font-size: .84rem; color: var(--clr-text-muted); }
 .sa-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem 1.4rem; min-width: 0; }
 .sa-upload-group { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; }

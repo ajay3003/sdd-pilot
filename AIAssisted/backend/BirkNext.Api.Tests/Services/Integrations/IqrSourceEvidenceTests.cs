@@ -52,23 +52,100 @@ public sealed class IqrSourceEvidenceTests
     [InlineData("../../escape.cs")]
     [InlineData("/absolute.cs")]
     [InlineData("C:/escape.cs")]
+    [InlineData("\\\\server\\share\\escape.cs")]
     [InlineData("safe/../escape.cs")]
+    [InlineData("a/../../escape.cs")]
     [InlineData("safe\\..\\escape.cs")]
+    [InlineData("a\\..\\..\\escape.cs")]
     public void RejectsUnsafePathsEvenWhenIgnored(string path)
     {
-        IqrSourceArchiveReader.Read("source.zip", Zip((path, Mapper))).Error.Should().Contain("unsafe");
+        var result = IqrSourceArchiveReader.ReadDetailed("source.zip", Zip((path, Mapper)));
+        result.Failure.Should().NotBeNull();
+        result.Failure!.Code.Should().Be(path.Contains("..") ? "ARCHIVE_PATH_TRAVERSAL" : "ARCHIVE_ABSOLUTE_PATH");
+        result.Failure.EntryPath.Should().NotContain("C:\\Users\\").And.NotContain("/tmp/");
     }
     [Fact] public void RejectsInvalidArchiveAndWrongExtension()
     {
-        IqrSourceArchiveReader.Read("source.zip", [1, 2, 3]).Error.Should().Contain("invalid");
-        IqrSourceArchiveReader.Read("source.exe", Zip(("a.cs", Mapper))).Error.Should().Contain(".zip");
+        IqrSourceArchiveReader.ReadDetailed("source.zip", [1, 2, 3]).Failure!.Code.Should().Be("ARCHIVE_INVALID_ZIP");
+        IqrSourceArchiveReader.ReadDetailed("source.exe", Zip(("a.cs", Mapper))).Failure!.Code.Should().Be("ARCHIVE_UNSUPPORTED_FORMAT");
+        IqrSourceArchiveReader.ReadDetailed("source.zip", [1, 2, 3]).Failure!.Code.Should().Be("ARCHIVE_INVALID_ZIP");
+        IqrSourceArchiveReader.ReadDetailed("source.exe", Zip(("a.cs", Mapper))).Failure!.Code.Should().Be("ARCHIVE_UNSUPPORTED_FORMAT");
+    }
+
+    [Fact]
+    public void AcceptsWrapperNestedMultipleRootAndDocumentOnlyLayoutsWithoutAFrameworkAssumption()
+    {
+        var wrapper = Zip(("./", ""), ("project-main/src/Main.java", "class Main {}"), ("project-main/docs/README.md", "# Read me"));
+        var manyRoots = Zip(("service-a/pom.xml", "<project/>"), ("service-b/src/Main.java", "class Main {}"), ("infra/main.tf", "resource {}"));
+        var documentOnly = Zip(("docs/requirements.md", "# Requirements"), ("README.md", "Project documentation"));
+
+        var wrapped = IqrSourceArchiveReader.ReadDetailed("wrapper.zip", wrapper);
+        wrapped.IsValid.Should().BeTrue(wrapped.Failure?.Message);
+        wrapped.Workspace!.AllPaths.Should().Contain("project-main/src/Main.java");
+        wrapped.Workspace.Limitations.Should().Contain(l => l.Contains("unsupported language"));
+        IqrSourceArchiveReader.ReadDetailed("services.zip", manyRoots).IsValid.Should().BeTrue("multiple top-level folders are valid repository layouts");
+        IqrSourceArchiveReader.ReadDetailed("docs.zip", documentOnly).IsValid.Should().BeTrue("technology detection happens after archive validation");
+    }
+
+    [Fact]
+    public void NormalizesHarmlessDotSegmentsAndRejectsDuplicateNormalizedPaths()
+    {
+        var normalized = IqrSourceArchiveReader.ReadDetailed("root.zip", Zip(("./src/Main.java", "class Main {}")));
+        normalized.IsValid.Should().BeTrue(normalized.Failure?.Message);
+        normalized.Workspace!.AllPaths.Should().Contain("src/Main.java");
+
+        var duplicate = IqrSourceArchiveReader.ReadDetailed("duplicate.zip", Zip(("src/./Main.java", "class Main {}"), ("src\\Main.java", "class Main {}")));
+        duplicate.Failure!.Code.Should().Be("ARCHIVE_DUPLICATE_PATH");
+        var caseCollision = IqrSourceArchiveReader.ReadDetailed("case-collision.zip", Zip(("Foo.cs", "class Foo {}"), ("foo.cs", "class foo {}")));
+        caseCollision.Failure!.Code.Should().Be("ARCHIVE_DUPLICATE_PATH");
+    }
+
+    [Fact]
+    public void EmptyArchiveHasDistinctFailureAndLargeEntryIsSkippedRatherThanRejectingTheArchive()
+    {
+        IqrSourceArchiveReader.ReadDetailed("empty.zip", Zip()).Failure!.Code.Should().Be("ARCHIVE_EMPTY");
+        var large = new byte[IqrSourceArchiveReader.MaxFileBytes + 1];
+        Array.Fill(large, (byte)'x');
+        using var archive = new MemoryStream();
+        using (var zip = new ZipArchive(archive, ZipArchiveMode.Create, true))
+        {
+            using var output = zip.CreateEntry("generated.cs").Open();
+            using var input = new MemoryStream(large);
+            input.CopyTo(output);
+        }
+        var result = IqrSourceArchiveReader.ReadDetailed("large-entry.zip", archive.ToArray());
+        result.IsValid.Should().BeTrue("the entry is bounded and skipped, while the ZIP remains structurally valid");
+        result.Workspace!.Limitations.Should().Contain(l => l.Contains("2 MB per-file limit"));
+    }
+
+    [Fact]
+    public void ExpandedSizeAndEntryCountHaveStableBoundedFailures()
+    {
+        using var expanded = new MemoryStream();
+        using (var zip = new ZipArchive(expanded, ZipArchiveMode.Create, true))
+        {
+            using var output = zip.CreateEntry("large.cs").Open();
+            var chunk = new byte[8192];
+            var target = IqrSourceArchiveReader.MaxExpandedBytes + 1;
+            for (var written = 0; written < target; written += chunk.Length) output.Write(chunk, 0, Math.Min(chunk.Length, target - written));
+        }
+        var expandedResult = IqrSourceArchiveReader.ReadDetailed("expanded.zip", expanded.ToArray());
+        expandedResult.Failure!.Code.Should().Be("ARCHIVE_EXPANDED_SIZE_EXCEEDED");
+        expandedResult.Failure.Limit.Should().Be(IqrSourceArchiveReader.MaxExpandedBytes);
+
+        using var many = new MemoryStream();
+        using (var zip = new ZipArchive(many, ZipArchiveMode.Create, true))
+            for (var i = 0; i <= 20_000; i++) zip.CreateEntry($"f{i}.txt");
+        var countResult = IqrSourceArchiveReader.ReadDetailed("many.zip", many.ToArray());
+        countResult.Failure!.Code.Should().Be("ARCHIVE_TOO_MANY_ENTRIES");
+        countResult.Failure.Actual.Should().Be(20_001);
     }
     [Fact] public void RejectsSymlinksAndDuplicatePaths()
     {
         using var stream = new MemoryStream();
         using (var zip = new ZipArchive(stream, ZipArchiveMode.Create, true)) { var entry = zip.CreateEntry("link.cs"); entry.ExternalAttributes = unchecked((int)0xA1FF0000); }
-        IqrSourceArchiveReader.Read("source.zip", stream.ToArray()).Error.Should().Contain("symbolic link");
-        IqrSourceArchiveReader.Read("source.zip", Zip(("a.cs", Mapper), ("a.cs", Mapper))).Error.Should().Contain("duplicate");
+        IqrSourceArchiveReader.ReadDetailed("source.zip", stream.ToArray()).Failure!.Code.Should().Be("ARCHIVE_SYMLINK_UNSUPPORTED");
+        IqrSourceArchiveReader.ReadDetailed("source.zip", Zip(("a.cs", Mapper), ("a.cs", Mapper))).Failure!.Code.Should().Be("ARCHIVE_DUPLICATE_PATH");
     }
     [Fact] public void FingerprintIsDeterministicAndChangesWithArchiveBytes()
     {

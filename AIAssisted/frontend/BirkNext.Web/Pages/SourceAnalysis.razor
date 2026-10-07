@@ -21,7 +21,6 @@
         <p class="sa-return" data-testid="sa-return"><a href="@back.Route" data-testid="sa-return-link">Back to @back.Label</a> <span class="sa-muted">— snapshots analyzed here can be chosen there.</span></p>
     }
     <p class="sa-safety" role="note" data-testid="sa-safety">@SourceAnalysisOverview.SafetyNote</p>
-    @if (_error is not null) { <p class="sa-error" role="alert" data-testid="sa-error">@_error</p> }
     @if (_profile is null)
     {
         @if (_loaded) { <p class="sa-card sa-muted" data-testid="sa-no-target">Select a target environment to access its source snapshots.</p> }
@@ -46,6 +45,24 @@
                 </label>
             </div>
             @if (_busy) { <p class="sa-status" role="status" data-testid="sa-analyzing">Analyzing source… The architecture and database are extracted from the archive.</p> }
+            @if (_error is { } uploadFailure)
+            {
+                <section class="sa-error-card" role="alert" aria-labelledby="sa-error-heading" data-testid="sa-error">
+                    <h3 id="sa-error-heading">@UploadErrorTitle(uploadFailure)</h3>
+                    <p>@uploadFailure.Message</p>
+                    @if (!string.IsNullOrWhiteSpace(uploadFailure.EntryPath)) { <p class="sa-error-path"><strong>Archive entry:</strong> <code>@uploadFailure.EntryPath</code></p> }
+                    <p><strong>What to do:</strong> @uploadFailure.Guidance</p>
+                    <details class="sa-error-details">
+                        <summary>Technical details</summary>
+                        <dl>
+                            <div><dt>Error code</dt><dd><code>@uploadFailure.Code</code></dd></div>
+                            <div><dt>Stage</dt><dd>@uploadFailure.StageLabel</dd></div>
+                            @if (uploadFailure.Actual is { } actual) { <div><dt>Observed</dt><dd>@FormatUploadValue(uploadFailure.Code, actual)</dd></div> }
+                            @if (uploadFailure.Limit is { } limit) { <div><dt>Limit</dt><dd>@FormatUploadValue(uploadFailure.Code, limit)</dd></div> }
+                        </dl>
+                    </details>
+                </section>
+            }
         </section>
 
         var selected = _busy ? null : _snapshots.FirstOrDefault(s => s.Id.ToString() == _selected);
@@ -295,15 +312,27 @@
         _snapshots.Where(s => s.Id != current.Id && s.AnalyzedAt < current.AnalyzedAt && s.Observability is not null && SameRepository(s, current)).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault()?.Observability;
     private static bool SameRepository(IqrSourceSnapshot a, IqrSourceSnapshot b) =>
         a.Repository is { } ra && b.Repository is { } rb ? ra.Key == rb.Key : a.Archive.FileName == b.Archive.FileName;
-    private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private string? _error; private bool _busy;
+    private FrontendAnalysisProfile? _profile; private IReadOnlyList<IqrSourceSnapshot> _snapshots = []; private string _selected = ""; private SourceUploadFailure? _error; private bool _busy;
     protected override async Task OnInitializedAsync() { var context = await ContextFactory.GetActiveContextAsync(); _profile = context.ActiveProfile; if (_profile is not null) await Load(); _loaded = true; }
-    private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = "Source snapshots could not be loaded."; } }
+    private async Task Load() { try { _snapshots = await Api.ListSourceSnapshotsAsync(_profile!.Id); if (_selected == "") _selected = _snapshots.FirstOrDefault()?.Id.ToString() ?? ""; } catch (Exception) { _error = new("SOURCE_SNAPSHOT_LIST_FAILED", "upload", "Stored source snapshots could not be loaded. Existing selections are unchanged."); } }
     private async Task Upload(InputFileChangeEventArgs args)
     {
         _busy = true; _error = null; _pendingArchive = args.File.Name;
-        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotAsync(_profile!.Id, args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
-        catch (Exception) { _error = "Source archive could not be analyzed. Check the ZIP file and upload size."; }
+        try { await using var stream = args.File.OpenReadStream(50 * 1024 * 1024); var (snapshot, error) = await Api.AnalyzeSourceSnapshotDetailedAsync(_profile!.Id, args.File.Name, stream); _error = error; if (snapshot is not null) { await Load(); _selected = snapshot.Id.ToString(); _area = "Overview"; SnapshotChanged(); _focusId = "sa-current-heading"; } }
+        catch (IOException) { _error = new("ARCHIVE_TOO_LARGE", "upload", "The selected ZIP exceeds the 50 MB upload limit.", Limit: 50L * 1024 * 1024); }
+        catch (HttpRequestException) { _error = new("SOURCE_ANALYSIS_UNAVAILABLE", "upload", "Source Analysis could not be reached. Existing snapshots are unchanged; retry when the service is available."); }
+        catch (Exception) { _error = new("SOURCE_UPLOAD_FAILED", "upload", "The source upload could not be completed. Existing snapshots are unchanged; correct the archive or retry."); }
         finally { _busy = false; }
     }
     private BirkNext.DatabaseArchitecture.DatabaseArchitectureSnapshot? Previous(IqrSourceSnapshot current) => _snapshots.Where(s => s.IntegrationId == current.IntegrationId && s.AnalyzedAt < current.AnalyzedAt && s.DatabaseArchitecture is not null).OrderByDescending(s => s.AnalyzedAt).FirstOrDefault()?.DatabaseArchitecture;
 }
+    private static string UploadErrorTitle(SourceUploadFailure failure) => failure.Stage switch
+    {
+        "prerequisite" => "Target Environment required",
+        "validation" => "Source archive rejected",
+        "analysis" => "Source analysis did not complete",
+        "persistence" => "Source snapshot could not be saved",
+        _ => "Source upload could not be completed",
+    };
+    private static string FormatUploadValue(string code, long value) => code.Contains("SIZE", StringComparison.OrdinalIgnoreCase)
+        ? $"{value / (1024d * 1024):0.#} MB" : value.ToString("N0");
