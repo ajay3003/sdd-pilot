@@ -8,9 +8,10 @@
 .traceability-item__text.is-collapsed { max-height: 4.35em; overflow: hidden; }
 .traceability-item__scenario-part { min-width: 0; }
 .traceability-item__keyword { font-weight: 700; }
-.traceability-item__given { color: var(--clr-info, #1d4ed8); }
-.traceability-item__when { color: var(--traceability-when, #6d28d9); }
-.traceability-item__then { color: var(--clr-success, #047857); }
+/* Scenario keywords: Given blue, When indigo, Then teal. Never red, and Then is not the Passed/success colour. */
+.traceability-item__given { color: var(--traceability-given, #1d4ed8); }
+.traceability-item__when { color: var(--traceability-when, #4338ca); }
+.traceability-item__then { color: var(--traceability-then, #0f766e); }
 .traceability-item__scenario-body { color: var(--clr-text-primary, inherit); }
 .traceability-item__toggle { display: inline-flex; align-items: center; min-height: 24px; margin: 0 .65rem .35rem; padding: 0 .2rem; border: 0; background: transparent; color: var(--tv-accent, var(--clr-info, #1d4ed8)); font: inherit; font-size: .8rem; font-weight: 600; text-decoration: underline; cursor: pointer; }
 .traceability-item__toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

@@ -1382,6 +1382,16 @@ public static class SpecExplorerService
         return requirements;
     }
 
+    /// <summary>The semantic model's Requirement rule: a Requirement item, or a sub-heading that starts with a requirement identifier.
+    /// Returns the normalized identifier when the node has one.</summary>
+    public static bool IsRequirementNode(SpecNode node, out string? requirementId)
+    {
+        requirementId = node.NodeType == SpecNodeType.Requirement
+            ? (node.SpecItemId is { Length: > 0 } id ? NormalizeSpecItemId(id) : ExtractSpecItemId(node.Title))
+            : IsRequirementHeading(node) ? ExtractSpecItemId(node.Title) : null;
+        return node.NodeType == SpecNodeType.Requirement || IsRequirementHeading(node);
+    }
+
     private static bool IsRequirementHeading(SpecNode node) =>
         node.HeadingLevel > 0
         && node.NodeType is SpecNodeType.SubSection or SpecNodeType.DeepSection
