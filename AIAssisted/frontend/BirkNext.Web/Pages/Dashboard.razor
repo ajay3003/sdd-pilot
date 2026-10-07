@@ -128,9 +128,12 @@
 
     @* ── KPI Strip ─────────────────────────────────────────────────────────── *@
     <div class="db-kpi-strip" aria-label="Key performance indicators">
-        <MetricCard Value="@GovernanceValue"
-                    Label="Governance"
-                    Sublabel="@GovernanceSublabel" />
+        <div class="db-kpi" data-testid="db-governance-kpi">
+            <MetricCard Value="@GovernanceValue"
+                        Label="Governance"
+                        Sublabel="@GovernanceSublabel"
+                        Variant="@GovernanceVariant" />
+        </div>
         <MetricCard Value="@TraceabilityHealthVal"
                     Label="Traceability"
                     Sublabel="@KpiStatusLabel(_traceabilityScore, _traceabilityHasData)"
@@ -174,8 +177,8 @@
 
             <div class="db-health-card">
                 <span class="db-health-label">Governance</span>
-                <span class="db-health-value @(_workspace is { WorkspaceLoaded: true } ? "" : "db-val-empty")" data-testid="db-governance-value">@GovernanceValue</span>
-                <StatusChip Status="neutral" Label="@GovernanceSublabel" />
+                <span class="db-health-value @(GovernanceAssessed ? "" : "db-val-empty")" data-testid="db-governance-value">@GovernanceValue</span>
+                <StatusChip Status="@GovernanceChip" Label="@GovernanceSublabel" />
             </div>
 
             <div class="db-health-card">
@@ -231,7 +234,7 @@
     @* ── Governance Status ─────────────────────────────────────────────────── *@
     @* Availability (from the current workspace) and analysis (from this session's reports) are separate facts, shown as separate badges. *@
     <section class="db-section">
-        <SectionHeader Title="Governance Status" Description="Available · Selected · Analyzed" />
+        <SectionHeader Title="Project Artifacts" Description="@ArtifactsDescription" />
         <div class="db-artifact-grid">
 
             <div class="db-artifact-card db-artifact-constitution @(Available(WorkspaceArtifactType.Constitution) ? "db-artifact-loaded" : "")" data-testid="db-artifact-card" data-role="Constitution">
@@ -248,9 +251,6 @@
                 {
                     @RoleStats(WorkspaceArtifactType.Constitution)
                 }
-                <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Constitution, _constitutionAnalyzed)%"></div>
-                </div>
                 <a href="constitution-explorer" class="db-artifact-action">Open Constitution Explorer →</a>
             </div>
 
@@ -269,9 +269,6 @@
                 {
                     @RoleStats(WorkspaceArtifactType.Specification)
                 }
-                <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Specification, _specAnalyzed)%"></div>
-                </div>
                 <a href="specification-explorer" class="db-artifact-action">Open Specification Explorer →</a>
             </div>
 
@@ -289,9 +286,6 @@
                 {
                     @RoleStats(WorkspaceArtifactType.Plan)
                 }
-                <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Plan, _planAnalyzed)%"></div>
-                </div>
                 <a href="plan-explorer" class="db-artifact-action">Open Plan Explorer →</a>
             </div>
 
@@ -310,9 +304,6 @@
                 {
                     @RoleStats(WorkspaceArtifactType.Tasks)
                 }
-                <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.Tasks, _tasksAnalyzed)%"></div>
-                </div>
                 <a href="task-explorer" class="db-artifact-action">Open Task Explorer →</a>
             </div>
 
@@ -321,9 +312,6 @@
                 <div class="db-artifact-name">Data Model</div>
                 <div class="db-artifact-badges">@RoleBadges(WorkspaceArtifactType.DataModel, _dataModelAnalyzed)</div>
                 @RoleStats(WorkspaceArtifactType.DataModel)
-                <div class="db-artifact-progress-track" aria-hidden="true">
-                    <div class="db-artifact-progress-fill" style="width: @Progress(WorkspaceArtifactType.DataModel, _dataModelAnalyzed)%"></div>
-                </div>
                 <a href="data-model-explorer" class="db-artifact-action">Open Data Model Explorer →</a>
             </div>
         </div>
@@ -838,6 +826,11 @@
                 {
                     <span class="db-badge db-badge-empty">Selection required</span>
                 }
+                if (_workflowReadiness?.ReviewFor(role) is { } review)
+                {
+                    <span class="db-badge db-badge-review is-@review.State.ToString().ToLowerInvariant()" data-testid="db-artifact-review" data-state="@review.State"
+                          title="@review.Summary"><span aria-hidden="true">@review.Icon </span>@review.Label</span>
+                }
                 if (analyzed)
                 {
                     <span class="db-badge db-badge-analyzed">Analyzed</span>
@@ -877,24 +870,50 @@
         </div>
     };
 
-    private int Progress(WorkspaceArtifactType role, bool analyzed) =>
-        Available(role) ? 50 + (analyzed ? 50 : 0) : 0;
+    // ── Governance: review decisions on the project's artifact revisions ──────────────────────────────────────────────
+    // Availability is context (the workspace card and Project Artifacts); Governance counts only decisions recorded on the
+    // revision each document review gate reads now — the same reading Recommended Workflow shows.
 
-    private static readonly WorkspaceArtifactType[] GovernanceRoles =
-        [WorkspaceArtifactType.Constitution, WorkspaceArtifactType.Specification, WorkspaceArtifactType.Plan, WorkspaceArtifactType.Tasks];
+    /// <summary>Document review gates that apply (one per available role with a review step; the Data Model's is optional).</summary>
+    private IReadOnlyList<ArtifactReviewStatus> DocumentReviews =>
+        _workflowReadiness?.DocumentReviewGates.Select(ArtifactReviewPresentation.Of).ToList() ?? [];
 
-    private int _governanceRoleCount => GovernanceRoles.Count(Available);
+    /// <summary>Assessed once a decision exists on a current revision, or an earlier decision has gone stale.</summary>
+    private bool GovernanceAssessed => DocumentReviews.Any(r => r.IsDecided || r.State == ArtifactReviewState.Stale);
 
-    /// <summary>Governance artifact roles available ("3 / 4"). Availability, not a score: there is no 0% without a workspace.</summary>
-    private string GovernanceValue => _workspace is { WorkspaceLoaded: true } ? $"{_governanceRoleCount} / {GovernanceRoles.Length}" : "—";
+    private int GovernanceApproved => DocumentReviews.Count(r => r.State == ArtifactReviewState.Approved);
 
-    private string GovernanceSublabel => _workspace switch
+    /// <summary>"—" until assessed; then approved document reviews of those that apply. Never an availability count, never 0%.</summary>
+    private string GovernanceValue => GovernanceAssessed ? $"{GovernanceApproved} / {DocumentReviews.Count}" : "—";
+
+    private string GovernanceSublabel
     {
-        null => "Loading",
-        { State: CurrentWorkspaceState.Error } => "Unavailable",
-        { WorkspaceLoaded: false } => "No workspace",
-        _ => "Roles available",
-    };
+        get
+        {
+            if (_workspace is null) return "Loading";
+            if (_workspace.State == CurrentWorkspaceState.Error) return "Unavailable";
+            if (!_workspace.WorkspaceLoaded) return "No workspace";
+            if (!GovernanceAssessed) return "Not assessed";
+            var needsChanges = DocumentReviews.Count(r => r.State == ArtifactReviewState.NeedsChanges);
+            var stale = DocumentReviews.Count(r => r.State == ArtifactReviewState.Stale);
+            return needsChanges > 0 ? $"{needsChanges} need{(needsChanges == 1 ? "s" : "")} changes"
+                : stale > 0 ? $"{stale} review{(stale == 1 ? "" : "s")} stale"
+                : GovernanceApproved == DocumentReviews.Count ? "Document reviews approved"
+                : "Document reviews approved so far";
+        }
+    }
+
+    /// <summary>Success only when every document review is approved; otherwise neutral — the sublabel names what needs attention.</summary>
+    private string? GovernanceVariant =>
+        GovernanceAssessed && GovernanceApproved == DocumentReviews.Count && DocumentReviews.Count > 0 ? "success" : null;
+
+    private string GovernanceChip =>
+        GovernanceVariant == "success" ? "healthy"
+        : DocumentReviews.Any(r => r.State is ArtifactReviewState.NeedsChanges or ArtifactReviewState.Stale) ? "warning"
+        : "neutral";
+
+    /// <summary>What each card shows. The role count is the workspace card's; repeating it here could contradict an unknown state.</summary>
+    private const string ArtifactsDescription = "Availability · review decision on the selected revision · analysis";
 
     // ── Workflow readiness ────────────────────────────────────────────────────
 

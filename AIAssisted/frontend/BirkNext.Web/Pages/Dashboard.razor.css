@@ -56,7 +56,7 @@
     display: inline-block;
     padding: 0.4rem 0.8rem;
     font-size: 0.85rem;
-    background: #3b82f6;
+    background: #2563eb; /* white text needs >= 4.5:1; #3b82f6 gave 3.7:1 */
     color: white;
     border: none;
     border-radius: var(--radius-sm);
@@ -66,7 +66,7 @@
 }
 
 .db-workspace-action:hover {
-    background: #2563eb;
+    background: #1d4ed8;
 }
 
 .db-workspace-info {
@@ -251,6 +251,11 @@
 .db-badge-analyzed { background: #ede9fe; color: #6d28d9; }
 /* Missing, Not analyzed, Selection required: status facts, so readable text (muted, not placeholder). */
 .db-badge-empty    { background: transparent; color: var(--clr-text-muted); font-style: italic; font-weight: 400; }
+/* Review decision on the selected revision (shared with Recommended Workflow). Text carries the state; colour only supports it. */
+.db-badge-review                  { background: #f1f5f9; color: #334155; }
+.db-badge-review.is-approved      { background: var(--clr-success-bg); color: var(--clr-success); }
+.db-badge-review.is-needschanges  { background: #fee2e2; color: #991b1b; }
+.db-badge-review.is-stale         { background: #ffedd5; color: #9a3412; }
 
 .db-artifact-stats {
     display: flex;
@@ -270,20 +275,6 @@
     white-space: nowrap;
 }
 
-.db-artifact-progress-track {
-    height: 3px;
-    background: var(--clr-border);
-    border-radius: 2px;
-    overflow: hidden;
-    margin: 0.35rem 0;
-}
-
-.db-artifact-progress-fill {
-    height: 100%;
-    background: var(--clr-primary);
-    border-radius: 2px;
-    transition: width 0.3s ease;
-}
 
 .db-artifact-action {
     display: block;

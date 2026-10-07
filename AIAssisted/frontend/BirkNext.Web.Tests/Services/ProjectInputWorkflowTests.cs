@@ -64,7 +64,7 @@ public sealed class ProjectInputWorkflowTests
         var api = new Mock<ITechnologyCoverageApiService>();
         api.Setup(a => a.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _coverage);
         var applicability = new ProjectApplicabilityState(api.Object, contexts.Object, projection.Object, _settings.Object);
-        _workflowApi.Setup(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
+        _workflowApi.Setup(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()))
             .ReturnsAsync(() => _steps);
         return (new WorkflowReadinessService(projection.Object, applicability, _workflowApi.Object, NullLogger<WorkflowReadinessService>.Instance), applicability);
     }
@@ -89,7 +89,7 @@ public sealed class ProjectInputWorkflowTests
     private static (string, Capability?) AzurePipelines => ("pipeline.azuredevops", Capability.Pipeline);
 
     private void VerifyNoDocumentSteps() =>
-        _workflowApi.Verify(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()), Times.Never);
+        _workflowApi.Verify(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()), Times.Never);
 
     // ── Scenarios ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -103,7 +103,7 @@ public sealed class ProjectInputWorkflowTests
         r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
         r.NextRecommendedAction.Route.Should().Be("sample-projects");
         r.NextRecommendedAction.ActionLabel.Should().Be("Load artifacts");
-        r.NextRecommendedAction.Description.Should().StartWith("Required project artifacts are missing.");
+        r.NextRecommendedAction.Description.Should().StartWith("No project artifacts are available yet.");
         r.AlternativeActions.Select(a => a.Route).Should().Equal("specification-explorer", "source-analysis", NavigationCatalog.TargetEnvironmentsRoute);
         r.Inputs.Documents.Requirement.Should().Be("Recommended start");
         r.Inputs.Source.Requirement.Should().StartWith("Optional");

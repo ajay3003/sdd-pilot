@@ -124,17 +124,24 @@
         <div class="rw-phases">
             @foreach (var step in _readiness.Steps)
             {
-                <div class="rw-phase @GetStepCardClass(step) @(step.IsCurrent ? "is-current" : "") @(step.Status == WorkflowStepStatus.NeedsAttention ? "is-invalidated" : "")" style="--rw-phase-color: @GetStepColor(step);"
-                     data-testid="rw-step" data-step="@step.Key" data-state="@GetStepStateLabel(step)" aria-current="@(step.IsCurrent ? "step" : null)">
+                var review = IsReviewGate(step) ? ArtifactReviewPresentation.Of(step) : null;
+                <div class="rw-phase @GetStepCardClass(step) @(step.IsCurrent ? "is-current" : "")" style="--rw-phase-color: @GetStepColor(step);"
+                     data-testid="rw-step" data-step="@step.Key" data-state="@GetStepStateLabel(step)" data-review="@review?.State" aria-current="@(step.IsCurrent ? "step" : null)">
                     <div class="rw-phase-header">
-                        <div class="rw-phase-num">
-                            @if (step.Status == WorkflowStepStatus.NeedsAttention)
+                        <div class="rw-phase-num" aria-hidden="true">
+                            @if (review is { State: ArtifactReviewState.NeedsChanges or ArtifactReviewState.Stale })
                             {
-                                <span class="rw-phase-num-warning">!</span>
+                                <span class="rw-phase-num-warning">@review.Icon</span>
                             }
                             else
                             {
-                                @(step.Status == WorkflowStepStatus.Approved ? "✓" : step.Status == WorkflowStepStatus.Locked ? "🔒" : step.Number.ToString())
+                                @(review?.State switch
+                                {
+                                    ArtifactReviewState.Approved => "✓",
+                                    ArtifactReviewState.Blocked => "🔒",
+                                    ArtifactReviewState.NotApplicable => "–",
+                                    _ => IsLoadWorkspaceStep(step) && _readiness.ArtifactLoad != ArtifactLoadState.Required ? "✓" : step.Number.ToString(),
+                                })
                             }
                         </div>
                         <div class="rw-phase-titles">
@@ -143,18 +150,12 @@
                         </div>
                         <span class="badge rw-step-badge @GetStepBadgeClass(step)" data-testid="rw-step-state">@GetStepStateLabel(step)</span>
                     </div>
-                    @if (step.Status == WorkflowStepStatus.NeedsAttention)
-                    {
-                        <div class="rw-invalidation-alert">
-                            <span class="rw-invalidation-icon">!</span>
-                            <div class="rw-invalidation-content">
-                                <div class="rw-invalidation-title">Approval Invalidated</div>
-                                <div class="rw-invalidation-reason">An artifact changed since this step was approved. Please review and re-approve.</div>
-                            </div>
-                        </div>
-                    }
                     <div class="rw-phase-body">
                         <p class="rw-goal">@step.Description</p>
+                        @if (review is not null)
+                        {
+                            <p class="rw-step-status is-@review.State.ToString().ToLowerInvariant()" data-testid="rw-step-status"><span class="rw-step-status-icon" aria-hidden="true">@review.Icon</span>@review.Summary</p>
+                        }
                         <div class="rw-phase-footer">
                             @RenderAction(step)
                         </div>
@@ -250,11 +251,33 @@
                     </div>
 
                     <div class="rw-summary metric-strip" role="status" aria-live="polite">
-                        <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
+                        <div class="rw-metric" data-testid="rw-manual-review-card">
+                            <MetricCard Value="@ManualApprovalValue" Label="Manual Review" Sublabel="@ManualApprovalSublabel" Variant="@ManualApprovalVariant" />
+                        </div>
                         <div class="rw-metric" data-testid="rw-release-readiness-card">
                             <MetricCard Value="@ReleaseReadinessValue" Label="Release Readiness" Sublabel="@ReleaseReadinessSublabel" Variant="@ReleaseReadinessVariant" />
                         </div>
                     </div>
+
+                    @if (_readiness.ReviewGates.Count > 0)
+                    {
+                        <details class="rw-gates" data-testid="rw-review-gates">
+                            <summary>What Manual Review counts</summary>
+                            <p class="rw-gates-lead">Required review steps that apply to this project, each approved on the artifact revision it reads now. Optional and not-applicable steps are listed but not counted.</p>
+                            <ul class="rw-gates-list">
+                                @foreach (var gate in _readiness.ReviewGates)
+                                {
+                                    var gateReview = ArtifactReviewPresentation.Of(gate);
+                                    var counted = !gateReview.Applies ? "not-counted" : gate.IsOptional ? "optional" : "required";
+                                    <li class="rw-gate" data-testid="rw-review-gate" data-step="@gate.Key" data-counted="@counted">
+                                        <span class="rw-gate-name">@gate.Title</span>
+                                        <span class="rw-gate-scope">@(counted switch { "required" => "Required", "optional" => "Optional, not counted", _ => "N/A, not counted" })</span>
+                                        <span class="rw-gate-state"><span aria-hidden="true">@gateReview.Icon </span>@gateReview.Label</span>
+                                    </li>
+                                }
+                            </ul>
+                        </details>
+                    }
                 </div>
             </aside>
         </div>
@@ -309,19 +332,28 @@
         _readiness = await WorkflowReadiness.GetReadinessAsync();
     }
 
-    private IReadOnlyList<WorkflowStepViewModel> ManualReviewSteps =>
-        _readiness?.Steps.Where(IsManualReviewStep).ToList() ?? [];
+    /// <summary>The denominator: required review steps that apply (not N/A, not optional), from the step list itself.</summary>
+    private IReadOnlyList<WorkflowStepViewModel> RequiredGates => _readiness?.RequiredReviewGates ?? [];
 
+    /// <summary>Required gates approved on the artifact revisions they read now. Reviewed alone is not approved.</summary>
     private int ManualApprovedCount =>
-        ManualReviewSteps.Count(step => step.ApprovalState == ApprovalState.Approved);
+        RequiredGates.Count(step => ArtifactReviewPresentation.Of(step).State == ArtifactReviewState.Approved);
 
-    private string ManualApprovalValue => ManualReviewSteps.Count == 0 ? "Not required" : $"{ManualApprovedCount} / {ManualReviewSteps.Count}";
+    private string ManualApprovalValue => RequiredGates.Count == 0 ? "—" : $"{ManualApprovedCount} / {RequiredGates.Count}";
 
-    private string ManualApprovalSublabel => ManualReviewSteps.Count == 0 ? "No document review steps" : "Approved, incl. optional";
+    private string ManualApprovalSublabel
+    {
+        get
+        {
+            if (RequiredGates.Count == 0) return "No review steps apply";
+            var optional = _readiness?.OptionalReviewGates.Count ?? 0;
+            return "Required reviews approved" + (optional > 0 ? $" · {optional} optional not counted" : "");
+        }
+    }
 
     /// <summary>Neutral until complete: pending approvals are not a warning, and the text carries the state.</summary>
     private string? ManualApprovalVariant =>
-        ManualReviewSteps.Count > 0 && ManualApprovedCount == ManualReviewSteps.Count ? "success" : null;
+        RequiredGates.Count > 0 && ManualApprovedCount == RequiredGates.Count ? "success" : null;
 
     private CurrentWorkspaceSnapshot? Workspace => _readiness?.Workspace;
 
@@ -387,59 +419,51 @@
     private string? ReleaseReadinessVariant =>
         _readiness?.CanRelease == true ? "success" : null;
 
-    private static bool IsManualReviewStep(WorkflowStepViewModel step) =>
-        !IsLoadWorkspaceStep(step) && (step.RequiresManualReview || step.RequiresApproval);
+    private static bool IsReviewGate(WorkflowStepViewModel step) => WorkflowReadinessService.IsReviewGate(step);
 
     private static bool IsLoadWorkspaceStep(WorkflowStepViewModel step) =>
         step.Key.Equals("LoadSampleProject", StringComparison.OrdinalIgnoreCase)
         || step.Key.Equals(WorkflowReadinessService.LoadWorkspaceKey, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// The step's state in words. Step 1 (artifact loading) is "Action required" or "Done" — never a review state. Review steps are
-    /// Ready, In review (opened), Pending approval (marked reviewed by a person), Approved, Needs changes or Locked.
+    /// The step's state in words. Step 1 (artifact loading) is "Action required" or "Done" — never a review state. Review steps use
+    /// the shared review reading (<see cref="ArtifactReviewPresentation"/>): Ready to review, In review, Reviewed, Approved,
+    /// Needs changes, Review stale, Blocked or N/A. Availability is never shown as a completed review.
     /// </summary>
     private string GetStepStateLabel(WorkflowStepViewModel step)
     {
         if (IsLoadWorkspaceStep(step))
-            return _readiness?.ArtifactLoad == ArtifactLoadState.Done ? "Done" : "Action required";
-
-        if (step.ApprovalState == ApprovalState.NeedsChanges ||
-            step.ApprovalState == ApprovalState.InvalidatedByArtifactChange ||
-            step.Status == WorkflowStepStatus.NeedsAttention)
-        {
-            return "Needs changes";
-        }
-
-        return step.Status switch
-        {
-            WorkflowStepStatus.Locked => "Locked",
-            WorkflowStepStatus.InProgress => "In review",
-            WorkflowStepStatus.Reviewed when step.RequiresApproval => "Pending approval",
-            WorkflowStepStatus.Reviewed => "Reviewed",
-            WorkflowStepStatus.Approved => "Approved",
-            _ => "Ready"
-        };
+            return _readiness?.ArtifactLoad == ArtifactLoadState.Required ? "Action required" : "Done";
+        return IsReviewGate(step) ? ArtifactReviewPresentation.Of(step).Label : step.Status == WorkflowStepStatus.Locked ? "Blocked" : "Available";
     }
 
-    private string GetStepBadgeClass(WorkflowStepViewModel step) => GetStepStateLabel(step) switch
-    {
-        "Approved" or "Done" => "rw-badge-approved",
-        "Needs changes" => "rw-badge-needs-changes",
-        "Action required" => "rw-badge-action",
-        "In review" => "rw-badge-in-review",
-        "Pending approval" or "Reviewed" => "rw-badge-pending",
-        "Locked" => "rw-badge-locked",
-        _ => "rw-badge-available"
-    };
+    private ArtifactReviewState? GateState(WorkflowStepViewModel step) =>
+        IsReviewGate(step) ? ArtifactReviewPresentation.Of(step).State : null;
 
-    private string GetStepCardClass(WorkflowStepViewModel step) => GetStepStateLabel(step) switch
-    {
-        "Approved" or "Done" => "is-approved",
-        "Needs changes" => "is-attention",
-        "Pending approval" or "Reviewed" => "is-reviewed",
-        "Locked" => "is-locked-step",
-        _ => ""
-    };
+    private string GetStepBadgeClass(WorkflowStepViewModel step) => IsLoadWorkspaceStep(step)
+        ? (GetStepStateLabel(step) == "Done" ? "rw-badge-approved" : "rw-badge-action")
+        : GateState(step) switch
+        {
+            ArtifactReviewState.Approved => "rw-badge-approved",
+            ArtifactReviewState.NeedsChanges => "rw-badge-needs-changes",
+            ArtifactReviewState.Stale => "rw-badge-stale",
+            ArtifactReviewState.InReview => "rw-badge-in-review",
+            ArtifactReviewState.Reviewed => "rw-badge-pending",
+            ArtifactReviewState.Blocked or ArtifactReviewState.NotApplicable => "rw-badge-locked",
+            _ => "rw-badge-available"
+        };
+
+    private string GetStepCardClass(WorkflowStepViewModel step) => IsLoadWorkspaceStep(step)
+        ? (GetStepStateLabel(step) == "Done" ? "is-approved" : "")
+        : GateState(step) switch
+        {
+            ArtifactReviewState.Approved => "is-approved",
+            ArtifactReviewState.NeedsChanges or ArtifactReviewState.Stale => "is-attention",
+            ArtifactReviewState.Reviewed => "is-reviewed",
+            ArtifactReviewState.Blocked => "is-locked-step",
+            ArtifactReviewState.NotApplicable => "is-locked-step is-not-applicable",
+            _ => ""
+        };
 
     private string GetStepColor(WorkflowStepViewModel step) =>
         GetStepStateLabel(step) is "Approved" or "Done" ? "#15803d" : step.Color;
@@ -464,7 +488,10 @@
         {
             if (_readiness?.ArtifactLoad == ArtifactLoadState.Done) return;
             <div class="rw-step-actions">
-                <a href="@step.Route" class="rw-cta" data-testid="rw-load-artifacts">@step.ActionLabel</a>
+                @if (_readiness?.ArtifactLoad == ArtifactLoadState.Required)
+                {
+                    <a href="@step.Route" class="rw-cta" data-testid="rw-load-artifacts">@step.ActionLabel</a>
+                }
                 @foreach (var alternative in _readiness?.AlternativeActions ?? [])
                 {
                     <a href="@alternative.Route" class="rw-step-link" data-testid="rw-alternative-action">@alternative.ActionLabel</a>
@@ -473,10 +500,10 @@
             return;
         }
 
-        if (step.Status == WorkflowStepStatus.Locked)
+        var review = IsReviewGate(step) ? ArtifactReviewPresentation.Of(step) : null;
+        if (review is { CanDecide: false } || (review is null && step.Status == WorkflowStepStatus.Locked))
         {
-            // A locked step says why, as text; it offers no review or approval controls.
-            <p class="rw-step-locked-reason" data-testid="rw-step-locked-reason">@(string.IsNullOrWhiteSpace(step.DisabledReason) ? "Complete the previous step first" : step.DisabledReason)</p>
+            // Not applicable or blocked: the status line says why; no review or approval controls.
             return;
         }
 
@@ -485,58 +512,38 @@
             <a href="@step.Route" class="@(step.IsCurrent ? "rw-cta" : "rw-cta rw-cta-secondary")">@step.ActionLabel →</a>
         }
 
-        if (step.RequiresManualReview || step.RequiresApproval)
+        if (review is not null && !string.IsNullOrWhiteSpace(step.ArtifactReferences))
         {
-            RenderApprovalButtons(__builder, step);
+            @RenderDecision(step, review)
         }
     };
 
-    private void RenderApprovalButtons(RenderTreeBuilder builder, WorkflowStepViewModel step)
+    /// <summary>
+    /// A review decision, recorded on purpose: inside a disclosure that names the exact artifact revisions it applies to. Opening
+    /// an explorer never records one.
+    /// </summary>
+    private RenderFragment RenderDecision(WorkflowStepViewModel step, ArtifactReviewStatus review) => __builder =>
     {
-        builder.OpenElement(100, "div");
-        builder.AddAttribute(101, "class", "rw-approval-buttons");
-
-        if (step.RequiresManualReview && step.ReviewState != ReviewState.Reviewed)
-        {
-            builder.OpenComponent<SecondaryButton>(102);
-            builder.AddAttribute(103, "Class", "rw-review-button");
-            builder.AddAttribute(104, "Disabled", _approvingStepId == step.Key);
-            builder.AddAttribute(105, "OnClick", EventCallback.Factory.Create(this, () => MarkReviewedAsync(step)));
-            builder.AddAttribute(106, "ChildContent", (RenderFragment)(childBuilder =>
-            {
-                childBuilder.AddContent(107, _approvingStepId == step.Key ? "Marking..." : "Mark Reviewed");
-            }));
-            builder.CloseComponent();
-        }
-
-        if (step.RequiresApproval && step.ApprovalState != ApprovalState.Approved)
-        {
-            builder.OpenComponent<PrimaryButton>(108);
-            builder.AddAttribute(109, "Class", "rw-approve-button");
-            builder.AddAttribute(110, "Disabled", _approvingStepId == step.Key);
-            builder.AddAttribute(111, "OnClick", EventCallback.Factory.Create(this, () => ApproveStepAsync(step)));
-            builder.AddAttribute(112, "ChildContent", (RenderFragment)(childBuilder =>
-            {
-                childBuilder.AddContent(113, _approvingStepId == step.Key ? "Approving..." : "Approve");
-            }));
-            builder.CloseComponent();
-        }
-
-        if (step.ApprovalState == ApprovalState.Approved || step.ApprovalState == ApprovalState.Pending)
-        {
-            builder.OpenComponent<DangerButton>(114);
-            builder.AddAttribute(115, "Class", "rw-needs-changes-button");
-            builder.AddAttribute(116, "Disabled", _approvingStepId == step.Key);
-            builder.AddAttribute(117, "OnClick", EventCallback.Factory.Create(this, () => RejectStepAsync(step)));
-            builder.AddAttribute(118, "ChildContent", (RenderFragment)(childBuilder =>
-            {
-                childBuilder.AddContent(119, _approvingStepId == step.Key ? "Rejecting..." : "Needs Changes");
-            }));
-            builder.CloseComponent();
-        }
-
-        builder.CloseElement();
-    }
+        var busy = _approvingStepId == step.Key;
+        <details class="rw-decision" data-testid="rw-decision">
+            <summary>Record review decision</summary>
+            <p class="rw-decision-target" id="rw-decision-@step.Key" data-testid="rw-decision-target">Applies to @step.ArtifactReferences</p>
+            <div class="rw-approval-buttons" role="group" aria-labelledby="rw-decision-@step.Key">
+                @if (step.RequiresManualReview && step.ReviewState != BirkNext.Web.Services.ReviewState.Reviewed)
+                {
+                    <SecondaryButton Class="rw-review-button" Disabled="busy" OnClick="() => MarkReviewedAsync(step)">@(busy ? "Saving..." : "Mark Reviewed")</SecondaryButton>
+                }
+                @if (step.RequiresApproval && review.State != ArtifactReviewState.Approved)
+                {
+                    <PrimaryButton Class="rw-approve-button" Disabled="busy" OnClick="() => ApproveStepAsync(step)">@(busy ? "Saving..." : "Approve")</PrimaryButton>
+                }
+                @if (review.State != ArtifactReviewState.NeedsChanges)
+                {
+                    <DangerButton Class="rw-needs-changes-button" Disabled="busy" OnClick="() => RejectStepAsync(step)">@(busy ? "Saving..." : "Needs Changes")</DangerButton>
+                }
+            </div>
+        </details>
+    };
 
     public void Dispose()
     {
@@ -649,7 +656,7 @@
 
         try
         {
-            await WorkflowApi.MarkStepReviewedAsync(GetWorkspaceId(), step.Key);
+            await WorkflowApi.MarkStepReviewedAsync(GetWorkspaceId(), step.Key, Revisions());
             await RefreshReadinessAsync();
         }
         catch (Exception ex)
@@ -672,7 +679,7 @@
 
         try
         {
-            await WorkflowApi.ApproveStepAsync(GetWorkspaceId(), step.Key);
+            await WorkflowApi.ApproveStepAsync(GetWorkspaceId(), step.Key, Revisions());
             await RefreshReadinessAsync();
         }
         catch (Exception ex)
@@ -695,7 +702,7 @@
 
         try
         {
-            await WorkflowApi.RejectStepAsync(GetWorkspaceId(), step.Key);
+            await WorkflowApi.RejectStepAsync(GetWorkspaceId(), step.Key, Revisions());
             await RefreshReadinessAsync();
         }
         catch (Exception ex)
@@ -711,6 +718,9 @@
     }
 
     private Guid GetWorkspaceId() => _readiness?.WorkspaceId ?? Guid.Empty;
+
+    /// <summary>The artifact revisions this page shows: a decision is recorded against exactly these.</summary>
+    private IReadOnlyList<ArtifactRevisionRef> Revisions() => _readiness?.Workspace.ArtifactRevisions ?? [];
 
     private async Task<string?> GetWorkspaceNameFromUserAsync()
     {

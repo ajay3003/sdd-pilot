@@ -10,9 +10,10 @@ public interface IWorkflowReadinessService
 }
 
 /// <summary>
-/// Step 1 (load project artifacts) — about artifact availability only, never a review decision. <see cref="Required"/>: no required
-/// role is available (or no workspace); <see cref="Partial"/>: some required roles are missing; <see cref="Done"/>: every role the
-/// required review steps need is available.
+/// Step 1 (load project artifacts) — about artifact availability only, never a review decision. <see cref="Required"/>: no
+/// document artifact is available (or no workspace), so no document review can run; <see cref="Partial"/>: artifacts are
+/// available but some roles the review steps read are absent — those steps are not applicable, nothing is blocked;
+/// <see cref="Done"/>: every role the review steps read is available. No role is required of every project.
 /// </summary>
 public enum ArtifactLoadState { Required, Partial, Done }
 
@@ -54,14 +55,37 @@ public sealed record WorkflowReadiness(
     /// <summary>Other useful starts shown beside the recommendation when no input is provided yet (add source, configure a target).</summary>
     public IReadOnlyList<WorkflowStepViewModel> AlternativeActions { get; init; } = [];
 
-    /// <summary>Step 1: whether the roles the required review steps need are available. A workspace alone does not complete it.</summary>
+    /// <summary>Step 1: whether document artifacts are available. A workspace alone does not complete it.</summary>
     public ArtifactLoadState ArtifactLoad { get; init; } = ArtifactLoadState.Required;
 
-    /// <summary>Roles the required (non-optional) review steps need, from the backend step definitions.</summary>
+    /// <summary>Roles the non-optional review steps read, from the backend step definitions. Each step requires its own roles; none is required of the project.</summary>
     public IReadOnlyList<WorkspaceArtifactType> RequiredRoles { get; init; } = [];
 
-    /// <summary>Required roles with no artifact in the current workspace.</summary>
+    /// <summary>Of those roles, the ones with no artifact in the current workspace (the steps that read them are not applicable).</summary>
     public IReadOnlyList<WorkspaceArtifactType> MissingRoles { get; init; } = [];
+
+    /// <summary>Every manual review gate (document and analysis review steps), applicable or not, in workflow order.</summary>
+    public IReadOnlyList<WorkflowStepViewModel> ReviewGates => Steps.Where(WorkflowReadinessService.IsReviewGate).ToList();
+
+    /// <summary>Gates that apply and are required: the Manual Review and Release Readiness denominator.</summary>
+    public IReadOnlyList<WorkflowStepViewModel> RequiredReviewGates =>
+        ReviewGates.Where(step => !step.IsOptional && ArtifactReviewPresentation.Of(step).Applies).ToList();
+
+    /// <summary>Gates that apply but are optional (a Data Model review): shown, never counted against release.</summary>
+    public IReadOnlyList<WorkflowStepViewModel> OptionalReviewGates =>
+        ReviewGates.Where(step => step.IsOptional && ArtifactReviewPresentation.Of(step).Applies).ToList();
+
+    /// <summary>The document review gate (explorer step) that reads a role, or null when the workflow has none for it.</summary>
+    public WorkflowStepViewModel? ReviewGateFor(WorkspaceArtifactType role) =>
+        ReviewGates.FirstOrDefault(step => step.StepType == "Explorer" && step.ArtifactRoles.Contains(role.ToString(), StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>The review status of a role's artifact, from its document review gate — what the Dashboard and the workflow both show.</summary>
+    public ArtifactReviewStatus? ReviewFor(WorkspaceArtifactType role) =>
+        ReviewGateFor(role) is { } gate ? ArtifactReviewPresentation.Of(gate) : null;
+
+    /// <summary>Document review gates that apply: the governance decisions recorded against project artifact revisions.</summary>
+    public IReadOnlyList<WorkflowStepViewModel> DocumentReviewGates =>
+        ReviewGates.Where(step => step.StepType == "Explorer" && ArtifactReviewPresentation.Of(step).Applies).ToList();
 
     /// <summary>True when the recommendation is one of the listed steps: the step card carries the action, not the summary card.</summary>
     public bool RecommendationIsListedStep => NextRecommendedAction is { } next && Steps.Contains(next);
@@ -154,31 +178,32 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             };
         }
 
+        // Each available role's selected revision goes with the request: decisions are current only for exactly these revisions.
         var steps = (await _workflowApi.BuildWorkflowStepsAsync(
             workspace.WorkspaceId ?? Guid.Empty,
             workspace.Has(WorkspaceArtifactType.Constitution),
             workspace.Has(WorkspaceArtifactType.Specification),
             workspace.Has(WorkspaceArtifactType.Plan),
             workspace.Has(WorkspaceArtifactType.Tasks),
-            workspace.Has(WorkspaceArtifactType.DataModel)) ?? [])
+            workspace.Has(WorkspaceArtifactType.DataModel),
+            workspace.ArtifactRevisions) ?? [])
             .Where(IsVisibleWorkflowStep)
             .ToList();
 
-        // Step 1 is complete only when the roles the required review steps need are available — not because a workspace exists.
+        // Step 1 is complete when document artifacts are available — not because a workspace exists. A role a review step reads
+        // but the workspace lacks makes that step not applicable; it does not hold the project back.
         var requiredRoles = RequiredRolesOf(steps);
         var missingRoles = requiredRoles.Where(role => !workspace.Has(role)).ToList();
-        var artifactLoad = requiredRoles.Count == 0
-            ? (workspace.AvailableRoleCount > 0 ? ArtifactLoadState.Done : ArtifactLoadState.Required)
+        var artifactLoad = workspace.AvailableRoleCount == 0 ? ArtifactLoadState.Required
             : missingRoles.Count == 0 ? ArtifactLoadState.Done
-            : missingRoles.Count == requiredRoles.Count ? ArtifactLoadState.Required
             : ArtifactLoadState.Partial;
         steps = steps.Select(step => IsLoadStep(step) ? LoadStep(step, artifactLoad, missingRoles, workspace) : step).ToList();
-        if (artifactLoad != ArtifactLoadState.Done)
+        if (artifactLoad == ArtifactLoadState.Required)
         {
             // Exactly one current step: loading artifacts comes first.
             foreach (var step in steps.Where(step => !IsLoadStep(step))) step.IsCurrent = false;
         }
-        foreach (var step in steps.Where(step => step.Status == WorkflowStepStatus.Locked))
+        foreach (var step in steps.Where(step => step.Status is WorkflowStepStatus.Locked or WorkflowStepStatus.NotApplicable))
             step.DisabledReason = LockReason(step, workspace);
 
         var specificationState = FindStep(steps, "Specification");
@@ -186,16 +211,12 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         var implementationState = FindStep(steps, "Implementation");
         var qualityGateState = FindStep(steps, "Quality");
 
-        // Required review steps lock themselves when their artifacts are missing, so an approved, unlocked step implies its artifacts.
-        var canRelease = IsApproved(specificationState)
-            && IsApproved(traceabilityState)
-            && IsApproved(implementationState)
-            && IsQualityGatePassed(qualityGateState);
-
-        var required = steps.Where(step => IsReleaseReviewStep(step) && !step.IsOptional).ToList();
-        var approved = required.Count(step => step.ApprovalState == ApprovalState.Approved);
-        var assessed = required.Any(step => step.ApprovalState != ApprovalState.Pending || step.ReviewState != ReviewState.NotStarted);
+        // The required gates that apply (not N/A, not optional), each approved on the artifact revisions it reads now.
+        var required = steps.Where(step => IsReleaseReviewStep(step) && !step.IsOptional && step.Status != WorkflowStepStatus.NotApplicable).ToList();
+        var approved = required.Count(step => step.Status == WorkflowStepStatus.Approved);
+        var assessed = required.Any(step => ArtifactReviewPresentation.Of(step) is { IsDecided: true } or { State: ArtifactReviewState.Stale });
         int? releasePercent = required.Count > 0 && assessed ? approved * 100 / required.Count : null;
+        var canRelease = required.Count > 0 && approved == required.Count && IsQualityGatePassed(qualityGateState);
 
         return new WorkflowReadiness(
             Workspace: workspace,
@@ -216,8 +237,8 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             Steps: steps,
             CanRelease: canRelease,
             ReleaseReason: canRelease
-                ? "Specification reviewed. Traceability approved. Implementation approved. Quality gates passed."
-                : "Release is available only after all required review steps are approved.")
+                ? $"All {required.Count} required reviews are approved on the current artifact revisions."
+                : "Release is available only after all required review steps are approved on the current artifact revisions.")
         {
             ReleaseReadinessPercent = releasePercent,
             Inputs = inputs,
@@ -240,24 +261,25 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
     private static bool IsLoadStep(WorkflowStepViewModel step) =>
         step.Key.Equals(LoadSampleProjectKey, StringComparison.OrdinalIgnoreCase) || step.Key.Equals(LoadWorkspaceKey, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Step 1 as the workflow shows it: an action while required roles are missing, done when they are available.</summary>
+    /// <summary>Step 1 as the workflow shows it: an action while no document artifact is available, done once there are some.</summary>
     private static WorkflowStepViewModel LoadStep(WorkflowStepViewModel step, ArtifactLoadState state, IReadOnlyList<WorkspaceArtifactType> missing,
         CurrentWorkspaceSnapshot workspace)
     {
         var missingText = string.Join(", ", missing.Select(r => Explorers.ArtifactExplorerRoles.Label(r) == "Task" ? "Tasks" : Explorers.ArtifactExplorerRoles.Label(r)));
-        step.Title = state == ArtifactLoadState.Partial ? "Add missing artifacts" : "Load project artifacts";
+        var roles = workspace.AvailableRoleCount;
+        step.Title = "Load project artifacts";
         step.Description = state switch
         {
-            ArtifactLoadState.Done => $"Required project artifacts are available ({workspace.RoleSummary}).",
-            ArtifactLoadState.Partial => $"Required project artifacts are missing: {missingText}. Choose a Sample Project that has them, or import them in the explorers.",
-            _ => "Required project artifacts are missing. Choose a Sample Project, or import your own documents in the explorers.",
+            ArtifactLoadState.Required => "No project artifacts are available yet. Choose a Sample Project, or import your own documents in the explorers.",
+            _ => $"{roles} project artifact role{(roles == 1 ? " is" : "s are")} available."
+                 + (missing.Count == 0 ? "" : $" Reviews that read {missingText} do not apply until {(missing.Count == 1 ? "it is" : "they are")} added."),
         };
         step.Route = ProjectInputPresentation.SampleProjectsRoute;
         step.ActionLabel = LoadArtifactsLabel;
-        step.CanOpen = state != ArtifactLoadState.Done;
-        step.IsCurrent = state != ArtifactLoadState.Done;
+        step.CanOpen = state == ArtifactLoadState.Required;
+        step.IsCurrent = state == ArtifactLoadState.Required;
         step.IsFuture = false;
-        step.Status = state == ArtifactLoadState.Done ? WorkflowStepStatus.Approved : WorkflowStepStatus.Available;
+        step.Status = state == ArtifactLoadState.Required ? WorkflowStepStatus.Available : WorkflowStepStatus.Approved;
         step.Prerequisites = PrerequisiteState.Available;
         step.DisabledReason = "";
         step.RequiresApproval = false;
@@ -265,9 +287,15 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         return step;
     }
 
-    /// <summary>Why a step is locked, from what it actually lacks: its artifacts, or an earlier approval.</summary>
+    /// <summary>
+    /// Why a step is not applicable (the artifacts it requires are absent) or blocked (no artifact chosen, or an earlier approval
+    /// missing — the backend names which).
+    /// </summary>
     private static string LockReason(WorkflowStepViewModel step, CurrentWorkspaceSnapshot workspace)
     {
+        if (step.Status == WorkflowStepStatus.Locked && !string.IsNullOrWhiteSpace(step.DisabledReason)
+            && !step.DisabledReason.StartsWith("Requires", StringComparison.Ordinal) && !step.DisabledReason.StartsWith("Load required", StringComparison.Ordinal))
+            return step.DisabledReason;
         var missing = (step.RequiredArtifacts ?? [])
             .Select(name => Enum.TryParse<WorkspaceArtifactType>(name, true, out var role) ? role : (WorkspaceArtifactType?)null)
             .Where(role => role is not null && !workspace.Has(role.Value))
@@ -296,7 +324,7 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         IReadOnlyList<WorkflowStepViewModel> steps, IReadOnlyList<WorkflowReviewOption> reviews,
         ArtifactLoadState artifactLoad, IReadOnlyList<WorkspaceArtifactType> missingRoles)
     {
-        if (workspace.WorkspaceLoaded && artifactLoad != ArtifactLoadState.Done)
+        if (workspace.WorkspaceLoaded && artifactLoad == ArtifactLoadState.Required)
             return steps.FirstOrDefault(IsLoadStep) ?? LoadStep(Synthetic(LoadWorkspaceKey, "", "", "", ""), artifactLoad, missingRoles, workspace);
 
         if (workspace.Roles.FirstOrDefault(r => r.Selection == ArtifactRoleSelection.SelectionRequired) is { } unresolved)
@@ -309,8 +337,10 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
         if (inputs.Source.Status == ProjectInputStatus.NeedsAttention)
             return Synthetic(RefreshSourceKey, "Analyze the source again", inputs.Source.Detail, ProjectInputPresentation.SourceAnalysisRoute, "Open Source Analysis");
 
+        // The first applicable review gate still open: not reviewed, reviewed but unapproved, needs changes, or stale.
         var documentStep = steps.FirstOrDefault(step => step.IsCurrent && IsReleaseReviewStep(step))
-            ?? steps.FirstOrDefault(step => IsReleaseReviewStep(step) && step.Status is not (WorkflowStepStatus.Approved or WorkflowStepStatus.Locked));
+            ?? steps.FirstOrDefault(step => IsReleaseReviewStep(step)
+                                            && step.Status is not (WorkflowStepStatus.Approved or WorkflowStepStatus.Locked or WorkflowStepStatus.NotApplicable));
         if (documentStep is not null) return documentStep;
 
         if (reviews.FirstOrDefault() is { } review)
@@ -377,9 +407,6 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
             step.Title.Contains(token, StringComparison.OrdinalIgnoreCase)
             || step.Key.Contains(token, StringComparison.OrdinalIgnoreCase));
 
-    private static bool IsApproved(WorkflowStepViewModel? step) =>
-        step?.ApprovalState == ApprovalState.Approved && step.Status != WorkflowStepStatus.Locked;
-
     private static bool IsQualityGatePassed(WorkflowStepViewModel? step) =>
         step is null
         || step.Status == WorkflowStepStatus.Approved
@@ -387,6 +414,9 @@ public sealed class WorkflowReadinessService : IWorkflowReadinessService, IDispo
 
     private static bool IsVisibleWorkflowStep(WorkflowStepViewModel step) =>
         !step.Key.Equals("ReviewContextValidation", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A manual review gate: a step that asks for a review or an approval (not step 1, the Dashboard or diagnostics).</summary>
+    public static bool IsReviewGate(WorkflowStepViewModel step) => IsReleaseReviewStep(step);
 
     private static bool IsReleaseReviewStep(WorkflowStepViewModel step) =>
         !IsLoadStep(step)

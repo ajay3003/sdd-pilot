@@ -9,7 +9,8 @@ namespace BirkNext.Web.Services;
 public interface IRecommendedWorkflowApiService
 {
     /// <summary>
-    /// Build workflow steps for a workspace.
+    /// Build workflow steps for a workspace. <paramref name="artifacts"/> names the selected revision of each available role;
+    /// review decisions are current only for the revisions named here.
     /// </summary>
     Task<List<WorkflowStepViewModel>?> BuildWorkflowStepsAsync(
         Guid workspaceId,
@@ -17,7 +18,8 @@ public interface IRecommendedWorkflowApiService
         bool hasSpecification,
         bool hasPlan,
         bool hasTasks,
-        bool hasDataModel);
+        bool hasDataModel,
+        IReadOnlyList<ArtifactRevisionRef> artifacts);
 
     /// <summary>
     /// Mark a step as in-progress.
@@ -25,19 +27,20 @@ public interface IRecommendedWorkflowApiService
     Task MarkStepInProgressAsync(Guid workspaceId, string stepKey);
 
     /// <summary>
-    /// Mark a step as reviewed.
+    /// Record that the step's exact artifact revisions were reviewed (no approval implied). Throws with the backend's reason
+    /// when the decision is refused (for example, it names no revision).
     /// </summary>
-    Task MarkStepReviewedAsync(Guid workspaceId, string stepKey, string? comment = null);
+    Task MarkStepReviewedAsync(Guid workspaceId, string stepKey, IReadOnlyList<ArtifactRevisionRef> artifacts, string? comment = null);
 
     /// <summary>
-    /// Approve a step.
+    /// Approve the step's exact artifact revisions. Throws when the decision is refused.
     /// </summary>
-    Task ApproveStepAsync(Guid workspaceId, string stepKey, string? comment = null, string? artifactSetHash = null);
+    Task ApproveStepAsync(Guid workspaceId, string stepKey, IReadOnlyList<ArtifactRevisionRef> artifacts, string? comment = null);
 
     /// <summary>
-    /// Reject a step.
+    /// Return the step's exact artifact revisions for changes. Throws when the decision is refused.
     /// </summary>
-    Task RejectStepAsync(Guid workspaceId, string stepKey, string? comment = null);
+    Task RejectStepAsync(Guid workspaceId, string stepKey, IReadOnlyList<ArtifactRevisionRef> artifacts, string? comment = null);
 
     /// <summary>
     /// Invalidate approvals when artifacts change.
@@ -75,7 +78,8 @@ public class RecommendedWorkflowApiService : IRecommendedWorkflowApiService
         bool hasSpecification,
         bool hasPlan,
         bool hasTasks,
-        bool hasDataModel)
+        bool hasDataModel,
+        IReadOnlyList<ArtifactRevisionRef> artifacts)
     {
         try
         {
@@ -88,7 +92,8 @@ public class RecommendedWorkflowApiService : IRecommendedWorkflowApiService
                     hasSpecification,
                     hasPlan,
                     hasTasks,
-                    hasDataModel
+                    hasDataModel,
+                    artifacts
                 });
 
             if (!response.IsSuccessStatusCode)
@@ -125,62 +130,29 @@ public class RecommendedWorkflowApiService : IRecommendedWorkflowApiService
         }
     }
 
-    public async Task MarkStepReviewedAsync(Guid workspaceId, string stepKey, string? comment = null)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync(
-                "api/recommended-workflow/mark-reviewed",
-                new { workspaceId, stepKey, comment });
+    public Task MarkStepReviewedAsync(Guid workspaceId, string stepKey, IReadOnlyList<ArtifactRevisionRef> artifacts, string? comment = null) =>
+        DecideAsync("mark-reviewed", new { workspaceId, stepKey, comment, artifacts }, "mark reviewed");
 
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Mark step reviewed failed with status {StatusCode}", response.StatusCode);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error marking step reviewed");
-        }
+    public Task ApproveStepAsync(Guid workspaceId, string stepKey, IReadOnlyList<ArtifactRevisionRef> artifacts, string? comment = null) =>
+        DecideAsync("approve", new { workspaceId, stepKey, comment, artifacts }, "approve");
+
+    public Task RejectStepAsync(Guid workspaceId, string stepKey, IReadOnlyList<ArtifactRevisionRef> artifacts, string? comment = null) =>
+        DecideAsync("reject", new { workspaceId, stepKey, comment, artifacts }, "record needs changes");
+
+    /// <summary>A review decision is never silently dropped: a refused or failed request throws with the backend's reason.</summary>
+    private async Task DecideAsync(string action, object body, string verb)
+    {
+        var response = await _httpClient.PostAsJsonAsync($"api/recommended-workflow/{action}", body);
+        if (response.IsSuccessStatusCode) return;
+
+        string? reason = null;
+        try { reason = (await response.Content.ReadFromJsonAsync<DecisionError>())?.Error; }
+        catch (Exception ex) { _logger.LogDebug(ex, "Decision error body could not be read"); }
+        _logger.LogWarning("Could not {Verb}: {Status} {Reason}", verb, response.StatusCode, reason);
+        throw new InvalidOperationException(reason ?? $"The decision was not recorded ({(int)response.StatusCode}).");
     }
 
-    public async Task ApproveStepAsync(Guid workspaceId, string stepKey, string? comment = null, string? artifactSetHash = null)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync(
-                "api/recommended-workflow/approve",
-                new { workspaceId, stepKey, comment, artifactSetHash });
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Approve step failed with status {StatusCode}", response.StatusCode);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error approving step");
-        }
-    }
-
-    public async Task RejectStepAsync(Guid workspaceId, string stepKey, string? comment = null)
-    {
-        try
-        {
-            var response = await _httpClient.PostAsJsonAsync(
-                "api/recommended-workflow/reject",
-                new { workspaceId, stepKey, comment });
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Reject step failed with status {StatusCode}", response.StatusCode);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error rejecting step");
-        }
-    }
+    private sealed record DecisionError(string? Error);
 
     public async Task InvalidateApprovalsAsync(Guid workspaceId, List<string> changedArtifactTypes, string currentHash)
     {

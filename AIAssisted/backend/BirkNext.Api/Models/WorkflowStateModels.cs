@@ -40,7 +40,9 @@ public enum WorkflowStepStatus
     InProgress,       // User is reviewing
     Reviewed,         // Review complete, pending approval
     Approved,         // Explicitly approved (green state)
-    NeedsAttention    // Artifact changed or needs changes
+    NeedsAttention,   // Needs changes on the current revision
+    NotApplicable,    // A required artifact role is absent: the step does not apply (not counted, not recommended)
+    Stale             // Decided on an earlier artifact revision; nothing decided on the current one
 }
 
 /// <summary>
@@ -72,6 +74,26 @@ public class WorkflowStepViewModel
 
     /// <summary>Artifact roles the step needs (from WorkflowDefinitions), so the UI can say exactly what a locked step is missing.</summary>
     public List<string> RequiredArtifacts { get; set; } = new();
+
+    /// <summary>Every artifact role the step reads: required, then optional (a Data Model review reads the Data Model).</summary>
+    public List<string> ArtifactRoles { get; set; } = new();
+
+    /// <summary>Step type from WorkflowDefinitions (ArtifactLoad, Explorer, Analysis, Dashboard).</summary>
+    public string StepType { get; set; } = "";
+
+    /// <summary>The artifact revisions a decision on this step applies to now, or null when none is identified.</summary>
+    public string? ArtifactSetHash { get; set; }
+
+    /// <summary>Those revisions for people: "Constitution: constitution.md @ 3F2A9C1B".</summary>
+    public string? ArtifactReferences { get; set; }
+
+    /// <summary>When the current decision (on the current revisions) was recorded.</summary>
+    public DateTimeOffset? DecidedAt { get; set; }
+
+    /// <summary>For a stale step: the latest decision on earlier revisions ("Approved", "Reviewed", "Needs changes"), kept as history.</summary>
+    public string? PreviousDecision { get; set; }
+    public DateTimeOffset? PreviousDecisionAt { get; set; }
+    public string? PreviousArtifactReferences { get; set; }
 
     // State indicators
     public WorkflowStepStatus Status { get; set; } = WorkflowStepStatus.Locked;

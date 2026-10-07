@@ -24,6 +24,24 @@ public class WorkspaceReviewProgress
     // Step identification
     public string StepKey { get; set; } = "";
 
+    /// <summary>
+    /// The exact artifact revisions this decision is about (<see cref="WorkflowArtifactBinding.Hash"/>): ids and content
+    /// fingerprints of the artifacts the step reads. One row per step and binding, so a decision on an earlier revision stays
+    /// as history and never becomes the decision on a new one. Null for decisions recorded before bindings existed: those
+    /// name no revision and are never current.
+    /// </summary>
+    public string? ArtifactSetHash { get; set; }
+
+    /// <summary>
+    /// Which artifacts the decision is about, regardless of content (<see cref="WorkflowArtifactBinding.IdentityHash"/>). A
+    /// decision with the same identity but another <see cref="ArtifactSetHash"/> was made on an earlier revision of the same
+    /// artifacts (stale); one with another identity is about different artifacts and is not carried to these.
+    /// </summary>
+    public string? ArtifactIdentityHash { get; set; }
+
+    /// <summary>The bound artifacts for people: "Specification: spec.md @ 3F2A9C1B; …".</summary>
+    public string? ArtifactReferences { get; set; }
+
     // Human decisions (persisted)
     public ReviewState ReviewState { get; set; } = ReviewState.NotStarted;
     public ApprovalState ApprovalState { get; set; } = ApprovalState.Pending;

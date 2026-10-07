@@ -618,7 +618,8 @@
 
 .metric-sublabel {
     font-size: 0.75rem;
-    color: var(--clr-text-placeholder);
+    /* The sublabel carries state ("Not assessed", "Not Run", "1 needs changes"): readable text, not placeholder grey. */
+    color: var(--clr-text-subtle);
     margin-top: 0.15rem;
 }
 

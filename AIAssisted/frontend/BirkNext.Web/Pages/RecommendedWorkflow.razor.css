@@ -591,6 +591,11 @@
     color: #4b5563;
 }
 
+.rw-step-badge.rw-badge-stale {
+    background: #ffedd5;
+    color: #9a3412;
+}
+
 .rw-phase-num {
     flex: 0 0 2.5rem;
     width: 2.5rem;
@@ -618,8 +623,8 @@
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--rw-phase-color, #2563eb);
-    opacity: 0.85;
+    /* Neutral text: the phase colour (on tinted cards, at small size) fell below 4.5:1. The number badge keeps the colour. */
+    color: #475569;
 }
 
 .rw-phase-name {
@@ -800,11 +805,18 @@
     flex-wrap: wrap;
 }
 
-.rw-approval-buttons .btn-primary,
-.rw-approval-buttons .btn-secondary,
-.rw-approval-buttons .btn-danger {
+/* The buttons are child components (no page scope attribute): reached with ::deep, only inside the decision group. */
+.rw-approval-buttons ::deep .btn-primary,
+.rw-approval-buttons ::deep .btn-secondary,
+.rw-approval-buttons ::deep .btn-danger {
     font-size: 0.8rem;
     padding: 0.4rem 0.85rem;
+}
+
+/* Readable on the tinted current-step card (muted text gave 4.4:1 there). */
+.rw-approval-buttons ::deep .btn-secondary {
+    color: #334155;
+    background: #ffffff;
 }
 
 /* ── Error alert ─────────────────────────────────────────────────────────── */
@@ -864,38 +876,111 @@
     line-height: 1;
 }
 
-.rw-invalidation-alert {
+/* ── Review status line and explicit decision ────────────────────────────── */
+
+/* State in text with an icon, never colour alone. */
+.rw-step-status {
     display: flex;
-    gap: 0.75rem;
-    background: #fffbeb;
-    border: 1px solid #fcd34d;
-    border-radius: var(--radius-md);
-    padding: 0.875rem 1rem;
-    margin-bottom: 0.75rem;
-    align-items: flex-start;
+    align-items: baseline;
+    gap: 0.4rem;
+    margin: 0 0 0.6rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #334155;
+    overflow-wrap: anywhere;
 }
 
-.rw-invalidation-icon {
-    flex: 0 0 1.5rem;
-    font-size: 1.25rem;
-    line-height: 1;
+.rw-step-status-icon {
+    flex: 0 0 auto;
 }
 
-.rw-invalidation-content {
-    flex: 1;
+.rw-step-status.is-approved { color: #166534; }
+.rw-step-status.is-needschanges { color: #991b1b; }
+.rw-step-status.is-stale { color: #9a3412; }
+.rw-step-status.is-notapplicable,
+.rw-step-status.is-blocked { color: #475569; }
+
+.rw-decision {
+    flex: 1 1 100%;
+    margin-top: 0.6rem;
+    border-top: 1px solid var(--clr-border, #e2e8f0);
+    padding-top: 0.5rem;
 }
 
-.rw-invalidation-title {
-    font-size: 0.875rem;
-    font-weight: 700;
-    color: #92400e;
-    margin-bottom: 0.25rem;
+.rw-decision > summary {
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #334155;
+    width: fit-content;
+    min-height: 24px;
 }
 
-.rw-invalidation-reason {
+.rw-decision > summary:focus-visible {
+    outline: 2px solid var(--clr-primary, #2563eb);
+    outline-offset: 2px;
+}
+
+.rw-decision-target {
+    margin: 0.4rem 0 0;
+    font-size: 0.78rem;
+    color: #475569;
+    overflow-wrap: anywhere;
+}
+
+/* ── What Manual Review counts ───────────────────────────────────────────── */
+
+.rw-gates {
+    margin-top: 0.75rem;
     font-size: 0.8rem;
-    color: #b45309;
+}
+
+.rw-gates > summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #334155;
+    min-height: 24px;
+}
+
+.rw-gates-lead {
+    margin: 0.4rem 0;
+    color: #475569;
     line-height: 1.4;
+}
+
+.rw-gates-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.35rem;
+}
+
+.rw-gate {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.15rem 0.5rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--clr-border, #e2e8f0);
+}
+
+.rw-gate-name {
+    flex: 1 1 10rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+.rw-gate-scope {
+    color: #475569;
+}
+
+.rw-gate-state {
+    color: #1e293b;
+}
+
+.rw-gate[data-counted="not-counted"] .rw-gate-name {
+    color: #475569;
+    font-weight: 500;
 }
 
 /* ── Inline links within phase content ──────────────────────────────────── */

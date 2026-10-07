@@ -522,6 +522,9 @@ public class AppDbContext : DbContext
             entity.Property(r => r.Id).HasColumnName("id");
             entity.Property(r => r.WorkspaceId).HasColumnName("workspace_id");
             entity.Property(r => r.StepKey).HasColumnName("step_key").HasMaxLength(100).IsRequired();
+            entity.Property(r => r.ArtifactSetHash).HasColumnName("artifact_set_hash").HasMaxLength(128);
+            entity.Property(r => r.ArtifactIdentityHash).HasColumnName("artifact_identity_hash").HasMaxLength(128);
+            entity.Property(r => r.ArtifactReferences).HasColumnName("artifact_references").HasColumnType("text");
 
             // Human review/approval decisions (persisted)
             entity.Property(r => r.ReviewState).HasColumnName("review_state").HasMaxLength(50).IsRequired()
@@ -564,8 +567,9 @@ public class AppDbContext : DbContext
                 .HasForeignKey(r => r.WorkspaceId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            entity.HasIndex(r => new { r.WorkspaceId, r.StepKey })
-                .HasDatabaseName("ix_workspace_review_progress_workspace_key")
+            // One decision per step and exact artifact revisions; decisions on earlier revisions remain as history.
+            entity.HasIndex(r => new { r.WorkspaceId, r.StepKey, r.ArtifactSetHash })
+                .HasDatabaseName("ix_workspace_review_progress_workspace_key_binding")
                 .IsUnique();
 
             entity.HasIndex(r => new { r.WorkspaceId, r.ApprovalState })

@@ -27,8 +27,8 @@ public sealed class CrossPageWorkspaceContractTests : BunitContext
     {
         _catalog.SetProjects(Project("person-module", "Person Module", "constitution.md", "spec.md", "plan.md", "tasks.md", "data-model.md"),
                              Project("skole", "Skole", "spec.md", "tasks.md"));
-        _workflowApi.Setup(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
-            .ReturnsAsync((Guid _, bool c, bool s, bool p, bool t, bool d) =>
+        _workflowApi.Setup(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()))
+            .ReturnsAsync((Guid _, bool c, bool s, bool p, bool t, bool d, IReadOnlyList<ArtifactRevisionRef> _) =>
             [
                 new WorkflowStepViewModel
                 {

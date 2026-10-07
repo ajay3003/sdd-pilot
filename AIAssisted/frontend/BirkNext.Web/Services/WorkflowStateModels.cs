@@ -12,7 +12,12 @@ public enum WorkflowStepStatus
     InProgress,
     Reviewed,
     Approved,
-    NeedsAttention
+    /// <summary>Needs changes on the current artifact revisions.</summary>
+    NeedsAttention,
+    /// <summary>A required artifact role is absent: the step does not apply (not counted, not recommended).</summary>
+    NotApplicable,
+    /// <summary>Decided on an earlier revision of the same artifacts; nothing decided on the current one.</summary>
+    Stale
 }
 
 public enum ReviewState
@@ -36,6 +41,18 @@ public enum PrerequisiteState
     Available
 }
 
+/// <summary>
+/// The exact artifact a workflow step reads for one role: its stable id and the fingerprint of the content the reviewer sees.
+/// Sent with every step build and review decision, so a decision is bound to that revision (backend WorkflowArtifactBinding).
+/// </summary>
+public sealed class ArtifactRevisionRef
+{
+    public string Role { get; set; } = "";
+    public string ArtifactId { get; set; } = "";
+    public string Fingerprint { get; set; } = "";
+    public string? FileName { get; set; }
+}
+
 public class WorkflowStepViewModel
 {
     public int Number { get; set; }
@@ -57,6 +74,26 @@ public class WorkflowStepViewModel
 
     /// <summary>Artifact roles the step needs (backend WorkflowDefinitions). Empty for steps without artifact prerequisites.</summary>
     public List<string> RequiredArtifacts { get; set; } = new();
+
+    /// <summary>Every artifact role the step reads: required, then optional.</summary>
+    public List<string> ArtifactRoles { get; set; } = new();
+
+    /// <summary>Step type from the backend definitions: ArtifactLoad, Explorer, Analysis or Dashboard.</summary>
+    public string StepType { get; set; } = "";
+
+    /// <summary>The artifact revisions a decision on this step applies to now (backend binding), or null when none is identified.</summary>
+    public string? ArtifactSetHash { get; set; }
+
+    /// <summary>Those revisions for people: "Constitution: constitution.md @ 3F2A9C1B".</summary>
+    public string? ArtifactReferences { get; set; }
+
+    /// <summary>When the decision on the current revisions was recorded.</summary>
+    public DateTimeOffset? DecidedAt { get; set; }
+
+    /// <summary>For a stale step: the latest decision on an earlier revision ("Approved", "Reviewed", "Needs changes"), kept as history.</summary>
+    public string? PreviousDecision { get; set; }
+    public DateTimeOffset? PreviousDecisionAt { get; set; }
+    public string? PreviousArtifactReferences { get; set; }
 
     // State indicators
     public WorkflowStepStatus Status { get; set; }

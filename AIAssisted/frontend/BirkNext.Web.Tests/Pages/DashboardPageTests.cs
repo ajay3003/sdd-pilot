@@ -116,7 +116,8 @@ public class DashboardPageTests : BunitContext
         cut.WaitForAssertion(() =>
         {
             cut.Markup.Should().Contain("SDD Governance Dashboard");
-            cut.Markup.Should().Contain("Governance Status");
+            cut.Markup.Should().Contain("Project Artifacts");
+            cut.Markup.Should().NotContain("Governance Status");
             cut.Markup.Should().Contain("Readiness Summary");
             cut.Markup.Should().Contain("Analysis Summary");
             cut.Markup.Should().Contain("Quick Actions");
@@ -329,7 +330,32 @@ public class DashboardPageTests : BunitContext
             card.TextContent.Should().NotContain("Not loaded");
             card.TextContent.Should().NotContain("Missing");
         }
-        Text(cut, "db-governance-value").Should().Be("4 / 4", "governance is role availability, never a 0% score beside available roles");
+        Text(cut, "db-governance-value").Should().Be("—", "five available roles are not a governance score; nothing is reviewed yet");
+        cut.Find("[data-testid=db-governance-kpi]").TextContent.Should().Contain("Not assessed").And.NotContain("Roles available");
+    }
+
+    [Fact]
+    public void ArtifactCards_AndGovernance_ReadTheSameReviewStateAsRecommendedWorkflow()
+    {
+        var steps = ReviewDecisionSemanticsTests.MixedSteps();
+        _workflowReadiness.Setup(w => w.GetReadinessAsync())
+            .ReturnsAsync(ReviewDecisionSemanticsTests.Readiness(BirkNext.Web.Tests.Services.WorkspaceSnapshots.AllRoles("Person Module", "autorisasjon"), steps));
+
+        var cut = RenderDashboardWithWorkspace("autorisasjon", CreateSampleProject("autorisasjon", "Autorisasjon"));
+
+        cut.WaitForAssertion(() => cut.FindAll("[data-testid=db-artifact-review]").Should().HaveCount(5));
+        foreach (var (role, key) in new[] { ("Constitution", "ConstitutionExplorer"), ("Specification", "SpecificationExplorer"),
+                     ("Plan", "PlanExplorer"), ("Tasks", "TaskExplorer"), ("DataModel", "DataModelExplorer") })
+        {
+            var expected = ArtifactReviewPresentation.Of(steps.Single(s => s.Key == key));
+            var badge = cut.Find($"[data-testid=db-artifact-card][data-role={role}] [data-testid=db-artifact-review]");
+            badge.GetAttribute("data-state").Should().Be(expected.State.ToString(), $"{role}: the Dashboard and the workflow read one review state");
+            badge.TextContent.Should().EndWith(expected.Label);
+        }
+        // Approved: Constitution only, of the five document reviews that apply (Data Model's optional one included).
+        Text(cut, "db-governance-value").Should().Be("1 / 5");
+        cut.Find("[data-testid=db-governance-kpi]").TextContent.Should().Contain("1 needs changes");
+        cut.Find("[data-testid=db-artifact-card][data-role=Plan]").TextContent.Should().Contain("Available").And.Contain("Review stale").And.Contain("Not analyzed");
     }
 
     [Fact]

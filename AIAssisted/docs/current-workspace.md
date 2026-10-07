@@ -63,16 +63,40 @@ There is no polling. Concurrent readers share one computation, and a snapshot co
 
 ## Consumers
 
-- **Dashboard.** The *Current Workspace* panel, role badges, artifact cards, the *Governance* KPI (“N / 4” governance roles
-  available) and the project phase all come from the snapshot. Artifact cards show availability (*Available*, *Missing*,
-  *Availability unknown*), selection (*Selection required*) and analysis (*Analyzed*, *Not analyzed*) as separate badges.
-  Analysis counts only for an available role. The quality aggregate averages assessed areas only, as before.
-- **Recommended Workflow.** `WorkflowReadinessService` reads the snapshot, passes role availability to the backend step
-  builder, and derives the next action. With no workspace it recommends *Load project artifacts*. A loaded workspace without
-  artifacts gets *Add project artifacts*. A role with several artifacts and no choice gets *Choose the … to review*.
-  Otherwise the next action is the first open review step. Release readiness is the approved share of required review
-  steps, and “—” until a required step has a review decision. *Manual Review* says *None applicable* when no step requires
-  review.
+- **Dashboard.** The *Current Workspace* panel, role badges, *Project Artifacts* cards and the project phase come from the
+  snapshot. Artifact cards show availability (*Available*, *Missing*, *Availability unknown*), selection (*Selection
+  required*), the review decision on the selected revision (from the workflow, see below) and analysis (*Analyzed*, *Not
+  analyzed*) as separate badges. *Governance* is not an availability count: it is “—” / *Not assessed* until a review
+  decision exists on a current artifact revision, then the approved document reviews of those that apply (“1 / 5”), with
+  *needs changes* or *review stale* named. The quality aggregate averages assessed areas only, as before.
+- **Recommended Workflow.** `WorkflowReadinessService` reads the snapshot, passes role availability and each role's selected
+  revision (`ArtifactRevisions`) to the backend step builder, and derives the next action. With no document artifact it
+  recommends *Load project artifacts*. A role with several artifacts and no choice gets *Choose the … to review*. Otherwise
+  the next action is the first applicable review step that is open, reviewed but unapproved, needs changes or is stale.
+  Release readiness is the approved share of the required review steps that apply, and “—” until one has a decision.
+
+## Review decisions
+
+A review decision (*Mark Reviewed*, *Approve*, *Needs Changes*) is about exact artifact revisions, not a role:
+
+- The client sends, with every step build and decision, the selected artifact of each available role: its id
+  (`sample:<path>` or `workspace:<file>`) and the fingerprint of its content (`ArtifactFingerprint`, SHA-256).
+- The backend (`WorkflowArtifactBinding`) hashes the revisions a step reads (its required roles, plus optional ones that are
+  present) and stores the decision in `workspace_review_progress` under that hash. A decision that names no revision is
+  refused. One row per step and binding: a decision on an earlier revision stays as history.
+- A step's decision is current only for the same hash. The same artifacts with other content → *Review stale* (the earlier
+  decision is shown with its date); another artifact of the role → *Ready to review* (it never inherits the decision).
+  Decisions recorded before revision binding name no revision and are always stale.
+- States: *Ready to review* (available, not reviewed), *In review*, *Reviewed* (inspected, no approval implied), *Approved*,
+  *Needs changes*, *Review stale*, *Blocked* (no artifact chosen, or an earlier step to approve first) and *N/A* (a role the
+  step requires is absent: not counted, not recommended). `ArtifactReviewPresentation` is the one reading; the Dashboard
+  and Recommended Workflow both use it.
+- Approval is required to complete a step; *Reviewed* alone does not. *Needs changes* and *Review stale* keep the step
+  recommended. Opening an explorer records nothing.
+- *Manual Review* counts the required review steps that apply (approved / applicable), lists every step with whether it
+  counts (*What Manual Review counts*), and names optional steps (the Data Model review) separately; they never block release.
+- Decisions belong to the saved workspace (project): they survive reload, never cross to another project, and are removed
+  with the workspace by Reset Local Data.
 - **Sidebar applicability.** `ProjectApplicabilityState` takes `HasRequirements` and `HasDocumentation` from the snapshot.
   NavMenu refreshes on `Changed`.
 

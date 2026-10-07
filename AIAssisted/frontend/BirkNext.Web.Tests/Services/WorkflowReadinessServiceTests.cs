@@ -52,7 +52,7 @@ public sealed class WorkflowReadinessServiceTests
         readiness.Workspace.AvailableRoleCount.Should().Be(5);
         readiness.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer");
         readiness.Steps.Should().NotContain(step => step.Key == WorkflowReadinessService.LoadWorkspaceKey);
-        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), true, true, true, true, true), Times.Once);
+        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), true, true, true, true, true, It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()), Times.Once);
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class WorkflowReadinessServiceTests
 
         readiness.WorkspaceLoaded.Should().BeTrue();
         readiness.Workspace.AvailableRoleCount.Should().Be(2);
-        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), false, true, false, true, false), Times.Once);
+        fixture.WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(It.IsAny<Guid>(), false, true, false, true, false, It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()), Times.Once);
     }
 
     [Fact]
@@ -263,7 +263,7 @@ public sealed class WorkflowReadinessServiceTests
 
         public void VerifyBackendNeverCalled() =>
             WorkflowApi.Verify(api => api.BuildWorkflowStepsAsync(
-                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()), Times.Never);
+                It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()), Times.Never);
     }
 }
 
@@ -278,7 +278,7 @@ file static class RecommendedWorkflowApiMockExtensions
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
                 It.IsAny<bool>(),
-                It.IsAny<bool>()))
+                It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()))
             .ReturnsAsync(steps);
     }
 }

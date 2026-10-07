@@ -34,7 +34,7 @@ public sealed class RecommendedWorkflowReactivityTests : BunitContext
             : new FrontendAnalysisContext { ActiveProfile = _environment, TargetUrl = _environment.TargetUrl });
         var coverage = new Mock<ITechnologyCoverageApiService>();
         coverage.Setup(c => c.GetAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(() => _coverage);
-        _workflowApi.Setup(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
+        _workflowApi.Setup(w => w.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()))
             .ReturnsAsync(() => { _readinessReads++; return []; });
 
         Services.AddSingleton(_settings.Object);

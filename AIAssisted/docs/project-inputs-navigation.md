@@ -41,8 +41,10 @@ The page shows the three inputs as cards, each with a requirement tag:
 
 Each card also has a status (text and icon, not colour only), a detail line, facts (role chips, archive, environment and
 host) and an action. The workspace card lists Workspace, Project, Documents, Source, Target, Save status, Last saved and
-Release Readiness. *Manual Review* says *Not required* when there are no document review steps. Release readiness stays
-“—” until a review decision exists.
+Release Readiness. *Manual Review* counts the required review steps that apply (not-applicable and optional steps are listed
+under *What Manual Review counts* but not counted) and shows “—” when none applies. Release readiness stays “—” until a
+review decision exists. No document role is required of every project: a step whose own artifact is absent is *N/A*.
+Review decisions are bound to artifact revisions; see [current-workspace.md](current-workspace.md#review-decisions).
 
 Next action, in priority order (`WorkflowReadinessService.NextAction`):
 

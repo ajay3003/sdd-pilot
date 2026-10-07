@@ -30,7 +30,8 @@ public class RecommendedWorkflowController : ControllerBase
                 request.HasSpecification,
                 request.HasPlan,
                 request.HasTasks,
-                request.HasDataModel);
+                request.HasDataModel,
+                request.Artifacts);
 
             return Ok(steps);
         }
@@ -61,7 +62,7 @@ public class RecommendedWorkflowController : ControllerBase
     {
         try
         {
-            await _service.MarkStepReviewedAsync(request.WorkspaceId, request.StepKey, request.Comment);
+            await _service.MarkStepReviewedAsync(request.WorkspaceId, request.StepKey, request.Artifacts, request.Comment);
             return Ok(new { message = "Step marked as reviewed" });
         }
         catch (Exception ex)
@@ -79,7 +80,7 @@ public class RecommendedWorkflowController : ControllerBase
             await _service.ApproveStepAsync(
                 request.WorkspaceId,
                 request.StepKey,
-                request.ArtifactSetHash,
+                request.Artifacts,
                 request.Comment);
 
             return Ok(new { message = "Step approved" });
@@ -96,7 +97,7 @@ public class RecommendedWorkflowController : ControllerBase
     {
         try
         {
-            await _service.RejectStepAsync(request.WorkspaceId, request.StepKey, request.Comment);
+            await _service.RejectStepAsync(request.WorkspaceId, request.StepKey, request.Artifacts, request.Comment);
             return Ok(new { message = "Step rejected" });
         }
         catch (Exception ex)
@@ -136,7 +137,8 @@ public class RecommendedWorkflowController : ControllerBase
                 request.HasSpecification,
                 request.HasPlan,
                 request.HasTasks,
-                request.HasDataModel);
+                request.HasDataModel,
+                request.Artifacts);
 
             var breakdown = _service.GetReadinessBreakdown(steps);
             return Ok(breakdown);
@@ -157,6 +159,8 @@ public class RecommendedWorkflowController : ControllerBase
         public bool HasPlan { get; set; }
         public bool HasTasks { get; set; }
         public bool HasDataModel { get; set; }
+        /// <summary>The selected artifact revision of each available role (id + content fingerprint).</summary>
+        public List<ArtifactRevisionRef> Artifacts { get; set; } = new();
     }
 
     public class StepActionRequest
@@ -164,6 +168,8 @@ public class RecommendedWorkflowController : ControllerBase
         public Guid WorkspaceId { get; set; }
         public string StepKey { get; set; } = "";
         public string? Comment { get; set; }
+        /// <summary>The exact artifact revisions the decision is about. Required for review decisions.</summary>
+        public List<ArtifactRevisionRef> Artifacts { get; set; } = new();
     }
 
     public class ApprovalRequest
@@ -171,7 +177,8 @@ public class RecommendedWorkflowController : ControllerBase
         public Guid WorkspaceId { get; set; }
         public string StepKey { get; set; } = "";
         public string? Comment { get; set; }
-        public string? ArtifactSetHash { get; set; }
+        /// <summary>The exact artifact revisions the approval is about. Required.</summary>
+        public List<ArtifactRevisionRef> Artifacts { get; set; } = new();
     }
 
     public class InvalidateApprovalsRequest

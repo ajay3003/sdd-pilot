@@ -1027,8 +1027,8 @@ public sealed class ReportExportService : IReportExportService
             sb.Append(Kpi(BirkNext.Integrations.IntegrationReviewLabels.Outcome(integrationQuality.Outcome), "Integrations"));
         sb.Append("</div>\n");
 
-        // Governance status
-        sb.Append("<section class=\"block\">\n<h2>Governance Status</h2>\n");
+        // Which artifacts the analyses read (availability, not a governance decision)
+        sb.Append("<section class=\"block\">\n<h2>Artifacts in the analyses</h2>\n");
         bool hasAny = traceability is not null || compliance is not null || audit is not null || delivery is not null;
         if (hasAny)
         {

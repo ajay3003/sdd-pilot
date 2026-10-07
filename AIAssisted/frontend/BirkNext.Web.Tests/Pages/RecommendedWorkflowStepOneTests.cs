@@ -11,13 +11,14 @@ using Moq;
 namespace BirkNext.Web.Tests.Pages;
 
 /// <summary>
-/// Step 1 ("Load project artifacts") is complete only when the roles the required review steps need are available — never just
-/// because a workspace or project exists. Until then it is the one current step with the one primary action, and steps whose
-/// artifacts are missing are locked with the reason, without review or approval controls.
+/// Step 1 ("Load project artifacts") is complete once document artifacts are available — never just because a workspace or
+/// project exists. Until then it is the one current step with the one primary action. No role is required of every project:
+/// a step whose own required artifact is absent is not applicable (with the reason), not counted and not recommended, and
+/// offers no review or approval controls.
 /// </summary>
 public sealed class RecommendedWorkflowStepOneTests : BunitContext
 {
-    // The backend's workflow (WorkflowDefinitions): requirements per step; a step is locked while any is missing.
+    // The backend's workflow (WorkflowDefinitions): requirements per step; a step is not applicable while any is absent.
     private static readonly (string Key, string Title, string[] Requires, bool Optional, bool Approval)[] Definitions =
     [
         ("LoadSampleProject", "Load project artifacts", [], false, false),
@@ -36,17 +37,19 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         var current = false;
         return Definitions.Where(x => x.Key != "DataModelExplorer" || d).Select((x, i) =>
         {
-            var unlocked = x.Requires.All(r => available[r]);
-            var isCurrent = !current && unlocked && x.Approval;
+            var applies = x.Requires.All(r => available[r]);
+            var isCurrent = !current && applies && x.Approval;
             current |= isCurrent;
             return new WorkflowStepViewModel
             {
                 Number = i + 1, Key = x.Key, Title = x.Title, Description = x.Title, Route = x.Key.ToLowerInvariant(), ActionLabel = $"Open {x.Title}",
-                Color = "#2563eb", Status = unlocked ? WorkflowStepStatus.Available : WorkflowStepStatus.Locked, CanOpen = unlocked, IsCurrent = isCurrent,
-                IsFuture = !unlocked, IsOptional = x.Optional, RequiresApproval = x.Approval, RequiresManualReview = x.Approval,
+                Color = "#2563eb", Status = applies ? WorkflowStepStatus.Available : WorkflowStepStatus.NotApplicable, CanOpen = applies, IsCurrent = isCurrent,
+                IsFuture = !applies, IsOptional = x.Optional, RequiresApproval = x.Approval, RequiresManualReview = x.Approval,
                 ApprovalState = ApprovalState.Pending, ReviewState = ReviewState.NotStarted,
-                Prerequisites = unlocked ? PrerequisiteState.Available : PrerequisiteState.Missing,
-                DisabledReason = unlocked ? "" : "Load required artifacts first", RequiredArtifacts = [.. x.Requires],
+                Prerequisites = applies ? PrerequisiteState.Available : PrerequisiteState.Missing,
+                DisabledReason = applies ? "" : $"Requires {string.Join(", ", x.Requires.Where(r => !available[r]))}", RequiredArtifacts = [.. x.Requires],
+                ArtifactRoles = [.. x.Requires], StepType = x.Key.EndsWith("Explorer") ? "Explorer" : x.Approval ? "Analysis" : "ArtifactLoad",
+                ArtifactReferences = applies && x.Requires.Length > 0 ? string.Join("; ", x.Requires.Select(r => $"{r}: {r.ToLowerInvariant()}.md @ A1A1A1A1")) : null,
             };
         }).ToList();
     }
@@ -58,8 +61,8 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         contexts.Setup(x => x.GetActiveContextAsync()).ReturnsAsync(new FrontendAnalysisContext { ActiveTargetError = "No active Target Environment" });
         var applicability = new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object, Mock.Of<IFrontendAnalysisSettingsService>());
         var api = new Mock<IRecommendedWorkflowApiService>();
-        api.Setup(a => a.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>()))
-            .ReturnsAsync((Guid _, bool c, bool s, bool p, bool t, bool d) => BackendSteps(c, s, p, t, d));
+        api.Setup(a => a.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>()))
+            .ReturnsAsync((Guid _, bool c, bool s, bool p, bool t, bool d, IReadOnlyList<ArtifactRevisionRef> _) => BackendSteps(c, s, p, t, d));
         return await new WorkflowReadinessService(projection.Object, applicability, api.Object, NullLogger<WorkflowReadinessService>.Instance).GetReadinessAsync();
     }
 
@@ -80,7 +83,7 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
 
         r.ArtifactLoad.Should().Be(ArtifactLoadState.Required);
         r.NextRecommendedAction!.Title.Should().Be("Load project artifacts");
-        r.NextRecommendedAction.Description.Should().StartWith("Required project artifacts are missing.");
+        r.NextRecommendedAction.Description.Should().StartWith("No project artifacts are available yet.");
         r.Steps.Should().ContainSingle().Which.Should().BeSameAs(r.NextRecommendedAction);
         r.NextRecommendedAction.IsCurrent.Should().BeTrue();
         r.NextRecommendedAction.CanOpen.Should().BeTrue();
@@ -95,7 +98,7 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
 
         r.WorkspaceLoaded.Should().BeTrue("the workspace exists");
         r.ArtifactLoad.Should().Be(ArtifactLoadState.Required, "a workspace alone does not load artifacts");
-        r.RequiredRoles.Should().Equal(Required, "Data Model is optional");
+        r.RequiredRoles.Should().Equal(Required, "the roles the non-optional review steps read; Data Model is optional");
         r.MissingRoles.Should().Equal(Required);
         var load = Step(r, "LoadSampleProject");
         r.NextRecommendedAction.Should().BeSameAs(load, "the recommendation is the actionable step, not Constitution Explorer");
@@ -103,7 +106,7 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         load.IsCurrent.Should().BeTrue();
         load.Status.Should().NotBe(WorkflowStepStatus.Approved);
         r.Steps.Count(s => s.IsCurrent).Should().Be(1);
-        Step(r, "ConstitutionExplorer").Status.Should().Be(WorkflowStepStatus.Locked);
+        Step(r, "ConstitutionExplorer").Status.Should().Be(WorkflowStepStatus.NotApplicable);
         Step(r, "ConstitutionExplorer").DisabledReason.Should().Be("Requires Constitution artifact");
         Step(r, "ArtifactTraceability").DisabledReason.Should().Be("Requires Constitution, Specification, Plan and Tasks artifacts");
         r.ReleaseReadinessPercent.Should().BeNull();
@@ -133,23 +136,29 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
     }
 
     [Fact]
-    public async Task E_PartialArtifacts_AddMissingArtifacts_DependentStepsLockedWithReasons()
+    public async Task E_PartialArtifacts_StepsThatNeedAbsentRolesAreNotApplicable_AndNothingIsBlocked()
     {
         var r = await ReadinessAsync(PersonModule(WorkspaceArtifactType.Specification, WorkspaceArtifactType.Tasks));
 
         r.ArtifactLoad.Should().Be(ArtifactLoadState.Partial);
         r.MissingRoles.Should().Equal(WorkspaceArtifactType.Constitution, WorkspaceArtifactType.Plan);
-        r.NextRecommendedAction!.Title.Should().Be("Add missing artifacts");
-        r.NextRecommendedAction.Description.Should().Contain("Required project artifacts are missing: Constitution, Plan");
+        var load = Step(r, "LoadSampleProject");
+        load.Description.Should().Be("2 project artifact roles are available. Reviews that read Constitution, Plan do not apply until they are added.");
+        load.Description.Should().NotContain("Required");
+        load.IsCurrent.Should().BeFalse("missing roles a project may not have are not a workflow failure");
+        r.NextRecommendedAction!.Key.Should().Be("SpecificationExplorer", "the first applicable review");
+        r.Steps.Single(s => s.IsCurrent).Key.Should().Be("SpecificationExplorer");
+        Step(r, "ArtifactTraceability").Status.Should().Be(WorkflowStepStatus.NotApplicable);
         Step(r, "ArtifactTraceability").DisabledReason.Should().Be("Requires Constitution and Plan artifacts");
         Step(r, "PlanExplorer").DisabledReason.Should().Be("Requires Plan artifact");
         Step(r, "SpecificationExplorer").Status.Should().Be(WorkflowStepStatus.Available, "its artifact exists");
-        r.Steps.Single(s => s.IsCurrent).Key.Should().Be("LoadSampleProject");
-        r.AlternativeActions.Single().Route.Should().Be("constitution-explorer", "import the first missing role in its explorer");
+        r.RequiredReviewGates.Select(s => s.Key).Should().Equal("SpecificationExplorer", "TaskExplorer", "ImplementationReview");
+        r.RequiredReviewCount.Should().Be(3, "not-applicable steps are not in the denominator");
+        r.AlternativeActions.Single().Route.Should().Be("constitution-explorer", "importing a missing role stays available as a secondary link");
     }
 
     [Fact]
-    public async Task ApprovalDependencyLock_SaysCompleteThePreviousStep()
+    public async Task ApprovalDependencyLock_NamesTheStepToApprove()
     {
         var workspace = PersonModule([.. CurrentWorkspaceSnapshot.WorkflowRoles]);
         var projection = WorkspaceSnapshots.Projection(workspace);
@@ -159,13 +168,14 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         var steps = BackendSteps(true, true, true, true, true);
         var implementation = steps.Single(s => s.Key == "ImplementationReview");
         implementation.Status = WorkflowStepStatus.Locked;
-        implementation.DisabledReason = "Complete prerequisite approvals first";
-        api.Setup(a => a.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>())).ReturnsAsync(steps);
+        implementation.DisabledReason = "Approve Artifact Traceability first";
+        api.Setup(a => a.BuildWorkflowStepsAsync(It.IsAny<Guid>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<IReadOnlyList<ArtifactRevisionRef>>())).ReturnsAsync(steps);
         var r = await new WorkflowReadinessService(projection.Object,
             new ProjectApplicabilityState(Mock.Of<ITechnologyCoverageApiService>(), contexts.Object, projection.Object, Mock.Of<IFrontendAnalysisSettingsService>()),
             api.Object, NullLogger<WorkflowReadinessService>.Instance).GetReadinessAsync();
 
-        Step(r, "ImplementationReview").DisabledReason.Should().Be("Complete the previous step first");
+        Step(r, "ImplementationReview").DisabledReason.Should().Be("Approve Artifact Traceability first");
+        ArtifactReviewPresentation.Of(Step(r, "ImplementationReview")).Label.Should().Be("Blocked");
     }
 
     // ── Page: hierarchy and controls ──────────────────────────────────────────────────────────────────────────────────────
@@ -187,7 +197,7 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
     }
 
     [Fact]
-    public async Task Page_ScreenshotState_StepOneIsTheOnlyPrimaryAction_AndLockedStepsHaveNoApprovalControls()
+    public async Task Page_ScreenshotState_StepOneIsTheOnlyPrimaryAction_AndNotApplicableStepsHaveNoApprovalControls()
     {
         var cut = RenderPage(await ReadinessAsync(PersonModule()));
 
@@ -204,18 +214,18 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         cut.FindAll("[data-testid=rw-step][aria-current=step]").Should().ContainSingle();
         cut.FindAll("a.rw-cta:not(.rw-cta-secondary), a.rw-next-action-btn").Should().ContainSingle("only one primary call to action");
 
-        var locked = cut.FindAll("[data-testid=rw-step][data-state=Locked]");
-        locked.Should().NotBeEmpty();
-        foreach (var step in locked)
+        var notApplicable = cut.FindAll("[data-testid=rw-step][data-state='N/A']");
+        notApplicable.Should().NotBeEmpty();
+        foreach (var step in notApplicable)
         {
-            step.QuerySelectorAll("button").Should().BeEmpty("a locked step offers no Mark Reviewed, Approve or Needs Changes");
-            step.QuerySelector("[data-testid=rw-step-locked-reason]")!.TextContent.Should().StartWith("Requires ");
+            step.QuerySelectorAll("button, details").Should().BeEmpty("a not-applicable step offers no Mark Reviewed, Approve or Needs Changes");
+            step.QuerySelector("[data-testid=rw-step-status]")!.TextContent.Should().StartWith("–Not applicable · Requires ");
         }
-        cut.Markup.Should().NotContain("Load required artifacts first");
+        cut.Markup.Should().NotContain("Load required artifacts first").And.NotContain("Required project artifacts");
 
         var card = cut.Find("[data-testid=rw-next-action]");
         card.QuerySelector(".rw-next-action-title")!.TextContent.Should().Be("Load project artifacts");
-        card.TextContent.Should().Contain("Required project artifacts are missing.").And.NotContain("Constitution Explorer");
+        card.TextContent.Should().Contain("No project artifacts are available yet.").And.NotContain("Constitution Explorer");
         card.QuerySelector("[data-testid=rw-next-action-step]")!.TextContent.Should().Be("Step 1 below.");
     }
 
@@ -228,7 +238,9 @@ public sealed class RecommendedWorkflowStepOneTests : BunitContext
         stepOne.GetAttribute("data-state").Should().Be("Done");
         stepOne.QuerySelectorAll("a, button").Should().BeEmpty();
         cut.Find("[data-testid=rw-step][aria-current=step]").GetAttribute("data-step").Should().Be("ConstitutionExplorer");
-        cut.Find("[data-testid=rw-step][data-step=ConstitutionExplorer] [data-testid=rw-step-state]").TextContent.Should().Be("Ready");
+        cut.Find("[data-testid=rw-step][data-step=ConstitutionExplorer] [data-testid=rw-step-state]").TextContent.Should().Be("Ready to review");
+        cut.Find("[data-testid=rw-step][data-step=ConstitutionExplorer] [data-testid=rw-step-status]").TextContent.Should().EndWith("Available · Not reviewed");
+        stepOne.QuerySelector(".rw-goal")!.TextContent.Should().Be("5 project artifact roles are available.");
     }
 
     [Fact]

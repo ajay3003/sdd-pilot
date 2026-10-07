@@ -25,19 +25,28 @@ public enum ArtifactRoleSelection
     SelectionRequired,
 }
 
-/// <summary>One artifact role of the current workspace: how many artifacts it has, and which one is selected.</summary>
+/// <summary>
+/// One artifact role of the current workspace: how many artifacts it has, which one is selected, and the fingerprint of the
+/// selected artifact's content (<see cref="ArtifactFingerprint"/>) — the revision a review decision on the role is about.
+/// </summary>
 public sealed record ArtifactRoleStatus(
     WorkspaceArtifactType Role,
     ArtifactRoleAvailability Availability,
     int ArtifactCount,
     ArtifactRoleSelection Selection,
     ExplorerArtifact? SelectedArtifact,
-    string? Error)
+    string? Error,
+    string? Fingerprint = null)
 {
     public bool IsAvailable => Availability == ArtifactRoleAvailability.Available;
     public string Label => ArtifactExplorerRoles.Label(Role);
     /// <summary>The selected artifact's repository authority (Approved, Baseline, …), or null when none is selected.</summary>
     public string? Authority => SelectedArtifact?.Authority;
+
+    /// <summary>The selected revision as review decisions name it, or null when no single readable artifact is selected.</summary>
+    public ArtifactRevisionRef? Revision => IsAvailable && SelectedArtifact is { } selected && !string.IsNullOrEmpty(Fingerprint)
+        ? new ArtifactRevisionRef { Role = Role.ToString(), ArtifactId = selected.Id, Fingerprint = Fingerprint, FileName = selected.FileName }
+        : null;
 }
 
 /// <summary>
@@ -92,6 +101,15 @@ public sealed record CurrentWorkspaceSnapshot(
         ?? new ArtifactRoleStatus(role, ArtifactRoleAvailability.Missing, 0, ArtifactRoleSelection.None, null, null);
 
     public bool Has(WorkspaceArtifactType role) => Role(role).IsAvailable;
+
+    /// <summary>
+    /// The selected revision of every available role that has one: what review decisions are bound to. The artifact id is
+    /// scoped by project ("person-module/sample:constitution.md"): Sample Project paths repeat across projects, and the
+    /// auto-saved workspace follows the selected project, so without the scope one project's decision would reach another's.
+    /// </summary>
+    public IReadOnlyList<ArtifactRevisionRef> ArtifactRevisions => Roles.Select(r => r.Revision).OfType<ArtifactRevisionRef>()
+        .Select(r => new ArtifactRevisionRef { Role = r.Role, ArtifactId = $"{ProjectSlug ?? "manual-workspace"}/{r.ArtifactId}", Fingerprint = r.Fingerprint, FileName = r.FileName })
+        .ToList();
 
     public string ProjectDisplay => ProjectName ?? ProjectSlug ?? "Not assigned";
 
@@ -271,7 +289,9 @@ public sealed class CurrentWorkspaceProjection : ICurrentWorkspaceProjection, ID
             _ when state.Selected is not null => ArtifactRoleSelection.Selected,
             _ => ArtifactRoleSelection.None,
         };
-        return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error);
+        // The fingerprint of the content the explorers show for the role: the same function the repository uses for revisions.
+        var fingerprint = state.Selected is not null && !string.IsNullOrEmpty(state.Content) ? ArtifactFingerprint.Compute(state.Content) : null;
+        return new ArtifactRoleStatus(state.Role, availability, count, selection, state.Selected, state.Error, fingerprint);
     }
 
     private static bool SameProject(string? persisted, string? scope) =>

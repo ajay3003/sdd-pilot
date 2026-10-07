@@ -20,7 +20,11 @@ internal static class WorkspaceSnapshots
         new(role, ArtifactRoleAvailability.Available, count, count == 1 ? ArtifactRoleSelection.Selected : ArtifactRoleSelection.SelectionRequired,
             count == 1 ? new ExplorerArtifact($"sample:{role}.md", role, role.ToString(), $"{role}.md", $"{role}.md",
                 ExplorerArtifactSource.SampleProject, null, null, 0, "Unknown", ExplorerArtifactCurrentness.Current, null) : null,
-            null);
+            null,
+            count == 1 ? Fingerprint(role) : null);
+
+    /// <summary>The content fingerprint the helper gives a role's selected artifact (8-character prefix "A1A1A1A1").</summary>
+    public static string Fingerprint(WorkspaceArtifactType role) => "A1A1A1A1" + role.ToString().ToUpperInvariant();
 
     public static ArtifactRoleStatus Missing(WorkspaceArtifactType role) =>
         new(role, ArtifactRoleAvailability.Missing, 0, ArtifactRoleSelection.None, null, null);
