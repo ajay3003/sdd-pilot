@@ -91,6 +91,7 @@ public sealed class TaskNode
 public sealed class TaskHealth
 {
     public int TotalTasks { get; init; }
+    /// <summary>Tasks marked done ([x]) in the Task artifact. A document checkbox: not implementation or test evidence.</summary>
     public int CompletedTasks { get; init; }
     public int OpenTasks => TotalTasks - CompletedTasks;
     public int TotalPhases { get; init; }
@@ -110,7 +111,7 @@ public sealed class TaskHealth
     // QA-oriented counts (always populated from task refs and keyword detection)
     public int FrLinkedTasks { get; init; }    // tasks with ≥1 FR reference
     public int ScLinkedTasks { get; init; }    // tasks with ≥1 SC reference
-    public int UnlinkedTasks { get; init; }    // tasks with no FR/SC refs or spec matches
+    public int UnlinkedTasks { get; init; }    // tasks with no traceability link of any kind (TaskExplorerService.HasNoTraceabilityLinks)
     public int TestingTasks { get; init; }
     public int SecurityTasks { get; init; }
     public int UserStoryCount { get; init; }

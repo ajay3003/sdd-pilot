@@ -227,8 +227,8 @@
     private List<SddRequirementGraphRow> GraphRows => Projection.Rows.ToList();
     private List<SemanticRequirement> Requirements => GraphRows.Select(x => x.Requirement).ToList();
     private List<SemanticClarification> Clarifications => Context?.GetClarifications().ToList() ?? [];
-    private bool HasSource => Artifacts.SddLifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus is "Ready" or "Partial");
-    private bool HasFailedSource => Artifacts.SddLifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus == "Failed");
+    private bool HasSource => SddSourceAssessment.HasSource(Artifacts.SddLifecycle);
+    private bool HasFailedSource => SddSourceAssessment.HasFailedSource(Artifacts.SddLifecycle);
     private int PlanLinkedCount => Requirements.Count(x => PlanLinks(x.Id) > 0);
     private int TaskLinkedCount => Requirements.Count(x => TaskLinks(x.Id) > 0);
     private int PlanLinks(string id) => GraphRows.FirstOrDefault(x => x.Requirement.Id.Equals(id, StringComparison.OrdinalIgnoreCase))?.PlanReferences.Count ?? 0;
@@ -247,7 +247,7 @@
         if (!Artifacts.Has(WorkspaceArtifactType.Specification)) return "Requirements not available";
         if (HasFailedSource && evidence.Count == 0) return "SourceUnsupported — Source Analysis failed; implementation not assessed";
         if (!HasSource && evidence.Count == 0) return "NoSourceAvailable — implementation not assessed";
-        if (Artifacts.SddLifecycle.SourceSnapshots.Any(x => x.Currentness == "Current" && x.AnalysisStatus == "Partial") && evidence.Count == 0) return "Partial source analysis — requirement implementation not assessed";
+        if (SddSourceAssessment.HasPartialSource(Artifacts.SddLifecycle) && evidence.Count == 0) return "Partial source analysis — requirement implementation not assessed";
         if (evidence.Count == 0) return "No implementation evidence registered";
         return evidence.Any(x => x.Confidence is "Confirmed" or "StronglySupported") ? "Implementation evidence found" : "Inferred evidence only";
     }

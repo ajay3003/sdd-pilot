@@ -289,7 +289,8 @@ public static class TaskExplorerService
         HashSet<string> expandedIds,
         string searchQuery,
         string? filter,
-        HashSet<string>? tableLinkedTaskIds = null)
+        HashSet<string>? tableLinkedTaskIds = null,
+        TaskEvidenceIndex? evidence = null)
     {
         var result = new List<(TaskNode, int, bool)>();
 
@@ -300,7 +301,7 @@ public static class TaskExplorerService
         {
             matchIds = [];
             ancestorIds = [];
-            CollectMatches(roots, searchQuery, filter, tableLinkedTaskIds, matchIds, ancestorIds, []);
+            CollectMatches(roots, searchQuery, filter, tableLinkedTaskIds, evidence, matchIds, ancestorIds, []);
         }
 
         foreach (var root in roots)
@@ -375,9 +376,7 @@ public static class TaskExplorerService
             RegressionCandidates = tasks.Count(t => t.IsRegressionCandidate),
             FrLinkedTasks  = tasks.Count(t => t.ReferencedFrIds.Count > 0),
             ScLinkedTasks  = tasks.Count(t => t.ReferencedScIds.Count > 0),
-            UnlinkedTasks  = tasks.Count(t => t.ReferencedFrIds.Count == 0
-                                               && t.ReferencedScIds.Count == 0
-                                               && t.SpecMatches.Count == 0),
+            UnlinkedTasks  = tasks.Count(t => HasNoTraceabilityLinks(t, linkedIds)),
             TestingTasks   = tasks.Count(t => t.IsTestingTask),
             SecurityTasks  = tasks.Count(t => t.IsSecurityTask),
         };
@@ -687,6 +686,7 @@ public static class TaskExplorerService
         string searchQuery,
         string? filter,
         HashSet<string>? tableLinkedIds,
+        TaskEvidenceIndex? evidence,
         HashSet<string> matchIds,
         HashSet<string> ancestorIds,
         List<string> path)
@@ -694,10 +694,10 @@ public static class TaskExplorerService
         var anyMatch = false;
         foreach (var node in nodes)
         {
-            var isMatch = MatchesSearchAndFilter(node, searchQuery, filter, tableLinkedIds);
+            var isMatch = MatchesSearchAndFilter(node, searchQuery, filter, tableLinkedIds, evidence);
 
             path.Add(node.Id);
-            var childMatch = CollectMatches(node.Children, searchQuery, filter, tableLinkedIds, matchIds, ancestorIds, path);
+            var childMatch = CollectMatches(node.Children, searchQuery, filter, tableLinkedIds, evidence, matchIds, ancestorIds, path);
             path.RemoveAt(path.Count - 1);
 
             if (isMatch || childMatch)
@@ -714,13 +714,14 @@ public static class TaskExplorerService
         TaskNode node,
         string searchQuery,
         string? filter,
-        HashSet<string>? tableLinkedIds)
+        HashSet<string>? tableLinkedIds,
+        TaskEvidenceIndex? evidence)
     {
         // Search match (empty query = matches all)
         var searchMatch = string.IsNullOrWhiteSpace(searchQuery) || NodeMatchesSearch(node, searchQuery);
 
         // Filter match (empty filter = matches all)
-        var filterMatch = string.IsNullOrEmpty(filter) || NodeMatchesFilter(node, filter, tableLinkedIds);
+        var filterMatch = string.IsNullOrEmpty(filter) || NodeMatchesFilter(node, filter, tableLinkedIds, evidence);
 
         return searchMatch && filterMatch;
     }
@@ -743,8 +744,35 @@ public static class TaskExplorerService
         return false;
     }
 
-    private static bool NodeMatchesFilter(TaskNode node, string filter, HashSet<string>? tableLinkedIds)
+    /// <summary>
+    /// The one "no traceability links" predicate (header count and filter): a task with no requirement (FR) or success
+    /// criterion (SC) reference, no requirement matched from the specification, no user-story tag and no traceability-table
+    /// row. A task with any one of these links is not unlinked.
+    /// </summary>
+    public static bool HasNoTraceabilityLinks(TaskNode node, HashSet<string>? tableLinkedIds) =>
+        node.NodeType == TaskNodeType.Task
+        && node.ReferencedFrIds.Count == 0
+        && node.ReferencedScIds.Count == 0
+        && node.SpecMatches.Count == 0
+        && string.IsNullOrWhiteSpace(node.UserStoryTag)
+        && !(node.TaskId is not null && (tableLinkedIds?.Contains(node.TaskId) ?? false));
+
+    /// <summary>Tasks marked parallelizable with [P] in the Task artifact: the one list behind the header count and the Parallel view.</summary>
+    public static List<TaskNode> ParallelizableTasks(IEnumerable<TaskNode> roots)
     {
+        var all = new List<TaskNode>();
+        CollectTaskNodes(roots, null, all);
+        return all.Where(n => n.NodeType == TaskNodeType.Task && n.IsParallel).ToList();
+    }
+
+    /// <summary>Whether one node matches a filter key (the same predicate the tree uses), for counts such as "Showing 12 of 65 tasks".</summary>
+    public static bool MatchesFilter(TaskNode node, string filter, HashSet<string>? tableLinkedIds, TaskEvidenceIndex? evidence = null) =>
+        NodeMatchesFilter(node, filter, tableLinkedIds, evidence);
+
+    private static bool NodeMatchesFilter(TaskNode node, string filter, HashSet<string>? tableLinkedIds, TaskEvidenceIndex? evidence)
+    {
+        // Implementation/test filters read lifecycle evidence; without an assessment they match nothing (never "all missing").
+        TaskEvidence? Evidence() => node.NodeType == TaskNodeType.Task && evidence is not null ? evidence.For(node) : null;
         return filter switch
         {
             "Completed"         => node.NodeType == TaskNodeType.Task && node.IsCompleted,
@@ -766,19 +794,23 @@ public static class TaskExplorerService
             "Unresolved"        => node.NodeType == TaskNodeType.TableTaskRef && node.IsUnresolved,
             "TestingTasks"      => node.NodeType == TaskNodeType.Task && node.IsTestingTask,
             "SecurityTasks"     => node.NodeType == TaskNodeType.Task && node.IsSecurityTask,
-            "MissingImplementation" => node.NodeType == TaskNodeType.Task
-                                   && node.ReferencedFrIds.Count == 0
-                                   && node.ReferencedScIds.Count == 0,
+            "ImplCurrent"       => Evidence()?.Implementation == ImplementationEvidenceState.Current,
+            "ImplStale"         => Evidence()?.Implementation is ImplementationEvidenceState.Stale or ImplementationEvidenceState.Historical,
+            // "MissingImplementation" kept as an alias: it now means no implementation evidence (assessed), never "no FR/SC link".
+            "ImplNone" or "MissingImplementation" => evidence?.ImplementationAssessed == true
+                                   && Evidence()?.Implementation == ImplementationEvidenceState.None,
+            "TestsDesigned"     => Evidence()?.Tests.Designed > 0,
+            "TestsExecuted"     => Evidence()?.Tests.Executed > 0,
+            "TestsFailed"       => Evidence()?.Tests.Failed > 0,
+            "Parallel"          => node.NodeType == TaskNodeType.Task && node.IsParallel,
             "PartialCoverage"   => node.NodeType == TaskNodeType.Task
                                    && (node.ReferencedFrIds.Count == 0 || node.ReferencedScIds.Count == 0),
+            // User-story groups and tasks tagged with a user story (US1, …). Not any title containing "us".
             "OnlyUserStories"   => node.NodeType == TaskNodeType.UserStoryGroup
-                                   || (node.NodeType == TaskNodeType.Task && !string.IsNullOrWhiteSpace(node.UserStoryTag))
-                                   || node.Title.Contains("US", StringComparison.OrdinalIgnoreCase),
+                                   || (node.NodeType == TaskNodeType.Task && !string.IsNullOrWhiteSpace(node.UserStoryTag)),
             "OnlyRequirements"  => node.ReferencedFrIds.Count > 0,
             "OnlySuccessCriteria" => node.ReferencedScIds.Count > 0,
-            "NoLinks"           => node.NodeType == TaskNodeType.Task
-                                   && node.ReferencedFrIds.Count == 0
-                                   && node.ReferencedScIds.Count == 0,
+            "NoLinks"           => HasNoTraceabilityLinks(node, tableLinkedIds),
             _ => true,
         };
     }

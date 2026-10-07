@@ -175,7 +175,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickFilter(cut, "Table Links");
+        ClickFilter(cut, "Table rows");
 
         cut.FindAll(".te-row.is-match").Should().HaveCount(2);
         FindTreeTaskRow(cut, "T001").ClassList.Should().Contain("is-match");
@@ -200,7 +200,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickFilter(cut, "Table Links");
+        ClickFilter(cut, "Table rows");
 
         var row = FindTreeTaskRow(cut, "T001");
         row.TextContent.Should().Contain("TABLE · KjentBruker");
@@ -225,7 +225,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickFilter(cut, "Table Links");
+        ClickFilter(cut, "Table rows");
 
         var badges = FindTreeTaskRow(cut, "T001").QuerySelectorAll(".te-ref-table");
         badges.Should().HaveCount(2);
@@ -238,7 +238,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickFilter(cut, "Table Links");
+        ClickFilter(cut, "Table rows");
 
         FindTreeTaskRow(cut, "T003").TextContent.Should().Contain("TABLE · Phase 2: Foundational");
     }
@@ -255,7 +255,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasks));
 
-        ClickFilter(cut, "Table Links");
+        ClickFilter(cut, "Table rows");
 
         cut.FindAll(".te-ref-table").Should().BeEmpty();
         cut.Find(".te-no-results").TextContent.Should().Contain("No tasks match");
@@ -290,7 +290,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Has FR Links");
+        ClickFilter(cut, "Requirements (FR)");
 
         AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
     }
@@ -300,7 +300,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Has SC Links");
+        ClickFilter(cut, "Success criteria (SC)");
 
         AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
     }
@@ -310,7 +310,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Table Links");
+        ClickFilter(cut, "Table rows");
 
         AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
     }
@@ -320,7 +320,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "User Stories");
+        ClickFilter(cut, "User stories");
 
         AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
     }
@@ -340,7 +340,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Success Criteria");
+        ClickFilter(cut, "Success criteria (SC)");
 
         AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
     }
@@ -350,7 +350,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Testing");
+        ClickFilter(cut, "Testing work");
 
         AssertInfoMatch(FindTreeTaskRow(cut, "T001"));
     }
@@ -360,7 +360,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Security");
+        ClickFilter(cut, "Security work");
 
         AssertInfoMatch(FindTreeTaskRow(cut, "T003"));
     }
@@ -370,9 +370,11 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Missing Implementation");
-
-        AssertWarningMatch(FindTreeTaskRow(cut, "T002"));
+        // "Missing Implementation" used to be "no FR and no SC reference" — a traceability predicate. Implementation evidence
+        // is not assessed here (no Source Analysis, no evidence), so there is no such filter and no task is called missing.
+        cut.FindAll(".te-filter-chip").Should().NotContain(b => b.TextContent.Contains("Missing Implementation"));
+        cut.Find("[data-testid=te-implementation-not-assessed]").TextContent.Should().Be("Not assessed");
+        cut.Find("[data-testid=te-summary-implementation]").TextContent.Should().Contain("Not assessed").And.NotContain("missing");
     }
 
     [Fact]
@@ -380,7 +382,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Unlinked");
+        ClickFilter(cut, "No traceability links");
 
         AssertWarningMatch(FindTreeTaskRow(cut, "T002"));
     }
@@ -390,7 +392,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Has FR Links");
+        ClickFilter(cut, "Requirements (FR)");
 
         var row = FindTreeTaskRow(cut, "T001");
         row.TextContent.Should().Contain("T001");
@@ -406,7 +408,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Has FR Links");
+        ClickFilter(cut, "Requirements (FR)");
 
         cut.FindAll(".te-row.is-heading").Should().Contain(row => row.TextContent.Contains("Phase 1"));
         cut.FindAll(".te-row").Should().Contain(row => row.TextContent.Contains("T001"));
@@ -417,7 +419,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, SemanticFilterFixture));
 
-        ClickFilter(cut, "Done");
+        ClickFilter(cut, "Marked done");
 
         var row = FindTreeTaskRow(cut, "T001");
         row.ClassList.Should().Contain("is-match");
@@ -876,7 +878,7 @@ public class TaskExplorerPageTests : BunitContext
         // Should show overall count
         var summary = cut.Find(".te-parallel-summary");
         summary.Should().NotBeNull("Summary should be shown");
-        summary.TextContent.Should().Contain("3 parallel tasks", "Should show correct total count");
+        summary.TextContent.Should().Contain("3 parallelizable tasks [P]", "Should show correct total count");
     }
 
     [Fact]
@@ -1793,12 +1795,10 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, allCompletedTasks));
 
-        var headerContent = cut.FindAll(".te-header-completion");
-        headerContent.Should().NotBeEmpty("Should have header status");
-
-        var statusText = headerContent[0].TextContent;
-        statusText.Should().Contain("task completion", "Should use 'task completion' terminology");
-        statusText.Should().NotContain("complete", "Should not use bare 'complete' without qualifier");
+        var status = cut.Find("[data-testid=te-summary-status]").TextContent;
+        status.Should().Contain("Marked done in Task artifact").And.Contain("2 / 2").And.Contain("(100%)");
+        cut.Find("[data-testid=te-summary]").TextContent.Should().NotContainAny(["task completion", "implementation complete", "Completed"],
+            "a checkbox ratio is not implementation or test completion");
     }
 
     [Fact]
@@ -1847,11 +1847,9 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, tasksMissingRequirements));
 
-        // Header should show task completion
-        var headerStatus = cut.FindAll(".te-header-completion");
-        var taskCompletionText = headerStatus.FirstOrDefault()?.TextContent ?? "";
-        taskCompletionText.Should().Contain("task completion",
-            "Header should show task completion status");
+        // The header shows the Task artifact checkbox status, separately from traceability
+        cut.Find("[data-testid=te-summary-status]").TextContent.Should().Contain("2 / 2");
+        cut.Find("[data-testid=te-summary-traceability]").TextContent.Should().Contain("0 linked · 2 with no links");
 
         // Impact tab should show requirement coverage (potentially different)
         var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Impact"));
@@ -2055,14 +2053,14 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
-        var header = cut.Find(".te-header-left");
-        var summary = header.TextContent;
-
-        // Verify all metrics are shown
-        summary.Should().Contain("task", "Should show task count");
-        summary.Should().Contain("phase", "Should show phase count");
-        summary.Should().Contain("parallel", "Should show parallel count");
-        summary.Should().Contain("task completion", "Should show task completion percentage");
+        // Each fact in its own place: artifact, status, planning, traceability, implementation and test evidence.
+        string Item(string id) => cut.Find($"[data-testid=te-summary-{id}]").TextContent;
+        Item("artifact").Should().Contain("4 tasks ·");
+        Item("status").Should().Contain("Marked done in Task artifact").And.Contain("1 / 4").And.Contain("(25%)");
+        Item("planning").Should().Contain("2 parallelizable tasks [P]");
+        Item("traceability").Should().Contain("with no links");
+        Item("implementation").Should().Contain("Not assessed");
+        Item("tests").Should().Contain("Not assessed");
     }
 
     [Fact]
@@ -2077,11 +2075,11 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, completedTasks));
 
-        var header = cut.Find(".te-header-summary");
+        var header = cut.Find("[data-testid=te-summary]");
         var headerText = header.TextContent;
 
-        headerText.Should().Contain("task completion",
-            "Should use 'task completion' terminology instead of just 'complete'");
+        headerText.Should().Contain("Marked done in Task artifact",
+            "the checkbox ratio says what it is").And.NotContain("task completion");
     }
 
     [Fact]
@@ -2098,12 +2096,12 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, partialTasks));
 
-        var header = cut.Find(".te-header-summary");
+        var header = cut.Find("[data-testid=te-summary]");
         var headerText = header.TextContent;
 
         // 2 out of 4 tasks complete = 50%
-        headerText.Should().Contain("50% task completion",
-            "Should calculate completion percentage correctly");
+        headerText.Should().Contain("2 / 4 (50%)",
+            "Should calculate the marked-done percentage correctly");
     }
 
     [Fact]
@@ -2117,7 +2115,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, singleTask));
 
-        var header = cut.Find(".te-header-summary");
+        var header = cut.Find("[data-testid=te-summary]");
         var headerText = header.TextContent.Replace("\n", "").Replace("\r", "").Replace(" ", "");
 
         // Should use singular "task" and "phase"
@@ -2142,7 +2140,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, multipleTasks));
 
-        var header = cut.Find(".te-header-summary");
+        var header = cut.Find("[data-testid=te-summary]");
         var headerText = header.TextContent.Replace("\n", "").Replace("\r", "").Replace(" ", "");
 
         // Should use plural forms
@@ -2169,11 +2167,11 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, withParallel));
 
-        var header = cut.Find(".te-header-summary");
+        var header = cut.Find("[data-testid=te-summary]");
         var headerText = header.TextContent.Replace("\n", "").Replace("\r", "").Replace(" ", "");
 
         // 3 tasks with [P] tags
-        headerText.Should().Contain("3parallel",
+        headerText.Should().Contain("3parallelizabletasks[P]",
             "Should count all tasks with [P] tags");
     }
 

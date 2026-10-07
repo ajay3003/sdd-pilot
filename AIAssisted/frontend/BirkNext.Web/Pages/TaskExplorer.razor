@@ -4,7 +4,10 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services.Explorers
 @using Microsoft.AspNetCore.WebUtilities
+@using BirkNext.Web.Services
 @inject NavigationManager NavigationManager
+@inject IServiceProvider ServiceProvider
+@implements IDisposable
 
 <PageTitle>Task Explorer — QA Review Studio</PageTitle>
 
@@ -25,6 +28,7 @@
                     TasksText="@_text"
                     ParsedTasks="@_parsed"
                     SemanticModel="@_semanticModel"
+                    Evidence="@_evidence"
                     InitialView="@_initialView"
                     OnTextChanged="ImportFromPanel" />
             </div>
@@ -40,12 +44,41 @@
     private string? _analysisError;
     private TaskTree? _parsed;
     private TaskSemanticModel? _semanticModel;
+    private TaskEvidenceIndex _evidence = TaskEvidenceIndex.NotAssessed;
+    private IWorkspaceSessionService? _workspace;
 
     protected override void OnInitialized()
     {
+        // Implementation and test evidence come from the shared SDD lifecycle graph (the one Implementation Review reads).
+        _workspace = ServiceProvider.GetService(typeof(IWorkspaceSessionService)) as IWorkspaceSessionService;
+        if (_workspace is not null) _workspace.ReviewContextRebuildNeeded += OnLifecycleChanged;
+        RefreshEvidence();
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
             _initialView = view;
+    }
+
+    /// <summary>Reads evidence per requirement from the lifecycle projection; "not assessed" whenever it cannot be read.</summary>
+    private void RefreshEvidence()
+    {
+        try
+        {
+            var graph = ServiceProvider.GetService(typeof(SddEvidenceGraphService)) as SddEvidenceGraphService;
+            _evidence = graph is null || _workspace is null
+                ? TaskEvidenceIndex.NotAssessed
+                : TaskEvidenceIndex.Build(graph.Project(_workspace), _workspace.SddLifecycle);
+        }
+        catch (Exception)
+        {
+            _evidence = TaskEvidenceIndex.NotAssessed;
+        }
+    }
+
+    private void OnLifecycleChanged(object? sender, EventArgs e) => _ = InvokeAsync(() => { RefreshEvidence(); StateHasChanged(); });
+
+    public void Dispose()
+    {
+        if (_workspace is not null) _workspace.ReviewContextRebuildNeeded -= OnLifecycleChanged;
     }
 
     // The panel's own paste box goes through the repository like every other import.
@@ -59,6 +92,7 @@
         _parsed = null;
         _semanticModel = null;
         _analysisError = null;
+        RefreshEvidence();
         if (string.IsNullOrWhiteSpace(text)) return;
         try
         {

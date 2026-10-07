@@ -168,7 +168,7 @@ public sealed class ReviewCoverageSummary
     public int ConstitutionGatesPass { get; init; }
     public int ConstitutionGatesFail { get; init; }
 
-    // ── Implementation Coverage ─────────────────────────────────────────────
+    // ── Task artifact status (checkboxes and links in the Task artifact; not implementation evidence) ──
     public int TotalTasks { get; init; }
     public int CompletedTasks { get; init; }
     public int OpenTasks { get; init; }
@@ -184,8 +184,8 @@ public sealed class ReviewCoverageSummary
     public int SpecificationCompleteness => ComputeSpecificationCompleteness();
     public int TraceabilityCompleteness => ComputeTraceabilityCompleteness();
     public int GovernanceCompleteness => ComputeGovernanceCompleteness();
-    public int ImplementationCompleteness => ComputeImplementationCompleteness();
-    public int OverallCompleteness => (SpecificationCompleteness + TraceabilityCompleteness + GovernanceCompleteness + ImplementationCompleteness) / 4;
+    /// <summary>Share of tasks marked done ([x]) in the Task artifact. A document checkbox ratio — not implementation completeness.</summary>
+    public int TasksMarkedDonePercent => ComputeTasksMarkedDonePercent();
 
     // ── Helper Methods ──────────────────────────────────────────────────────
     private int ComputeSpecificationCompleteness()
@@ -207,7 +207,7 @@ public sealed class ReviewCoverageSummary
         return (CompliantRules * 100) / TotalConstitutionRules;
     }
 
-    private int ComputeImplementationCompleteness()
+    private int ComputeTasksMarkedDonePercent()
     {
         if (TotalTasks == 0) return 0;
         return (CompletedTasks * 100) / TotalTasks;

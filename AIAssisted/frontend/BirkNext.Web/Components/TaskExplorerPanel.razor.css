@@ -93,20 +93,6 @@
     color: var(--clr-text-subtle);
 }
 
-.te-header-summary {
-    font-size: 0.8rem;
-    color: var(--clr-text-secondary);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    flex-wrap: wrap;
-}
-
-.te-header-completion {
-    font-weight: 600;
-    color: var(--clr-text-primary);
-}
-
 .te-header-right {
     display: flex;
     align-items: center;
@@ -234,15 +220,16 @@
 }
 
 .te-filter-chip:hover { color: var(--clr-text-primary); }
-.te-filter-chip.is-active { background: var(--clr-info-bg); color: var(--clr-info); border-color: var(--clr-info-border); }
+.te-filter-chip.is-active { background: var(--clr-info-bg); color: var(--clr-info); border-color: var(--clr-info-border); font-weight: 600; box-shadow: inset 0 0 0 1px currentColor; }
+.te-filter-chip:focus-visible { outline: 2px solid var(--clr-primary, #2563eb); outline-offset: 2px; }
 .te-fc-linked.is-active   { background: var(--clr-success-bg); color: var(--clr-success); border-color: var(--clr-success-border); }
 .te-fc-tech.is-active     { background: var(--clr-info-bg); color: var(--clr-info); border-color: var(--clr-info-border); }
 .te-fc-review.is-active   { background: var(--clr-warning-bg); color: var(--clr-warning); border-color: var(--clr-warning-border); }
 .te-fc-dev.is-active      { background: var(--clr-danger-bg); color: var(--clr-danger); border-color: var(--clr-danger-border); }
-.te-fc-risk.is-active     { background: var(--clr-danger-bg); color: var(--clr-danger); border-color: var(--clr-danger-border); }
+.te-fc-risk.is-active     { background: var(--clr-danger-bg); color: #b91c1c; border-color: var(--clr-danger-border); }
 .te-fc-reg.is-active      { background: var(--clr-warning-bg); color: var(--clr-warning); border-color: var(--clr-warning-border); }
 .te-fc-testing.is-active  { background: var(--clr-accent-bg); color: var(--clr-accent); border-color: var(--clr-accent-border); }
-.te-fc-security.is-active { background: var(--clr-danger-bg); color: var(--clr-danger); border-color: var(--clr-danger-border); }
+.te-fc-security.is-active { background: var(--clr-danger-bg); color: #b91c1c; border-color: var(--clr-danger-border); }
 
 /* ── Main layout ─────────────────────────────────────────────────────────── */
 
@@ -278,8 +265,10 @@
     border-bottom: 1px solid rgba(255, 255, 255, 0.03);
     transition: background 0.1s;
     min-height: 30px;
-    flex-wrap: nowrap;
-    overflow: hidden;
+    flex-wrap: wrap;
+    row-gap: 0.2rem;
+    /* Indentation from the tree depth; reduced on narrow screens so task text keeps room. */
+    padding-left: calc(var(--te-depth, 0) * 16px + 6px);
 }
 
 .te-row:last-child { border-bottom: none; }
@@ -352,17 +341,17 @@
 .te-node-title {
     font-size: 0.81rem;
     color: var(--clr-text-primary);
-    flex: 1;
+    flex: 1 1 14rem;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    user-select: text;
     line-height: 1.4;
 }
 
+/* Marked done: the ✓ carries the state; the text stays readable (no opacity, which also washed out the task ID). */
 .te-node-title.is-done {
-    opacity: 0.65;
-    color: var(--clr-text-subtle);
+    color: #475569;
 }
 
 .te-task-id {
@@ -388,9 +377,8 @@
 .te-chips {
     display: flex;
     gap: 0.2rem;
-    flex-shrink: 0;
-    flex-wrap: nowrap;
-    overflow: hidden;
+    flex-shrink: 1;
+    flex-wrap: wrap;
 }
 
 .te-chip {
@@ -404,10 +392,10 @@
 
 .te-chip-us       { background: var(--clr-accent-bg); color: var(--clr-accent); }
 .te-chip-parallel { background: var(--clr-info-bg); color: var(--clr-info); }
-.te-chip-risk     { background: var(--clr-danger-bg); color: var(--clr-danger); }
+.te-chip-risk     { background: var(--clr-danger-bg); color: #b91c1c; }
 .te-chip-reg      { background: var(--clr-warning-bg); color: var(--clr-warning); }
 .te-chip-testing  { background: var(--clr-accent-bg); color: var(--clr-accent); }
-.te-chip-security { background: var(--clr-danger-bg); color: var(--clr-danger); }
+.te-chip-security { background: var(--clr-danger-bg); color: #b91c1c; }
 
 .te-chip-status { border-radius: 999px; }
 .te-chip-status-linked { background: var(--clr-success-bg); color: var(--clr-success); }
@@ -449,8 +437,8 @@
     font-weight: 500;
     padding: 0.1rem 0.35rem;
     border-radius: 999px;
-    background: rgba(100,116,139,0.15);
-    color: var(--clr-text-subtle);
+    background: #eef2f7;
+    color: #334155;
     white-space: nowrap;
 }
 
@@ -460,9 +448,8 @@
 .te-ref-chips {
     display: flex;
     gap: 0.2rem;
-    flex-shrink: 0;
-    flex-wrap: nowrap;
-    overflow: hidden;
+    flex-shrink: 1;
+    flex-wrap: wrap;
 }
 
 .te-ref-chip {
@@ -487,12 +474,16 @@ button.te-ref-chip:hover {
 }
 
 .te-ref-fr { background: var(--clr-badge-req-bg); color: var(--clr-badge-req-text); }
-.te-ref-sc { background: var(--clr-danger-bg); color: var(--clr-danger); }
+.te-ref-sc { background: #f5f3ff; color: #5b21b6; } /* a link, not a failure: neutral violet, never danger red */
 .te-ref-task { background: var(--clr-info-bg); color: var(--clr-info); }
 .te-ref-table {
     background: var(--clr-bg-subtle);
     color: var(--clr-text-secondary);
     border: 1px solid var(--clr-border);
+    /* Table row titles can be long: wrap inside the row instead of running past it on narrow screens. */
+    white-space: normal;
+    overflow-wrap: anywhere;
+    max-width: 100%;
 }
 
 .te-table-link-count {
@@ -1917,7 +1908,7 @@ button.te-ref-chip:hover {
 
 .te-ptask-id {
     font-weight: 700;
-    color: rgba(45, 212, 191, 0.9);
+    color: #0f766e;
     font-family: monospace;
     text-align: center;
     padding: 0.3rem 0.45rem;
@@ -2049,4 +2040,124 @@ button.te-ref-chip:hover {
     font-size: 0.77rem;
     color: var(--clr-text-subtle);
     line-height: 1.45;
+}
+
+
+/* ── Summary: separate facts, one meaning each ───────────────────────────── */
+
+.te-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr));
+    gap: 0.5rem;
+    margin: 0 0 0.75rem;
+}
+
+.te-summary-item {
+    min-width: 0;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-sm, 6px);
+    background: var(--clr-bg-card, #fff);
+}
+
+.te-summary-item dt {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--clr-text-subtle, #475569);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.te-summary-item dd {
+    margin: 0.2rem 0 0;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--clr-text-primary, #0f172a);
+    overflow-wrap: anywhere;
+}
+
+.te-summary-sub {
+    font-weight: 400;
+    color: var(--clr-text-subtle, #475569);
+}
+
+.te-summary-link {
+    margin-left: 0.35rem;
+    font-weight: 500;
+    font-size: 0.78rem;
+}
+
+/* ── Filters: not-assessed note, filter status, legend ───────────────────── */
+
+.te-filter-na {
+    font-size: 0.72rem;
+    color: var(--clr-text-subtle, #475569);
+    font-style: italic;
+}
+
+.te-filter-status {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--clr-text-subtle, #475569);
+    flex-wrap: wrap;
+}
+
+.te-legend {
+    font-size: 0.75rem;
+    color: var(--clr-text-subtle, #475569);
+}
+
+.te-legend > summary {
+    cursor: pointer;
+    font-weight: 600;
+    min-height: 24px;
+    width: fit-content;
+}
+
+.te-legend-sample {
+    display: inline-block;
+    padding: 0 0.3rem;
+    border: 1px solid var(--clr-border, #e2e8f0);
+    border-radius: var(--radius-sm, 6px);
+    font-weight: 600;
+    color: #334155;
+    background: #f8fafc;
+}
+
+.te-legend ul {
+    margin: 0.35rem 0 0;
+    padding-left: 1rem;
+    display: grid;
+    gap: 0.25rem;
+}
+
+/* ── Evidence chips (implementation / test): neutral, text carries the state ── */
+
+.te-ev-chips {
+    display: flex;
+    gap: 0.2rem;
+    flex-wrap: wrap;
+}
+
+.te-ev-chip {
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: var(--radius-sm, 6px);
+    border: 1px solid var(--clr-border, #e2e8f0);
+    color: #334155;
+    background: #f8fafc;
+    white-space: nowrap;
+}
+
+.te-ev-chip.is-current { color: #166534; border-color: #bbf7d0; background: #f0fdf4; }
+.te-ev-chip.is-stale,
+.te-ev-chip.is-historical { color: #9a3412; border-color: #fed7aa; background: #fff7ed; }
+.te-ev-chip.is-failed { color: #991b1b; border-color: #fecaca; background: #fef2f2; }
+
+@media (max-width: 480px) {
+    .te-row { padding-left: calc(var(--te-depth, 0) * 8px + 4px); }
+    .te-summary { grid-template-columns: 1fr 1fr; }
 }

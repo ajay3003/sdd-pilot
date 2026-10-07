@@ -1696,15 +1696,15 @@ public class ViewBehaviorTests : BunitContext
         var text = cut.Markup;
 
         // Coverage dimension: filter by artifact type and implementation status
-        text.Should().Contain("User Stories");
-        text.Should().Contain("Requirements");
-        text.Should().Contain("Success Criteria");
-        text.Should().Contain("Missing Implementation");
+        text.Should().Contain("User stories");
+        text.Should().Contain("Requirements (FR)");
+        text.Should().Contain("Success criteria (SC)");
+        text.Should().NotContain("Missing Implementation", "implementation evidence is its own group, never a traceability predicate");
+        text.Should().Contain("Implementation evidence");
 
         // Traceability dimension: filter by link relationships
-        text.Should().Contain("Has FR Links");
-        text.Should().Contain("Has SC Links");
-        text.Should().Contain("Unlinked");
+        text.Should().Contain("Table rows");
+        text.Should().Contain("No traceability links");
 
         // Quality dimension: filter by task classification
         text.Should().Contain("Testing");
@@ -1728,7 +1728,8 @@ public class ViewBehaviorTests : BunitContext
         details.Should().Contain("SC-001");
         details.Should().Contain("Linked Test Assets");
         details.Should().Contain("Linked Architecture Notes");
-        details.Should().Contain("Implementation Status");
+        details.Should().Contain("Task artifact status").And.Contain("Implementation evidence").And.Contain("Test evidence");
+        details.Should().NotContain("Implementation Status", "a checkbox is not an implementation status");
         details.Should().Contain("Coverage Impact");
     }
 
