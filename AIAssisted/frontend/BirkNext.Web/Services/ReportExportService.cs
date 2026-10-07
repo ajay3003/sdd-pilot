@@ -231,11 +231,12 @@ public sealed class ReportExportService : IReportExportService
             else if (pack.DataModel is { } dm)
             {
                 sb.Append("<div class=\"kpi-row\">");
-                sb.Append(Kpi(dm.EntityCount.ToString(), "Entities"));
-                sb.Append(Kpi(dm.ColumnCount.ToString(), "Columns"));
-                sb.Append(Kpi(dm.RelationshipCount.ToString(), "Relationships"));
+                sb.Append(Kpi(dm.EntityCount.ToString(), "Data structures"));
+                sb.Append(Kpi(EvidenceCount(dm.ColumnCount, dm.ColumnEvidence), "Fields / columns"));
+                sb.Append(Kpi(EvidenceCount(dm.RelationshipCount, dm.RelationshipEvidence), "Relationships"));
                 sb.Append(Kpi(dm.FindingCount.ToString(), "Findings"));
                 sb.Append("</div>\n");
+                sb.Append(DataModelEvidenceSummary(dm));
 
                 sb.Append(BuildDataModelBody(dm));
             }
@@ -1022,13 +1023,14 @@ public sealed class ReportExportService : IReportExportService
         var sb = new StringBuilder();
 
         sb.Append("<div class=\"kpi-row\">");
-        sb.Append(Kpi(document.EntityCount.ToString(), "Entities"));
-        sb.Append(Kpi(document.ColumnCount.ToString(), "Columns"));
-        sb.Append(Kpi(document.RelationshipCount.ToString(), "Relationships"));
-        sb.Append(Kpi(document.IndexCount.ToString(), "Indexes"));
+        sb.Append(Kpi(document.EntityCount.ToString(), "Data structures"));
+        sb.Append(Kpi(EvidenceCount(document.ColumnCount, document.ColumnEvidence), "Fields / columns"));
+        sb.Append(Kpi(EvidenceCount(document.RelationshipCount, document.RelationshipEvidence), "Relationships"));
+        sb.Append(Kpi(EvidenceCount(document.IndexCount, document.IndexEvidence), "Indexes"));
         if (document.FindingCount > 0)
             sb.Append(Kpi(document.FindingCount.ToString(), "Findings"));
         sb.Append("</div>\n");
+        sb.Append(DataModelEvidenceSummary(document));
 
         sb.Append(BuildDataModelBody(document));
 
@@ -1147,6 +1149,34 @@ public sealed class ReportExportService : IReportExportService
 
     // ── Private helpers ────────────────────────────────────────────────────────────
 
+    private static string EvidenceCount(int count, DataModelEvidenceState state) =>
+        state is DataModelEvidenceState.Extracted or DataModelEvidenceState.NoneDeclared ? count.ToString() : "—";
+
+    private static string DataModelEvidenceSummary(DataModelDocument dm) =>
+        $"<p class=\"meta\">Fields / columns: {EvidenceLabel(dm.ColumnEvidence)} · Relationships: {EvidenceLabel(dm.RelationshipEvidence)} · Indexes: {EvidenceLabel(dm.IndexEvidence)} · Source-derived model only; deployed schema and runtime state are not verified here.</p>\n";
+
+    private static string EvidenceLabel(DataModelEvidenceState state) => state switch
+    {
+        DataModelEvidenceState.Extracted => "extracted from artifact",
+        DataModelEvidenceState.NoneDeclared => "none declared in artifact",
+        DataModelEvidenceState.NotExtracted => "not extracted",
+        DataModelEvidenceState.NotRepresented => "not represented",
+        DataModelEvidenceState.Unsupported => "notation not supported by analyzer",
+        DataModelEvidenceState.NotApplicable => "not applicable",
+        _ => "not assessed",
+    };
+
+    private static string DataStructureKindLabel(DataStructureKind kind) => kind switch
+    {
+        DataStructureKind.Table => "Table",
+        DataStructureKind.PersistentEntity => "Persistent structure",
+        DataStructureKind.Record => "Record / DTO",
+        DataStructureKind.Event => "Event",
+        DataStructureKind.Message => "Message",
+        DataStructureKind.DataStructure => "Data structure",
+        _ => "Unclassified structure",
+    };
+
     private static string BuildDataModelBody(DataModelDocument dm)
     {
         var sb = new StringBuilder();
@@ -1154,19 +1184,22 @@ public sealed class ReportExportService : IReportExportService
         if (!string.IsNullOrWhiteSpace(dm.Overview))
         {
             sb.Append("<section class=\"block\">\n<h2>Overview</h2>\n");
-            sb.Append($"<p style=\"font-size:.88rem;line-height:1.55\">{Esc(dm.Overview)}</p>\n");
+            sb.Append(new MarkdownRenderingService().Render(dm.Overview));
             sb.Append("</section>\n");
         }
 
         if (dm.Entities.Count > 0)
         {
-            sb.Append("<section class=\"block\">\n<h2>Entities</h2>\n");
+            sb.Append("<section class=\"block\">\n<h2>Data structures</h2>\n");
             foreach (var entity in dm.Entities)
             {
                 sb.Append("<div class=\"entity-block\">\n");
-                sb.Append($"<p class=\"entity-name\">{Esc(entity.Name)}<span class=\"entity-type\">{(entity.IsTable ? "Table" : "Entity")}</span></p>\n");
+                sb.Append($"<p class=\"entity-name\">{Esc(entity.Name)}<span class=\"entity-type\">{DataStructureKindLabel(entity.Kind)}</span></p>\n");
                 if (!string.IsNullOrWhiteSpace(entity.Description))
                     sb.Append($"<p style=\"font-size:.82rem;color:#4b5563;margin:.2rem 0 .4rem\">{Esc(entity.Description)}</p>\n");
+
+                if (entity.Columns.Count == 0)
+                    sb.Append($"<p class=\"meta\">{(entity.IsTable || entity.Kind == DataStructureKind.Table ? "Column-level detail was not extracted from this artifact." : "Fields or properties were not extracted from this artifact.")}</p>\n");
 
                 if (entity.Columns.Count > 0)
                     sb.Append(Table(
@@ -1258,6 +1291,17 @@ public sealed class ReportExportService : IReportExportService
                     Esc(f.Description)
                 })));
             sb.Append("</section>\n");
+        }
+
+        if (dm.EvidenceGaps.Count > 0)
+        {
+            sb.Append("<section class=\"block\"><h2>Evidence gaps (not model findings)</h2><ul>");
+            foreach (var gap in dm.EvidenceGaps)
+            {
+                var subject = string.IsNullOrWhiteSpace(gap.EntityName) ? gap.Category : $"{gap.Category} · {gap.EntityName}";
+                sb.Append($"<li><strong>{Esc(subject)}:</strong> {Esc(gap.Description)}</li>");
+            }
+            sb.Append("</ul></section>\n");
         }
 
         return sb.ToString();

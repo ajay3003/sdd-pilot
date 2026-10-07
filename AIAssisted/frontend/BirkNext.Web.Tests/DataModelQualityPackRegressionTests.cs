@@ -64,6 +64,8 @@ public sealed class DataModelQualityPackRegressionTests
         // Arrange - construct model with known findings
         const string markdown = """
             ## Entity: User
+
+            ### Columns
             | Column | Type |
             |--------|------|
             | email | String |
@@ -93,14 +95,18 @@ public sealed class DataModelQualityPackRegressionTests
         // Arrange - two entities with same type of violation
         const string markdown = """
             ## Entity: User
+
+            ### Columns
             | Column | Type |
             |--------|------|
-            | name | String |
+            | password | String |
 
             ## Entity: Company
+
+            ### Columns
             | Column | Type |
             |--------|------|
-            | name | String |
+            | password | String |
             """;
 
         var parsed = _parser.Parse(markdown);
@@ -218,6 +224,8 @@ public sealed class DataModelQualityPackRegressionTests
         // Arrange - deliberately create conditions for duplicate-like findings
         const string markdown = """
             ## Entity: User
+
+            ### Columns
             | Column | Type |
             |--------|------|
             | password | String |

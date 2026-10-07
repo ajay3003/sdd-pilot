@@ -13,6 +13,11 @@ public sealed class DataModelDocument
     public List<DataConstraint>   Constraints   { get; init; } = [];
     public List<DataEnum>         Enums         { get; init; } = [];
     public List<DataModelFinding> Findings      { get; init; } = [];
+    public List<DataModelEvidenceGap> EvidenceGaps { get; init; } = [];
+    public DataModelEvidenceState ColumnEvidence { get; init; } = DataModelEvidenceState.NotExtracted;
+    public DataModelEvidenceState RelationshipEvidence { get; init; } = DataModelEvidenceState.NotRepresented;
+    public DataModelEvidenceState IndexEvidence { get; init; } = DataModelEvidenceState.NotRepresented;
+    public DataModelEvidenceState ConstraintEvidence { get; init; } = DataModelEvidenceState.NotRepresented;
 
     public int EntityCount       => Entities.Count;
     public int ColumnCount       => Entities.Sum(e => e.Columns.Count);
@@ -24,10 +29,40 @@ public sealed class DataModelDocument
     public int InfoCount         => Findings.Count(f => f.Severity == DataModelSeverity.Info);
 }
 
+public enum DataModelEvidenceState
+{
+    Extracted,
+    NoneDeclared,
+    NotExtracted,
+    NotRepresented,
+    Unsupported,
+    NotApplicable,
+}
+
+public enum DataStructureKind
+{
+    Unclassified,
+    PersistentEntity,
+    Table,
+    Record,
+    Event,
+    Message,
+    DataStructure,
+}
+
+public sealed class DataModelEvidenceGap
+{
+    public string Category { get; init; } = string.Empty;
+    public string Description { get; init; } = string.Empty;
+    public string? EntityName { get; init; }
+    public DataModelEvidenceState State { get; init; }
+}
+
 public sealed class DataEntity
 {
     public string  Name        { get; init; } = string.Empty;
     public bool    IsTable     { get; init; }
+    public DataStructureKind Kind { get; init; } = DataStructureKind.Unclassified;
     public string? Description { get; init; }
 
     public List<DataColumn> Columns         { get; init; } = [];

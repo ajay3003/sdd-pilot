@@ -195,7 +195,7 @@ public class DataModelAnalysisServiceTests
     }
 
     [Fact]
-    public void Parse_WithNoEntities_ShowsInfoNotError()
+    public void Parse_WithNoEntities_DoesNotClaimModelFinding()
     {
         var markdown = """
             # Data Model: Test
@@ -208,9 +208,8 @@ public class DataModelAnalysisServiceTests
         var doc = _service.Parse(markdown);
 
         Assert.Empty(doc.Entities);
-        Assert.NotEmpty(doc.Findings);
-        Assert.All(doc.Findings, f =>
-            Assert.Equal(DataModelSeverity.Info, f.Severity));
+        Assert.Empty(doc.Findings);
+        Assert.Contains(doc.EvidenceGaps, gap => gap.Category == "Fields / columns");
     }
 
     [Fact]

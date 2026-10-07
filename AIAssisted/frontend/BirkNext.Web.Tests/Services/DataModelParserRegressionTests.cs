@@ -67,13 +67,11 @@ public class DataModelParserRegressionTests
     // ── Findings: core rules ───────────────────────────────────────────
 
     [Fact]
-    public void Parse_NoEntities_GeneratesInfoFinding()
+    public void Parse_NoEntities_DoesNotTreatMissingStructureAsFinding()
     {
         var result = _service.Parse("## Overview\n\nSome text");
-        Assert.NotEmpty(result.Findings);
-        Assert.True(result.Findings.Any(f =>
-            f.Severity == DataModelSeverity.Info &&
-            f.Description.Contains("persistent entities")));
+        Assert.Empty(result.Findings);
+        Assert.Empty(result.Entities);
     }
 
     // ── Sensitivity ────────────────────────────────────────────────────
@@ -943,6 +941,23 @@ public class DataModelParserRegressionTests
 
         // Non-standard notation is intentionally unsupported
         Assert.Empty(result.Indexes);
+    }
+
+    [Fact]
+    public void Parse_PersonAdapter_ClassifiesStructuresWithoutTreatingEvidenceGapsAsFindings()
+    {
+        var path = TestDataHelper.ResolveSampleDataPath("person-adapter", "data-model.md");
+        if (!System.IO.File.Exists(path)) return;
+
+        var result = _service.Parse(System.IO.File.ReadAllText(path));
+
+        Assert.Equal(6, result.Entities.Count);
+        Assert.Equal(DataStructureKind.Table, result.Entities.Single(e => e.Name == "FaultQueueEntry").Kind);
+        Assert.Equal(DataStructureKind.PersistentEntity, result.Entities.Single(e => e.Name == "StreamCheckpoint").Kind);
+        Assert.Equal(DataStructureKind.Event, result.Entities.Single(e => e.Name.Contains("CDC Event", StringComparison.Ordinal)).Kind);
+        Assert.Equal(DataStructureKind.Record, result.Entities.Single(e => e.Name == "PersonRecord").Kind);
+        Assert.DoesNotContain(result.Findings, f => f.Description.Contains("No columns defined", StringComparison.OrdinalIgnoreCase));
+        Assert.Empty(result.Findings);
     }
 
     [Fact]

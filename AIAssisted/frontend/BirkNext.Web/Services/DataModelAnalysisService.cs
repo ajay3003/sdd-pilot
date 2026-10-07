@@ -41,6 +41,14 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         var             globalRelationships       = new List<DataRelationship>();
         var             globalIndexes             = new List<DataIndex>();
         var             globalConstraints         = new List<DataConstraint>();
+        var             columnSectionDeclared      = false;
+        var             relationshipSectionDeclared = false;
+        var             indexSectionDeclared       = false;
+        var             constraintSectionDeclared  = false;
+        var             unsupportedIndexNotation   = false;
+        var             unsupportedRelationshipNotation = false;
+        var             unsupportedConstraintNotation = false;
+        var             currentEntityKind           = DataStructureKind.Unclassified;
 
         void FlushEntity()
         {
@@ -49,6 +57,9 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             {
                 Name            = currentEntityName,
                 IsTable         = currentEntityIsTable,
+                Kind            = currentEntityIsTable ? DataStructureKind.Table :
+                    currentEntitySectionKind == "persistent" ? DataStructureKind.PersistentEntity :
+                    currentEntityKind,
                 Description     = string.IsNullOrWhiteSpace(currentEntityDesc) ? null : currentEntityDesc.Trim(),
                 Columns         = new List<DataColumn>(currentColumns),
                 TraceabilityIds = new List<string>(currentTraceIds),
@@ -65,6 +76,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             currentEntityConstraints.Clear();
             currentTraceIds.Clear();
             currentSection = string.Empty;
+            currentEntityKind = DataStructureKind.Unclassified;
         }
 
         void FlushEnum()
@@ -112,6 +124,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     {
                         currentEntityName    = NormalizeStructuredName(h2[7..].Trim());
                         currentEntityIsTable = false;
+                        currentEntityKind   = DataStructureKind.Unclassified;
                         currentSection       = string.Empty;
                         currentEntitySectionKind = string.Empty;
                     }
@@ -119,6 +132,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     {
                         currentEntityName    = NormalizeStructuredName(h2[6..].Trim());
                         currentEntityIsTable = true;
+                        currentEntityKind   = DataStructureKind.Table;
                         currentSection       = string.Empty;
                         currentEntitySectionKind = string.Empty;
                     }
@@ -146,17 +160,28 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                     else if (h2.Equals("Relationships", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "relationships";
+                        relationshipSectionDeclared = true;
+                        currentEntitySectionKind = string.Empty;
+                    }
+                    else if (h2.Equals("Columns", StringComparison.OrdinalIgnoreCase) ||
+                             h2.Equals("Fields", StringComparison.OrdinalIgnoreCase) ||
+                             h2.Equals("Properties", StringComparison.OrdinalIgnoreCase))
+                    {
+                        currentSection = "columns";
+                        columnSectionDeclared = true;
                         currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Indexes", StringComparison.OrdinalIgnoreCase) ||
                              h2.Equals("Indices", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "indexes";
+                        indexSectionDeclared = true;
                         currentEntitySectionKind = string.Empty;
                     }
                     else if (h2.Equals("Constraints", StringComparison.OrdinalIgnoreCase))
                     {
                         currentSection = "constraints";
+                        constraintSectionDeclared = true;
                         currentEntitySectionKind = string.Empty;
                     }
                     else if (IsEntitySectionHeading(h2))
@@ -208,6 +233,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         var (entityName, tableName) = ExtractEntityAndTableName(h3);
                         currentEntityName    = NormalizeStructuredName(entityName);
                         currentEntityIsTable = !string.IsNullOrEmpty(tableName);
+                        currentEntityKind   = currentEntityIsTable ? DataStructureKind.Table : InferDataStructureKind(entityName);
 
                         // If a table name was extracted, set it as a description hint
                         if (!string.IsNullOrEmpty(tableName))
@@ -217,17 +243,27 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         currentSection = string.Empty;
                     }
                     else if (h3.Equals("Columns", StringComparison.OrdinalIgnoreCase))
+                    {
                         currentSection = "columns";
+                    }
                     else if (h3.Equals("Fields", StringComparison.OrdinalIgnoreCase) ||
                              h3.Equals("Properties", StringComparison.OrdinalIgnoreCase))
+                    {
                         currentSection = "columns";
+                    }
                     else if (h3.Equals("Relationships", StringComparison.OrdinalIgnoreCase))
+                    {
                         currentSection = "relationships";
+                    }
                     else if (h3.Equals("Indexes", StringComparison.OrdinalIgnoreCase) ||
                              h3.Equals("Indices", StringComparison.OrdinalIgnoreCase))
+                    {
                         currentSection = "indexes";
+                    }
                     else if (h3.Equals("Constraints", StringComparison.OrdinalIgnoreCase))
+                    {
                         currentSection = "constraints";
+                    }
                     else if (h3.Equals("Traceability", StringComparison.OrdinalIgnoreCase))
                         currentSection = "traceability";
                     else if (h3.Equals("Open Questions", StringComparison.OrdinalIgnoreCase))
@@ -239,6 +275,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         FlushEnum();
                         currentEntityName    = NormalizeStructuredName(StripNumericPrefix(h3));
                         currentEntityIsTable = false;
+                        currentEntityKind   = DataStructureKind.Unclassified;
                         currentSection       = string.Empty;
                         currentEntitySectionKind = string.Empty;
                     }
@@ -273,6 +310,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                 if (currentEntityName is null) { FlushEntity(); FlushEnum(); }
                                 currentEntityName    = tableName;
                                 currentEntityIsTable = true;
+                                currentEntityKind   = DataStructureKind.Table;
                                 currentSection       = "columns";
                             }
                             continue;
@@ -282,6 +320,7 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                         case "index":
                             if (currentEntityName is not null)
                             {
+                                indexSectionDeclared = true;
                                 currentSection = "indexes";
                                 // If there's inline content after the label, parse it immediately
                                 if (!string.IsNullOrWhiteSpace(val))
@@ -413,6 +452,10 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                             else
                                 globalRelationships.Add(rel);
                         }
+                        else if (!string.IsNullOrWhiteSpace(token.Content))
+                        {
+                            unsupportedRelationshipNotation = true;
+                        }
                     }
                     break;
 
@@ -426,6 +469,10 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                 currentEntityIndexes.Add(idx);
                             else
                                 globalIndexes.Add(idx);
+                        }
+                        else if (!string.IsNullOrWhiteSpace(token.Content))
+                        {
+                            unsupportedIndexNotation = true;
                         }
                     }
                     else if (token.Kind == MarkdownTokenKind.Text)
@@ -447,6 +494,10 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                                 currentEntityConstraints.Add(con);
                             else
                                 globalConstraints.Add(con);
+                        }
+                        else if (!string.IsNullOrWhiteSpace(token.Content))
+                        {
+                            unsupportedConstraintNotation = true;
                         }
                     }
                     break;
@@ -477,13 +528,35 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         indexes.AddRange(globalIndexes);
         constraints.AddRange(globalConstraints);
 
-        var findings = GenerateFindings(entities, relationships, indexes,
-            overviewLines.Count > 0, migrationLines.Count > 0);
+        var findings = GenerateFindings(entities, relationships);
+        var columnEvidence = EvidenceState(entities.Sum(e => e.Columns.Count), columnSectionDeclared, DataModelEvidenceState.NotExtracted);
+        var relationshipEvidence = EvidenceState(relationships.Count, relationshipSectionDeclared, DataModelEvidenceState.NotRepresented);
+        // Relational-only evidence applies only when the artifact explicitly identifies a table.
+        // A persistent structure can be stored in blobs, documents, or other non-relational stores.
+        var relationalStructuresExist = entities.Any(e => e.IsTable || e.Kind == DataStructureKind.Table);
+        var relationshipEvidenceFinal = relationships.Count == 0 && unsupportedRelationshipNotation
+            ? DataModelEvidenceState.Unsupported
+            : relationshipEvidence;
+        var indexEvidence = indexes.Count == 0 && unsupportedIndexNotation
+            ? DataModelEvidenceState.Unsupported
+            : indexSectionDeclared
+            ? EvidenceState(indexes.Count, true, DataModelEvidenceState.NotRepresented)
+            : !relationalStructuresExist && indexes.Count == 0
+            ? DataModelEvidenceState.NotApplicable
+            : EvidenceState(indexes.Count, false, DataModelEvidenceState.NotRepresented);
+        var constraintEvidence = constraints.Count == 0 && unsupportedConstraintNotation
+            ? DataModelEvidenceState.Unsupported
+            : constraintSectionDeclared
+            ? EvidenceState(constraints.Count, true, DataModelEvidenceState.NotRepresented)
+            : !relationalStructuresExist && constraints.Count == 0
+            ? DataModelEvidenceState.NotApplicable
+            : EvidenceState(constraints.Count, false, DataModelEvidenceState.NotRepresented);
+        var evidenceGaps = BuildEvidenceGaps(entities, columnEvidence, relationshipEvidenceFinal, indexEvidence, constraintEvidence);
 
         return new DataModelDocument
         {
             Title           = title,
-            Overview        = overviewLines.Count > 0 ? string.Join(" ", overviewLines) : null,
+            Overview        = overviewLines.Count > 0 ? string.Join(Environment.NewLine, overviewLines) : null,
             MigrationNotes  = migrationLines.Count > 0 ? string.Join(" ", migrationLines) : null,
             RetentionPolicy = retentionLines.Count > 0 ? string.Join(" ", retentionLines) : null,
             Entities        = entities,
@@ -492,6 +565,11 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             Constraints     = constraints,
             Enums           = enums,
             Findings        = findings,
+            EvidenceGaps    = evidenceGaps,
+            ColumnEvidence = columnEvidence,
+            RelationshipEvidence = relationshipEvidenceFinal,
+            IndexEvidence = indexEvidence,
+            ConstraintEvidence = constraintEvidence,
         };
     }
 
@@ -832,22 +910,16 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
             // Extract table name — it's typically the first word(s) before "table" keyword or space
             // Pattern: "### FaultQueueEntry — feilkoe table" → table name is "feilkoe"
-            var tableName = rest;
             var tableKeywordIdx = rest.IndexOf(" table", StringComparison.OrdinalIgnoreCase);
             if (tableKeywordIdx > 0)
-                tableName = rest[..tableKeywordIdx].Trim();
-            else
             {
-                // No "table" keyword, take first word (could be backticked)
-                var spaceIdx = rest.IndexOf(' ');
-                if (spaceIdx > 0)
-                    tableName = rest[..spaceIdx].Trim();
+                var tableName = rest[..tableKeywordIdx].Trim().Replace("`", "").Trim();
+                return (entityName, string.IsNullOrWhiteSpace(tableName) ? null : tableName);
             }
 
-            // Clean backticks from table name (should already be normalized, but keep for safety)
-            tableName = tableName.Replace("`", "").Trim();
-
-            return (entityName, tableName);
+            // An em dash can describe storage or flow (for example, "Azure Blob Storage").
+            // It identifies a database table only when the heading explicitly says "table".
+            return (entityName, null);
         }
 
         // No table name, just entity name
@@ -856,47 +928,61 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
 
     // ── Findings ───────────────────────────────────────────────────────────────
 
+    private static DataModelEvidenceState EvidenceState(int count, bool sectionDeclared, DataModelEvidenceState absentState) =>
+        count > 0 ? DataModelEvidenceState.Extracted :
+        sectionDeclared ? DataModelEvidenceState.NoneDeclared : absentState;
+
+    private static List<DataModelEvidenceGap> BuildEvidenceGaps(
+        IReadOnlyList<DataEntity> entities,
+        DataModelEvidenceState columns,
+        DataModelEvidenceState relationships,
+        DataModelEvidenceState indexes,
+        DataModelEvidenceState constraints)
+    {
+        var gaps = new List<DataModelEvidenceGap>();
+        AddGap("Fields / columns", columns, DataModelEvidenceState.NotExtracted,
+            "Field or column definitions were not extracted from this artifact.");
+        AddGap("Relationships", relationships, DataModelEvidenceState.NotRepresented,
+            "No relationship definitions were represented in this artifact.");
+        AddGap("Relationships", relationships, DataModelEvidenceState.Unsupported,
+            "The artifact contains relationship notation that this analyzer did not extract.");
+        AddGap("Indexes", indexes, DataModelEvidenceState.NotRepresented,
+            "Index definitions were not represented in this artifact.");
+        AddGap("Indexes", indexes, DataModelEvidenceState.Unsupported,
+            "The artifact contains index notation that this analyzer did not extract.");
+        AddGap("Constraints", constraints, DataModelEvidenceState.NotRepresented,
+            "Constraint definitions were not represented in this artifact.");
+        AddGap("Constraints", constraints, DataModelEvidenceState.Unsupported,
+            "The artifact contains constraint notation that this analyzer did not extract.");
+
+        gaps.AddRange(entities.Where(e => e.TraceabilityIds.Count == 0).Select(e => new DataModelEvidenceGap
+        {
+            Category = "Traceability",
+            EntityName = e.Name,
+            State = DataModelEvidenceState.NotRepresented,
+            Description = "No requirement references were extracted for this data structure.",
+        }));
+        return gaps;
+
+        void AddGap(string category, DataModelEvidenceState state, DataModelEvidenceState matchingState, string description)
+        {
+            if (state == matchingState)
+                gaps.Add(new DataModelEvidenceGap { Category = category, State = state, Description = description });
+        }
+    }
+
     private static List<DataModelFinding> GenerateFindings(
-        List<DataEntity>       entities,
-        List<DataRelationship> relationships,
-        List<DataIndex>        indexes,
-        bool                   hasOverview,
-        bool                   hasMigrationNotes)
+        List<DataEntity> entities,
+        List<DataRelationship> relationships)
     {
         var findings = new List<DataModelFinding>();
         var entityNames = new HashSet<string>(
             entities.Select(e => e.Name), StringComparer.OrdinalIgnoreCase);
 
-        if (entities.Count == 0)
-        {
-            // If no entities found, the document may be stateless or configuration-only
-            // Don't show a hard error; use INFO instead to indicate the document was parsed successfully
-            // but contains no persistent data model
-            findings.Add(new DataModelFinding
-            {
-                Severity    = DataModelSeverity.Info,
-                Category    = "Structure",
-                Description = "No persistent entities or tables were found. This document may describe configuration, runtime models, or be intentionally stateless.",
-            });
-            return findings;
-        }
-
         foreach (var entity in entities)
         {
-            if (entity.Columns.Count == 0)
-            {
-                findings.Add(new DataModelFinding
-                {
-                    Severity    = DataModelSeverity.Warning,
-                    Category    = "Schema",
-                    Description = $"No columns defined.",
-                    EntityName  = entity.Name,
-                });
-                continue;
-            }
-
-            var hasPk = entity.Columns.Any(c => c.IsPrimaryKey);
-            if (!hasPk)
+            var relationalStructure = entity.IsTable || entity.Kind == DataStructureKind.Table;
+            if (relationalStructure && entity.Columns.Count > 0 && !entity.Columns.Any(c => c.IsPrimaryKey))
             {
                 findings.Add(new DataModelFinding
                 {
@@ -973,16 +1059,6 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
                 }
             }
 
-            if (entity.TraceabilityIds.Count == 0)
-            {
-                findings.Add(new DataModelFinding
-                {
-                    Severity    = DataModelSeverity.Warning,
-                    Category    = "Traceability",
-                    Description = "No requirement IDs linked.",
-                    EntityName  = entity.Name,
-                });
-            }
         }
 
         // Relationships referencing undefined entities
@@ -1008,37 +1084,6 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
             }
         }
 
-        // No indexes at all
-        if (indexes.Count == 0 && entities.Count > 0)
-        {
-            findings.Add(new DataModelFinding
-            {
-                Severity    = DataModelSeverity.Info,
-                Category    = "Performance",
-                Description = "No indexes are defined. Consider adding indexes for foreign key and frequently queried columns.",
-            });
-        }
-
-        if (!hasOverview)
-        {
-            findings.Add(new DataModelFinding
-            {
-                Severity    = DataModelSeverity.Info,
-                Category    = "Documentation",
-                Description = "No ## Overview section found.",
-            });
-        }
-
-        if (!hasMigrationNotes)
-        {
-            findings.Add(new DataModelFinding
-            {
-                Severity    = DataModelSeverity.Info,
-                Category    = "Documentation",
-                Description = "No ## Migration Notes section found.",
-            });
-        }
-
         return findings;
     }
 
@@ -1059,6 +1104,15 @@ public sealed class DataModelAnalysisService : IDataModelAnalysisService
         if (NonPersistentEntitySections.Contains(h, StringComparer.OrdinalIgnoreCase))
             return "runtime";
         return string.Empty;
+    }
+
+    private static DataStructureKind InferDataStructureKind(string name)
+    {
+        var normalized = name.Trim().Trim('`', '*');
+        if (normalized.EndsWith("Event", StringComparison.OrdinalIgnoreCase) || normalized.EndsWith("Events", StringComparison.OrdinalIgnoreCase)) return DataStructureKind.Event;
+        if (normalized.EndsWith("Message", StringComparison.OrdinalIgnoreCase) || normalized.EndsWith("Messages", StringComparison.OrdinalIgnoreCase)) return DataStructureKind.Message;
+        if (new[] { "Record", "Records", "Dto", "Dtos", "Request", "Response" }.Any(suffix => normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))) return DataStructureKind.Record;
+        return DataStructureKind.DataStructure;
     }
 
     // Normalize section headings by removing parenthetical suffixes

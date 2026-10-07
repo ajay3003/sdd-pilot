@@ -60,7 +60,7 @@ else
                 <button class="dme-tab @(_activeTab == "design" ? "is-active" : "")"
                         role="tab" aria-selected="@(_activeTab == "design")"
                         @onclick='() => SetTab("design")'>
-                    DB Design @if (_document.EntityCount > 0) { <span class="dme-tab-count">@_document.EntityCount</span> }
+                    Data Structures @if (_document.EntityCount > 0) { <span class="dme-tab-count">@_document.EntityCount</span> }
                 </button>
                 <button class="dme-tab @(_activeTab == "relationships" ? "is-active" : "")"
                         role="tab" aria-selected="@(_activeTab == "relationships")"
@@ -111,32 +111,68 @@ else
                 <div class="dme-stat-row">
                     <div class="dme-stat">
                         <span class="dme-stat-value">@_document.EntityCount</span>
-                        <span class="dme-stat-label">Entities / Tables</span>
+                        <span class="dme-stat-label">Data structures</span>
                     </div>
                     <div class="dme-stat">
-                        <span class="dme-stat-value">@_document.ColumnCount</span>
-                        <span class="dme-stat-label">Columns</span>
+                        <span class="dme-stat-value">@EvidenceValue(_document.ColumnCount, _document.ColumnEvidence)</span>
+                        <span class="dme-stat-label">Fields / columns</span>
+                        <span class="dme-stat-detail">@EvidenceLabel(_document.ColumnEvidence)</span>
                     </div>
                     <div class="dme-stat">
-                        <span class="dme-stat-value">@_document.RelationshipCount</span>
+                        <span class="dme-stat-value">@EvidenceValue(_document.RelationshipCount, _document.RelationshipEvidence)</span>
                         <span class="dme-stat-label">Relationships</span>
+                        <span class="dme-stat-detail">@EvidenceLabel(_document.RelationshipEvidence)</span>
                     </div>
                     <div class="dme-stat">
-                        <span class="dme-stat-value">@_document.IndexCount</span>
+                        <span class="dme-stat-value">@EvidenceValue(_document.IndexCount, _document.IndexEvidence)</span>
                         <span class="dme-stat-label">Indexes</span>
+                        <span class="dme-stat-detail">@EvidenceLabel(_document.IndexEvidence)</span>
                     </div>
                     <div class="dme-stat @(_document.ErrorCount > 0 ? "dme-stat-error" : (_document.WarningCount > 0 ? "dme-stat-warn" : ""))">
                         <span class="dme-stat-value">@_document.FindingCount</span>
                         <span class="dme-stat-label">Findings</span>
                     </div>
+                    @if (_document.EvidenceGaps.Count > 0)
+                    {
+                        <div class="dme-stat dme-stat-neutral" data-testid="dme-evidence-gap-count">
+                            <span class="dme-stat-value">@_document.EvidenceGaps.Count</span>
+                            <span class="dme-stat-label">Evidence gaps</span>
+                        </div>
+                    }
                 </div>
+
+                <p class="dme-source-disclaimer" data-testid="dme-source-disclaimer">Source-derived model only. Deployed database schemas and runtime state are not verified here.</p>
+
+                @if (_document.Entities.Count > 0)
+                {
+                    <section class="dme-structure-breakdown" data-testid="dme-structure-breakdown" aria-label="Data structure kinds">
+                        @foreach (var kindGroup in _document.Entities.GroupBy(e => e.Kind).OrderBy(g => g.Key))
+                        {
+                            <span class="dme-structure-chip">@kindGroup.Count() @StructureKindPlural(kindGroup.Key)</span>
+                        }
+                    </section>
+                }
 
                 @if (!string.IsNullOrWhiteSpace(_document.Overview))
                 {
-                    <div class="dme-overview-text">
+                    <section class="dme-overview-text" data-testid="dme-structured-overview">
                         <div class="dme-section-label">Overview</div>
-                        <p>@_document.Overview</p>
-                    </div>
+                        <MarkdownContent Content="@_document.Overview" CssClass="dme-overview-markdown" />
+                    </section>
+                }
+
+                @if (_document.EvidenceGaps.Count > 0)
+                {
+                    <section class="dme-evidence-gaps" data-testid="dme-evidence-gaps">
+                        <div class="dme-section-label">Evidence not available in this artifact</div>
+                        @foreach (var group in _document.EvidenceGaps.GroupBy(g => g.Category))
+                        {
+                            <div class="dme-evidence-gap-row">
+                                <strong>@group.Key</strong>
+                                <span>@string.Join("; ", group.Select(g => string.IsNullOrWhiteSpace(g.EntityName) ? g.Description : $"{g.EntityName}: {g.Description}"))</span>
+                            </div>
+                        }
+                    </section>
                 }
 
                 @if (_document.Findings.Count > 0)
@@ -186,7 +222,7 @@ else
         {
             @if (_document.Entities.Count == 0)
             {
-                <div class="dme-empty-tab">No entities or tables to display.</div>
+                <div class="dme-empty-tab">No data structures were extracted from this artifact.</div>
             }
             else
             {
@@ -211,7 +247,7 @@ else
 
                             <div class="dme-dc @cardMod">
                                 <div class="dme-dc-header">
-                                    <span class="dme-dc-kind">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
+                                    <span class="dme-dc-kind">@StructureKindLabel(entity.Kind)</span>
                                     <span class="dme-dc-name" title="@entity.Name">@entity.Name</span>
                                     @if (eFindings.Count > 0)
                                     {
@@ -246,7 +282,7 @@ else
                                 }
                                 else
                                 {
-                                    <div class="dme-dc-no-cols">no columns defined</div>
+                                    <div class="dme-dc-no-cols">@(entity.IsTable || entity.Kind == DataStructureKind.Table ? "Column-level detail was not extracted from this artifact." : "Fields or properties were not extracted from this artifact.")</div>
                                 }
 
                                 @if (entity.TraceabilityIds.Count > 0 || entityRels.Count > 0 || eFindings.Count > 0)
@@ -327,7 +363,7 @@ else
                     @if (!string.IsNullOrWhiteSpace(_searchQuery))
                     { <span>No relationships match "<strong>@_searchQuery</strong>"</span> }
                     else
-                    { <span>No relationships defined in the document.</span> }
+                    { <span>@EvidenceEmptyMessage("Relationships", _document.RelationshipEvidence)</span> }
                 </div>
             }
             else
@@ -368,14 +404,14 @@ else
             var visibleCon = AnalysisService.FilterConstraints(_document.Constraints, _searchQuery).ToList();
 
             <div class="dme-idx-section">
-                <div class="dme-section-label">Indexes (@_document.Indexes.Count)</div>
+                <div class="dme-section-label">Indexes (@EvidenceValue(_document.IndexCount, _document.IndexEvidence)) · @EvidenceLabel(_document.IndexEvidence)</div>
                 @if (visibleIdx.Count == 0)
                 {
                     <div class="dme-empty-tab" style="padding:0.5rem 0">
                         @if (!string.IsNullOrWhiteSpace(_searchQuery))
                         { <span>No indexes match "<strong>@_searchQuery</strong>"</span> }
                         else
-                        { <span>No indexes defined.</span> }
+                        { <span>@EvidenceEmptyMessage("Indexes", _document.IndexEvidence)</span> }
                     </div>
                 }
                 else
@@ -400,7 +436,7 @@ else
             @if (_document.Constraints.Count > 0)
             {
                 <div class="dme-idx-section" style="margin-top:1.5rem">
-                    <div class="dme-section-label">Constraints (@_document.Constraints.Count)</div>
+                    <div class="dme-section-label">Constraints (@EvidenceValue(_document.Constraints.Count, _document.ConstraintEvidence)) · @EvidenceLabel(_document.ConstraintEvidence)</div>
                     @if (visibleCon.Count == 0)
                     {
                         <div class="dme-empty-tab" style="padding:0.5rem 0">
@@ -448,22 +484,22 @@ else
                     </div>
                     <div class="dme-stat">
                         <span class="dme-stat-value">@linked.Count</span>
-                        <span class="dme-stat-label">Entities Linked</span>
+                        <span class="dme-stat-label">Data structures linked</span>
                     </div>
-                    <div class="dme-stat @(unlinked.Count > 0 ? "dme-stat-warn" : "")">
+                    <div class="dme-stat">
                         <span class="dme-stat-value">@unlinked.Count</span>
-                        <span class="dme-stat-label">Entities Without Links</span>
+                        <span class="dme-stat-label">Data structures without links</span>
                     </div>
                 </div>
             </div>
 
             @if (linked.Count > 0)
             {
-                <div class="dme-section-label" style="margin-top:1.5rem">Linked Entities</div>
+                <div class="dme-section-label" style="margin-top:1.5rem">Linked data structures</div>
                 @foreach (var entity in linked)
                 {
                     <div class="dme-trace-entity-row">
-                        <span class="dme-entity-kind-sm">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
+                        <span class="dme-entity-kind-sm">@StructureKindLabel(entity.Kind)</span>
                         <span class="dme-entity-name" title="@entity.Name">@entity.Name</span>
                         <div class="dme-trace-chips">
                             @foreach (var id in entity.TraceabilityIds)
@@ -477,15 +513,15 @@ else
 
             @if (unlinked.Count > 0)
             {
-                <div class="dme-section-label dme-section-label-warn" style="margin-top:1.5rem">
-                    Entities Without Traceability Links (@unlinked.Count)
+                <div class="dme-section-label" style="margin-top:1.5rem">
+                    Data structures with no requirement references extracted (@unlinked.Count)
                 </div>
                 @foreach (var entity in unlinked)
                 {
                     <div class="dme-trace-entity-row dme-trace-unlinked">
-                        <span class="dme-entity-kind-sm">@(entity.IsTable ? "TABLE" : "ENTITY")</span>
+                        <span class="dme-entity-kind-sm">@StructureKindLabel(entity.Kind)</span>
                         <span class="dme-entity-name">@entity.Name</span>
-                        <span class="dme-trace-missing">no traceability</span>
+                        <span class="dme-trace-missing">no requirement references extracted</span>
                     </div>
                 }
             }
@@ -494,10 +530,23 @@ else
         @* ── Findings ─────────────────────────────────────────────────────────── *@
         @if (_activeTab == "findings")
         {
+            @if (_document.EvidenceGaps.Count > 0)
+            {
+                <section class="dme-evidence-gaps" data-testid="dme-findings-evidence-gaps">
+                    <div class="dme-section-label">Evidence gaps · not model findings</div>
+                    @foreach (var gap in _document.EvidenceGaps)
+                    {
+                        <div class="dme-evidence-gap-row">
+                            <strong>@gap.Category@(string.IsNullOrWhiteSpace(gap.EntityName) ? "" : $" · {gap.EntityName}")</strong>
+                            <span>@gap.Description</span>
+                        </div>
+                    }
+                </section>
+            }
             @if (_document.Findings.Count == 0)
             {
                 <div class="dme-empty-tab">
-                    <span>✓ No findings — the data model looks clean.</span>
+                    <span>No deterministic model findings were generated from the evidence extracted here.</span>
                 </div>
             }
             else
@@ -541,6 +590,54 @@ else
     private SpecificationImport? _importRef;
 
     private bool CanBuild => !string.IsNullOrWhiteSpace(_localText);
+
+    private static string EvidenceValue(int count, DataModelEvidenceState state) => state switch
+    {
+        DataModelEvidenceState.Extracted or DataModelEvidenceState.NoneDeclared => count.ToString(),
+        _ => "—",
+    };
+
+    private static string EvidenceLabel(DataModelEvidenceState state) => state switch
+    {
+        DataModelEvidenceState.Extracted => "Extracted from artifact",
+        DataModelEvidenceState.NoneDeclared => "None declared in artifact",
+        DataModelEvidenceState.NotExtracted => "Not extracted",
+        DataModelEvidenceState.NotRepresented => "Not represented",
+        DataModelEvidenceState.Unsupported => "Notation not supported",
+        DataModelEvidenceState.NotApplicable => "Not applicable",
+        _ => "Not assessed",
+    };
+
+    private static string EvidenceEmptyMessage(string subject, DataModelEvidenceState state) => state switch
+    {
+        DataModelEvidenceState.NoneDeclared => $"No {subject.ToLowerInvariant()} are declared in this artifact.",
+        DataModelEvidenceState.Unsupported => $"{subject} are mentioned, but this notation was not extracted by the analyzer.",
+        DataModelEvidenceState.NotApplicable => $"{subject} are not applicable to the extracted data structures.",
+        DataModelEvidenceState.NotExtracted => $"{subject} were not extracted from this artifact.",
+        _ => $"No {subject.ToLowerInvariant()} definitions are represented in this artifact; this does not confirm that none exist.",
+    };
+
+    private static string StructureKindLabel(DataStructureKind kind) => kind switch
+    {
+        DataStructureKind.Table => "Table",
+        DataStructureKind.PersistentEntity => "Persistent structure",
+        DataStructureKind.Record => "Record / DTO",
+        DataStructureKind.Event => "Event",
+        DataStructureKind.Message => "Message",
+        DataStructureKind.DataStructure => "Data structure",
+        _ => "Unclassified structure",
+    };
+
+    private static string StructureKindPlural(DataStructureKind kind) => kind switch
+    {
+        DataStructureKind.Table => "tables",
+        DataStructureKind.PersistentEntity => "persistent entities",
+        DataStructureKind.Record => "records / DTOs",
+        DataStructureKind.Event => "events",
+        DataStructureKind.Message => "messages",
+        DataStructureKind.DataStructure => "data structures",
+        _ => "unclassified structures",
+    };
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
