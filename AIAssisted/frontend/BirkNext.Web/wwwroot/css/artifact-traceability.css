@@ -235,6 +235,16 @@
     margin-bottom: 0.6rem;
 }
 
+.at-neutral-note {
+    color: var(--text-secondary, #475569);
+    background: var(--surface-subtle, #f8fafc);
+    border-left: 3px solid var(--border-strong, #94a3b8);
+    border-radius: 4px;
+    padding: .55rem .75rem;
+    margin: .5rem 0 1rem;
+    font-size: .875rem;
+}
+
 .at-coverage-stat-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);

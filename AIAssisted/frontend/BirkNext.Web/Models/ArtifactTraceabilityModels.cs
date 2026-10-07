@@ -54,6 +54,7 @@ public sealed class TraceabilityCoverageStats
     public int PartialItems  { get; init; }
     public int MissingItems  { get; init; }
     public int OrphanedItems { get; init; }
+    public bool HasApplicablePopulation => TotalItems > 0;
 
     public double CoveragePercentage =>
         TotalItems > 0
@@ -127,6 +128,8 @@ public sealed class TraceabilityHealth
     public int OrphanCount   { get; init; }
 
     public double CoveragePercentage { get; init; }
+    public int CoverageDenominator { get; init; }
+    public bool HasAssessedCoverage => CoverageDenominator > 0;
     public int GapCount { get; init; }
 
     public List<TraceabilityHealthIndicator> Indicators { get; init; } = [];
@@ -161,4 +164,5 @@ public sealed class ArtifactTraceabilityReport
     public bool HasSpecification { get; init; }
     public bool HasPlan          { get; init; }
     public bool HasTasks         { get; init; }
+    public int ReferenceOnlyConstitutionEntries { get; init; }
 }

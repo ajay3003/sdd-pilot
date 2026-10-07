@@ -28,21 +28,30 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         var allTaskNodes = tasks is not null ? FlattenTasks(tasks.Roots) : [];
 
         // Build ReviewContext-based chain relationships
-        var constToSpec = BuildConstitutionToSpecFromContext(reviewContext, constitution, plan);
-        var specToPlan  = BuildSpecToPlanFromContext(reviewContext, plan);
-        var planToTask  = BuildPlanToTaskFromContext(reviewContext, plan);
+        var constToSpec = BuildConstitutionToSpecFromContext(reviewContext, constitution, spec);
+        var specToPlan  = BuildSpecToPlanFromContext(reviewContext, spec, plan);
+        // Plan phase entries contain action text, not stable Task IDs. There is
+        // no direct Plan→Task relation to assess in the current document model.
+        var planToTask = new List<ChainCoverage>();
 
-        var orphanTasks = FindOrphanTasks(allTaskNodes);
+        // Task → requirement/SC traceability is a separate direct relation. A task
+        // asset or a derived Plan relation does not satisfy this projection.
+        var orphanTasks = spec is not null && tasks is not null
+            ? FindOrphanTasks(allTaskNodes)
+            : [];
 
-        // Coverage stats from semantic model
-        var constCoverage = ComputeConstCoverageFromContext(reviewContext);
-        var specCoverage  = ComputeSpecCoverageFromContext(reviewContext);
-        var planCoverage  = ComputePlanCoverageFromContext(reviewContext);
-
-        var taskCoverage  = ComputeTaskCoverage(allTaskNodes, orphanTasks);
+        // Every percentage is projected from the same rows shown in its transition tab.
+        var constCoverage = ComputeCoverage(constToSpec);
+        var specCoverage  = ComputeCoverage(specToPlan);
+        var planCoverage  = ComputeCoverage(planToTask);
+        var taskCoverage  = spec is not null && tasks is not null
+            ? ComputeTaskCoverage(allTaskNodes, orphanTasks)
+            : new TraceabilityCoverageStats();
 
         // Gaps (sorted by severity desc)
         var gaps = BuildGaps(constToSpec, specToPlan, planToTask, orphanTasks)
+            .GroupBy(g => (g.GapIn, g.ItemId, g.Status))
+            .Select(group => group.First())
             .OrderBy(g => g.Severity)
             .ToList();
 
@@ -51,6 +60,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
 
         var health = BuildHealth(
             constitution, spec, plan, tasks,
+            reviewContext,
             constCoverage, specCoverage, planCoverage, taskCoverage,
             gaps.Count, allTaskNodes.Count, orphanTasks.Count);
 
@@ -70,6 +80,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             HasSpecification      = spec is not null,
             HasPlan               = plan is not null,
             HasTasks              = tasks is not null,
+            ReferenceOnlyConstitutionEntries = constitution?.RuleCatalog.Count(r => r.IsReferenceOnly) ?? 0,
         };
     }
 
@@ -78,10 +89,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
     private static List<ChainCoverage> BuildConstitutionToSpecFromContext(
         ReviewContext context,
         ConstitutionDocument? constitution,
-        PlanDocument? plan)
+        SpecTree? spec)
     {
-        if (constitution is null) return [];
-        if (context.Specification.Requirements.Count == 0 && plan is null) return [];
+        if (constitution is null || spec is null) return [];
 
         var result = new List<ChainCoverage>();
         var specToConstLinks = context.SpecToConstitution;
@@ -98,14 +108,13 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             }
         }
 
-        foreach (var rule in constitution.RuleCatalog)
+        foreach (var rule in constitution.RuleCatalog.Where(r => !r.IsReferenceOnly))
         {
             var allIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { rule.RuleId };
             foreach (var alias in rule.Aliases) allIds.Add(alias);
 
             var links = new List<TraceabilityLink>();
             bool hasReqCoverage = false;
-            bool hasOtherCoverage = false;
 
             foreach (var id in allIds)
             {
@@ -130,16 +139,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 }
             }
 
-            // Plan-level gates also provide partial evidence
-            if (links.Count == 0 && plan is not null)
-            {
-                var planMentions = plan.Gates.Where(g => allIds.Contains(g.RuleId)).Any();
-                if (planMentions) hasOtherCoverage = true;
-            }
-
-            var status = hasReqCoverage
-                ? TraceabilityStatus.Covered
-                : (hasOtherCoverage ? TraceabilityStatus.Partial : TraceabilityStatus.Missing);
+            var status = hasReqCoverage ? TraceabilityStatus.Covered : TraceabilityStatus.Missing;
 
             result.Add(new ChainCoverage
             {
@@ -157,8 +157,10 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
 
     private static List<ChainCoverage> BuildSpecToPlanFromContext(
         ReviewContext context,
+        SpecTree? spec,
         PlanDocument? plan)
     {
+        if (spec is null || plan is null) return [];
         var result = new List<ChainCoverage>();
         var specToPlanLinks = context.SpecToPlan;
 
@@ -204,101 +206,14 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         return result;
     }
 
-    private static List<ChainCoverage> BuildPlanToTaskFromContext(
-        ReviewContext context,
-        PlanDocument? plan)
+    private static TraceabilityCoverageStats ComputeCoverage(IReadOnlyCollection<ChainCoverage> rows) => new()
     {
-        if (plan is null) return [];
-
-        var result = new List<ChainCoverage>();
-        var planToTaskLinks = context.PlanToTasks;
-
-        foreach (var decision in context.Plan.ArchitectureDecisions)
-        {
-            if (!planToTaskLinks.TryGetValue(decision.Id, out var taskIds))
-                taskIds = [];
-
-            var links = new List<TraceabilityLink>();
-            foreach (var taskId in taskIds)
-            {
-                var task = context.Tasks.AllTasks
-                    .FirstOrDefault(t => t.Id == taskId);
-
-                if (task is not null)
-                {
-                    links.Add(new TraceabilityLink
-                    {
-                        SourceId    = decision.Id,
-                        SourceType  = ArtifactType.Plan,
-                        TargetId    = taskId,
-                        TargetType  = ArtifactType.Task,
-                        SourceTitle = decision.Title,
-                        TargetTitle = task.Title,
-                    });
-                }
-            }
-
-            var status = links.Count > 0
-                ? TraceabilityStatus.Covered
-                : TraceabilityStatus.Missing;
-
-            result.Add(new ChainCoverage
-            {
-                ItemId      = decision.Id,
-                ItemTitle   = decision.Title,
-                ItemType    = ArtifactType.Plan,
-                Status      = status,
-                Links       = links,
-            });
-        }
-
-        return result;
-    }
-
-    private static TraceabilityCoverageStats ComputeConstCoverageFromContext(ReviewContext context)
-    {
-        var totalRules = context.Constitution.Rules.Count;
-        var coveredRules = context.SpecToConstitution.Values.SelectMany(x => x).Distinct().Count();
-
-        return new TraceabilityCoverageStats
-        {
-            TotalItems   = totalRules,
-            CoveredItems = Math.Min(coveredRules, totalRules),
-            PartialItems = 0,
-            MissingItems = Math.Max(0, totalRules - coveredRules),
-            OrphanedItems = 0,
-        };
-    }
-
-    private static TraceabilityCoverageStats ComputeSpecCoverageFromContext(ReviewContext context)
-    {
-        var totalReqs = context.Specification.Requirements.Count;
-        var coveredReqs = context.SpecToPlan.Keys.Count;
-
-        return new TraceabilityCoverageStats
-        {
-            TotalItems   = totalReqs,
-            CoveredItems = coveredReqs,
-            PartialItems = 0,
-            MissingItems = Math.Max(0, totalReqs - coveredReqs),
-            OrphanedItems = 0,
-        };
-    }
-
-    private static TraceabilityCoverageStats ComputePlanCoverageFromContext(ReviewContext context)
-    {
-        var totalItems = context.Plan.ArchitectureDecisions.Count;
-        var linkedItems = context.PlanToTasks.Keys.Count;
-
-        return new TraceabilityCoverageStats
-        {
-            TotalItems   = totalItems,
-            CoveredItems = linkedItems,
-            PartialItems = 0,
-            MissingItems = Math.Max(0, totalItems - linkedItems),
-            OrphanedItems = 0,
-        };
-    }
+        TotalItems = rows.Count,
+        CoveredItems = rows.Count(r => r.Status == TraceabilityStatus.Covered),
+        PartialItems = rows.Count(r => r.Status == TraceabilityStatus.Partial),
+        MissingItems = rows.Count(r => r.Status == TraceabilityStatus.Missing),
+        OrphanedItems = rows.Count(r => r.Status == TraceabilityStatus.Orphaned),
+    };
 
     // ── Search / filter ───────────────────────────────────────────────────────
 
@@ -400,9 +315,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
 
 
     private static List<TaskNode> FindOrphanTasks(List<TaskNode> tasks)
-        => tasks
-            .Where(t => t.ReferencedFrIds.Count == 0 && t.ReferencedScIds.Count == 0)
-            .ToList();
+        => tasks.Where(t => t.ReferencedFrIds.Count == 0 && t.ReferencedScIds.Count == 0).ToList();
 
     // ── Coverage stats ────────────────────────────────────────────────────────
 
@@ -488,7 +401,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 ItemId      = t.TaskId ?? t.Title,
                 ItemTitle   = t.ShortTitle ?? t.Title,
                 Status      = TraceabilityStatus.Orphaned,
-                Description = "Task has no references to any specification requirement or success criterion.",
+                Description = "Task has no direct Requirement or Success Criterion reference.",
                 Severity    = GapSeverity.Medium,
             });
 
@@ -505,16 +418,9 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
     {
         if (constitution is null) return [];
 
-        // When no spec is loaded, emit a Missing row per rule from the catalog directly
-        if (constToSpec.Count == 0)
-        {
-            return constitution.RuleCatalog.Select(rule => new TraceabilityMatrixRow
-            {
-                ConstitutionRuleId    = rule.RuleId,
-                ConstitutionRuleTitle = rule.Title,
-                Status                = TraceabilityStatus.Missing,
-            }).ToList();
-        }
+        // The matrix is an assessed chain projection, so without applicable
+        // Constitution→Specification rows it must not invent Missing rows.
+        if (constToSpec.Count == 0) return [];
 
         var rows = new List<TraceabilityMatrixRow>();
 
@@ -646,6 +552,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         SpecTree? spec,
         PlanDocument? plan,
         TaskTree? tasks,
+        ReviewContext context,
         TraceabilityCoverageStats constCov,
         TraceabilityCoverageStats specCov,
         TraceabilityCoverageStats planCov,
@@ -657,13 +564,13 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         var indicators = new List<TraceabilityHealthIndicator>();
 
         // Constitution coverage
-        if (constitution is not null)
+        if (constitution is not null && spec is not null && constCov.HasApplicablePopulation)
         {
             var pct = constCov.CoveragePercentage;
             indicators.Add(new TraceabilityHealthIndicator
             {
                 Icon  = pct >= 80 ? "✓" : pct >= 50 ? "⚠" : "✗",
-                Message = $"Constitution coverage: {pct:0.#}% ({constCov.CoveredItems} of {constCov.TotalItems} rules covered in spec)",
+                Message = $"Constitution coverage: {pct:0.#}% ({constCov.CoveredItems} of {constCov.TotalItems} authored rules linked to Specification)",
                 Level = pct >= 80 ? TraceabilityHealthLevel.Good
                       : pct >= 50 ? TraceabilityHealthLevel.Warning
                       : TraceabilityHealthLevel.Error,
@@ -671,7 +578,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         }
 
         // Spec coverage
-        if (spec is not null && plan is not null)
+        if (spec is not null && plan is not null && specCov.HasApplicablePopulation)
         {
             var pct = specCov.CoveragePercentage;
             indicators.Add(new TraceabilityHealthIndicator
@@ -685,12 +592,12 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
         }
 
         // Orphan tasks
-        if (tasks is not null && orphanTaskCount > 0)
+        if (tasks is not null && spec is not null && orphanTaskCount > 0)
         {
             indicators.Add(new TraceabilityHealthIndicator
             {
                 Icon  = "⚠",
-                Message = $"{orphanTaskCount} orphan task{(orphanTaskCount != 1 ? "s" : "")} — not linked to any specification requirement",
+                Message = $"{orphanTaskCount} task{(orphanTaskCount != 1 ? "s" : "")} without a Requirement or Success Criterion reference",
                 Level = TraceabilityHealthLevel.Warning,
             });
         }
@@ -705,7 +612,8 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
                 Level = gapCount > 10 ? TraceabilityHealthLevel.Error : TraceabilityHealthLevel.Warning,
             });
         }
-        else if (constitution is not null && spec is not null && plan is not null && tasks is not null)
+        else if (constitution is not null && spec is not null && plan is not null && tasks is not null &&
+                 constCov.HasApplicablePopulation && specCov.HasApplicablePopulation && planCov.HasApplicablePopulation)
         {
             indicators.Add(new TraceabilityHealthIndicator
             {
@@ -717,17 +625,15 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
 
         // Determine aggregate coverage %
         var totalItems = constCov.TotalItems + specCov.TotalItems + planCov.TotalItems;
-        var totalCovered = constCov.CoveredItems + specCov.CoveredItems + planCov.CoveredItems;
+        var totalCovered = constCov.CoveredItems + constCov.PartialItems + specCov.CoveredItems + specCov.PartialItems + planCov.CoveredItems + planCov.PartialItems;
         var aggPct = totalItems > 0 ? Math.Round((double)totalCovered / totalItems * 100, 1) : 0;
 
-        var totalPlan = plan is not null
-            ? plan.ArchitectureDecisions.Count + plan.Phases.Count
-            : 0;
+        var totalPlan = plan is not null ? context.Plan.PhaseGroups.Count : 0;
 
         return new TraceabilityHealth
         {
-            TotalRules        = constitution?.RuleCatalog.Count ?? 0,
-            TotalRequirements = specCov.TotalItems,
+            TotalRules        = constitution?.RuleCatalog.Count(r => !r.IsReferenceOnly) ?? 0,
+            TotalRequirements = context.Specification.Requirements.Count,
             TotalPlanItems    = totalPlan,
             TotalTasks        = totalTaskCount,
             CoveredCount      = constCov.CoveredItems + specCov.CoveredItems + planCov.CoveredItems,
@@ -735,6 +641,7 @@ public sealed class ArtifactTraceabilityService : IArtifactTraceabilityService
             MissingCount      = constCov.MissingItems  + specCov.MissingItems  + planCov.MissingItems,
             OrphanCount       = orphanTaskCount,
             CoveragePercentage = aggPct,
+            CoverageDenominator = totalItems,
             GapCount          = gapCount,
             Indicators        = indicators,
         };

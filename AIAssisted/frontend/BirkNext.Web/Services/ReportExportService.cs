@@ -865,13 +865,13 @@ public sealed class ReportExportService : IReportExportService
         // Coverage KPIs
         sb.Append("<div class=\"kpi-row\">");
         if (report.HasConstitution && report.HasSpecification)
-            sb.Append(Kpi($"{report.ConstitutionCoverage.CoveragePercentage:0.#}%", "Constitution Coverage"));
+            sb.Append(Kpi(CoverageLabel(report.ConstitutionCoverage), "Authored Constitution → Specification"));
         if (report.HasSpecification && report.HasPlan)
-            sb.Append(Kpi($"{report.SpecificationCoverage.CoveragePercentage:0.#}%", "Spec Coverage"));
+            sb.Append(Kpi(CoverageLabel(report.SpecificationCoverage), "Requirement → Plan"));
         if (report.HasPlan && report.HasTasks)
-            sb.Append(Kpi($"{report.PlanCoverage.CoveragePercentage:0.#}%", "Plan Coverage"));
-        if (report.HasTasks)
-            sb.Append(Kpi($"{report.TaskCoverage.CoveragePercentage:0.#}%", "Task Coverage"));
+            sb.Append(Kpi("Not assessed", "Plan → Tasks (no stable direct relation)"));
+        if (report.HasTasks && report.HasSpecification)
+            sb.Append(Kpi(CoverageLabel(report.TaskCoverage), "Tasks with Requirement/SC references"));
         sb.Append(Kpi(report.Health.GapCount.ToString(), "Gaps"));
         sb.Append("</div>\n");
 
@@ -883,11 +883,13 @@ public sealed class ReportExportService : IReportExportService
         if (report.HasTasks)         loaded.Add("Tasks");
         if (loaded.Count > 0)
             sb.Append($"<p class=\"meta\"><span>Artifacts: {Esc(string.Join(", ", loaded))}</span></p>\n");
+        if (report.ReferenceOnlyConstitutionEntries > 0)
+            sb.Append($"<p class=\"meta\">{report.ReferenceOnlyConstitutionEntries} reference-only Constitution catalog entries are excluded from authored-rule coverage.</p>\n");
 
         // Chain tables
         if (report.ConstitutionToSpec.Count > 0)
         {
-            sb.Append("<section class=\"block\">\n<h2>Constitution → Specification</h2>\n");
+            sb.Append("<section class=\"block\">\n<h2>Authored Constitution rules → Specification</h2>\n");
             sb.Append(ChainTable(report.ConstitutionToSpec, 100));
             sb.Append("</section>\n");
         }
@@ -944,6 +946,9 @@ public sealed class ReportExportService : IReportExportService
 
         return BuildHtml("Artifact Traceability Report", projectName, null, sb.ToString());
     }
+
+    private static string CoverageLabel(TraceabilityCoverageStats stats) =>
+        stats.HasApplicablePopulation ? $"{stats.CoveragePercentage:0.#}% ({stats.CoveredItems + stats.PartialItems} of {stats.TotalItems})" : "Not assessed";
 
     public string ExportImplementationReview(AlignmentReport report, string? projectName, TaskAlignmentSnapshot? snapshot = null, TaskAlignmentCurrentness currentness = TaskAlignmentCurrentness.Current)
     {
@@ -1052,7 +1057,7 @@ public sealed class ReportExportService : IReportExportService
         // Health KPIs
         sb.Append("<div class=\"kpi-row\">");
         if (traceability is not null)
-            sb.Append(Kpi($"{traceability.Health.CoveragePercentage:0.#}%", "Traceability"));
+            sb.Append(Kpi(traceability.Health.HasAssessedCoverage ? $"{traceability.Health.CoveragePercentage:0.#}% across assessed transitions" : "Not assessed", "Traceability"));
         if (compliance is not null)
             sb.Append(Kpi($"{compliance.Coverage.CompliancePercentage:0.#}%", "Compliance"));
         if (audit is not null)
@@ -1088,7 +1093,9 @@ public sealed class ReportExportService : IReportExportService
 
         // Analyses run
         var ran = new List<string>();
-        if (traceability is not null)  ran.Add($"Artifact Traceability — {traceability.Health.CoveragePercentage:0.#}% coverage");
+        if (traceability is not null)  ran.Add(traceability.Health.HasAssessedCoverage
+            ? $"Artifact Traceability — {traceability.Health.CoveragePercentage:0.#}% across assessed transitions"
+            : "Artifact Traceability — transitions not assessed");
         if (compliance is not null)    ran.Add($"Constitution Compliance — {compliance.Coverage.CompliancePercentage:0.#}% compliant");
         if (audit is not null)         ran.Add($"QA Audit — score {audit.Health.AuditScore:0.#}, {audit.Health.TotalFindings} findings");
         if (delivery is not null)      ran.Add($"Delivery Readiness — {delivery.Health.OverallReadinessScore:0.#}% overall");

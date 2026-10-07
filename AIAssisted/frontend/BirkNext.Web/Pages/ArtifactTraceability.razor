@@ -22,7 +22,9 @@
     }
 
     <PageHeader Title="Requirements Traceability"
-                Description="End-to-end traceability across Constitution → Specification → Plan → Tasks. Surface coverage gaps, orphaned items, and a unified traceability matrix." />
+                Description="Document-reference coverage across authored Constitution rules, Specification requirements, Plan references, and Task requirement references. Plan-to-Task links are not assessed because the current artifacts do not share stable Task IDs; lifecycle evidence is shown in the shared SDD graph." />
+
+    <p class="at-neutral-note">This report counts document-level links and derived phase-heading alignment. It does not represent implementation verification or test execution. <a href="/traceability">Open the shared SDD evidence graph</a>.</p>
 
     @if (string.IsNullOrWhiteSpace(_selectedProject))
     {
@@ -162,14 +164,10 @@
 
         <!-- Health summary bar -->
         <div class="at-health-bar">
-            <MetricCard Value="@(_report.ConstitutionCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Constitution Coverage"
-                        Variant="@(_report.ConstitutionCoverage.CoveragePercentage >= 80 ? "success" : _report.ConstitutionCoverage.CoveragePercentage >= 50 ? "warning" : _report.ConstitutionCoverage.CoveragePercentage > 0 ? "danger" : null)" />
-            <MetricCard Value="@(_report.SpecificationCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Spec Coverage"
-                        Variant="@(_report.SpecificationCoverage.CoveragePercentage >= 80 ? "success" : _report.SpecificationCoverage.CoveragePercentage >= 50 ? "warning" : _report.SpecificationCoverage.CoveragePercentage > 0 ? "danger" : null)" />
-            <MetricCard Value="@(_report.PlanCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Plan Coverage"
-                        Variant="@(_report.PlanCoverage.CoveragePercentage >= 80 ? "success" : _report.PlanCoverage.CoveragePercentage >= 50 ? "warning" : _report.PlanCoverage.CoveragePercentage > 0 ? "danger" : null)" />
-            <MetricCard Value="@(_report.TaskCoverage.CoveragePercentage.ToString("0.#") + "%")" Label="Task Coverage"
-                        Variant="@(_report.TaskCoverage.CoveragePercentage >= 80 ? "success" : _report.TaskCoverage.CoveragePercentage >= 50 ? "warning" : _report.TaskCoverage.CoveragePercentage > 0 ? "danger" : null)" />
+            <MetricCard Value="@CoverageValue(_report.ConstitutionCoverage)" Label="@CoverageLabel("Authored Constitution to Spec", _report.ConstitutionCoverage, _report.HasConstitution && _report.HasSpecification)" Variant="@CoverageVariant(_report.ConstitutionCoverage)" />
+            <MetricCard Value="@CoverageValue(_report.SpecificationCoverage)" Label="@CoverageLabel("Requirement to Plan", _report.SpecificationCoverage, _report.HasSpecification && _report.HasPlan)" Variant="@CoverageVariant(_report.SpecificationCoverage)" />
+            <MetricCard Value="@CoverageValue(_report.PlanCoverage)" Label="Plan to Tasks · Not assessed" Variant="@CoverageVariant(_report.PlanCoverage)" />
+            <MetricCard Value="@CoverageValue(_report.TaskCoverage)" Label="@CoverageLabel("Tasks with Requirement/SC links", _report.TaskCoverage, _report.HasTasks && _report.HasSpecification)" Variant="@CoverageVariant(_report.TaskCoverage)" />
             @if (_report.Health.GapCount > 0)
             {
                 <MetricCard Value="@_report.Health.GapCount.ToString()" Label="Gaps" Variant="warning" />
@@ -269,7 +267,11 @@
                     <!-- Coverage sections -->
                     @if (_report.HasConstitution && _report.HasSpecification)
                     {
-                        @RenderCoverageSection("Constitution → Specification", _report.ConstitutionCoverage, "const-spec")
+                        @RenderCoverageSection("Constitution → Specification (authored rules)", _report.ConstitutionCoverage, "const-spec")
+                        @if (_report.ReferenceOnlyConstitutionEntries > 0)
+                        {
+                            <p class="at-neutral-note">@_report.ReferenceOnlyConstitutionEntries reference-only catalog entries are excluded from authored-rule coverage.</p>
+                        }
                     }
                     @if (_report.HasSpecification && _report.HasPlan)
                     {
@@ -278,10 +280,11 @@
                     @if (_report.HasPlan && _report.HasTasks)
                     {
                         @RenderCoverageSection("Plan → Tasks", _report.PlanCoverage, "plan-task")
+                        <p class="at-neutral-note">Not assessed: Plan phase entries contain action descriptions, not stable Task IDs. The current model cannot establish direct Plan→Task links; task-to-Requirement/Success Criterion references are shown separately.</p>
                     }
-                    @if (_report.HasTasks)
+                    @if (_report.HasTasks && _report.HasSpecification)
                     {
-                        @RenderCoverageSection("Task Traceability", _report.TaskCoverage, "plan-task")
+                        @RenderCoverageSection("Tasks → Requirement / Success Criterion references", _report.TaskCoverage, "plan-task")
                     }
 
                     <!-- Health indicators -->
@@ -462,7 +465,11 @@
                 }
                 else if (!_report.HasTasks && _report.PlanToTask.Count == 0)
                 {
-                    <EmptyState Icon="📭" Title="No Tasks loaded and no plan items found." Description="Load a tasks document above." />
+                    <EmptyState Icon="📭" Title="Plan → Tasks is not assessed." Description="The current Plan and Tasks models do not provide a stable direct relation. Task-to-Requirement and Task-to-Success-Criterion references are reported separately." />
+                }
+                else if (_report.PlanToTask.Count == 0)
+                {
+                    <EmptyState Icon="ℹ️" Title="Plan → Tasks is not assessed." Description="Plan phases contain descriptive action text, not stable Task IDs. Task-to-Requirement and Task-to-Success-Criterion references are reported separately." />
                 }
                 else
                 {
@@ -476,9 +483,9 @@
                             <table class="at-chain-table" aria-label="Plan to Tasks coverage">
                                 <thead>
                                     <tr>
-                                        <th>Plan Item</th>
-                                        <th>Title</th>
-                                        <th>Related Tasks</th>
+                                        <th>Plan phase</th>
+                                        <th>Phase group</th>
+                                        <th>Tasks in matching Task phase</th>
                                         <th>Coverage</th>
                                     </tr>
                                 </thead>
@@ -512,7 +519,7 @@
                         @if (_report.Gaps.Any(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
                         {
                             <div class="at-gaps-section" style="margin-top:1.5rem;">
-                                <SectionHeader Title="Orphan Tasks (no spec references)" />
+                                <SectionHeader Title="Tasks without Requirement/SC references" />
                                 <div class="issue-cards">
                                     @foreach (var gap in _report.Gaps.Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned))
                                     {
@@ -718,6 +725,18 @@
         _report?.Gaps.Count > 0 ? $"({_report.Gaps.Count})" : string.Empty;
     private string MatrixBadge =>
         _report?.Matrix.Count > 0 ? $"({_report.Matrix.Count})" : string.Empty;
+
+    private static string CoverageValue(TraceabilityCoverageStats stats) =>
+        stats.HasApplicablePopulation ? $"{stats.CoveragePercentage:0.#}%" : "—";
+
+    private static string CoverageVariant(TraceabilityCoverageStats stats) =>
+        !stats.HasApplicablePopulation ? "" :
+        stats.CoveragePercentage >= 80 ? "success" :
+        stats.CoveragePercentage >= 50 ? "warning" :
+        stats.CoveragePercentage > 0 ? "danger" : "danger";
+
+    private static string CoverageLabel(string label, TraceabilityCoverageStats stats, bool artifactsAvailable) =>
+        stats.HasApplicablePopulation ? label : $"{label} · {(artifactsAvailable ? "No applicable items" : "Not assessed")}";
 
     private string SearchPlaceholder => _tab switch
     {
@@ -946,6 +965,7 @@
             MissingCount = report.Health?.MissingCount ?? 0,
             OrphanCount = report.Health?.OrphanCount ?? 0,
             CoveragePercentage = report.Health?.CoveragePercentage ?? 0,
+            CoverageDenominator = report.Health?.CoverageDenominator ?? 0,
             GapCount = report.Health?.GapCount ?? 0,
             Indicators = report.Health?.Indicators ?? [],
         },
@@ -953,6 +973,7 @@
         HasSpecification = report.HasSpecification,
         HasPlan = report.HasPlan,
         HasTasks = report.HasTasks,
+        ReferenceOnlyConstitutionEntries = report.ReferenceOnlyConstitutionEntries,
     };
 
     private void SetTab(string tab)
@@ -983,20 +1004,30 @@
         __builder.AddContent(4, title);
         __builder.CloseElement();
 
-        __builder.OpenElement(5, "div");
-        __builder.AddAttribute(6, "class", "at-coverage-stat-grid");
+        if (!stats.HasApplicablePopulation)
+        {
+            __builder.OpenElement(5, "p");
+            __builder.AddAttribute(6, "class", "at-neutral-note");
+            __builder.AddContent(7, "No applicable items were assessed for this transition.");
+            __builder.CloseElement();
+            __builder.CloseElement();
+            return;
+        }
+
+        __builder.OpenElement(8, "div");
+        __builder.AddAttribute(9, "class", "at-coverage-stat-grid");
 
         void AddCard(string label, int count, string variant)
         {
-            __builder.OpenElement(7, "div");
-            __builder.AddAttribute(8, "class", $"at-coverage-stat-card is-{variant}");
-            __builder.OpenElement(9, "div");
-            __builder.AddAttribute(10, "class", "at-coverage-stat-num");
-            __builder.AddContent(11, count.ToString());
+            __builder.OpenElement(30, "div");
+            __builder.AddAttribute(31, "class", $"at-coverage-stat-card is-{variant}");
+            __builder.OpenElement(32, "div");
+            __builder.AddAttribute(33, "class", "at-coverage-stat-num");
+            __builder.AddContent(34, count.ToString());
             __builder.CloseElement();
-            __builder.OpenElement(12, "div");
-            __builder.AddAttribute(13, "class", "at-coverage-stat-label");
-            __builder.AddContent(14, label);
+            __builder.OpenElement(35, "div");
+            __builder.AddAttribute(36, "class", "at-coverage-stat-label");
+            __builder.AddContent(37, label);
             __builder.CloseElement();
             __builder.CloseElement();
         }
@@ -1011,20 +1042,20 @@
         // Coverage bar
         var pct         = stats.CoveragePercentage;
         var barVariant  = pct >= 80 ? string.Empty : pct >= 50 ? "is-warning" : "is-error";
-        __builder.OpenElement(15, "div");
-        __builder.AddAttribute(16, "class", "at-coverage-bar-wrap");
+        __builder.OpenElement(40, "div");
+        __builder.AddAttribute(41, "class", "at-coverage-bar-wrap");
 
-        __builder.OpenElement(17, "div");
-        __builder.AddAttribute(18, "class", "at-coverage-bar");
-        __builder.OpenElement(19, "div");
-        __builder.AddAttribute(20, "class", $"at-coverage-bar-fill {barVariant}");
-        __builder.AddAttribute(21, "style", $"width:{pct}%");
+        __builder.OpenElement(42, "div");
+        __builder.AddAttribute(43, "class", "at-coverage-bar");
+        __builder.OpenElement(44, "div");
+        __builder.AddAttribute(45, "class", $"at-coverage-bar-fill {barVariant}");
+        __builder.AddAttribute(46, "style", $"width:{pct}%");
         __builder.CloseElement();
         __builder.CloseElement();
 
-        __builder.OpenElement(22, "span");
-        __builder.AddAttribute(23, "class", "at-coverage-pct");
-        __builder.AddContent(24, $"{pct:0.#}%");
+        __builder.OpenElement(47, "span");
+        __builder.AddAttribute(48, "class", "at-coverage-pct");
+        __builder.AddContent(49, $"{pct:0.#}% ({stats.CoveredItems + stats.PartialItems} of {stats.TotalItems})");
         __builder.CloseElement();
 
         __builder.CloseElement(); // bar-wrap

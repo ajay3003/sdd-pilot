@@ -141,8 +141,8 @@ public sealed class ArtifactTraceabilityServiceTests
         var report = _svc.Analyze(Constitution(), Spec(), null, null, context);
 
         report.ConstitutionToSpec.Should()
-            .HaveCount(Constitution().RuleCatalog.Count,
-                "one ChainCoverage entry per constitution rule");
+            .HaveCount(Constitution().RuleCatalog.Count(r => !r.IsReferenceOnly),
+                "one ChainCoverage entry per locally authored rule");
     }
 
     [Fact]
@@ -156,6 +156,79 @@ public sealed class ArtifactTraceabilityServiceTests
             report.ConstitutionToSpec.Count(c => c.Status == TraceabilityStatus.Covered));
         report.ConstitutionCoverage.MissingItems.Should().Be(
             report.ConstitutionToSpec.Count(c => c.Status == TraceabilityStatus.Missing));
+    }
+
+    [Fact]
+    public void ConstitutionCoverage_ExcludesReferenceOnlyCatalogEntriesFromAuthoredPopulation()
+    {
+        var parsed = Constitution();
+        var constitution = new ConstitutionDocument
+        {
+            Title = parsed.Title,
+            Principles = parsed.Principles,
+            Standards = parsed.Standards,
+            Constraints = parsed.Constraints,
+            GovernanceItems = parsed.GovernanceItems,
+            RuleCatalog = [.. parsed.RuleCatalog, new ConstitutionRule
+            {
+                RuleId = "PP-99", Title = "Referenced externally", IsReferenceOnly = true
+            }]
+        };
+        var spec = SpecWithNoRuleRefs();
+        var context = BuildContext(constitution, spec, null, null);
+
+        var report = _svc.Analyze(constitution, spec, null, null, context);
+
+        report.ConstitutionCoverage.TotalItems.Should().Be(parsed.RuleCatalog.Count(r => !r.IsReferenceOnly));
+        report.ReferenceOnlyConstitutionEntries.Should().Be(1);
+        report.ConstitutionToSpec.Should().NotContain(row => row.ItemId == "PP-99");
+        report.Gaps.Should().NotContain(gap => gap.ItemId == "PP-99");
+    }
+
+    [Fact]
+    public void SpecToPlan_IsNotAssessedWhenPlanArtifactIsUnavailable()
+    {
+        var spec = Spec();
+        var context = BuildContext(null, spec, null, null);
+
+        var report = _svc.Analyze(null, spec, null, null, context);
+
+        report.SpecToPlan.Should().BeEmpty();
+        report.SpecificationCoverage.HasApplicablePopulation.Should().BeFalse();
+        report.Gaps.Should().NotContain(gap => gap.GapIn == ArtifactType.Specification);
+    }
+
+    [Fact]
+    public void TaskRequirementTraceability_IsNotAssessedWithoutSpecification()
+    {
+        var tasks = Tasks();
+        var context = BuildContext(null, null, null, tasks);
+
+        var report = _svc.Analyze(null, null, null, tasks, context);
+
+        report.TaskCoverage.HasApplicablePopulation.Should().BeFalse();
+        report.Gaps.Should().NotContain(gap => gap.GapIn == ArtifactType.Task);
+    }
+
+    [Fact]
+    public void GapCount_EqualsDistinctActionableRowsAcrossAssessedProjections()
+    {
+        var constitution = Constitution();
+        var spec = SpecWithNoRuleRefs();
+        var plan = Plan();
+        var tasks = Tasks();
+        var context = BuildContext(constitution, spec, plan, tasks);
+
+        var report = _svc.Analyze(constitution, spec, plan, tasks, context);
+        var expected = report.ConstitutionToSpec.Count(row => row.Status is TraceabilityStatus.Missing or TraceabilityStatus.Partial)
+            + report.SpecToPlan.Count(row => row.Status is TraceabilityStatus.Missing or TraceabilityStatus.Partial)
+            + report.PlanToTask.Count(row => row.Status == TraceabilityStatus.Missing)
+            + report.TaskCoverage.OrphanedItems;
+
+        report.Gaps.Should().HaveCount(expected);
+        report.ConstitutionCoverage.TotalItems.Should().Be(report.ConstitutionToSpec.Count);
+        report.SpecificationCoverage.TotalItems.Should().Be(report.SpecToPlan.Count);
+        report.PlanCoverage.TotalItems.Should().Be(report.PlanToTask.Count);
     }
 
     // ── 2: Spec → Plan coverage ───────────────────────────────────────────────
@@ -196,13 +269,13 @@ public sealed class ArtifactTraceabilityServiceTests
     // ── 3: Plan → Task coverage ───────────────────────────────────────────────
 
     [Fact]
-    public void PlanCoverage_CoveredWhenTaskReferencesFR()
+    public void PlanCoverage_IsNotAssessedWithoutStablePlanTaskIdentifiers()
     {
         var context = BuildContext(null, null, Plan(), Tasks());
         var report = _svc.Analyze(null, null, Plan(), Tasks(), context);
 
-        var covered = report.PlanToTask.Where(p => p.Status == TraceabilityStatus.Covered).ToList();
-        covered.Should().NotBeEmpty("tasks T001 and T002 reference FR-001 which is in the plan");
+        report.PlanToTask.Should().BeEmpty("phase descriptions are not stable Task references");
+        report.PlanCoverage.HasApplicablePopulation.Should().BeFalse();
     }
 
     [Fact]
@@ -211,7 +284,8 @@ public sealed class ArtifactTraceabilityServiceTests
         var context = BuildContext(null, null, Plan(), Tasks());
         var report = _svc.Analyze(null, null, Plan(), Tasks(), context);
 
-        report.PlanToTask.Should().NotBeEmpty("plan has ADRs and phases");
+        report.PlanToTask.Should().BeEmpty("ADRs and phases do not establish Plan-to-Task links");
+        report.PlanCoverage.HasApplicablePopulation.Should().BeFalse();
     }
 
     // ── 4: Orphan task detection ──────────────────────────────────────────────
@@ -219,8 +293,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void OrphanTask_DetectedWhenNoFrOrScRefs()
     {
-        var context = BuildContext(null, null, null, Tasks());
-        var report = _svc.Analyze(null, null, null, Tasks(), context);
+        var context = BuildContext(null, Spec(), null, Tasks());
+        var report = _svc.Analyze(null, Spec(), null, Tasks(), context);
 
         // T004 "Fix button spacing on dashboard" has no FR/SC refs
         var orphanGaps = report.Gaps
@@ -232,8 +306,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void OrphanTask_TaskCoverageStatsCountsOrphans()
     {
-        var context = BuildContext(null, null, null, Tasks());
-        var report = _svc.Analyze(null, null, null, Tasks(), context);
+        var context = BuildContext(null, Spec(), null, Tasks());
+        var report = _svc.Analyze(null, Spec(), null, Tasks(), context);
 
         report.TaskCoverage.OrphanedItems.Should().BeGreaterThan(0,
             "at least one orphan task expected");
@@ -257,8 +331,8 @@ public sealed class ArtifactTraceabilityServiceTests
     [Fact]
     public void GapDetection_IncludesOrphanTasks()
     {
-        var context = BuildContext(null, null, null, Tasks());
-        var report = _svc.Analyze(null, null, null, Tasks(), context);
+        var context = BuildContext(null, Spec(), null, Tasks());
+        var report = _svc.Analyze(null, Spec(), null, Tasks(), context);
 
         var taskGaps = report.Gaps
             .Where(g => g.GapIn == ArtifactType.Task && g.Status == TraceabilityStatus.Orphaned)
@@ -303,20 +377,15 @@ public sealed class ArtifactTraceabilityServiceTests
     }
 
     [Fact]
-    public void Matrix_ContainsFullChainRowWhenAllArtifactsLoaded()
+    public void Matrix_DoesNotPromoteDerivedPhaseAlignmentToDirectRequirementPlanTaskChain()
     {
         var context = BuildContext(Constitution(), Spec(), Plan(), Tasks());
         var report = _svc.Analyze(Constitution(), Spec(), Plan(), Tasks(), context);
 
-        // A fully covered row has all four columns filled
-        var coveredRows = report.Matrix.Where(r => r.Status == TraceabilityStatus.Covered).ToList();
-        coveredRows.Should().NotBeEmpty("PP-01 → FR-001 → plan → T001/T002 forms a full chain");
-        var fullRow = coveredRows.FirstOrDefault(r =>
-            !string.IsNullOrEmpty(r.ConstitutionRuleId) &&
-            !string.IsNullOrEmpty(r.SpecRequirementId) &&
-            !string.IsNullOrEmpty(r.PlanItemId) &&
-            !string.IsNullOrEmpty(r.TaskId));
-        fullRow.Should().NotBeNull("at least one full 4-column covered row expected");
+        report.PlanToTask.Should().BeEmpty("Plan phase descriptions do not contain stable Task IDs");
+        report.PlanCoverage.HasApplicablePopulation.Should().BeFalse();
+        report.Matrix.Should().NotContain(row => !string.IsNullOrWhiteSpace(row.TaskId),
+            "phase-heading alignment is not a direct requirement-to-task edge");
     }
 
     // ── 7: Search and filter ──────────────────────────────────────────────────
@@ -362,7 +431,7 @@ public sealed class ArtifactTraceabilityServiceTests
         var context = BuildContext(constitution, Spec(), Plan(), Tasks());
         var report = _svc.Analyze(constitution, Spec(), Plan(), Tasks(), context);
 
-        report.Health.TotalRules.Should().Be(constitution.RuleCatalog.Count);
+        report.Health.TotalRules.Should().Be(constitution.RuleCatalog.Count(r => !r.IsReferenceOnly));
         report.Health.TotalRules.Should().BeGreaterThan(0);
     }
 
@@ -389,6 +458,6 @@ public sealed class ArtifactTraceabilityServiceTests
         var report = _svc.Analyze(Constitution(), null, null, null, context);
 
         report.ConstitutionToSpec.Should().BeEmpty("no spec to analyze against");
-        report.Matrix.Should().NotBeEmpty("constitution rules generate matrix rows even without spec");
+        report.Matrix.Should().BeEmpty("without a Specification there is no assessed matrix transition");
     }
 }

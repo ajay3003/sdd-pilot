@@ -262,7 +262,7 @@
                 {
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@specTrace.Health.TotalRequirements requirements</span>
-                        <span class="db-stat-pill">@specTrace.SpecificationCoverage.CoveragePercentage.ToString("0")% coverage</span>
+                        <span class="db-stat-pill">@(specTrace.HasPlan && specTrace.SpecificationCoverage.HasApplicablePopulation ? $"{specTrace.SpecificationCoverage.CoveragePercentage:0}% Requirement → Plan" : "Requirement → Plan not assessed")</span>
                     </div>
                 }
                 else
@@ -279,7 +279,15 @@
                 @if (Available(WorkspaceArtifactType.Plan) && Snapshot.TraceabilityReport?.HasPlan == true)
                 {
                     <div class="db-artifact-stats">
-                        <span class="db-stat-pill">@Snapshot.TraceabilityReport.PlanCoverage.TotalItems items</span>
+                        <span class="db-stat-pill">@Snapshot.TraceabilityReport.Health.TotalPlanItems plan phases</span>
+                        @if (Snapshot.TraceabilityReport.HasTasks && Snapshot.TraceabilityReport.PlanCoverage.HasApplicablePopulation)
+                        {
+                            <span class="db-stat-pill">@Snapshot.TraceabilityReport.PlanCoverage.CoveredItems of @Snapshot.TraceabilityReport.PlanCoverage.TotalItems align with Task phases</span>
+                        }
+                        else
+                        {
+                            <span class="db-stat-pill">Plan-to-Task phase alignment not assessed</span>
+                        }
                     </div>
                 }
                 else
@@ -297,7 +305,7 @@
                 {
                     <div class="db-artifact-stats">
                         <span class="db-stat-pill">@taskTrace.Health.TotalTasks tasks</span>
-                        <span class="db-stat-pill">@taskTrace.TaskCoverage.CoveragePercentage.ToString("0")% coverage</span>
+                        <span class="db-stat-pill">@(taskTrace.HasSpecification && taskTrace.TaskCoverage.HasApplicablePopulation ? $"{taskTrace.TaskCoverage.CoveredItems} of {taskTrace.TaskCoverage.TotalItems} Tasks have Requirement/SC references" : "Requirement/SC references not assessed")</span>
                     </div>
                 }
                 else
@@ -443,7 +451,7 @@
                         <span class="db-tl-dot db-tl-dot-analyzed" aria-hidden="true"></span>
                         <div class="db-tl-body">
                             <span class="db-tl-action">Requirements Traceability completed</span>
-                            <span class="db-tl-meta">@Snapshot.TraceabilityReport.Health.CoveragePercentage.ToString("0")% coverage</span>
+                            <span class="db-tl-meta">@(Snapshot.TraceabilityReport.Health.HasAssessedCoverage ? $"{Snapshot.TraceabilityReport.Health.CoveragePercentage:0}% across assessed transitions" : "No transition coverage assessed")</span>
                         </div>
                     </div>
                 }
@@ -512,8 +520,16 @@
                 </div>
                 @if (Snapshot.TraceabilityReport is { } tr)
                 {
-                    <div class="db-analysis-score @ScoreClass(tr.Health.CoveragePercentage)">@tr.Health.CoveragePercentage.ToString("0")%</div>
-                    <span class="db-analysis-status @KpiStatusClass(tr.Health.CoveragePercentage, true)">@KpiStatusLabel(tr.Health.CoveragePercentage, true)</span>
+                    @if (tr.Health.HasAssessedCoverage)
+                    {
+                        <div class="db-analysis-score @ScoreClass(tr.Health.CoveragePercentage)">@tr.Health.CoveragePercentage.ToString("0")%</div>
+                        <span class="db-analysis-status @KpiStatusClass(tr.Health.CoveragePercentage, true)">@KpiStatusLabel(tr.Health.CoveragePercentage, true) across assessed transitions</span>
+                    }
+                    else
+                    {
+                        <div class="db-analysis-score">—</div>
+                        <span class="db-analysis-status">Traceability transitions not assessed</span>
+                    }
                     <div class="db-analysis-chips">
                         <span class="db-count-chip db-count-good">@tr.Health.CoveredCount covered</span>
                         @if (tr.Health.PartialCount > 0) { <span class="db-count-chip db-count-warn">@tr.Health.PartialCount partial</span> }

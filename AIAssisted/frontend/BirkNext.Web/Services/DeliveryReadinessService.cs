@@ -259,9 +259,11 @@ public sealed class DeliveryReadinessService : IDeliveryReadinessAssessmentServi
         double tracePct = traceReport.SpecificationCoverage.TotalItems > 0
             ? traceReport.SpecificationCoverage.CoveragePercentage
             : 0;
-        bool traceAssessed = readiness.HasSpecification && readiness.HasPlan;
+        bool traceAssessed = readiness.HasSpecification && readiness.HasPlan && traceReport.SpecificationCoverage.HasApplicablePopulation;
         if (!traceAssessed)
-            passed.Add("Traceability check skipped — need Spec + Plan");
+            passed.Add(readiness.HasSpecification && readiness.HasPlan
+                ? "Traceability check skipped — no applicable Requirements were available"
+                : "Traceability check skipped — need Spec + Plan");
         else if (tracePct >= 60)
             passed.Add($"Spec→Plan traceability: {tracePct:0.#}%");
         else
