@@ -68,6 +68,12 @@ else
         </button>
     </div>
 
+    <p class="tv-scope" data-testid="tv-scope">
+        Coverage within this specification: requirements against tests, user stories and success criteria.
+        <a href="artifact-traceability" class="tv-scope-link" data-testid="tv-open-requirements-traceability">Open Requirements Traceability →</a>
+        <span class="tv-scope-hint">for traceability across constitution, plan and tasks.</span>
+    </p>
+
     @* ── Sub-view toggle ──────────────────────────────────────────────── *@
     <div class="tv-toggle" role="tablist" aria-label="Traceability view mode">
         <button type="button" role="tab" class="tv-toggle-btn @(_subView == TvSubView.Requirements ? "is-active" : "")"
@@ -96,14 +102,15 @@ else
                 <div class="tv-req-list">
                     <input type="search" class="tv-req-search" placeholder="Search requirements…"
                            @bind="_reqSearch" @bind:event="oninput" />
-                    <ul class="tv-req-items" role="listbox" aria-label="Requirements">
+                    <ul class="tv-req-items" aria-label="Requirements">
                         @foreach (var req in FilteredRequirements)
                         {
                             var reqCap = req;
-                            <li role="option" aria-selected="@(_selectedReqId == req.CandidateId)">
+                            <li>
                                 <span class="tv-status-dot tv-dot-@req.Status.ToString().ToLowerInvariant()"></span>
                                 <TraceabilityItemText @key="req.CandidateId" ItemType="Requirement" ItemId="@req.FrId" Text="@req.Title"
                                     ActionClass="@( "tv-req-item-btn " + (_selectedReqId == req.CandidateId ? "is-selected" : "") )"
+                                    Current="@(_selectedReqId == req.CandidateId)"
                                     OnActivate="() => _selectedReqId = reqCap.CandidateId" />
                                 @if (req.LinkedTests.Count > 0) { <span class="tv-item-test-count">@req.LinkedTests.Count</span> }
                             </li>
@@ -308,12 +315,13 @@ else
                         @if (_gapExpanded["reqs-no-tests"])
                         {
                             <ul class="tv-gap-items">
-                                @foreach (var req in reqsNoTests)
+                                @foreach (var req in GapPreview("reqs-no-tests", reqsNoTests))
                                 {
                                     var reqCap = req;
                                     <li><TraceabilityItemText @key="req.CandidateId" ItemType="Requirement missing tests" ItemId="@req.FrId" Text="@req.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirement(reqCap)" /></li>
                                 }
                             </ul>
+                            @GapShowAll("reqs-no-tests", reqsNoTests.Count, "requirements without tests")
                         }
                     </div>
                 }
@@ -331,12 +339,13 @@ else
                         @if (_gapExpanded["reqs-no-us"])
                         {
                             <ul class="tv-gap-items">
-                                @foreach (var req in reqsNoUserStory)
+                                @foreach (var req in GapPreview("reqs-no-us", reqsNoUserStory))
                                 {
                                     var reqCap = req;
                                     <li><TraceabilityItemText @key="req.CandidateId" ItemType="Requirement missing a user story" ItemId="@req.FrId" Text="@req.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirement(reqCap)" /></li>
                                 }
                             </ul>
+                            @GapShowAll("reqs-no-us", reqsNoUserStory.Count, "requirements missing a user story")
                         }
                     </div>
                 }
@@ -354,12 +363,13 @@ else
                         @if (_gapExpanded["reqs-no-sc"])
                         {
                             <ul class="tv-gap-items">
-                                @foreach (var req in reqsNoSc)
+                                @foreach (var req in GapPreview("reqs-no-sc", reqsNoSc))
                                 {
                                     var reqCap = req;
                                     <li><TraceabilityItemText @key="req.CandidateId" ItemType="Requirement missing success criteria" ItemId="@req.FrId" Text="@req.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirement(reqCap)" /></li>
                                 }
                             </ul>
+                            @GapShowAll("reqs-no-sc", reqsNoSc.Count, "requirements missing success criteria")
                         }
                     </div>
                 }
@@ -377,11 +387,12 @@ else
                         @if (_gapExpanded["orphan-tests"])
                         {
                             <ul class="tv-gap-items">
-                                @foreach (var t in orphanTests)
+                                @foreach (var t in GapPreview("orphan-tests", orphanTests))
                                 {
                                     <li><TraceabilityItemText @key="t.CandidateId" ItemType="Orphaned test" Text="@t.Title" /></li>
                                 }
                             </ul>
+                            @GapShowAll("orphan-tests", orphanTests.Count, "orphan tests")
                         }
                     </div>
                 }
@@ -399,12 +410,13 @@ else
                         @if (_gapExpanded["sc-no-fr"])
                         {
                             <ul class="tv-gap-items">
-                                @foreach (var sc in scNoFr)
+                                @foreach (var sc in GapPreview("sc-no-fr", scNoFr))
                                 {
                                     var scCap = sc.SpecItemId;
                                     <li><TraceabilityItemText @key="sc.SpecItemId" ItemType="Success criterion" ItemId="@sc.SpecItemId" Text="@sc.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirementBySc(scCap)" /></li>
                                 }
                             </ul>
+                            @GapShowAll("sc-no-fr", scNoFr.Count, "success criteria without requirements")
                         }
                     </div>
                 }
@@ -422,12 +434,13 @@ else
                         @if (_gapExpanded["sc-no-tests"])
                         {
                             <ul class="tv-gap-items">
-                                @foreach (var sc in scNoTests)
+                                @foreach (var sc in GapPreview("sc-no-tests", scNoTests))
                                 {
                                     var scCap = sc.SpecItemId;
                                     <li><TraceabilityItemText @key="sc.SpecItemId" ItemType="Success criterion" ItemId="@sc.SpecItemId" Text="@sc.Title" ActionClass="tv-gap-item-btn" OnActivate="() => NavigateToRequirementBySc(scCap)" /></li>
                                 }
                             </ul>
+                            @GapShowAll("sc-no-tests", scNoTests.Count, "success criteria without tests")
                         }
                     </div>
                 }
@@ -548,7 +561,25 @@ else
         _gapFocus = gapKey;
         if (_gapExpanded.ContainsKey(gapKey))
             _gapExpanded[gapKey] = true;
+        _gapShowAll.Add(gapKey); // a gap opened on purpose shows all of its items
     }
+
+    /// <summary>Items a gap section shows: a short preview, or all of them once asked for. Keeps the embedded view compact.</summary>
+    public const int GapPreviewLimit = 5;
+    private readonly HashSet<string> _gapShowAll = new(StringComparer.Ordinal);
+
+    private IEnumerable<T> GapPreview<T>(string key, IReadOnlyList<T> items) =>
+        _gapShowAll.Contains(key) ? items : items.Take(GapPreviewLimit);
+
+    private RenderFragment GapShowAll(string key, int count, string label) => __builder =>
+    {
+        if (count <= GapPreviewLimit) return;
+        var all = _gapShowAll.Contains(key);
+        <button type="button" class="tv-gap-more" data-testid="tv-gap-more" aria-expanded="@(all ? "true" : "false")"
+                @onclick="() => { if (!_gapShowAll.Remove(key)) _gapShowAll.Add(key); }">
+            @(all ? $"Show first {GapPreviewLimit}" : $"Show all {count} {label}")
+        </button>
+    };
 
     private void NavigateToRequirement(TracedRequirement req)
     {

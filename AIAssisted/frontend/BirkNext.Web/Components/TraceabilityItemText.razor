@@ -1,7 +1,8 @@
 <div class="traceability-item @(Expanded ? "is-expanded" : "")">
     @if (OnActivate.HasDelegate)
     {
-        <button type="button" class="traceability-item__activate @ActionClass" @onclick="Activate" aria-label="@ActivateLabel">
+        <button type="button" class="traceability-item__activate @ActionClass" @onclick="Activate" aria-label="@ActivateLabel"
+                aria-current="@(Current ? "true" : null)">
             @if (!string.IsNullOrWhiteSpace(ItemId)) { <span class="traceability-item__id">@ItemId</span> }
             <span class="visually-hidden">@ItemType: </span><span class="traceability-item__text @(CanExpand && !Expanded ? "is-collapsed" : "")">@Text</span>
         </button>
@@ -27,6 +28,8 @@
     [Parameter] public string? ItemId { get; set; }
     [Parameter] public string ActionClass { get; set; } = "";
     [Parameter] public EventCallback OnActivate { get; set; }
+    /// <summary>The activate button is the selected item of its list (announced as aria-current).</summary>
+    [Parameter] public bool Current { get; set; }
     private bool Expanded { get; set; }
     private bool CanExpand => Text.Length > 180;
     private string ActivateLabel => $"{ItemType}{(string.IsNullOrWhiteSpace(ItemId) ? "" : $" {ItemId}")}: {Text}";
