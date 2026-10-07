@@ -111,6 +111,7 @@ public sealed class TaskHealth
     // QA-oriented counts (always populated from task refs and keyword detection)
     public int FrLinkedTasks { get; init; }    // tasks with ≥1 FR reference
     public int ScLinkedTasks { get; init; }    // tasks with ≥1 SC reference
+    public int LinkedTasks { get; init; }      // tasks with at least one traceability link (TaskExplorerService.HasTraceabilityLinks)
     public int UnlinkedTasks { get; init; }    // tasks with no traceability link of any kind (TaskExplorerService.HasNoTraceabilityLinks)
     public int TestingTasks { get; init; }
     public int SecurityTasks { get; init; }
@@ -120,7 +121,7 @@ public sealed class TaskHealth
     public int WorkerServiceTasks { get; init; } // worker/background service tasks
     public int ProxyTasks { get; init; }        // proxy/gateway tasks
     public int NoSqlTasks { get; init; }        // no-SQL/no-database project tasks
-    public int ParallelTasks { get; init; }     // tasks marked [P]
+    public int ParallelTasks { get; init; }     // tasks marked parallelizable ([P] in the Task artifact)
 }
 
 public sealed class TaskTree

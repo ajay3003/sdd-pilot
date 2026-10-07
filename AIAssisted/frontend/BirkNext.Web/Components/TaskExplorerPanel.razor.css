@@ -298,7 +298,7 @@
     color: var(--clr-text-primary);
 }
 
-.te-row.is-item { opacity: 0.92; }
+/* Task rows are not dimmed: opacity pushed badge text (user story, previews) below 4.5:1. */
 
 .te-expand-cell {
     width: 18px;
@@ -382,9 +382,9 @@
 }
 
 .te-chip {
-    font-size: 0.6rem;
+    font-size: 0.72rem;
     font-weight: 600;
-    padding: 0.1rem 0.35rem;
+    padding: 0.14rem 0.5rem;
     border-radius: 999px;
     white-space: nowrap;
     flex-shrink: 0;
@@ -396,6 +396,7 @@
 .te-chip-reg      { background: var(--clr-warning-bg); color: var(--clr-warning); }
 .te-chip-testing  { background: var(--clr-accent-bg); color: var(--clr-accent); }
 .te-chip-security { background: var(--clr-danger-bg); color: #b91c1c; }
+.te-chip-architecture { background: #eef2f7; color: #334155; }
 
 .te-chip-status { border-radius: 999px; }
 .te-chip-status-linked { background: var(--clr-success-bg); color: var(--clr-success); }
@@ -433,9 +434,9 @@
 }
 
 .te-meta-chip {
-    font-size: 0.6rem;
-    font-weight: 500;
-    padding: 0.1rem 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.14rem 0.5rem;
     border-radius: 999px;
     background: #eef2f7;
     color: #334155;
@@ -453,7 +454,7 @@
 }
 
 .te-ref-chip {
-    font-size: 0.68rem;
+    font-size: 0.72rem;
     font-weight: 600;
     padding: 0.18rem 0.45rem;
     border-radius: var(--radius-sm);
@@ -792,7 +793,7 @@ button.te-ref-chip:hover {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: rgba(20, 184, 166, 0.8);
+    color: #0f766e;
 }
 
 .te-details-close {
@@ -826,7 +827,72 @@ button.te-ref-chip:hover {
     color: var(--clr-text-primary);
     margin: 0 0 0.25rem;
     line-height: 1.4;
-    word-break: break-word;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    user-select: text;
+}
+
+/* Long task text: a few lines, then Show more; never a permanent ellipsis. */
+.te-details-title.is-clamped {
+    /* The details panel is a scrolling flex column: without this the clamped title would shrink away. */
+    flex-shrink: 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.te-details-more {
+    background: none;
+    border: none;
+    padding: 0.15rem 0;
+    min-height: 24px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--clr-accent, #4338ca);
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.te-detail-group + .te-detail-group {
+    margin-top: 0.75rem;
+    padding-top: 0.65rem;
+    border-top: 1px solid var(--clr-border, #e2e8f0);
+}
+
+.te-detail-group-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--clr-text-primary);
+    margin: 0 0 0.3rem;
+}
+
+.te-detail-empty,
+.te-detail-value,
+.te-detail-note {
+    margin: 0.15rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.te-detail-empty,
+.te-detail-note { color: var(--clr-text-subtle, #475569); }
+.te-detail-value { color: var(--clr-text-primary); }
+
+.te-detail-cta {
+    display: inline-block;
+    margin-top: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    min-height: 24px;
+}
+
+.te-phase-dashboard-sub {
+    font-weight: 500;
+    color: var(--clr-text-subtle, #475569);
+    text-transform: none;
+    letter-spacing: 0;
 }
 
 .te-details-section {
@@ -857,8 +923,20 @@ button.te-ref-chip:hover {
     border-radius: 999px;
 }
 
-.te-completion-badge.is-done { background: var(--clr-success-bg); color: #4ade80; }
-.te-completion-badge.is-open { background: rgba(100,116,139,0.12); color: #94a3b8; }
+.te-completion-badge.is-done { background: var(--clr-success-bg); color: #166534; }
+.te-completion-badge.is-open { background: rgba(100,116,139,0.12); color: #334155; }
+
+.te-node-more {
+    color: #475569;
+    font-size: 0.75rem;
+    font-style: italic;
+}
+
+.te-details-raw-wrap > summary {
+    cursor: pointer;
+    min-height: 24px;
+    width: fit-content;
+}
 
 .te-details-raw {
     font-family: 'Courier New', Courier, monospace;
@@ -956,7 +1034,7 @@ button.te-ref-chip:hover {
     padding: 0.15rem 0.5rem;
     border-radius: 999px;
     background: rgba(100,116,139,0.12);
-    color: var(--clr-text-subtle);
+    color: #334155;
 }
 
 .te-table-rel-source {
@@ -1244,7 +1322,7 @@ button.te-ref-chip:hover {
 .te-coverage-pill.partial,
 .te-risk-severity-medium {
     background: rgba(251, 191, 36, 0.13);
-    color: #fde68a;
+    color: #92400e;
 }
 
 .te-coverage-pill.missing,
@@ -1366,7 +1444,7 @@ button.te-ref-chip:hover {
 .te-gap-id {
     font-family: monospace;
     font-weight: 600;
-    color: rgba(248, 113, 113, 0.85);
+    color: #b91c1c;
 }
 
 .te-zero-gaps {
@@ -1384,7 +1462,7 @@ button.te-ref-chip:hover {
     background: rgba(74, 222, 128, 0.1);
     border-radius: 0.25rem;
     font-size: 0.7rem;
-    color: rgba(74, 222, 128, 0.85);
+    color: #166534;
 }
 
 .te-link-visualization {
@@ -2104,35 +2182,6 @@ button.te-ref-chip:hover {
     flex-wrap: wrap;
 }
 
-.te-legend {
-    font-size: 0.75rem;
-    color: var(--clr-text-subtle, #475569);
-}
-
-.te-legend > summary {
-    cursor: pointer;
-    font-weight: 600;
-    min-height: 24px;
-    width: fit-content;
-}
-
-.te-legend-sample {
-    display: inline-block;
-    padding: 0 0.3rem;
-    border: 1px solid var(--clr-border, #e2e8f0);
-    border-radius: var(--radius-sm, 6px);
-    font-weight: 600;
-    color: #334155;
-    background: #f8fafc;
-}
-
-.te-legend ul {
-    margin: 0.35rem 0 0;
-    padding-left: 1rem;
-    display: grid;
-    gap: 0.25rem;
-}
-
 /* ── Evidence chips (implementation / test): neutral, text carries the state ── */
 
 .te-ev-chips {
@@ -2142,9 +2191,9 @@ button.te-ref-chip:hover {
 }
 
 .te-ev-chip {
-    font-size: 0.68rem;
+    font-size: 0.72rem;
     font-weight: 600;
-    padding: 0.1rem 0.4rem;
+    padding: 0.14rem 0.5rem;
     border-radius: var(--radius-sm, 6px);
     border: 1px solid var(--clr-border, #e2e8f0);
     color: #334155;

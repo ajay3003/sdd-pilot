@@ -376,6 +376,7 @@ public static class TaskExplorerService
             RegressionCandidates = tasks.Count(t => t.IsRegressionCandidate),
             FrLinkedTasks  = tasks.Count(t => t.ReferencedFrIds.Count > 0),
             ScLinkedTasks  = tasks.Count(t => t.ReferencedScIds.Count > 0),
+            LinkedTasks    = tasks.Count(t => HasTraceabilityLinks(t, linkedIds)),
             UnlinkedTasks  = tasks.Count(t => HasNoTraceabilityLinks(t, linkedIds)),
             TestingTasks   = tasks.Count(t => t.IsTestingTask),
             SecurityTasks  = tasks.Count(t => t.IsSecurityTask),
@@ -460,7 +461,7 @@ public static class TaskExplorerService
         title = StripMarkdown(title);
         if (taskId != null)
             title = Regex.Replace(title, @"^T\d{2,4}\s*[-–.]?\s*", "").Trim();
-        if (title.Length > 200) title = title[..200];
+        // The whole task text is kept: views that need a compact label use ShortTitle, never a silent cut.
 
         var shortTitle = DeriveShortTitle(title);
         var relatedFiles = FilePathRe.Matches(rawLine).Select(m => m.Value).Distinct().ToList();
@@ -757,6 +758,14 @@ public static class TaskExplorerService
         && string.IsNullOrWhiteSpace(node.UserStoryTag)
         && !(node.TaskId is not null && (tableLinkedIds?.Contains(node.TaskId) ?? false));
 
+    /// <summary>
+    /// A task with at least one traceability link: the complement of <see cref="HasNoTraceabilityLinks"/> over tasks, so
+    /// "with traceability links" + "with no traceability links" is always the task total. Topics (testing, security,
+    /// parallelizable) and implementation/test evidence are not traceability links.
+    /// </summary>
+    public static bool HasTraceabilityLinks(TaskNode node, HashSet<string>? tableLinkedIds) =>
+        node.NodeType == TaskNodeType.Task && !HasNoTraceabilityLinks(node, tableLinkedIds);
+
     /// <summary>Tasks marked parallelizable with [P] in the Task artifact: the one list behind the header count and the Parallel view.</summary>
     public static List<TaskNode> ParallelizableTasks(IEnumerable<TaskNode> roots)
     {
@@ -811,6 +820,7 @@ public static class TaskExplorerService
             "OnlyRequirements"  => node.ReferencedFrIds.Count > 0,
             "OnlySuccessCriteria" => node.ReferencedScIds.Count > 0,
             "NoLinks"           => HasNoTraceabilityLinks(node, tableLinkedIds),
+            "HasLinks"          => HasTraceabilityLinks(node, tableLinkedIds),
             _ => true,
         };
     }

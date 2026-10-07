@@ -71,7 +71,7 @@
                         Dependencies
                     </button>
                     <button type="button" class='te-view-btn @(_isParallelView ? "is-active" : "")' aria-pressed="@((_isParallelView) ? "true" : "false")" @onclick='ShowParallelView'>
-                        Parallel
+                        Parallelizable
                     </button>
                     <button type="button" class='te-view-btn @(_isChangesView ? "is-active" : "")' aria-pressed="@(_isChangesView ? "true" : "false")" @onclick='ShowChangesView' data-testid="te-changes-tab-btn">
                         Changes
@@ -123,9 +123,10 @@
                             @Chip("HasFrLinks", "Requirements (FR)", "Tasks that reference an FR ID or match a specification requirement")
                             @Chip("HasScLinks", "Success criteria (SC)", "Tasks that reference an SC ID or match a success criterion")
                             @Chip("HasTableLinks", "Table rows", "Tasks listed in a traceability table row of the Task artifact")
+                            @Chip("HasLinks", $"With traceability links ({_health.LinkedTasks})", "Tasks with at least one FR, SC, user-story, matched-requirement or table-row link. Topics and evidence are not links.")
                             @if (_health.UnlinkedTasks > 0)
                             {
-                                @Chip("NoLinks", $"No traceability links ({_health.UnlinkedTasks})", "Tasks with no FR, SC, user-story, matched-requirement or table link of any kind", "te-fc-review")
+                                @Chip("NoLinks", $"No traceability links ({_health.UnlinkedTasks})", "Tasks with no FR, SC, user-story, matched-requirement or table-row link of any kind", "te-fc-review")
                             }
                         </div>
                     </div>
@@ -167,7 +168,7 @@
                         <div class="te-filter-row">
                             @if (_health.ParallelTasks > 0)
                             {
-                                @Chip("Parallel", "⇉ Parallelizable", "Tasks marked [P] in the Task artifact: they can run in parallel with other tasks")
+                                @Chip("Parallel", $"Parallelizable ({_health.ParallelTasks})", "Tasks the Task artifact marks as parallelizable: they can run in parallel with other tasks. Planning, not progress.")
                             }
                             @if (_health.TestingTasks > 0)
                             {
@@ -196,17 +197,6 @@
                         </div>
                     }
 
-                    <details class="te-legend" data-testid="te-legend">
-                        <summary>What do these marks mean?</summary>
-                        <ul>
-                            <li><span class="te-legend-sample" aria-hidden="true">✓</span> Marked done in the Task artifact ([x]); <span class="te-legend-sample" aria-hidden="true">○</span> open. Not implementation or test evidence.</li>
-                            <li><span class="te-legend-sample">3 / 5 done</span> tasks under a phase or group marked done in the Task artifact.</li>
-                            <li><span class="te-legend-sample">⇉ Parallel</span> marked [P]: can run in parallel with other tasks (planning, not progress).</li>
-                            <li><span class="te-legend-sample">FR-001</span> <span class="te-legend-sample">SC-001</span> <span class="te-legend-sample">TABLE · row</span> traceability links.</li>
-                            <li><span class="te-legend-sample">&lt;/&gt; Current</span> implementation evidence of a linked requirement (Current, Stale, Historical, None); shown only when assessed.</li>
-                            <li><span class="te-legend-sample">▷ 2 passed</span> test evidence of linked requirements (designed, executed, passed, failed); shown only when recorded.</li>
-                        </ul>
-                    </details>
                 </div>
             </div>
         }
@@ -358,7 +348,7 @@
                 <div class="te-parallel-view" @ref="_parallelContainer" data-testid="te-parallel-view" role="region" tabindex="0" aria-label="Parallelizable tasks">
                     <div class="te-parallel-header">
                         <div>
-                            <div class="te-section-kicker">Parallel Work</div>
+                            <div class="te-section-kicker">Parallelizable work</div>
                             <h3>Tasks that can run in parallel</h3>
                         </div>
                     </div>
@@ -382,7 +372,7 @@
                             {
                                 var groups = parallelTasks.GroupBy(t => t.PhaseTitle ?? "Unphased").OrderBy(g => g.Key).ToList();
 
-                                <div class="te-parallel-summary" data-testid="te-parallel-summary">@parallelTasks.Count parallelizable task@(parallelTasks.Count == 1 ? "" : "s") [P] across @groups.Count phase@(groups.Count == 1 ? "" : "s")</div>
+                                <div class="te-parallel-summary" data-testid="te-parallel-summary">@parallelTasks.Count parallelizable task@(parallelTasks.Count == 1 ? "" : "s") across @groups.Count phase@(groups.Count == 1 ? "" : "s")</div>
 
                                 @foreach (var group in groups)
                                 {
@@ -391,7 +381,7 @@
                                     <div class="te-parallel-group">
                                         <div class="te-parallel-group-header">
                                             <h4 class="te-parallel-group-title">@group.Key</h4>
-                                            <span class="te-parallel-group-count">@groupCount parallel task@(groupCount == 1 ? "" : "s")</span>
+                                            <span class="te-parallel-group-count">@groupCount parallelizable task@(groupCount == 1 ? "" : "s")</span>
                                         </div>
 
                                         @foreach (var task in group)
@@ -502,20 +492,21 @@
                     @if (_tree is not null && _tree.Roots.Any(r => r.NodeType == TaskNodeType.Phase))
                     {
                         <div class="te-phase-dashboard">
-                            <div class="te-phase-dashboard-header">Phase Progress</div>
+                            <div class="te-phase-dashboard-header">Phase progress <span class="te-phase-dashboard-sub">tasks marked done in Task artifact</span></div>
                             <div class="te-phase-cards">
                                 @foreach (var phase in _tree.Roots.Where(r => r.NodeType == TaskNodeType.Phase).OrderBy(p => p.Title))
                                 {
                                     var phasePct = phase.TaskCount == 0 ? 0 : (int)Math.Round((double)phase.CompletedCount / phase.TaskCount * 100);
-                                    var phaseStatus = phase.TaskCount == 0 ? "Not Started" : (phasePct == 100 ? "Complete" : "In Progress");
-                                    var phaseStatusClass = phase.TaskCount == 0 ? "not-started" : (phasePct == 100 ? "complete" : "in-progress");
+                                    var phaseStatus = PhaseMarkedDoneLabel(phase.CompletedCount, phase.TaskCount);
+                                    var phaseStatusClass = phase.TaskCount == 0 || phase.CompletedCount == 0 ? "not-started" : (phasePct == 100 ? "complete" : "in-progress");
+                                    var phaseProgressText = $"{phase.Title}: {phase.CompletedCount} of {phase.TaskCount} task{(phase.TaskCount == 1 ? "" : "s")} marked done in Task artifact";
                                     <div class="te-phase-card">
                                         <div class="te-phase-card-header">
                                             <div class="te-phase-name">@phase.Title</div>
                                             <span class="te-phase-status te-phase-status-@phaseStatusClass">@phaseStatus</span>
                                         </div>
-                                        <div class="te-phase-counts">@phase.CompletedCount / @phase.TaskCount</div>
-                                        <div class="te-phase-bar">
+                                        <div class="te-phase-counts">@phase.CompletedCount / @phase.TaskCount marked done</div>
+                                        <div class="te-phase-bar" role="progressbar" aria-valuemin="0" aria-valuemax="@phase.TaskCount" aria-valuenow="@phase.CompletedCount" aria-label="@phaseProgressText" data-testid="te-phase-progress">
                                             <div class="te-phase-bar-fill" style="width:@(phasePct)%"></div>
                                         </div>
                                         <div class="te-phase-pct">@(phasePct)%</div>
@@ -643,7 +634,7 @@
                                                         }
                                                         @if (task.IsParallel)
                                                         {
-                                                            <span class="te-map-parallel-badge">Parallel</span>
+                                                            <span class="te-map-parallel-badge">Parallelizable</span>
                                                         }
                                                     </span>
                                                 </div>
@@ -674,7 +665,7 @@
                                                 }
                                                 @if (task.IsParallel)
                                                 {
-                                                    <span class="te-map-parallel-badge">Parallel</span>
+                                                    <span class="te-map-parallel-badge">Parallelizable</span>
                                                 }
                                             </span>
                                         </div>
@@ -754,9 +745,17 @@
                                       title="@(node.IsCompleted ? "Marked done in Task artifact" : "Open in Task artifact")">@(node.IsCompleted ? "✓" : "○")</span>
                             }
 
-                            @* The tree shows a task's full text, wrapped and selectable; the short title is for the compact map views. *@
+                            @* The tree shows a task's text wrapped and selectable; very long tasks show a preview that says so, and the
+                               details panel always has the whole text. The short title is for the compact map views. *@
                             <span class="te-node-title @(node.NodeType == TaskNodeType.Task && node.IsCompleted ? "is-done" : "")">
-                                @(node.NodeType == TaskNodeType.Task ? node.Title : node.ShortTitle ?? node.Title)
+                                @if (node.NodeType == TaskNodeType.Task && node.Title.Length > TreeTitlePreviewChars)
+                                {
+                                    @TreePreview(node.Title)<span class="te-node-more" data-testid="te-node-preview">… <span class="visually-hidden">(preview; </span>full text in details<span class="visually-hidden">)</span></span>
+                                }
+                                else
+                                {
+                                    @(node.NodeType == TaskNodeType.Task ? node.Title : node.ShortTitle ?? node.Title)
+                                }
                                 @if (node.TaskId is not null && node.NodeType == TaskNodeType.Task)
                                 {
                                     <span class="te-task-id">@node.TaskId</span>
@@ -778,7 +777,7 @@
                                     }
                                     @if (node.IsParallel)
                                     {
-                                        <span class="te-chip te-chip-parallel" data-testid="te-parallel-chip" title="Marked [P] in the Task artifact: can run in parallel with other tasks"><span aria-hidden="true">⇉ </span>Parallel</span>
+                                        <span class="te-chip te-chip-parallel" data-testid="te-parallel-chip" title="The Task artifact marks this task as parallelizable: it can run in parallel with other tasks. Planning, not progress.">Parallelizable</span>
                                     }
                                     @if (node.Status.HasValue)
                                     {
@@ -921,14 +920,17 @@
                             <div class="te-details-task-id">@selected.TaskId</div>
                         }
 
-                        <h3 class="te-details-title">@(selected.ShortTitle ?? selected.Title)</h3>
-
-                        @if (selected.NodeType == TaskNodeType.Task && selected.ShortTitle is not null)
+                        @{
+                            // The full task text, once: wrapped and selectable, clamped with Show more only when it is long.
+                            var detailTitle = selected.NodeType == TaskNodeType.Task ? selected.Title : selected.ShortTitle ?? selected.Title;
+                            var titleIsLong = detailTitle.Length > DetailTitleClampChars;
+                            var titleExpanded = _expandedTitleNodeId == selected.Id;
+                        }
+                        <h3 class="te-details-title @(titleIsLong && !titleExpanded ? "is-clamped" : "")" id="te-details-title" data-testid="te-details-title">@detailTitle</h3>
+                        @if (titleIsLong)
                         {
-                            <div class="te-details-section">
-                                <div class="te-details-label">Full Description</div>
-                                <div class="te-details-desc">@selected.Title</div>
-                            </div>
+                            <button type="button" class="te-details-more" data-testid="te-details-title-toggle" aria-controls="te-details-title"
+                                    aria-expanded="@(titleExpanded ? "true" : "false")" @onclick="() => _expandedTitleNodeId = titleExpanded ? null : selected.Id">@(titleExpanded ? "Show less" : "Show more")</button>
                         }
 
                         @if (selected.NodeType == TaskNodeType.Task)
@@ -948,80 +950,108 @@
                                 </div>
                             }
 
-                            <div class="te-details-section">
+                            @* Status is the Task artifact's own state only; topics and evidence have their own sections. *@
+                            <div class="te-details-section" data-testid="te-detail-status">
                                 <div class="te-details-label">Status</div>
                                 <div class="te-details-status-row">
                                     <span class="te-completion-badge @(selected.IsCompleted ? "is-done" : "is-open")">
                                         @(selected.IsCompleted ? "✓ Marked done in Task artifact" : "○ Open in Task artifact")
                                     </span>
-                                    @if (selected.IsParallel)
-                                    {
-                                        <span class="te-chip te-chip-parallel">⇉ Parallelizable [P]</span>
-                                    }
-                                    @if (selected.UserStoryTag is not null)
-                                    {
-                                        <span class="te-chip te-chip-us" title="@GetUserStoryTitle(selected)">@UserStoryDisplay(selected)</span>
-                                    }
-                                    @if (selected.IsTestingTask)
-                                    {
-                                        <span class="te-chip te-chip-testing">🧪 Testing</span>
-                                    }
-                                    @if (selected.IsSecurityTask)
-                                    {
-                                        <span class="te-chip te-chip-security">🔒 Security</span>
-                                    }
                                 </div>
                             </div>
 
+                            var topics = TaskTopics(selected);
+                            <div class="te-details-section" data-testid="te-detail-topics">
+                                <div class="te-details-label">Task topics</div>
+                                @if (topics.Count == 0)
+                                {
+                                    <p class="te-detail-empty">No topics detected in the task text.</p>
+                                }
+                                else
+                                {
+                                    <div class="te-details-status-row">
+                                        @foreach (var topic in topics)
+                                        {
+                                            <span class="te-chip @topic.CssClass" title="@topic.Title">@topic.Label</span>
+                                        }
+                                    </div>
+                                    <p class="te-detail-note">From the Task artifact's wording and markers. Topics are not traceability links or evidence.</p>
+                                }
+                            </div>
+
+                            var taskEvidence = Evidence.For(selected);
+                            var tableRows = GetTableRelationships(selected.TaskId);
+                            var hasNoLinks = TaskExplorerService.HasNoTraceabilityLinks(selected, _tableLinkedTaskIds);
                             <div class="te-details-section te-task-details-card" data-testid="te-task-details">
-                                <div class="te-details-label">Task Details</div>
-                                <dl class="te-detail-grid">
-                                    <div>
-                                        <dt>Linked User Story</dt>
-                                        <dd>@DisplayOrEmpty(UserStoryDisplay(selected))</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Linked Requirement(s)</dt>
-                                        <dd>@DisplayListOrEmpty(selected.ReferencedFrIds)</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Linked Success Criteria</dt>
-                                        <dd>@DisplayListOrEmpty(selected.ReferencedScIds)</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Linked Test Assets</dt>
-                                        <dd>@(selected.IsTestingTask ? selected.TaskId ?? "Testing task" : "No linked test task")</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Linked Architecture Notes</dt>
-                                        <dd>@(IsArchitectureTask(selected) ? selected.TaskId ?? "Architecture task" : "No linked architecture note")</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Task artifact status</dt>
-                                        <dd>@(selected.IsCompleted ? "Marked done" : "Open")</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Implementation evidence</dt>
-                                        <dd data-testid="te-detail-implementation">@ImplementationText(Evidence.For(selected))</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Test evidence</dt>
-                                        <dd data-testid="te-detail-tests">@TestText(Evidence.For(selected))</dd>
-                                    </div>
-                                    <div>
-                                        <dt>Coverage Impact</dt>
-                                        <dd>@CoverageImpactLabel(selected)</dd>
-                                    </div>
-                                </dl>
-                                <button class="te-traceability-link" @onclick='() => OpenInTraceability(selected)'>Open in Traceability</button>
+                                <section class="te-detail-group" data-testid="te-detail-traceability" aria-labelledby="te-detail-traceability-h">
+                                    <h4 class="te-detail-group-title" id="te-detail-traceability-h">Traceability</h4>
+                                    @if (hasNoLinks)
+                                    {
+                                        <p class="te-detail-empty" data-testid="te-detail-no-links">No traceability links: the task references no requirement, success criterion or user story, matches no specification item and is in no traceability-table row.</p>
+                                    }
+                                    else
+                                    {
+                                        <dl class="te-detail-grid">
+                                            <div>
+                                                <dt>User story</dt>
+                                                <dd>@DisplayOrEmpty(UserStoryDisplay(selected))</dd>
+                                            </div>
+                                            <div>
+                                                <dt>Requirements (FR)</dt>
+                                                <dd>@DisplayListOrEmpty(selected.ReferencedFrIds)</dd>
+                                            </div>
+                                            <div>
+                                                <dt>Success criteria (SC)</dt>
+                                                <dd>@DisplayListOrEmpty(selected.ReferencedScIds)</dd>
+                                            </div>
+                                            @if (selected.SpecMatches.Count > 0)
+                                            {
+                                                <div>
+                                                    <dt>Matched specification items</dt>
+                                                    <dd>@selected.SpecMatches.Count matched (listed below)</dd>
+                                                </div>
+                                            }
+                                            @if (tableRows.Count > 0)
+                                            {
+                                                <div>
+                                                    <dt>Traceability-table rows</dt>
+                                                    <dd>@string.Join(", ", tableRows.Select(r => r.RowTitle))</dd>
+                                                </div>
+                                            }
+                                            <div>
+                                                <dt>Coverage impact</dt>
+                                                <dd>@CoverageImpactLabel(selected)</dd>
+                                            </div>
+                                        </dl>
+                                    }
+                                    <button class="te-traceability-link" @onclick='() => OpenInTraceability(selected)'>Open in Traceability</button>
+                                </section>
+
+                                <section class="te-detail-group" data-testid="te-detail-test-assets" aria-labelledby="te-detail-tests-h">
+                                    <h4 class="te-detail-group-title" id="te-detail-tests-h">Test assets</h4>
+                                    <p class="@(taskEvidence.Tests.Any ? "te-detail-value" : "te-detail-empty")" data-testid="te-detail-tests">@TestText(taskEvidence)</p>
+                                    @if (!taskEvidence.TestsAssessed)
+                                    {
+                                        <a class="te-detail-cta" href="implementation-review" data-testid="te-detail-tests-cta">Import test results in Implementation Review</a>
+                                    }
+                                </section>
+
+                                <section class="te-detail-group" data-testid="te-detail-implementation-group" aria-labelledby="te-detail-impl-h">
+                                    <h4 class="te-detail-group-title" id="te-detail-impl-h">Implementation</h4>
+                                    <p class="@(taskEvidence.Implementation is ImplementationEvidenceState.NotAssessed or ImplementationEvidenceState.NoLinkedRequirement ? "te-detail-empty" : "te-detail-value")" data-testid="te-detail-implementation">@ImplementationText(taskEvidence)</p>
+                                    @if (!Evidence.ImplementationAssessed)
+                                    {
+                                        <a class="te-detail-cta" href="implementation-review" data-testid="te-detail-implementation-cta">Open Implementation Review</a>
+                                    }
+                                </section>
                             </div>
 
                             @if (!string.IsNullOrEmpty(selected.RawText))
                             {
-                                <div class="te-details-section">
-                                    <div class="te-details-label">Original Text</div>
+                                <details class="te-details-section te-details-raw-wrap" data-testid="te-detail-raw">
+                                    <summary class="te-details-label">Line in Task artifact</summary>
                                     <div class="te-details-raw">@selected.RawText</div>
-                                </div>
+                                </details>
                             }
 
                             @if (selected.Status.HasValue)
@@ -1323,7 +1353,6 @@
         var total = _health.TotalTasks;
         var done = _health.CompletedTasks;
         var percent = total > 0 ? (int)Math.Round((double)done / total * 100) : 0;
-        var linked = total - _health.UnlinkedTasks;
         var evidence = tasks.Select(Evidence.For).ToList();
         <dl class="te-summary" data-testid="te-summary">
             <div class="te-summary-item" data-testid="te-summary-artifact">
@@ -1336,17 +1365,17 @@
             </div>
             <div class="te-summary-item" data-testid="te-summary-planning">
                 <dt>Planning</dt>
-                <dd>@_health.ParallelTasks parallelizable task@(_health.ParallelTasks == 1 ? "" : "s") [P]</dd>
+                <dd>@_health.ParallelTasks parallelizable task@(_health.ParallelTasks == 1 ? "" : "s")</dd>
             </div>
             <div class="te-summary-item" data-testid="te-summary-traceability">
                 <dt>Traceability</dt>
-                <dd>@linked linked · @_health.UnlinkedTasks with no links</dd>
+                <dd>@_health.LinkedTasks with traceability links · @_health.UnlinkedTasks with no traceability links</dd>
             </div>
             <div class="te-summary-item" data-testid="te-summary-implementation">
                 <dt>Implementation evidence</dt>
                 @if (!Evidence.ImplementationAssessed)
                 {
-                    <dd>Not assessed <a class="te-summary-link" href="implementation-review">Implementation Review</a></dd>
+                    <dd>Not assessed <span class="te-summary-sub">· no current Source Analysis or implementation evidence</span> <a class="te-summary-link" href="implementation-review">Implementation Review</a></dd>
                 }
                 else
                 {
@@ -1357,7 +1386,7 @@
                 <dt>Test evidence</dt>
                 @if (!Evidence.TestsAssessed)
                 {
-                    <dd>Not assessed</dd>
+                    <dd>Not assessed <span class="te-summary-sub">· no designed tests or test executions recorded</span> <a class="te-summary-link" href="implementation-review">Import test results</a></dd>
                 }
                 else
                 {
@@ -1388,6 +1417,40 @@
         </span>
     };
 
+    /// <summary>Tree rows preview task text longer than this; the details panel shows the whole text.</summary>
+    private const int TreeTitlePreviewChars = 240;
+
+    /// <summary>The start of a long task text, cut at a word boundary.</summary>
+    private static string TreePreview(string text)
+    {
+        var cut = text.LastIndexOf(' ', TreeTitlePreviewChars);
+        return text[..(cut > TreeTitlePreviewChars / 2 ? cut : TreeTitlePreviewChars)].TrimEnd(' ', ',', ';', ':');
+    }
+
+    /// <summary>Detail-pane titles longer than this are clamped behind Show more; shorter ones are shown whole.</summary>
+    private const int DetailTitleClampChars = 220;
+    private string? _expandedTitleNodeId;
+
+    private sealed record TaskTopic(string Label, string CssClass, string Title);
+
+    /// <summary>
+    /// Topics of one task, from the Task artifact's marker ([P]) and wording (testing, security, architecture keywords).
+    /// Metadata only: never task status, a traceability link or evidence.
+    /// </summary>
+    private static List<TaskTopic> TaskTopics(TaskNode node)
+    {
+        var topics = new List<TaskTopic>();
+        if (node.IsParallel) topics.Add(new("Parallelizable", "te-chip-parallel", "The Task artifact marks this task as parallelizable: it can run in parallel with other tasks. Planning, not progress."));
+        if (node.IsTestingTask) topics.Add(new("Testing", "te-chip-testing", "The task text describes testing work. Not a linked test asset and not a test result."));
+        if (node.IsSecurityTask) topics.Add(new("Security", "te-chip-security", "The task text describes security work. Not a security check."));
+        if (IsArchitectureTask(node)) topics.Add(new("Architecture", "te-chip-architecture", "The task text describes architecture or infrastructure work. Not a linked architecture note."));
+        return topics;
+    }
+
+    /// <summary>A phase's share of tasks marked done in the Task artifact, in words (not implementation progress).</summary>
+    private static string PhaseMarkedDoneLabel(int done, int total) =>
+        total == 0 ? "No tasks" : done == 0 ? "None marked done" : done >= total ? "All marked done" : "Partly marked done";
+
     private static string TestShort(TaskTestEvidence t) =>
         t.Failed > 0 ? $"{t.Failed} failed" : t.Passed > 0 ? $"{t.Passed} passed" : t.Executed > 0 ? $"{t.Executed} executed" : $"{t.Designed} designed";
 
@@ -1406,7 +1469,7 @@
     }
 
     private string TestText(TaskEvidence e) => !e.TestsAssessed
-        ? "Not assessed: no designed tests or test executions are recorded."
+        ? "Not assessed: no designed tests or test executions are recorded in this workspace, so no test asset can be traced to this task yet."
         : e.Requirements.Count == 0 ? "Not resolvable: the task references no requirement of the current specification."
         : !e.Tests.Any ? $"No test evidence for {string.Join(", ", e.Requirements)}."
         : $"{e.Tests.Designed} designed · {e.Tests.Executed} executed · {e.Tests.Passed} passed · {e.Tests.Failed} failed (via {string.Join(", ", e.Requirements)}).";

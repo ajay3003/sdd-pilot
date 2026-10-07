@@ -71,7 +71,7 @@ public class TaskExplorerPageTests : BunitContext
 
         ClickTaskRow(cut, "T001");
 
-        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Task Details");
+        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Traceability");
         cut.Find(".te-main").GetAttribute("class").Should().Contain("has-details");
     }
 
@@ -112,7 +112,7 @@ public class TaskExplorerPageTests : BunitContext
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, parallelTasks));
 
         ClickTaskRow(cut, "T001");
-        ClickTab(cut, "Parallel");
+        ClickTab(cut, "Parallelizable");
 
         cut.FindAll("[data-testid='te-task-details']").Should().BeEmpty();
         cut.Find(".te-main").GetAttribute("class").Should().NotContain("has-details");
@@ -151,7 +151,7 @@ public class TaskExplorerPageTests : BunitContext
         ClickTab(cut, "Impact");
         ClickTab(cut, "Tree");
 
-        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Task Details");
+        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Traceability");
         cut.Find(".te-main").GetAttribute("class").Should().Contain("has-details");
         cut.FindAll(".te-row.is-selected").Should().ContainSingle(row => row.TextContent.Contains("T001"));
     }
@@ -878,7 +878,7 @@ public class TaskExplorerPageTests : BunitContext
         // Should show overall count
         var summary = cut.Find(".te-parallel-summary");
         summary.Should().NotBeNull("Summary should be shown");
-        summary.TextContent.Should().Contain("3 parallelizable tasks [P]", "Should show correct total count");
+        summary.TextContent.Should().Contain("3 parallelizable tasks", "Should show correct total count");
     }
 
     [Fact]
@@ -1713,7 +1713,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Parallel");
+        ClickTab(cut, "Parallelizable");
 
         FindParallelTaskRow(cut, "T018").TextContent.Should().Contain("US1 · User Activated");
     }
@@ -1723,7 +1723,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Parallel");
+        ClickTab(cut, "Parallelizable");
 
         FindParallelTaskRow(cut, "T024").TextContent.Should().Contain("US2 · User Deactivated");
     }
@@ -1733,7 +1733,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Parallel");
+        ClickTab(cut, "Parallelizable");
 
         FindParallelTaskRow(cut, "T028").TextContent.Should().Contain("US3 · Full Synchronization");
     }
@@ -1743,7 +1743,7 @@ public class TaskExplorerPageTests : BunitContext
     {
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, ReadRealScimTasks()));
 
-        ClickTab(cut, "Parallel");
+        ClickTab(cut, "Parallelizable");
 
         FindParallelTaskRow(cut, "T032").TextContent.Should().Contain("US4 · Operations Monitoring");
     }
@@ -1760,7 +1760,7 @@ public class TaskExplorerPageTests : BunitContext
 
         var cut = Render<TaskExplorerPanel>(p => p.Add(x => x.TasksText, sampleTasks));
 
-        ClickTab(cut, "Parallel");
+        ClickTab(cut, "Parallelizable");
 
         FindParallelTaskRow(cut, "T001").TextContent.Should().Contain("US7");
         FindParallelTaskRow(cut, "T001").TextContent.Should().NotContain("·");
@@ -1780,8 +1780,8 @@ public class TaskExplorerPageTests : BunitContext
 
         ClickTaskRow(cut, "T001");
 
-        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("Linked User Story");
-        cut.Find("[data-testid='te-task-details']").TextContent.Should().Contain("No link");
+        cut.Find("[data-testid='te-detail-no-links']").TextContent.Should().Contain("No traceability links")
+            .And.Contain("no requirement, success criterion or user story");
     }
 
     [Fact]
@@ -1849,7 +1849,7 @@ public class TaskExplorerPageTests : BunitContext
 
         // The header shows the Task artifact checkbox status, separately from traceability
         cut.Find("[data-testid=te-summary-status]").TextContent.Should().Contain("2 / 2");
-        cut.Find("[data-testid=te-summary-traceability]").TextContent.Should().Contain("0 linked · 2 with no links");
+        cut.Find("[data-testid=te-summary-traceability]").TextContent.Should().Contain("0 with traceability links · 2 with no traceability links");
 
         // Impact tab should show requirement coverage (potentially different)
         var impactTabBtn = cut.FindAll(".te-view-btn").FirstOrDefault(b => b.TextContent.Contains("Impact"));
@@ -2057,8 +2057,8 @@ public class TaskExplorerPageTests : BunitContext
         string Item(string id) => cut.Find($"[data-testid=te-summary-{id}]").TextContent;
         Item("artifact").Should().Contain("4 tasks ·");
         Item("status").Should().Contain("Marked done in Task artifact").And.Contain("1 / 4").And.Contain("(25%)");
-        Item("planning").Should().Contain("2 parallelizable tasks [P]");
-        Item("traceability").Should().Contain("with no links");
+        Item("planning").Should().Contain("2 parallelizable tasks").And.NotContain("[P]");
+        Item("traceability").Should().Contain("with no traceability links");
         Item("implementation").Should().Contain("Not assessed");
         Item("tests").Should().Contain("Not assessed");
     }
@@ -2170,8 +2170,9 @@ public class TaskExplorerPageTests : BunitContext
         var header = cut.Find("[data-testid=te-summary]");
         var headerText = header.TextContent.Replace("\n", "").Replace("\r", "").Replace(" ", "");
 
-        // 3 tasks with [P] tags
-        headerText.Should().Contain("3parallelizabletasks[P]",
+        // 3 tasks marked parallelizable ([P] in the Task artifact; the marker itself is not shown)
+        headerText.Should().Contain("3parallelizabletasks").And.NotContain("[P]");
+        headerText.Should().Contain("3parallelizabletasks",
             "Should count all tasks with [P] tags");
     }
 
@@ -2352,7 +2353,7 @@ public class TaskExplorerPageTests : BunitContext
 
         cut.Find(".te-map").TextContent.Should().NotContain("[P]");
         cut.FindAll(".te-map-task-chips span").Should().NotContain(chip => chip.TextContent.Trim() == "P");
-        cut.Find(".te-map-parallel-badge").TextContent.Trim().Should().Be("Parallel");
+        cut.Find(".te-map-parallel-badge").TextContent.Trim().Should().Be("Parallelizable");
     }
 
     [Fact]
@@ -2695,8 +2696,8 @@ public class TaskExplorerPageTests : BunitContext
         groupCounts.Should().NotBeEmpty("Should have group count elements");
 
         var countTexts = groupCounts.Select(g => g.TextContent.Trim()).ToList();
-        countTexts.Should().Contain("1 parallel task", "Single task should use singular form");
-        countTexts.Should().Contain("2 parallel tasks", "Multiple tasks should use plural form");
+        countTexts.Should().Contain("1 parallelizable task", "Single task should use singular form");
+        countTexts.Should().Contain("2 parallelizable tasks", "Multiple tasks should use plural form");
     }
 
     [Fact]

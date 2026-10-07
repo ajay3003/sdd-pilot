@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BirkNext.Web.Tests.Components;
 
 /// <summary>
-/// Task Explorer keeps five things apart: the Task artifact's checkboxes, planning ([P]), traceability links, implementation
+/// Task Explorer keeps five things apart: the Task artifact's checkboxes, planning (parallelizable), traceability links, implementation
 /// evidence and test evidence. The last two come from the SDD lifecycle graph through each task's linked requirements and
 /// say "Not assessed" when nothing was looked at.
 /// </summary>
@@ -111,6 +111,22 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         chip.GetAttribute("title").Should().Be("2 of 3 tasks marked done in the Task artifact");
     }
 
+    [Fact]
+    public void PhaseProgressBars_AreProgressbarsNamedAsTasksMarkedDoneInTheTaskArtifact()
+    {
+        var cut = Render();
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Impact").Click();
+
+        var bars = cut.FindAll("[data-testid=te-phase-progress]");
+        bars.Should().NotBeEmpty();
+        var setup = bars.Single(b => b.GetAttribute("aria-label")!.StartsWith("Phase 1"));
+        setup.GetAttribute("role").Should().Be("progressbar");
+        setup.GetAttribute("aria-label").Should().EndWith("2 of 3 tasks marked done in Task artifact");
+        setup.GetAttribute("aria-valuenow").Should().Be("2");
+        setup.GetAttribute("aria-valuemax").Should().Be("3");
+        cut.Markup.Should().Contain("Partly marked done").And.NotContain("In Progress", "a checkbox share is not implementation progress");
+    }
+
     // ── Planning ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -118,9 +134,11 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     {
         var cut = Render();
 
-        Item(cut, "planning").Should().Contain("2 parallelizable tasks [P]");
-        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Parallel").Click();
-        cut.Find("[data-testid=te-parallel-summary]").TextContent.Should().StartWith("2 parallelizable tasks [P]");
+        Item(cut, "planning").Should().Contain("2 parallelizable tasks").And.NotContain("[P]");
+        cut.Find(".te-filter-chip[data-filter=Parallel]").TextContent.Should().Be("Parallelizable (2)");
+        cut.FindAll(".te-view-btn").Single(b => b.TextContent.Trim() == "Parallelizable").Click();
+        cut.Find("[data-testid=te-parallel-summary]").TextContent.Should().StartWith("2 parallelizable tasks").And.NotContain("[P]");
+        cut.FindAll(".te-parallel-task").Should().HaveCount(2);
     }
 
     [Fact]
@@ -129,9 +147,11 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         var cut = Render();
 
         var chip = Row(cut, "T001").QuerySelector("[data-testid=te-parallel-chip]")!;
-        chip.TextContent.Should().Be("⇉ Parallel");
-        chip.GetAttribute("title").Should().Contain("Marked [P] in the Task artifact");
+        chip.TextContent.Should().Be("Parallelizable");
+        chip.GetAttribute("title").Should().Contain("can run in parallel with other tasks").And.Contain("Planning, not progress");
         cut.FindAll(".te-chip").Should().NotContain(c => c.TextContent.Trim() == "P");
+        // [P] is source syntax: it stays in the task text but never appears as a badge, summary or chip label.
+        cut.FindAll(".te-chip, .te-meta-chip, .te-filter-chip, [data-testid^=te-summary-]").Should().NotContain(e => e.TextContent.Contains("[P]"));
     }
 
     // ── Traceability ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -153,10 +173,13 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
         TaskExplorerService.HasNoTraceabilityLinks(Task("T004"), []).Should().BeTrue("nothing links it");
 
         var cut = Render();
-        Item(cut, "traceability").Should().Contain("5 linked · 1 with no links");
+        Item(cut, "traceability").Should().Contain("5 with traceability links · 1 with no traceability links");
         Click(cut, "NoLinks");
         VisibleMatches(cut).Should().Equal("T004");
         cut.Find("[data-testid=te-filter-status]").TextContent.Should().Contain("Showing 1 of 6 tasks");
+        Click(cut, "HasLinks");
+        VisibleMatches(cut).Should().BeEquivalentTo(["T001", "T002", "T003", "T005", "T006"]);
+        cut.Find("[data-testid=te-filter-status]").TextContent.Should().Contain("Showing 5 of 6 tasks");
     }
 
     [Fact]
@@ -190,7 +213,8 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     {
         var cut = Render(evidence: Index(new SddLifecycleState(), GraphRow("FR-001"), GraphRow("FR-002"), GraphRow("FR-003")));
 
-        Item(cut, "implementation").Should().Contain("Not assessed");
+        Item(cut, "implementation").Should().Contain("Not assessed").And.Contain("no current Source Analysis").And.NotContain("0 ");
+        cut.Find("[data-testid=te-summary-implementation] a").GetAttribute("href").Should().Be("implementation-review");
         cut.Find("[data-testid=te-implementation-not-assessed]").TextContent.Should().Be("Not assessed");
         cut.FindAll("[data-testid=te-impl-chip]").Should().BeEmpty();
         TaskExplorerService.MatchesFilter(TaskExplorerService.ParallelizableTasks(TaskExplorerService.Parse(Fixture).Roots)[0],
@@ -244,7 +268,8 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     {
         var cut = Render(evidence: Index(AnalysedSource(), GraphRow("FR-001")));
 
-        Item(cut, "tests").Should().Contain("Not assessed");
+        Item(cut, "tests").Should().Contain("Not assessed").And.Contain("no designed tests or test executions recorded").And.NotContain("0 ");
+        cut.Find("[data-testid=te-summary-tests] a").GetAttribute("href").Should().Be("implementation-review", "test results are imported in Implementation Review");
         cut.Find("[data-testid=te-tests-not-assessed]").TextContent.Should().Be("Not assessed");
         cut.FindAll("[data-testid=te-test-chip]").Should().BeEmpty();
     }
@@ -252,15 +277,45 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
     // ── Readability ─────────────────────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void LongTaskText_IsRenderedInFull_AndTheLegendExplainsTheMarks()
+    public void LongTaskText_IsRenderedInFull_AndMarksExplainThemselves_WithoutALegend()
     {
         var cut = Render();
 
         Row(cut, "T003").QuerySelector(".te-node-title")!.TextContent.Should().Contain("AbcdefghijklmnopqrstuvwxyzAbcdefghijklmnopqrstuvwxyz");
-        var legend = cut.Find("[data-testid=te-legend]");
-        legend.TagName.Should().Be("DETAILS");
-        legend.TextContent.Should().Contain("Marked done in the Task artifact").And.Contain("Not implementation or test evidence")
-            .And.Contain("planning, not progress");
+        cut.FindAll("[data-testid=te-legend]").Should().BeEmpty("the labels say what they mean; the legend only repeated them");
+        Row(cut, "T001").QuerySelector("[data-testid=te-task-check]")!.GetAttribute("title").Should().Be("Marked done in Task artifact");
+    }
+
+    [Fact]
+    public void DetailTitle_ShowsTheFullTaskTextOnce_AndLongTextGetsShowMore()
+    {
+        var longTask = "Implement the importer that reads every person record from the upstream register, normalises names, addresses and "
+            + "identifiers, de-duplicates by national identity number, and writes an audit entry for each rejected record so operators can follow up";
+        var cut = Render($"## Phase 1: Work\n\n- [ ] T001 {longTask} (FR-001)\n- [ ] T002 Short task\n");
+
+        // The parser keeps the whole text (it used to cut it silently at 200 characters).
+        static IEnumerable<TaskNode> Flatten(IEnumerable<TaskNode> nodes) => nodes.SelectMany(n => Flatten(n.Children).Prepend(n));
+        Flatten(TaskExplorerService.Parse($"## Phase 1: Work\n\n- [ ] T001 {longTask}\n").Roots)
+            .Single(n => n.TaskId == "T001").Title.Should().Be(longTask);
+        // The tree previews very long text and says where the rest is.
+        Row(cut, "T001").QuerySelector("[data-testid=te-node-preview]")!.TextContent.Should().Contain("full text in details");
+        Row(cut, "T002").QuerySelector("[data-testid=te-node-preview]").Should().BeNull();
+
+        Row(cut, "T001").Click();
+        var title = cut.Find("[data-testid=te-details-title]");
+        title.TextContent.Should().Contain("so operators can follow up", "the whole task text is in the title, never truncated");
+        title.ClassList.Should().Contain("is-clamped");
+        cut.FindAll(".te-details-desc").Should().BeEmpty("the full text is not repeated below the title");
+        var toggle = cut.Find("[data-testid=te-details-title-toggle]");
+        toggle.TextContent.Should().Be("Show more");
+        toggle.GetAttribute("aria-expanded").Should().Be("false");
+        toggle.Click();
+        cut.Find("[data-testid=te-details-title]").ClassList.Should().NotContain("is-clamped");
+        cut.Find("[data-testid=te-details-title-toggle]").TextContent.Should().Be("Show less");
+
+        Row(cut, "T002").Click();
+        cut.Find("[data-testid=te-details-title]").TextContent.Should().Be("Short task");
+        cut.FindAll("[data-testid=te-details-title-toggle]").Should().BeEmpty("short text needs no toggle");
     }
 
     [Fact]
@@ -270,8 +325,90 @@ public sealed class TaskExplorerSemanticsTests : BunitContext
 
         Row(cut, "T001").Click();
 
-        cut.Markup.Should().Contain("Task artifact status").And.NotContain("Implementation Status");
+        cut.Find("[data-testid=te-detail-status]").TextContent.Should().Contain("Marked done in Task artifact");
+        cut.Markup.Should().NotContain("Implementation Status");
         cut.Find("[data-testid=te-detail-implementation]").TextContent.Should().StartWith("Current implementation evidence (via FR-001)");
+        cut.FindAll("[data-testid=te-detail-implementation-cta]").Should().BeEmpty("implementation was assessed");
         cut.Find("[data-testid=te-detail-tests]").TextContent.Should().StartWith("Not assessed");
+    }
+
+    [Fact]
+    public void DetailStatus_HoldsOnlyTaskArtifactState_TopicsHaveTheirOwnSection()
+    {
+        var cut = Render("## Phase 1: Work\n\n- [x] T001 [P] Add integration test for authorization of the search endpoint (FR-001)\n");
+
+        Row(cut, "T001").Click();
+
+        var status = cut.Find("[data-testid=te-detail-status]");
+        status.QuerySelectorAll(".te-chip").Should().BeEmpty("Testing, Security and Parallelizable are topics, not status");
+        status.TextContent.Should().Contain("Marked done in Task artifact");
+        var topics = cut.Find("[data-testid=te-detail-topics]");
+        topics.QuerySelectorAll(".te-chip").Select(c => c.TextContent).Should().StartWith(["Parallelizable", "Testing", "Security"]);
+        topics.TextContent.Should().Contain("not traceability links or evidence").And.NotContain("[P]");
+    }
+
+    [Fact]
+    public void DetailGroups_TraceabilityTestAssetsImplementation_WithInformativeNotAssessedStates()
+    {
+        var cut = Render();
+
+        Row(cut, "T006").Click(); // a testing task: "Add integration test for search (FR-001)"
+
+        cut.FindAll("[data-testid=te-task-details] .te-detail-group-title").Select(h => h.TextContent)
+            .Should().Equal("Traceability", "Test assets", "Implementation");
+        var details = cut.Find("[data-testid=te-task-details]").TextContent;
+        details.Should().NotContain("Linked Test Assets", "a task that mentions testing is a topic, not a linked test asset")
+            .And.NotContain("Linked Architecture Notes").And.NotContain(" 0 ");
+        cut.Find("[data-testid=te-detail-tests]").TextContent.Should().StartWith("Not assessed: no designed tests or test executions are recorded");
+        cut.Find("[data-testid=te-detail-tests-cta]").GetAttribute("href").Should().Be("implementation-review");
+        cut.Find("[data-testid=te-detail-implementation]").TextContent.Should().StartWith("Not");
+        cut.Find("[data-testid=te-detail-implementation-cta]").GetAttribute("href").Should().Be("implementation-review");
+    }
+
+    [Fact]
+    public void TestingTopic_DoesNotCountAsTraceability()
+    {
+        var cut = Render("## Phase 1: Work\n\n- [ ] T001 Add unit test for the mapper\n- [ ] T002 Map the payload (FR-001)\n");
+
+        Item(cut, "traceability").Should().Contain("1 with traceability links · 1 with no traceability links");
+        Row(cut, "T001").Click();
+        cut.Find("[data-testid=te-detail-no-links]").TextContent.Should().StartWith("No traceability links");
+        cut.Find("[data-testid=te-detail-topics]").TextContent.Should().Contain("Testing");
+    }
+
+    // ── Count invariants: one predicate behind the summary, the filter badge and the filtered tree ───────────────────
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("person-adapter")]
+    public void Counts_SummaryFilterBadgeAndFilteredTree_Agree(string? sample)
+    {
+        var text = sample is null ? Fixture : File.ReadAllText(TestDataHelper.ResolveSampleDataPath(sample, "tasks.md"));
+        var cut = Render(text);
+        var health = TaskExplorerService.ComputeEnrichedHealth(TaskExplorerService.Parse(text));
+
+        (health.LinkedTasks + health.UnlinkedTasks).Should().Be(health.TotalTasks, "linked + unlinked == total");
+        Item(cut, "traceability").Should().Contain($"{health.LinkedTasks} with traceability links · {health.UnlinkedTasks} with no traceability links");
+        Item(cut, "artifact").Should().Contain($"{health.TotalTasks} task");
+        Item(cut, "planning").Should().Contain($"{health.ParallelTasks} parallelizable task");
+
+        void Expect(string key, int count)
+        {
+            if (count == 0) return;
+            cut.Find($".te-filter-chip[data-filter={key}]").TextContent.Should().Contain($"({count})", key);
+            Click(cut, key);
+            cut.Find("[data-testid=te-filter-status]").TextContent.Should().Contain($"Showing {count} of {health.TotalTasks} tasks", key);
+            VisibleMatches(cut).Should().HaveCount(count, key);
+        }
+        Expect("HasLinks", health.LinkedTasks);
+        Expect("NoLinks", health.UnlinkedTasks);
+        Expect("Parallel", health.ParallelTasks);
+
+        Click(cut, "Completed");
+        var done = VisibleMatches(cut).Count;
+        Click(cut, "Open");
+        var open = VisibleMatches(cut).Count;
+        done.Should().Be(health.CompletedTasks);
+        (done + open).Should().Be(health.TotalTasks, "marked done + open == total");
     }
 }

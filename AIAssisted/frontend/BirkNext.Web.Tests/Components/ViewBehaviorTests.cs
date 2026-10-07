@@ -1719,18 +1719,17 @@ public class ViewBehaviorTests : BunitContext
         cut.FindAll(".te-row").First(r => r.TextContent.Contains("T001")).Click();
 
         var details = cut.Find("[data-testid='te-task-details']").TextContent;
-        details.Should().Contain("Task Details");
-        details.Should().Contain("Linked User Story");
+        details.Should().Contain("Traceability").And.Contain("Test assets").And.Contain("Implementation");
+        details.Should().Contain("User story");
         details.Should().Contain("US-001");
-        details.Should().Contain("Linked Requirement(s)");
+        details.Should().Contain("Requirements (FR)");
         details.Should().Contain("FR-001");
-        details.Should().Contain("Linked Success Criteria");
+        details.Should().Contain("Success criteria (SC)");
         details.Should().Contain("SC-001");
-        details.Should().Contain("Linked Test Assets");
-        details.Should().Contain("Linked Architecture Notes");
-        details.Should().Contain("Task artifact status").And.Contain("Implementation evidence").And.Contain("Test evidence");
+        details.Should().NotContain("Linked Test Assets", "a testing topic is not a linked test asset");
         details.Should().NotContain("Implementation Status", "a checkbox is not an implementation status");
-        details.Should().Contain("Coverage Impact");
+        details.Should().Contain("Coverage impact");
+        cut.Find("[data-testid='te-detail-status']").TextContent.Should().Contain("in Task artifact");
     }
 
     [Fact]
