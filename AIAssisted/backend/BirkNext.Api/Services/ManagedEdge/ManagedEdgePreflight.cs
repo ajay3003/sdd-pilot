@@ -185,7 +185,10 @@ public sealed class ManagedEdgePreflightService(IEdgeInstallationLocator locator
         return normalized.Contains(@"\Microsoft\Edge\User Data", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains(@"\Microsoft\Edge Beta\User Data", StringComparison.OrdinalIgnoreCase) ||
                normalized.Contains(@"\Microsoft\Edge Dev\User Data", StringComparison.OrdinalIgnoreCase) ||
-               normalized.Contains(@"\Microsoft\Edge SxS\User Data", StringComparison.OrdinalIgnoreCase);
+               normalized.Contains(@"\Microsoft\Edge SxS\User Data", StringComparison.OrdinalIgnoreCase) ||
+               // Linux (~/.config/microsoft-edge[-beta|-dev]) and macOS (~/Library/Application Support/Microsoft Edge*) layouts.
+               normalized.Contains(@"\.config\microsoft-edge", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Contains(@"\Application Support\Microsoft Edge", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<ManagedEdgePreflightResult> CheckAsync(string? targetUrl, CancellationToken cancellationToken = default)

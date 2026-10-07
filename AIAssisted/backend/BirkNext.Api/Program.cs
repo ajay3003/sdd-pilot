@@ -559,8 +559,9 @@ try
 {
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    // One process migrates at a time (parallel test hosts and multiple instances share the database).
     if (db.Database.IsRelational())
-        await db.Database.MigrateAsync();
+        await DatabaseMigrationLock.MigrateAsync(db);
 }
 catch (PostgresException ex) when (ex.SqlState == "28P01")
 {

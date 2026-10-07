@@ -491,7 +491,13 @@ public sealed class ApplicationMessagingEvidenceTests
         await store.UseSourceScopeAsync("dev", new() { PrimarySnapshotId = adapter, RelatedSnapshotIds = [common] });
         (await store.GetAsync("dev"))!.Applications.Single(a => a.ApplicationId == "M2LB.Hendelse.BiRK.Adapter").BoundConsumer.Should().Be("Hendelse BiRK Adapter");
         // An invalid archive is rejected where source is ingested — Source Analysis — so it never reaches application messaging.
-        (await new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db).AnalyzeAsync("dev", "source-analysis", "notes.zip", "not a zip"u8.ToArray())).Error.Should().Contain("invalid or unreadable");
+        // Assert the reader's structured classification, not a wording the archive diagnostics may refine.
+        var invalid = "not a zip"u8.ToArray();
+        var expected = BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceArchiveReader.ReadDetailed("notes.zip", invalid, CancellationToken.None).Failure!;
+        expected.Code.Should().Be("ARCHIVE_INVALID_ZIP");
+        var rejected = await new BirkNext.Api.Services.Integrations.SourceEvidence.IqrSourceStore(db).AnalyzeAsync("dev", "source-analysis", "notes.zip", invalid);
+        rejected.Snapshot.Should().BeNull();
+        rejected.Error.Should().Be(expected.Message);
     }
 
     /// <summary>The one ingestion path: upload to Source Analysis; messaging reads the resulting snapshot through its source scope.</summary>

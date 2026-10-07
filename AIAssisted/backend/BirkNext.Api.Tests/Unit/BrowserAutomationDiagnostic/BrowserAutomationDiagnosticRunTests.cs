@@ -188,7 +188,9 @@ public sealed class BrowserAutomationDiagnosticRunTests
         public EdgeInstallation? Locate() => installation;
     }
 
-    private const string ProfileRoot = @"C:\Users\someone\AppData\Local\BirkNext\BrowserAutomationDiagnostic";
+    // Fully qualified on the platform running the test (a "C:\..." literal is not fully qualified on the Linux CI agents,
+    // so the dedicated-profile guard rightly blocked every diagnostic there).
+    private static readonly string ProfileRoot = Path.Combine(Path.GetTempPath(), "BirkNext", "BrowserAutomationDiagnostic");
     private const string ControlUrl = "https://example.com/";
     private const string TargetUrl = "https://m2lbdev.example.test/";
     private const string TargetHost = "m2lbdev.example.test";

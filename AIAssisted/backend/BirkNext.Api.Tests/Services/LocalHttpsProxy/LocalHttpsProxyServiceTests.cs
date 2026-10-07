@@ -1084,15 +1084,56 @@ public sealed class LocalHttpsProxyServiceTests : IAsyncLifetime
     [Fact]
     public void EdgeLaunchArgumentsNeverTouchTheNormalProfileOrGlobalProxySettings()
     {
-        var arguments = LocalHttpsProxyService.BuildEdgeArguments(8888, @"C:\Users\tester\AppData\Local\BirkNext\LocalHttpsProxyEdgeProfile", Target);
-        Assert.Contains("--proxy-server=127.0.0.1:8888", arguments);
-        // Loopback stays proxied except the BirkNext backend, so the Companion never depends on the proxy.
-        Assert.Contains("--proxy-bypass-list=<-loopback>;127.0.0.1:5000;localhost:5000", arguments);
-        Assert.Contains(Target, arguments);
-        Assert.DoesNotContain(arguments, a => a.Contains("remote-debugging", StringComparison.OrdinalIgnoreCase));
-        Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, @"C:\Users\tester\AppData\Local\Microsoft\Edge\User Data", Target));
-        Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(0, @"C:\Users\tester\AppData\Local\BirkNext\P", Target));
-        Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, @"C:\Users\tester\AppData\Local\BirkNext\P", "ftp://x"));
+        // A fully qualified dedicated profile on the platform running the test. (A "C:\..." literal is not fully qualified on
+        // the Linux CI agents, so the dedicated-profile guard rightly rejected the old fixture there.)
+        var dedicated = Path.Combine(Path.GetTempPath(), "BirkNext", "LocalHttpsProxyEdgeProfile");
+
+        var arguments = LocalHttpsProxyService.BuildEdgeArguments(8888, dedicated, Target);
+
+        // Exactly these flags: the proxy lives on this one Edge process; nothing points at the normal profile or changes a
+        // machine-wide proxy setting (no PAC, auto-detect, system proxy or remote debugging).
+        Assert.Equal(
+            ["--proxy-server=127.0.0.1:8888",
+             // Loopback stays proxied except the BirkNext backend, so the Companion never depends on the proxy.
+             "--proxy-bypass-list=<-loopback>;127.0.0.1:5000;localhost:5000",
+             $"--user-data-dir={dedicated}",
+             "--no-first-run", "--no-default-browser-check", Target],
+            arguments);
+        Assert.DoesNotContain(arguments, a => a.Contains("remote-debugging", StringComparison.OrdinalIgnoreCase)
+                                              || a.Contains("proxy-pac", StringComparison.OrdinalIgnoreCase)
+                                              || a.Contains("proxy-auto-detect", StringComparison.OrdinalIgnoreCase));
+        Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(0, dedicated, Target));
+        Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, dedicated, "ftp://x"));
+    }
+
+    /// <summary>The dedicated-profile guard: the normal Edge profile (any platform layout) is refused, wherever it is rooted.</summary>
+    [Theory]
+    [InlineData("Microsoft/Edge/User Data")]
+    [InlineData("Microsoft/Edge Beta/User Data")]
+    [InlineData(".config/microsoft-edge")]
+    [InlineData(".config/microsoft-edge-beta/Default")]
+    [InlineData("Library/Application Support/Microsoft Edge")]
+    public void EdgeLaunchArgumentsRefuseTheNormalEdgeProfile(string normalProfileUnderRoot)
+    {
+        var normal = Path.Combine(Path.GetTempPath(), normalProfileUnderRoot.Replace('/', Path.DirectorySeparatorChar));
+
+        var refused = Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, normal, Target));
+        Assert.Contains("normal Edge profile is never reused", refused.Message);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("BirkNext/LocalHttpsProxyEdgeProfile")]
+    public void EdgeLaunchArgumentsRefuseAMissingOrRelativeProfile(string profile)
+    {
+        Assert.Throws<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, profile, Target));
+    }
+
+    [Fact]
+    public void EdgeLaunchArgumentsRefuseANullProfile()
+    {
+        Assert.ThrowsAny<ArgumentException>(() => LocalHttpsProxyService.BuildEdgeArguments(8888, null!, Target));
     }
 
     /// <summary>

@@ -42,12 +42,27 @@ public sealed class ManagedEdgeConnectorTests
         finally { listener.Stop(); }
     }
 
+    /// <summary>
+    /// One canned HTTP exchange with a graceful close: read the whole request head (it can arrive in several segments), send the
+    /// response, stop sending, then wait for the client to close. Closing with unread request bytes resets the connection, and
+    /// the client then waited for its 5-second timeout instead of reading the response (flaky under load, seen on Linux CI).
+    /// </summary>
     private static async Task Serve(TcpListener listener, string response)
     {
         using var peer = await listener.AcceptTcpClientAsync();
         var stream = peer.GetStream();
-        await stream.ReadAsync(new byte[8192]);
+        var head = new StringBuilder();
+        var buffer = new byte[8192];
+        while (!head.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+        {
+            var read = await stream.ReadAsync(buffer);
+            if (read == 0) return;
+            head.Append(Encoding.ASCII.GetString(buffer, 0, read));
+        }
         await stream.WriteAsync(Encoding.ASCII.GetBytes(response));
+        peer.Client.Shutdown(SocketShutdown.Send);
+        try { while (await stream.ReadAsync(buffer) > 0) { } }
+        catch (IOException) { /* the client closed its side abruptly after reading the response */ }
     }
 
     [Theory]

@@ -15,7 +15,7 @@ namespace BirkNext.Api.Tests.Unit.FrontendBrowserRuntime;
 [Trait("Category", "FrontendBrowserRuntimeIntegration")]
 public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
 {
-    private SimpleHttpTestServer? _server;
+    private LoopbackHttpTestServer? _server;
     private FrontendBrowserRuntimeReviewService? _service;
     private readonly ILogger<FrontendBrowserRuntimeReviewService> _logger = new TestLogger();
     private readonly ITestOutputHelper _output;
@@ -25,25 +25,28 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
         _output = output;
     }
 
-    public async Task InitializeAsync()
+    public Task InitializeAsync()
     {
-        _server = new SimpleHttpTestServer();
-        await _server.StartAsync();
+        _server = new LoopbackHttpTestServer(ServePageAsync);
+        _server.Start();
 
         _service = CreateService();
+        return Task.CompletedTask;
     }
 
+    // Deterministic shutdown (see LoopbackHttpTestServer): a stopped listener's pending accept is a normal stop on every
+    // platform; any other server failure fails the test here.
     public async Task DisposeAsync()
     {
         if (_server != null)
-            await _server.StopAsync();
+            await _server.DisposeAsync();
     }
 
     [Fact]
     public async Task BrowserRuntime_HealthyPage_StartsSuccessfully()
     {
         if (!ExternalFrontendQualityTestGate.IsEnabled) return;
-        var url = _server!.GetUrl("/healthy.html");
+        var url = _server!.Url("/healthy.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("healthy", result);
 
@@ -62,7 +65,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     public async Task BrowserRuntime_PageWithConsoleError_IsCaptured()
     {
         if (!ExternalFrontendQualityTestGate.IsEnabled) return;
-        var url = _server!.GetUrl("/console-error.html");
+        var url = _server!.Url("/console-error.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("console-error", result);
 
@@ -79,7 +82,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     public async Task BrowserRuntime_PageWithUncaughtError_IsCaptured()
     {
         if (!ExternalFrontendQualityTestGate.IsEnabled) return;
-        var url = _server!.GetUrl("/uncaught-error.html");
+        var url = _server!.Url("/uncaught-error.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("page-error", result);
 
@@ -93,7 +96,7 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
     public async Task BrowserRuntime_FailedResource_IsCaptured()
     {
         if (!ExternalFrontendQualityTestGate.IsEnabled) return;
-        var url = _server!.GetUrl("/missing-resource.html");
+        var url = _server!.Url("/missing-resource.html");
         var result = await _service!.ReviewAsync(url);
         WriteResult("failed-resource", result);
 
@@ -151,105 +154,24 @@ public sealed class RealPlaywrightIntegrationTests : IAsyncLifetime
             options);
     }
 
-    // ── Simple Test HTTP Server ────────────────────────────────────
-    private sealed class SimpleHttpTestServer
+    // ── Test pages served by the loopback server ──────────────────────────
+    private static async Task ServePageAsync(HttpListenerContext context)
     {
-        private HttpListener? _listener;
-        private CancellationTokenSource? _cts;
-        private Task? _serverTask;
-        private string _port = "9999";
-
-        public string GetUrl(string path) => $"http://localhost:{_port}{path}";
-
-        public async Task StartAsync()
+        var path = context.Request.Url?.AbsolutePath ?? "/";
+        var html = path switch
         {
-            _listener = new HttpListener();
+            "/healthy.html" => "<html><body>Healthy</body></html>",
+            "/console-error.html" => "<html><body><script>console.error('runtime-test-error')</script></body></html>",
+            "/uncaught-error.html" => "<html><body><script>throw new Error('uncaught')</script></body></html>",
+            "/missing-resource.html" => "<html><body><script src='/missing.js'></script></body></html>",
+            _ => "<html><body>Not Found</body></html>"
+        };
 
-            // Find an available port by trying to bind; HttpListener with port 0 doesn't work,
-            // so try ports starting from 9999 until one succeeds
-            int basePort = 9999;
-            int maxAttempts = 10;
-            for (int i = 0; i < maxAttempts; i++)
-            {
-                int attemptPort = basePort + i;
-                try
-                {
-                    var prefix = $"http://localhost:{attemptPort}/";
-                    _listener.Prefixes.Clear();
-                    _listener.Prefixes.Add(prefix);
-                    _listener.Start();
-                    _port = attemptPort.ToString();
-                    break;
-                }
-                catch (HttpListenerException)
-                {
-                    if (i == maxAttempts - 1) throw;
-                    _listener.Close();
-                    _listener = new HttpListener();
-                }
-            }
-
-            _cts = new CancellationTokenSource();
-            _serverTask = RunServerAsync(_cts.Token);
-
-            // Give server time to start
-            await Task.Delay(100);
-        }
-
-        public async Task StopAsync()
-        {
-            _cts?.Cancel();
-            _listener?.Stop();
-            if (_serverTask != null)
-                await _serverTask;
-
-            (_listener as IDisposable)?.Dispose();
-            _cts?.Dispose();
-        }
-
-        private async Task RunServerAsync(CancellationToken ct)
-        {
-            try
-            {
-                while (!ct.IsCancellationRequested && _listener != null)
-                {
-                    var context = await _listener.GetContextAsync();
-                    _ = HandleRequestAsync(context);
-                }
-            }
-            catch (HttpListenerException) when (ct.IsCancellationRequested)
-            {
-                // Server stopped normally
-            }
-        }
-
-        private async Task HandleRequestAsync(HttpListenerContext context)
-        {
-            var path = context.Request.Url?.AbsolutePath ?? "/";
-            var html = path switch
-            {
-                "/healthy.html" => "<html><body>Healthy</body></html>",
-                "/console-error.html" => "<html><body><script>console.error('runtime-test-error')</script></body></html>",
-                "/uncaught-error.html" => "<html><body><script>throw new Error('uncaught')</script></body></html>",
-                "/missing-resource.html" => "<html><body><script src='/missing.js'></script></body></html>",
-                _ => "<html><body>Not Found</body></html>"
-            };
-
-            var statusCode = path switch
-            {
-                "/missing.js" => 404,
-                _ => 200
-            };
-
-            context.Response.StatusCode = statusCode;
-            context.Response.ContentType = "text/html";
-
-            var buffer = System.Text.Encoding.UTF8.GetBytes(html);
-            context.Response.OutputStream.Write(buffer, 0, buffer.Length);
-            context.Response.Close();
-
-            await Task.CompletedTask;
-        }
+        context.Response.StatusCode = path == "/missing.js" ? 404 : 200;
+        context.Response.ContentType = "text/html";
+        var buffer = System.Text.Encoding.UTF8.GetBytes(html);
+        await context.Response.OutputStream.WriteAsync(buffer);
+        context.Response.Close();
     }
 
     private sealed class TestLogger : ILogger<FrontendBrowserRuntimeReviewService>

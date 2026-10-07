@@ -12,7 +12,9 @@ namespace BirkNext.Api.Tests.Unit.BrowserAutomationDiagnostic;
 /// </summary>
 public sealed class BrowserAutomationDiagnosticPolicyTests
 {
-    private const string Profile = @"C:\Users\someone\AppData\Local\BirkNext\BrowserAutomationDiagnosticEdgeProfile";
+    // Fully qualified on the platform running the test (a "C:\..." literal is not fully qualified on the Linux CI agents,
+    // so the dedicated-profile guard rightly blocked every diagnostic there).
+    private static readonly string Profile = Path.Combine(Path.GetTempPath(), "BirkNext", "BrowserAutomationDiagnosticEdgeProfile");
 
     private static BrowserAutomationDiagnosticRequest Request(
         string environmentType = "Development", string url = "https://m2lbdev.example.test/") => new()
