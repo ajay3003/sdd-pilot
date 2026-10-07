@@ -155,6 +155,10 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
         plan.ComplexityDerived.Should().BeTrue();
         plan.Health.HighComplexityItems.Should().Be(5);
         plan.ConstitutionCheckItems.Should().HaveCount(8);
+
+        var grouped = plan.Dependencies.Single(d => d.Name.Contains("Microsoft.EntityFrameworkCore", StringComparison.Ordinal));
+        grouped.Name.Should().Contain("Microsoft.EntityFrameworkCore.SqlServer");
+        plan.Dependencies.Should().HaveCount(8, "the EF Core and SQL Server package names are one bullet declaration and therefore one entry");
     }
 
     // ── Overview ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -205,7 +209,8 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
         cut.Find("[data-testid=pe-dependency-count]").TextContent.Should().Be("3");
         cut.FindAll("[data-testid=pe-dependency]").Should().HaveCount(3);
         cut.Find("[data-testid=pe-dependency-help]").TextContent.Should()
-            .Contain("Declared in the plan (Technical Context)")
+            .Contain("3 declared dependency entries in the plan (Technical Context)")
+            .And.Contain("multiple names on one line count as one entry")
             .And.Contain("not verified here")
             .And.Contain("does not say which are internal or external");
     }
@@ -228,9 +233,11 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
         var cut = RenderPlan(many);
 
         cut.FindAll("[data-testid=pe-dependency]").Should().HaveCount(6);
-        cut.Find("[data-testid=pe-dependency-more]").TextContent.Trim().Should().Be("Show all 9 declared dependencies");
+        cut.Find("[data-testid=pe-dependency-visible-count]").TextContent.Should().Be("Showing 6 of 9 declared dependency entries");
+        cut.Find("[data-testid=pe-dependency-more]").TextContent.Trim().Should().Be("Show all 9 declared dependency entries");
         cut.Find("[data-testid=pe-dependency-more]").Click();
         cut.FindAll("[data-testid=pe-dependency]").Should().HaveCount(9);
+        cut.Find("[data-testid=pe-dependency-visible-count]").TextContent.Should().Be("Showing 9 of 9 declared dependency entries");
     }
 
     [Fact]
@@ -259,7 +266,7 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
         provenance.QuerySelector(".pe-meta-label")!.TextContent.Should().Be("Source specification");
         provenance.QuerySelector(".pe-meta-value")!.TextContent.Should().Be("spec.md");
         cut.Find("[data-testid=pe-provenance-detail]").TextContent.Should().Be("specs/042-orders/spec.md");
-        provenance.TextContent.Should().Contain("not a resolved traceability link");
+        provenance.TextContent.Should().Contain("No current Specification artifact state is available");
         cut.Find("[data-testid=pe-metadata]").TextContent.Should().NotContain("Input Source");
     }
 
@@ -292,9 +299,20 @@ public sealed class PlanExplorerSemanticsTests : BunitContext
     {
         var cut = RenderPlan(GenericPlan);
 
-        cut.Find("[data-testid=pe-constitution-summary]").TextContent.Should().Contain("1 of 2 marked met").And.Contain("not assessed here");
+        cut.Find("[data-testid=pe-constitution-summary]").TextContent.Should().Contain("1 marked met").And.Contain("1 need review").And.Contain("BirkNext assessment: Not performed");
         cut.Find("[data-testid=pe-tab][data-tab=constitution]").Click();
-        cut.Find("[data-testid=pe-constitution-note]").TextContent.Should().Contain("as stated in the plan's own Constitution Check");
+        cut.Find("[data-testid=pe-constitution-note]").TextContent.Should().Contain("plan's own statements").And.Contain("does not independently assess");
+        cut.Markup.Should().NotContain("PASS");
+    }
+
+    [Fact]
+    public void PersonAdapterConstitutionSummary_AttributesAllEightMetStatusesToThePlan()
+    {
+        var cut = RenderPlan(File.ReadAllText(TestDataHelper.ResolveSampleDataPath("person-adapter", "plan.md")));
+
+        cut.Find("[data-testid=pe-constitution-summary]").TextContent.Should()
+            .Be("8 of 8 marked met by the plan; BirkNext assessment: Not performed");
+        cut.Find("[data-testid=pe-constitution-summary-card]").ClassList.Should().NotContain("pe-ov-ok");
     }
 
     [Fact]
@@ -364,4 +382,84 @@ public sealed class PlanExplorerArtifactSourceTests : BunitContext
 
         cut.WaitForAssertion(() => cut.Find("[data-testid=pe-dependency-count]").TextContent.Should().Be("3"));
     }
+
+    [Fact]
+    public void PlanSourceReference_ResolvesToCurrentSpecificationByExactPath()
+    {
+        const string project = "resolution-demo";
+        const string path = "specs/001-demo/custom-requirements.md";
+        _samples.SetSelectedProject(project);
+        _samples.AddDocument(project, WorkspaceArtifactType.Plan, "specs/001-demo/plan.md",
+            $"# Implementation Plan: Demo\n\n**Spec**: custom-requirements.md\n**Input**: {path}\n\n## Testing\n\nxUnit.");
+        _samples.AddDocument(project, WorkspaceArtifactType.Specification, path, "# Feature Specification: Demo\n");
+
+        var cut = Render<PlanExplorer>();
+
+        cut.WaitForAssertion(() =>
+        {
+            cut.Find("[data-testid=pe-source-spec-resolution]").TextContent.Should().Contain("resolved to the current Specification artifact").And.Contain("does not establish traceability");
+            cut.Find("[data-testid=pe-source-spec-identity]").TextContent.Should().Contain(path).And.Contain("exact source path");
+        });
+    }
+}
+
+public sealed class PlanSpecificationReferenceResolverTests
+{
+    [Fact]
+    public void UniqueFilename_ResolvesCustomSpecificationName()
+    {
+        var artifact = Artifact("spec-a", "custom-requirements.md", "specs/feature/custom-requirements.md");
+        var result = PlanSpecificationReferenceResolver.Resolve(
+            new PlanDocument { SpecLink = "custom-requirements.md" },
+            State(artifact));
+
+        result.Status.Should().Be(PlanSpecificationReferenceStatus.Resolved);
+        result.Match.Should().Be(PlanSpecificationReferenceMatch.UniqueFileName);
+        result.Artifact.Should().Be(artifact);
+    }
+
+    [Fact]
+    public void DuplicateFilename_IsAmbiguousAndDoesNotChooseFirst()
+    {
+        var first = Artifact("spec-a", "requirements.md", "specs/a/requirements.md");
+        var second = Artifact("spec-b", "requirements.md", "specs/b/requirements.md");
+        var result = PlanSpecificationReferenceResolver.Resolve(
+            new PlanDocument { SpecLink = "requirements.md" },
+            new(WorkspaceArtifactType.Specification, ExplorerArtifactStatus.Loaded, "demo", "demo", [first, second], first, ExplorerSelectionReason.Explicit, "content"));
+
+        result.Status.Should().Be(PlanSpecificationReferenceStatus.Ambiguous);
+        result.Artifact.Should().BeNull();
+    }
+
+    [Fact]
+    public void ExactPathMatchingAnotherArtifact_DoesNotOverrideCurrentSelection()
+    {
+        var declared = Artifact("spec-a", "requirements.md", "specs/a/requirements.md");
+        var selected = Artifact("spec-b", "requirements.md", "specs/b/requirements.md");
+        var result = PlanSpecificationReferenceResolver.Resolve(
+            new PlanDocument { InputSource = "specs/a/requirements.md" },
+            new(WorkspaceArtifactType.Specification, ExplorerArtifactStatus.Loaded, "demo", "demo", [declared, selected], selected, ExplorerSelectionReason.Explicit, "content"));
+
+        result.Status.Should().Be(PlanSpecificationReferenceStatus.NamedOnly);
+        result.Detail.Should().Contain("not the current Specification selection");
+    }
+
+    [Fact]
+    public void MissingArtifact_RemainsMissingAndNamedOnlyHasNoTraceabilitySemantics()
+    {
+        var missing = PlanSpecificationReferenceResolver.Resolve(
+            new PlanDocument { SpecLink = "spec.md" },
+            new(WorkspaceArtifactType.Specification, ExplorerArtifactStatus.Empty, null, null, []));
+        var namedOnly = PlanSpecificationReferenceResolver.Resolve(new PlanDocument { SpecLink = "spec.md" }, null);
+
+        missing.Status.Should().Be(PlanSpecificationReferenceStatus.Missing);
+        namedOnly.Status.Should().Be(PlanSpecificationReferenceStatus.NamedOnly);
+    }
+
+    private static ArtifactExplorerState State(ExplorerArtifact artifact) =>
+        new(WorkspaceArtifactType.Specification, ExplorerArtifactStatus.Loaded, "demo", "demo", [artifact], artifact, ExplorerSelectionReason.OnlyArtifact, "spec content");
+
+    private static ExplorerArtifact Artifact(string id, string fileName, string path) =>
+        new(id, WorkspaceArtifactType.Specification, $"Feature Specification: {fileName}", fileName, path,
+            ExplorerArtifactSource.SampleProject, null, null, 0, "Unknown", ExplorerArtifactCurrentness.Current, null);
 }

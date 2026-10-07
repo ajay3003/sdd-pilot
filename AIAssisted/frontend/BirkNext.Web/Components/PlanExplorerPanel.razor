@@ -1,5 +1,6 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services
+@using BirkNext.Web.Services.Explorers
 @inject IPlanAnalysisService AnalysisService
 
 <div class="pe-panel">
@@ -135,39 +136,39 @@
             <!-- Gate status filter (shown only when gates exist) -->
             @if (_plan.Gates.Count > 0)
             {
-                <div class="pe-filter-strip" role="group" aria-label="Filter gates by status">
+                <div class="pe-filter-strip" role="group" aria-label="Filter gates by status stated in the plan">
                     @{
                         var justifiedDeviations = _plan.Gates.Count(g => g.Status == PlanGateStatus.Warning && g.IsJustifiedDeviation);
                         var genuineWarnings = _plan.Health.WarningGates - justifiedDeviations;
                     }
-                    <button class='pe-filter-chip @(_gateFilter is null ? "is-active" : "")' @onclick='() => SetGateFilter(null)'>All Gates (@_plan.Gates.Count)</button>
+                    <button class='pe-filter-chip pe-plan-filter @(_gateFilter is null ? "is-active" : "")' @onclick='() => SetGateFilter(null)'>All plan gates (@_plan.Gates.Count)</button>
                     @if (_plan.Health.PassedGates > 0)
                     {
-                        <button class='pe-filter-chip pe-fc-pass @(_gateFilter == PlanGateStatus.Pass ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Pass)'>Pass (@_plan.Health.PassedGates)</button>
+                        <button class='pe-filter-chip pe-plan-filter @(_gateFilter == PlanGateStatus.Pass ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Pass)'>Plan says met (@_plan.Health.PassedGates)</button>
                     }
                     @if (genuineWarnings > 0)
                     {
-                        <button class='pe-filter-chip pe-fc-warning @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Warning (@genuineWarnings)</button>
+                        <button class='pe-filter-chip pe-plan-filter @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Plan says warning (@genuineWarnings)</button>
                     }
                     @if (justifiedDeviations > 0)
                     {
-                        <button class='pe-filter-chip pe-fc-warning @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Justified Deviations (@justifiedDeviations)</button>
+                        <button class='pe-filter-chip pe-plan-filter @(_gateFilter == PlanGateStatus.Warning ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Warning)'>Justified deviations in plan (@justifiedDeviations)</button>
                     }
                     @if (_plan.Health.FailedGates > 0)
                     {
-                        <button class='pe-filter-chip pe-fc-fail @(_gateFilter == PlanGateStatus.Fail ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Fail)'>Fail (@_plan.Health.FailedGates)</button>
+                        <button class='pe-filter-chip pe-plan-filter @(_gateFilter == PlanGateStatus.Fail ? "is-active" : "")' @onclick='() => SetGateFilter(PlanGateStatus.Fail)'>Plan says not met (@_plan.Health.FailedGates)</button>
                     }
                 </div>
             }
             <!-- Check item status filter -->
             @if (_plan.ConstitutionCheckItems.Count > 0)
             {
-                <div class="pe-filter-strip" role="group" aria-label="Filter check items by status">
-                    <button class='pe-filter-chip @(_checkFilter is null ? "is-active" : "")' @onclick='() => SetCheckFilter(null)'>All Items</button>
-                    <button class='pe-filter-chip pe-fc-critical @(_checkFilter == ConstitutionCheckStatus.NonCompliant ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NonCompliant)'>Non-Compliant</button>
-                    <button class='pe-filter-chip pe-fc-medium @(_checkFilter == ConstitutionCheckStatus.NeedsReview ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NeedsReview)'>Needs Review</button>
-                    <button class='pe-filter-chip pe-fc-low @(_checkFilter == ConstitutionCheckStatus.Compliant ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.Compliant)'>Compliant</button>
-                    <button class='pe-filter-chip @(_checkFilter == ConstitutionCheckStatus.NotApplicable ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NotApplicable)'>N/A</button>
+                <div class="pe-filter-strip" role="group" aria-label="Filter plan-declared Constitution statuses">
+                    <button class='pe-filter-chip pe-plan-filter @(_checkFilter is null ? "is-active" : "")' @onclick='() => SetCheckFilter(null)'>All plan items</button>
+                    <button class='pe-filter-chip pe-plan-filter @(_checkFilter == ConstitutionCheckStatus.NonCompliant ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NonCompliant)'>Plan says not met</button>
+                    <button class='pe-filter-chip pe-plan-filter @(_checkFilter == ConstitutionCheckStatus.NeedsReview ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NeedsReview)'>Plan says needs review</button>
+                    <button class='pe-filter-chip pe-plan-filter @(_checkFilter == ConstitutionCheckStatus.Compliant ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.Compliant)'>Plan says met</button>
+                    <button class='pe-filter-chip pe-plan-filter @(_checkFilter == ConstitutionCheckStatus.NotApplicable ? "is-active" : "")' @onclick='() => SetCheckFilter(ConstitutionCheckStatus.NotApplicable)'>Plan says not applicable</button>
                 </div>
             }
         }
@@ -250,7 +251,21 @@
                                     {
                                         <div class="pe-meta-detail" data-testid="pe-provenance-detail">@provenance.Detail</div>
                                     }
-                                    <div class="pe-meta-detail">Named in the plan; not a resolved traceability link.</div>
+                                    @if (SpecificationReference is { } reference)
+                                    {
+                                        <div class="pe-meta-detail pe-spec-reference pe-spec-reference-@reference.Status.ToString().ToLowerInvariant()" data-testid="pe-source-spec-resolution">
+                                            @SpecificationReferenceSummary(reference)
+                                        </div>
+                                        @if (reference.Status == PlanSpecificationReferenceStatus.Resolved && reference.Artifact is { } resolvedArtifact)
+                                        {
+                                            <div class="pe-meta-detail" data-testid="pe-source-spec-identity">
+                                                Current artifact: @resolvedArtifact.DisplayName · @(resolvedArtifact.SourcePath ?? resolvedArtifact.FileName)
+                                                @if (resolvedArtifact.Revision is { } revision)
+                                                { <text> · revision @revision</text> }
+                                                · resolved by @(reference.Match == PlanSpecificationReferenceMatch.ExactSourcePath ? "exact source path" : "unique filename")
+                                            </div>
+                                        }
+                                    }
                                 </div>
                             }
                         </div>
@@ -297,10 +312,11 @@
                                 }
                                 @if (_plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
                                 {
-                                    <div class="pe-ov-card" data-testid="pe-constitution-summary">
+                                    <div class="pe-ov-card" data-testid="pe-constitution-summary-card">
                                         <div class="pe-ov-value">@(_plan.Gates.Count + _plan.ConstitutionCheckItems.Count)</div>
-                                        <div class="pe-ov-label">Constitution checks in the plan</div>
-                                        <div class="pe-ov-detail">@ConstitutionStated — as stated in the plan, not assessed here</div>
+                                        <div class="pe-ov-label">Constitution statements in the plan</div>
+                                        <div class="pe-ov-detail" data-testid="pe-constitution-summary">@ConstitutionStated</div>
+                                        <div class="pe-ov-detail">BirkNext assessment: Not performed</div>
                                     </div>
                                 }
                             </div>
@@ -328,9 +344,10 @@
                             }
                             else
                             {
-                                <p class="pe-ov-help" data-testid="pe-dependency-help">Declared in the plan (@DependencySources). Use in code or at runtime is not verified here.@(_plan.Dependencies.Any(d => d.ScopeStated) ? "" : " The plan does not say which are internal or external.")</p>
+                                <p class="pe-ov-help" data-testid="pe-dependency-help">@_plan.Dependencies.Count declared dependency entries in the plan (@DependencySources). One entry per plan declaration; multiple names on one line count as one entry. Use in code or at runtime is not verified here.@(_plan.Dependencies.Any(d => d.ScopeStated) ? "" : " The plan does not say which are internal or external.")</p>
+                                <p class="pe-ov-help pe-dependency-visible-count" data-testid="pe-dependency-visible-count">Showing @VisibleDependencies.Count of @_plan.Dependencies.Count declared dependency entries</p>
                                 <ul class="pe-overview-list pe-dep-list">
-                                    @foreach (var dep in _showAllDependencies ? _plan.Dependencies : _plan.Dependencies.Take(DependencyPreview).ToList())
+                                    @foreach (var dep in VisibleDependencies)
                                     {
                                         <li data-testid="pe-dependency">
                                             <span class="pe-dep-name">@dep.Name</span>
@@ -347,7 +364,7 @@
                                 {
                                     <button type="button" class="pe-ov-more" data-testid="pe-dependency-more" aria-expanded="@(_showAllDependencies ? "true" : "false")"
                                             @onclick="() => _showAllDependencies = !_showAllDependencies">
-                                        @(_showAllDependencies ? $"Show first {DependencyPreview}" : $"Show all {_plan.Dependencies.Count} declared dependencies")
+                                        @(_showAllDependencies ? $"Show first {Math.Min(DependencyPreview, _plan.Dependencies.Count)} dependency entries" : $"Show all {_plan.Dependencies.Count} declared dependency entries")
                                     </button>
                                 }
                             }
@@ -924,7 +941,7 @@
                 <div class="pe-constitution-check">
                     @if (_plan.Gates.Count > 0 || _plan.ConstitutionCheckItems.Count > 0)
                     {
-                        <p class="pe-tab-note" data-testid="pe-constitution-note">Statuses as stated in the plan's own Constitution Check. They are not assessed here against the Constitution artifact; Constitution Compliance does that.</p>
+                        <p class="pe-tab-note" data-testid="pe-constitution-note">These statuses are the plan's own statements. Plan Explorer does not independently assess them against the Constitution artifact.</p>
                     }
 
                     <!-- Gate table (table-based, rendered first) -->
@@ -940,7 +957,7 @@
                                     <tr>
                                         <th>Gate</th>
                                         <th>Rule</th>
-                                        <th>Status</th>
+                                        <th>Status stated in plan</th>
                                         @if (showEvidenceColumn)
                                         {
                                             <th>Evidence</th>
@@ -956,7 +973,7 @@
                                             <td class="pe-gate-rule">@(string.IsNullOrEmpty(gate.RuleId) ? gate.Principle : gate.RuleId)</td>
                                             <td>
                                                 <span class="pe-gate-status @GateStatusCss(gate.Status)">
-                                                    @GateStatusIcon(gate.Status) @GateStatusLabel(gate)
+                                                    Plan says: @GateStatusLabel(gate)
                                                 </span>
                                             </td>
                                             @if (showEvidenceColumn)
@@ -991,7 +1008,7 @@
                         {
                             <div class="pe-check-group">
                                 <div class="pe-check-group-header pe-check-header-@CheckStatusCss(group.Key)">
-                                    @CheckStatusLabel(group.Key) (@group.Count())
+                                    @PlanCheckStatusLabel(group.Key) (@group.Count())
                                 </div>
                                 @foreach (var item in group)
                                 {
@@ -1004,7 +1021,7 @@
                                                 <span class="pe-check-title">@item.Title</span>
                                             </div>
                                             <div class="pe-check-header-right">
-                                                <span class="pe-check-status-badge pe-check-badge-@CheckStatusCss(item.Status)">@CheckStatusLabel(item.Status)</span>
+                                                <span class="pe-check-status-badge pe-check-badge-@CheckStatusCss(item.Status)">Plan says: @PlanCheckStatusLabel(item.Status)</span>
                                                 <span class="pe-expand-icon" aria-hidden="true">@(isExpanded ? "▾" : "▸")</span>
                                             </div>
                                         </button>
@@ -1032,6 +1049,7 @@
     [Parameter] public string PlanText { get; set; } = string.Empty;
     [Parameter] public PlanDocument? ParsedPlan { get; set; }
     [Parameter] public PlanSemanticModel? SemanticModel { get; set; }
+    [Parameter] public ArtifactExplorerState? SpecificationState { get; set; }
     [Parameter] public string? InitialView { get; set; }
     [Parameter] public EventCallback<string> OnTextChanged { get; set; }
 
@@ -1138,6 +1156,9 @@
 
     private const int DependencyPreview = 6;
     private bool _showAllDependencies;
+    private IReadOnlyList<PlanDependency> VisibleDependencies => _plan is null
+        ? []
+        : (_showAllDependencies ? _plan.Dependencies : _plan.Dependencies.Take(DependencyPreview)).ToList();
 
     private string RiskCardClass => _plan is null ? "" : _plan.Health.CriticalRisks > 0 ? "pe-ov-critical" : _plan.Health.HighRisks > 0 ? "pe-ov-high" : "";
 
@@ -1162,10 +1183,30 @@
         {
             if (_plan is null) return "";
             var met = _plan.Health.PassedGates + _plan.Health.CompliantItems;
+            var notMet = _plan.Health.FailedGates + _plan.Health.NonCompliantItems;
+            var review = _plan.Health.WarningGates + _plan.Health.NeedsReviewItems;
+            var notApplicable = _plan.Gates.Count(g => g.Status == PlanGateStatus.NotApplicable)
+                + _plan.ConstitutionCheckItems.Count(c => c.Status == ConstitutionCheckStatus.NotApplicable);
             var total = _plan.Gates.Count + _plan.ConstitutionCheckItems.Count;
-            return $"{met} of {total} marked met";
+            if (met == total)
+                return $"{met} of {total} marked met by the plan; BirkNext assessment: Not performed";
+
+            return $"Plan states: {met} marked met · {notMet} marked not met · {review} need review · {notApplicable} not applicable. BirkNext assessment: Not performed";
         }
     }
+
+    private PlanSpecificationReferenceResolution? SpecificationReference =>
+        _plan is null || (string.IsNullOrWhiteSpace(_plan.SpecLink) && string.IsNullOrWhiteSpace(_plan.InputSource))
+            ? null
+            : PlanSpecificationReferenceResolver.Resolve(_plan, SpecificationState);
+
+    private static string SpecificationReferenceSummary(PlanSpecificationReferenceResolution reference) => reference.Status switch
+    {
+        PlanSpecificationReferenceStatus.Resolved => "Artifact reference resolved to the current Specification artifact. This does not establish traceability, coverage, review, or approval.",
+        PlanSpecificationReferenceStatus.Ambiguous => reference.Detail ?? "Multiple Specification artifacts match; select the current artifact before resolving this reference.",
+        PlanSpecificationReferenceStatus.Missing => reference.Detail ?? "No matching current Specification artifact is available.",
+        _ => reference.Detail ?? "Named in the plan; not resolved to the current Specification artifact.",
+    };
 
     private string DependencySources => _plan is null ? "" :
         string.Join(", ", _plan.Dependencies.Select(d => d.DeclaredIn ?? "Plan").Distinct());
@@ -1294,6 +1335,15 @@
         _                                      => s.ToString(),
     };
 
+    private static string PlanCheckStatusLabel(ConstitutionCheckStatus s) => s switch
+    {
+        ConstitutionCheckStatus.Compliant => "marked met in plan",
+        ConstitutionCheckStatus.NonCompliant => "marked not met in plan",
+        ConstitutionCheckStatus.NeedsReview => "needs review in plan",
+        ConstitutionCheckStatus.NotApplicable => "marked not applicable in plan",
+        _ => $"{CheckStatusLabel(s)} in plan",
+    };
+
     private static string CheckStatusCss(ConstitutionCheckStatus s) => s switch
     {
         ConstitutionCheckStatus.Compliant      => "compliant",
@@ -1306,35 +1356,21 @@
     private static string GateStatusLabel(PlanGate gate)
     {
         if (gate.Status == PlanGateStatus.Warning && gate.IsJustifiedDeviation)
-            return "JUSTIFIED DEVIATION";
+            return "justified deviation";
 
         return gate.Status switch
         {
-            PlanGateStatus.Pass          => "PASS",
-            PlanGateStatus.Warning       => "WARNING",
-            PlanGateStatus.Fail          => "FAIL",
-            PlanGateStatus.NotApplicable => "N/A",
-            _                            => gate.Status.ToString(),
+            PlanGateStatus.Pass          => "marked met",
+            PlanGateStatus.Warning       => "warning",
+            PlanGateStatus.Fail          => "marked not met",
+            PlanGateStatus.NotApplicable => "not applicable",
+            _                            => gate.Status.ToString().ToLowerInvariant(),
         };
     }
 
-    private static string GateStatusCss(PlanGateStatus s) => s switch
-    {
-        PlanGateStatus.Pass          => "pe-gate-pass",
-        PlanGateStatus.Warning       => "pe-gate-warning",
-        PlanGateStatus.Fail          => "pe-gate-fail",
-        PlanGateStatus.NotApplicable => "pe-gate-na",
-        _                            => "pe-gate-na",
-    };
+    private static string GateStatusCss(PlanGateStatus s) => "pe-gate-plan-stated";
 
-    private static string GateStatusIcon(PlanGateStatus s) => s switch
-    {
-        PlanGateStatus.Pass          => "✓",
-        PlanGateStatus.Warning       => "⚠",
-        PlanGateStatus.Fail          => "✗",
-        PlanGateStatus.NotApplicable => "–",
-        _                            => string.Empty,
-    };
+    private static string GateStatusIcon(PlanGateStatus s) => string.Empty;
 
     private static string ConstraintTypeCss(ConstraintType t) => t switch
     {

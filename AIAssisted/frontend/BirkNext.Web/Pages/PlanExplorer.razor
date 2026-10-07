@@ -4,8 +4,10 @@
 @using BirkNext.Web.Models
 @using BirkNext.Web.Services.Explorers
 @using Microsoft.AspNetCore.WebUtilities
+@implements IDisposable
 @inject NavigationManager NavigationManager
 @inject BirkNext.Web.Services.IPlanAnalysisService PlanService
+@inject IArtifactExplorerContext ArtifactContext
 
 <PageTitle>Plan Explorer — QA Review Studio</PageTitle>
 
@@ -26,6 +28,7 @@
                     PlanText="@_text"
                     ParsedPlan="@_parsed"
                     SemanticModel="@_semanticModel"
+                    SpecificationState="@_specificationState"
                     InitialView="@_initialView"
                     OnTextChanged="ImportFromPanel" />
             </div>
@@ -41,36 +44,72 @@
     private string? _analysisError;
     private PlanDocument? _parsed;
     private PlanSemanticModel? _semanticModel;
+    private ArtifactExplorerState? _specificationState;
+    private int _specificationLoadVersion;
+    private bool _disposed;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
         if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("view", out var view))
             _initialView = view;
+
+        ArtifactContext.Changed += OnArtifactContextChanged;
+        await RefreshSpecificationStateAsync();
     }
 
     // The panel's own paste box goes through the repository like every other import.
     private Task ImportFromPanel(string text) => _host?.ImportPastedAsync(text) ?? Task.CompletedTask;
 
-    private void OnArtifactChanged(ArtifactExplorerState state)
+    private async Task OnArtifactChanged(ArtifactExplorerState state)
     {
         var text = state.Content ?? string.Empty;
-        if (string.Equals(text, _text, StringComparison.Ordinal)) return;
-        _text = text;
-        _parsed = null;
-        _semanticModel = null;
-        _analysisError = null;
-        if (string.IsNullOrWhiteSpace(text)) return;
-        try
+        if (!string.Equals(text, _text, StringComparison.Ordinal))
         {
-            _parsed = PlanService.Parse(text);
-            _semanticModel = PlanAnalysisService.BuildSemanticModel(_parsed);
-        }
-        catch (Exception ex)
-        {
+            _text = text;
             _parsed = null;
             _semanticModel = null;
-            _analysisError = ex.Message;
+            _analysisError = null;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                try
+                {
+                    _parsed = PlanService.Parse(text);
+                    _semanticModel = PlanAnalysisService.BuildSemanticModel(_parsed);
+                }
+                catch (Exception ex)
+                {
+                    _parsed = null;
+                    _semanticModel = null;
+                    _analysisError = ex.Message;
+                }
+            }
         }
+
+        await RefreshSpecificationStateAsync();
+    }
+
+    private void OnArtifactContextChanged(object? sender, EventArgs args)
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshSpecificationStateAsync();
+            if (!_disposed) StateHasChanged();
+        });
+    }
+
+    private async Task RefreshSpecificationStateAsync()
+    {
+        var version = Interlocked.Increment(ref _specificationLoadVersion);
+        var state = await ArtifactContext.GetStateAsync(WorkspaceArtifactType.Specification);
+        if (_disposed || version != _specificationLoadVersion) return;
+        _specificationState = state;
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        ArtifactContext.Changed -= OnArtifactContextChanged;
     }
 }

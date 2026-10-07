@@ -762,9 +762,9 @@
     border-bottom: 1px solid var(--clr-border-subtle);
     color: var(--clr-text-subtle);
 }
-.pe-check-header-noncompliant { color: #dc2626; border-bottom-color: #fecaca; }
-.pe-check-header-review       { color: #d97706; border-bottom-color: #fde68a; }
-.pe-check-header-compliant    { color: var(--clr-success); border-bottom-color: var(--clr-success-border); }
+.pe-check-header-noncompliant,
+.pe-check-header-review,
+.pe-check-header-compliant    { color: var(--clr-text-subtle); border-bottom-color: var(--clr-border-subtle); }
 
 .pe-check-card {
     background: var(--clr-surface-white);
@@ -773,9 +773,9 @@
     overflow: hidden;
     border-left: 4px solid var(--clr-border);
 }
-.pe-check-noncompliant { border-left-color: #dc2626; }
-.pe-check-review       { border-left-color: #d97706; }
-.pe-check-compliant    { border-left-color: var(--clr-success); }
+.pe-check-noncompliant,
+.pe-check-review,
+.pe-check-compliant,
 .pe-check-na           { border-left-color: var(--clr-border-hover); }
 
 .pe-check-header {
@@ -820,9 +820,9 @@
     border-radius: var(--radius-sm);
     white-space: nowrap;
 }
-.pe-check-badge-noncompliant { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-.pe-check-badge-review       { background: var(--clr-warning-bg); color: var(--clr-warning); border: 1px solid var(--clr-warning-border); }
-.pe-check-badge-compliant    { background: var(--clr-success-bg); color: var(--clr-success); border: 1px solid var(--clr-success-border); }
+.pe-check-badge-noncompliant,
+.pe-check-badge-review,
+.pe-check-badge-compliant,
 .pe-check-badge-na           { background: var(--clr-surface); color: var(--clr-text-subtle); border: 1px solid var(--clr-border); }
 
 .pe-check-body {
@@ -916,10 +916,9 @@
     border-radius: var(--radius-pill);
     white-space: nowrap;
 }
-.pe-gate-pass    { background: var(--clr-success-bg); color: var(--clr-success); border: 1px solid var(--clr-success-border); }
-.pe-gate-warning { background: var(--clr-warning-bg); color: var(--clr-warning); border: 1px solid var(--clr-warning-border); }
-.pe-gate-fail    { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-.pe-gate-na      { background: var(--clr-surface); color: var(--clr-text-subtle); border: 1px solid var(--clr-border); }
+.pe-gate-plan-stated { background: var(--clr-surface); color: var(--clr-text-subtle); border: 1px solid var(--clr-border); }
+
+.pe-plan-filter.is-active { background: var(--clr-surface-muted); border-color: var(--clr-border-hover); color: var(--clr-text-heading); }
 
 /* Filter chips for gate status */
 .pe-fc-pass.is-active    { background: var(--clr-success); border-color: var(--clr-success); }

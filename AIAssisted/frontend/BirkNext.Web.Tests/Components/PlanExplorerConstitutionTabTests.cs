@@ -107,7 +107,7 @@ public sealed class PlanExplorerConstitutionTabTests : BunitContext
         cut.Markup.Should().NotContain("<th>Evidence</th>");
         cut.FindAll("td.pe-gate-evidence").Should().BeEmpty();
         cut.Markup.Should().Contain("<th>Gate</th>");
-        cut.Markup.Should().Contain("<th>Status</th>");
+        cut.Markup.Should().Contain("<th>Status stated in plan</th>");
         cut.Markup.Should().Contain("<th>Notes</th>");
         cut.FindAll("tbody tr").Should().HaveCount(13);
         cut.Markup.Should().Contain("SCIM endpoint is the inbound contract");

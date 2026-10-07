@@ -102,6 +102,7 @@ public sealed class PlanDocument
     /// keywords) because the plan lists none itself — even when it has a Complexity section (e.g. "no violations to justify").
     /// </summary>
     public bool ComplexityDerived { get; init; }
+    /// <summary>Declared dependency entries: one per extracted plan declaration; one declaration may name multiple packages.</summary>
     public List<PlanDependency> Dependencies { get; init; } = [];
     public List<PlanMilestone> Milestones { get; init; } = [];
     public List<PlanConstitutionCheckItem> ConstitutionCheckItems { get; init; } = [];
