@@ -37,6 +37,9 @@ public sealed class SharedArtifactTraceabilityTests : BunitContext
         resolved.Selected!.FileName.Should().Be("requirements-school.md");
         fixture.Provider.GetCurrent()!.GetRequirements().Should().Contain(r => r.Id == "FR-019");
         fixture.Graph.Build(fixture.Workspace).Should().Contain(r => r.Requirement.Id == "FR-019");
+        AddTraceabilityServices(fixture);
+        var traceability = Render<Traceability>();
+        traceability.WaitForAssertion(() => traceability.Markup.Should().Contain("FR-019"));
     }
 
     [Fact]
