@@ -174,7 +174,8 @@ else
                                 <ul class="tv-det-list">
                                     @foreach (var t in sel.LinkedTests)
                                     {
-                                            <li class="tv-test-item"><span class="tv-test-dot"></span><TraceabilityItemText @key="t.CandidateId" ItemType="Test" Text="@t.Title" /></li>
+                                        var scenario = ScenarioFor(t.CandidateId);
+                                        <li class="tv-test-item"><span class="tv-test-dot"></span><TraceabilityItemText @key="t.CandidateId" ItemType="Test" Text="@t.Title" Given="@scenario?.Given" When="@scenario?.When" Then="@scenario?.Then" /></li>
                                     }
                                 </ul>
                             </div>
@@ -389,7 +390,8 @@ else
                             <ul class="tv-gap-items">
                                 @foreach (var t in GapPreview("orphan-tests", orphanTests))
                                 {
-                                    <li><TraceabilityItemText @key="t.CandidateId" ItemType="Orphaned test" Text="@t.Title" /></li>
+                                    var scenario = ScenarioFor(t.CandidateId);
+                                    <li><TraceabilityItemText @key="t.CandidateId" ItemType="Orphaned test" Text="@t.Title" Given="@scenario?.Given" When="@scenario?.When" Then="@scenario?.Then" /></li>
                                 }
                             </ul>
                             @GapShowAll("orphan-tests", orphanTests.Count, "orphan tests")
@@ -604,6 +606,9 @@ else
     {
         _gapExpanded[key] = !(_gapExpanded.TryGetValue(key, out var v) && v);
     }
+
+    private TraceabilityScenarioText? ScenarioFor(Guid candidateId) =>
+        _model is not null && _model.ScenarioTextByCandidateId.TryGetValue(candidateId, out var scenario) ? scenario : null;
 
     // ── Formatting helpers ──────────────────────────────────────────────────
 

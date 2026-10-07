@@ -26,8 +26,8 @@ public sealed class TraceabilityViewEmbeddedTests : BunitContext
             i == 1 && longText is not null ? $"FR-{i:000}: {longText}" : $"FR-{i:000}: The system MUST support capability {i}.",
             ScenarioKind.Requirement)).ToList();
 
-    private IRenderedComponent<TraceabilityView> Render(IReadOnlyList<ExtractionCandidate> candidates) =>
-        Render<TraceabilityView>(p => p.Add(c => c.Candidates, candidates).Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]));
+    private IRenderedComponent<TraceabilityView> Render(IReadOnlyList<ExtractionCandidate> candidates, string? specMarkdown = null) =>
+        Render<TraceabilityView>(p => p.Add(c => c.SpecMarkdown, specMarkdown).Add(c => c.Candidates, candidates).Add(c => c.Links, (IReadOnlyList<CandidateLinkEntry>)[]));
 
     private static void OpenGaps(IRenderedComponent<TraceabilityView> cut) =>
         cut.FindAll(".tv-toggle-btn").Single(b => b.TextContent.Contains("Gaps")).Click();
@@ -131,6 +131,32 @@ public sealed class TraceabilityViewEmbeddedTests : BunitContext
         items.Should().NotBeEmpty();
         cut.Markup.Should().Contain("TEST-END");
         cut.FindAll(".traceability-item__toggle").Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public void OrphanScenario_UsesStructuredFullTextAndSharedSemanticRenderer()
+    {
+        const string scenario = "Given a person record is created When the CDC event is processed Then the complete identity payload is mapped through the adapter pipeline.";
+        const string spec = """
+            # Specification
+            ## User Story 1: Person creation
+            ### Acceptance Scenarios
+            1. **Given** a person record is created **When** the CDC event is processed **Then** the complete identity payload is mapped through the adapter pipeline.
+            """;
+        var candidates = new[]
+        {
+            Candidate("FR-001: The service MUST create a person record.", ScenarioKind.Requirement),
+            Candidate(scenario, ScenarioKind.Test, "Unrelated tests"),
+        };
+        var cut = Render(candidates, spec);
+
+        cut.Find("[data-testid=health-orphan-tests]").Click();
+
+        var item = cut.Find("[data-testid=gap-orphan-tests] .traceability-item__text");
+        item.TextContent.Should().Contain("complete identity payload is mapped through the adapter pipeline");
+        item.QuerySelector(".traceability-item__given")!.TextContent.Should().Be("Given");
+        item.QuerySelector(".traceability-item__when")!.TextContent.Should().Be("When");
+        item.QuerySelector(".traceability-item__then")!.TextContent.Should().Be("Then");
     }
 
     [Fact]

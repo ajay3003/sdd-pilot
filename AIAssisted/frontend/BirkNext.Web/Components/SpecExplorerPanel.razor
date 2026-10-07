@@ -325,42 +325,10 @@
                         @* ── BDD Scenario ──────────────────────────────────────── *@
                         @if (selected.NodeType == SpecNodeType.BddScenario)
                         {
-                            @if (!string.IsNullOrEmpty(selected.BddGiven))
-                            {
-                                <div class="se-details-section">
-                                    <div class="se-details-label se-bdd-label-given">Given</div>
-                                    <div class="se-bdd-block">
-                                        @foreach (var step in selected.BddGiven.Split('\n'))
-                                        {
-                                            <div class="se-bdd-step">@step</div>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(selected.BddWhen))
-                            {
-                                <div class="se-details-section">
-                                    <div class="se-details-label se-bdd-label-when">When</div>
-                                    <div class="se-bdd-block">
-                                        @foreach (var step in selected.BddWhen.Split('\n'))
-                                        {
-                                            <div class="se-bdd-step">@step</div>
-                                        }
-                                    </div>
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(selected.BddThen))
-                            {
-                                <div class="se-details-section">
-                                    <div class="se-details-label se-bdd-label-then">Then</div>
-                                    <div class="se-bdd-block">
-                                        @foreach (var step in selected.BddThen.Split('\n'))
-                                        {
-                                            <div class="se-bdd-step">@step</div>
-                                        }
-                                    </div>
-                                </div>
-                            }
+                            <div class="se-details-section">
+                                <TraceabilityItemText @key="selected.Id" ItemType="Test scenario" ItemId="@selected.SpecItemId"
+                                    Text="@(selected.FullContent ?? selected.Title)" Given="@selected.BddGiven" When="@selected.BddWhen" Then="@selected.BddThen" />
+                            </div>
                         }
 
                         @* ── Section contents summary ──────────────────────────── *@

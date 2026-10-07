@@ -1,28 +1,31 @@
+@using Microsoft.AspNetCore.Components.Rendering
+
 <div class="traceability-item @(Expanded ? "is-expanded" : "")">
     @if (OnActivate.HasDelegate)
     {
         <button type="button" class="traceability-item__activate @ActionClass" @onclick="Activate" aria-label="@ActivateLabel"
                 aria-current="@(Current ? "true" : null)">
             @if (!string.IsNullOrWhiteSpace(ItemId)) { <span class="traceability-item__id">@ItemId</span> }
-            <span class="visually-hidden">@ItemType: </span><span class="traceability-item__text @(CanExpand && !Expanded ? "is-collapsed" : "")">@Text</span>
+            <span class="visually-hidden">@ItemType: </span><div id="@TextId" class="traceability-item__text @(CanExpand && !Expanded ? "is-collapsed" : "")">@TextBody</div>
         </button>
     }
     else
     {
         <div class="traceability-item__content">
             @if (!string.IsNullOrWhiteSpace(ItemId)) { <span class="traceability-item__id">@ItemId</span> }
-            <span class="visually-hidden">@ItemType: </span><span class="traceability-item__text @(CanExpand && !Expanded ? "is-collapsed" : "")">@Text</span>
+            <span class="visually-hidden">@ItemType: </span><div id="@TextId" class="traceability-item__text @(CanExpand && !Expanded ? "is-collapsed" : "")">@TextBody</div>
         </div>
     }
     @if (CanExpand)
     {
-        <button type="button" class="traceability-item__toggle" aria-expanded="@(Expanded ? "true" : "false")"
+        <button type="button" class="traceability-item__toggle" aria-expanded="@(Expanded ? "true" : "false")" aria-controls="@TextId"
                 aria-label="@(Expanded ? $"Show less for {ItemType} {ItemId}" : $"Show full text for {ItemType} {ItemId}")"
                 @onclick="Toggle">@(Expanded ? "Show less" : "Show more")</button>
     }
 </div>
 
 @code {
+    private readonly string TextId = $"traceability-text-{Guid.NewGuid():N}";
     [Parameter, EditorRequired] public string Text { get; set; } = "";
     [Parameter] public string ItemType { get; set; } = "Traceability item";
     [Parameter] public string? ItemId { get; set; }
@@ -30,8 +33,44 @@
     [Parameter] public EventCallback OnActivate { get; set; }
     /// <summary>The activate button is the selected item of its list (announced as aria-current).</summary>
     [Parameter] public bool Current { get; set; }
+    [Parameter] public string? Given { get; set; }
+    [Parameter] public string? When { get; set; }
+    [Parameter] public string? Then { get; set; }
     private bool Expanded { get; set; }
-    private bool CanExpand => Text.Length > 180;
+    private bool HasStructuredScenario => Given is not null || When is not null || Then is not null;
+    private string ExpansionText => HasStructuredScenario ? $"{Given} {When} {Then}" : Text;
+    private bool CanExpand => ExpansionText.Length > 100;
+    private RenderFragment TextBody => builder =>
+    {
+        if (HasStructuredScenario)
+        {
+            var sequence = 0;
+            AddScenarioPart(builder, ref sequence, "Given", Given, "given");
+            AddScenarioPart(builder, ref sequence, "When", When, "when");
+            AddScenarioPart(builder, ref sequence, "Then", Then, "then");
+        }
+        else
+        {
+            builder.AddContent(0, Text);
+        }
+    };
+
+    private static void AddScenarioPart(RenderTreeBuilder builder, ref int sequence, string label, string? value, string kind)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return;
+        builder.OpenElement(sequence++, "div");
+        builder.AddAttribute(sequence++, "class", "traceability-item__scenario-part");
+        builder.OpenElement(sequence++, "span");
+        builder.AddAttribute(sequence++, "class", $"traceability-item__keyword traceability-item__{kind}");
+        builder.AddContent(sequence++, label);
+        builder.CloseElement();
+        builder.AddContent(sequence++, " ");
+        builder.OpenElement(sequence++, "span");
+        builder.AddAttribute(sequence++, "class", "traceability-item__scenario-body");
+        builder.AddContent(sequence++, value);
+        builder.CloseElement();
+        builder.CloseElement();
+    }
     private string ActivateLabel => $"{ItemType}{(string.IsNullOrWhiteSpace(ItemId) ? "" : $" {ItemId}")}: {Text}";
     private Task Activate() => OnActivate.InvokeAsync();
     private void Toggle() => Expanded = !Expanded;

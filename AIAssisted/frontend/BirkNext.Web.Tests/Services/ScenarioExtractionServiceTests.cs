@@ -30,6 +30,24 @@ public sealed class ScenarioExtractionServiceTests
         int maxLineLength = 2_000)
         => await Build(maxInput, minCandidate, maxLineLength).ExtractAsync(input);
 
+    [Fact]
+    public async Task NumberedBddScenario_PreservesIndentedWrappedThenText()
+    {
+        const string markdown = """
+            # Specification
+            ## Acceptance Scenarios
+            1. **Given** a new person record is created, **When** the CDC event is
+               processed, **Then** the record is persisted with identity fields mapped
+               from the source event through the complete adapter pipeline.
+            """;
+
+        var result = await ExtractAsync(markdown);
+
+        var scenario = result.Candidates.Single(c => c.Classification == ScenarioKind.Test);
+        scenario.Title.Should().Contain("processed");
+        scenario.Title.Should().Contain("complete adapter pipeline");
+    }
+
     // =========================================================================
     // Stage 1: Input Validation Gate
     // =========================================================================

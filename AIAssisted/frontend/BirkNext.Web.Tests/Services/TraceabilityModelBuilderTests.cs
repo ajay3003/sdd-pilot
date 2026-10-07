@@ -81,6 +81,37 @@ public sealed class TraceabilityModelBuilderTests
     }
 
     [Fact]
+    public async Task StructuredScenarioText_SurvivesExtractionAndTraceabilityProjection()
+    {
+        const string specMarkdown = """
+            # Feature Specification
+            ## User Story 1: Person Search
+            ### Acceptance Scenarios
+            1. **Given** a caseworker with access to search, **When** the person lookup event is
+               processed, **Then** the person exists with all identity fields mapped
+               from the source event through the adapter pipeline.
+            """;
+        var extraction = await BuildExtractionService().ExtractAsync(specMarkdown);
+        extraction.Status.Should().Be(PipelineStatus.Success);
+
+        var scenarioCandidate = extraction.Candidates.First(c => c.Classification == ScenarioKind.Test);
+        scenarioCandidate.Title.Should().Contain("through the adapter pipeline", "the wrapped final Then clause stays in the extracted candidate");
+
+        var model = TraceabilityModelBuilder.Build(specMarkdown, extraction.Candidates, []);
+        var scenario = model.ScenarioTextByCandidateId[scenarioCandidate.CandidateId];
+        scenario.Given.Should().Contain("caseworker");
+        scenario.When.Should().Contain("event is processed");
+        scenario.Then.Should().Contain("through the adapter pipeline");
+
+        var legacyCandidate = Candidate(
+            "Given a caseworker with access to search, When the person lookup event is",
+            ScenarioKind.Test);
+        var legacyModel = TraceabilityModelBuilder.Build(specMarkdown, [legacyCandidate], []);
+        legacyModel.ScenarioTextByCandidateId[legacyCandidate.CandidateId].Then
+            .Should().Contain("through the adapter pipeline", "old saved first-line candidates can recover the parsed scenario for display");
+    }
+
+    [Fact]
     public void QAPair_NotTreatedAsRequirement()
     {
         var qaPair = Candidate(

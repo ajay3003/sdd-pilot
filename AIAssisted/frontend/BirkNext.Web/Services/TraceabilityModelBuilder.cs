@@ -15,6 +15,7 @@ public static class TraceabilityModelBuilder
 
     // Matches ISO date anywhere in the heading so "Session 2026-03-06" is caught.
     private static readonly Regex DateHeadingRe = new(@"\b\d{4}-\d{2}-\d{2}\b", RegexOptions.Compiled);
+    private static readonly Regex ScenarioIdentityRe = new(@"[^\p{L}\p{N}]", RegexOptions.Compiled);
 
     public static TraceabilityModel Build(
         string? specMarkdown,
@@ -36,6 +37,7 @@ public static class TraceabilityModelBuilder
         var tests = activeCandidates
             .Where(c => c.Classification == ScenarioKind.Test)
             .ToList();
+        var scenarioTextByCandidateId = new Dictionary<Guid, TraceabilityScenarioText>();
 
         var testById = tests.ToDictionary(t => t.CandidateId);
 
@@ -57,10 +59,43 @@ public static class TraceabilityModelBuilder
         if (!string.IsNullOrWhiteSpace(specMarkdown))
         {
             var specTree = SpecExplorerService.Parse(specMarkdown);
-            foreach (var node in FlattenSpecNodes(specTree.Roots))
+            var allSpecNodes = FlattenSpecNodes(specTree.Roots).ToList();
+            foreach (var node in allSpecNodes)
             {
                 if (node.HeadingLevel > 0)
                     headingSemantics[node.Title] = node.Semantics;
+            }
+
+            // Match extracted logical test candidates to the parser's structured scenario
+            // fields. The candidate remains the source of traceability identity/counts;
+            // the parsed Specification supplies complete display text without Razor parsing.
+            var scenariosByIdentity = allSpecNodes
+                .Where(n => n.NodeType == SpecNodeType.BddScenario &&
+                            (!string.IsNullOrWhiteSpace(n.BddGiven) || !string.IsNullOrWhiteSpace(n.BddWhen) || !string.IsNullOrWhiteSpace(n.BddThen)))
+                .Select(n => (Node: n, Identity: NormalizeScenario($"Given {n.BddGiven} When {n.BddWhen} Then {n.BddThen}")))
+                .GroupBy(x => x.Identity, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First().Node, StringComparer.Ordinal);
+            foreach (var test in tests)
+            {
+                var identity = NormalizeScenario(test.Title);
+                if (scenariosByIdentity.TryGetValue(identity, out var scenario))
+                    scenarioTextByCandidateId[test.CandidateId] = new(scenario.BddGiven, scenario.BddWhen, scenario.BddThen);
+                else if (identity.Length >= 32)
+                {
+                    // Workspaces may still contain a candidate saved before wrapped list
+                    // continuations were retained. Recover display text only when its
+                    // substantial prefix identifies exactly one parsed scenario.
+                    var prefixMatches = scenariosByIdentity
+                        .Where(pair => pair.Key.StartsWith(identity, StringComparison.Ordinal))
+                        .Select(pair => pair.Value)
+                        .DistinctBy(node => node.Id)
+                        .ToList();
+                    if (prefixMatches.Count == 1)
+                    {
+                        var matched = prefixMatches[0];
+                        scenarioTextByCandidateId[test.CandidateId] = new(matched.BddGiven, matched.BddWhen, matched.BddThen);
+                    }
+                }
             }
 
             explicitFrNodes = FlattenSpecNodes(specTree.Roots)
@@ -254,6 +289,7 @@ public static class TraceabilityModelBuilder
             Requirements    = tracedReqs,
             SuccessCriteria = finalScs,
             OrphanedTests   = orphanedTests,
+            ScenarioTextByCandidateId = scenarioTextByCandidateId,
             TotalTests      = totalTests,
             TotalCandidates = activeCandidates.Count,
             RequirementCandidateCount = activeCandidates.Count(c => c.Classification == ScenarioKind.Requirement),
@@ -454,6 +490,9 @@ public static class TraceabilityModelBuilder
 
     private static string? FirstMatch(Regex re, string? text) =>
         text is null ? null : re.Match(text) is { Success: true } m ? m.Value : null;
+
+    private static string NormalizeScenario(string? text) =>
+        ScenarioIdentityRe.Replace(text ?? string.Empty, string.Empty).ToUpperInvariant();
 
     private static IEnumerable<SpecNode> FlattenSpecNodes(IEnumerable<SpecNode> nodes)
     {

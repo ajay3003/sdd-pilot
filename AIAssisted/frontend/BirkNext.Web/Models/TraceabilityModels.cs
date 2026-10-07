@@ -53,6 +53,7 @@ public sealed class TraceabilityModel
     public List<TracedRequirement> Requirements { get; init; } = [];
     public List<TracedSc> SuccessCriteria { get; init; } = [];
     public List<ExtractionCandidate> OrphanedTests { get; init; } = [];
+    public Dictionary<Guid, TraceabilityScenarioText> ScenarioTextByCandidateId { get; init; } = [];
 
     public required int TotalTests { get; init; }
     public int TotalCandidates { get; init; }
@@ -80,3 +81,6 @@ public sealed class TraceabilityModel
     public bool HasNonEligibleArtifacts =>
         ClarificationCount + DecisionCount + AssumptionCount + ArchitectureNoteCount + MetadataCount > 0;
 }
+
+/// <summary>Structured scenario syntax sourced from the parsed Specification, not inferred by the view.</summary>
+public sealed record TraceabilityScenarioText(string? Given, string? When, string? Then);

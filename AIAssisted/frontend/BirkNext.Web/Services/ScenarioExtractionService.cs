@@ -297,6 +297,19 @@ public sealed class ScenarioExtractionService : IScenarioExtractionService
                 continue;
             }
 
+            // Markdown commonly wraps a long ordered scenario onto indented continuation
+            // lines. Keep those lines with their owning list item so extraction does not
+            // reduce a Given/When/Then scenario to its first visual line.
+            var leadingWhitespace = line.Length - trimmed.Length;
+            if (leadingWhitespace >= 2 && blocks.Count > 0 &&
+                blocks[^1].BlockType is BlockType.OrderedListItem or BlockType.UnorderedListItem &&
+                blocks[^1].PrecedingHeading == currentHeading)
+            {
+                var previous = blocks[^1];
+                blocks[^1] = previous with { RawText = $"{previous.RawText} {trimmed}" };
+                continue;
+            }
+
             // Table rows — use look-ahead to detect header vs body
             if (trimmed.StartsWith("|"))
             {

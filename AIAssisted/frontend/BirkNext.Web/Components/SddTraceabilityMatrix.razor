@@ -25,7 +25,7 @@
                 var currentImpl = row.Implementation.Where(x => x.Currentness == "Current").ToList();
                 var currentTests = row.Executions.Where(x => x.Currentness == "Current").ToList();
                 <tr>
-                    <th scope="row"><strong>@row.Requirement.Id</strong><span>@row.Requirement.Text</span></th>
+                    <th scope="row"><TraceabilityItemText ItemType="Requirement" ItemId="@row.Requirement.Id" Text="@row.Requirement.Text" /></th>
                     <td>@row.Requirement.LinkedAcceptanceScenarios.Count documented; @row.DesignedTests.Count designed</td>
                     <td>@(row.PlanReferences.Count == 0 ? "No link" : string.Join(", ", row.PlanReferences))</td>
                     <td>@(row.TaskReferences.Count == 0 ? "No link" : string.Join(", ", row.TaskReferences))</td>
